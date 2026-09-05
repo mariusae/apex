@@ -31,8 +31,30 @@ Goals:
 - **Modern extensions fit:** LSP, formatters, file watchers, agents.
 
 Non-goals (for now): multiple simultaneous UI clients editing the same
-workspace ("single player mode": one UI session at a time), a plugin
-language, a configuration language, Windows.
+session ("single player mode": one UI attachment per session at a time), a
+plugin language, a configuration language, web windows, persistence of the
+server's state across restarts, Windows.
+
+### Terminology
+
+- **Session**: what tmux calls a session — a whole workspace (its shards,
+  layout, windows, terminals) living on one server. A server hosts many.
+- **Attachment**: the fenced identity a client gets when it attaches to a
+  session. Leases are granted to attachments. A client may hold several
+  attachments at once, to sessions on local and remote servers.
+- **Connection**: a socket. Connections drop and resume without affecting
+  attachments or sessions.
+
+### Principles
+
+- **Nothing is ever lost.** Whenever the system must set something aside —
+  unflushed edits from a fenced attachment, a buffer overwritten by `Get`,
+  a disk change under a dirty buffer — every version is kept and shown,
+  with provenance, in a `+Recovered` buffer or in the tag. Silent discard
+  is a bug.
+- **State on the server, rendering on the client.** The client is a
+  renderer and input device with a replica; if it lacks data for an
+  operation it hands the operation to the server (§5) rather than blocking.
 
 ---
 
@@ -41,7 +63,7 @@ language, a configuration language, Windows.
 ```
                  ┌──────────────────────────── server (one per host) ───────────────────────────┐
                  │  logs + snapshots      state machine (core crate)      ptys / files / procs  │
-                 │  fencing / sessions    plumber, Edit language          file watcher          │
+                 │  fencing / attachments plumber, Edit language          file watcher          │
                  └───────────┬───────────────────────────┬────────────────────────┬─────────────┘
        attach protocol       │                           │ control protocol       │
    (unix socket / ssh stdio) │                           │ (same frames)          │
@@ -55,12 +77,13 @@ language, a configuration language, Windows.
 
 Three kinds of process:
 
-- **Server.** Owns the logs, sequences or stores every change, runs ptys and
-  external programs, watches files, hosts the plumber. Runs where the files
-  are.
-- **UI client.** Mirrors the server's state, renders it, and while attached
-  *leads* the shards a user edits (buffers, windows, layout) so editing never
-  waits on a round trip.
+- **Server.** A daemon, one per host, hosting many sessions. Owns the logs
+  (in memory), sequences or stores every change, runs ptys and external
+  programs, watches files, hosts the plumber. Runs where the files are.
+- **UI client.** Attaches to one or more sessions (one OS window each).
+  Mirrors each session's state, renders it, and while attached *leads* the
+  shards a user edits (buffers, windows, layout) so editing never waits on
+  a round trip.
 - **Tools.** Anything else: the `apex` CLI, shell scripts, `apex lsp`, an
   agent harness. Tools read state and *propose* changes through the server.
 
@@ -99,7 +122,7 @@ server-owned emulator grid or page.
 
 State is partitioned into **shards**, each an independent replicated state
 machine with its own log and its own lease. A shard is either *leasable*
-(its lease moves between sessions) or *pinned* (its leader is fixed and the
+(its lease moves between attachments) or *pinned* (its leader is fixed and the
 lease never moves):
 
 | shard | one per | entries | default leader |
@@ -108,6 +131,16 @@ lease never moves):
 | `window` | window | `Select{part, q0, q1}`, `Origin{part, off}`, `Addr`, `Kind` | server |
 | `layout` | workspace | `ColNew/Del/Resize`, `WinNew{col, at, buffer}`, `WinDel`, `WinMove`, `WinResize` | server |
 | `term` | terminal | `Rows{seq, rows: [cells]}`, `Cursor`, `Mode`, `Resize`, `Exit` | server, **pinned** |
+| `control` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}` | server, **pinned** |
+| `registry` | server | `SessionNew/Del/Rename` | server, **pinned** |
+
+The **control log** is the session's authority on everything *about* shards
+rather than in them: which shards exist, which attachment holds which lease
+at which epoch, and every transfer or reclaim, so a reader can tell what
+happened and why. Fencing is decided there and enforced by the log store
+against its latest state. Layout cross-references windows and buffers but,
+being leasable, cannot be the source of truth for what exists. The
+server-wide **registry** lists sessions.
 
 Cross-shard operations are several entries in several logs with no
 atomicity between them. acme has none either. Zerox is a `layout.WinNew`
@@ -148,32 +181,37 @@ on replaying it.
 
 ---
 
-## 4. Leadership: sessions, leases, fencing
+## 4. Leadership: attachments, leases, fencing
 
-### 4.1 Sessions
+### 4.1 Attachments
 
-A **session** is explicit and server-issued (`apex attach` creates one), with
-a monotonically increasing id. Leases are granted to sessions, never to
-connections. A dropped connection does not end a session: the client
-reconnects, presents its session id, and both sides resume from the last
-acknowledged sequence, keeping their tails. Nothing is lost on a network
-blip.
+An **attachment** is explicit and server-issued (`apex attach` creates one,
+recorded in the session's control log), with a monotonically increasing id.
+Leases are granted to attachments, never to connections. A dropped
+connection does not end an attachment: the client reconnects, presents its
+attachment id, and both sides resume from the last acknowledged sequence,
+keeping their tails. Nothing is lost on a network blip.
 
 Resuming is decided per shard, and the two directions differ:
 
-- Shards the session **leads** (buffers, windows, layout): the client is
+- Shards the attachment **leads** (buffers, windows, layout): the client is
   ahead of the server, not behind. It flushes its unflushed tail; there is
   nothing to replay.
-- Shards the session **follows** (terminals, tool-led buffers): the server
-  chooses, by size, between replaying the tail since the last acknowledged
-  sequence and sending a fresh snapshot. If the tail is larger than the
-  snapshot (or over a fixed threshold), it re-snapshots — an hour of agent
-  output is a huge tail and a small grid. Time away is only a hint; bytes
-  decide.
+- Shards the attachment **follows** (terminals, tool-led buffers): the
+  server chooses, by size, between replaying the tail since the last
+  acknowledged sequence and sending a fresh snapshot. If the tail is larger
+  than the snapshot (or over a fixed threshold), it re-snapshots — an hour
+  of agent output is a huge tail and a small grid. Time away is only a
+  hint; bytes decide.
 
-Proposals addressed to a leader whose session is disconnected are held
+Proposals addressed to a leader whose attachment is disconnected are held
 briefly, then rejected with "leader unreachable" so tools retry rather than
-hang. Once the session is fenced, proposals go to the new leader.
+hang. Once the attachment is fenced, proposals go to the new leader.
+
+While an attachment holds entries the server has not acknowledged, the
+affected buffers are **unsynced** — a state distinct from dirty (§9), shown
+in the tag box in its own colour. It clears when the attachment resumes
+and flushes; if the attachment is fenced instead, §4.4 applies.
 
 ### 4.2 Leases
 
@@ -182,8 +220,8 @@ Only the leader appends to the shard's log; everyone else **proposes** to
 the leader (§5). The lease carries a **fence epoch**, bumped on every
 transfer and every reclaim.
 
-- On attach, the UI session takes the leases for `layout`, every `window`,
-  and every `buffer` it shows, in one bulk grant. It takes further buffer
+- On attach, the UI attachment takes the leases for `layout`, every
+  `window`, and every `buffer` it shows, in one bulk grant. It takes further buffer
   leases lazily as it opens them. Editing, selecting and rearranging then
   happen locally with no round trip; entries stream to the server
   asynchronously, batched per frame.
@@ -199,33 +237,39 @@ transfer and every reclaim.
 ### 4.3 Fencing
 
 Every append and every proposal — terminal keystrokes included — carries
-`(session id, fence epoch)` for the shard. The server's log store, which
-every session must go through, refuses anything stale. A client that still
+`(attachment id, fence epoch)` for the shard. The server's log store, which
+every attachment must go through, refuses anything stale. A client that still
 believes it leads cannot append, cannot propose and cannot type into a
 terminal.
 
 ### 4.4 Transfer and reclaim
 
-- **Transfer** (cooperative): holder flushes, server acknowledges the tail,
-  epoch bumps, the new holder continues from that sequence. Lossless.
-- **Reclaim**: a new UI session attaches. The server bumps the epochs of
-  every shard the old session held, grants them to the new session at the
-  last flushed sequence, and the old session is dead from that instant,
-  whether or not it ever returns. No timeouts are involved in correctness;
-  timeouts only garbage-collect sessions nobody will resume, and expire tool
-  leases.
-- **Recovery**: a fenced client re-attaches only as a *new* session, takes
-  fresh snapshots, and re-submits its unflushed tail as base-versioned
-  proposals. Where versions still match they apply and nothing is lost;
-  where they don't, the text goes into a recovery buffer (`+Recovered`) so
-  work is un-sequenced rather than lost.
+Both are driven through the control log, and a new UI attachment always
+tries the first before the second:
+
+- **Transfer** (cooperative): the server appends `LeaseRequest`; the holder,
+  if connected, flushes and appends `LeaseRelease{seq}`; the server appends
+  `LeaseGrant{new holder, epoch+1, seq}`. Lossless.
+- **Reclaim**: the holder does not answer within a short deadline (it is
+  disconnected or wedged). The server appends `LeaseReclaim{epoch+1, last
+  flushed seq}` and grants from there; the old attachment is dead from that
+  instant, whether or not it ever returns. The deadline is the one timeout
+  that is not garbage collection, and it is safe because a reclaim is only
+  ever lossy, never incorrect. Other timeouts only collect attachments
+  nobody will resume and expire tool leases.
+- **Recovery**: a fenced client re-attaches only as a *new* attachment,
+  takes fresh snapshots, and re-submits its unflushed tail as
+  base-versioned proposals. Where versions still match they apply and
+  nothing is lost; where they don't, the text goes into `+Recovered` with
+  provenance (attachment, time, base version) so work is un-sequenced
+  rather than lost.
 
 The UI flushes every frame, so the unflushed tail is milliseconds of typing.
 Server acks give an honest "unsynced" signal; the tag's layout box can show
 it.
 
-Every entry records the session and epoch that wrote it. `apex log` shows
-provenance: "this edit came from the agent's session".
+Every entry records the attachment and epoch that wrote it. `apex log`
+shows provenance: "this edit came from the agent's attachment".
 
 ---
 
@@ -266,9 +310,21 @@ This is acme's model where a tool may consume an event and act instead of
 acme, made explicit. Locally the split is invisible; remotely it is ssh's:
 editing is instant, running things costs one round trip.
 
-The `|cmd`, `<cmd`, `>cmd` forms are commands whose input is the selection
-(read from the leader's state at the sequence the command names) and whose
-output is a proposal against the same base version.
+The `|cmd`, `<cmd`, `>cmd` forms are commands whose input is the selection.
+The input text is not stored in the entry: the exec sits at a sequence and
+any replica reconstructs the text from the state there. What the entry does
+carry is the buffer id, its version and the range, because the exec lives in
+the window log and the text in a buffer log; cross-shard ordering must never
+be guessed. The output, being an effect, returns as a proposal against that
+version.
+
+**Handlers also give the client a fallback.** A command the client can
+satisfy from mirrored state runs locally; one it cannot — `Look` past the
+mirrored part of a huge buffer, `Edit` over paged text — it appends with
+`handler: server`. The server evaluates it and proposes the resulting
+selection and origin; the client's ordinary "not in view, page it" path
+fetches the text. Full mirroring (§6.1) is therefore an optimisation, not an
+invariant.
 
 **Proposals may be intents; entries are always concrete.** A proposal is
 either concrete ops against a base version (a formatter that diffed the
@@ -288,6 +344,12 @@ the watcher ignores the event, and proposes `Clean{version}`. Handing the
 lease to the server instead would cost two transfers, stall typing while the
 server held it, and open a fencing window on a buffer being edited.
 
+`Clean{v}` means *clean as of version v*; dirty is derived as "current
+version ≠ clean version", so typing during a slow `Put` leaves the buffer
+correctly dirty afterwards. Between the exec and its `Done` the UI knows a
+`Put` is in flight and shows it; a `Failed{exec, reason}` is shown in place
+rather than as an `+Errors` line that scrolls away.
+
 ---
 
 ## 6. Protocols
@@ -305,7 +367,7 @@ Tuned for one thing: the client mirrors only what it can see.
 
 ```
 client → server
-  Hello{session?: id}                        new session or resume
+  Hello{session, attachment?: id}            attach to a session, or resume an attachment
   Take{shards}                               bulk lease request (on attach)
   Append{shard, epoch, entries}              leader appends (incl. Exec), batched per frame
   Propose{shard, epoch, base, ops}           for shards it doesn't lead (term input)
@@ -313,7 +375,7 @@ client → server
   Ack{shard, seq}
 
 server → client
-  Welcome{session, fenced?: reason}
+  Welcome{attachment, fenced?: reason}
   Grant{shard, epoch, seq} | Deny
   Snapshot{shard, seq, state}                full buffer / window / layout / term grid
   Entries{shard, from, entries}              tail, or server-authored rows
@@ -322,9 +384,10 @@ server → client
   Hash{shard, seq, hash}                     divergence check
 ```
 
-- Buffers a window shows are mirrored in full (acme loads whole files; they
-  are bounded by what a person opens). `Look`, `Edit` and B2 built-ins need
-  the whole text to run locally.
+- Buffers a window shows are mirrored in full by default (acme loads whole
+  files; they are bounded by what a person opens), so `Look`, `Edit` and
+  B2 built-ins run locally. Where a buffer is too large to mirror, the
+  client pages it and hands those commands to the server (§5).
 - Terminal scrollback and `+Errors`-like unbounded output are demand-paged
   by row range. Attach sends the visible grid (a 200×50 grid is ~50 KB).
 - Frames coalesce per display refresh; nothing is sent per keystroke.
@@ -353,7 +416,7 @@ version it is valid at.
 ### 6.3 Schema sketch
 
 ```proto
-message Entry   { uint64 seq = 1; uint64 session = 2; uint32 epoch = 3; oneof op { ... } }
+message Entry   { uint64 seq = 1; uint64 attachment = 2; uint32 epoch = 3; oneof op { ... } }
 message Edit    { uint64 version = 1; uint64 start = 2; uint64 end = 3; string text = 4; }
 message Select  { Part part = 1; uint64 q0 = 2; uint64 q1 = 3; }
 message Rows    { uint32 first = 1; repeated Row rows = 2; }        // Row = repeated Cell
@@ -370,8 +433,11 @@ message Done    { uint64 exec_seq = 1; }   // also Failed{reason}, Unknown
 The CLI is the stable public API. Scripts never see the wire.
 
 ```
-● apex server [--socket P]           start a server (also auto-started by attach)
-● apex attach [host] [--stdio]       start/resume a UI session; fences other UI sessions
+● apex server [--socket P]           start the daemon (also auto-started by attach)
+● apex ls [host]                     list sessions on a server
+● apex new-session [host/]name       create a session
+● apex attach [host/]session [--stdio]  attach a UI to a session (transfer, else fence, other UI attachments)
+● apex detach                        drop the current attachment (leases return to the server)
 ● apex new <path>...                 open files (windows in the current column)
 ● apex win list|del|move|resize      layout
 ● apex text read <buf> [--addr A]    read a buffer or address range
@@ -403,13 +469,26 @@ acme's tools port directly because the event model is the same, generalised:
   servers incrementally (the log *is* an incremental sync protocol), writes
   diagnostics into a buffer, and installs plumb rules so B3 on an identifier
   goes to its definition. Formatting is one proposal.
-- Agents get two doors: a terminal window to run in, and the CLI to open
-  files, set selections and write to `+Errors`. An agent can be told "you are
-  inside apex" and behaves as a first-class acme tool. Its edits are
-  proposals; a harness that needs exclusivity takes a buffer lease.
-- Plumbing: rules live on the server, installed by commands. B3 on text
-  sends `(text, window context)` to the plumber; rules produce commands.
-  Plumb rules can target tools (open in LSP, send to agent).
+- Agents run in a terminal window and **edit files directly**; the server
+  detects the edits through the file watcher (§9): a clean buffer takes
+  them as proposals, a dirty one is flagged stale with `Get` in the tag,
+  and by the nothing-is-lost principle a person's unsaved edit and the
+  agent's write both stay visible. The CLI is a second door for agents
+  that want to read selections, open windows or write to `+Errors`; a
+  harness that needs exclusivity may take a buffer lease.
+- **Plumbing** is a rule table on the server, as in acme, with two
+  additions. Tools install and remove rules at runtime, with a priority.
+  A rule may target a tool, which may **NACK**, after which the server
+  falls through to the next matching rule. Predicates are richer than
+  acme's: file type, syntactic context ("in a comment"), selection shape.
+  So "LSP handles identifiers in source files; paths in comments get the
+  default" is two rules, and only the tool a rule names is consulted. The
+  exec entry records the chain (rule matched, tool NACKed, next rule
+  fired), and `apex plumb --dry-run` shows it. Bidding — every plumber
+  voting on every B3 — is deliberately not the model: it makes each click
+  wait for the slowest plumber and its outcome hard to predict; a rule
+  that fans out to several tools in priority order emulates it if ever
+  needed.
 
 Typed client libraries (Rust, Go) are generated from the schema for programs
 that want more than the CLI.
@@ -471,8 +550,11 @@ concrete `Edit` entries (§5).
 
 The server runs where the files are; that is the whole remote story.
 
-- **Dirty** = buffer version differs from the version at last load or Put.
-  acme's `Put` appears in the tag when dirty.
+- Three derived flags per buffer, each with its own signal: **dirty** =
+  version differs from the version at last load or `Put` (acme's `Put`
+  appears in the tag); **stale** = the disk changed underneath (`Get` in
+  the tag); **unsynced** = the leader holds entries the server has not
+  acknowledged (§4.1, the tag box).
 - **Watching.** The server watches the parent directories of open files
   (editors and `git checkout` replace files by rename, which breaks per-file
   watches) with FSEvents/inotify via the `notify` crate, debounced. On an
@@ -504,17 +586,21 @@ the pty. Selection inside a terminal (v2) is a `window` shard entry like any
 other selection, computed over the mirrored rows, so B2/B3 on terminal text
 work exactly as in text windows.
 
-**Web windows** currently drive headless Chrome over DevTools and stream
-screencast frames — already a server-side renderer, so they fit the model
-but are bandwidth-heavy over ssh. Alternative: the URL is server state and a
-client-side Chrome renders it, breaking "all state on the server" only for
-page state. Decide per window kind; v1 keeps the screencast.
+**Web windows** are out of v1. The prototype's headless-Chrome screencast
+is a server-side renderer and fits the model, but it is bandwidth-heavy
+over ssh, and the alternative (URL as server state, client-side rendering)
+breaks "all state on the server" for page state. Decide later.
 
 ---
 
 ## 11. Client
 
-The gpui prototype becomes the client:
+The gpui prototype becomes the client. It holds one attachment per OS
+window, each to a session on a local or remote server. The window title is
+`host/session`; clicking it opens the **session selector**, listing sessions
+on the servers the client knows, with "new local session" and "new remote
+session" at the bottom. Switching is opening another window or re-pointing
+this one (detach, attach).
 
 - Holds a full replica of the shards it leads and a paged replica of
   terminals. Rendering reads only local state; the element code
@@ -535,21 +621,23 @@ The gpui prototype becomes the client:
 
 ---
 
-## 12. Persistence and compaction
+## 12. Logs in memory; compaction
 
-Logs are append-only files per shard under the server's state directory,
-fsynced per batch. Snapshots are taken periodically (and on detach) by the
-node holding the state; compaction truncates a log below a snapshot. Server
-restart replays snapshot plus tail, so `Dump`/`Load` become implicit.
-Terminal ptys do not survive a server restart; their grids and logs do.
+Logs live in the server's memory; the server is a long-running daemon. No
+persistence in v1: terminals and tools could not be restored anyway, so we
+admit it rather than pretend. Snapshots are taken periodically (and on
+detach) by the node holding the state, and compaction truncates a log
+below its snapshot, so logs stay bounded. A server restart is a fresh
+world, as acme's is; `Dump`/`Load` of layouts and buffer contents can come
+later.
 
 ---
 
 ## 13. Security
 
 Local access is the Unix socket's file permissions. Remote access is ssh;
-the server never listens on the network. Sessions are unforgeable server
-issued ids; fencing prevents a stale session from writing. Tools run with
+the server never listens on the network. Attachments are unforgeable
+server-issued ids; fencing prevents a stale attachment from writing. Tools run with
 the server's credentials, as acme's do.
 
 ---
@@ -563,16 +651,17 @@ the server's credentials, as acme's do.
    Property tests: two instances, random entries, equal hashes. Criterion
    benches for apply, view adjustment, snapshot/hash, and replay. No UI: a
    headless driver replays recorded logs for profiling.
-3. **Server + attach** — log store, sessions, leases, fencing, the attach
-   protocol over a Unix socket, detach/re-attach, terminal rows paged.
+3. **Server + attach** — registry and control logs, sessions, attachments,
+   leases with transfer-then-reclaim, fencing, the attach protocol over a
+   Unix socket, detach/re-attach, terminal rows paged, `+Recovered`.
 4. **Client** — the gpui prototype re-layered as a pure renderer and input
    device over core state, first in-process, then over the socket. Zerox
-   becomes two views on one buffer.
+   becomes two views on one buffer. Multiple sessions per client and the
+   session selector.
 5. **CLI + control protocol** — `apex` subcommands, `events`, proposals,
    `win`/`Watch` ports, plumbing rules as commands.
 6. **Files** — watcher, stale/dirty flow, `Get` in the tag.
-7. **Remote** — `apex attach host` over ssh stdio; hash checks; recovery
-   buffer.
+7. **Remote** — `apex attach host/session` over ssh stdio; hash checks.
 8. **Tools** — `apex lsp`, agent harness, tool leases.
 
 ---
@@ -584,9 +673,12 @@ the server's credentials, as acme's do.
   is many round trips; batch in the CLI.
 - Whether `window` selections for terminals should be cell-based or
   offset-based over the paged rows.
-- Web windows: server-side screencast vs client-side Chrome with server-side
-  URL state.
-- Multiple UI sessions with independent layouts (multi-player) — explicitly
-  out of scope; the per-shard design leaves the door open.
+- Web windows (deferred): server-side screencast vs client-side Chrome
+  with server-side URL state.
+- Persistence: whether to snapshot buffers and layouts to disk later, and
+  how that interacts with the nothing-is-lost principle on a server crash.
+- Multiple UI attachments to one session with independent layouts
+  (multi-player) — explicitly out of scope; the per-shard design leaves
+  the door open.
 - Naming: keep acme's command vocabulary verbatim (`Newcol`, `Delcol`,
   `Zerox`, `Putall`) so muscle memory and existing scripts carry over.
