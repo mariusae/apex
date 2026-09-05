@@ -131,16 +131,17 @@ lease never moves):
 | `window` | window | `Select{part, q0, q1}`, `Origin{part, off}`, `Addr`, `Kind` | server |
 | `layout` | workspace | `ColNew/Del/Resize`, `WinNew{col, at, buffer}`, `WinDel`, `WinMove`, `WinResize` | server |
 | `term` | terminal | `Rows{seq, rows: [cells]}`, `Cursor`, `Mode`, `Resize`, `Exit` | server, **pinned** |
-| `control` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}` | server, **pinned** |
+| `metalog` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}`, `PlumbRuleInstall/Remove{attachment, priority, predicate, action}` | server, **pinned** |
 | `registry` | server | `SessionNew/Del/Rename` | server, **pinned** |
 
-The **control log** is the session's authority on everything *about* shards
+The **metalog** is the session's authority on everything *about* shards
 rather than in them: which shards exist, which attachment holds which lease
-at which epoch, and every transfer or reclaim, so a reader can tell what
-happened and why. Fencing is decided there and enforced by the log store
-against its latest state. Layout cross-references windows and buffers but,
-being leasable, cannot be the source of truth for what exists. The
-server-wide **registry** lists sessions.
+at which epoch, every transfer or reclaim, and the plumbing rule table
+(§8), so a reader can tell what happened and why. Fencing is decided there
+and enforced by the log store against its latest state. Layout
+cross-references windows and buffers but, being leasable, cannot be the
+source of truth for what exists. The server-wide **registry** lists
+sessions.
 
 Cross-shard operations are several entries in several logs with no
 atomicity between them. acme has none either. Zerox is a `layout.WinNew`
@@ -186,7 +187,7 @@ on replaying it.
 ### 4.1 Attachments
 
 An **attachment** is explicit and server-issued (`apex attach` creates one,
-recorded in the session's control log), with a monotonically increasing id.
+recorded in the session's metalog), with a monotonically increasing id.
 Leases are granted to attachments, never to connections. A dropped
 connection does not end an attachment: the client reconnects, presents its
 attachment id, and both sides resume from the last acknowledged sequence,
@@ -244,7 +245,7 @@ terminal.
 
 ### 4.4 Transfer and reclaim
 
-Both are driven through the control log, and a new UI attachment always
+Both are driven through the metalog, and a new UI attachment always
 tries the first before the second:
 
 - **Transfer** (cooperative): the server appends `LeaseRequest`; the holder,
@@ -476,8 +477,12 @@ acme's tools port directly because the event model is the same, generalised:
   agent's write both stay visible. The CLI is a second door for agents
   that want to read selections, open windows or write to `+Errors`; a
   harness that needs exclusivity may take a buffer lease.
-- **Plumbing** is a rule table on the server, as in acme, with two
-  additions. Tools install and remove rules at runtime, with a priority.
+- **Plumbing** is a rule table, as in acme, with two additions. Tools
+  install and remove rules at runtime, with a priority, as **metalog
+  entries**: the table is replicated state, the client can display it,
+  `apex log` shows who installed what, and a tool's rules are tied to its
+  attachment — when the tool detaches or is garbage-collected, a metalog
+  entry removes them.
   A rule may target a tool, which may **NACK**, after which the server
   falls through to the next matching rule. Predicates are richer than
   acme's: file type, syntactic context ("in a comment"), selection shape.
@@ -651,7 +656,7 @@ the server's credentials, as acme's do.
    Property tests: two instances, random entries, equal hashes. Criterion
    benches for apply, view adjustment, snapshot/hash, and replay. No UI: a
    headless driver replays recorded logs for profiling.
-3. **Server + attach** — registry and control logs, sessions, attachments,
+3. **Server + attach** — registry and metalogs, sessions, attachments,
    leases with transfer-then-reclaim, fencing, the attach protocol over a
    Unix socket, detach/re-attach, terminal rows paged, `+Recovered`.
 4. **Client** — the gpui prototype re-layered as a pure renderer and input
