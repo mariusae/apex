@@ -127,9 +127,9 @@ lease never moves):
 
 | shard | one per | entries | default leader |
 |---|---|---|---|
-| `buffer` | buffer | `Edit{version, range, text}`, `Clean{version}`, `Stale{hash}`, `Rename` | server |
-| `window` | window | `Select{part, q0, q1}`, `Origin{part, off}`, `Addr`, `Kind` | server |
-| `layout` | workspace | `ColNew/Del/Resize`, `WinNew{col, at, buffer}`, `WinDel`, `WinMove`, `WinResize` | server |
+| `buffer` | buffer | `Create`, `Edit{version, q0, nd, text, group}`, `Undo/Redo{version}`, `Clean{version}`, `Stale{hash}`, `Rename`, `ViewAdd/Del{view}`, `Select{view, q0, q1}`, `Origin{view, off}` | server |
+| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done|Failed|Unknown}`, `Delete` | server |
+| `layout` | session | `Init{top}`, `ColNew/Del/Resize`, `WinPlace{window, col, at}`, `WinRemove`, `WinResize`, `Snarf`, `Exec` from column tags and the top row | server |
 | `term` | terminal | `Rows{seq, rows: [cells]}`, `Cursor`, `Mode`, `Resize`, `Exit` | server, **pinned** |
 | `metalog` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}`, `PlumbRuleInstall/Remove{attachment, priority, predicate, action}` | server, **pinned** |
 | `registry` | server | `SessionNew/Del/Rename` | server, **pinned** |
@@ -142,6 +142,11 @@ and enforced by the log store against its latest state. Layout
 cross-references windows and buffers but, being leasable, cannot be the
 source of truth for what exists. The server-wide **registry** lists
 sessions.
+
+**Views (selections and origins) live in the buffer shard**, not the
+window shard: a buffer edit adjusts every view on the buffer, so `Select`
+and `Edit` must share one sequence or replicas could interleave them
+differently and disagree. Column tags and the top row have views too.
 
 Cross-shard operations are several entries in several logs with no
 atomicity between them. acme has none either. Zerox is a `layout.WinNew`
