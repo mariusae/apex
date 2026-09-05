@@ -10,3 +10,13 @@ apex-edit = { path = "../apex-edit" }
 alacritty_terminal = "0.26"
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["use-std"] }
+
+[[bin]]
+name = "apexd"
+path = "src/bin/apexd.rs"
+
+[[bin]]
+name = "apex-bench"
+path = "src/bin/apex_bench.rs"
+

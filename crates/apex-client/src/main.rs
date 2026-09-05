@@ -1,5 +1,6 @@
 //! apex: the UI client. Renders a session's state and turns mouse and keys
-//! into log entries; for now the server runs in-process.
+//! into log entries. `apex [files]` runs the server in-process;
+//! `apex --attach [SOCKET] [files]` attaches to a running `apexd`.
 
 mod app;
 mod term_element;
@@ -85,32 +86,85 @@ impl Render for Acme {
 }
 
 fn main() {
-    let files: Vec<String> = std::env::args().skip(1).collect();
+    let mut files: Vec<String> = Vec::new();
+    let mut attach: Option<std::path::PathBuf> = None;
+    let mut args = std::env::args().skip(1).peekable();
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--attach" => {
+                attach = Some(match args.peek() {
+                    Some(p) if p.ends_with(".sock") => std::path::PathBuf::from(args.next().unwrap()),
+                    _ => apex_server::daemon::default_socket(),
+                });
+            }
+            _ => files.push(a),
+        }
+    }
+    let title = match &attach {
+        Some(p) => format!("apex — {}", p.display()),
+        None => "apex".to_string(),
+    };
     Application::new().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions { title: Some("apex".into()), ..Default::default() }),
+                titlebar: Some(TitlebarOptions { title: Some(title.clone().into()), ..Default::default() }),
                 ..Default::default()
             },
             |window, cx| {
-                let view = cx.new(|cx| {
-                    let (acme, mut rx) = Acme::new(cx, files);
-                    cx.spawn(async move |this, cx| {
-                        use futures::StreamExt;
-                        while let Some(ev) = rx.next().await {
-                            let r = this.update(cx, |acme: &mut Acme, cx| {
-                                acme.pump(ev);
-                                cx.notify();
-                            });
-                            if r.is_err() {
-                                break;
+                let files = files.clone();
+                let attach = attach.clone();
+                let view = cx.new(|cx| match attach {
+                    None => {
+                        let (acme, mut rx) = Acme::new(cx, files);
+                        cx.spawn(async move |this, cx| {
+                            use futures::StreamExt;
+                            while let Some(ev) = rx.next().await {
+                                let r = this.update(cx, |acme: &mut Acme, cx| {
+                                    acme.pump(ev);
+                                    cx.notify();
+                                });
+                                if r.is_err() {
+                                    break;
+                                }
                             }
-                        }
-                    })
-                    .detach();
-                    acme
+                        })
+                        .detach();
+                        acme
+                    }
+                    Some(socket) => {
+                        // the reader thread pokes this channel; the task
+                        // polls the link on the UI thread
+                        let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
+                        let wake: apex_server::remote::Wake = std::sync::Arc::new(move || {
+                            let _ = wake_tx.unbounded_send(());
+                        });
+                        let acme = match Acme::attach(cx, &socket, "main", files, wake) {
+                            Ok(a) => a,
+                            Err(e) => {
+                                eprintln!("apex: attach {}: {e}", socket.display());
+                                std::process::exit(1);
+                            }
+                        };
+                        cx.spawn(async move |this, cx| {
+                            use futures::StreamExt;
+                            while wake_rx.next().await.is_some() {
+                                let r = this.update(cx, |acme: &mut Acme, cx| {
+                                    if !acme.poll_remote() {
+                                        eprintln!("apex: server went away");
+                                        cx.quit();
+                                    }
+                                    cx.notify();
+                                });
+                                if r.is_err() {
+                                    break;
+                                }
+                            }
+                        })
+                        .detach();
+                        acme
+                    }
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus);

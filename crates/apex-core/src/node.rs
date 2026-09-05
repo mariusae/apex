@@ -118,7 +118,7 @@ impl Node {
                 self.catch_up_shard(log, shard)?;
             }
         }
-        self.refresh_leases();
+        self.refresh_leases(log);
         Ok(())
     }
 
@@ -130,13 +130,10 @@ impl Node {
         Ok(())
     }
 
-    fn refresh_leases(&mut self) {
-        self.epochs.clear();
-        for (shard, l) in &self.state.meta.leases {
-            if l.holder == self.attachment && l.released.is_none() {
-                self.epochs.insert(*shard, l.epoch);
-            }
-        }
+    /// The log store is the fencing authority (a mirror knows the leases
+    /// the server will honour), so leases come from it, not from state.
+    fn refresh_leases(&mut self, log: &Log) {
+        self.epochs = log.held_by(self.attachment);
     }
 
     /// Append as leader and apply.
@@ -154,15 +151,25 @@ impl Node {
         for e in log.create_shard(shard, self.attachment)? {
             self.state.apply(Shard::Meta, &e)?;
         }
-        self.refresh_leases();
+        if log.is_mirror() {
+            // the server's metalog entries arrive later; meanwhile the state
+            // must know the shard exists so entries for it apply
+            self.state.meta.shards.insert(shard);
+        }
+        self.refresh_leases(log);
         Ok(())
     }
 
     pub fn delete_shard(&mut self, log: &mut Log, shard: Shard) -> Result<()> {
         self.catch_up(log)?;
-        let e = log.delete_shard(shard)?;
-        self.state.apply(Shard::Meta, &e)?;
-        self.refresh_leases();
+        if let Some(e) = log.delete_shard(shard)? {
+            self.state.apply(Shard::Meta, &e)?;
+        } else {
+            // a mirror: drop the shard's state now; the metalog entry follows
+            let fake = Entry { seq: 0, attachment: SERVER, epoch: 0, op: Op::Meta(MetaOp::ShardDel { shard }) };
+            let _ = self.state.apply_unsequenced(&fake);
+        }
+        self.refresh_leases(log);
         Ok(())
     }
 
@@ -171,7 +178,7 @@ impl Node {
         self.catch_up(log)?;
         let e = log.grant(shard, self.attachment)?;
         self.state.apply(Shard::Meta, &e)?;
-        self.refresh_leases();
+        self.refresh_leases(log);
         Ok(())
     }
 
@@ -180,7 +187,7 @@ impl Node {
         self.catch_up(log)?;
         let e = log.release(shard, self.attachment, log.last_seq(shard))?;
         self.state.apply(Shard::Meta, &e)?;
-        self.refresh_leases();
+        self.refresh_leases(log);
         Ok(())
     }
 

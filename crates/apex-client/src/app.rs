@@ -1,9 +1,11 @@
 //! The apex client: acme's interaction model (three-button mouse, chords,
 //! keyboard to the text under the pointer) over the core's state. Every
-//! change goes through the leader node as log entries; the server runs
-//! in-process for now and shares the log.
+//! change goes through the leader node as log entries. The server either
+//! runs in-process and shares the log, or sits behind a socket: the
+//! client's code path is the same, only the [`Backend`] differs.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use gpui::{
     px, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
@@ -11,7 +13,9 @@ use gpui::{
 };
 
 use apex_core::*;
-use apex_server::{Server, ServerEvent, TermKey};
+use apex_server::proto::ClientMsg;
+use apex_server::remote::{Link, Wake};
+use apex_server::{perform, Server, ServerEvent, TermKey};
 
 use crate::term_element::TermLayout;
 use crate::text_element::{Source, TextLayout};
@@ -72,10 +76,18 @@ enum Target {
     Term(WindowId, TermId),
 }
 
+/// Where the server is.
+pub enum Backend {
+    /// In this process, sharing the log.
+    Local(Server),
+    /// Behind a socket; the log is a mirror.
+    Remote(Link),
+}
+
 pub struct Acme {
     pub log: Log,
     pub node: Node,
-    pub server: Server,
+    pub backend: Backend,
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
@@ -191,27 +203,50 @@ fn double_click(t: &Text, i: usize) -> (usize, usize) {
 }
 
 impl Acme {
+    /// A session with the server in-process.
     pub fn new(cx: &mut Context<Self>, files: Vec<String>) -> (Acme, futures::channel::mpsc::UnboundedReceiver<ServerEvent>) {
         let mut log = Log::new();
         let (a, _) = log.attach(AttachmentKind::Ui, "apex");
         let mut node = Node::new(a);
         node.catch_up(&log).expect("fresh log");
         let col = node.init_session(&mut log).expect("init session");
-        let (mut server, rx) = Server::new(&log);
+        let (server, rx) = Server::new(&log);
         let cwd = server.cwd.clone();
-        if files.is_empty() {
-            let _ = server.open_file(&mut log, &mut node, col, &cwd, ".");
-        } else {
-            for f in &files {
-                if let Err(e) = server.open_file(&mut log, &mut node, col, &cwd, f) {
+        let names: Vec<&str> = if files.is_empty() { vec!["."] } else { files.iter().map(|s| s.as_str()).collect() };
+        for f in names {
+            match server.open_file(col, &cwd, f, None) {
+                Ok(p) => {
+                    perform(&mut node, &mut log, vec![p]);
+                }
+                Err(e) => {
                     let _ = node.errors(&mut log, col, &format!("{e}\n"));
                 }
             }
         }
-        let acme = Acme {
+        (Self::over(cx, log, node, Backend::Local(server)), rx)
+    }
+
+    /// Attach to a session behind `socket`. `wake` is called from the
+    /// reader thread when there is something to poll.
+    pub fn attach(cx: &mut Context<Self>, socket: &Path, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
+        let (link, mut log, mut node) = Link::connect(socket, session, "apex", Some(wake))?;
+        let col = match node.state.layout.cols.first() {
+            Some(c) => c.id,
+            None => node.init_session(&mut log).map_err(std::io::Error::other)?,
+        };
+        let mut acme = Self::over(cx, log, node, Backend::Remote(link));
+        for f in files {
+            acme.send(ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: f });
+        }
+        acme.after();
+        Ok(acme)
+    }
+
+    fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend) -> Acme {
+        Acme {
             log,
             node,
-            server,
+            backend,
             focus: cx.focus_handle(),
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
@@ -219,41 +254,87 @@ impl Acme {
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
             typed_start: HashMap::new(),
-        };
-        (acme, rx)
+        }
     }
 
-    /// Bring the client node up to date with the shared log (the server
-    /// appends terminal rows and metalog entries).
+    /// Bring the client node up to date with the log (the server appends
+    /// terminal rows and metalog entries).
     pub fn sync(&mut self) {
         if let Err(e) = self.node.catch_up(&self.log) {
             eprintln!("catch up: {e}");
         }
     }
 
+    /// An event from the in-process server.
     pub fn pump(&mut self, ev: ServerEvent) {
-        self.server.pump(&mut self.log, &mut self.node, ev);
+        if let Backend::Local(server) = &mut self.backend {
+            let props = server.pump(&mut self.log, ev);
+            if let Some(w) = perform(&mut self.node, &mut self.log, props) {
+                self.show(w);
+            }
+        }
         self.sync();
     }
 
-    /// After a command: let the server perform what it was handed, close
-    /// terminals whose windows are gone, and catch up.
+    /// Everything the socket has queued from the server. Returns false
+    /// when the connection is gone.
+    pub fn poll_remote(&mut self) -> bool {
+        let Backend::Remote(link) = &mut self.backend else { return true };
+        let alive = link.poll(&mut self.node, &mut self.log);
+        for w in link.take_made() {
+            self.show(w);
+        }
+        alive
+    }
+
+    fn show(&mut self, w: WindowId) {
+        self.node.seltext = Some(ViewId::Body(w));
+        self.want_visible.insert(ViewId::Body(w));
+    }
+
+    fn send(&self, m: ClientMsg) {
+        if let Backend::Remote(link) = &self.backend {
+            link.send(&m);
+        }
+    }
+
+    /// After a command: in-process, let the server perform what it was
+    /// handed and close terminals whose windows are gone; over a socket,
+    /// ship what we sequenced. Then catch up.
     fn after(&mut self) {
-        self.server.poll_execs(&mut self.log, &mut self.node);
-        let live: HashSet<TermId> = self
-            .node
-            .state
-            .windows
-            .values()
-            .filter_map(|w| match w.body {
-                Body::Term(t) => Some(t),
-                _ => None,
-            })
-            .collect();
-        for t in self.server.term_ids() {
-            if !live.contains(&t) {
-                self.server.close_term(&mut self.log, t);
+        match &mut self.backend {
+            Backend::Local(server) => {
+                let props = server.poll_execs(&mut self.log, &self.node);
+                if let Some(w) = perform(&mut self.node, &mut self.log, props) {
+                    self.show(w);
+                }
+                if let Backend::Local(server) = &mut self.backend {
+                    server.close_orphan_terms(&mut self.log, &self.node);
+                }
             }
+            Backend::Remote(link) => link.flush(&self.log),
+        }
+        self.sync();
+    }
+
+    fn term_key(&mut self, t: TermId, key: TermKey) {
+        match &mut self.backend {
+            Backend::Local(server) => server.term_key(t, &key),
+            Backend::Remote(link) => link.send(&ClientMsg::TermKey { term: t, key }),
+        }
+    }
+
+    fn term_paste(&mut self, t: TermId, text: String) {
+        match &mut self.backend {
+            Backend::Local(server) => server.term_paste(t, &text),
+            Backend::Remote(link) => link.send(&ClientMsg::TermPaste { term: t, text }),
+        }
+    }
+
+    fn term_scroll(&mut self, t: TermId, delta: isize) {
+        match &mut self.backend {
+            Backend::Local(server) => server.term_scroll(&mut self.log, t, delta),
+            Backend::Remote(link) => link.send(&ClientMsg::TermScroll { term: t, delta: delta as i64 }),
         }
         self.sync();
     }
@@ -300,7 +381,15 @@ impl Acme {
     }
 
     pub fn term_resize(&mut self, term: TermId, cols: u16, rows: u16) {
-        self.server.term_resize(&mut self.log, term, cols, rows);
+        match &mut self.backend {
+            Backend::Local(server) => server.term_resize(&mut self.log, term, cols, rows),
+            Backend::Remote(link) => {
+                let same = self.node.state.terms.get(&term).is_some_and(|t| t.cols == cols && t.rows == rows);
+                if !same {
+                    link.send(&ClientMsg::TermResize { term, cols, rows });
+                }
+            }
+        }
         self.sync();
     }
 
@@ -597,8 +686,7 @@ impl Acme {
         let Some(l) = self.term_layouts.get(&w) else { return };
         let frac = ((pos.y - l.bounds.top()) / l.bounds.size.height).clamp(0., 1.);
         let n = ((l.rows.len() as f32 * frac) as isize).max(1);
-        self.server.term_scroll(&mut self.log, t, n * dir as isize);
-        self.sync();
+        self.term_scroll(t, n * dir as isize);
     }
 
     fn slot_weight(&self, w: WindowId) -> u32 {
@@ -655,8 +743,7 @@ impl Acme {
         match target {
             Target::View(v) => self.scroll_by(v, n),
             Target::Term(_, t) => {
-                self.server.term_scroll(&mut self.log, t, n as isize);
-                self.sync();
+                self.term_scroll(t, n as isize);
             }
         }
         cx.notify();
@@ -679,10 +766,10 @@ impl Acme {
             Target::Term(_, t) => {
                 if m.platform && ks.key == "v" {
                     if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
-                        self.server.term_paste(t, &text);
+                        self.term_paste(t, text);
                     }
                 } else if !m.platform {
-                    self.server.term_key(t, &term_key(ks));
+                    self.term_key(t, term_key(ks));
                 }
             }
             Target::View(v) => self.text_key(v, ks, cx),
@@ -888,23 +975,16 @@ impl Acme {
         if text.is_empty() {
             return;
         }
-        if let Some(w) = self.server.plumb_file(&mut self.log, &mut self.node, ctx, text) {
-            self.node.seltext = Some(ViewId::Body(w));
-            self.want_visible.insert(ViewId::Body(w));
-            self.sync();
-            return;
-        }
-        let win = match ctx {
-            ExecCtx::Window(w) => Some(w),
-            _ => self.node.seltext.and_then(|v| v.window()),
-        };
-        if let Some(w) = win {
-            if self.node.state.window(w).ok().and_then(|x| x.body_buffer()).is_some() {
-                let _ = self.node.look(&mut self.log, w, text);
-                self.want_visible.insert(ViewId::Body(w));
+        match &self.backend {
+            Backend::Local(server) => {
+                let p = server.plumb(&self.node, ctx, text);
+                if let Some(w) = perform(&mut self.node, &mut self.log, vec![p]) {
+                    self.show(w);
+                }
             }
+            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string() }),
         }
-        self.sync();
+        self.after();
     }
 
 }

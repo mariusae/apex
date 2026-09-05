@@ -37,12 +37,29 @@ pub struct LeaseState {
     pub released: Option<Seq>,
 }
 
-/// The in-memory log store of one session.
-#[derive(Debug, Clone)]
+/// What a mirror log tells its owner when shards come and go, so the
+/// request reaches the server ahead of the entries that follow it.
+pub trait MirrorHook {
+    fn create_shard(&mut self, shard: Shard, creator: AttachmentId);
+    fn delete_shard(&mut self, shard: Shard);
+}
+
+/// The in-memory log store of one session. On the server it is the
+/// authority; on a client it is a *mirror* (see [`Log::mirror`]) that
+/// assigns the same sequence numbers the server will store, so the client
+/// leads without waiting.
 pub struct Log {
     shards: BTreeMap<Shard, ShardLog>,
     leases: BTreeMap<Shard, LeaseState>,
     next_attachment: u64,
+    /// Set on a mirror: metalog entries come from the server, not from here.
+    hook: Option<Box<dyn MirrorHook>>,
+}
+
+impl std::fmt::Debug for Log {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Log").field("shards", &self.shards.len()).field("mirror", &self.hook.is_some()).finish()
+    }
 }
 
 impl Default for Log {
@@ -54,11 +71,86 @@ impl Default for Log {
 impl Log {
     /// A new session's store, with its metalog initialised.
     pub fn new() -> Log {
-        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1 };
+        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, hook: None };
         log.shards.insert(Shard::Meta, ShardLog::default());
         log.leases.insert(Shard::Meta, LeaseState { holder: SERVER, epoch: 0, released: None });
         log.push_meta(MetaOp::Init);
         log
+    }
+
+    /// A client's mirror of a session, from a snapshot of its state: every
+    /// shard the state knows starts at its applied sequence, and leases are
+    /// as the metalog recorded them. `hook` forwards shard creation and
+    /// deletion to the server.
+    pub fn mirror(state: &crate::state::State, hook: Box<dyn MirrorHook>) -> Log {
+        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, hook: Some(hook) };
+        for (shard, seq) in &state.applied {
+            log.shards.insert(*shard, ShardLog { entries: Vec::new(), base: *seq });
+        }
+        for shard in &state.meta.shards {
+            log.shards.entry(*shard).or_default();
+        }
+        log.shards.entry(Shard::Meta).or_default();
+        for (shard, l) in &state.meta.leases {
+            log.leases.insert(*shard, LeaseState { holder: l.holder, epoch: l.epoch, released: l.released });
+        }
+        log.leases.entry(Shard::Meta).or_insert(LeaseState { holder: SERVER, epoch: 0, released: None });
+        log
+    }
+
+    pub fn is_mirror(&self) -> bool {
+        self.hook.is_some()
+    }
+
+    /// Accept an entry sequenced elsewhere (the server's, on a mirror; a
+    /// leader client's, on the server). Fenced and sequence-checked.
+    /// Metalog entries also update the lease table.
+    pub fn append_entry(&mut self, shard: Shard, e: Entry) -> Result<(), LogError> {
+        if !e.op.fits(shard) {
+            return Err(LogError::WrongShard { shard });
+        }
+        if let Op::Meta(m) = &e.op {
+            self.note_meta(m);
+        }
+        let lease = self.leases.get(&shard).copied().ok_or(LogError::NoShard(shard))?;
+        if shard != Shard::Meta && (lease.holder != e.attachment || lease.epoch != e.epoch) {
+            return Err(LogError::Fenced { shard, holder: lease.holder, epoch: lease.epoch });
+        }
+        let sl = self.shards.get_mut(&shard).ok_or(LogError::NoShard(shard))?;
+        let expect = sl.base + sl.entries.len() as Seq + 1;
+        if e.seq != expect {
+            return Err(LogError::Fenced { shard, holder: lease.holder, epoch: lease.epoch });
+        }
+        sl.entries.push(e);
+        Ok(())
+    }
+
+    /// Keep the lease table in step with metalog entries received from the
+    /// authority.
+    fn note_meta(&mut self, m: &MetaOp) {
+        match m {
+            MetaOp::ShardNew { shard } => {
+                self.shards.entry(*shard).or_default();
+                self.leases.entry(*shard).or_insert(LeaseState { holder: SERVER, epoch: 0, released: None });
+            }
+            MetaOp::ShardDel { shard } => {
+                self.shards.remove(shard);
+                self.leases.remove(shard);
+            }
+            MetaOp::LeaseGrant { shard, to, epoch, .. } => {
+                self.shards.entry(*shard).or_default();
+                self.leases.insert(*shard, LeaseState { holder: *to, epoch: *epoch, released: None });
+            }
+            MetaOp::LeaseReclaim { shard, epoch, .. } => {
+                self.leases.insert(*shard, LeaseState { holder: SERVER, epoch: *epoch, released: None });
+            }
+            MetaOp::LeaseRelease { shard, seq, .. } => {
+                if let Some(l) = self.leases.get_mut(shard) {
+                    l.released = Some(*seq);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn push_meta(&mut self, op: MetaOp) -> Entry {
@@ -119,6 +211,15 @@ impl Log {
             return Err(LogError::ShardExists(shard));
         }
         self.shards.insert(shard, ShardLog::default());
+        if let Some(hook) = self.hook.as_mut() {
+            // a mirror: the server sequences the metalog; we assume the
+            // grant it will make (creator, epoch 1) and carry on
+            let epoch = if shard.is_pinned() || creator == SERVER { 0 } else { 1 };
+            let holder = if epoch == 0 { SERVER } else { creator };
+            self.leases.insert(shard, LeaseState { holder, epoch, released: None });
+            hook.create_shard(shard, creator);
+            return Ok(Vec::new());
+        }
         self.leases.insert(shard, LeaseState { holder: SERVER, epoch: 0, released: None });
         let mut out = vec![self.push_meta(MetaOp::ShardNew { shard })];
         if !shard.is_pinned() && creator != SERVER {
@@ -127,13 +228,26 @@ impl Log {
         Ok(out)
     }
 
-    pub fn delete_shard(&mut self, shard: Shard) -> Result<Entry, LogError> {
+    pub fn delete_shard(&mut self, shard: Shard) -> Result<Option<Entry>, LogError> {
         if shard == Shard::Meta {
             return Err(LogError::Pinned { shard });
         }
         self.shards.remove(&shard).ok_or(LogError::NoShard(shard))?;
         self.leases.remove(&shard);
-        Ok(self.push_meta(MetaOp::ShardDel { shard }))
+        if let Some(hook) = self.hook.as_mut() {
+            hook.delete_shard(shard);
+            return Ok(None);
+        }
+        Ok(Some(self.push_meta(MetaOp::ShardDel { shard })))
+    }
+
+    /// Leases held by `attachment` (the fencing authority's view).
+    pub fn held_by(&self, attachment: AttachmentId) -> BTreeMap<Shard, Epoch> {
+        self.leases
+            .iter()
+            .filter(|(_, l)| l.holder == attachment && l.released.is_none())
+            .map(|(s, l)| (*s, l.epoch))
+            .collect()
     }
 
     /// Register an attachment.

@@ -2,10 +2,15 @@
 //! terminals (pinned term shards), reads and writes files, runs external
 //! commands and pipes, and performs the execs that name it as handler.
 //!
-//! In-process mode: the server shares the `Log` with the client and applies
-//! results through the client's leader node directly. Over a socket the
-//! same calls become proposals.
+//! The server never writes a shard it does not lead: everything it wants
+//! done to buffers, windows or the layout is a [`Proposal`] for the leader.
+//! In-process the client applies proposals at once ([`proposal::apply`]);
+//! over a socket ([`daemon`], [`remote`]) they travel as messages.
 
+pub mod daemon;
+pub mod proposal;
+pub mod proto;
+pub mod remote;
 pub mod term;
 
 use std::collections::{BTreeSet, HashMap};
@@ -20,6 +25,7 @@ use apex_core::node::ERRORS;
 use apex_core::state::ExecStatus;
 use apex_core::*;
 
+pub use proposal::Proposal;
 pub use term::{TermHost, TermKey};
 
 /// Something that happened off the main thread and needs the server's
@@ -38,6 +44,10 @@ pub enum ShellMode {
     Replace { col: ColumnId, buffer: BufferId, version: Version, q0: usize, q1: usize },
 }
 
+/// The server. `node` is its replica as the `SERVER` attachment: it leads
+/// the pinned terminal shards and nothing else. Reads of the rest of the
+/// session go through a `view` the caller supplies (in-process, the
+/// client's own node; in the daemon, a follower kept up to date).
 pub struct Server {
     pub node: Node,
     terms: HashMap<TermId, TermHost>,
@@ -47,6 +57,8 @@ pub struct Server {
     performed: BTreeSet<(ExecCtx, Seq)>,
     pub cwd: PathBuf,
     next_term: u64,
+    /// Terminals whose window has been seen: once it goes, so do they.
+    windowed: BTreeSet<TermId>,
 }
 
 impl Server {
@@ -72,7 +84,7 @@ impl Server {
         let mut node = Node::new(SERVER);
         node.catch_up(log).expect("fresh log");
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-        (Server { node, terms: HashMap::new(), tx, term_tx, performed: BTreeSet::new(), cwd, next_term: 1 }, rx)
+        (Server { node, terms: HashMap::new(), tx, term_tx, performed: BTreeSet::new(), cwd, next_term: 1, windowed: BTreeSet::new() }, rx)
     }
 
     pub fn term(&self, id: TermId) -> Option<&TermHost> {
@@ -139,35 +151,20 @@ impl Server {
         }
     }
 
-    /// Open a file in a window of `col` through the leader, or return the
-    /// window already showing it.
-    pub fn open_file(&mut self, log: &mut Log, leader: &mut Node, col: ColumnId, dir: &Path, name: &str) -> Result<WindowId, String> {
+    /// Propose a window of `col` on a file (or a directory listing). The
+    /// leader reuses a window already showing it.
+    pub fn open_file(&self, col: ColumnId, dir: &Path, name: &str, select_line: Option<usize>) -> Result<Proposal, String> {
         let path = resolve(dir, name);
         let (display, text) = self.read_path(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if let Some(w) = leader
-            .state
-            .windows
-            .keys()
-            .copied()
-            .find(|w| leader.window_name(*w) == display)
-        {
-            return Ok(w);
-        }
         let hash = Text::new(&text).content_hash();
-        let b = leader.create_buffer(log, &display, &text, Some(hash)).map_err(|e| e.to_string())?;
-        leader.open_window(log, col, b).map_err(|e| e.to_string())
+        Ok(Proposal::OpenWindow { col, name: display, text, hash, select_line })
     }
 
-    fn put(&mut self, log: &mut Log, leader: &mut Node, w: WindowId, arg: Option<&str>) -> Result<(), String> {
-        let (b, tag) = {
-            let win = leader.state.window(w).map_err(|e| e.to_string())?;
-            (win.body_buffer().ok_or("Put: not a text window")?, win.tag)
-        };
-        let (buf_name, text, version) = {
-            let buf = leader.state.buffer(b).map_err(|e| e.to_string())?;
-            (buf.name.clone(), buf.text.to_string(), buf.version)
-        };
-        let dir = self.dir_of(leader, ExecCtx::Window(w));
+    fn put(&self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {
+        let b = view.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("Put: not a text window")?;
+        let buf = view.state.buffer(b).map_err(|e| e.to_string())?;
+        let (buf_name, text, version) = (buf.name.clone(), buf.text.to_string(), buf.version);
+        let dir = self.dir_of(view, ExecCtx::Window(w));
         let name = match arg {
             Some(a) => resolve(&dir, a).to_string_lossy().to_string(),
             None => buf_name,
@@ -177,36 +174,26 @@ impl Server {
         }
         std::fs::write(&name, &text).map_err(|e| format!("{name}: {e}"))?;
         let hash = Text::new(&text).content_hash();
+        let mut out = Vec::new();
         if arg.is_some() {
-            leader
-                .append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Rename { name: name.clone() }))
-                .map_err(|e| e.to_string())?;
-            let rest = leader.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
-            let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
-            leader.set_content(log, tag, &format!("{name} {rest}")).map_err(|e| e.to_string())?;
+            out.push(Proposal::Rename { buffer: b, window: w, name });
         }
-        leader
-            .append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(hash) }))
-            .map_err(|e| e.to_string())?;
-        Ok(())
+        out.push(Proposal::Clean { buffer: b, version, hash });
+        Ok(out)
     }
 
-    fn get(&mut self, log: &mut Log, leader: &mut Node, w: WindowId) -> Result<(), String> {
-        let b = leader.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("Get: not a text window")?;
-        let name = leader.state.buffer(b).map(|b| b.name.clone()).map_err(|e| e.to_string())?;
+    fn get(&self, view: &Node, w: WindowId) -> Result<Proposal, String> {
+        let b = view.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("Get: not a text window")?;
+        let name = view.state.buffer(b).map(|b| b.name.clone()).map_err(|e| e.to_string())?;
         let (_, text) = self.read_path(Path::new(&name)).map_err(|e| format!("{name}: {e}"))?;
-        leader.set_content(log, b, &text).map_err(|e| e.to_string())?;
-        let version = leader.state.buffer(b).map(|b| b.version).unwrap_or(0);
         let hash = Text::new(&text).content_hash();
-        leader
-            .append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(hash) }))
-            .map_err(|e| e.to_string())?;
-        Ok(())
+        Ok(Proposal::SetContent { buffer: b, text, hash })
     }
 
     // ---- terminals ------------------------------------------------------------
 
-    pub fn new_term(&mut self, log: &mut Log, leader: &mut Node, col: ColumnId, dir: &Path) -> Result<WindowId, String> {
+    /// Start a shell in a new pinned terminal shard; propose its window.
+    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path) -> Result<Proposal, String> {
         let id = TermId(self.next_term);
         self.next_term += 1;
         let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone())?;
@@ -216,8 +203,7 @@ impl Server {
             .map_err(|e| e.to_string())?;
         self.terms.insert(id, host);
         let name = format!("{}/-term", dir.display().to_string().trim_end_matches('/'));
-        leader.catch_up(log).map_err(|e| e.to_string())?;
-        leader.open_term_window(log, col, &name, id).map_err(|e| e.to_string())
+        Ok(Proposal::TermWindow { col, name, term: id })
     }
 
     /// Publish a terminal's current grid to its shard.
@@ -264,13 +250,37 @@ impl Server {
         let _ = self.node.delete_shard(log, Shard::Term(id));
     }
 
+    /// Close terminals whose windows are gone. A terminal whose window has
+    /// not appeared yet (the proposal is in flight) is left alone.
+    pub fn close_orphan_terms(&mut self, log: &mut Log, view: &Node) {
+        let live: BTreeSet<TermId> = view
+            .state
+            .windows
+            .values()
+            .filter_map(|w| match w.body {
+                Body::Term(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        for t in self.term_ids() {
+            if live.contains(&t) {
+                self.windowed.insert(t);
+            } else if self.windowed.remove(&t) {
+                self.close_term(log, t);
+            }
+        }
+    }
+
     // ---- events and execs -------------------------------------------------------
 
     /// Handle one event from the receiver returned by [`Server::new`].
-    pub fn pump(&mut self, log: &mut Log, leader: &mut Node, ev: ServerEvent) {
+    /// Terminal output goes straight to the term shard; shell results
+    /// become proposals.
+    pub fn pump(&mut self, log: &mut Log, ev: ServerEvent) -> Vec<Proposal> {
+        let mut props = Vec::new();
         match ev {
             ServerEvent::Term(id, ev) => {
-                let Some(h) = self.terms.get_mut(&id) else { return };
+                let Some(h) = self.terms.get_mut(&id) else { return props };
                 match ev {
                     Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange | Event::Title(_) | Event::ResetTitle | Event::Bell => {}
                     Event::PtyWrite(s) => h.write(s.as_bytes()),
@@ -285,78 +295,67 @@ impl Server {
                 self.publish_term(log, id);
             }
             ServerEvent::Shell { ctx, exec, out, err, mode } => {
-                let _ = leader.catch_up(log);
+                let col = mode_col(&mode);
                 match mode {
                     ShellMode::Errors { col } => {
                         if !out.is_empty() {
-                            let _ = leader.errors(log, col, &out);
+                            props.push(Proposal::Errors { col, text: out });
                         }
                     }
                     ShellMode::Replace { col, buffer, version, q0, q1 } => {
-                        let ok = leader.state.buffer(buffer).map(|b| b.version == version).unwrap_or(false);
-                        if ok {
-                            let group_view = leader.state.buffer(buffer).ok().and_then(|b| b.views.keys().next().copied());
-                            if let Some(v) = group_view {
-                                let _ = leader.select(log, v, q0, q1);
-                                let _ = leader.replace_selection(log, v, &out);
-                            }
-                        } else {
-                            let _ = leader.errors(log, col, &format!("pipe output not applied: buffer changed meanwhile\n{out}"));
-                        }
+                        props.push(Proposal::ReplaceRange { col, buffer, version, q0, q1, text: out });
                     }
                 }
                 if !err.is_empty() {
-                    let col = match mode_col(&mode) {
-                        Some(c) => c,
-                        None => return,
-                    };
-                    let _ = leader.errors(log, col, &err);
+                    props.push(Proposal::Errors { col, text: err });
                 }
-                let _ = leader.append_status(log, ctx, exec, ExecStatusOp::Done);
+                props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Done });
             }
         }
-        let _ = leader.catch_up(log);
+        props
     }
 
-    /// Perform every pending exec addressed to the server, through the
-    /// leader. Returns how many were started.
-    pub fn poll_execs(&mut self, log: &mut Log, leader: &mut Node) -> usize {
+    /// Perform every pending exec addressed to the server, as seen in
+    /// `view`. Returns the proposals that carry the results.
+    pub fn poll_execs(&mut self, log: &mut Log, view: &Node) -> Vec<Proposal> {
         let mut todo: Vec<(ExecCtx, Seq, String, ExecAt)> = Vec::new();
-        for (w, win) in &leader.state.windows {
+        for (w, win) in &view.state.windows {
             for (seq, e) in &win.execs {
                 if e.handler == Handler::Server && e.status == ExecStatus::Pending && !self.performed.contains(&(ExecCtx::Window(*w), *seq)) {
                     todo.push((ExecCtx::Window(*w), *seq, e.text.clone(), e.at));
                 }
             }
         }
-        for (seq, (ctx, e)) in &leader.state.layout.execs {
+        for (seq, (ctx, e)) in &view.state.layout.execs {
             if e.handler == Handler::Server && e.status == ExecStatus::Pending && !self.performed.contains(&(*ctx, *seq)) {
                 todo.push((*ctx, *seq, e.text.clone(), e.at));
             }
         }
-        let n = todo.len();
+        let mut props = Vec::new();
         for (ctx, seq, text, at) in todo {
             self.performed.insert((ctx, seq));
-            match self.perform(log, leader, ctx, seq, &text, at) {
-                Ok(true) => {
-                    let _ = leader.append_status(log, ctx, seq, ExecStatusOp::Done);
+            match self.perform(log, view, ctx, seq, &text, at) {
+                Ok(Some(mut p)) => {
+                    props.append(&mut p);
+                    props.push(Proposal::Status { ctx, exec: seq, status: ExecStatusOp::Done });
                 }
-                Ok(false) => {} // asynchronous; status comes with the result
+                Ok(None) => {} // asynchronous; status comes with the result
                 Err(reason) => {
-                    if let Ok(col) = column_of(leader, ctx) {
-                        let _ = leader.errors(log, col, &format!("{reason}\n"));
+                    if let Ok(col) = column_of(view, ctx) {
+                        props.push(Proposal::Errors { col, text: format!("{reason}\n") });
                     }
-                    let _ = leader.append_status(log, ctx, seq, ExecStatusOp::Failed(reason));
+                    props.push(Proposal::Status { ctx, exec: seq, status: ExecStatusOp::Failed(reason) });
                 }
             }
         }
-        n
+        props
     }
 
-    /// `Ok(true)` if finished now, `Ok(false)` if the result arrives later.
-    fn perform(&mut self, log: &mut Log, leader: &mut Node, ctx: ExecCtx, seq: Seq, text: &str, at: ExecAt) -> Result<bool, String> {
-        let dir = self.dir_of(leader, ctx);
-        let col = column_of(leader, ctx)?;
+    /// `Ok(Some(proposals))` if finished now, `Ok(None)` if the result
+    /// arrives later through [`Server::pump`].
+    fn perform(&mut self, log: &mut Log, view: &Node, ctx: ExecCtx, seq: Seq, text: &str, at: ExecAt) -> Result<Option<Vec<Proposal>>, String> {
+        let dir = self.dir_of(view, ctx);
+        let col = column_of(view, ctx)?;
         let win = match ctx {
             ExecCtx::Window(w) => Some(w),
             _ => None,
@@ -366,7 +365,7 @@ impl Server {
             let kind = text.as_bytes()[0];
             let input = at
                 .buffer
-                .and_then(|b| leader.state.buffer(b).ok())
+                .and_then(|b| view.state.buffer(b).ok())
                 .map(|b| b.text.slice(at.q0, at.q1))
                 .unwrap_or_default();
             let mode = match (kind, at.buffer) {
@@ -375,55 +374,52 @@ impl Server {
             };
             let stdin = if kind == b'<' { None } else { Some(input) };
             self.spawn_shell(ctx, seq, rest.trim().to_string(), dir, stdin, mode);
-            return Ok(false);
+            return Ok(None);
         }
         let mut words = text.split_whitespace();
         let cmd = words.next().unwrap_or("");
         let arg = words.next();
+        let mut props = Vec::new();
         match cmd {
             "Put" => {
                 let w = win.ok_or("Put needs a window")?;
-                self.put(log, leader, w, arg)?;
+                props.append(&mut self.put(view, w, arg)?);
             }
             "Putall" => {
-                let wins: Vec<WindowId> = leader.state.windows.keys().copied().collect();
-                for w in wins {
-                    let dirty = leader
-                        .state
-                        .window(w)
-                        .ok()
-                        .and_then(|x| x.body_buffer())
-                        .and_then(|b| leader.state.buffer(b).ok())
+                for (w, x) in &view.state.windows {
+                    let dirty = x
+                        .body_buffer()
+                        .and_then(|b| view.state.buffer(b).ok())
                         .is_some_and(|b| b.dirty() && !b.name.is_empty() && !b.name.starts_with('+') && !b.name.ends_with('/'));
                     if dirty {
-                        self.put(log, leader, w, None)?;
+                        props.append(&mut self.put(view, *w, None)?);
                     }
                 }
             }
             "Get" => {
                 let w = win.ok_or("Get needs a window")?;
-                self.get(log, leader, w)?;
+                props.push(self.get(view, w)?);
             }
             "New" => {
                 let name = arg.ok_or("New needs a name here")?;
                 let path = resolve(&dir, name);
                 if path.exists() {
-                    self.open_file(log, leader, col, &dir, name)?;
+                    props.push(self.open_file(col, &dir, name, None)?);
                 } else {
-                    leader.new_window(log, col, &path.to_string_lossy(), "").map_err(|e| e.to_string())?;
+                    props.push(Proposal::NewWindow { col, name: path.to_string_lossy().to_string() });
                 }
             }
             "Newterm" => {
-                self.new_term(log, leader, col, &dir)?;
+                props.push(self.new_term(log, col, &dir)?);
             }
             "Kill" | "Dump" | "Load" | "Newweb" => return Err(format!("{cmd}: not implemented")),
             _ => {
                 // anything else is a shell command; output goes to +Errors
                 self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { col });
-                return Ok(false);
+                return Ok(None);
             }
         }
-        Ok(true)
+        Ok(Some(props))
     }
 
     fn spawn_shell(&self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode) {
@@ -434,10 +430,12 @@ impl Server {
         });
     }
 
-    /// B3: open `text` as a file (with optional `:line`) if it names one.
-    pub fn plumb_file(&mut self, log: &mut Log, leader: &mut Node, ctx: ExecCtx, text: &str) -> Option<WindowId> {
-        let dir = self.dir_of(leader, ctx);
-        let col = column_of(leader, ctx).ok()?;
+    /// B3: open `text` as a file (with optional `:line`) if it names one;
+    /// otherwise the leader searches for it.
+    pub fn plumb(&self, view: &Node, ctx: ExecCtx, text: &str) -> Proposal {
+        let look = Proposal::Look { ctx, text: text.to_string() };
+        let dir = self.dir_of(view, ctx);
+        let Ok(col) = column_of(view, ctx) else { return look };
         let candidates = [text.to_string(), text.trim_end_matches(['.', ',', ';', ':', ')']).to_string()];
         for cand in &candidates {
             let (path, line) = match cand.rsplit_once(':') {
@@ -447,25 +445,31 @@ impl Server {
                 _ => (cand.clone(), None),
             };
             if std::fs::metadata(resolve(&dir, &path)).is_ok() {
-                let w = self.open_file(log, leader, col, &dir, &path).ok()?;
-                if let Some(n) = line {
-                    if let Ok(b) = leader.view_buffer(ViewId::Body(w)) {
-                        if let Some((s, e)) = leader.state.buffer(b).ok().and_then(|b| b.text.line_range(n.saturating_sub(1))) {
-                            let e = (e + 1).min(leader.state.buffer(b).map(|b| b.text.len()).unwrap_or(e));
-                            let _ = leader.select(log, ViewId::Body(w), s, e);
-                        }
-                    }
+                if let Ok(p) = self.open_file(col, &dir, &path, line) {
+                    return p;
                 }
-                return Some(w);
             }
         }
-        None
+        look
     }
 }
 
-fn mode_col(m: &ShellMode) -> Option<ColumnId> {
+/// In-process convenience: apply proposals through the leader, reporting
+/// failures to the column's `+Errors`.
+pub fn perform(node: &mut Node, log: &mut Log, props: Vec<Proposal>) -> Option<WindowId> {
+    let mut made = None;
+    for p in props {
+        match proposal::apply(node, log, p) {
+            Ok(w) => made = w.or(made),
+            Err(e) => eprintln!("proposal: {e}"),
+        }
+    }
+    made
+}
+
+fn mode_col(m: &ShellMode) -> ColumnId {
     match m {
-        ShellMode::Errors { col } | ShellMode::Replace { col, .. } => Some(*col),
+        ShellMode::Errors { col } | ShellMode::Replace { col, .. } => *col,
     }
 }
 

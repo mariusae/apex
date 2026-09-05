@@ -209,6 +209,15 @@ impl State {
         self.applied.get(&shard).copied().unwrap_or(0)
     }
 
+    /// Apply a metalog op out of band (a mirror dropping a shard before the
+    /// server's entry arrives). Does not advance any sequence.
+    pub fn apply_unsequenced(&mut self, e: &Entry) -> Result<Applied, ApplyError> {
+        match &e.op {
+            Op::Meta(m) => self.apply_meta(m),
+            _ => Err(ApplyError::WrongShard { shard: Shard::Meta, op: format!("{:?}", e.op) }),
+        }
+    }
+
     /// Apply one entry of `shard`'s log. Entries must arrive in sequence.
     pub fn apply(&mut self, shard: Shard, e: &Entry) -> Result<Applied, ApplyError> {
         if !e.op.fits(shard) {
@@ -415,10 +424,8 @@ impl State {
         match op {
             MetaOp::Init => {}
             MetaOp::ShardNew { shard } => {
-                if !m.shards.insert(*shard) {
-                    return Err(ApplyError::Exists(format!("shard {shard}")));
-                }
-                m.leases.insert(*shard, Lease { holder: SERVER, epoch: 0, seq: 0, pending: None, released: None });
+                m.shards.insert(*shard);
+                m.leases.entry(*shard).or_insert(Lease { holder: SERVER, epoch: 0, seq: 0, pending: None, released: None });
             }
             MetaOp::ShardDel { shard } => {
                 m.shards.remove(shard);

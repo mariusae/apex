@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use apex_core::state::ExecStatus;
 use apex_core::*;
-use apex_server::{Server, ServerEvent};
+use apex_server::{perform, Server, ServerEvent};
 use futures::channel::mpsc::UnboundedReceiver;
 
 fn session() -> (Log, Node, ColumnId, Server, UnboundedReceiver<ServerEvent>) {
@@ -25,7 +25,10 @@ fn pump_until(log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut Unbo
             return true;
         }
         match rx.try_recv() {
-            Ok(ev) => server.pump(log, node, ev),
+            Ok(ev) => {
+                let props = server.pump(log, ev);
+                perform(node, log, props);
+            }
             Err(_) => std::thread::sleep(Duration::from_millis(10)),
         }
         node.catch_up(log).unwrap();
@@ -42,6 +45,18 @@ fn errors_text(node: &Node) -> String {
     node.state.buffers.values().find(|b| b.name == "+Errors").map(|b| b.text.to_string()).unwrap_or_default()
 }
 
+fn open(server: &Server, log: &mut Log, node: &mut Node, col: ColumnId, dir: &std::path::Path, name: &str) -> WindowId {
+    let p = server.open_file(col, dir, name, None).unwrap();
+    perform(node, log, vec![p]).unwrap()
+}
+
+fn poll(server: &mut Server, log: &mut Log, node: &mut Node) -> usize {
+    let props = server.poll_execs(log, node);
+    let n = props.len();
+    perform(node, log, props);
+    n
+}
+
 fn exec_status(node: &Node, w: WindowId) -> ExecStatus {
     node.state.window(w).unwrap().execs.values().last().unwrap().status.clone()
 }
@@ -54,11 +69,11 @@ fn files_put_and_get() {
     let path = dir.join("f.txt");
     std::fs::write(&path, "one\ntwo\n").unwrap();
 
-    let w = server.open_file(&mut log, &mut node, col, &dir, "f.txt").unwrap();
+    let w = open(&server, &mut log, &mut node, col, &dir, "f.txt");
     assert_eq!(body_text(&node, w), "one\ntwo\n");
     assert_eq!(node.window_name(w), path.to_string_lossy());
     // opening it again gives the same window
-    assert_eq!(server.open_file(&mut log, &mut node, col, &dir, "f.txt").unwrap(), w);
+    assert_eq!(open(&server, &mut log, &mut node, col, &dir, "f.txt"), w);
 
     // edit, Put, check the file and the clean flag
     let v = ViewId::Body(w);
@@ -66,7 +81,7 @@ fn files_put_and_get() {
     node.insert(&mut log, v, "zero\n").unwrap();
     assert!(node.state.buffer(node.view_buffer(v).unwrap()).unwrap().dirty());
     assert!(matches!(node.exec(&mut log, ExecCtx::Window(w), "Put").unwrap(), Executed::Deferred(_)));
-    assert_eq!(server.poll_execs(&mut log, &mut node), 1);
+    assert_eq!(poll(&mut server, &mut log, &mut node), 2); // Clean + Status
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "zero\none\ntwo\n");
     assert!(!node.state.buffer(node.view_buffer(v).unwrap()).unwrap().dirty());
     assert_eq!(exec_status(&node, w), ExecStatus::Done);
@@ -74,12 +89,12 @@ fn files_put_and_get() {
     // change the file outside and Get it back
     std::fs::write(&path, "changed\n").unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "Get").unwrap();
-    server.poll_execs(&mut log, &mut node);
+    poll(&mut server, &mut log, &mut node);
     assert_eq!(body_text(&node, w), "changed\n");
     assert!(!node.state.buffer(node.view_buffer(v).unwrap()).unwrap().dirty());
 
     // a directory opens as a listing
-    let d = server.open_file(&mut log, &mut node, col, &dir, ".").unwrap();
+    let d = open(&server, &mut log, &mut node, col, &dir, ".");
     assert!(body_text(&node, d).contains("f.txt\n"));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -90,19 +105,19 @@ fn shell_commands_and_pipes() {
     let w = node.new_window(&mut log, col, "scratch", "b\na\nc\n").unwrap();
     // an unknown word runs in the shell; output goes to +Errors
     node.exec(&mut log, ExecCtx::Window(w), "echo hello-apex").unwrap();
-    server.poll_execs(&mut log, &mut node);
+    poll(&mut server, &mut log, &mut node);
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors_text(n).contains("hello-apex")));
     assert_eq!(exec_status(&node, w), ExecStatus::Done);
     // |sort replaces the selection with sorted input
     let v = ViewId::Body(w);
     node.select(&mut log, v, 0, 6).unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "|sort").unwrap();
-    server.poll_execs(&mut log, &mut node);
+    poll(&mut server, &mut log, &mut node);
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| body_text(n, w) == "a\nb\nc\n"));
     // <cmd inserts output at the selection
     node.select(&mut log, v, 0, 0).unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "<echo top").unwrap();
-    server.poll_execs(&mut log, &mut node);
+    poll(&mut server, &mut log, &mut node);
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| body_text(n, w) == "top\na\nb\nc\n"));
     // a follower replaying the log agrees with everything that happened
     let mut f = Node::new(AttachmentId(77));
@@ -114,7 +129,7 @@ fn shell_commands_and_pipes() {
 fn newterm_runs_a_shell() {
     let (mut log, mut node, _col, mut server, mut rx) = session();
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
-    server.poll_execs(&mut log, &mut node);
+    poll(&mut server, &mut log, &mut node);
     let w = node
         .state
         .windows
@@ -123,6 +138,9 @@ fn newterm_runs_a_shell() {
         .map(|w| w.id)
         .expect("terminal window");
     let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    assert!(node.state.terms.contains_key(&t));
+    // the server sees the window (a client does this after every command)
+    server.close_orphan_terms(&mut log, &node);
     assert!(node.state.terms.contains_key(&t));
     // type a command into the shell and see its output in the grid
     for c in "echo apex-term-$((6*7))\r".chars() {
@@ -134,7 +152,7 @@ fn newterm_runs_a_shell() {
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("apex-term-42")), "grid:\n{}", grid_text(&node));
     // Del closes the window; the server drops the terminal
     node.exec(&mut log, ExecCtx::Window(w), "Del").unwrap();
-    server.close_term(&mut log, t);
+    server.close_orphan_terms(&mut log, &node);
     assert!(!node.state.windows.contains_key(&w));
     node.catch_up(&log).unwrap();
     assert!(!node.state.terms.contains_key(&t));

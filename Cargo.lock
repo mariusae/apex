@@ -146,6 +146,7 @@ dependencies = [
  "apex-core",
  "apex-edit",
  "futures",
+ "postcard",
  "serde",
 ]
 
