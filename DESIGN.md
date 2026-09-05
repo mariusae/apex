@@ -671,7 +671,27 @@ the server's credentials, as acme's do.
 
 ---
 
-## 15. Open questions
+## 15. Open questions and exploration
+
+### Exploration: tool-defined shards
+
+Not for v1, but worth keeping in view. Today the shard kinds are fixed
+(buffer, window, layout, term, metalog, registry) and tools reach the
+system through proposals, execs and metalog entries. The generalisation is
+to let a tool **register its own shard kind** with its own entry schema:
+the shard is created through the metalog like any other, leased to the
+tool (pinned to it while it lives), replicated to clients that subscribe,
+snapshotted, hashed and paged by the same machinery. A plumber would then
+be a shard whose entries are rules rather than a set of metalog entry
+types; an LSP tool would keep diagnostics in a shard the client renders
+in the gutter; an agent harness would keep its transcript in one. The
+appeal is that "extension" would mean "another shard", with fencing,
+provenance and re-attach for free. The cost is a schema-registration
+story, clients that must render entries they do not understand, and a
+harder question of what a client-led shard kind would even mean. Do it
+only if a second or third concrete need for it appears beyond plumbing.
+
+### Open questions
 
 - Granularity of `layout` leasing when a tool wants to open windows while the
   UI leads layout: proposals suffice, but a burst of `apex new` from a script
