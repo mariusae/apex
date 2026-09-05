@@ -147,7 +147,9 @@ impl Node {
         Ok((e.seq, a))
     }
 
-    fn create_shard(&mut self, log: &mut Log, shard: Shard) -> Result<()> {
+    /// Create a shard (pinned ones stay with the server; others come to this
+    /// node at epoch 1).
+    pub fn create_shard(&mut self, log: &mut Log, shard: Shard) -> Result<()> {
         self.catch_up(log)?;
         for e in log.create_shard(shard, self.attachment)? {
             self.state.apply(Shard::Meta, &e)?;
@@ -156,7 +158,7 @@ impl Node {
         Ok(())
     }
 
-    fn delete_shard(&mut self, log: &mut Log, shard: Shard) -> Result<()> {
+    pub fn delete_shard(&mut self, log: &mut Log, shard: Shard) -> Result<()> {
         self.catch_up(log)?;
         let e = log.delete_shard(shard)?;
         self.state.apply(Shard::Meta, &e)?;
@@ -236,6 +238,38 @@ impl Node {
         let at = self.state.layout.column(col).map(|c| c.wins.len()).unwrap_or(0);
         self.append(log, Shard::Layout, Op::Layout(LayoutOp::WinPlace { window: id, col, at, weight: 1 }))?;
         Ok(id)
+    }
+
+    /// A window whose body is a terminal (the term shard exists already).
+    pub fn open_term_window(&mut self, log: &mut Log, col: ColumnId, name: &str, term: TermId) -> Result<WindowId> {
+        let id = WindowId(self.alloc());
+        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf | Look "), None)?;
+        self.create_shard(log, Shard::Window(id))?;
+        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Term(term) }))?;
+        self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
+        let at = self.state.layout.column(col).map(|c| c.wins.len()).unwrap_or(0);
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::WinPlace { window: id, col, at, weight: 1 }))?;
+        Ok(id)
+    }
+
+    /// Replace a buffer's whole content (a `Get`, a watcher reload) in one
+    /// undo group, keeping views where the text still allows.
+    pub fn set_content(&mut self, log: &mut Log, buffer: BufferId, text: &str) -> Result<()> {
+        self.end_typing();
+        let len = self.state.buffer(buffer)?.text.len();
+        let group = self.new_group();
+        self.edit_op(log, buffer, 0, len, text, group)
+    }
+
+    /// The name shown in a window's tag: its body buffer's name.
+    pub fn window_name(&self, window: WindowId) -> String {
+        self.state
+            .window(window)
+            .ok()
+            .and_then(|w| w.body_buffer())
+            .and_then(|b| self.state.buffer(b).ok())
+            .map(|b| b.name.clone())
+            .unwrap_or_default()
     }
 
     pub fn zerox(&mut self, log: &mut Log, window: WindowId) -> Result<WindowId> {
@@ -564,7 +598,8 @@ impl Node {
         }
     }
 
-    fn append_status(&mut self, log: &mut Log, ctx: ExecCtx, exec: Seq, status: ExecStatusOp) -> Result<()> {
+    /// Report the outcome of an exec (the performer does this).
+    pub fn append_status(&mut self, log: &mut Log, ctx: ExecCtx, exec: Seq, status: ExecStatusOp) -> Result<()> {
         match ctx {
             ExecCtx::Window(w) => {
                 self.append(log, Shard::Window(w), Op::Window(WindowOp::Status { exec, status }))?;

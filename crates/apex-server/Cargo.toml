@@ -1,0 +1,12 @@
+[package]
+name = "apex-server"
+version.workspace = true
+edition.workspace = true
+description = "apex server: terminals, files, processes and the plumber, over the core's log store"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+apex-edit = { path = "../apex-edit" }
+alacritty_terminal = "0.26"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }

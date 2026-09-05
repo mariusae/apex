@@ -1,0 +1,17 @@
+[package]
+name = "apex-client"
+version.workspace = true
+edition.workspace = true
+description = "apex UI client: renders a session's state with gpui and turns mouse and keys into entries"
+
+[[bin]]
+name = "apex"
+path = "src/main.rs"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }
+apex-edit = { path = "../apex-edit" }
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+futures = "0.3"
+core-text = "21"

@@ -47,8 +47,29 @@ impl Text {
         }
     }
 
+    /// Number of lines; a text ending in a newline has an empty last line.
     pub fn line_count(&self) -> usize {
         self.0.len_lines()
+    }
+
+    /// `(start, end)` of line `n`, `end` excluding the newline; `None` past
+    /// the last line. Mirrors acme's line addressing for rendering.
+    pub fn line_range(&self, n: usize) -> Option<(usize, usize)> {
+        let lines = self.0.len_lines();
+        if n >= lines {
+            return None;
+        }
+        let start = self.0.line_to_char(n);
+        let end = if n + 1 < lines { self.0.line_to_char(n + 1) - 1 } else { self.len() };
+        Some((start, end))
+    }
+
+    /// The runes of line `n` without its newline.
+    pub fn line(&self, n: usize) -> String {
+        match self.line_range(n) {
+            Some((a, b)) => self.slice(a, b),
+            None => String::new(),
+        }
     }
 
     /// Rune offset of the start of line `n` (0-based).
