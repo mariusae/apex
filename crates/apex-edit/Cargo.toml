@@ -1,0 +1,16 @@
+[package]
+name = "apex-edit"
+version.workspace = true
+edition.workspace = true
+description = "The sam/acme Edit command language and plan 9 regular expressions, ported from plan9port's acme"
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"
+criterion = "0.5"
+
+[[bench]]
+name = "edit"
+harness = false
