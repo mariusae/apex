@@ -756,7 +756,10 @@ common extension is inserted, otherwise the candidates are listed in
 (`framescroll`); the mouse pulled up as a tag closes under it and pushed
 down as one expands over it (`winresize`); `Kill name` ending every
 running command whose first word is `name` (the server tracks the
-commands it starts); `Zerox` refusing directories; newline ignored in
+commands it starts); the top row naming each running command at its
+front while it runs, "`name: exit status`" in `+Errors` when one ends
+badly (`waitthread`, `runproc`'s naming: the first word without its
+directory, `|sort` for a pipe); `Zerox` refusing directories; newline ignored in
 column and top tags; `+Errors` named `dir/+Errors` after the directory of
 the window whose command produced the output, made in the last column
 (`errorwin1`), with no `Undo`/`Put` words in its tag. Decided against

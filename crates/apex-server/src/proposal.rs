@@ -31,6 +31,11 @@ pub enum Proposal {
     /// Filename completion (acme's ^F): insert `text` at `at` in `view`,
     /// if the insertion point is still there.
     Complete { view: ViewId, at: usize, text: String },
+    /// acme's waitthread: a command started; its name goes to the front of
+    /// the top row.
+    CommandStart { name: String },
+    /// ... and leaves it when the command ends.
+    CommandExit { name: String },
     /// The outcome of an exec.
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// B3 did not name a file: search the body instead.
@@ -113,6 +118,22 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         }
         Proposal::Errors { dir, text } => {
             node.errors(log, dir.as_deref(), &text)?;
+            Ok(None)
+        }
+        Proposal::CommandStart { name } => {
+            if let Some(top) = node.state.layout.top {
+                node.select(log, ViewId::Top, 0, 0)?;
+                node.replace_selection(log, ViewId::Top, &format!("{name} "))?;
+                node.select(log, ViewId::Top, 0, 0)?;
+                let _ = top;
+            }
+            Ok(None)
+        }
+        Proposal::CommandExit { name } => {
+            if node.state.layout.top.is_some() && node.look(log, ViewId::Top, &format!("{name} "))? {
+                node.replace_selection(log, ViewId::Top, "")?;
+                node.select(log, ViewId::Top, 0, 0)?;
+            }
             Ok(None)
         }
         Proposal::Complete { view, at, text } => {

@@ -33,8 +33,10 @@ pub use term::{TermHost, TermKey};
 /// attention on it.
 pub enum ServerEvent {
     Term(TermId, Event),
-    /// A shell command finished: `(ctx, exec seq, stdout, stderr, what to do with stdout)`.
-    Shell { ctx: ExecCtx, exec: Seq, out: String, err: String, mode: ShellMode },
+    /// A shell command finished: `(ctx, exec seq, stdout, stderr, what to do
+    /// with stdout)`, its name as shown in the top row, and how it ended
+    /// (acme's wait message: empty for a clean exit).
+    Shell { ctx: ExecCtx, exec: Seq, out: String, err: String, mode: ShellMode, name: String, exit: String },
     /// A watched directory reported this path.
     File(PathBuf),
 }
@@ -74,6 +76,8 @@ pub struct Server {
     /// Stale buffers `Put` has refused once (acme: the second Put writes).
     put_warned: BTreeSet<BufferId>,
     running: std::sync::Arc<std::sync::Mutex<Vec<Running>>>,
+    /// Proposals made while performing (a command's name for the top row).
+    started: Vec<Proposal>,
 }
 
 impl Server {
@@ -117,6 +121,7 @@ impl Server {
             watches,
             put_warned: BTreeSet::new(),
             running: Default::default(),
+            started: Vec::new(),
         };
         (server, rx)
     }
@@ -334,8 +339,14 @@ impl Server {
                 }
                 self.publish_term(log, id);
             }
-            ServerEvent::Shell { ctx, exec, out, err, mode } => {
+            ServerEvent::Shell { ctx, exec, out, err, mode, name, exit } => {
                 let dir = mode_dir(&mode);
+                // acme's waitthread: the name leaves the top row, then any
+                // exit message is reported
+                props.push(Proposal::CommandExit { name: name.clone() });
+                if !exit.is_empty() {
+                    props.push(Proposal::Errors { dir: dir.clone(), text: format!("{name}: exit {exit}\n") });
+                }
                 match mode {
                     ShellMode::Errors { dir } => {
                         if !out.is_empty() {
@@ -411,7 +422,9 @@ impl Server {
         let mut props = Vec::new();
         for (ctx, seq, text, at) in todo {
             self.performed.insert((ctx, seq));
-            match self.perform(log, view, ctx, seq, &text, at) {
+            let r = self.perform(log, view, ctx, seq, &text, at);
+            props.append(&mut self.started);
+            match r {
                 Ok(Some(mut p)) => {
                     props.append(&mut p);
                     props.push(Proposal::Status { ctx, exec: seq, status: ExecStatusOp::Done });
@@ -523,12 +536,15 @@ impl Server {
         Ok(Some(props))
     }
 
-    fn spawn_shell(&self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode) {
+    fn spawn_shell(&mut self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode) {
         let tx = self.tx.clone();
         let running = self.running.clone();
+        let name = command_name(&cmd);
+        // acme's waitthread: the name goes into the top row while it runs
+        self.started.push(Proposal::CommandStart { name: name.clone() });
         std::thread::spawn(move || {
-            let (out, err) = shell_tracked(&cmd, &dir, stdin, Some(running));
-            let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode });
+            let (out, err, exit) = shell_tracked(&cmd, &dir, stdin, Some(running));
+            let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit });
         });
     }
 
@@ -651,12 +667,21 @@ pub fn resolve(dir: &Path, name: &str) -> PathBuf {
 
 /// Run `sh -c cmd` in `dir`, feeding `input` on stdin. Returns (stdout, stderr).
 pub fn shell(cmd: &str, dir: &Path, input: Option<String>) -> (String, String) {
-    shell_tracked(cmd, dir, input, None)
+    let (out, err, _) = shell_tracked(cmd, dir, input, None);
+    (out, err)
 }
 
-/// `shell`, registering the child in `running` (by its first word) for
-/// `Kill` while it lives.
-pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>) -> (String, String) {
+/// acme's name for a command (`runproc`): the first word, without any
+/// directory, as it appears in the top row and as `Kill` knows it.
+pub fn command_name(cmd: &str) -> String {
+    let first = cmd.split_whitespace().next().unwrap_or("");
+    first.rsplit('/').next().unwrap_or(first).to_string()
+}
+
+/// `shell`, registering the child in `running` (by acme's name for it)
+/// for `Kill` while it lives. The third result is how it ended: empty for
+/// a clean exit, else the status or signal, as acme's wait message.
+pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>) -> (String, String, String) {
     let child = Command::new("sh")
         .arg("-c")
         .arg(cmd)
@@ -667,10 +692,10 @@ pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Opti
         .spawn();
     let mut child = match child {
         Ok(c) => c,
-        Err(e) => return (String::new(), format!("{cmd}: {e}\n")),
+        Err(e) => return (String::new(), format!("{cmd}: {e}\n"), String::new()),
     };
     let pid = child.id();
-    let name = cmd.split_whitespace().next().unwrap_or("").to_string();
+    let name = command_name(cmd);
     if let Some(r) = &running {
         r.lock().unwrap().push(Running { pid, name });
     }
@@ -680,8 +705,17 @@ pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Opti
         });
     }
     let out = match child.wait_with_output() {
-        Ok(o) => (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string()),
-        Err(e) => (String::new(), format!("{cmd}: {e}\n")),
+        Ok(o) => {
+            use std::os::unix::process::ExitStatusExt;
+            let exit = match (o.status.code(), o.status.signal()) {
+                (Some(0), _) => String::new(),
+                (Some(n), _) => n.to_string(),
+                (None, Some(sig)) => format!("signal {sig}"),
+                _ => "?".to_string(),
+            };
+            (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string(), exit)
+        }
+        Err(e) => (String::new(), format!("{cmd}: {e}\n"), String::new()),
     };
     if let Some(r) = &running {
         r.lock().unwrap().retain(|x| x.pid != pid);

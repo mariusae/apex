@@ -199,3 +199,26 @@ fn completion_extends_a_path_or_lists_candidates() {
     assert!(matches!(server.complete(v, 3, &dir, "zz"), apex_server::Proposal::Errors { text: ref t, .. } if t.contains("no matches")));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn running_commands_are_named_in_the_top_row() {
+    let (mut log, mut node, col, mut server, mut rx) = session();
+    let top = node.state.layout.top.unwrap();
+    let top_text = |n: &Node| n.state.buffer(top).unwrap().text.to_string();
+    let w = node.new_window(&mut log, col, "scratch", "").unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "sleep 30").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    // acme's waitthread: the name, without directory, at the front
+    assert!(top_text(&node).starts_with("sleep "), "{:?}", top_text(&node));
+    node.exec(&mut log, ExecCtx::Window(w), "/bin/false").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(top_text(&node).starts_with("false sleep "), "{:?}", top_text(&node));
+    // false exits 1: its name leaves and the exit is reported
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !top_text(n).contains("false ")));
+    assert!(errors_text(&node).contains("false: exit 1"), "{:?}", errors_text(&node));
+    node.exec(&mut log, ExecCtx::Window(w), "Kill sleep").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !top_text(n).contains("sleep ")));
+    assert!(errors_text(&node).contains("sleep: exit signal 15"), "{:?}", errors_text(&node));
+    assert!(top_text(&node).starts_with("Newcol"), "{:?}", top_text(&node));
+}
