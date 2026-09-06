@@ -363,7 +363,7 @@ impl Server {
                 match ev {
                     TermEvent::Alac(ev) => match ev {
                         Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange | Event::ResetTitle | Event::Bell => {}
-                        Event::Title(t) => name = Some(term::labelled(&t, &h.label)),
+                        Event::Title(t) => name = Some(term::labelled(&term::expand_tilde(&t), &h.label)),
                         Event::PtyWrite(s) => h.write(s.as_bytes()),
                         Event::ColorRequest(i, fmt) => h.write(fmt(term::default_color(i)).as_bytes()),
                         Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
@@ -373,7 +373,7 @@ impl Server {
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 0 }));
                         }
                     },
-                    TermEvent::Name(t) => name = Some(term::labelled(&t, &h.label)),
+                    TermEvent::Name(t) => name = Some(term::labelled(&term::expand_tilde(&t), &h.label)),
                     TermEvent::Cwd(s) => {
                         if let Some(p) = term::cwd_path(&s) {
                             name = Some(format!("{}/-{}", p.display().to_string().trim_end_matches('/'), h.label));

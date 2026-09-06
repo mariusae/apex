@@ -60,6 +60,21 @@ pub fn labelled(text: &str, name: &str) -> String {
     format!("{text}{}-{name}", if text.ends_with('/') { "" } else { "/" })
 }
 
+/// A leading `~` or `~/` (a shell's short form of the home directory, as
+/// in a title made with zsh's `%~`) becomes `$HOME`.
+pub fn expand_tilde(s: &str) -> String {
+    let home = || std::env::var("HOME").ok().filter(|h| !h.is_empty());
+    if s == "~" {
+        return home().unwrap_or_else(|| s.to_string());
+    }
+    if let Some(rest) = s.strip_prefix("~/") {
+        if let Some(h) = home() {
+            return format!("{}/{rest}", h.trim_end_matches('/'));
+        }
+    }
+    s.to_string()
+}
+
 /// The directory an OSC 7 report names: a `file://host/path` URL
 /// (percent-encoded), or a plain path. Some shells report `~` for the
 /// home directory; that becomes `$HOME`.
@@ -111,6 +126,9 @@ mod tests {
         assert_eq!(cwd_path("file://host/~/src").unwrap(), PathBuf::from(&home).join("src"));
         assert_eq!(cwd_path("file://host/%7E/x").unwrap(), PathBuf::from(&home).join("x"));
         assert!(cwd_path("nothing").is_none());
+        assert_eq!(expand_tilde("~/src"), format!("{home}/src"));
+        assert_eq!(expand_tilde("~"), home);
+        assert_eq!(expand_tilde("/a/~/b"), "/a/~/b");
     }
 }
 

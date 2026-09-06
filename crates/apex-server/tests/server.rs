@@ -329,6 +329,12 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     // an xterm title is a label too
     type_(&mut server, &mut log, "printf '\\033]2;hello\\007'\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == "hello/-x"), "name: {}", name(&node));
+    // a ~ in a title or label (zsh's %~) is the home directory
+    let home = std::env::var("HOME").unwrap();
+    type_(&mut server, &mut log, "printf '\\033]2;~/src\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{home}/src/-x")), "name: {}", name(&node));
+    type_(&mut server, &mut log, "printf '\\033];~/-y\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{home}/-y")), "name: {}", name(&node));
     // the labels never reached the screen
     assert!(!rows(&node).contains("\u{1b}"));
     // the shell's exit is still noticed
