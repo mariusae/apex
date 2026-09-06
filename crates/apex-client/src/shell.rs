@@ -591,6 +591,16 @@ impl Acme {
                     cx.notify();
                     return;
                 }
+                // a window already on that session: go there instead
+                let me = window.window_handle().window_id();
+                let elsewhere = cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()).find(|h| {
+                    h.window_id() != me && h.read(cx).ok().is_some_and(|a| a.url == url)
+                });
+                if let Some(h) = elsewhere {
+                    let _ = h.update(cx, |_, window, _| window.activate_window());
+                    cx.notify();
+                    return;
+                }
                 if let Err(e) = self.reattach(&url, window) {
                     eprintln!("apex-ui: attach {url}: {e}");
                     self.notice(&format!("{url}: {e}\n"));
