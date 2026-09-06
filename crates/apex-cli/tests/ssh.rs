@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use apex_core::*;
 use apex_server::remote::Remote;
-use apex_server::ssh;
+use apex_server::providers as ssh;
 
 /// Both tests set process-wide environment variables: one at a time.
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -81,7 +81,7 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     ssh::deploy("box").unwrap();
     // the daemon on the host is started by the bridge; sessions listed
     assert_eq!(ssh::list_sessions("box").unwrap(), vec!["local".to_string()]);
-    let cmd = ssh::attach_command("box", "local");
+    let cmd = ssh::attach_command("box", "local").unwrap();
     assert!(cmd.starts_with(&format!("{} box ", script.display())), "{cmd}");
     let mut c = Remote::via(&cmd, "local", "over-ssh", AttachmentKind::Ui).unwrap();
     let col = c.node.state.layout.cols[0].id;
@@ -95,9 +95,39 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     }
     assert_eq!(c.acked(Shard::Buffer(b)), want, "acked over the bridge");
     // another client on the same "host" sees it
-    let again = Remote::via(&ssh::attach_command("box", "local"), "local", "again", AttachmentKind::Tool).unwrap();
+    let again = Remote::via(&ssh::attach_command("box", "local").unwrap(), "local", "again", AttachmentKind::Tool).unwrap();
     assert!(again.node.state.windows.keys().any(|w| again.node.window_name(*w) == "remote-notes"));
     drop(again);
+    drop(c);
+    let _ = std::fs::remove_dir_all(&home);
+    let _ = std::fs::remove_file(&sock);
+}
+
+#[test]
+fn a_provider_is_a_command_named_apex_provider_on_the_path() {
+    let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    // "sprite:box": the provider script is `apexsprite`, found on the PATH,
+    // called as `apexsprite box COMMAND`
+    let (script, home, sock) = fake_host();
+    let bindir = home.join("providers");
+    std::fs::create_dir_all(&bindir).unwrap();
+    std::fs::copy(&script, bindir.join("apexsprite")).unwrap();
+    std::env::set_var("PATH", format!("{}:{}", bindir.display(), std::env::var("PATH").unwrap_or_default()));
+    std::env::remove_var("APEX_SSH");
+    std::env::set_var("APEX_REMOTE_BINARIES", binaries());
+    let d = ssh::Dest::parse("sprite:box");
+    assert_eq!(d, ssh::Dest { provider: "sprite".into(), name: "box".into() });
+    assert_eq!(d.program().unwrap(), bindir.join("apexsprite").to_string_lossy());
+    assert_eq!(ssh::Dest::parse("me@host").spec(), "me@host");
+    assert_eq!(ssh::Dest::parse("sprite:box").spec(), "sprite:box");
+    assert_eq!(ssh::split_spec("sprite:box/dev"), Some(("sprite:box", "dev")));
+    assert!(ssh::Dest::parse("nosuch:thing").program().is_err());
+    // the whole path through the provider
+    let (_, installed) = ssh::deploy("sprite:box").unwrap();
+    assert!(installed);
+    assert_eq!(ssh::list_sessions("sprite:box").unwrap(), vec!["local".to_string()]);
+    let c = Remote::via(&ssh::attach_command("sprite:box", "local").unwrap(), "local", "over-sprite", AttachmentKind::Ui).unwrap();
+    assert_eq!(c.node.state.layout.cols.len(), 1);
     drop(c);
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_file(&sock);

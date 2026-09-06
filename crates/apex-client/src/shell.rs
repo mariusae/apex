@@ -333,9 +333,9 @@ impl Selector {
 pub enum Row {
     Session(String),
     Create(String),
-    /// "Remote host…": type a host name next.
+    /// "Remote…": type a destination next.
     Remote,
-    /// Connect to this host's `local` session.
+    /// Connect to this destination's `local` session.
     Connect(String),
     /// Back to the local daemon.
     Local,
@@ -345,7 +345,7 @@ impl Acme {
     pub fn open_selector(&mut self, cx: &mut Context<Self>) {
         let Some(socket) = &self.socket else { return };
         let sessions = match &self.host {
-            Some(h) => apex_server::ssh::list_sessions(h).unwrap_or_default(),
+            Some(h) => apex_server::providers::list_sessions(h).unwrap_or_default(),
             None => list_sessions(socket).unwrap_or_default(),
         };
         let cursor = sessions.iter().position(|s| *s == self.session).unwrap_or(0);
@@ -408,11 +408,11 @@ impl Acme {
                 cx.notify();
                 return;
             }
-            Row::Connect(host) => (crate::app::Where::Ssh(host), "local".to_string()),
+            Row::Connect(host) => (crate::app::Where::Remote(host), "local".to_string()),
             Row::Local => (crate::app::Where::Socket(self.socket.clone().unwrap_or_else(apex_server::daemon::default_socket)), "local".to_string()),
             Row::Session(s) | Row::Create(s) => {
                 let at = match &self.host {
-                    Some(h) => crate::app::Where::Ssh(h.clone()),
+                    Some(h) => crate::app::Where::Remote(h.clone()),
                     None => crate::app::Where::Socket(self.socket.clone().unwrap_or_else(apex_server::daemon::default_socket)),
                 };
                 (at, s)
@@ -425,7 +425,7 @@ impl Acme {
         }
         if let Err(e) = self.reattach(at.clone(), &name, window) {
             let what = match &at {
-                crate::app::Where::Ssh(h) => format!("{h}/{name}"),
+                crate::app::Where::Remote(h) => format!("{h}/{name}"),
                 _ => name.clone(),
             };
             eprintln!("apex-ui: attach {what}: {e}");
@@ -511,7 +511,7 @@ impl Acme {
             .text_size(px(13.))
             .font_family("Lucida Grande")
             .child(if sel.filter.is_empty() {
-                div().text_color(rgb(0x888888)).child(if sel.entering_host { "user@host, then return" } else { "Search sessions, or type a new name…" })
+                div().text_color(rgb(0x888888)).child(if sel.entering_host { "user@host or provider:name, then return" } else { "Search sessions, or type a new name…" })
             } else {
                 div().text_color(rgb(0x111111)).child(format!("{}▏", sel.filter))
             });
@@ -531,7 +531,7 @@ impl Acme {
                 Row::Session(s) if *s == self.session => (format!("{s}   (this window)"), false),
                 Row::Session(s) => (s.clone(), false),
                 Row::Create(s) => (format!("Create session “{s}”"), true),
-                Row::Remote => ("Remote host…".to_string(), true),
+                Row::Remote => ("Remote…".to_string(), true),
                 Row::Connect(h) => (format!("Connect to {h}"), true),
                 Row::Local => ("Local sessions".to_string(), true),
             };

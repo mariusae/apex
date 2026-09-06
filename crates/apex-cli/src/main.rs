@@ -6,8 +6,9 @@
 //! apex [--socket P] [--session S] server               run the daemon (foreground)
 //! apex ls                                              list sessions
 //! apex new-session NAME
-//! apex attach [host/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
-//!                                                      host/SESSION: over ssh, installing apex on the host first
+//! apex attach [DEST/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
+//!                                                      DEST/SESSION: on a destination (user@host, provider:name)
+//!                                                      through its provider, installing apex there first
 //! apex new FILE...                                     open files in the first column
 //! apex win list | win del WIN
 //! apex text read WIN [--addr ADDR]
@@ -179,11 +180,11 @@ fn attach(socket: &Path, session: &str, args: &[String]) -> R {
         return bridge(socket);
     }
     let ui = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("apex-ui");
-    let status = match apex_server::ssh::split_spec(&target) {
+    let status = match apex_server::providers::split_spec(&target) {
         Some((host, sess)) => {
             // remote: the UI talks to `ssh host apex attach --stdio`,
             // after our apex is put on the host
-            Command::new(&ui).arg("--ssh").arg(host).arg("--session").arg(sess).args(&args).status()
+            Command::new(&ui).arg("--remote").arg(host).arg("--session").arg(sess).args(&args).status()
         }
         None => {
             ensure_server(socket, &target)?;

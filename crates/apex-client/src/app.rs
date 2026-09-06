@@ -143,9 +143,10 @@ pub enum Where {
     Socket(std::path::PathBuf),
     /// A command whose stdin/stdout carry the frames (ssh to a bridge).
     Via(String),
-    /// A host reached over ssh: our `apex` is put there first, and its
-    /// daemon started (`ssh.rs`).
-    Ssh(String),
+    /// A destination reached through a provider (`providers.rs`):
+    /// `provider:name`, or `user@host` for ssh. Our `apex` is put there
+    /// first, and its daemon started.
+    Remote(String),
 }
 
 /// Where the server is.
@@ -250,10 +251,10 @@ impl Acme {
         acme.socket = match at {
             Where::Socket(p) => Some(p.clone()),
             // a remote window can still switch to the local daemon
-            Where::Via(_) | Where::Ssh(_) => Some(apex_server::daemon::default_socket()),
+            Where::Via(_) | Where::Remote(_) => Some(apex_server::daemon::default_socket()),
         };
         acme.host = match at {
-            Where::Ssh(h) => Some(h.clone()),
+            Where::Remote(h) => Some(h.clone()),
             _ => None,
         };
         acme.wake = Some(wake);
@@ -267,9 +268,9 @@ impl Acme {
         match at {
             Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake)),
             Where::Via(cmd) => Self::connect_via(cmd, session, wake),
-            Where::Ssh(host) => {
-                apex_server::ssh::deploy(host)?;
-                let cmd = apex_server::ssh::attach_command(host, session);
+            Where::Remote(spec) => {
+                apex_server::providers::deploy(spec)?;
+                let cmd = apex_server::providers::attach_command(spec, session)?;
                 Self::connect_via(&cmd, session, wake)
             }
         }
@@ -307,7 +308,7 @@ impl Acme {
         self.node = node;
         self.session = name.to_string();
         self.host = match &at {
-            Where::Ssh(h) => Some(h.clone()),
+            Where::Remote(h) => Some(h.clone()),
             _ => None,
         };
         self.layouts.clear();

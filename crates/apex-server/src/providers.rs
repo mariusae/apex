@@ -1,11 +1,28 @@
-//! Attaching to a session on another machine over ssh (§6, §7). The
-//! host needs nothing but sshd: we carry an `apex` for its OS and
-//! architecture, put it in `~/.apex/bin` (or update it when ours
-//! differs), let it start the daemon, and bridge frames through
-//! `apex attach --stdio` on the host.
+//! Attaching to a session on another machine (§6, §7) through a
+//! *provider*: a command that runs a shell command line on a destination
+//! with stdin and stdout connected, exactly as `ssh HOST COMMAND` does.
+//! `ssh` is the built-in provider; any other is an executable named
+//! `apex<provider>` on the PATH, called as
 //!
-//! `APEX_SSH` names the ssh program to use; tests point it at a script
-//! that runs the commands locally.
+//! ```text
+//! apex<provider> DESTINATION COMMAND
+//! ```
+//!
+//! where COMMAND is one argument, a shell command line for the
+//! destination (it uses `&&`, redirections and the destination's
+//! `$HOME`). A provider over an argv-style tool wraps it: `apexsprite`
+//! is `exec sprite exec -s "$1" -- sh -c "$2"`. There is no other
+//! configuration: the provider script is it.
+//!
+//! A destination is written `provider:name`, or just `name` for ssh
+//! (`user@host`). The destination needs nothing but the provider's
+//! access: we carry an `apex` for its OS and architecture, put it in
+//! `~/.apex/bin` there (or update it when ours differs), let it start
+//! the daemon, and bridge frames through `apex attach --stdio`.
+//!
+//! `APEX_PROVIDER_<NAME>` (and `APEX_SSH` for ssh) name the program to
+//! use instead; tests point them at a script that runs the commands
+//! locally.
 
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
@@ -14,14 +31,68 @@ use std::process::{Command, Stdio};
 /// Where the host keeps our command.
 pub const REMOTE_BIN: &str = "$HOME/.apex/bin/apex";
 
-pub fn ssh_program() -> String {
-    std::env::var("APEX_SSH").unwrap_or_else(|_| "ssh".into())
+/// A destination: which provider reaches it, and its name there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dest {
+    pub provider: String,
+    pub name: String,
 }
 
-/// Run `cmd` on `host` through the login shell, with `stdin` fed to it.
-/// Returns stdout; a failure carries stderr.
-pub fn run(host: &str, cmd: &str, stdin: Option<&[u8]>) -> io::Result<String> {
-    let mut child = Command::new(ssh_program())
+impl Dest {
+    /// `provider:name`, or `name` for ssh (`user@host`).
+    pub fn parse(spec: &str) -> Dest {
+        match spec.split_once(':') {
+            Some((p, n)) if !p.is_empty() && !n.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') => {
+                Dest { provider: p.to_string(), name: n.to_string() }
+            }
+            _ => Dest { provider: "ssh".into(), name: spec.to_string() },
+        }
+    }
+
+    /// The spec as the user writes it: ssh destinations are bare.
+    pub fn spec(&self) -> String {
+        if self.provider == "ssh" {
+            self.name.clone()
+        } else {
+            format!("{}:{}", self.provider, self.name)
+        }
+    }
+
+    /// The program for this provider: `APEX_PROVIDER_<NAME>` if set
+    /// (`APEX_SSH` for ssh), else `apex<provider>` on the PATH, else
+    /// `ssh` itself for ssh.
+    pub fn program(&self) -> io::Result<String> {
+        let var = format!("APEX_PROVIDER_{}", self.provider.to_ascii_uppercase().replace('-', "_"));
+        if let Ok(p) = std::env::var(&var) {
+            return Ok(p);
+        }
+        if self.provider == "ssh" {
+            if let Ok(p) = std::env::var("APEX_SSH") {
+                return Ok(p);
+            }
+        }
+        let name = format!("apex{}", self.provider);
+        if let Some(p) = on_path(&name) {
+            return Ok(p.to_string_lossy().to_string());
+        }
+        if self.provider == "ssh" {
+            return Ok("ssh".into());
+        }
+        Err(io::Error::new(io::ErrorKind::NotFound, format!("no {name} command on the PATH for provider {}", self.provider)))
+    }
+}
+
+fn on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+/// Run `cmd` (a shell command line) on the destination `spec`, with
+/// `stdin` fed to it. Returns stdout; a failure carries stderr.
+pub fn run(spec: &str, cmd: &str, stdin: Option<&[u8]>) -> io::Result<String> {
+    let dest = Dest::parse(spec);
+    let host = dest.name.as_str();
+    let mut child = Command::new(dest.program()?)
         .arg(host)
         .arg(cmd)
         .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
@@ -40,8 +111,8 @@ pub fn run(host: &str, cmd: &str, stdin: Option<&[u8]>) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// The host's OS and architecture as we name binaries: `linux-amd64`,
-/// `linux-arm64`, `darwin-arm64`, ...
+/// The destination's OS and architecture as we name binaries:
+/// `linux-amd64`, `linux-arm64`, `darwin-arm64`, ...
 pub fn remote_target(host: &str) -> io::Result<String> {
     let uname = run(host, "uname -sm", None)?;
     let mut parts = uname.split_whitespace();
@@ -108,8 +179,8 @@ fn sha256_of(path: &std::path::Path) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).split_whitespace().next().unwrap_or("").to_string())
 }
 
-/// Make sure `host` has our `apex`, current with ours. Returns its path
-/// there, and whether it was (re)installed.
+/// Make sure the destination has our `apex`, current with ours. Returns
+/// its path there, and whether it was (re)installed.
 pub fn deploy(host: &str) -> io::Result<(String, bool)> {
     let target = remote_target(host)?;
     let bin = bundled_binary(&target).ok_or_else(|| io::Error::other(format!("no apex for {target} in this build")))?;
@@ -132,27 +203,30 @@ pub fn deploy(host: &str) -> io::Result<(String, bool)> {
 }
 
 /// The command whose stdin and stdout carry the frames: `apex attach
-/// --stdio` on the host, which starts the daemon there if it must.
-pub fn attach_command(host: &str, session: &str) -> String {
-    // the command is run through a local shell: the remote command is one
-    // single-quoted word so `$HOME` is the host's, not ours
+/// --stdio` on the destination, which starts the daemon there if it
+/// must. Run it through a local shell.
+pub fn attach_command(spec: &str, session: &str) -> io::Result<String> {
+    let dest = Dest::parse(spec);
+    // the remote command is one single-quoted word so `$HOME` is the
+    // destination's, not ours
     let session: String = session.chars().filter(|c| c.is_ascii_alphanumeric() || "-_.".contains(*c)).collect();
-    format!("{} {} '{REMOTE_BIN} --session {session} attach --stdio'", ssh_program(), shell_quote(host))
+    Ok(format!("{} {} '{REMOTE_BIN} --session {session} attach --stdio'", shell_quote(&dest.program()?), shell_quote(&dest.name)))
 }
 
-/// The sessions on `host`'s daemon (started if it is not running).
+/// The sessions on the destination's daemon (started if it is not running).
 pub fn list_sessions(host: &str) -> io::Result<Vec<String>> {
     let out = run(host, &format!("{REMOTE_BIN} --ensure-server ls"), None)?;
     Ok(out.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect())
 }
 
-/// `host/session` from a name the user typed; `None` without a slash.
+/// `destination/session` from a name the user typed (`provider:name` or
+/// `user@host` before the slash); `None` without a slash.
 pub fn split_spec(spec: &str) -> Option<(&str, &str)> {
-    let (host, session) = spec.split_once('/')?;
-    if host.is_empty() {
+    let (dest, session) = spec.split_once('/')?;
+    if dest.is_empty() {
         return None;
     }
-    Some((host, if session.is_empty() { "local" } else { session }))
+    Some((dest, if session.is_empty() { "local" } else { session }))
 }
 
 fn shell_quote(s: &str) -> String {
