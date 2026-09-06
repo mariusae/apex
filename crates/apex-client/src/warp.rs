@@ -29,24 +29,6 @@ extern "C" {
     fn CFRelease(cf: *mut std::ffi::c_void);
 }
 
-/// Where the pointer really is, in this window's coordinates (it may be
-/// outside the window).
-pub fn position_in(window: &Window) -> Option<Point<Pixels>> {
-    // SAFETY: an event created from no source describes the current
-    // pointer; we release it ourselves.
-    let p = unsafe {
-        let ev = CGEventCreate(std::ptr::null());
-        if ev.is_null() {
-            return None;
-        }
-        let p = CGEventGetLocation(ev);
-        CFRelease(ev);
-        p
-    };
-    let b = window.bounds();
-    Some(Point { x: gpui::px(p.x as f32 - f32::from(b.origin.x)), y: gpui::px(p.y as f32 - f32::from(b.origin.y)) })
-}
-
 /// Put the pointer at `p`, a point in this window's coordinates.
 pub fn move_to(window: &Window, p: Point<Pixels>) {
     let b = window.bounds();
