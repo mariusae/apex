@@ -106,18 +106,18 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
 #[test]
 fn a_provider_is_a_command_named_apex_provider_on_the_path() {
     let _serial = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    // "sprite:box": the provider script is `apexsprite`, found on the PATH,
-    // called as `apexsprite box COMMAND`
+    // "sprite:box": the provider script is `apex-remote-sprite`, found on the PATH,
+    // called as `apex-remote-sprite box COMMAND`
     let (script, home, sock) = fake_host();
     let bindir = home.join("providers");
     std::fs::create_dir_all(&bindir).unwrap();
-    std::fs::copy(&script, bindir.join("apexsprite")).unwrap();
+    std::fs::copy(&script, bindir.join("apex-remote-sprite")).unwrap();
     std::env::set_var("PATH", format!("{}:{}", bindir.display(), std::env::var("PATH").unwrap_or_default()));
     std::env::remove_var("APEX_SSH");
     std::env::set_var("APEX_REMOTE_BINARIES", binaries());
     let d = ssh::Dest::parse("sprite:box");
     assert_eq!(d, ssh::Dest { provider: "sprite".into(), name: "box".into() });
-    assert_eq!(d.program().unwrap(), bindir.join("apexsprite").to_string_lossy());
+    assert_eq!(d.program().unwrap(), bindir.join("apex-remote-sprite").to_string_lossy());
     assert_eq!(ssh::Dest::parse("me@host").spec(), "me@host");
     assert_eq!(ssh::Dest::parse("sprite:box").spec(), "sprite:box");
     assert_eq!(ssh::split_spec("sprite:box/dev"), Some(("sprite:box", "dev")));

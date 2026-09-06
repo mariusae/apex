@@ -1,9 +1,9 @@
 #!/bin/sh
 # An apex provider for sprites. apex calls a provider as
 #
-#     apex<provider> DESTINATION COMMAND
+#     apex-remote-<provider> DESTINATION COMMAND
 #
 # with COMMAND a single shell command line to run on the destination
 # with stdin and stdout connected (the ssh convention). Put this on your
-# PATH as `apexsprite`, then attach to `sprite:NAME/SESSION`.
+# PATH as `apex-remote-sprite`, then attach to `sprite:NAME/SESSION`.
 exec sprite exec -s "$1" -- sh -c "$2"

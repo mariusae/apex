@@ -520,12 +520,12 @@ plumb`; `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.
 
 `apex attach dest/session` (and the selector's "Remote…") goes through
-`providers.rs`. A *provider* is an executable `apex<provider>` on the
-PATH, called as `apex<provider> DESTINATION COMMAND`: it runs COMMAND, a
+`providers.rs`. A *provider* is an executable `apex-remote-<provider>` on the
+PATH, called as `apex-remote-<provider> DESTINATION COMMAND`: it runs COMMAND, a
 single shell command line, on the destination with stdio connected —
 ssh's own convention, and `ssh` is the built-in provider, so `user@host`
 needs nothing. Other destinations are `provider:name` (`sprite:mybox`)
-and need only that script (`providers/apexsprite` is one: `sprite exec
+and need only that script (`providers/apex-remote-sprite` is one: `sprite exec
 -s "$1" -- sh -c "$2"`). This keeps the rule that there is no
 configuration file: the provider script is the whole configuration. The
 destination needs nothing but the provider's access. We ask `uname -sm`,

@@ -2,15 +2,15 @@
 //! *provider*: a command that runs a shell command line on a destination
 //! with stdin and stdout connected, exactly as `ssh HOST COMMAND` does.
 //! `ssh` is the built-in provider; any other is an executable named
-//! `apex<provider>` on the PATH, called as
+//! `apex-remote-<provider>` on the PATH, called as
 //!
 //! ```text
-//! apex<provider> DESTINATION COMMAND
+//! apex-remote-<provider> DESTINATION COMMAND
 //! ```
 //!
 //! where COMMAND is one argument, a shell command line for the
 //! destination (it uses `&&`, redirections and the destination's
-//! `$HOME`). A provider over an argv-style tool wraps it: `apexsprite`
+//! `$HOME`). A provider over an argv-style tool wraps it: `apex-remote-sprite`
 //! is `exec sprite exec -s "$1" -- sh -c "$2"`. There is no other
 //! configuration: the provider script is it.
 //!
@@ -59,7 +59,7 @@ impl Dest {
     }
 
     /// The program for this provider: `APEX_PROVIDER_<NAME>` if set
-    /// (`APEX_SSH` for ssh), else `apex<provider>` on the PATH, else
+    /// (`APEX_SSH` for ssh), else `apex-remote-<provider>` on the PATH, else
     /// `ssh` itself for ssh.
     pub fn program(&self) -> io::Result<String> {
         let var = format!("APEX_PROVIDER_{}", self.provider.to_ascii_uppercase().replace('-', "_"));
@@ -71,7 +71,7 @@ impl Dest {
                 return Ok(p);
             }
         }
-        let name = format!("apex{}", self.provider);
+        let name = format!("apex-remote-{}", self.provider);
         if let Some(p) = on_path(&name) {
             return Ok(p.to_string_lossy().to_string());
         }

@@ -35,7 +35,7 @@ apex exec notes.txt Put
 works with no UI running, and a UI attaching later finds the result.
 
 `apex attach dest/session` reaches `dest` through a provider (`user@host`
-over ssh, or `provider:name` through an `apex<provider>` script on the
+over ssh, or `provider:name` through an `apex-remote-<provider>` script on the
 PATH, see `providers/README.md`), installs (or updates) our `apex` for the
 destination's OS and architecture in `~/.apex/bin` there, then launches
 `apex-ui --remote dest --session session`; on the destination `apex attach

@@ -1,17 +1,17 @@
 # Providers
 
 apex reaches other machines through *providers*. A provider is an
-executable named `apex<provider>` on the PATH, called as
+executable named `apex-remote-<provider>` on the PATH, called as
 
 ```
-apex<provider> DESTINATION COMMAND
+apex-remote-<provider> DESTINATION COMMAND
 ```
 
 It must run COMMAND, a single shell command line, on DESTINATION with
 stdin and stdout connected, and exit with its status. That is `ssh`'s own
 calling convention, and `ssh` is the built-in provider: `user@host` needs
 no script. Any other destination is written `provider:name`, e.g.
-`sprite:mybox`, and needs an `apex<provider>` script; `apexsprite` here is
+`sprite:mybox`, and needs an `apex-remote-<provider>` script; `apex-remote-sprite` here is
 an example. The command line is one argument (it uses `&&`, redirections
 and the destination's `$HOME`), so a tool that takes argv wraps it in
 `sh -c "$2"`.
