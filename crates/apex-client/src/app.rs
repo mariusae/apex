@@ -448,13 +448,10 @@ impl Acme {
 
     /// Called at the start of a frame: the previous frame's layouts show
     /// where things are now, so the pending warp can be placed.
-    pub fn resolve_warp(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn resolve_warp(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
         let Some(p) = self.pending else { return };
         if self.warp_wait {
-            // one more frame, so the layouts reflect the change
-            self.warp_wait = false;
-            cx.notify();
-            return;
+            return; // the frame after this one has the layouts to use
         }
         self.pending = None;
         let font = font_for(false).line_height;
@@ -479,10 +476,27 @@ impl Acme {
                 self.layouts.get(&ViewId::Body(w)).and_then(|tl| tl.point_of(q0)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
             }
         };
+        if std::env::var_os("APEX_DEBUG_WARP").is_some() {
+            let slot = match p {
+                Pending::Warp(Warp::NewWindow(w)) | Pending::Warp(Warp::WinButton(w)) | Pending::Warp(Warp::Sel(w)) => self.node.state.layout.slot(w).copied(),
+                Pending::Warp(Warp::Closed { next: Some(w), .. }) => self.node.state.layout.slot(w).copied(),
+                _ => None,
+            };
+            eprintln!("warp {p:?} -> {target:?} (window bounds {:?}) slot {slot:?}", window.bounds());
+        }
         if let Some(at) = target {
             crate::warp::move_to(window, at);
             self.pointer = Some(at);
             self.last_mouse = at;
+        }
+    }
+
+    /// At the end of a render: a warp queued by what this frame applied
+    /// needs one more frame, whose layouts will show the new geometry.
+    pub fn schedule_warp(&mut self, window: &mut Window) {
+        if self.pending.is_some() && self.warp_wait {
+            self.warp_wait = false;
+            window.request_animation_frame();
         }
     }
 

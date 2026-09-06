@@ -33,6 +33,7 @@ impl Render for Acme {
         self.sync();
         self.measure(window.viewport_size());
         self.sync();
+        self.schedule_warp(window);
         self.layouts.clear();
         self.term_layouts.clear();
         let me = cx.entity();
