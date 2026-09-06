@@ -165,6 +165,8 @@ pub struct Acme {
     pending: Option<Pending>,
     /// The title last given to the OS window.
     pub title_shown: String,
+    /// The link to the daemon is up (a socket, or a provider's bridge).
+    pub connected: bool,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -320,6 +322,7 @@ impl Acme {
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };
         self.backend = Backend::Remote(link);
+        self.connected = true;
         self.log = log;
         self.node = node;
         self.session = url.session.clone();
@@ -355,9 +358,11 @@ impl Acme {
         format!("{url} — apex")
     }
 
-    /// The window's title, with the fenced state.
+    /// The window's title, with the connection and fenced states.
     pub fn current_title(&self) -> String {
-        if self.fenced() {
+        if !self.connected {
+            format!("{} — disconnected — apex", self.url)
+        } else if self.fenced() {
             format!("{} — fenced (another client leads) — apex", self.url)
         } else {
             Self::title(&self.url)
@@ -391,6 +396,7 @@ impl Acme {
             close_requested: false,
             pending: None,
             title_shown: String::new(),
+            connected: true,
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -618,6 +624,7 @@ impl Acme {
     pub fn poll_remote(&mut self) -> bool {
         let Backend::Remote(link) = &mut self.backend else { return true };
         let alive = link.poll(&mut self.node, &mut self.log);
+        self.connected = alive;
         for w in link.take_made() {
             self.show(w);
         }

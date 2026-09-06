@@ -659,6 +659,7 @@ impl Acme {
             .bg(rgb(0xececec))
             .border_b_1()
             .border_color(rgb(0xc8c8c8))
+            .gap(px(6.))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &gpui::MouseDownEvent, window, cx| {
@@ -674,6 +675,8 @@ impl Acme {
                 }),
             )
             .child(button)
+            // the link to the daemon: bright while it is up, faded when gone
+            .child(div().text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))
     }
 
     /// The dropdown, when open.
