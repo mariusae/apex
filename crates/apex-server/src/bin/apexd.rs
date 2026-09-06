@@ -7,7 +7,7 @@ use apex_server::daemon::{default_socket, Daemon};
 fn main() {
     let mut args = std::env::args().skip(1);
     let mut socket = default_socket();
-    let mut session = "main".to_string();
+    let mut session = "local".to_string();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--socket" => socket = PathBuf::from(args.next().expect("--socket PATH")),

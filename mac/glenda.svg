@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Glenda, the Plan 9 bunny, with big eyes. Drawn for the apex icon. -->
+  <defs>
+    <clipPath id="face"><circle cx="512" cy="560" r="230"/></clipPath>
+  </defs>
+  <!-- background: acme's pale yellow on a rounded square -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#ffffea" stroke="#99994c" stroke-width="10"/>
+
+  <!-- ears -->
+  <g stroke="#000" stroke-width="14" stroke-linejoin="round">
+    <ellipse cx="392" cy="250" rx="72" ry="190" transform="rotate(-14 392 250)" fill="#fff"/>
+    <ellipse cx="392" cy="262" rx="34" ry="140" transform="rotate(-14 392 262)" fill="#e6c9c9" stroke-width="8"/>
+    <ellipse cx="632" cy="250" rx="72" ry="190" transform="rotate(14 632 250)" fill="#fff"/>
+    <ellipse cx="632" cy="262" rx="34" ry="140" transform="rotate(14 632 262)" fill="#e6c9c9" stroke-width="8"/>
+  </g>
+
+  <!-- body -->
+  <path d="M330 720 Q300 940 512 950 Q724 940 694 720 Z" fill="#fff" stroke="#000" stroke-width="14" stroke-linejoin="round"/>
+  <!-- paws -->
+  <ellipse cx="440" cy="930" rx="60" ry="26" fill="#fff" stroke="#000" stroke-width="12"/>
+  <ellipse cx="584" cy="930" rx="60" ry="26" fill="#fff" stroke="#000" stroke-width="12"/>
+
+  <!-- helmet ring and head -->
+  <circle cx="512" cy="560" r="262" fill="#f4f4ff" stroke="#000" stroke-width="14"/>
+  <circle cx="512" cy="560" r="230" fill="#fff" stroke="#000" stroke-width="10"/>
+  <!-- helmet highlight -->
+  <path d="M330 470 Q380 340 512 320" fill="none" stroke="#000" stroke-width="8" stroke-linecap="round" opacity="0.35"/>
+
+  <!-- the big eyes -->
+  <g stroke="#000" stroke-width="12">
+    <circle cx="428" cy="540" r="86" fill="#fff"/>
+    <circle cx="596" cy="540" r="86" fill="#fff"/>
+  </g>
+  <circle cx="440" cy="552" r="52" fill="#000"/>
+  <circle cx="608" cy="552" r="52" fill="#000"/>
+  <circle cx="458" cy="532" r="18" fill="#fff"/>
+  <circle cx="626" cy="532" r="18" fill="#fff"/>
+  <circle cx="428" cy="576" r="8" fill="#fff"/>
+  <circle cx="596" cy="576" r="8" fill="#fff"/>
+
+  <!-- nose, mouth, teeth -->
+  <ellipse cx="512" cy="642" rx="26" ry="18" fill="#000"/>
+  <path d="M512 660 Q512 690 486 696 M512 660 Q512 690 538 696" fill="none" stroke="#000" stroke-width="10" stroke-linecap="round"/>
+  <g stroke="#000" stroke-width="8" fill="#fff">
+    <rect x="490" y="690" width="22" height="40" rx="4"/>
+    <rect x="512" y="690" width="22" height="40" rx="4"/>
+  </g>
+  <!-- whiskers -->
+  <g stroke="#000" stroke-width="8" stroke-linecap="round" opacity="0.7">
+    <path d="M300 620 L400 636 M300 660 L400 656"/>
+    <path d="M724 620 L624 636 M724 660 L624 656"/>
+  </g>
+</svg>

@@ -13,8 +13,10 @@ use gpui::{
 
 use apex_core::*;
 use apex_server::proto::ClientMsg;
-use apex_server::remote::{Link, Wake};
+use apex_server::remote::{new_session, Link, Wake};
 use apex_server::{perform, Server, ServerEvent, TermKey};
+
+use crate::shell::Selector;
 
 use crate::term_element::TermLayout;
 use crate::text_element::{Source, TextLayout};
@@ -95,6 +97,12 @@ pub struct Acme {
     pub log: Log,
     pub node: Node,
     pub backend: Backend,
+    /// The session this window shows.
+    pub session: String,
+    /// The daemon's socket, when the session can be switched from here.
+    pub socket: Option<std::path::PathBuf>,
+    wake: Option<Wake>,
+    pub selector: Option<Selector>,
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
@@ -230,14 +238,14 @@ impl Acme {
                 }
             }
         }
-        (Self::over(cx, log, node, Backend::Local(server)), rx)
+        (Self::over(cx, log, node, Backend::Local(server), "local"), rx)
     }
 
     /// Attach to a session behind `socket`. `wake` is called from the
     /// reader thread when there is something to poll.
     pub fn attach(cx: &mut Context<Self>, at: &Where, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
         let (link, mut log, mut node) = match at {
-            Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake))?,
+            Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake.clone()))?,
             Where::Via(cmd) => {
                 let mut child = std::process::Command::new("sh")
                     .arg("-c")
@@ -250,26 +258,72 @@ impl Acme {
                 let closer = Box::new(move || {
                     let _ = child.kill();
                 });
-                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))?
+                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake.clone()))?
             }
         };
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };
-        let mut acme = Self::over(cx, log, node, Backend::Remote(link));
-        for f in files {
-            acme.send(ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: f });
-        }
-        acme.after();
+        let mut acme = Self::over(cx, log, node, Backend::Remote(link), session);
+        acme.socket = match at {
+            Where::Socket(p) => Some(p.clone()),
+            Where::Via(_) => None,
+        };
+        acme.wake = Some(wake);
+        acme.open_initial(col, files);
         Ok(acme)
     }
 
-    fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend) -> Acme {
+    /// Open the files named on the command line; a fresh session with
+    /// nothing named shows the working directory, as acme does.
+    fn open_initial(&mut self, col: ColumnId, files: Vec<String>) {
+        if files.is_empty() && self.node.state.windows.is_empty() {
+            self.send(ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: ".".into() });
+        }
+        for f in files {
+            self.send(ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: f });
+        }
+        self.after();
+    }
+
+    /// Re-point this window at another session on the same daemon,
+    /// creating it if needed. The old attachment ends; its leases return
+    /// to the daemon.
+    pub fn switch_session(&mut self, name: &str, window: &mut Window) -> std::io::Result<()> {
+        let socket = self.socket.clone().ok_or_else(|| std::io::Error::other("not on a socket"))?;
+        let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
+        new_session(&socket, name)?;
+        let (link, mut log, mut node) = Link::connect(&socket, name, "apex", AttachmentKind::Ui, Some(wake))?;
+        let col = match node.state.layout.cols.first() {
+            Some(c) => c.id,
+            None => node.init_session(&mut log).map_err(std::io::Error::other)?,
+        };
+        self.backend = Backend::Remote(link);
+        self.log = log;
+        self.node = node;
+        self.session = name.to_string();
+        self.layouts.clear();
+        self.term_layouts.clear();
+        self.hl = None;
+        self.mouse = Mouse::default();
+        self.want_visible.clear();
+        self.typed_start.clear();
+        self.selector = None;
+        window.set_window_title(&format!("{name} — apex"));
+        self.open_initial(col, Vec::new());
+        Ok(())
+    }
+
+    fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
         Acme {
             log,
             node,
             backend,
+            session: session.to_string(),
+            socket: None,
+            wake: None,
+            selector: None,
             focus: cx.focus_handle(),
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
@@ -496,6 +550,11 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.selector.is_some() {
+            // a click anywhere else dismisses the dropdown
+            self.close_selector(cx);
+            return;
+        }
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
         let Some((target, region)) = self.locate(e.position) else { return };
@@ -782,6 +841,11 @@ impl Acme {
 
     /// Keys go to the text under the pointer, as in acme.
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selector.is_some() {
+            let ks = &e.keystroke;
+            self.selector_key(&ks.key, ks.key_char.as_deref(), window, cx);
+            return;
+        }
         let target = match self.locate(window.mouse_position()) {
             Some((t, _)) => t,
             None => match self.node.seltext {
@@ -803,6 +867,51 @@ impl Acme {
             }
             Target::View(v) => self.text_key(v, ks, cx),
         }
+        cx.notify();
+    }
+
+    /// What the Edit menu (and its shortcuts, which arrive as actions
+    /// before any key event) does: acme's rule, the text under the
+    /// pointer, else the last selected text.
+    pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let target = match self.locate(window.mouse_position()) {
+            Some((t, _)) => t,
+            None => match self.node.seltext {
+                Some(v) => Target::View(v),
+                None => return,
+            },
+        };
+        match target {
+            Target::Term(_, t) => {
+                if what == "paste" {
+                    if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
+                        self.term_paste(t, text);
+                    }
+                }
+            }
+            Target::View(v) => {
+                match what {
+                    "undo" => {
+                        let _ = self.node.undo(&mut self.log, v);
+                    }
+                    "redo" => {
+                        let _ = self.node.redo(&mut self.log, v);
+                    }
+                    "cut" => self.cut(v, cx),
+                    "copy" => self.snarf(v, cx),
+                    "paste" => self.paste(v, cx),
+                    "select-all" => {
+                        if let Some(t) = self.text_of(v) {
+                            let n = t.len();
+                            let _ = self.node.select(&mut self.log, v, 0, n);
+                        }
+                    }
+                    _ => {}
+                }
+                self.want_visible.insert(v);
+            }
+        }
+        self.sync();
         cx.notify();
     }
 

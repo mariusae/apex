@@ -244,6 +244,37 @@ impl Link {
     }
 }
 
+/// Ask a daemon for its sessions without attaching.
+pub fn list_sessions(path: &Path) -> io::Result<Vec<String>> {
+    let mut s = UnixStream::connect(path)?;
+    write_frame(&mut s, &ClientMsg::ListSessions)?;
+    let mut r = BufReader::new(s);
+    loop {
+        match read_frame::<_, ServerMsg>(&mut r)? {
+            Some(ServerMsg::Sessions { names }) => return Ok(names),
+            Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(_) => {}
+            None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
+        }
+    }
+}
+
+/// Create a session on a daemon; fine if it already exists.
+pub fn new_session(path: &Path, name: &str) -> io::Result<()> {
+    let mut s = UnixStream::connect(path)?;
+    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string() })?;
+    let mut r = BufReader::new(s);
+    loop {
+        match read_frame::<_, ServerMsg>(&mut r)? {
+            Some(ServerMsg::Sessions { .. }) => return Ok(()),
+            Some(ServerMsg::Error { text }) if text.contains("exists") => return Ok(()),
+            Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(_) => {}
+            None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
+        }
+    }
+}
+
 /// A link with its own log and node: a headless client.
 pub struct Remote {
     pub log: Log,

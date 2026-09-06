@@ -37,7 +37,7 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut socket = std::env::var("APEX_SOCKET").map(PathBuf::from).unwrap_or_else(|_| default_socket());
-    let mut session = std::env::var("APEX_SESSION").unwrap_or_else(|_| "main".into());
+    let mut session = std::env::var("APEX_SESSION").unwrap_or_else(|_| "local".into());
     while args.len() >= 2 && (args[0] == "--socket" || args[0] == "--session") {
         let v = args.remove(1);
         match args.remove(0).as_str() {

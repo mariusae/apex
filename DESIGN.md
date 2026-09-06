@@ -703,6 +703,22 @@ this one (detach, attach).
 - Over a WAN, mosh-style predictive echo is unnecessary for editing (the
   client leads) and only relevant for terminals; it can come later.
 
+*As built (`apex-client/src/shell.rs`, `mac/`).* `mac/build-app.sh`
+makes `Apex.app`: `apex-ui` as the executable, the `apex` command beside
+it, and an icon of Glenda with big eyes (`mac/glenda.svg`, rasterised by
+headless Chrome). Launched with no arguments the app makes sure a daemon
+answers on the default socket — starting one through the bundled `apex`
+with the home directory as its working directory — and opens one window
+per session it had open last time (`~/Library/Application
+Support/apex/last-sessions`), else the first existing session, else a new
+`local`. The title bar is the app's own: the session name is a button
+that drops down the selector (also ⌘K), a list filtered by what you type,
+where a name that matches nothing becomes "Create session". Choosing
+re-points this window; ⌘N opens another window on the same session. The
+menu bar carries Quit, Hide, New Window, Sessions, Close Window and the
+Edit menu, whose items act on the text under the pointer, as acme's keys
+do. Not yet: remote sessions in the selector, an About window.
+
 ---
 
 ## 12. Logs in memory; compaction
