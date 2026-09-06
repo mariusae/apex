@@ -161,7 +161,7 @@ pub struct Acme {
     pub socket: Option<std::path::PathBuf>,
     /// Where this window's session is, as a URL.
     pub url: SessionUrl,
-    wake: Option<Wake>,
+    pub wake: Option<Wake>,
     pub selector: Option<Selector>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
@@ -360,16 +360,27 @@ impl Acme {
     /// taking the leases back. What acme cannot tell from a stuck link,
     /// the user can.
     pub fn reconnect(&mut self, window: &mut Window) {
-        if matches!(self.backend, Backend::Local(_)) {
-            return;
+        if self.wake.is_none() {
+            return; // an in-process session has nothing to reconnect to
         }
         let url = self.url.clone();
         match self.reattach(&url, window) {
             Ok(()) => self.notice(&format!("{url}: reconnected\n")),
             Err(e) => {
                 self.connected = false;
-                self.notice(&format!("{url}: reconnect: {e}\n"));
+                let msg = Self::connect_error(&url, &e);
+                self.notice(&msg);
             }
+        }
+    }
+
+    /// What to tell the user when a session could not be attached: the
+    /// error, and for a daemon of another build, how to get going again.
+    pub fn connect_error(url: &SessionUrl, e: &std::io::Error) -> String {
+        if e.kind() == std::io::ErrorKind::Unsupported {
+            format!("{url}: {e}: Reconnect (⌘R)\n")
+        } else {
+            format!("{url}: {e}\n")
         }
     }
 

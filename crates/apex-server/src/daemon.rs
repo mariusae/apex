@@ -145,6 +145,11 @@ impl Daemon {
                     next_id += 1;
                     d.accept(id, s);
                 }
+                // `apex stop`: done, sessions and all
+                Event::Msg(_, ClientMsg::Stop) => {
+                    d.conns.clear(); // every connection ends with us
+                    break;
+                }
                 Event::Msg(id, m) => d.handle(id, m),
                 Event::Gone(id) => d.gone(id),
                 Event::Server(sid, ev) => {
@@ -156,6 +161,7 @@ impl Daemon {
                 }
             }
         }
+        let _ = std::fs::remove_file(path);
         Ok(())
     }
 
@@ -218,6 +224,8 @@ impl Daemon {
 
     fn accept(&mut self, id: u64, s: UnixStream) {
         let (out, orx) = channel::<ServerMsg>();
+        // the first word: which apex this is
+        let _ = out.send(ServerMsg::Build { id: crate::BUILD_ID.to_string() });
         let reader = match s.try_clone() {
             Ok(r) => r,
             Err(_) => return,
@@ -303,6 +311,7 @@ impl Daemon {
                 Err(text) => self.send(id, ServerMsg::Error { text }),
             },
             ClientMsg::Ping { t } => self.send(id, ServerMsg::Pong { t }),
+            ClientMsg::Stop => {}
             other => {
                 let Some(name) = self.conns.get(&id).and_then(|c| c.session).and_then(|sid| self.name_of(sid)) else {
                     self.send(id, ServerMsg::Error { text: "not attached".into() });
@@ -450,7 +459,7 @@ impl Daemon {
                     }
                 }
             }
-            ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::RenameSession { .. } | ClientMsg::Ping { .. } => {}
+            ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::RenameSession { .. } | ClientMsg::Ping { .. } | ClientMsg::Stop => {}
         }
         self.after(name, props);
     }

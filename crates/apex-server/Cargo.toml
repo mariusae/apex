@@ -15,6 +15,9 @@ postcard = { version = "1", features = ["use-std"] }
 notify = "8"
 libc = "0.2"
 
+[build-dependencies]
+sha2 = "0.10"
+
 [[bin]]
 name = "apexd"
 path = "src/bin/apexd.rs"

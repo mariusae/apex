@@ -72,3 +72,11 @@ made from then on get, and `apex env` alone prints the environment.
 name their window after the directory on every `cd`, through their
 environment; rc does that on its own in an apex terminal (its rcmain
 checks `$TERM_PROGRAM`).
+
+## Builds
+
+A daemon's first word on every connection is its build id, a hash of the
+sources it was built from. A client of another build stops there and
+says so: the daemon keeps running (its sessions may hold work), and when
+they can be let go, `apex stop` on its machine ends it; the next attach
+starts the current one. The app's Reconnect (⌘R) is that next attach.

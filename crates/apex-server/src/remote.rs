@@ -151,6 +151,7 @@ impl Link {
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind })?;
         let (attachment, snapshot) = loop {
             match rx.recv().map_err(|_| io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome"))? {
+                ServerMsg::Build { id } => check_build(&id)?,
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
                 ServerMsg::Error { text } => return Err(io::Error::other(text)),
                 _ => {}
@@ -207,6 +208,7 @@ impl Link {
     /// connection is finished.
     pub fn handle(&mut self, node: &mut Node, log: &mut Log, m: ServerMsg) -> bool {
         match m {
+            ServerMsg::Build { .. } => {} // checked before the welcome
             ServerMsg::Entries { shard, entries } => {
                 for e in entries {
                     if let Err(err) = log.append_entry(shard, e) {
@@ -294,10 +296,35 @@ pub fn list_sessions(path: &Path) -> io::Result<Vec<String>> {
         match read_frame::<_, ServerMsg>(&mut r)? {
             Some(ServerMsg::Sessions { names }) => return Ok(names),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(ServerMsg::Build { id }) => check_build(&id)?,
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
         }
     }
+}
+
+/// A daemon of another build is not ours to talk to: the error (kind
+/// `Unsupported`) says what to do about it.
+pub fn check_build(id: &str) -> io::Result<()> {
+    if id == crate::BUILD_ID {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!("the daemon is apex build {id}, this is {}; when its sessions can be let go, stop it (`apex stop` on its machine) and attach again", crate::BUILD_ID),
+    ))
+}
+
+/// Stop the daemon at `path`: it exits, its sessions with it.
+pub fn stop(path: &Path) -> io::Result<()> {
+    let mut s = UnixStream::connect(path)?;
+    write_frame(&mut s, &ClientMsg::Stop)?;
+    // it goes on its way out; give it a moment to take the message
+    let _ = s.shutdown(std::net::Shutdown::Write);
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    let mut r = BufReader::new(s);
+    while let Ok(Some(_)) = read_frame::<_, ServerMsg>(&mut r) {}
+    Ok(())
 }
 
 /// This machine's `~/.apex/init` and name, for a session made from here.
@@ -318,6 +345,7 @@ pub fn new_session(path: &Path, name: &str, init: Option<SessionInit>) -> io::Re
             Some(ServerMsg::Sessions { .. }) => return Ok(()),
             Some(ServerMsg::Error { text }) if text.contains("exists") => return Ok(()),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(ServerMsg::Build { id }) => check_build(&id)?,
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
         }
@@ -333,6 +361,7 @@ pub fn rename_session(path: &Path, from: &str, to: &str) -> io::Result<()> {
         match read_frame::<_, ServerMsg>(&mut r)? {
             Some(ServerMsg::Sessions { .. }) => return Ok(()),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(ServerMsg::Build { id }) => check_build(&id)?,
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
         }
@@ -463,4 +492,18 @@ fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Optio
             w();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn another_build_is_refused_with_advice() {
+        assert!(check_build(crate::BUILD_ID).is_ok());
+        let e = check_build("000000000000").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::Unsupported);
+        assert!(e.to_string().contains("apex stop"), "{e}");
+        assert!(e.to_string().contains(crate::BUILD_ID), "{e}");
+    }
 }

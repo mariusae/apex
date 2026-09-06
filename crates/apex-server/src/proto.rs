@@ -49,6 +49,8 @@ pub enum ClientMsg {
     /// Set variables in the session's environment (what terminals and
     /// commands get); the answer is the whole environment.
     Env { set: Vec<(String, String)> },
+    /// The daemon exits, its sessions with it (to run a newer build).
+    Stop,
 }
 
 /// What the creator of a session brings: its `~/.apex/init`, sourced on
@@ -62,6 +64,10 @@ pub struct SessionInit {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ServerMsg {
+    /// The daemon's build id, its first frame on every connection. This
+    /// variant stays first, and as it is, so that any client can read it
+    /// whatever else changed.
+    Build { id: String },
     /// The attachment id and a snapshot of the whole session state, with
     /// this attachment already holding its leases.
     Welcome { attachment: AttachmentId, snapshot: Vec<u8> },

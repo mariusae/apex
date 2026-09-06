@@ -254,6 +254,7 @@ dependencies = [
  "polling",
  "postcard",
  "serde",
+ "sha2",
 ]
 
 [[package]]

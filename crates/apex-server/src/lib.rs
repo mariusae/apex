@@ -7,6 +7,10 @@
 //! In-process the client applies proposals at once ([`proposal::apply`]);
 //! over a socket ([`daemon`], [`remote`]) they travel as messages.
 
+/// This apex's build id (see `build.rs`): a daemon says its own first
+/// thing on every connection, and a client of another build stops there.
+pub const BUILD_ID: &str = env!("APEX_BUILD_ID");
+
 pub mod daemon;
 pub mod proposal;
 pub mod proto;

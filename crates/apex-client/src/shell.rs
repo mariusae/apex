@@ -605,7 +605,8 @@ impl Acme {
                 }
                 if let Err(e) = self.reattach(&url, window) {
                     eprintln!("apex-ui: attach {url}: {e}");
-                    self.notice(&format!("{url}: {e}\n"));
+                    let msg = Acme::connect_error(&url, &e);
+                    self.notice(&msg);
                 }
                 save_open(cx);
                 cx.notify();

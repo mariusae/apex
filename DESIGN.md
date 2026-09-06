@@ -448,6 +448,17 @@ protobuf stays an option for a gateway. What differs from the sketch:
   for execs and snapshots, and forwards the metalog before any other
   shard so a client learns of a shard before its entries.
 
+*As built, builds:* the daemon's first frame on every connection is
+`ServerMsg::Build{id}`, a hash of the workspace sources computed at build
+time (the same on every target, so the client can compare itself with the
+binary it carries for a host). The variant stays first and unchanged. A
+client of another build stops at that frame with an `Unsupported` error
+that says what to do: when the daemon's sessions can be let go, `apex
+stop` on its machine, then attach again (Reconnect, ⌘R). The daemon is
+never restarted behind the user's back: its sessions may hold work. When
+the local daemon refuses at startup, the app opens an in-process window
+showing the error, pointed at the session so Reconnect tries it again.
+
 ### 6.2 Control protocol (tools ⇄ server) — *v1*
 
 Same frames, request/response plus subscription:

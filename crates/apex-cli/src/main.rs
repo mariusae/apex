@@ -5,6 +5,7 @@
 //! ```text
 //! apex [--socket P] [--session S] server               run the daemon (foreground)
 //! apex ls                                              list sessions
+//! apex stop                                            stop the daemon (its sessions end)
 //! apex new-session NAME
 //! apex rename-session [FROM] TO
 //! apex attach [DEST/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
@@ -87,6 +88,11 @@ fn main() {
         "plumb" => plumb(&socket, &session, rest),
         "label" => label(&rest.join(" ")),
         "env" => env_cmd(&socket, &session, rest),
+        "stop" => apex_server::remote::stop(&socket).map_err(|e| format!("{}: {e}", socket.display())),
+        "version" => {
+            println!("apex build {}", apex_server::BUILD_ID);
+            Ok(())
+        }
         "awd" => awd(rest),
         _ => usage(),
     };
@@ -97,7 +103,7 @@ fn main() {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|label|awd|env ...");
+    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|label|awd|env|stop|version ...");
     std::process::exit(2);
 }
 

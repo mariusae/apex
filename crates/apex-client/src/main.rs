@@ -310,7 +310,7 @@ fn open_window(cx: &mut App, target: Target) {
                                 std::process::exit(1);
                             }
                         },
-                        Target::Url { url, files } => match Acme::attach(cx, &url, files, wake.clone()) {
+                        Target::Url { url, files } => match Acme::attach(cx, &url, files.clone(), wake.clone()) {
                             Ok(a) => a,
                             Err(e) if !url.is_local() => {
                                 // a remembered remote session that cannot be
@@ -319,19 +319,14 @@ fn open_window(cx: &mut App, target: Target) {
                                 let fallback = SessionUrl::local(apex_server::providers::DEFAULT_SESSION);
                                 match Acme::attach(cx, &fallback, Vec::new(), wake.clone()) {
                                     Ok(mut a) => {
-                                        a.notice(&format!("{url}: {e}\n"));
+                                        let msg = Acme::connect_error(&url, &e);
+                                        a.notice(&msg);
                                         a
                                     }
-                                    Err(e) => {
-                                        eprintln!("apex-ui: attach {fallback}: {e}");
-                                        std::process::exit(1);
-                                    }
+                                    Err(e) => offline(cx, &fallback, files, wake.clone(), &e),
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("apex-ui: attach {url}: {e}");
-                                std::process::exit(1);
-                            }
+                            Err(e) => offline(cx, &url, files, wake.clone(), &e),
                         },
                         Target::Local(_) => unreachable!(),
                     };
@@ -370,4 +365,32 @@ fn open_window(cx: &mut App, target: Target) {
     if let Err(e) = opened {
         eprintln!("apex-ui: open window: {e}");
     }
+}
+
+/// A window with nothing behind it when the local daemon cannot be
+/// attached (another build, say): an in-process session showing the
+/// error, pointed at `url` so Reconnect (⌘R) tries again.
+fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, wake: apex_server::remote::Wake, e: &std::io::Error) -> Acme {
+    eprintln!("apex-ui: attach {url}: {e}");
+    let (mut acme, mut rx) = Acme::new(cx, files);
+    cx.spawn(async move |this, cx| {
+        use futures::StreamExt;
+        while let Some(ev) = rx.next().await {
+            let r = this.update(cx, |acme: &mut Acme, cx| {
+                acme.pump(ev);
+                cx.notify();
+            });
+            if r.is_err() {
+                break;
+            }
+        }
+    })
+    .detach();
+    acme.url = url.clone();
+    acme.session = url.session.clone();
+    acme.wake = Some(wake);
+    acme.connected = false;
+    let msg = Acme::connect_error(url, e);
+    acme.notice(&msg);
+    acme
 }

@@ -275,3 +275,25 @@ fn selection_and_scroll_position_survive_reattach() {
     assert_eq!(view.origin, origin);
     assert_eq!(again.node.state.layout.cols[0].wins.len(), 1);
 }
+
+#[test]
+fn the_daemon_says_its_build_first_and_stops_when_told() {
+    let sock = daemon();
+    // the first frame on any connection is the build id
+    let mut s = std::os::unix::net::UnixStream::connect(&sock).unwrap();
+    apex_server::proto::write_frame(&mut s, &apex_server::proto::ClientMsg::ListSessions).unwrap();
+    let mut r = std::io::BufReader::new(s);
+    let first = apex_server::proto::read_frame::<_, apex_server::proto::ServerMsg>(&mut r).unwrap().unwrap();
+    match first {
+        apex_server::proto::ServerMsg::Build { id } => assert_eq!(id, apex_server::BUILD_ID),
+        other => panic!("first frame: {other:?}"),
+    }
+    drop(r);
+    // stop: the daemon goes, and takes its socket with it
+    apex_server::remote::stop(&sock).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::os::unix::net::UnixStream::connect(&sock).is_ok() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(std::os::unix::net::UnixStream::connect(&sock).is_err(), "daemon still answers");
+}
