@@ -805,6 +805,7 @@ impl Acme {
                 };
                 if let Some(bt) = bt {
                     self.mouse.box_drag = Some((bt, button, e.position));
+                    cx.notify(); // the pointer becomes the box
                     return;
                 }
             }
