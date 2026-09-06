@@ -324,6 +324,8 @@ impl Daemon {
             c.sent = marks;
         }
         self.send(id, ServerMsg::Welcome { attachment: a, snapshot });
+        // the others learn from the metalog that the leases moved
+        self.after(&session, Vec::new());
     }
 
     fn in_session(&mut self, id: u64, name: &str, m: ClientMsg) {

@@ -30,7 +30,7 @@ fn main() {
     let socket = socket.unwrap_or_else(|| {
         let path = std::env::temp_dir().join(format!("apex-bench-{}.sock", std::process::id()));
         let p = path.clone();
-        std::thread::spawn(move || Daemon::run(&p, "main").unwrap());
+        std::thread::spawn(move || Daemon::run(&p, "default").unwrap());
         while !path.exists() {
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -39,8 +39,8 @@ fn main() {
 
     let connect = |name: &str| -> Remote {
         match &via {
-            Some(cmd) => Remote::via(cmd, "main", name, AttachmentKind::Ui).unwrap(),
-            None => Remote::connect(&socket, "main", name).unwrap(),
+            Some(cmd) => Remote::via(cmd, "default", name, AttachmentKind::Ui).unwrap(),
+            None => Remote::connect(&socket, "default", name).unwrap(),
         }
     };
     match &via {

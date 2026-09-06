@@ -264,6 +264,9 @@ pub struct Source {
     pub mono: bool,
     pub dirty: bool,
     pub unsynced: bool,
+    /// This client no longer leads (its leases went elsewhere): the top
+    /// row's square says so.
+    pub fenced: bool,
     pub text: Text,
     pub sel: (usize, usize),
     pub origin: usize,
@@ -287,6 +290,7 @@ pub struct Prepaint {
     hl: Option<(usize, usize, HlKind)>,
     dirty: bool,
     unsynced: bool,
+    fenced: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -517,6 +521,7 @@ impl Element for TextElement {
                 hl: src.hl,
                 dirty: src.dirty,
                 unsynced: src.unsynced,
+                fenced: src.fenced,
             })
         })
     }
@@ -578,7 +583,15 @@ impl Element for TextElement {
                     window.paint_quad(fill(b, pal.border));
                     layout_box = Some(b);
                 }
-                Kind::Top => {}
+                Kind::Top => {
+                    // the upper-left square: filled when this client has
+                    // lost its leases and only watches
+                    let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
+                    window.paint_quad(fill(b, pal.border));
+                    let bb = px(BUTTON_BORDER);
+                    let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
+                    window.paint_quad(fill(inner, if pp.fenced { gpui::rgb(0xaa0000).into() } else { pal.bg }));
+                }
             }
 
             let (q0, q1) = pp.sel;

@@ -16,32 +16,19 @@ we should allow the user to configure *providers* that help make these connectio
 --
 
 
-in plan9port acme, i can type a path, e.g., hit 'New', enter some content, type the path name, and then hit 'Put'. this isn't available in apex.
-
 let's port the rc shell. and run by default in the rc shell.  that will allow us to also define $%, $samfile, etc.
 
-
-when the content of a window is completely hidden (i.e., we only see the top bar), B3-ing its path doesn't seem to warp/recall it. in plan9port acme it does. doing so in plan9port also reveals a few lines of the content.
-
 select, then release outside, shoudl also B3 correctly.
-
 
 plumber!
 
 fully document `apex` command.
 
 terminal titles
-
-mac keyboard shorcuts: cmd-s for Put, cmd-w for Del, cmd-n for new, cmd-shift-n for new window
-
 --
 
 scroll responsiveness (w/ trackpad)
 
---
+in plan9port acme, i can type a path, e.g., hit 'New', enter some content, type the path name, and then hit 'Put'. this isn't available in apex.
 
-the mouse no longer renders the square handle when selecting a window
-
---
-
-when switching windows (command-`), let's restore the cursor to the last position in that window, e.g., so i can use command-` to swap, and always restore the cursor correctly
+then let's see what it would take to implement 'rc'

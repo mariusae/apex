@@ -163,6 +163,8 @@ pub struct Acme {
     /// `Exit`: the next frame closes this window.
     pub close_requested: bool,
     pending: Option<Pending>,
+    /// The title last given to the OS window.
+    pub title_shown: String,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -353,6 +355,15 @@ impl Acme {
         format!("{url} — apex")
     }
 
+    /// The window's title, with the fenced state.
+    pub fn current_title(&self) -> String {
+        if self.fenced() {
+            format!("{} — fenced (another client leads) — apex", self.url)
+        } else {
+            Self::title(&self.url)
+        }
+    }
+
     /// Open the files named on the command line; a fresh session with
     /// nothing named shows the working directory, as acme does.
     fn open_initial(&mut self, col: ColumnId, files: Vec<String>) {
@@ -379,6 +390,7 @@ impl Acme {
             tag_need: HashMap::new(),
             close_requested: false,
             pending: None,
+            title_shown: String::new(),
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -408,6 +420,13 @@ impl Acme {
             eprintln!("catch up: {e}");
         }
         self.take_warp();
+    }
+
+    /// Has this client lost its leases (another UI attached and took
+    /// them)? The mirror log follows the metalog, so it knows.
+    pub fn fenced(&self) -> bool {
+        matches!(self.backend, Backend::Remote(_))
+            && self.log.lease(Shard::Layout).is_some_and(|l| l.holder != self.node.attachment || l.released.is_some())
     }
 
     /// A layout box is held: acme shows the box cursor.
@@ -678,6 +697,7 @@ impl Acme {
             mono,
             dirty,
             unsynced: false,
+            fenced: self.fenced(),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,

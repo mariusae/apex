@@ -42,6 +42,14 @@ impl Render for Acme {
         self.measure(window.viewport_size());
         self.sync();
         self.schedule_warp(window);
+        let title = self.current_title();
+        if title != self.title_shown {
+            if std::env::var_os("APEX_DEBUG").is_some() {
+                eprintln!("apex-ui: title: {title}");
+            }
+            window.set_window_title(&title);
+            self.title_shown = title;
+        }
         self.layouts.clear();
         self.term_layouts.clear();
         let me = cx.entity();

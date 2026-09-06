@@ -616,6 +616,7 @@ impl Acme {
     pub fn titlebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let label = match &self.backend {
             Backend::Local(_) => "in-process".to_string(),
+            Backend::Remote(_) if self.fenced() => format!("{}  ·  fenced", self.url),
             Backend::Remote(_) => self.url.to_string(),
         };
         let clickable = self.socket.is_some();
