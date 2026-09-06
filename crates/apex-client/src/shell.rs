@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+
 
 use gpui::{
     actions, anchored, deferred, div, point, prelude::*, px, rgb, App, Context, KeyBinding, Menu, MenuItem, MouseButton,
@@ -198,45 +198,19 @@ pub fn ensure_daemon(socket: &Path) -> std::io::Result<()> {
     if list_sessions(socket).is_ok() {
         return Ok(());
     }
-    if let Some(d) = socket.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     let mut candidates = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         candidates.push(exe.with_file_name("apex"));
     }
     candidates.push(PathBuf::from("apex"));
-    let mut started = false;
+    let mut last = std::io::Error::other("no apex command");
     for apex in candidates {
-        let spawned = Command::new(&apex)
-            .args(["--socket", &socket.to_string_lossy(), "--session", apex_server::providers::DEFAULT_SESSION, "server"])
-            .current_dir(&home)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-        if spawned.is_ok() {
-            started = true;
-            break;
+        match apex_server::daemon::spawn_server(&apex, socket, apex_server::providers::DEFAULT_SESSION) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = e,
         }
     }
-    if !started {
-        eprintln!("apex-ui: no apex command found; running the daemon in-process (sessions end with the app)");
-        let p = socket.to_path_buf();
-        std::thread::spawn(move || {
-            let _ = std::env::set_current_dir(&home);
-            let _ = apex_server::daemon::Daemon::run(&p, apex_server::providers::DEFAULT_SESSION);
-        });
-    }
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        if list_sessions(socket).is_ok() {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    Err(std::io::Error::other("the daemon did not start"))
+    Err(last)
 }
 
 // ---- the apex command ---------------------------------------------------------------

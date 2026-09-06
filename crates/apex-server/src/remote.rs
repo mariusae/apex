@@ -68,6 +68,14 @@ pub struct Link {
 
 impl Drop for Link {
     fn drop(&mut self) {
+        self.close();
+    }
+}
+
+impl Link {
+    /// End the transport now: the reader thread ends, and a bridge behind
+    /// it is ended with its process group.
+    pub fn close(&mut self) {
         if let Some(c) = self.closer.take() {
             c();
         }
@@ -303,6 +311,34 @@ pub fn list_sessions(path: &Path) -> io::Result<Vec<String>> {
     }
 }
 
+/// The bridge command (`ssh host apex attach --stdio`, a provider's
+/// equivalent) as a child with piped stdin and stdout, in a process group
+/// of its own, and the closer that ends that whole group: the shell, the
+/// provider, whatever it ran. A bridge left behind keeps its far end
+/// open, and some providers only tear down cleanly when it goes.
+pub fn bridge_child(cmd: &str) -> io::Result<(std::process::ChildStdin, std::process::ChildStdout, Box<dyn FnOnce() + Send>)> {
+    use std::os::unix::process::CommandExt;
+    let mut child = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .process_group(0)
+        .spawn()?;
+    let stdin = child.stdin.take().expect("piped");
+    let stdout = child.stdout.take().expect("piped");
+    let pid = child.id() as libc::pid_t;
+    let closer = Box::new(move || {
+        // SAFETY: a signal to the group we made for this child.
+        unsafe {
+            libc::killpg(pid, libc::SIGTERM);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+    });
+    Ok((stdin, stdout, closer))
+}
+
 /// A daemon of another build is not ours to talk to: the error (kind
 /// `Unsupported`) says what to do about it.
 pub fn check_build(id: &str) -> io::Result<()> {
@@ -388,17 +424,7 @@ impl Remote {
     /// Attach through a command's stdin/stdout (`ssh host apex attach
     /// --stdio`, or the same bridge run locally).
     pub fn via(cmd: &str, session: &str, name: &str, kind: AttachmentKind) -> io::Result<Remote> {
-        let mut child = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()?;
-        let stdin = child.stdin.take().expect("piped");
-        let stdout = child.stdout.take().expect("piped");
-        let closer = Box::new(move || {
-            let _ = child.kill();
-        });
+        let (stdin, stdout, closer) = bridge_child(cmd)?;
         let (link, log, node) = Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, name, kind, None)?;
         Ok(Remote { log, node, link })
     }

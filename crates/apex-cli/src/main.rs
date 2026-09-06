@@ -30,7 +30,7 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use apex_core::*;
@@ -148,21 +148,7 @@ fn ensure_server(socket: &Path, session: &str) -> R {
         return Ok(());
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    Command::new(exe)
-        .args(["--socket", &socket.to_string_lossy(), "--session", session, "server"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("start server: {e}"))?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        if UnixStream::connect(socket).is_ok() {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    Err("server did not start".into())
+    apex_server::daemon::spawn_server(&exe, socket, session).map_err(|e| format!("start server: {e}"))
 }
 
 // these three talk to the daemon without attaching to any session

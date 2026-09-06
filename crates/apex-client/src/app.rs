@@ -298,17 +298,7 @@ impl Acme {
 
     /// Attach through a command's stdin and stdout.
     pub fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
-        let mut child = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()?;
-        let stdin = child.stdin.take().expect("piped");
-        let stdout = child.stdout.take().expect("piped");
-        let closer = Box::new(move || {
-            let _ = child.kill();
-        });
+        let (stdin, stdout, closer) = apex_server::remote::bridge_child(cmd)?;
         Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake), apex_server::remote::local_init())
     }
 
@@ -359,6 +349,14 @@ impl Acme {
     /// Attach to this window's session again: a fresh link and snapshot,
     /// taking the leases back. What acme cannot tell from a stuck link,
     /// the user can.
+    /// End this window's link now (the app is quitting): the bridge
+    /// behind it goes with it, so the far end sees us leave.
+    pub fn close_link(&mut self) {
+        if let Backend::Remote(link) = &mut self.backend {
+            link.close();
+        }
+    }
+
     pub fn reconnect(&mut self, window: &mut Window) {
         if self.wake.is_none() {
             return; // an in-process session has nothing to reconnect to

@@ -183,6 +183,13 @@ fn main() {
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
+            // every link ends before we do: the bridges go with us, and
+            // the daemons see the attachments leave
+            for w in cx.windows() {
+                if let Some(h) = w.downcast::<Acme>() {
+                    let _ = h.update(cx, |acme, _, _| acme.close_link());
+                }
+            }
             cx.quit();
         });
         cx.on_action(|_: &shell::HideApp, cx| cx.hide());

@@ -22,6 +22,40 @@ use apex_core::*;
 use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, SessionInit};
 use crate::{proposal, Proposal, Server, ServerEvent};
 
+/// Start a daemon on `socket` from the `apex` binary at `exe`, detached
+/// from whoever asked: its own session, so that the end of an ssh
+/// session or a bridge's process group does not take it along, and no
+/// terminal. Returns once it answers on the socket.
+pub fn spawn_server(exe: &Path, socket: &Path, session: &str) -> io::Result<()> {
+    use std::os::unix::process::CommandExt;
+    if let Some(d) = socket.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(["--socket", &socket.to_string_lossy(), "--session", session, "server"])
+        .current_dir(&home)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    // SAFETY: setsid in the child before exec; it only touches the child.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    cmd.spawn()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if std::os::unix::net::UnixStream::connect(socket).is_ok() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    Err(io::Error::other("the daemon did not start"))
+}
+
 /// Where `apexd` listens by default: `$TMPDIR/apex-$USER/main.sock`,
 /// with the uid standing in where the environment names no user (a
 /// container's `exec` often sets neither USER nor LOGNAME).
@@ -120,6 +154,11 @@ impl Daemon {
     /// `run`, with the host's init file given (tests keep it out of `$HOME`).
     pub fn run_with(path: &Path, session: &str, host_init: Option<PathBuf>) -> io::Result<()> {
         put_apex_on_path();
+        // whoever started us may go (an ssh session, a terminal): we stay
+        // SAFETY: setting a signal disposition.
+        unsafe {
+            libc::signal(libc::SIGHUP, libc::SIG_IGN);
+        }
         let _ = std::fs::remove_file(path);
         let listener = UnixListener::bind(path)?;
         let (tx, rx) = channel();
