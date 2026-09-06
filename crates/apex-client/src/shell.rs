@@ -675,8 +675,9 @@ impl Acme {
                 }),
             )
             .child(button)
-            // the link to the daemon: bright while it is up, faded when gone
-            .child(div().text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))
+            .child(div().flex_1())
+            // the link to the daemon, at the right: bright while it is up, faded when gone
+            .child(div().pr(px(12.)).text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))
     }
 
     /// The dropdown, when open.
