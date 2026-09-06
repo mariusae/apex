@@ -16,7 +16,7 @@ mod text_element;
 mod warp;
 
 use gpui::{
-    black, div, prelude::*, px, size, App, Application, Bounds, Context, MouseButton, TitlebarOptions, Window,
+    black, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
     WindowBounds, WindowOptions,
 };
 
@@ -137,7 +137,7 @@ fn main() {
     }
     let socket = socket.unwrap_or_else(apex_server::daemon::default_socket);
 
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         cx.set_menus(shell::menus());
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
@@ -201,7 +201,7 @@ fn main() {
         }
         shell::save_open(cx);
         cx.activate(true);
-        cx.on_window_closed(|cx| {
+        cx.on_window_closed(|cx, _| {
             shell::save_open(cx);
             if cx.windows().is_empty() {
                 cx.quit();
@@ -288,7 +288,7 @@ fn open_window(cx: &mut App, target: Target) {
                 }
             });
             let focus = view.read(cx).focus.clone();
-            window.focus(&focus);
+            window.focus(&focus, cx);
             view
         },
     );

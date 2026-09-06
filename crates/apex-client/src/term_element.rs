@@ -170,7 +170,7 @@ impl Element for TermElement {
                 }
                 if !row.runs.is_empty() {
                     let line = window.text_system().shape_line(row.text.clone(), pp.fontspec.size, &row.runs, None);
-                    line.paint(point(origin.x, y), lh, window, cx).ok();
+                    line.paint(point(origin.x, y), lh, gpui::TextAlign::Left, None, window, cx).ok();
                 }
             }
             if pp.exited {

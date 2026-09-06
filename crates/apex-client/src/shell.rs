@@ -29,6 +29,7 @@ pub fn menus() -> Vec<Menu> {
     vec![
         Menu {
             name: "Apex".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("About Apex", About),
                 MenuItem::separator(),
@@ -41,6 +42,7 @@ pub fn menus() -> Vec<Menu> {
         },
         Menu {
             name: "File".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Sessions…", Sessions),
@@ -50,6 +52,7 @@ pub fn menus() -> Vec<Menu> {
         },
         Menu {
             name: "Edit".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("Undo", Undo),
                 MenuItem::action("Redo", Redo),

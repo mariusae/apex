@@ -12,6 +12,8 @@ path = "src/main.rs"
 apex-core = { path = "../apex-core" }
 apex-server = { path = "../apex-server" }
 apex-edit = { path = "../apex-edit" }
-gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+# gpui straight from Zed's tree: the published crate lags far behind
+gpui = { git = "https://github.com/zed-industries/zed", branch = "main" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", branch = "main", features = ["runtime_shaders", "font-kit"] }
 futures = "0.3"
 core-text = "21"
