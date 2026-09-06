@@ -18,7 +18,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewWindow, CloseWindow, Sessions, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Put, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -45,8 +45,12 @@ pub fn menus() -> Vec<Menu> {
             name: "File".into(),
             disabled: false,
             items: vec![
+                MenuItem::action("New", NewFile),
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Sessions…", Sessions),
+                MenuItem::separator(),
+                MenuItem::action("Put", Put),
+                MenuItem::action("Del", Del),
                 MenuItem::separator(),
                 MenuItem::action("Close Window", CloseWindow),
             ],
@@ -71,8 +75,12 @@ pub fn bindings() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-h", HideApp, None),
-        KeyBinding::new("cmd-n", NewWindow, None),
-        KeyBinding::new("cmd-w", CloseWindow, None),
+        // acme's commands on the text under the pointer, the Mac way
+        KeyBinding::new("cmd-n", NewFile, None),
+        KeyBinding::new("cmd-shift-n", NewWindow, None),
+        KeyBinding::new("cmd-s", Put, None),
+        KeyBinding::new("cmd-w", Del, None),
+        KeyBinding::new("cmd-shift-w", CloseWindow, None),
         KeyBinding::new("cmd-k", Sessions, None),
         KeyBinding::new("cmd-z", Undo, None),
         KeyBinding::new("cmd-shift-z", Redo, None),

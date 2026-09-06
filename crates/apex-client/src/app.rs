@@ -1258,6 +1258,46 @@ impl Acme {
         cx.notify();
     }
 
+    /// The window acme would act on: the one under the pointer, else the
+    /// last selected text's.
+    fn window_at_pointer(&self, window: &Window) -> Option<WindowId> {
+        match self.locate(self.pointer(window)) {
+            Some((Target::View(v), _)) => v.window().or_else(|| self.node.seltext.and_then(|s| s.window())),
+            Some((Target::Term(w, _), _)) => Some(w),
+            None => self.node.seltext.and_then(|s| s.window()),
+        }
+    }
+
+    /// A menu item that is an acme command: `Put`, `Del`, `New`, `Edit ,`
+    /// run in the window under the pointer, as B2 there would.
+    pub fn menu_command(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let ctx = match self.window_at_pointer(window) {
+            Some(w) => ExecCtx::Window(w),
+            None if text == "New" => ExecCtx::Top,
+            None => return,
+        };
+        self.execute(ctx, text, cx);
+        cx.notify();
+    }
+
+    /// The window became active or inactive (cmd-` and friends): coming
+    /// back by the keyboard, put the pointer where it last was here. A
+    /// click into the window already put it somewhere; leave that.
+    pub fn window_activated(&mut self, active: bool, window: &mut Window) {
+        if !active || self.last_mouse == Point::default() {
+            return;
+        }
+        let inside = crate::warp::position_in(window).is_some_and(|p| {
+            let s = window.viewport_size();
+            p.x >= px(0.) && p.y >= px(0.) && p.x < s.width && p.y < s.height
+        });
+        if !inside {
+            let at = self.last_mouse;
+            crate::warp::move_to(window, at);
+            self.pointer = Some(at);
+        }
+    }
+
     /// What the Edit menu (and its shortcuts, which arrive as actions
     /// before any key event) does: acme's rule, the text under the
     /// pointer, else the last selected text.

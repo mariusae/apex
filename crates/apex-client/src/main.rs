@@ -59,7 +59,10 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Cut, window, cx| this.menu_edit("cut", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Copy, window, cx| this.menu_edit("copy", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Paste, window, cx| this.menu_edit("paste", window, cx)))
-            .on_action(cx.listener(|this, _: &shell::SelectAll, window, cx| this.menu_edit("select-all", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::SelectAll, window, cx| this.menu_command("Edit ,", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Put, window, cx| this.menu_command("Put", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
             .on_action(cx.listener(|_, _: &shell::CloseWindow, window, _| window.remove_window()))
             .on_key_down(cx.listener(Self::key_down))
@@ -340,6 +343,14 @@ fn open_window(cx: &mut App, target: Target) {
             });
             let focus = view.read(cx).focus.clone();
             window.focus(&focus, cx);
+            // cmd-` back into this window: the pointer where it was
+            view.update(cx, |_, cx| {
+                cx.observe_window_activation(window, |acme: &mut Acme, window, _| {
+                    let active = window.is_window_active();
+                    acme.window_activated(active, window);
+                })
+                .detach();
+            });
             view
         },
     );
