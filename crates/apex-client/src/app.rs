@@ -282,7 +282,13 @@ impl Acme {
 
     /// Bring the client node up to date with the log (the server appends
     /// terminal rows and metalog entries).
+    /// Also ships whatever this node sequenced since the last call: this
+    /// runs after every input handler and on every frame, so nothing the
+    /// user typed is ever more than a frame away from the daemon.
     pub fn sync(&mut self) {
+        if let Backend::Remote(link) = &mut self.backend {
+            link.flush(&self.log);
+        }
         if let Err(e) = self.node.catch_up(&self.log) {
             eprintln!("catch up: {e}");
         }
