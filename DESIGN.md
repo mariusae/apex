@@ -724,7 +724,10 @@ yellow); cmd-c / Edit ▸ Copy, `Snarf` in the window's tag, or the B1+B2
 chord send `TermText` to the server, which has the scrollback, and its
 answer is a `Snarf` proposal (so Paste and Send have the text); the
 clipboard follows the snarf buffer. Wrapped lines join, as in alacritty.
-cmd-a selects the viewport. Keys and pastes first scroll the terminal
+cmd-a selects the viewport. B2 and B3 sweep too (acme's `textselect23`,
+in but2col/but3col): what was swept is executed or plumbed, a plain click
+takes the word under it, and the B1 selection is left alone. Keys and
+pastes first scroll the terminal
 back to the bottom, republishing the rows at once. History lines are
 numbered from the oldest line kept, so a selection drifts once the
 scrollback limit truncates; a selection does not outlive that.

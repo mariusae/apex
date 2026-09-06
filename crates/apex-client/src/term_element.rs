@@ -10,7 +10,7 @@ use apex_core::{Cell, TermId, WindowId};
 use apex_server::term::FLAG_BOLD;
 
 use crate::app::Acme;
-use crate::text_element::{font_for, rgb, FontSpec, MARGIN, PALEYELLOW, SCROLLWID, YELLOWGREEN};
+use crate::text_element::{font_for, rgb, FontSpec, BUT2COL, BUT3COL, MARGIN, PALEYELLOW, SCROLLWID, YELLOWGREEN};
 
 pub struct TermLayout {
     pub bounds: Bounds<Pixels>,
@@ -107,16 +107,27 @@ impl Element for TermElement {
             let bg_default = rgb(PALEYELLOW);
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
             // the selection, if it is in this terminal: acme's yellow
-            let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) });
+            let order = |a: (usize, u64), b: (usize, u64)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
+            let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| order(a, b));
+            // a B2/B3 sweep shows in the button's colour, over the selection
+            let hl = acme.term_hl.filter(|(sw, ..)| *sw == self.window).map(|(_, b, p0, p1)| (b, order(p0, p1)));
             let top = t.top;
-            let selected = |x: usize, y: usize| -> bool {
+            let within = |x: usize, y: usize, (p0, p1): ((usize, u64), (usize, u64))| {
                 let line = top + y as u64;
-                match sel {
-                    Some((p0, p1)) => (line, x) >= (p0.1, p0.0) && (line, x) < (p1.1, p1.0),
-                    None => false,
-                }
+                (line, x) >= (p0.1, p0.0) && (line, x) < (p1.1, p1.0)
             };
-            let sel_bg = rgb(0xeeee9e);
+            let highlight = |x: usize, y: usize| -> Option<(Hsla, Hsla)> {
+                if let Some((b, r)) = hl {
+                    if within(x, y, r) {
+                        let bg = if b == gpui::MouseButton::Middle { BUT2COL } else { BUT3COL };
+                        return Some((rgb(bg), gpui::white()));
+                    }
+                }
+                if sel.is_some_and(|r| within(x, y, r)) {
+                    return Some((rgb(0xeeee9e), gpui::black()));
+                }
+                None
+            };
             let mut rows = Vec::with_capacity(t.grid.len());
             let mut row_text = Vec::with_capacity(t.grid.len());
             for (y, row) in t.grid.iter().enumerate() {
@@ -133,9 +144,9 @@ impl Element for TermElement {
                             fgc = bg_default;
                         }
                     }
-                    if selected(x, y) {
-                        bgc = Some(sel_bg);
-                        fgc = gpui::black();
+                    if let Some((b, f)) = highlight(x, y) {
+                        bgc = Some(b);
+                        fgc = f;
                     }
                     if let Some(b) = bgc {
                         match bgs.last_mut() {

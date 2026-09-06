@@ -79,6 +79,9 @@ struct Mouse {
     autoscroll: Option<(ViewId, i64)>,
     /// B1 held in a terminal: the selection follows the pointer.
     term_drag: Option<WindowId>,
+    /// B2 or B3 held in a terminal (acme's `textselect23`): the window,
+    /// the button, the cell pressed and its position.
+    term_sweep: Option<(WindowId, MouseButton, (usize, usize), (usize, u64))>,
     left_as: Option<MouseButton>,
     mods: Modifiers,
 }
@@ -174,6 +177,8 @@ pub struct Acme {
     pub term_sel: Option<(WindowId, (usize, u64), (usize, u64))>,
     /// The snarf buffer as it was when a terminal copy was requested.
     snarf_wanted: Option<String>,
+    /// A B2/B3 sweep in a terminal, shown in the button's colour.
+    pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The heartbeat: when the last ping went out.
     last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
@@ -473,6 +478,7 @@ impl Acme {
             last_ping: None,
             term_sel: None,
             snarf_wanted: None,
+            term_hl: None,
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -981,15 +987,12 @@ impl Acme {
                     self.mouse.chorded = true;
                     self.term_copy(w, cx);
                 }
-                (Region::Term(c, r), MouseButton::Middle) => {
-                    if let Some(word) = self.term_word(w, c, r, is_exec_char) {
-                        self.execute(ExecCtx::Window(w), &word, cx);
-                    }
-                }
-                (Region::Term(c, r), MouseButton::Right) => {
-                    if let Some(word) = self.term_word(w, c, r, is_file_char) {
-                        self.look(ExecCtx::Window(w), &word);
-                    }
+                (Region::Term(c, r), MouseButton::Middle | MouseButton::Right) => {
+                    // acme's textselect23: sweep, then act on what was swept
+                    // (or on the word under a plain click)
+                    let p = (c, self.term_top(w) + r as u64);
+                    self.mouse.term_sweep = Some((w, button, (c, r), p));
+                    self.term_hl = Some((w, button, p, p));
                 }
                 (Region::TermScrollbar, MouseButton::Left) => self.start_scrolling(Target::Term(w, t), MouseButton::Left, e.position, window, cx),
                 (Region::TermScrollbar, MouseButton::Right) => self.start_scrolling(Target::Term(w, t), MouseButton::Right, e.position, window, cx),
@@ -1009,6 +1012,18 @@ impl Acme {
         let mut changed = false;
         if let Some((_, _, y)) = self.mouse.scrolling.as_mut() {
             *y = pos.y; // the bar follows the pointer's height
+        }
+        if let Some((w, _, _, anchor)) = self.mouse.term_sweep {
+            if let Some(l) = self.term_layouts.get(&w) {
+                let (c, r) = l.cell_at(pos);
+                let (cols, top) = (l.cols as usize, self.term_top(w));
+                let line = top + r as u64;
+                let end = if (line, c) >= (anchor.1, anchor.0) { ((c + 1).min(cols), line) } else { (c, line) };
+                if let Some(hl) = self.term_hl.as_mut() {
+                    hl.3 = end;
+                }
+                changed = true;
+            }
         }
         if let Some(w) = self.mouse.term_drag {
             if let (Some(l), Some((sw, anchor, _))) = (self.term_layouts.get(&w), self.term_sel) {
@@ -1100,6 +1115,26 @@ impl Acme {
                 return;
             }
         }
+        if let Some((w, b, cell, _)) = self.mouse.term_sweep {
+            if b == button {
+                self.mouse.term_sweep = None;
+                let hl = self.term_hl.take();
+                let swept = hl.filter(|(_, _, p0, p1)| p0 != p1).and_then(|(_, _, p0, p1)| self.term_grid_text(w, p0, p1));
+                let text = match (swept, button) {
+                    (Some(t), _) => Some(t),
+                    (None, MouseButton::Middle) => self.term_word(w, cell.0, cell.1, is_exec_char),
+                    (None, _) => self.term_word(w, cell.0, cell.1, is_file_char),
+                };
+                if let Some(text) = text {
+                    match button {
+                        MouseButton::Middle => self.execute(ExecCtx::Window(w), &text, cx),
+                        _ => self.look(ExecCtx::Window(w), &text),
+                    }
+                }
+                cx.notify();
+                return;
+            }
+        }
         match button {
             MouseButton::Left => {
                 self.mouse.b1 = None;
@@ -1171,6 +1206,30 @@ impl Acme {
             return None;
         }
         Some(t.slice(a, z))
+    }
+
+    /// The text between two `(column, history line)` positions, from the
+    /// rows on screen (a sweep is on screen); lines joined by newlines,
+    /// trailing blanks dropped.
+    fn term_grid_text(&self, w: WindowId, a: (usize, u64), b: (usize, u64)) -> Option<String> {
+        let t = self.term_of(w)?;
+        let term = self.node.state.terms.get(&t)?;
+        let (p0, p1) = if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
+        let mut out = String::new();
+        for (i, row) in term.grid.iter().enumerate() {
+            let line = term.top + i as u64;
+            if line < p0.1 || line > p1.1 {
+                continue;
+            }
+            let from = if line == p0.1 { p0.0.min(row.len()) } else { 0 };
+            let to = if line == p1.1 { p1.0.min(row.len()) } else { row.len() };
+            let s: String = row[from.min(to)..to].iter().map(|c| if c.ch == '\0' { ' ' } else { c.ch }).collect();
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(s.trim_end());
+        }
+        Some(out).filter(|s| !s.trim().is_empty())
     }
 
     fn term_word(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<String> {
