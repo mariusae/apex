@@ -519,10 +519,22 @@ new-session attach [--stdio] new win text edit sel exec events term
 plumb`; `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.
 
-`apex attach host/session` runs `apex-ui --via "ssh host apex attach
---stdio session"`: the UI speaks frames to the child's stdin/stdout, and
-on the host `apex attach --stdio` copies bytes between its stdio and the
-daemon's socket. The bridge knows nothing of frames.
+`apex attach host/session` (and the selector's "Remote host…") goes
+through `ssh.rs`: the host needs nothing but sshd. We ask `uname -sm`,
+pick the `apex` we carry for that OS and architecture (the Mac app
+bundles `linux-amd64`, cross-compiled statically against musl with Zig
+as the linker, and its own `darwin-arm64`), compare its sha256 with
+`~/.apex/bin/apex` there, upload it over ssh's stdin if it differs, and
+run `~/.apex/bin/apex --session S attach --stdio`, which starts the
+daemon on the host if it must and copies bytes between its stdio and
+the daemon's socket. The bridge knows nothing of frames; the UI speaks
+them to the child's stdin/stdout exactly as to a socket. A remote
+window's selector lists the host's sessions (`apex --ensure-server ls`
+there); "Local sessions" leads back. Remembered sessions are
+`host/session`; one that cannot be reached at launch falls back to the
+local `local` with the error in `+Errors`. `APEX_SSH` names the ssh
+program, which the tests point at a script running the commands under a
+scratch HOME.
 
 ---
 

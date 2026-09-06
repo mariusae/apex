@@ -114,8 +114,14 @@ pub fn save_open(cx: &App) {
     for w in cx.windows() {
         if let Some(h) = w.downcast::<Acme>() {
             if let Ok(a) = h.read(cx) {
-                if a.socket.is_some() && !open.contains(&a.session) {
-                    open.push(a.session.clone());
+                if a.socket.is_some() {
+                    let spec = match &a.host {
+                        Some(h) => format!("{h}/{}", a.session),
+                        None => a.session.clone(),
+                    };
+                    if !open.contains(&spec) {
+                        open.push(spec);
+                    }
                 }
             }
         }
@@ -127,7 +133,8 @@ pub fn save_open(cx: &App) {
 /// else the first existing one; else a new `local`.
 pub fn plan(socket: &Path) -> std::io::Result<Vec<String>> {
     let existing = list_sessions(socket)?;
-    let again: Vec<String> = remembered().into_iter().filter(|s| existing.contains(s)).collect();
+    // remote ones ("host/session") are tried as they are
+    let again: Vec<String> = remembered().into_iter().filter(|s| s.contains('/') || existing.contains(s)).collect();
     if !again.is_empty() {
         return Ok(again);
     }
@@ -288,12 +295,20 @@ pub struct Selector {
     pub filter: String,
     pub sessions: Vec<String>,
     pub cursor: usize,
+    /// The host whose sessions are listed; `None` for the local daemon.
+    pub host: Option<String>,
+    /// Typing a host name to connect to.
+    pub entering_host: bool,
 }
 
 impl Selector {
     /// Rows in order: matching sessions, then "create" if the filter
-    /// names no existing session.
+    /// names no existing session, then the way to the other side.
     pub fn rows(&self) -> Vec<Row> {
+        if self.entering_host {
+            let h = self.filter.trim();
+            return if h.is_empty() { Vec::new() } else { vec![Row::Connect(h.to_string())] };
+        }
         let f = self.filter.trim().to_lowercase();
         let mut rows: Vec<Row> = self
             .sessions
@@ -304,6 +319,12 @@ impl Selector {
         if !f.is_empty() && !self.sessions.iter().any(|s| s.to_lowercase() == f) {
             rows.push(Row::Create(self.filter.trim().to_string()));
         }
+        if f.is_empty() {
+            rows.push(Row::Remote);
+            if self.host.is_some() {
+                rows.push(Row::Local);
+            }
+        }
         rows
     }
 }
@@ -312,14 +333,23 @@ impl Selector {
 pub enum Row {
     Session(String),
     Create(String),
+    /// "Remote host…": type a host name next.
+    Remote,
+    /// Connect to this host's `local` session.
+    Connect(String),
+    /// Back to the local daemon.
+    Local,
 }
 
 impl Acme {
     pub fn open_selector(&mut self, cx: &mut Context<Self>) {
         let Some(socket) = &self.socket else { return };
-        let sessions = list_sessions(socket).unwrap_or_default();
+        let sessions = match &self.host {
+            Some(h) => apex_server::ssh::list_sessions(h).unwrap_or_default(),
+            None => list_sessions(socket).unwrap_or_default(),
+        };
         let cursor = sessions.iter().position(|s| *s == self.session).unwrap_or(0);
-        self.selector = Some(Selector { filter: String::new(), sessions, cursor });
+        self.selector = Some(Selector { filter: String::new(), sessions, cursor, host: self.host.clone(), entering_host: false });
         cx.notify();
     }
 
@@ -367,16 +397,39 @@ impl Acme {
     }
 
     pub fn choose(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
-        self.selector = None;
-        let name = match row {
-            Row::Session(s) | Row::Create(s) => s,
+        let (at, name) = match row {
+            Row::Remote => {
+                // stay open: the filter now takes a host name
+                if let Some(sel) = self.selector.as_mut() {
+                    sel.entering_host = true;
+                    sel.filter.clear();
+                    sel.cursor = 0;
+                }
+                cx.notify();
+                return;
+            }
+            Row::Connect(host) => (crate::app::Where::Ssh(host), "local".to_string()),
+            Row::Local => (crate::app::Where::Socket(self.socket.clone().unwrap_or_else(apex_server::daemon::default_socket)), "local".to_string()),
+            Row::Session(s) | Row::Create(s) => {
+                let at = match &self.host {
+                    Some(h) => crate::app::Where::Ssh(h.clone()),
+                    None => crate::app::Where::Socket(self.socket.clone().unwrap_or_else(apex_server::daemon::default_socket)),
+                };
+                (at, s)
+            }
         };
-        if name == self.session {
+        self.selector = None;
+        if name == self.session && matches!((&at, &self.host), (crate::app::Where::Socket(_), None)) {
             cx.notify();
             return;
         }
-        if let Err(e) = self.switch_session(&name, window) {
-            eprintln!("apex-ui: switch to {name}: {e}");
+        if let Err(e) = self.reattach(at.clone(), &name, window) {
+            let what = match &at {
+                crate::app::Where::Ssh(h) => format!("{h}/{name}"),
+                _ => name.clone(),
+            };
+            eprintln!("apex-ui: attach {what}: {e}");
+            self.notice(&format!("{what}: {e}\n"));
         }
         save_open(cx);
         cx.notify();
@@ -385,9 +438,10 @@ impl Acme {
     /// The strip at the top: traffic lights live in its left margin; the
     /// session name is a button.
     pub fn titlebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = match &self.backend {
-            Backend::Local(_) => "in-process".to_string(),
-            Backend::Remote(_) => self.session.clone(),
+        let label = match (&self.backend, &self.host) {
+            (Backend::Local(_), _) => "in-process".to_string(),
+            (Backend::Remote(_), Some(h)) => format!("{h}/{}", self.session),
+            (Backend::Remote(_), None) => self.session.clone(),
         };
         let clickable = self.socket.is_some();
         let mut button = div()
@@ -457,7 +511,7 @@ impl Acme {
             .text_size(px(13.))
             .font_family("Lucida Grande")
             .child(if sel.filter.is_empty() {
-                div().text_color(rgb(0x888888)).child("Search sessions, or type a new name…")
+                div().text_color(rgb(0x888888)).child(if sel.entering_host { "user@host, then return" } else { "Search sessions, or type a new name…" })
             } else {
                 div().text_color(rgb(0x111111)).child(format!("{}▏", sel.filter))
             });
@@ -477,6 +531,9 @@ impl Acme {
                 Row::Session(s) if *s == self.session => (format!("{s}   (this window)"), false),
                 Row::Session(s) => (s.clone(), false),
                 Row::Create(s) => (format!("Create session “{s}”"), true),
+                Row::Remote => ("Remote host…".to_string(), true),
+                Row::Connect(h) => (format!("Connect to {h}"), true),
+                Row::Local => ("Local sessions".to_string(), true),
             };
             let row = row.clone();
             let item = div()

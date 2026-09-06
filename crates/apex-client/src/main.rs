@@ -118,6 +118,7 @@ enum Target {
     Local(Vec<String>),
     Socket { socket: std::path::PathBuf, session: String, files: Vec<String> },
     Via { cmd: String, session: String, files: Vec<String> },
+    Ssh { host: String, session: String, files: Vec<String> },
 }
 
 fn main() {
@@ -125,6 +126,7 @@ fn main() {
     let mut local = false;
     let mut socket: Option<std::path::PathBuf> = None;
     let mut via: Option<String> = None;
+    let mut ssh: Option<String> = None;
     let mut session: Option<String> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
@@ -137,6 +139,7 @@ fn main() {
                 });
             }
             "--via" => via = Some(args.next().expect("--via CMD")),
+            "--ssh" => ssh = Some(args.next().expect("--ssh HOST")),
             "--session" => session = Some(args.next().expect("--session NAME")),
             // Finder passes this when launching a bundle
             a if a.starts_with("-psn_") => {}
@@ -172,15 +175,20 @@ fn main() {
             let socket = socket.clone();
             cx.on_action(move |_: &shell::NewWindow, cx| {
                 // another window on the active window's session
-                let session = cx
+                let (host, session) = cx
                     .active_window()
                     .and_then(|w| w.downcast::<Acme>())
-                    .and_then(|h| h.read(cx).ok().map(|a| a.session.clone()))
-                    .unwrap_or_else(|| "local".to_string());
-                if shell::ensure_daemon(&socket).is_ok() {
-                    open_window(cx, Target::Socket { socket: socket.clone(), session, files: Vec::new() });
-                    shell::save_open(cx);
+                    .and_then(|h| h.read(cx).ok().map(|a| (a.host.clone(), a.session.clone())))
+                    .unwrap_or((None, "local".to_string()));
+                match host {
+                    Some(host) => open_window(cx, Target::Ssh { host, session, files: Vec::new() }),
+                    None => {
+                        if shell::ensure_daemon(&socket).is_ok() {
+                            open_window(cx, Target::Socket { socket: socket.clone(), session, files: Vec::new() });
+                        }
+                    }
                 }
+                shell::save_open(cx);
             });
         }
 
@@ -188,6 +196,8 @@ fn main() {
             vec![Target::Local(files.clone())]
         } else if let Some(cmd) = via.clone() {
             vec![Target::Via { cmd, session: session.clone().unwrap_or_else(|| "local".into()), files: files.clone() }]
+        } else if let Some(host) = ssh.clone() {
+            vec![Target::Ssh { host, session: session.clone().unwrap_or_else(|| "local".into()), files: files.clone() }]
         } else {
             if let Err(e) = shell::ensure_daemon(&socket) {
                 eprintln!("apex-ui: {e}");
@@ -203,7 +213,13 @@ fn main() {
                     std::process::exit(1);
                 }),
             };
-            sessions.into_iter().map(|s| Target::Socket { socket: socket.clone(), session: s, files: files.clone() }).collect()
+            sessions
+                .into_iter()
+                .map(|s| match apex_server::ssh::split_spec(&s) {
+                    Some((host, sess)) => Target::Ssh { host: host.to_string(), session: sess.to_string(), files: Vec::new() },
+                    None => Target::Socket { socket: socket.clone(), session: s, files: files.clone() },
+                })
+                .collect()
         };
         for t in targets {
             open_window(cx, t);
@@ -227,8 +243,9 @@ fn open_window(cx: &mut App, target: Target) {
     bounds.origin.y += px(24. * n);
     let title = match &target {
         Target::Local(_) => "apex".to_string(),
-        Target::Socket { session, .. } => format!("{session} — apex"),
-        Target::Via { cmd, session, .. } => format!("{session} on {} — apex", cmd.split_whitespace().nth(1).unwrap_or(cmd)),
+        Target::Socket { session, .. } => Acme::title(&None, session),
+        Target::Via { cmd, session, .. } => Acme::title(&Some(cmd.split_whitespace().nth(1).unwrap_or(cmd).to_string()), session),
+        Target::Ssh { host, session, .. } => Acme::title(&Some(host.clone()), session),
     };
     let opened = cx.open_window(
         WindowOptions {
@@ -259,7 +276,7 @@ fn open_window(cx: &mut App, target: Target) {
                     .detach();
                     acme
                 }
-                Target::Socket { .. } | Target::Via { .. } => {
+                Target::Socket { .. } | Target::Via { .. } | Target::Ssh { .. } => {
                     // the reader thread pokes this channel; the task polls
                     // the link on the UI thread
                     let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
@@ -269,14 +286,35 @@ fn open_window(cx: &mut App, target: Target) {
                     let (at, session, files) = match target {
                         Target::Socket { socket, session, files } => (app::Where::Socket(socket), session, files),
                         Target::Via { cmd, session, files } => (app::Where::Via(cmd), session, files),
+                        Target::Ssh { host, session, files } => (app::Where::Ssh(host), session, files),
                         Target::Local(_) => unreachable!(),
                     };
-                    let acme = match Acme::attach(cx, &at, &session, files, wake) {
+                    let acme = match Acme::attach(cx, &at, &session, files, wake.clone()) {
                         Ok(a) => a,
-                        Err(e) => {
-                            eprintln!("apex-ui: attach {session}: {e}");
-                            std::process::exit(1);
-                        }
+                        Err(e) => match at {
+                            // a remembered remote session that cannot be reached:
+                            // fall back to the local daemon, and say so
+                            app::Where::Ssh(host) => {
+                                eprintln!("apex-ui: attach {host}/{session}: {e}");
+                                let socket = apex_server::daemon::default_socket();
+                                let _ = shell::ensure_daemon(&socket);
+                                let _ = apex_server::remote::new_session(&socket, "local");
+                                match Acme::attach(cx, &app::Where::Socket(socket), "local", Vec::new(), wake) {
+                                    Ok(mut a) => {
+                                        a.notice(&format!("{host}/{session}: {e}\n"));
+                                        a
+                                    }
+                                    Err(e) => {
+                                        eprintln!("apex-ui: attach local: {e}");
+                                        std::process::exit(1);
+                                    }
+                                }
+                            }
+                            _ => {
+                                eprintln!("apex-ui: attach {session}: {e}");
+                                std::process::exit(1);
+                            }
+                        },
                     };
                     cx.spawn(async move |this, cx| {
                         use futures::StreamExt;

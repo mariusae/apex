@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 use apex_server::daemon::Daemon;
 
 fn daemon() -> PathBuf {
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos();
-    let path = std::env::temp_dir().join(format!("apex-cli-{}-{nanos}.sock", std::process::id()));
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("apex-cli-{}-{n}.sock", std::process::id()));
     let p = path.clone();
     std::thread::spawn(move || Daemon::run(&p, "main").unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);

@@ -1,0 +1,15 @@
+#!/bin/sh
+# C compiler and linker for cross-compiling to x86_64-linux-musl, via Zig.
+# cc-rs passes Rust's target triple, which Zig does not know; drop it.
+args=""
+skip=0
+for a in "$@"; do
+  if [ $skip = 1 ]; then skip=0; continue; fi
+  case "$a" in
+    --target=*) continue ;;
+    -target) skip=1; continue ;;
+  esac
+  args="$args \"$a\""
+done
+eval set -- "$args"
+exec "$HOME/.local/zig-aarch64-macos-0.16.0/zig" cc -target x86_64-linux-musl "$@"

@@ -10,7 +10,10 @@ use apex_server::proto::ClientMsg;
 use apex_server::remote::Remote;
 
 fn daemon() -> PathBuf {
-    let path = std::env::temp_dir().join(format!("apex-socket-test-{}-{}.sock", std::process::id(), rand_suffix()));
+    // pid plus a counter: the clock is too coarse to tell parallel tests apart
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("apex-socket-test-{}-{n}.sock", std::process::id()));
     let p = path.clone();
     std::thread::spawn(move || Daemon::run(&p, "main").unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -18,10 +21,6 @@ fn daemon() -> PathBuf {
         std::thread::sleep(Duration::from_millis(5));
     }
     path
-}
-
-fn rand_suffix() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos() as u64
 }
 
 /// Pump messages until `done` or the deadline.

@@ -11,6 +11,7 @@ pub mod daemon;
 pub mod proposal;
 pub mod proto;
 pub mod remote;
+pub mod ssh;
 pub mod term;
 pub mod watch;
 

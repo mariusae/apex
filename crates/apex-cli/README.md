@@ -34,6 +34,9 @@ apex exec notes.txt Put
 
 works with no UI running, and a UI attaching later finds the result.
 
-`apex attach host/session` launches `apex-ui --via "ssh host apex attach
---stdio session"`; the bridge on the host copies bytes between ssh's
-stdio and the daemon's socket.
+`apex attach host/session` installs (or updates) our `apex` for the
+host's OS and architecture in `~/.apex/bin` there over ssh, then launches
+`apex-ui --ssh host --session session`; on the host `apex attach --stdio`
+starts the daemon if needed and copies bytes between ssh's stdio and its
+socket. The Mac app carries a `linux-amd64` build; `APEX_SSH` names the
+ssh program.

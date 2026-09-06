@@ -1,0 +1,10 @@
+# Cross-compiling the daemon for Linux hosts (mac/build-app.sh packages
+# it in the app). Zig provides the C compiler and linker.
+[target.x86_64-unknown-linux-musl]
+linker = "/Users/marius/src/apex/mac/zig-cc"
+# Zig brings musl's own start files; Rust must not add its bundled ones too
+rustflags = ["-C", "link-self-contained=no"]
+
+[env]
+CC_x86_64-unknown-linux-musl = { value = "mac/zig-cc", relative = true }
+AR_x86_64-unknown-linux-musl = "ar"

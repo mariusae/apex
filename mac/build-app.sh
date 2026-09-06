@@ -6,12 +6,16 @@ export PATH="$HOME/.cargo/bin:$PATH"
 profile=release; flag=--release
 if [ "$1" = "--debug" ]; then profile=debug; flag=; fi
 cargo build $flag -p apex-client -p apex-cli
+# the command for Linux hosts (attached over ssh); Zig is the cross linker
+cargo build --release --target x86_64-unknown-linux-musl -p apex-cli
 
 app=target/Apex.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "target/$profile/apex-ui" "$app/Contents/MacOS/apex-ui"
 cp "target/$profile/apex" "$app/Contents/MacOS/apex"
+mkdir -p "$app/Contents/Resources/remote/linux-amd64"
+cp target/x86_64-unknown-linux-musl/release/apex "$app/Contents/Resources/remote/linux-amd64/apex"
 version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 sed "s/VERSION/$version/g" mac/Info.plist > "$app/Contents/Info.plist"
 echo -n "APPL????" > "$app/Contents/PkgInfo"

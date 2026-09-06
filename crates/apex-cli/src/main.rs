@@ -7,6 +7,7 @@
 //! apex ls                                              list sessions
 //! apex new-session NAME
 //! apex attach [host/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
+//!                                                      host/SESSION: over ssh, installing apex on the host first
 //! apex new FILE...                                     open files in the first column
 //! apex win list | win del WIN
 //! apex text read WIN [--addr ADDR]
@@ -38,11 +39,27 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut socket = std::env::var("APEX_SOCKET").map(PathBuf::from).unwrap_or_else(|_| default_socket());
     let mut session = std::env::var("APEX_SESSION").unwrap_or_else(|_| "local".into());
-    while args.len() >= 2 && (args[0] == "--socket" || args[0] == "--session") {
-        let v = args.remove(1);
-        match args.remove(0).as_str() {
-            "--socket" => socket = PathBuf::from(v),
-            _ => session = v,
+    let mut ensure = false;
+    loop {
+        if args.len() >= 2 && (args[0] == "--socket" || args[0] == "--session") {
+            let v = args.remove(1);
+            match args.remove(0).as_str() {
+                "--socket" => socket = PathBuf::from(v),
+                _ => session = v,
+            }
+        } else if args.first().is_some_and(|a| a == "--ensure-server") {
+            // start the daemon first if it is not running (what a remote
+            // `apex ls` wants)
+            args.remove(0);
+            ensure = true;
+        } else {
+            break;
+        }
+    }
+    if ensure {
+        if let Err(e) = ensure_server(&socket, &session) {
+            eprintln!("apex: {e}");
+            std::process::exit(1);
         }
     }
     let Some(cmd) = args.first().cloned() else { usage() };
@@ -157,14 +174,16 @@ fn attach(socket: &Path, session: &str, args: &[String]) -> R {
     let stdio = args.iter().position(|a| a == "--stdio").map(|i| args.remove(i)).is_some();
     let target = if args.first().is_some_and(|a| !Path::new(a).exists()) { args.remove(0) } else { session.to_string() };
     if stdio {
+        // the bridge on a host: the daemon there may need starting
+        ensure_server(socket, &session)?;
         return bridge(socket);
     }
     let ui = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("apex-ui");
-    let status = match target.split_once('/') {
+    let status = match apex_server::ssh::split_spec(&target) {
         Some((host, sess)) => {
-            // remote: the UI talks to `ssh host apex attach --stdio sess`
-            let via = format!("ssh {host} apex --session {sess} attach --stdio");
-            Command::new(&ui).arg("--via").arg(via).arg("--session").arg(sess).args(&args).status()
+            // remote: the UI talks to `ssh host apex attach --stdio`,
+            // after our apex is put on the host
+            Command::new(&ui).arg("--ssh").arg(host).arg("--session").arg(sess).args(&args).status()
         }
         None => {
             ensure_server(socket, &target)?;

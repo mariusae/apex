@@ -143,6 +143,9 @@ pub enum Where {
     Socket(std::path::PathBuf),
     /// A command whose stdin/stdout carry the frames (ssh to a bridge).
     Via(String),
+    /// A host reached over ssh: our `apex` is put there first, and its
+    /// daemon started (`ssh.rs`).
+    Ssh(String),
 }
 
 /// Where the server is.
@@ -159,8 +162,10 @@ pub struct Acme {
     pub backend: Backend,
     /// The session this window shows.
     pub session: String,
-    /// The daemon's socket, when the session can be switched from here.
+    /// The local daemon's socket, when the session can be switched from here.
     pub socket: Option<std::path::PathBuf>,
+    /// The host this window's session is on, if not this machine.
+    pub host: Option<String>,
     wake: Option<Wake>,
     pub selector: Option<Selector>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
@@ -236,23 +241,7 @@ impl Acme {
     /// Attach to a session behind `socket`. `wake` is called from the
     /// reader thread when there is something to poll.
     pub fn attach(cx: &mut Context<Self>, at: &Where, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (link, mut log, mut node) = match at {
-            Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake.clone()))?,
-            Where::Via(cmd) => {
-                let mut child = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(cmd)
-                    .stdin(std::process::Stdio::piped())
-                    .stdout(std::process::Stdio::piped())
-                    .spawn()?;
-                let stdin = child.stdin.take().expect("piped");
-                let stdout = child.stdout.take().expect("piped");
-                let closer = Box::new(move || {
-                    let _ = child.kill();
-                });
-                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake.clone()))?
-            }
-        };
+        let (link, mut log, mut node) = Self::connect(at, session, wake.clone())?;
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -260,11 +249,84 @@ impl Acme {
         let mut acme = Self::over(cx, log, node, Backend::Remote(link), session);
         acme.socket = match at {
             Where::Socket(p) => Some(p.clone()),
-            Where::Via(_) => None,
+            // a remote window can still switch to the local daemon
+            Where::Via(_) | Where::Ssh(_) => Some(apex_server::daemon::default_socket()),
+        };
+        acme.host = match at {
+            Where::Ssh(h) => Some(h.clone()),
+            _ => None,
         };
         acme.wake = Some(wake);
         acme.open_initial(col, files);
         Ok(acme)
+    }
+
+    /// A link to `session` at `at`: the local socket, a command's stdio, or
+    /// a host over ssh (our apex installed there first).
+    fn connect(at: &Where, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+        match at {
+            Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake)),
+            Where::Via(cmd) => Self::connect_via(cmd, session, wake),
+            Where::Ssh(host) => {
+                apex_server::ssh::deploy(host)?;
+                let cmd = apex_server::ssh::attach_command(host, session);
+                Self::connect_via(&cmd, session, wake)
+            }
+        }
+    }
+
+    fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()?;
+        let stdin = child.stdin.take().expect("piped");
+        let stdout = child.stdout.take().expect("piped");
+        let closer = Box::new(move || {
+            let _ = child.kill();
+        });
+        Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))
+    }
+
+    /// Re-point this window at `session` at `at` (the selector). The old
+    /// attachment ends; its leases return to its daemon.
+    pub fn reattach(&mut self, at: Where, name: &str, window: &mut Window) -> std::io::Result<()> {
+        let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
+        if let Where::Socket(socket) = &at {
+            new_session(socket, name)?;
+        }
+        let (link, mut log, mut node) = Self::connect(&at, name, wake)?;
+        let col = match node.state.layout.cols.first() {
+            Some(c) => c.id,
+            None => node.init_session(&mut log).map_err(std::io::Error::other)?,
+        };
+        self.backend = Backend::Remote(link);
+        self.log = log;
+        self.node = node;
+        self.session = name.to_string();
+        self.host = match &at {
+            Where::Ssh(h) => Some(h.clone()),
+            _ => None,
+        };
+        self.layouts.clear();
+        self.term_layouts.clear();
+        self.hl = None;
+        self.mouse = Mouse::default();
+        self.want_visible.clear();
+        self.typed_start.clear();
+        self.selector = None;
+        window.set_window_title(&Self::title(&self.host, name));
+        self.open_initial(col, Vec::new());
+        Ok(())
+    }
+
+    pub fn title(host: &Option<String>, session: &str) -> String {
+        match host {
+            Some(h) => format!("{session} on {h} — apex"),
+            None => format!("{session} — apex"),
+        }
     }
 
     /// Open the files named on the command line; a fresh session with
@@ -279,33 +341,6 @@ impl Acme {
         self.after();
     }
 
-    /// Re-point this window at another session on the same daemon,
-    /// creating it if needed. The old attachment ends; its leases return
-    /// to the daemon.
-    pub fn switch_session(&mut self, name: &str, window: &mut Window) -> std::io::Result<()> {
-        let socket = self.socket.clone().ok_or_else(|| std::io::Error::other("not on a socket"))?;
-        let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
-        new_session(&socket, name)?;
-        let (link, mut log, mut node) = Link::connect(&socket, name, "apex", AttachmentKind::Ui, Some(wake))?;
-        let col = match node.state.layout.cols.first() {
-            Some(c) => c.id,
-            None => node.init_session(&mut log).map_err(std::io::Error::other)?,
-        };
-        self.backend = Backend::Remote(link);
-        self.log = log;
-        self.node = node;
-        self.session = name.to_string();
-        self.layouts.clear();
-        self.term_layouts.clear();
-        self.hl = None;
-        self.mouse = Mouse::default();
-        self.want_visible.clear();
-        self.typed_start.clear();
-        self.selector = None;
-        window.set_window_title(&format!("{name} — apex"));
-        self.open_initial(col, Vec::new());
-        Ok(())
-    }
 
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
         Acme {
@@ -314,6 +349,7 @@ impl Acme {
             backend,
             session: session.to_string(),
             socket: None,
+            host: None,
             wake: None,
             selector: None,
             tag_need: HashMap::new(),
