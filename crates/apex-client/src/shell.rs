@@ -18,7 +18,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Put, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Reconnect, Put, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -50,6 +50,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("New", NewFile),
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Sessions…", Sessions),
+                MenuItem::action("Reconnect", Reconnect),
                 MenuItem::separator(),
                 MenuItem::action("Put", Put),
                 MenuItem::action("Del", Del),
@@ -84,6 +85,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-w", Del, None),
         KeyBinding::new("cmd-shift-w", CloseWindow, None),
         KeyBinding::new("cmd-k", Sessions, None),
+        KeyBinding::new("cmd-r", Reconnect, None),
         KeyBinding::new("cmd-z", Undo, None),
         KeyBinding::new("cmd-shift-z", Redo, None),
         KeyBinding::new("cmd-x", Cut, None),

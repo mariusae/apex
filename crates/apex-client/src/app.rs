@@ -343,6 +343,23 @@ impl Acme {
         Ok(())
     }
 
+    /// Attach to this window's session again: a fresh link and snapshot,
+    /// taking the leases back. What acme cannot tell from a stuck link,
+    /// the user can.
+    pub fn reconnect(&mut self, window: &mut Window) {
+        if matches!(self.backend, Backend::Local(_)) {
+            return;
+        }
+        let url = self.url.clone();
+        match self.reattach(&url, window) {
+            Ok(()) => self.notice(&format!("{url}: reconnected\n")),
+            Err(e) => {
+                self.connected = false;
+                self.notice(&format!("{url}: reconnect: {e}\n"));
+            }
+        }
+    }
+
     /// Rename this window's session on its daemon.
     pub fn rename_session(&mut self, to: &str, window: &mut Window) {
         let from = self.session.clone();

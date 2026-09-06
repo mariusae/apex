@@ -72,6 +72,10 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
+            .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
+                this.reconnect(window);
+                cx.notify();
+            }))
             .on_action(cx.listener(|_, _: &shell::CloseWindow, window, _| window.remove_window()))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
