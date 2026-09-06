@@ -318,6 +318,10 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     type_(&mut server, &mut log, &format!("printf '\\033];{}/-x\\007'\r", a.display()));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", a.display())), "name: {}", name(&node));
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), a);
+    // winsettag keeps the name (a terminal's name is its tag's first word)
+    node.update_tags(&mut log).unwrap();
+    assert_eq!(name(&node), format!("{}/-x", a.display()));
+    assert_eq!(node.window_name(w), format!("{}/-x", a.display()));
     // OSC 7, the working-directory report, keeps the label's name
     type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", b.display()));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", b.display())), "name: {}", name(&node));

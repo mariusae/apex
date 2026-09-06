@@ -524,13 +524,12 @@ impl Node {
 
     /// The name shown in a window's tag: its body buffer's name.
     pub fn window_name(&self, window: WindowId) -> String {
-        self.state
-            .window(window)
-            .ok()
-            .and_then(|w| w.body_buffer())
-            .and_then(|b| self.state.buffer(b).ok())
-            .map(|b| b.name.clone())
-            .unwrap_or_default()
+        let Ok(w) = self.state.window(window) else { return String::new() };
+        match w.body_buffer() {
+            Some(b) => self.state.buffer(b).map(|b| b.name.clone()).unwrap_or_default(),
+            // a terminal has no file: its name lives in its tag, as win's does
+            None => self.state.buffer(w.tag).map(|t| t.text.to_string().split(' ').next().unwrap_or("").to_string()).unwrap_or_default(),
+        }
     }
 
     /// acme's `zeroxx`: `coladd(w->col, nil, w, -1)`, another window on

@@ -435,8 +435,19 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
         }
         Some("send") => {
             let t = find_term(&c, args.get(1).ok_or("term send TERM TEXT")?)?;
-            let text = args[2..].join(" ");
-            c.send(&ClientMsg::TermPaste { term: t, text });
+            // the text is pasted; a final newline is the Enter key, since
+            // shells take a pasted newline literally (bracketed paste)
+            let mut text = args[2..].join(" ");
+            let enter = text.ends_with('\r') || text.ends_with('\n');
+            if enter {
+                text.pop();
+            }
+            if !text.is_empty() {
+                c.send(&ClientMsg::TermPaste { term: t, text });
+            }
+            if enter {
+                c.send(&ClientMsg::TermKey { term: t, key: apex_server::TermKey { key: "enter".into(), text: Some("\r".into()), shift: false, control: false, alt: false } });
+            }
             // give the daemon a moment to take it before we hang up
             let _ = c.step(Duration::from_millis(50));
             Ok(())
