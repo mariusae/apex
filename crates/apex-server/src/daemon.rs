@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufReader, BufWriter};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 
@@ -96,6 +96,7 @@ struct Pending {
 }
 
 pub struct Daemon {
+    socket: PathBuf,
     sessions: BTreeMap<String, Session>,
     next_session: u64,
     conns: HashMap<u64, Conn>,
@@ -124,7 +125,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -153,7 +154,9 @@ impl Daemon {
             return false;
         }
         let log = Log::new();
-        let (server, mut srx) = Server::new(&log);
+        let (mut server, mut srx) = Server::new(&log);
+        // shells and commands in this session know it, and the daemon
+        server.env = vec![("apexsession".into(), name.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
         let sid = self.next_session;
         self.next_session += 1;
         {

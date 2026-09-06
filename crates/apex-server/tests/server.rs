@@ -284,3 +284,51 @@ fn terminal_selection_follows_the_scrollback_and_keys_scroll_to_the_bottom() {
     node.catch_up(&log).unwrap();
     assert_eq!(node.state.terms[&t].top, bottom);
 }
+
+#[test]
+fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    server.env = vec![("apexsession".into(), "main".into())];
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    server.close_orphan_terms(&mut log, &node);
+    let name = |n: &Node| {
+        let tag = n.state.window(w).unwrap().tag;
+        n.state.buffer(tag).unwrap().text.to_string().split(' ').next().unwrap_or("").to_string()
+    };
+    // win's name: the directory, then -host
+    let host = apex_server::term::sysname();
+    assert!(name(&node).ends_with(&format!("/-{host}")), "{}", name(&node));
+    let type_ = |server: &mut Server, log: &mut Log, s: &str| {
+        for c in s.chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    // the shell's environment: the session, and a truecolor xterm
+    type_(&mut server, &mut log, "echo s=$apexsession c=$COLORTERM t=$TERM\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("s=main c=truecolor t=xterm-256color")), "grid:\n{}", rows(&node));
+    // plan9port's label sequence names the window, and moves its directory
+    let base = std::env::temp_dir().join(format!("apex-label-{}", std::process::id()));
+    let (a, b) = (base.join("a"), base.join("b"));
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    type_(&mut server, &mut log, &format!("printf '\\033];{}/-x\\007'\r", a.display()));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", a.display())), "name: {}", name(&node));
+    assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), a);
+    // OSC 7, the working-directory report, keeps the label's name
+    type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", b.display()));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", b.display())), "name: {}", name(&node));
+    assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), b);
+    // an xterm title is a label too
+    type_(&mut server, &mut log, "printf '\\033]2;hello\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == "hello/-x"), "name: {}", name(&node));
+    // the labels never reached the screen
+    assert!(!rows(&node).contains("\u{1b}"));
+    // the shell's exit is still noticed
+    type_(&mut server, &mut log, "exit\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|t| t.exit.is_some())), "exit noticed");
+    let _ = std::fs::remove_dir_all(&base);
+}

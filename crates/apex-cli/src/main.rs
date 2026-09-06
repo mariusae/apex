@@ -19,6 +19,8 @@
 //! apex events [--shard S]                              entries as JSON lines, forever
 //! apex term new | term send TERM TEXT | term read TERM
 //! apex plumb TEXT
+//! apex label TEXT                                       name this terminal's window (plan9port's label)
+//! apex awd [LABEL]                                      name it pwd/-LABEL (plan9port's awd)
 //! ```
 //!
 //! `WIN` is a window id or a unique substring of a window's name.
@@ -40,7 +42,8 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut socket = std::env::var("APEX_SOCKET").map(PathBuf::from).unwrap_or_else(|_| default_socket());
-    let mut session = std::env::var("APEX_SESSION").unwrap_or_else(|_| "default".into());
+    // in a terminal apex runs, `apexsession` names the session it is in
+    let mut session = std::env::var("apexsession").or_else(|_| std::env::var("APEX_SESSION")).unwrap_or_else(|_| "default".into());
     let mut ensure = false;
     loop {
         if args.len() >= 2 && (args[0] == "--socket" || args[0] == "--session") {
@@ -81,6 +84,8 @@ fn main() {
         "events" => events(&socket, &session, rest),
         "term" => term(&socket, &session, rest),
         "plumb" => plumb(&socket, &session, rest),
+        "label" => label(&rest.join(" ")),
+        "awd" => awd(rest),
         _ => usage(),
     };
     if let Err(e) = r {
@@ -90,7 +95,7 @@ fn main() {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb ...");
+    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|label|awd ...");
     std::process::exit(2);
 }
 
@@ -456,4 +461,31 @@ fn plumb(socket: &Path, session: &str, args: &[String]) -> R {
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text });
     let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     Ok(())
+}
+
+/// plan9port's `label`: name the window this terminal shows, through the
+/// sequence acme's win reads (`ESC ] ; text BEL`).
+fn label(text: &str) -> R {
+    use std::io::Write;
+    let seq = format!("\x1b];{text}\x07");
+    match std::fs::OpenOptions::new().write(true).open("/dev/tty") {
+        Ok(mut f) => f.write_all(seq.as_bytes()).map_err(|e| e.to_string())?,
+        Err(_) => {
+            let mut out = std::io::stdout();
+            out.write_all(seq.as_bytes()).and_then(|_| out.flush()).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// plan9port's `awd [label]`: name the window `pwd/-label`, the label
+/// being the host unless given.
+fn awd(args: &[String]) -> R {
+    let sys = match args {
+        [] => apex_server::term::sysname(),
+        [s] if !s.starts_with('-') => s.clone(),
+        _ => return Err("usage: awd [label]".into()),
+    };
+    let p = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
+    label(&format!("{p}{}-{sys}", if p.ends_with('/') { "" } else { "/" }))
 }

@@ -729,6 +729,17 @@ back to the bottom, republishing the rows at once. History lines are
 numbered from the oldest line kept, so a selection drifts once the
 scrollback limit truncates; a selection does not outlive that.
 
+*As built, labels and environment:* the pty loop is alacritty's with
+`win`'s label scan in front of the parser: `ESC ] ; text BEL` (plan9port's
+`label`/`awd`, or `apex label`/`apex awd`) names the window as win does
+(`/-host` appended unless the label brings its own `-` component); OSC 7
+(`file://host/path`) moves the name's directory; an xterm title (OSC 0/2)
+is a label too. The name's directory becomes the terminal's, where B2/B3
+resolve relative names. A new terminal is `dir/-host` (win's naming). The
+shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,
+`apexsession` and `APEX_SOCKET` set, so `apex` inside it addresses the
+session it runs in; commands run from tags get the same two.
+
 **Web windows** are out of v1. The prototype's headless-Chrome screencast
 is a server-side renderer and fits the model, but it is bandwidth-heavy
 over ssh, and the alternative (URL as server state, client-side rendering)

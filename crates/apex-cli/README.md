@@ -17,10 +17,14 @@ apex exec [WIN] COMMAND                              as if B2
 apex events [--shard S]                              entries as JSON lines, forever
 apex term new | term send TERM TEXT | term read TERM
 apex plumb TEXT
+apex label TEXT
+apex awd [LABEL]
 ```
 
 `WIN` is a window id or a unique substring of a window's name. `APEX_SOCKET`
-and `APEX_SESSION` set the defaults; `apex attach` starts a daemon if the
+and `APEX_SESSION` set the defaults (a shell in an apex terminal has
+`apexsession` and `APEX_SOCKET` set, so `apex` there works on the session
+it is in); `apex attach` starts a daemon if the
 socket does not answer.
 
 Every subcommand attaches as a tool: it gets the session snapshot, reads
@@ -44,3 +48,11 @@ destination's OS and architecture in `~/.apex/bin` there, then launches
 `apex-ui --remote dest --session session`; on the destination `apex attach
 --stdio` starts the daemon if needed and copies bytes between its stdio
 and the daemon's socket. The Mac app carries a `linux-amd64` build.
+
+`apex label TEXT` and `apex awd [LABEL]` are plan9port's `label` and
+`awd`: they write `ESC ] ; text BEL` to the terminal, and apex names the
+terminal's window after it, `awd` as `pwd/-LABEL` (the host by default).
+In rc, `fn cd { builtin cd $1 && apex awd }` keeps the window's name (and
+so where relative names resolve) on the shell's directory; shells that
+report their directory with OSC 7 (`ESC ] 7 ; file://host/path BEL`) or
+set an xterm title get the same treatment.

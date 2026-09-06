@@ -13,6 +13,7 @@ pub mod proto;
 pub mod providers;
 pub mod remote;
 pub mod term;
+pub mod term_loop;
 pub mod watch;
 
 use std::collections::{BTreeSet, HashMap};
@@ -28,12 +29,12 @@ use apex_core::state::ExecStatus;
 use apex_core::*;
 
 pub use proposal::Proposal;
-pub use term::{TermHost, TermKey};
+pub use term::{TermEvent, TermHost, TermKey};
 
 /// Something that happened off the main thread and needs the server's
 /// attention on it.
 pub enum ServerEvent {
-    Term(TermId, Event),
+    Term(TermId, TermEvent),
     /// A shell command finished: `(ctx, exec seq, stdout, stderr, what to do
     /// with stdout)`, its name as shown in the top row, and how it ended
     /// (acme's wait message: empty for a clean exit).
@@ -66,7 +67,11 @@ pub struct Server {
     pub node: Node,
     terms: HashMap<TermId, TermHost>,
     tx: UnboundedSender<ServerEvent>,
-    term_tx: UnboundedSender<(TermId, Event)>,
+    term_tx: UnboundedSender<(TermId, TermEvent)>,
+    /// What every shell and command gets in its environment beyond acme's
+    /// own: the session (`apexsession`) and the socket, so `apex` in a
+    /// terminal works on the session it is in.
+    pub env: Vec<(String, String)>,
     /// Execs already performed, so a scan does not repeat them.
     performed: BTreeSet<(ExecCtx, Seq)>,
     pub cwd: PathBuf,
@@ -86,7 +91,7 @@ impl Server {
     /// [`Server::pump`].
     pub fn new(log: &Log) -> (Server, UnboundedReceiver<ServerEvent>) {
         let (tx, rx) = unbounded();
-        let (term_tx, mut term_rx) = unbounded::<(TermId, Event)>();
+        let (term_tx, mut term_rx) = unbounded::<(TermId, TermEvent)>();
         // forward terminal events into the one server channel
         {
             let tx = tx.clone();
@@ -115,6 +120,7 @@ impl Server {
             terms: HashMap::new(),
             tx,
             term_tx,
+            env: Vec::new(),
             performed: BTreeSet::new(),
             cwd,
             next_term: 1,
@@ -241,13 +247,14 @@ impl Server {
     pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path) -> Result<Proposal, String> {
         let id = TermId(self.next_term);
         self.next_term += 1;
-        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone())?;
+        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone(), &self.env)?;
         self.node.create_shard(log, Shard::Term(id)).map_err(|e| e.to_string())?;
         self.node
             .append(log, Shard::Term(id), Op::Term(TermOp::Create { cols: 80, rows: 24 }))
             .map_err(|e| e.to_string())?;
         self.terms.insert(id, host);
-        let name = format!("{}/-term", dir.display().to_string().trim_end_matches('/'));
+        // win's name: the directory, then `-` and the host (`awd` keeps it so)
+        let name = format!("{}/-{}", dir.display().to_string().trim_end_matches('/'), term::sysname());
         Ok(Proposal::TermWindow { col, name, term: id })
     }
 
@@ -347,15 +354,42 @@ impl Server {
             ServerEvent::File(path) => props.extend(self.file_changed(view, &path)),
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
+                // a new name for the window, from a label (acme's win)
+                let mut name: Option<String> = None;
                 match ev {
-                    Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange | Event::Title(_) | Event::ResetTitle | Event::Bell => {}
-                    Event::PtyWrite(s) => h.write(s.as_bytes()),
-                    Event::ColorRequest(i, fmt) => h.write(fmt(term::default_color(i)).as_bytes()),
-                    Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
-                    Event::ClipboardStore(..) | Event::ClipboardLoad(..) => {}
-                    Event::Exit | Event::ChildExit(_) => {
-                        h.exited = true;
-                        let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 0 }));
+                    TermEvent::Alac(ev) => match ev {
+                        Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange | Event::ResetTitle | Event::Bell => {}
+                        Event::Title(t) => name = Some(term::labelled(&t, &h.label)),
+                        Event::PtyWrite(s) => h.write(s.as_bytes()),
+                        Event::ColorRequest(i, fmt) => h.write(fmt(term::default_color(i)).as_bytes()),
+                        Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
+                        Event::ClipboardStore(..) | Event::ClipboardLoad(..) => {}
+                        Event::Exit | Event::ChildExit(_) => {
+                            h.exited = true;
+                            let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 0 }));
+                        }
+                    },
+                    TermEvent::Name(t) => name = Some(term::labelled(&t, &h.label)),
+                    TermEvent::Cwd(s) => {
+                        if let Some(p) = term::cwd_path(&s) {
+                            name = Some(format!("{}/-{}", p.display().to_string().trim_end_matches('/'), h.label));
+                        }
+                    }
+                }
+                if let Some(name) = name {
+                    // the label's `-name` stays for later directory reports;
+                    // its directory is where the shell now is
+                    if let Some((dir, last)) = name.rsplit_once('/') {
+                        if let Some(l) = last.strip_prefix('-') {
+                            h.label = l.to_string();
+                        }
+                        let dir = if dir.is_empty() { "/" } else { dir };
+                        if Path::new(dir).is_dir() {
+                            h.dir = PathBuf::from(dir);
+                        }
+                    }
+                    if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
+                        props.push(Proposal::TermName { window: w, name });
                     }
                 }
                 self.publish_term(log, id);
@@ -484,7 +518,7 @@ impl Server {
                 (_, Some(b)) => ShellMode::Replace { dir: errdir, buffer: b, version: at.version, q0: at.q0, q1: at.q1 },
             };
             let stdin = if kind == b'<' { None } else { Some(input) };
-            let env = command_env(view, ctx);
+            let env = self.command_env(view, ctx);
             self.spawn_shell(ctx, seq, rest.trim().to_string(), dir, stdin, mode, env);
             return Ok(None);
         }
@@ -553,7 +587,7 @@ impl Server {
             "Newweb" => return Err(format!("{cmd}: not implemented")),
             _ => {
                 // anything else is a shell command; output goes to +Errors
-                let env = command_env(view, ctx);
+                let env = self.command_env(view, ctx);
                 self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { dir: errdir }, env);
                 return Ok(None);
             }
@@ -738,6 +772,15 @@ pub fn command_shell() -> String {
 
 /// What acme's `runproc` puts in a command's environment: `winid`, and
 /// for a window on a file, `%` and `samfile` naming it.
+impl Server {
+    /// acme's environment for a command, plus this server's (`apexsession`).
+    fn command_env(&self, view: &Node, ctx: ExecCtx) -> Vec<(String, String)> {
+        let mut env = command_env(view, ctx);
+        env.extend(self.env.iter().cloned());
+        env
+    }
+}
+
 pub fn command_env(view: &Node, ctx: ExecCtx) -> Vec<(String, String)> {
     let mut env = Vec::new();
     let w = match ctx {

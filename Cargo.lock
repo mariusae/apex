@@ -251,6 +251,7 @@ dependencies = [
  "futures",
  "libc",
  "notify",
+ "polling",
  "postcard",
  "serde",
 ]

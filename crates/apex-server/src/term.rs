@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
-use alacritty_terminal::event_loop::{EventLoop, Msg, Notifier};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::sync::FairMutex;
@@ -20,6 +19,72 @@ use futures::channel::mpsc::UnboundedSender;
 
 use apex_core::{Cell, TermId, TermOp};
 
+use crate::term_loop::{EventLoop, Label, Msg, Notifier};
+
+/// What a terminal reports: alacritty's events, and the labels its shell
+/// wrote (acme's win: `ESC ] ; name BEL`; OSC 7: the working directory).
+#[derive(Debug)]
+pub enum TermEvent {
+    Alac(Event),
+    Name(String),
+    Cwd(String),
+}
+
+/// plan9port's `sysname`: `$sysname`, else the host's name up to the
+/// first dot; `gnot` if all else fails (win.c).
+pub fn sysname() -> String {
+    if let Ok(s) = std::env::var("sysname") {
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    let mut buf = [0u8; 256];
+    // SAFETY: a plain gethostname into a buffer of the stated size.
+    let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+    let host = if rc == 0 { std::ffi::CStr::from_bytes_until_nul(&buf).map(|c| c.to_string_lossy().to_string()).unwrap_or_default() } else { String::new() };
+    let host = host.split('.').next().unwrap_or("").to_string();
+    if host.is_empty() {
+        "gnot".into()
+    } else {
+        host
+    }
+}
+
+/// win's `label`: the window's name for a label, with `/-name` added when
+/// the label does not end in a `-` component of its own.
+pub fn labelled(text: &str, name: &str) -> String {
+    let last = text.rsplit('/').next().unwrap_or("");
+    if text.contains('/') && last.starts_with('-') {
+        return text.to_string();
+    }
+    format!("{text}{}-{name}", if text.ends_with('/') { "" } else { "/" })
+}
+
+/// The directory an OSC 7 report names: a `file://host/path` URL
+/// (percent-encoded), or a plain path.
+pub fn cwd_path(s: &str) -> Option<PathBuf> {
+    let path = match s.strip_prefix("file://") {
+        Some(rest) => &rest[rest.find('/')?..],
+        None if s.starts_with('/') => s,
+        None => return None,
+    };
+    let mut out = Vec::with_capacity(path.len());
+    let b = path.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() + 0 && i + 2 <= b.len() - 1 {
+            if let Ok(v) = u8::from_str_radix(&path[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    Some(PathBuf::from(String::from_utf8_lossy(&out).to_string()))
+}
+
 /// Cell flags in `Cell::flags`.
 pub const FLAG_BOLD: u8 = 1;
 pub const FLAG_ITALIC: u8 = 2;
@@ -29,12 +94,12 @@ pub const FLAG_UNDERLINE: u8 = 4;
 #[derive(Clone)]
 pub struct Listener {
     id: TermId,
-    tx: UnboundedSender<(TermId, Event)>,
+    tx: UnboundedSender<(TermId, TermEvent)>,
 }
 
 impl EventListener for Listener {
     fn send_event(&self, event: Event) {
-        let _ = self.tx.unbounded_send((self.id, event));
+        let _ = self.tx.unbounded_send((self.id, TermEvent::Alac(event)));
     }
 }
 
@@ -75,19 +140,30 @@ pub struct TermHost {
     pub cols: u16,
     pub rows: u16,
     pub exited: bool,
+    /// Where the shell is, as far as its labels have told us (acme's win
+    /// resolves relative names there).
     pub dir: PathBuf,
+    /// The `-name` the window carries after its directory (the host, until
+    /// a label brings its own).
+    pub label: String,
 }
 
 impl TermHost {
-    /// Start the user's shell as a login shell in `dir`.
-    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, Event)>) -> Result<TermHost, String> {
+    /// Start the user's shell as a login shell in `dir`, a truecolor
+    /// xterm with `extra` (the session, the socket) in its environment.
+    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)]) -> Result<TermHost, String> {
         tty::setup_env();
         let shell = match std::env::var_os("SHELL") {
             Some(s) if !s.is_empty() => PathBuf::from(s),
             _ => PathBuf::from("/bin/sh"),
         };
         let mut env = HashMap::new();
+        env.insert("TERM".to_string(), "xterm-256color".to_string());
+        env.insert("COLORTERM".to_string(), "truecolor".to_string());
         env.insert("TERM_PROGRAM".to_string(), "apex".to_string());
+        for (k, v) in extra {
+            env.insert(k.clone(), v.clone());
+        }
         let options = Options {
             shell: Some(Shell::new(shell.to_string_lossy().to_string(), vec!["-l".to_string()])),
             working_directory: Some(dir.to_path_buf()),
@@ -96,13 +172,21 @@ impl TermHost {
         };
         let size = WindowSize { num_lines: rows, num_cols: cols, cell_width: 8, cell_height: 16 };
         let pty = tty::new(&options, size, id.0).map_err(|e| e.to_string())?;
-        let listener = Listener { id, tx };
+        let listener = Listener { id, tx: tx.clone() };
         let term = AlacTerm::new(Config::default(), &Size { cols, rows }, listener.clone());
         let term = Arc::new(FairMutex::new(term));
-        let event_loop = EventLoop::new(term.clone(), listener, pty, false, false).map_err(|e| e.to_string())?;
+        let label_tx = tx;
+        let on_label = Box::new(move |l: Label| {
+            let ev = match l {
+                Label::Name(s) => TermEvent::Name(s),
+                Label::Cwd(s) => TermEvent::Cwd(s),
+            };
+            let _ = label_tx.unbounded_send((id, ev));
+        });
+        let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf() })
+        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label: sysname() })
     }
 
     pub fn write(&self, data: &[u8]) {

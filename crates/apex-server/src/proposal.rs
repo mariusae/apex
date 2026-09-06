@@ -40,6 +40,9 @@ pub enum Proposal {
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// Put this text in the snarf buffer (a terminal selection's text).
     Snarf { text: String },
+    /// A terminal's shell labelled its window (acme's win): the tag's
+    /// first word changes.
+    TermName { window: WindowId, name: String },
     /// B3 did not name a file: search the body instead.
     Look { ctx: ExecCtx, text: String },
     /// The file on disk changed under a dirty buffer.
@@ -145,6 +148,13 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.insert(log, view, &text)?;
             }
             Ok(view.window())
+        }
+        Proposal::TermName { window, name } => {
+            let tag = node.state.window(window)?.tag;
+            let rest = node.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
+            let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
+            node.set_content(log, tag, &format!("{name} {rest}"))?;
+            Ok(None)
         }
         Proposal::Snarf { text } => {
             node.append(log, apex_core::Shard::Layout, apex_core::Op::Layout(apex_core::LayoutOp::Snarf { text }))?;
