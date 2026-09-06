@@ -149,6 +149,11 @@ fn main() {
     }
     let socket = socket.unwrap_or_else(apex_server::daemon::default_socket);
 
+    // from the Finder we start with LaunchServices' bare environment
+    let adopted = shell::adopt_login_shell_environment();
+    if std::env::var_os("APEX_DEBUG_ENV").is_some() {
+        eprintln!("apex-ui: adopted from the login shell: {adopted:?}; PATH={}", std::env::var("PATH").unwrap_or_default());
+    }
     gpui_platform::application().run(move |cx: &mut App| {
         cursor::install();
         cx.set_menus(shell::menus());

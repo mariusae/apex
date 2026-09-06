@@ -82,6 +82,37 @@ pub fn bindings() -> Vec<KeyBinding> {
     ]
 }
 
+// ---- the login shell's environment ------------------------------------------------------
+
+/// An app launched from the Finder gets LaunchServices' environment, whose
+/// PATH is `/usr/bin:/bin:/usr/sbin:/sbin`: no `~/.local/bin`, no
+/// providers, and commands run by the daemon we start would miss them
+/// too. Ask the user's login shell for its environment and adopt it, as
+/// Zed does. Returns what changed.
+pub fn adopt_login_shell_environment() -> Vec<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+    let out = Command::new(&shell)
+        .args(["-l", "-i", "-c", "env -0 2>/dev/null || env"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    let Ok(out) = out else { return Vec::new() };
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let entries: Vec<&str> = if text.contains('\0') { text.split('\0').collect() } else { text.lines().collect() };
+    let mut changed = Vec::new();
+    for e in entries {
+        let Some((k, v)) = e.split_once('=') else { continue };
+        if k.is_empty() || matches!(k, "_" | "SHLVL" | "PWD" | "OLDPWD" | "TERM" | "TERM_PROGRAM" | "TERM_SESSION_ID") {
+            continue;
+        }
+        if std::env::var(k).ok().as_deref() != Some(v) {
+            std::env::set_var(k, v);
+            changed.push(k.to_string());
+        }
+    }
+    changed
+}
+
 // ---- which sessions to open ----------------------------------------------------------
 
 fn state_file() -> PathBuf {
@@ -261,6 +292,15 @@ pub fn install_cli() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_login_shells_path_is_adopted() {
+        std::env::set_var("PATH", "/usr/bin:/bin");
+        let changed = adopt_login_shell_environment();
+        let path = std::env::var("PATH").unwrap();
+        assert!(changed.iter().any(|k| k == "PATH"), "changed: {changed:?}");
+        assert!(path.split(':').count() > 2, "{path}");
+    }
 
     #[test]
     fn links_and_relinks_but_never_clobbers_a_file() {
