@@ -383,8 +383,13 @@ impl Daemon {
                 let _ = s.log.delete_shard(shard);
                 let _ = s.view.catch_up(&s.log);
             }
-            ClientMsg::TermKey { term, key } => s.server.term_key(term, &key),
-            ClientMsg::TermPaste { term, text } => s.server.term_paste(term, &text),
+            ClientMsg::TermKey { term, key } => s.server.term_key(&mut s.log, term, &key),
+            ClientMsg::TermPaste { term, text } => s.server.term_paste(&mut s.log, term, &text),
+            ClientMsg::TermText { term, p0, p1 } => {
+                if let Some(p) = s.server.term_text(term, p0, p1) {
+                    props.push(p);
+                }
+            }
             ClientMsg::TermResize { term, cols, rows } => s.server.term_resize(&mut s.log, term, cols, rows),
             ClientMsg::TermScroll { term, delta } => s.server.term_scroll(&mut s.log, term, delta as isize),
             ClientMsg::OpenFile { col, ctx, name: file } => {

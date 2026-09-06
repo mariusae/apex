@@ -143,6 +143,8 @@ pub struct Term {
     pub cursor: (u16, u16),
     pub cursor_visible: bool,
     pub exit: Option<i32>,
+    /// The history line shown in the viewport's first row.
+    pub top: u64,
 }
 
 // ---- meta -------------------------------------------------------------------
@@ -405,6 +407,7 @@ impl State {
                         cursor: (0, 0),
                         cursor_visible: true,
                         exit: None,
+                        top: 0,
                     },
                 );
             }
@@ -433,6 +436,7 @@ impl State {
                         }
                     }
                     TermOp::Exit { status } => t.exit = Some(*status),
+                    TermOp::View { top } => t.top = *top,
                     TermOp::Create { .. } => unreachable!(),
                 }
             }

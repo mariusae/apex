@@ -262,18 +262,34 @@ impl Server {
 
     /// Keys go to the live screen: a terminal scrolled back comes back
     /// to the bottom first (its rows are republished by the next event).
-    pub fn term_key(&mut self, id: TermId, key: &TermKey) {
+    pub fn term_key(&mut self, log: &mut Log, id: TermId, key: &TermKey) {
         if let Some(h) = self.terms.get_mut(&id) {
-            h.scroll_to_bottom();
+            let scrolled = h.scroll_to_bottom();
             h.key(key);
+            if scrolled {
+                self.publish_term(log, id);
+            }
         }
     }
 
-    pub fn term_paste(&mut self, id: TermId, text: &str) {
+    pub fn term_paste(&mut self, log: &mut Log, id: TermId, text: &str) {
         if let Some(h) = self.terms.get_mut(&id) {
-            h.scroll_to_bottom();
+            let scrolled = h.scroll_to_bottom();
             h.paste(text);
+            if scrolled {
+                self.publish_term(log, id);
+            }
         }
+    }
+
+    /// A terminal selection's text (it may run into the scrollback only
+    /// the server has), as a proposal that snarfs it.
+    pub fn term_text(&self, id: TermId, p0: (u16, u64), p1: (u16, u64)) -> Option<Proposal> {
+        let text = self.terms.get(&id)?.text(p0, p1);
+        if text.is_empty() {
+            return None;
+        }
+        Some(Proposal::Snarf { text })
     }
 
     pub fn term_resize(&mut self, log: &mut Log, id: TermId, cols: u16, rows: u16) {
@@ -532,7 +548,7 @@ impl Server {
                 if !text.ends_with('\n') {
                     text.push('\n');
                 }
-                self.term_paste(t, &text);
+                self.term_paste(log, t, &text);
             }
             "Newweb" => return Err(format!("{cmd}: not implemented")),
             _ => {

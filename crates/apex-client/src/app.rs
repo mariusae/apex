@@ -169,9 +169,11 @@ pub struct Acme {
     pub title_shown: String,
     /// The link to the daemon is up (a socket, or a provider's bridge).
     pub connected: bool,
-    /// A selection in a terminal, client-side: the window, and two cell
-    /// positions (column, row) in reading order, the end exclusive.
-    pub term_sel: Option<(WindowId, (usize, usize), (usize, usize))>,
+    /// A selection in a terminal, client-side: the window, and two
+    /// positions (column, history line), the end exclusive.
+    pub term_sel: Option<(WindowId, (usize, u64), (usize, u64))>,
+    /// The snarf buffer as it was when a terminal copy was requested.
+    snarf_wanted: Option<String>,
     /// The heartbeat: when the last ping went out.
     last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
@@ -470,6 +472,7 @@ impl Acme {
             connected: true,
             last_ping: None,
             term_sel: None,
+            snarf_wanted: None,
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -737,14 +740,14 @@ impl Acme {
 
     fn term_key(&mut self, t: TermId, key: TermKey) {
         match &mut self.backend {
-            Backend::Local(server) => server.term_key(t, &key),
+            Backend::Local(server) => server.term_key(&mut self.log, t, &key),
             Backend::Remote(link) => link.send(&ClientMsg::TermKey { term: t, key }),
         }
     }
 
     fn term_paste(&mut self, t: TermId, text: String) {
         match &mut self.backend {
-            Backend::Local(server) => server.term_paste(t, &text),
+            Backend::Local(server) => server.term_paste(&mut self.log, t, &text),
             Backend::Remote(link) => link.send(&ClientMsg::TermPaste { term: t, text }),
         }
     }
@@ -967,7 +970,8 @@ impl Acme {
             }
             (Target::Term(w, t), button) => match (region, button) {
                 (Region::Term(c, r), MouseButton::Left) => {
-                    self.term_sel = Some((w, (c, r), (c, r)));
+                    let p = (c, self.term_top(w) + r as u64);
+                    self.term_sel = Some((w, p, p));
                     self.mouse.term_drag = Some(w);
                     self.node.activecol = self.column_of_view(ViewId::Tag(w));
                 }
@@ -1010,8 +1014,10 @@ impl Acme {
             if let (Some(l), Some((sw, anchor, _))) = (self.term_layouts.get(&w), self.term_sel) {
                 if sw == w {
                     let (c, r) = l.cell_at(pos);
+                    let (cols, top) = (l.cols as usize, self.term_top(w));
+                    let line = top + r as u64;
                     // the end is exclusive: past the pointed-at cell when dragging forward
-                    let end = if (r, c) >= (anchor.1, anchor.0) { ((c + 1).min(l.cols as usize), r) } else { (c, r) };
+                    let end = if (line, c) >= (anchor.1, anchor.0) { ((c + 1).min(cols), line) } else { (c, line) };
                     self.term_sel = Some((w, anchor, end));
                     changed = true;
                 }
@@ -1274,41 +1280,50 @@ impl Acme {
         true
     }
 
-    /// The text a terminal selection covers: cells in reading order, rows
-    /// trimmed of trailing blanks, joined by newlines.
-    pub fn term_selected_text(&self, w: WindowId) -> Option<String> {
-        let (sw, a, b) = self.term_sel?;
-        if sw != w {
-            return None;
+    fn term_of(&self, w: WindowId) -> Option<TermId> {
+        match self.node.state.window(w).ok()?.body {
+            Body::Term(t) => Some(t),
+            _ => None,
         }
-        let (p0, p1) = if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
-        if p0 == p1 {
-            return None;
-        }
-        let win = self.node.state.window(w).ok()?;
-        let Body::Term(t) = win.body else { return None };
-        let term = self.node.state.terms.get(&t)?;
-        let mut out = String::new();
-        for r in p0.1..=p1.1.min(term.grid.len().saturating_sub(1)) {
-            let row = &term.grid[r];
-            let from = if r == p0.1 { p0.0 } else { 0 };
-            let to = if r == p1.1 { p1.0.min(row.len()) } else { row.len() };
-            let line: String = row[from.min(to)..to].iter().map(|c| if c.ch == '\0' { ' ' } else { c.ch }).collect();
-            out.push_str(line.trim_end());
-            if r != p1.1 {
-                out.push('\n');
-            }
-        }
-        Some(out)
     }
 
-    /// Copy a terminal's selection: to the clipboard, and to the snarf
-    /// buffer so Paste and Send have it.
+    /// The history line in a terminal window's first row.
+    fn term_top(&self, w: WindowId) -> u64 {
+        self.term_of(w).and_then(|t| self.node.state.terms.get(&t)).map(|t| t.top).unwrap_or(0)
+    }
+
+    /// Copy a terminal's selection: the server, which has the scrollback,
+    /// snarfs its text; the clipboard follows the snarf buffer.
     pub fn term_copy(&mut self, w: WindowId, cx: &mut Context<Self>) {
-        let Some(text) = self.term_selected_text(w) else { return };
-        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-        let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text }));
-        self.sync();
+        let Some((sw, a, b)) = self.term_sel else { return };
+        if sw != w || a == b {
+            return;
+        }
+        let Some(t) = self.term_of(w) else { return };
+        let (p0, p1) = ((a.0 as u16, a.1), (b.0 as u16, b.1));
+        self.snarf_wanted = Some(self.node.state.layout.snarf.clone());
+        match &mut self.backend {
+            Backend::Local(server) => {
+                if let Some(p) = server.term_text(t, p0, p1) {
+                    perform(&mut self.node, &mut self.log, vec![p]);
+                }
+            }
+            Backend::Remote(link) => link.send(&ClientMsg::TermText { term: t, p0, p1 }),
+        }
+        self.after();
+        self.settle_snarf(cx);
+    }
+
+    /// A terminal copy is waiting for the server's text: once the snarf
+    /// buffer changes, the clipboard gets it too.
+    pub fn settle_snarf(&mut self, cx: &mut Context<Self>) {
+        if let Some(prev) = &self.snarf_wanted {
+            let s = &self.node.state.layout.snarf;
+            if s != prev {
+                cx.write_to_clipboard(ClipboardItem::new_string(s.clone()));
+                self.snarf_wanted = None;
+            }
+        }
     }
 
     /// acme's `textcomplete`: the path fragment before `q0` goes to the
@@ -1475,7 +1490,8 @@ impl Acme {
                 "copy" | "cut" => self.term_copy(w, cx),
                 "select-all" => {
                     if let Some(l) = self.term_layouts.get(&w) {
-                        self.term_sel = Some((w, (0, 0), (l.cols as usize, l.rows.len().saturating_sub(1))));
+                        let top = self.term_top(w);
+                        self.term_sel = Some((w, (0, top), (l.cols as usize, top + l.rows.len().saturating_sub(1) as u64)));
                     }
                 }
                 _ => {}

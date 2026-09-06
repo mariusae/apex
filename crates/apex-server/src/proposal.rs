@@ -38,6 +38,8 @@ pub enum Proposal {
     CommandExit { name: String },
     /// The outcome of an exec.
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
+    /// Put this text in the snarf buffer (a terminal selection's text).
+    Snarf { text: String },
     /// B3 did not name a file: search the body instead.
     Look { ctx: ExecCtx, text: String },
     /// The file on disk changed under a dirty buffer.
@@ -143,6 +145,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.insert(log, view, &text)?;
             }
             Ok(view.window())
+        }
+        Proposal::Snarf { text } => {
+            node.append(log, apex_core::Shard::Layout, apex_core::Op::Layout(apex_core::LayoutOp::Snarf { text }))?;
+            Ok(None)
         }
         Proposal::Status { ctx, exec, status } => {
             // the window may be gone (Del); the metalog is the record then

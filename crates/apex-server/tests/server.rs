@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use apex_core::state::ExecStatus;
 use apex_core::*;
-use apex_server::{perform, Server, ServerEvent};
+use apex_server::{perform, Proposal, Server, ServerEvent};
 use futures::channel::mpsc::UnboundedReceiver;
 
 fn session() -> (Log, Node, ColumnId, Server, UnboundedReceiver<ServerEvent>) {
@@ -144,7 +144,7 @@ fn newterm_runs_a_shell() {
     assert!(node.state.terms.contains_key(&t));
     // type a command into the shell and see its output in the grid
     for c in "echo apex-term-$((6*7))\r".chars() {
-        server.term_key(t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
     }
     let grid_text = |n: &Node| {
         n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default()
@@ -244,4 +244,43 @@ fn commands_run_in_rc_with_acmes_environment() {
     } else {
         eprintln!("no rc built (target/rc-host/bin/rc): commands fell back to {shell}");
     }
+}
+
+#[test]
+fn terminal_selection_follows_the_scrollback_and_keys_scroll_to_the_bottom() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().next().copied().expect("terminal");
+    server.close_orphan_terms(&mut log, &node);
+    let key = |server: &mut Server, log: &mut Log, c: char| {
+        server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    };
+    for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
+        key(&mut server, &mut log, c);
+    }
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).iter().any(|r| r == "line-100")), "grid:\n{}", rows(&node).join("\n"));
+    let bottom = node.state.terms[&t].top;
+    assert!(bottom > 0, "the output scrolled into history");
+    // scroll back: the viewport's first line moves up in the history
+    server.term_scroll(&mut log, t, -20);
+    node.catch_up(&log).unwrap();
+    let top = node.state.terms[&t].top;
+    assert_eq!(top, bottom - 20);
+    // a selection is addressed by history line, so it names the same text
+    // wherever the viewport is
+    let shown = rows(&node);
+    let r = shown.iter().position(|r| r.starts_with("line-")).expect("a line in view");
+    let n: u64 = shown[r][5..].parse().unwrap();
+    let line = top + r as u64;
+    let Some(Proposal::Snarf { text }) = server.term_text(t, (0, line), (0, line + 2)) else { panic!("no text") };
+    assert_eq!(text, format!("line-{n}\nline-{}", n + 1));
+    let Some(Proposal::Snarf { text }) = server.term_text(t, (5, line), (7, line)) else { panic!("no text") };
+    assert_eq!(text, shown[r][5..7]);
+    assert!(server.term_text(t, (3, line), (3, line)).is_none());
+    // typing brings the live screen back
+    key(&mut server, &mut log, 'x');
+    node.catch_up(&log).unwrap();
+    assert_eq!(node.state.terms[&t].top, bottom);
 }

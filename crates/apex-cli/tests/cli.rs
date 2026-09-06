@@ -68,12 +68,17 @@ fn scripts_drive_a_headless_session() {
     ok(&sock, &["sel", "notes.txt", "5", "10"]);
     assert_eq!(ok(&sock, &["sel", "notes.txt"]), "5 10\n");
 
-    // a pipe through the shell, as B2 would
+    // a pipe through the shell, as B2 would: the selection ("apple") sorts
+    // to itself, but the replacement dirties the window
     ok(&sock, &["exec", "notes.txt", "|sort"]);
+    let dirty = |sock: &PathBuf| ok(sock, &["win", "list"]).lines().any(|l| l.contains("\t*") && l.ends_with("notes.txt"));
     let deadline = Instant::now() + Duration::from_secs(5);
-    while ok(&sock, &["text", "read", "notes.txt"]) != "pear\napple\nkiwi\n".replace("apple", "apple") && Instant::now() < deadline {
+    while !dirty(&sock) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
+    assert!(dirty(&sock), "|sort dirties the window:\n{}", ok(&sock, &["win", "list"]));
+    // sort's output ends in a newline the selection did not have
+    assert_eq!(ok(&sock, &["text", "read", "notes.txt"]), "pear\napple\n\nkiwi\n");
 
     // a terminal
     let t = ok(&sock, &["term", "new"]);

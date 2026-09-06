@@ -108,9 +108,11 @@ impl Element for TermElement {
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
             // the selection, if it is in this terminal: acme's yellow
             let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) });
+            let top = t.top;
             let selected = |x: usize, y: usize| -> bool {
+                let line = top + y as u64;
                 match sel {
-                    Some((p0, p1)) => (y, x) >= (p0.1, p0.0) && (y, x) < (p1.1, p1.0),
+                    Some((p0, p1)) => (line, x) >= (p0.1, p0.0) && (line, x) < (p1.1, p1.0),
                     None => false,
                 }
             };

@@ -342,6 +342,7 @@ fn open_window(cx: &mut App, target: Target) {
                                 if !acme.poll_remote() {
                                     eprintln!("apex-ui: server went away");
                                 }
+                                acme.settle_snarf(cx);
                                 cx.notify();
                             });
                             if r.is_err() {

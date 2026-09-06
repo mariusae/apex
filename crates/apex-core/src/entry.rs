@@ -167,6 +167,9 @@ pub enum TermOp {
     Cursor { col: u16, row: u16, visible: bool },
     Resize { cols: u16, rows: u16 },
     Exit { status: i32 },
+    /// The viewport's first row is this line of the terminal's history
+    /// (0 is the oldest line kept); the client anchors selections to it.
+    View { top: u64 },
 }
 
 // ---- meta -----------------------------------------------------------------

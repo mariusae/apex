@@ -9,6 +9,7 @@ use std::sync::Arc;
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Msg, Notifier};
 use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, TermMode};
@@ -127,6 +128,31 @@ impl TermHost {
         }
         t.scroll_display(Scroll::Bottom);
         true
+    }
+
+    /// The text between two positions, `(column, history line)` as the
+    /// term shard numbers them, the end exclusive; wrapped lines join.
+    pub fn text(&self, p0: (u16, u64), p1: (u16, u64)) -> String {
+        let t = self.term.lock();
+        let hist = t.grid().history_size() as i64;
+        let last_col = t.grid().columns().saturating_sub(1) as u16;
+        let last_line = t.grid().screen_lines() as i64 - 1;
+        let (p0, p1) = if (p0.1, p0.0) <= (p1.1, p1.0) { (p0, p1) } else { (p1, p0) };
+        // an exclusive end, as an inclusive one on the cell before it
+        let end = if p1.0 == 0 {
+            if p1.1 <= p0.1 {
+                return String::new();
+            }
+            (last_col, p1.1 - 1)
+        } else {
+            (p1.0 - 1, p1.1)
+        };
+        let point = |(c, l): (u16, u64)| Point::new(Line((l as i64 - hist).clamp(-hist, last_line) as i32), Column(c.min(last_col) as usize));
+        let (a, b) = (point(p0), point(end));
+        if a > b {
+            return String::new();
+        }
+        t.bounds_to_string(a, b)
     }
 
     pub fn scroll(&mut self, delta: isize) {
@@ -294,8 +320,10 @@ impl TermHost {
         let cursor = content.cursor;
         let visible = cursor.shape != CursorShape::Hidden;
         let crow = (cursor.point.line.0 + off).max(0) as u16;
+        let top = t.grid().history_size().saturating_sub(content.display_offset) as u64;
         drop(t);
         vec![
+            TermOp::View { top },
             TermOp::Rows { first: 0, rows },
             TermOp::Cursor { col: cursor.point.column.0 as u16, row: crow, visible },
         ]

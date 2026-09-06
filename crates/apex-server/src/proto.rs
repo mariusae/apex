@@ -29,6 +29,9 @@ pub enum ClientMsg {
     TermPaste { term: TermId, text: String },
     TermResize { term: TermId, cols: u16, rows: u16 },
     TermScroll { term: TermId, delta: i64 },
+    /// Snarf the text between two `(column, history line)` positions of a
+    /// terminal (the end exclusive); the answer is a `Snarf` proposal.
+    TermText { term: TermId, p0: (u16, u64), p1: (u16, u64) },
     /// Open a file (relative to the window's directory) in a column.
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
     /// B3: a file, or else a search.

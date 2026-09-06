@@ -716,14 +716,18 @@ the pty. Selection inside a terminal (v2) is a `window` shard entry like any
 other selection, computed over the mirrored rows, so B2/B3 on terminal text
 work exactly as in text windows.
 
-*As built:* terminal selection is client-side, not a shard entry: B1 drag
-over cells selects (acme's yellow, boundary positions in the viewport),
-cmd-c / Edit ▸ Copy, `Snarf` in the window's tag, or the B1+B2 chord copy
-the trimmed rows to the clipboard and to the snarf buffer (so Paste and
-Send have them); cmd-a selects the whole viewport. Keyboard input and
-pastes scroll the terminal back to the bottom first, as every terminal
-does. Sharing the selection between clients can come with paged
-scrollback, when positions have a stable reference.
+*As built:* terminal selection is client-side, not a shard entry. The
+term shard carries `View{top}`, the history line in the viewport's first
+row, and a selection is two `(column, history line)` positions, so it
+stays on its text as the terminal scrolls. B1 drag selects (acme's
+yellow); cmd-c / Edit ▸ Copy, `Snarf` in the window's tag, or the B1+B2
+chord send `TermText` to the server, which has the scrollback, and its
+answer is a `Snarf` proposal (so Paste and Send have the text); the
+clipboard follows the snarf buffer. Wrapped lines join, as in alacritty.
+cmd-a selects the viewport. Keys and pastes first scroll the terminal
+back to the bottom, republishing the rows at once. History lines are
+numbered from the oldest line kept, so a selection drifts once the
+scrollback limit truncates; a selection does not outlive that.
 
 **Web windows** are out of v1. The prototype's headless-Chrome screencast
 is a server-side renderer and fits the model, but it is bandwidth-heavy
