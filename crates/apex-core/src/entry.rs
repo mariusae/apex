@@ -119,6 +119,12 @@ pub enum WindowOp {
     Create { tag: BufferId, body: Body },
     /// Toggle the alternate (monospace) font.
     Font { mono: bool },
+    /// acme's `Tab n`: the body's tab stop.
+    Tab { n: u32 },
+    /// acme's `Indent on|off`: copy the previous line's indentation on newline.
+    Indent { on: bool },
+    /// acme's `tagexpand`: whether the tag shows all its lines (Down) or one (Up).
+    TagExpand { on: bool },
     /// B2 (or the CLI) executed something in this window.
     Exec(ExecOp),
     Status { exec: Seq, status: ExecStatusOp },

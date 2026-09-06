@@ -383,6 +383,7 @@ impl Daemon {
                         eprintln!("apexd: {name}: proposal: {e}");
                     }
                 }
+                let _ = s.view.update_tags(&mut s.log);
                 // what the daemon just did may have handed the server more
                 props = s.server.poll_execs(&mut s.log, &s.view);
                 s.server.close_orphan_terms(&mut s.log, &s.view);

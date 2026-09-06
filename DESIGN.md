@@ -730,6 +730,34 @@ drag, and to the selection when an already open file is plumbed. macOS
 gives no mouse event for a warp, so the client remembers where it put the
 pointer for keyboard routing until the mouse really moves.
 
+*Fidelity audit against plan9port acme (2026-09-05).* Read side by side
+with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
+and `scrl.c`. Matching now: the three buttons and their chords, including
+B1 while B2 is down passing the last selection as the command's argument;
+double-click selection of bracketed and quoted spans and lines
+(`textdoubleclick`/`textclickmatch`); `Del`/`Delete`/`Delcol`/`Get` through
+`winclean` (scratch windows such as `+Errors` and directories go at once;
+a dirty window warns "name modified" once and goes the second time; a
+small unnamed window never whines); the tag's words `Undo Redo Put Get`
+coming and going as acme's `winsettag1`; `Newcol` making an empty window;
+the last column being deletable, `New` making a column when there is none;
+`Look` searching the last-selected text (`seltext`), wrapping, and moving
+the mouse to the match; `Tab`, `Indent on|off` (autoindent), `ID`; Up and
+Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
+a third of the window and PageUp/PageDown two thirds; Home and End; the
+erase keys; and the pointers: plan9port's big arrow always, the box while
+a layout box is held. Not yet, no design conflict: the scrollbar scrolling
+continuously while a button is held (`textscroll`, with the pointer pinned
+to the bar); `^F`/Insert filename completion; B1 drag autoscrolling past
+the window edge; the mouse being pushed out of a tag that grows under it
+(`winresize`); `Kill` (the server does not yet track the commands it
+started); `Zerox` refusing directories; newline ignored in column and top
+tags; `+Errors` per directory in the source window's column rather than
+per column. Conflicts with the design, to be decided: `Exit` (acme
+refuses while windows are dirty; here the session survives the client),
+`Dump`/`Load` (acme's session file; here sessions live in the daemon),
+`Send`, `Local`, `Incl`, `Abort`.
+
 ^H, ^U and ^W erase exactly as acme's `textbswidth`: ^W skips
 non-alphanumerics, then erases the alphanumeric run, never past the start
 of the line or the window's origin; with a selection, the selection is

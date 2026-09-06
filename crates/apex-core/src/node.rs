@@ -14,7 +14,9 @@ use crate::state::{Applied, ApplyError, Layout, State};
 use crate::text::Text;
 use crate::tiling::{self, Rect, Warp};
 
-pub const WIN_TAG_SUFFIX: &str = " Del Snarf Undo Put | Look ";
+/// What a new window's tag holds after its name; the words before `|`
+/// are kept up to date by [`Node::update_tags`], as acme's `winsettag`.
+pub const WIN_TAG_SUFFIX: &str = " Del Snarf | Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
 pub const TOP_TAG: &str = "Newcol Newterm Kill Putall Dump Exit ";
 pub const ERRORS: &str = "+Errors";
@@ -34,6 +36,79 @@ pub enum CoreError {
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;
+
+/// acme's `textdoubleclick`: a click next to a bracket or quote selects
+/// what it encloses; on a line end, the line; else the alphanumeric word.
+pub fn double_click(t: &Text, q: usize) -> (usize, usize) {
+    const LEFT: [&[char]; 3] = [&['{', '[', '(', '<', '«'], &['\n'], &['\'', '"', '`']];
+    const RIGHT: [&[char]; 3] = [&['}', ']', ')', '>', '»'], &['\n'], &['\'', '"', '`']];
+    let n = t.len();
+    let (mut q0, mut q1) = (q.min(n), q.min(n));
+    for i in 0..3 {
+        let (l, r) = (LEFT[i], RIGHT[i]);
+        // try matching character to left, looking right
+        let c = if q0 == 0 { '\n' } else { t.char_at(q0 - 1) };
+        if let Some(p) = l.iter().position(|&x| x == c) {
+            let mut qq = q0;
+            if click_match(t, c, r[p], 1, &mut qq) {
+                q1 = qq - (c != '\n') as usize;
+            }
+            return (q0, q1);
+        }
+        // try matching character to right, looking left
+        let c = if q0 == n { '\n' } else { t.char_at(q0) };
+        if let Some(p) = r.iter().position(|&x| x == c) {
+            let mut qq = q0;
+            if click_match(t, c, l[p], -1, &mut qq) {
+                q1 = q0 + (q0 < n && c == '\n') as usize;
+                q0 = qq;
+                if c != '\n' || qq != 0 || t.char_at(0) == '\n' {
+                    q0 += 1;
+                }
+            }
+            return (q0, q1);
+        }
+    }
+    // try filling out word to right, then to left
+    while q1 < n && t.char_at(q1).is_alphanumeric() {
+        q1 += 1;
+    }
+    while q0 > 0 && t.char_at(q0 - 1).is_alphanumeric() {
+        q0 -= 1;
+    }
+    (q0, q1)
+}
+
+/// acme's `textclickmatch`.
+fn click_match(t: &Text, cl: char, cr: char, dir: i32, q: &mut usize) -> bool {
+    let n = t.len();
+    let mut nest = 1;
+    loop {
+        let c;
+        if dir > 0 {
+            if *q == n {
+                break;
+            }
+            c = t.char_at(*q);
+            *q += 1;
+        } else {
+            if *q == 0 {
+                break;
+            }
+            *q -= 1;
+            c = t.char_at(*q);
+        }
+        if c == cr {
+            nest -= 1;
+            if nest == 0 {
+                return true;
+            }
+        } else if c == cl {
+            nest += 1;
+        }
+    }
+    cl == '\n' && nest == 1
+}
 
 /// acme's three erasing keys.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -559,6 +634,25 @@ impl Node {
         let b = self.view_buffer(view)?;
         let (q0, q1) = self.selection(view)?;
         let group = self.typing_group(view);
+        let mut text = text.to_string();
+        if text == "\n" && matches!(view, ViewId::Body(_)) {
+            // acme's autoindent: copy the previous line's leading blanks
+            let auto = view.window().and_then(|w| self.state.window(w).ok()).is_some_and(|w| w.autoindent);
+            if auto {
+                let t = &self.state.buffer(b)?.text;
+                let nnb = Self::bswidth(t, q0, Erase::Line);
+                let mut ws = String::new();
+                for i in 0..nnb {
+                    let c = t.char_at(q0 - nnb + i);
+                    if c != ' ' && c != '\t' {
+                        break;
+                    }
+                    ws.push(c);
+                }
+                text.push_str(&ws);
+            }
+        }
+        let text = text.as_str();
         self.edit_op(log, b, q0, q1 - q0, text, group)?;
         let p = q0 + count(text);
         self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0: p, q1: p }))?;
@@ -724,8 +818,9 @@ impl Node {
     }
 
     /// Search the body forward from the selection, wrapping; select a hit.
-    pub fn look(&mut self, log: &mut Log, window: WindowId, needle: &str) -> Result<bool> {
-        let view = ViewId::Body(window);
+    /// acme's `search`, in the text `view`: forward from its selection's
+    /// end, wrapping around; the match becomes the selection.
+    pub fn look(&mut self, log: &mut Log, view: ViewId, needle: &str) -> Result<bool> {
         let b = self.view_buffer(view)?;
         let buf = self.state.buffer(b)?;
         let (_, from) = self.selection(view)?;
@@ -741,10 +836,97 @@ impl Node {
         match hit {
             Some(i) => {
                 self.select(log, view, i, i + n.len())?;
+                self.seltext = Some(view);
                 Ok(true)
             }
             None => Ok(false),
         }
+    }
+
+    /// acme's `winclean`: may this window go? Scratch windows (`+Errors`,
+    /// `guide`) and directories always; a dirty window warns once
+    /// ("name modified") and goes the second time, as acme clears its
+    /// dirty flag after warning.
+    pub fn winclean(&mut self, log: &mut Log, w: WindowId, _conservative: bool) -> Result<bool> {
+        let name = self.window_name(w);
+        let isdir = name.ends_with('/');
+        let isscratch = name.ends_with("+Errors") || name.ends_with("/guide");
+        if isscratch || isdir {
+            return Ok(true);
+        }
+        if !self.window_dirty(w) {
+            return Ok(true);
+        }
+        let Some(b) = self.state.window(w)?.body_buffer() else { return Ok(true) };
+        let (version, len) = {
+            let buf = self.state.buffer(b)?;
+            (buf.version, buf.text.len())
+        };
+        if self.warned.get(&w) == Some(&version) {
+            return Ok(true);
+        }
+        let col = self.column_of(w)?;
+        if !name.is_empty() {
+            self.errors(log, col, &format!("{name} modified\n"))?;
+        } else {
+            if len < 100 {
+                return Ok(true); // don't whine if it's too small
+            }
+            self.errors(log, col, "unnamed file modified\n")?;
+        }
+        self.warned.insert(w, version);
+        Ok(false)
+    }
+
+    /// acme's `colclean`.
+    pub fn colclean(&mut self, log: &mut Log, col: ColumnId) -> Result<bool> {
+        let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
+        let mut clean = true;
+        for w in wins {
+            clean &= self.winclean(log, w, true)?;
+        }
+        Ok(clean)
+    }
+
+    /// acme's `winsettag1`: the words before `|` in every window's tag —
+    /// `Del Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they apply —
+    /// brought up to date. The text after `|` is the user's.
+    pub fn update_tags(&mut self, log: &mut Log) -> Result<()> {
+        let wins: Vec<WindowId> = self.state.windows.keys().copied().collect();
+        for w in wins {
+            let Ok(win) = self.state.window(w) else { continue };
+            let tag = win.tag;
+            let name = self.window_name(w);
+            let mut new = format!("{name} Del Snarf");
+            if let Some(b) = win.body_buffer() {
+                let buf = self.state.buffer(b)?;
+                if !buf.undo.is_empty() {
+                    new.push_str(" Undo");
+                }
+                if !buf.redo.is_empty() {
+                    new.push_str(" Redo");
+                }
+                let isdir = name.ends_with('/');
+                if !isdir && !name.is_empty() && buf.dirty() {
+                    new.push_str(" Put");
+                }
+                if isdir {
+                    new.push_str(" Get");
+                }
+            }
+            new.push_str(" |");
+            let old = self.state.buffer(tag)?.text.to_string();
+            let k = old.chars().position(|c| c == '|').map(|i| i + 1).unwrap_or(old.chars().count());
+            let head: String = old.chars().take(k).collect();
+            if head != new {
+                if !old.contains('|') {
+                    new.push_str(" Look ");
+                }
+                let group = self.new_group();
+                self.edit_op(log, tag, 0, k, &new, group)?;
+            }
+        }
+        Ok(())
     }
 
     /// Run an Edit program on a window's body as leader and lower its
@@ -867,8 +1049,8 @@ impl Node {
             return Handler::Server;
         }
         match t.split_whitespace().next().unwrap_or("") {
-            "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Zerox"
-            | "Font" | "Sort" | "Exit" => Handler::Leader,
+            "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
+            | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -877,6 +1059,15 @@ impl Node {
     /// Execute `text` as B2 would from `ctx`. Built-ins run here; anything
     /// else is recorded for the server.
     pub fn exec(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<Executed> {
+        // acme's get: a dirty window is asked once before reloading
+        if text.trim() == "Get" {
+            if let ExecCtx::Window(w) = ctx {
+                let len = self.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.state.buffer(b).ok()).map(|b| b.text.len()).unwrap_or(0);
+                if len > 0 && !self.window_name(w).ends_with('/') && !self.winclean(log, w, true)? {
+                    return Ok(Executed::Done(0));
+                }
+            }
+        }
         self.end_typing();
         let text = text.trim().to_string();
         let handler = Node::resolve(&text);
@@ -916,6 +1107,7 @@ impl Node {
         let mut words = text.split_whitespace();
         let cmd = words.next().unwrap_or("");
         let rest = text[cmd.len()..].trim();
+        let arg = rest.split_whitespace().next();
         let win = match ctx {
             ExecCtx::Window(w) => Some(w),
             _ => None,
@@ -938,7 +1130,7 @@ impl Node {
             "Look" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Look needs a window".into()))?;
                 let needle = if rest.is_empty() { self.selected_text(ViewId::Body(w))? } else { rest.to_string() };
-                self.look(log, w, &needle)?;
+                self.look(log, ViewId::Body(w), &needle)?;
             }
             "Edit" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Edit needs a window".into()))?;
@@ -956,7 +1148,11 @@ impl Node {
                 }
             }
             "New" => {
-                let col = self.column_ctx(ctx)?;
+                let col = match self.column_ctx(ctx) {
+                    Ok(c) => c,
+                    Err(_) if self.state.layout.cols.is_empty() => self.new_column(log, None)?,
+                    Err(e) => return Err(e),
+                };
                 let body = self.create_buffer(log, "", "", None)?;
                 let w = self.make_window(log, win, col, body)?;
                 self.seltext = Some(ViewId::Body(w));
@@ -968,31 +1164,52 @@ impl Node {
                 self.open_window(log, col, body)?;
             }
             "Delcol" => {
+                // acme's delcol: colclean warns for each dirty window and
+                // refuses; the second Delcol goes through
                 let col = self.column_ctx(ctx)?;
-                if self.state.layout.cols.len() <= 1 {
-                    return Err(CoreError::Missing("can't delete last column".into()));
+                if !self.colclean(log, col)? {
+                    return Ok(false);
                 }
                 let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
-                for w in &wins {
-                    if self.window_dirty(*w) {
-                        return Err(CoreError::Missing("can't delete column: window is dirty".into()));
-                    }
-                }
                 for w in wins {
                     self.delete_window(log, w)?;
                 }
                 self.delete_column(log, col)?;
             }
-            "Del" => {
+            "Del" | "Delete" => {
+                // acme's del: Delete forces; another view on the file, or a
+                // clean window, goes at once; a dirty one warns first
                 let w = win.ok_or_else(|| CoreError::Missing("Del needs a window".into()))?;
-                if self.window_dirty(w) && self.window_last_view(w) {
-                    let version = self.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.state.buffer(b).ok()).map(|b| b.version).unwrap_or(0);
-                    if self.warned.get(&w) != Some(&version) {
-                        self.warned.insert(w, version);
-                        return Err(CoreError::Missing("file modified; Del again to discard".into()));
+                if cmd == "Delete" || !self.window_last_view(w) || self.winclean(log, w, false)? {
+                    self.delete_window(log, w)?;
+                }
+            }
+            "Tab" => {
+                let w = win.ok_or_else(|| CoreError::Missing("Tab needs a window".into()))?;
+                match arg.and_then(|a| a.parse::<u32>().ok()) {
+                    Some(n) if n > 0 => {
+                        self.append(log, Shard::Window(w), Op::Window(WindowOp::Tab { n }))?;
+                    }
+                    _ => {
+                        let (name, tab) = (self.window_name(w), self.state.window(w)?.tabstop);
+                        let col = self.column_of(w)?;
+                        self.errors(log, col, &format!("{name}: Tab {tab}\n"))?;
                     }
                 }
-                self.delete_window(log, w)?;
+            }
+            "Indent" => {
+                let w = win.ok_or_else(|| CoreError::Missing("Indent needs a window".into()))?;
+                let on = match arg {
+                    Some("on") | Some("ON") => true,
+                    Some("off") | Some("OFF") => false,
+                    _ => return Err(CoreError::Missing("Indent on|off".into())),
+                };
+                self.append(log, Shard::Window(w), Op::Window(WindowOp::Indent { on }))?;
+            }
+            "ID" => {
+                let w = win.ok_or_else(|| CoreError::Missing("ID needs a window".into()))?;
+                let col = self.column_of(w)?;
+                self.errors(log, col, &format!("{}\n", w.0))?;
             }
             "Zerox" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Zerox needs a window".into()))?;

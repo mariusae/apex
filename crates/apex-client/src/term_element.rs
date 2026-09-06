@@ -76,12 +76,10 @@ impl Element for TermElement {
     }
 
     fn request_layout(&mut self, _: Option<&GlobalElementId>, _: Option<&InspectorElementId>, window: &mut Window, cx: &mut App) -> (LayoutId, ()) {
+        // acme's tiling decides the rectangle; fill it
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.flex_grow = 1.;
-        style.flex_shrink = 1.;
-        style.flex_basis = px(0.).into();
-        style.min_size.height = px(0.).into();
+        style.size.height = relative(1.).into();
         (window.request_layout(style, [], cx), ())
     }
 

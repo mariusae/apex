@@ -215,6 +215,7 @@ dependencies = [
  "futures",
  "gpui",
  "gpui_platform",
+ "objc",
 ]
 
 [[package]]

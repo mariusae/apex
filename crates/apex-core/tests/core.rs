@@ -176,9 +176,12 @@ fn del_warns_once_on_a_dirty_buffer() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "f", "x").unwrap();
     node.insert(&mut log, ViewId::Body(w), "y").unwrap();
+    // acme's winclean: the first Del warns in +Errors and does nothing
     let r = node.exec(&mut log, ExecCtx::Window(w), "Del").unwrap();
-    assert!(matches!(r, Executed::Failed(_, ref m) if m.contains("modified")));
+    assert!(matches!(r, Executed::Done(_)));
     assert!(node.state.window(w).is_ok());
+    let errors = node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default();
+    assert!(errors.contains("f modified"), "{errors:?}");
     let r = node.exec(&mut log, ExecCtx::Window(w), "Del").unwrap();
     assert!(matches!(r, Executed::Done(_)));
     assert!(node.state.window(w).is_err());
@@ -206,7 +209,11 @@ fn columns_new_delete_sort() {
     assert_eq!(&wins[1..], &[wa, wb]);
     assert!(matches!(node.exec(&mut log, ExecCtx::Column(c2), "Delcol").unwrap(), Executed::Done(_)));
     assert_eq!(node.state.layout.cols.len(), 1);
-    assert!(matches!(node.exec(&mut log, ExecCtx::Column(col), "Delcol").unwrap(), Executed::Failed(..)));
+    // acme lets the last column go too; New makes one again
+    assert!(matches!(node.exec(&mut log, ExecCtx::Column(col), "Delcol").unwrap(), Executed::Done(_)));
+    assert_eq!(node.state.layout.cols.len(), 0);
+    node.exec(&mut log, ExecCtx::Top, "New").unwrap();
+    assert_eq!(node.state.layout.cols.len(), 1);
     assert_eq!(f_hash(&log), node.state.hash());
 }
 

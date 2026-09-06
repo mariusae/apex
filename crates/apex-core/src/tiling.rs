@@ -119,8 +119,9 @@ pub enum Warp {
     Closed { window: WindowId, next: Option<WindowId> },
     /// `colmousebut`: the middle of a column's layout box.
     ColButton(ColumnId),
-    /// `openfile` with `jump`: the start of the selection in a body.
-    Sel(WindowId),
+    /// `openfile` with `jump`, or a `Look` that found something: the start
+    /// of the selection in that text.
+    Sel(ViewId),
 }
 
 // ---- per-window geometry helpers ---------------------------------------------------

@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs)] // objc's macros mention cargo-clippy
 //! apex-ui: the UI client. Renders a session's state and turns mouse and
 //! keys into log entries.
 //!
@@ -10,6 +11,7 @@
 //! runs the server in-process, the old prototype's way.
 
 mod app;
+mod cursor;
 mod shell;
 mod term_element;
 mod text_element;
@@ -46,6 +48,7 @@ impl Render for Acme {
             .flex()
             .flex_col()
             .track_focus(&self.focus)
+            .when(self.dragging_box(), |d| d.cursor_crosshair())
             .on_action(cx.listener(|this, _: &shell::Undo, window, cx| this.menu_edit("undo", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Redo, window, cx| this.menu_edit("redo", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Cut, window, cx| this.menu_edit("cut", window, cx)))
@@ -138,6 +141,7 @@ fn main() {
     let socket = socket.unwrap_or_else(apex_server::daemon::default_socket);
 
     gpui_platform::application().run(move |cx: &mut App| {
+        cursor::install();
         cx.set_menus(shell::menus());
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {

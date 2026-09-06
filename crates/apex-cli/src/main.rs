@@ -262,7 +262,13 @@ fn win(socket: &Path, session: &str, args: &[String]) -> R {
                 for slot in &col.wins {
                     let w = slot.window;
                     let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                    println!("{}\t{}{}", w.0, if dirty { "*" } else { " " }, c.node.window_name(w));
+                    let mut name = c.node.window_name(w);
+                    if name.is_empty() {
+                        // a terminal: its tag names it
+                        let tag = c.node.state.window(w).ok().map(|x| x.tag);
+                        name = tag.and_then(|b| c.node.state.buffer(b).ok()).map(|b| b.text.to_string().split(' ').next().unwrap_or("").to_string()).unwrap_or_default();
+                    }
+                    println!("{}\t{}{}", w.0, if dirty { "*" } else { " " }, name);
                 }
             }
             Ok(())

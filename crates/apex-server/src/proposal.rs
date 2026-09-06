@@ -51,7 +51,7 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 // acme's openfile: show it, and jump the mouse to the selection
                 select(node, log, w, select_line)?;
                 node.seltext = Some(ViewId::Body(w));
-                node.warp = Some(Warp::Sel(w));
+                node.warp = Some(Warp::Sel(ViewId::Body(w)));
                 return Ok(Some(w));
             }
             let b = node.create_buffer(log, &name, &text, Some(hash))?;
@@ -124,15 +124,21 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Look { ctx, text } => {
-            let win = match ctx {
-                ExecCtx::Window(w) => Some(w),
-                _ => node.seltext.and_then(|v| v.window()),
-            };
-            if let Some(w) = win {
-                if node.state.window(w).ok().and_then(|x| x.body_buffer()).is_some() {
-                    node.look(log, w, &text)?;
-                    return Ok(Some(w));
+            // acme's look3: the search runs in seltext, the text last
+            // selected with B1, not necessarily where B3 was clicked
+            let view = node
+                .seltext
+                .filter(|v| node.view_buffer(*v).is_ok())
+                .or_else(|| match ctx {
+                    ExecCtx::Window(w) => Some(ViewId::Body(w)),
+                    ExecCtx::Column(c) => Some(ViewId::ColTag(c)),
+                    ExecCtx::Top => Some(ViewId::Top),
+                });
+            if let Some(v) = view {
+                if node.view_buffer(v).is_ok() && node.look(log, v, &text)? {
+                    node.warp = Some(Warp::Sel(v)); // acme moves the mouse to what it found
                 }
+                return Ok(v.window());
             }
             Ok(None)
         }

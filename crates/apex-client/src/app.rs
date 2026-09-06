@@ -68,6 +68,8 @@ struct Mouse {
     b2: Option<Drag>,
     b3: Option<Drag>,
     chorded: bool,
+    /// B1 was pressed while B2 was down: the command gets an argument.
+    chord_arg: bool,
     /// acme's `coldragwin`/`rowdragcol`: the box, the button, where it was pressed.
     box_drag: Option<(BoxTarget, MouseButton, Point<Pixels>)>,
     left_as: Option<MouseButton>,
@@ -177,9 +179,6 @@ pub struct Acme {
     typed_start: HashMap<ViewId, usize>,
 }
 
-fn is_word_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
 fn is_file_char(c: char) -> bool {
     c.is_alphanumeric() || ".-+/:@_~$#".contains(c)
 }
@@ -202,85 +201,7 @@ fn expand(t: &Text, i: usize, pred: impl Fn(char) -> bool) -> (usize, usize) {
     (a, b)
 }
 
-fn closing(c: char) -> Option<char> {
-    match c {
-        '(' => Some(')'),
-        '[' => Some(']'),
-        '{' => Some('}'),
-        '<' => Some('>'),
-        '"' | '\'' | '`' => Some(c),
-        _ => None,
-    }
-}
-fn opening(c: char) -> Option<char> {
-    match c {
-        ')' => Some('('),
-        ']' => Some('['),
-        '}' => Some('{'),
-        '>' => Some('<'),
-        '"' | '\'' | '`' => Some(c),
-        _ => None,
-    }
-}
 
-/// acme's double-click: bracketed text next to a bracket or quote, the
-/// whole line at a line boundary, otherwise the word.
-fn double_click(t: &Text, i: usize) -> (usize, usize) {
-    let n = t.len();
-    let i = i.min(n);
-    let before = if i > 0 { Some(t.char_at(i - 1)) } else { None };
-    let at = if i < n { Some(t.char_at(i)) } else { None };
-    if let Some(c) = before {
-        if let Some(close) = closing(c) {
-            let mut depth = 1;
-            let mut j = i;
-            while j < n {
-                let ch = t.char_at(j);
-                if ch == close {
-                    depth -= 1;
-                    if depth == 0 {
-                        return (i, j);
-                    }
-                } else if ch == c && c != close {
-                    depth += 1;
-                }
-                j += 1;
-            }
-        }
-    }
-    if let Some(c) = at {
-        if let Some(open) = opening(c) {
-            let mut depth = 1;
-            let mut j = i;
-            while j > 0 {
-                let ch = t.char_at(j - 1);
-                if ch == open {
-                    depth -= 1;
-                    if depth == 0 {
-                        return (j, i);
-                    }
-                } else if ch == c && open != c {
-                    depth += 1;
-                }
-                j -= 1;
-            }
-        }
-    }
-    let line_start = |p: usize| t.line_start(t.line_of(p));
-    let line_end = |p: usize| t.line_range(t.line_of(p)).map(|(_, e)| e).unwrap_or(n);
-    if before.is_none_or(|c| c == '\n') && at.is_some_and(|c| c != '\n') {
-        let e = line_end(i);
-        return (i, e + usize::from(e < n));
-    }
-    if at.is_none_or(|c| c == '\n') && before.is_some_and(|c| c != '\n') {
-        return (line_start(i), i);
-    }
-    let r = expand(t, i, is_word_char);
-    if r.0 == r.1 {
-        return (i, (i + 1).min(n));
-    }
-    r
-}
 
 impl Acme {
     /// A session with the server in-process.
@@ -411,6 +332,8 @@ impl Acme {
     /// runs after every input handler and on every frame, so nothing the
     /// user typed is ever more than a frame away from the daemon.
     pub fn sync(&mut self) {
+        // acme's winsettag: Undo/Redo/Put/Get come and go with the state
+        let _ = self.node.update_tags(&mut self.log);
         if let Backend::Remote(link) = &mut self.backend {
             link.flush(&self.log);
         }
@@ -418,6 +341,11 @@ impl Acme {
             eprintln!("catch up: {e}");
         }
         self.take_warp();
+    }
+
+    /// A layout box is held: acme shows the box cursor.
+    pub fn dragging_box(&self) -> bool {
+        self.mouse.box_drag.is_some()
     }
 
     /// The mouse move acme would make after the last layout change.
@@ -471,14 +399,15 @@ impl Acme {
                 self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.point_of(n)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
             }
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
-            Pending::Warp(Warp::Sel(w)) => {
-                let q0 = self.node.selection(ViewId::Body(w)).map(|s| s.0).unwrap_or(0);
-                self.layouts.get(&ViewId::Body(w)).and_then(|tl| tl.point_of(q0)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
+            Pending::Warp(Warp::Sel(v)) => {
+                let q0 = self.node.selection(v).map(|s| s.0).unwrap_or(0);
+                self.layouts.get(&v).and_then(|tl| tl.point_of(q0)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
             }
         };
         if std::env::var_os("APEX_DEBUG_WARP").is_some() {
             let slot = match p {
-                Pending::Warp(Warp::NewWindow(w)) | Pending::Warp(Warp::WinButton(w)) | Pending::Warp(Warp::Sel(w)) => self.node.state.layout.slot(w).copied(),
+                Pending::Warp(Warp::NewWindow(w)) | Pending::Warp(Warp::WinButton(w)) => self.node.state.layout.slot(w).copied(),
+                Pending::Warp(Warp::Sel(v)) => v.window().and_then(|w| self.node.state.layout.slot(w).copied()),
                 Pending::Warp(Warp::Closed { next: Some(w), .. }) => self.node.state.layout.slot(w).copied(),
                 _ => None,
             };
@@ -515,7 +444,9 @@ impl Acme {
         let mut tags = HashMap::new();
         let mut bodies = HashMap::new();
         for (w, win) in &self.node.state.windows {
-            if let Some((n, nl)) = self.tag_need.get(&ViewId::Tag(*w)) {
+            if !win.tagexpand {
+                tags.insert(*w, (1, false)); // acme: Up in the tag shrank it to one line
+            } else if let Some((n, nl)) = self.tag_need.get(&ViewId::Tag(*w)) {
                 tags.insert(*w, (*n as i32, *nl));
             }
             let term = matches!(win.body, Body::Term(_));
@@ -792,13 +723,18 @@ impl Acme {
             }
         }
         match (target, button) {
+            (Target::View(_), MouseButton::Left) if self.mouse.b2.is_some() => {
+                // acme's textselect2: button 1 while 2 is down makes the
+                // last selection the command's argument
+                self.mouse.chord_arg = true;
+            }
             (Target::View(v), MouseButton::Left) => match region {
                 Region::Text(off) => {
                     self.typed_start.remove(&v);
                     self.node.activecol = self.column_of_view(v); // button 1 only
                     if e.click_count >= 2 {
                         if let Some(t) = self.text_of(v) {
-                            let (a, z) = double_click(&t, off);
+                            let (a, z) = apex_core::node::double_click(&t, off);
                             let _ = self.node.select(&mut self.log, v, a, z);
                         }
                     } else {
@@ -927,7 +863,13 @@ impl Acme {
                 if let Some(d) = self.mouse.b2.take() {
                     let text = self.take_range(d, HlKind::Exec);
                     self.hl = None;
-                    if let Some(text) = text {
+                    let arg = if self.mouse.chord_arg { self.node.seltext.and_then(|v| self.node.selected_text(v).ok()) } else { None };
+                    self.mouse.chord_arg = false;
+                    if let Some(mut text) = text {
+                        if let Some(a) = arg.filter(|a| !a.is_empty()) {
+                            text.push(' ');
+                            text.push_str(&a);
+                        }
                         self.execute(self.ctx_of(d.view), &text, cx);
                     }
                 }
@@ -1164,10 +1106,24 @@ impl Acme {
         let Some(t) = self.text_of(v) else { return };
         let Ok((q0, q1)) = self.node.selection(v) else { return };
         let fit = self.layouts.get(&v).map(|l| l.lines_that_fit()).unwrap_or(1) as i64;
-        // acme: up/down scroll by half a window, page up/down by two thirds
+        // acme's texttype in a tag: Up shrinks it to one line, Down expands it
+        if let ViewId::Tag(w) = v {
+            match ks.key.as_str() {
+                "up" | "down" => {
+                    let on = ks.key == "down";
+                    if self.node.state.window(w).map(|x| x.tagexpand != on).unwrap_or(false) {
+                        let _ = self.node.append(&mut self.log, Shard::Window(w), Op::Window(WindowOp::TagExpand { on }));
+                        let _ = self.node.refit_window(&mut self.log, w);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
+        // acme: up/down scroll by a third of the window, page up/down by two thirds
         let scroll = match ks.key.as_str() {
-            "up" if !m.control => Some(-(fit / 2).max(1)),
-            "down" if !m.control => Some((fit / 2).max(1)),
+            "up" if !m.control => Some(-(fit / 3).max(1)),
+            "down" if !m.control => Some((fit / 3).max(1)),
             "pageup" => Some(-(fit * 2 / 3).max(1)),
             "pagedown" => Some((fit * 2 / 3).max(1)),
             _ => None,
@@ -1228,12 +1184,25 @@ impl Acme {
                     typed = false;
                 }
                 "home" => {
-                    let _ = self.node.select(&mut self.log, v, 0, 0);
+                    // acme: if the insertion point is above the view, show it; else go to the top
+                    let org = self.node.state.buffer(self.node.view_buffer(v).unwrap_or(BufferId(0))).ok().and_then(|b| b.views.get(&v).map(|x| x.origin)).unwrap_or(0);
+                    if org > q1 {
+                        self.want_visible.insert(v);
+                    } else {
+                        let _ = self.node.select(&mut self.log, v, 0, 0);
+                    }
                     typed = false;
                 }
                 "end" => {
-                    let n = t.len();
-                    let _ = self.node.select(&mut self.log, v, n, n);
+                    // acme: if the insertion point is below the view, show it; else go to the end
+                    let shown = self.layouts.get(&v).map(|l| l.first_line + l.lines.len()).unwrap_or(0);
+                    let below = t.line_of(q1.min(t.len())) >= shown && shown > 0;
+                    if below {
+                        self.want_visible.insert(v);
+                    } else {
+                        let n = t.len();
+                        let _ = self.node.select(&mut self.log, v, n, n);
+                    }
                     typed = false;
                 }
                 _ => match &ks.key_char {

@@ -93,9 +93,10 @@ fn scripts_drive_a_headless_session() {
     let (_, wins, _) = apex(&sock, &["--session", "side", "win", "list"]);
     assert_eq!(wins, "");
 
-    // delete the window: acme refuses once while it is dirty
-    let (success, _, err) = apex(&sock, &["win", "del", "notes.txt"]);
-    assert!(!success && err.contains("Del again"), "{err}");
+    // delete the window: acme warns once while it is dirty, then goes
+    ok(&sock, &["win", "del", "notes.txt"]);
+    assert!(ok(&sock, &["win", "list"]).contains("notes.txt"));
+    assert!(ok(&sock, &["text", "read", "+Errors"]).contains("notes.txt modified"));
     ok(&sock, &["win", "del", "notes.txt"]);
     assert!(!ok(&sock, &["win", "list"]).contains("notes.txt"));
     let _ = std::fs::remove_dir_all(&dir);

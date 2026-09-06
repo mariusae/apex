@@ -241,6 +241,11 @@ fn the_watcher_reloads_clean_buffers_and_flags_dirty_ones() {
     c.node.insert(&mut c.log, v, "x").unwrap();
     c.flush();
     assert!(wait(&mut c, |r| r.node.state.buffer(b).unwrap().stale));
+    // acme's get: a dirty window is asked once ("modified"), then reloads
+    c.node.exec(&mut c.log, ExecCtx::Window(w), "Get").unwrap();
+    c.flush();
+    assert!(wait(&mut c, |r| r.node.state.buffers.values().any(|b| b.name.ends_with("+Errors") && b.text.to_string().contains("w.txt modified"))));
+    assert_ne!(body(&c, w), "four\n");
     c.node.exec(&mut c.log, ExecCtx::Window(w), "Get").unwrap();
     c.flush();
     assert!(wait(&mut c, |r| body(r, w) == "four\n" && !r.node.state.buffer(b).unwrap().stale));
