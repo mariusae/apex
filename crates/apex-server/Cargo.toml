@@ -11,6 +11,7 @@ alacritty_terminal = "0.26"
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["use-std"] }
+notify = "8"
 
 [[bin]]
 name = "apexd"

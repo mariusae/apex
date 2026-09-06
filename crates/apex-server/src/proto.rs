@@ -12,8 +12,11 @@ use crate::term::TermKey;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
-    /// Attach to a session (a new attachment).
-    Hello { session: String, name: String },
+    /// Attach to a session as a new attachment. A UI attachment takes the
+    /// leases; a tool follows and proposes.
+    Hello { session: String, name: String, kind: AttachmentKind },
+    NewSession { name: String },
+    ListSessions,
     /// Entries this client sequenced as leader.
     Append { shard: Shard, entries: Vec<Entry> },
     /// The client allocated a shard; the server records it and grants the
@@ -28,6 +31,10 @@ pub enum ClientMsg {
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
     /// B3: a file, or else a search.
     Plumb { ctx: ExecCtx, text: String },
+    /// A tool asks the leader to do something; `id` comes back in `Applied`.
+    Propose { id: u64, proposal: Proposal },
+    /// The leader's answer to a `Propose` it was handed (id 0: nobody waits).
+    Applied { id: u64, result: Result<Option<WindowId>, String> },
     /// Latency probe.
     Ping { t: u64 },
 }
@@ -39,7 +46,12 @@ pub enum ServerMsg {
     Welcome { attachment: AttachmentId, snapshot: Vec<u8> },
     /// Entries of a shard this client follows (or metalog entries).
     Entries { shard: Shard, entries: Vec<Entry> },
-    Propose(Proposal),
+    /// The leader is asked to apply this; answer with `Applied{id}` unless
+    /// `id` is 0.
+    Propose { id: u64, proposal: Proposal },
+    /// The outcome of a tool's `Propose`.
+    Applied { id: u64, result: Result<Option<WindowId>, String> },
+    Sessions { names: Vec<String> },
     /// The server stored the client's entries of `shard` up to `seq`.
     Ack { shard: Shard, seq: Seq },
     /// A client-created shard is recorded and leased.

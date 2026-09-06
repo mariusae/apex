@@ -1,6 +1,8 @@
-//! apex: the UI client. Renders a session's state and turns mouse and keys
-//! into log entries. `apex [files]` runs the server in-process;
-//! `apex --attach [SOCKET] [files]` attaches to a running `apexd`.
+//! apex-ui: the UI client. Renders a session's state and turns mouse and
+//! keys into log entries. `apex-ui [files]` runs the server in-process;
+//! `apex-ui --attach [SOCKET] [--session S] [files]` attaches to a running
+//! daemon; `apex-ui --via CMD` attaches through CMD's stdin/stdout (the
+//! `apex attach host/session` path: CMD is `ssh host apex attach --stdio`).
 
 mod app;
 mod term_element;
@@ -87,21 +89,25 @@ impl Render for Acme {
 
 fn main() {
     let mut files: Vec<String> = Vec::new();
-    let mut attach: Option<std::path::PathBuf> = None;
+    let mut attach: Option<app::Where> = None;
+    let mut session = "main".to_string();
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--attach" => {
-                attach = Some(match args.peek() {
+                attach = Some(app::Where::Socket(match args.peek() {
                     Some(p) if p.ends_with(".sock") => std::path::PathBuf::from(args.next().unwrap()),
                     _ => apex_server::daemon::default_socket(),
-                });
+                }));
             }
+            "--via" => attach = Some(app::Where::Via(args.next().expect("--via CMD"))),
+            "--session" => session = args.next().expect("--session NAME"),
             _ => files.push(a),
         }
     }
     let title = match &attach {
-        Some(p) => format!("apex — {}", p.display()),
+        Some(app::Where::Socket(_)) => format!("apex — {session}"),
+        Some(app::Where::Via(cmd)) => format!("apex — {}", cmd.split_whitespace().nth(1).unwrap_or(cmd)),
         None => "apex".to_string(),
     };
     Application::new().run(move |cx: &mut App| {
@@ -115,6 +121,7 @@ fn main() {
             |window, cx| {
                 let files = files.clone();
                 let attach = attach.clone();
+                let session = session.clone();
                 let view = cx.new(|cx| match attach {
                     None => {
                         let (acme, mut rx) = Acme::new(cx, files);
@@ -133,17 +140,17 @@ fn main() {
                         .detach();
                         acme
                     }
-                    Some(socket) => {
+                    Some(target) => {
                         // the reader thread pokes this channel; the task
                         // polls the link on the UI thread
                         let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
                         let wake: apex_server::remote::Wake = std::sync::Arc::new(move || {
                             let _ = wake_tx.unbounded_send(());
                         });
-                        let acme = match Acme::attach(cx, &socket, "main", files, wake) {
+                        let acme = match Acme::attach(cx, &target, &session, files, wake) {
                             Ok(a) => a,
                             Err(e) => {
-                                eprintln!("apex: attach {}: {e}", socket.display());
+                                eprintln!("apex-ui: attach: {e}");
                                 std::process::exit(1);
                             }
                         };

@@ -1,7 +1,9 @@
-//! `apex-bench [--socket PATH]`: measure the attach protocol over a Unix
-//! socket. Without `--socket` it starts a daemon on a thread of its own,
-//! so the numbers are for two threads of one process talking through the
-//! kernel; with one, it talks to a running `apexd`.
+//! `apex-bench [--socket PATH] [--via CMD]`: measure the attach protocol.
+//! Without `--socket` it starts a daemon on a thread of its own, so the
+//! numbers are for two threads of one process talking through the kernel;
+//! with one, it talks to a running `apexd`. `--via CMD` attaches through
+//! CMD's stdin/stdout instead — `apex attach --stdio` locally stands in for
+//! `ssh host apex attach --stdio`, adding the two pipe hops ssh would.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -14,9 +16,11 @@ use apex_server::remote::Remote;
 fn main() {
     let mut args = std::env::args().skip(1);
     let mut socket: Option<PathBuf> = None;
+    let mut via: Option<String> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--socket" => socket = Some(PathBuf::from(args.next().expect("--socket PATH"))),
+            "--via" => via = Some(args.next().expect("--via CMD")),
             other => {
                 eprintln!("apex-bench: unknown argument {other}");
                 std::process::exit(2);
@@ -33,15 +37,21 @@ fn main() {
         path
     });
 
-    println!("socket: {}", socket.display());
+    let connect = |name: &str| -> Remote {
+        match &via {
+            Some(cmd) => Remote::via(cmd, "main", name, AttachmentKind::Ui).unwrap(),
+            None => Remote::connect(&socket, "main", name).unwrap(),
+        }
+    };
+    match &via {
+        Some(cmd) => println!("via: {cmd}"),
+        None => println!("socket: {}", socket.display()),
+    }
     println!();
 
     // ---- protocol floor: ping round trip ----------------------------------------
-    let mut c = Remote::connect(&socket, "main", "bench").unwrap();
-    let col = match c.node.state.layout.cols.first() {
-        Some(col) => col.id,
-        None => c.node.init_session(&mut c.log).unwrap(),
-    };
+    let mut c = connect("bench");
+    let col = c.node.state.layout.cols[0].id;
     c.flush();
     let mut pings = Vec::new();
     for i in 0..2000u64 {
@@ -108,12 +118,12 @@ fn main() {
         let mut snap = 0;
         for _ in 0..10 {
             let t = Instant::now();
-            let r = Remote::connect(&socket, "main", "probe").unwrap();
+            let r = connect("probe");
             ts.push(t.elapsed());
             snap = r.node.state.to_snapshot().len();
         }
         // the probes took the leases; take them back for the next round
-        c = Remote::connect(&socket, "main", "bench").unwrap();
+        c = connect("bench");
         report(&format!("attach with {bytes} runes of text ({} KB snapshot, 10 runs)", snap / 1024), &ts);
     }
     println!();

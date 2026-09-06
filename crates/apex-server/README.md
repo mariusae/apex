@@ -49,5 +49,16 @@ The transport is not where time goes. Two things stand out:
   the socket: the whole grid is published as `Rows` entries per wakeup.
   Diffing rows would shrink the stream but the latency is already fine.
 
+Through the stdio bridge (`apex-bench --socket P --via "apex --socket P
+attach --stdio"`, the ssh path without the network): ping 26 µs,
+keystroke → ack 21 µs, attach +4.5 ms flat, terminal 195 µs.
+
 Run it against a live daemon with `apex-bench --socket PATH`. Note that
 macOS limits socket paths to 104 bytes.
+
+## Files
+
+`watch.rs` watches the parent directories of open files. A change to a
+clean buffer is proposed as a base-versioned `SetContent`; the leader
+turns it into `Stale` if the buffer has moved on, so a lagging replica
+never overwrites typing. `Put` on a stale buffer refuses once.

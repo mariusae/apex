@@ -1,0 +1,15 @@
+[package]
+name = "apex-cli"
+version.workspace = true
+edition.workspace = true
+description = "the apex command: sessions, attaching, and the control protocol for scripts and tools"
+
+[[bin]]
+name = "apex"
+path = "src/main.rs"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }
+apex-edit = { path = "../apex-edit" }
+serde_json = "1"

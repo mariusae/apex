@@ -5,7 +5,7 @@ edition.workspace = true
 description = "apex UI client: renders a session's state with gpui and turns mouse and keys into entries"
 
 [[bin]]
-name = "apex"
+name = "apex-ui"
 path = "src/main.rs"
 
 [dependencies]

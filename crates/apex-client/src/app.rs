@@ -5,7 +5,6 @@
 //! client's code path is the same, only the [`Backend`] differs.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use gpui::{
     px, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
@@ -74,6 +73,14 @@ enum Region {
 enum Target {
     View(ViewId),
     Term(WindowId, TermId),
+}
+
+/// How to reach a daemon.
+#[derive(Clone, Debug)]
+pub enum Where {
+    Socket(std::path::PathBuf),
+    /// A command whose stdin/stdout carry the frames (ssh to a bridge).
+    Via(String),
 }
 
 /// Where the server is.
@@ -228,8 +235,24 @@ impl Acme {
 
     /// Attach to a session behind `socket`. `wake` is called from the
     /// reader thread when there is something to poll.
-    pub fn attach(cx: &mut Context<Self>, socket: &Path, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (link, mut log, mut node) = Link::connect(socket, session, "apex", Some(wake))?;
+    pub fn attach(cx: &mut Context<Self>, at: &Where, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
+        let (link, mut log, mut node) = match at {
+            Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake))?,
+            Where::Via(cmd) => {
+                let mut child = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(cmd)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()?;
+                let stdin = child.stdin.take().expect("piped");
+                let stdout = child.stdout.take().expect("piped");
+                let closer = Box::new(move || {
+                    let _ = child.kill();
+                });
+                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))?
+            }
+        };
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -268,7 +291,7 @@ impl Acme {
     /// An event from the in-process server.
     pub fn pump(&mut self, ev: ServerEvent) {
         if let Backend::Local(server) = &mut self.backend {
-            let props = server.pump(&mut self.log, ev);
+            let props = server.pump(&mut self.log, &self.node, ev);
             if let Some(w) = perform(&mut self.node, &mut self.log, props) {
                 self.show(w);
             }

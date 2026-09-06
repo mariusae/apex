@@ -12,6 +12,7 @@ pub mod proposal;
 pub mod proto;
 pub mod remote;
 pub mod term;
+pub mod watch;
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
@@ -34,6 +35,8 @@ pub enum ServerEvent {
     Term(TermId, Event),
     /// A shell command finished: `(ctx, exec seq, stdout, stderr, what to do with stdout)`.
     Shell { ctx: ExecCtx, exec: Seq, out: String, err: String, mode: ShellMode },
+    /// A watched directory reported this path.
+    File(PathBuf),
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +62,9 @@ pub struct Server {
     next_term: u64,
     /// Terminals whose window has been seen: once it goes, so do they.
     windowed: BTreeSet<TermId>,
+    watches: watch::Watches,
+    /// Stale buffers `Put` has refused once (acme: the second Put writes).
+    put_warned: BTreeSet<BufferId>,
 }
 
 impl Server {
@@ -84,7 +90,25 @@ impl Server {
         let mut node = Node::new(SERVER);
         node.catch_up(log).expect("fresh log");
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-        (Server { node, terms: HashMap::new(), tx, term_tx, performed: BTreeSet::new(), cwd, next_term: 1, windowed: BTreeSet::new() }, rx)
+        let watches = {
+            let tx = tx.clone();
+            watch::Watches::new(move |p| {
+                let _ = tx.unbounded_send(ServerEvent::File(p));
+            })
+        };
+        let server = Server {
+            node,
+            terms: HashMap::new(),
+            tx,
+            term_tx,
+            performed: BTreeSet::new(),
+            cwd,
+            next_term: 1,
+            windowed: BTreeSet::new(),
+            watches,
+            put_warned: BTreeSet::new(),
+        };
+        (server, rx)
     }
 
     pub fn term(&self, id: TermId) -> Option<&TermHost> {
@@ -160,7 +184,7 @@ impl Server {
         Ok(Proposal::OpenWindow { col, name: display, text, hash, select_line })
     }
 
-    fn put(&self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {
+    fn put(&mut self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {
         let b = view.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("Put: not a text window")?;
         let buf = view.state.buffer(b).map_err(|e| e.to_string())?;
         let (buf_name, text, version) = (buf.name.clone(), buf.text.to_string(), buf.version);
@@ -172,8 +196,13 @@ impl Server {
         if name.is_empty() || name.starts_with('+') || name.ends_with('/') {
             return Err("Put: no file name".into());
         }
+        if buf.stale && arg.is_none() && self.put_warned.insert(b) {
+            return Err(format!("{name}: modified since last read"));
+        }
+        self.put_warned.remove(&b);
         std::fs::write(&name, &text).map_err(|e| format!("{name}: {e}"))?;
         let hash = Text::new(&text).content_hash();
+        self.watches.written.insert(PathBuf::from(&name), hash.clone());
         let mut out = Vec::new();
         if arg.is_some() {
             out.push(Proposal::Rename { buffer: b, window: w, name });
@@ -187,7 +216,7 @@ impl Server {
         let name = view.state.buffer(b).map(|b| b.name.clone()).map_err(|e| e.to_string())?;
         let (_, text) = self.read_path(Path::new(&name)).map_err(|e| format!("{name}: {e}"))?;
         let hash = Text::new(&text).content_hash();
-        Ok(Proposal::SetContent { buffer: b, text, hash })
+        Ok(Proposal::SetContent { buffer: b, version: None, text, hash })
     }
 
     // ---- terminals ------------------------------------------------------------
@@ -276,9 +305,10 @@ impl Server {
     /// Handle one event from the receiver returned by [`Server::new`].
     /// Terminal output goes straight to the term shard; shell results
     /// become proposals.
-    pub fn pump(&mut self, log: &mut Log, ev: ServerEvent) -> Vec<Proposal> {
+    pub fn pump(&mut self, log: &mut Log, view: &Node, ev: ServerEvent) -> Vec<Proposal> {
         let mut props = Vec::new();
         match ev {
+            ServerEvent::File(path) => props.extend(self.file_changed(view, &path)),
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
                 match ev {
@@ -315,9 +345,46 @@ impl Server {
         props
     }
 
+    /// Keep the directory watches in step with the files open in `view`.
+    pub fn sync_watches(&mut self, view: &Node) {
+        let files: Vec<PathBuf> = view
+            .state
+            .buffers
+            .values()
+            .filter(|b| !b.name.is_empty() && !b.name.starts_with('+') && !b.name.ends_with('/') && b.name.starts_with('/'))
+            .map(|b| PathBuf::from(&b.name))
+            .collect();
+        self.watches.sync(files.iter().map(|p| p.as_path()));
+    }
+
+    /// A watched path changed. A clean buffer follows the disk; a dirty one
+    /// is flagged stale so `Get` appears in its tag (§9).
+    fn file_changed(&mut self, view: &Node, path: &Path) -> Vec<Proposal> {
+        let path = &self.watches.as_named(path);
+        let name = path.to_string_lossy().to_string();
+        let Some(buf) = view.state.buffers.values().find(|b| b.name == name) else { return Vec::new() };
+        let Ok(bytes) = std::fs::read(path) else { return Vec::new() };
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        let hash = Text::new(&text).content_hash();
+        if self.watches.written.get(path) == Some(&hash) || buf.disk_hash.as_deref() == Some(hash.as_str()) {
+            return Vec::new(); // our own write, or nothing new
+        }
+        if buf.dirty() {
+            if buf.stale {
+                return Vec::new();
+            }
+            vec![Proposal::Stale { buffer: buf.id, hash }]
+        } else {
+            // valid at the version this replica saw: if the leader has
+            // typed since, it flags the buffer stale instead
+            vec![Proposal::SetContent { buffer: buf.id, version: Some(buf.version), text, hash }]
+        }
+    }
+
     /// Perform every pending exec addressed to the server, as seen in
     /// `view`. Returns the proposals that carry the results.
     pub fn poll_execs(&mut self, log: &mut Log, view: &Node) -> Vec<Proposal> {
+        self.sync_watches(view);
         let mut todo: Vec<(ExecCtx, Seq, String, ExecAt)> = Vec::new();
         for (w, win) in &view.state.windows {
             for (seq, e) in &win.execs {

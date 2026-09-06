@@ -14,8 +14,10 @@ pub enum Proposal {
     NewWindow { col: ColumnId, name: String },
     /// A window on a terminal the server created.
     TermWindow { col: ColumnId, name: String, term: TermId },
-    /// Replace a buffer's content (`Get`).
-    SetContent { buffer: BufferId, text: String, hash: String },
+    /// Replace a buffer's content: unconditionally (`Get`), or only if the
+    /// buffer is still at `version` (a watched file changed) — a buffer
+    /// edited meanwhile is flagged stale instead.
+    SetContent { buffer: BufferId, version: Option<Version>, text: String, hash: String },
     /// The file on disk equals the buffer at `version` (`Put`).
     Clean { buffer: BufferId, version: Version, hash: String },
     /// `Put newname`: rename the buffer and its window's tag.
@@ -28,6 +30,14 @@ pub enum Proposal {
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// B3 did not name a file: search the body instead.
     Look { ctx: ExecCtx, text: String },
+    /// The file on disk changed under a dirty buffer.
+    Stale { buffer: BufferId, hash: String },
+    // ---- from tools (the control protocol) ----
+    /// As if B2 on `text` in `ctx`.
+    Exec { ctx: ExecCtx, text: String },
+    /// Run an Edit program on a window's body.
+    Edit { window: WindowId, program: String },
+    Select { view: ViewId, q0: usize, q1: usize },
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -56,7 +66,14 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             let w = node.open_term_window(log, col, &name, term)?;
             Ok(Some(w))
         }
-        Proposal::SetContent { buffer, text, hash } => {
+        Proposal::SetContent { buffer, version, text, hash } => {
+            let b = node.state.buffer(buffer)?;
+            if version.is_some_and(|v| v != b.version) && b.dirty() {
+                if !b.stale {
+                    node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Stale { disk_hash: hash }))?;
+                }
+                return Ok(None);
+            }
             node.set_content(log, buffer, &text)?;
             let version = node.state.buffer(buffer)?.version;
             node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(hash) }))?;
@@ -114,6 +131,31 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 }
             }
             Ok(None)
+        }
+        Proposal::Stale { buffer, hash } => {
+            node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Stale { disk_hash: hash }))?;
+            Ok(None)
+        }
+        Proposal::Exec { ctx, text } => {
+            match node.exec(log, ctx, &text)? {
+                Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
+                _ => Ok(match ctx {
+                    ExecCtx::Window(w) => Some(w),
+                    _ => None,
+                }),
+            }
+        }
+        Proposal::Edit { window, program } => {
+            let run = node.run_edit(log, window, &program)?;
+            if !run.output.is_empty() {
+                let col = node.column_of(window)?;
+                node.errors(log, col, &run.output)?;
+            }
+            Ok(Some(window))
+        }
+        Proposal::Select { view, q0, q1 } => {
+            node.select(log, view, q0, q1)?;
+            Ok(view.window())
         }
     }
 }

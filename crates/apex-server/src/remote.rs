@@ -5,7 +5,7 @@
 //! bundles a link with its log and node for headless clients.
 
 use std::collections::HashMap;
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -16,11 +16,11 @@ use apex_core::log::MirrorHook;
 use apex_core::*;
 
 use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg};
-use crate::proposal;
+use crate::{proposal, Proposal};
 
 /// A shared, buffered writer: the mirror hook and the owner both send.
 #[derive(Clone)]
-pub struct Outbound(Arc<Mutex<BufWriter<UnixStream>>>);
+pub struct Outbound(Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>);
 
 impl Outbound {
     pub fn send(&self, m: &ClientMsg) -> io::Result<()> {
@@ -52,6 +52,22 @@ pub struct Link {
     pub acked: HashMap<Shard, Seq>,
     /// Windows made by proposals since the last `take_made`.
     made: Vec<WindowId>,
+    /// Answers to this tool's proposals, by its ids.
+    pub applied: HashMap<u64, Result<Option<WindowId>, String>>,
+    /// The last session listing received.
+    pub sessions: Option<Vec<String>>,
+    next_id: u64,
+    /// Closes the transport on drop, so the reader thread ends and the
+    /// server sees the attachment go.
+    closer: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl Drop for Link {
+    fn drop(&mut self) {
+        if let Some(c) = self.closer.take() {
+            c();
+        }
+    }
 }
 
 /// Called by the reader thread after queuing a message, so an event loop
@@ -61,16 +77,42 @@ pub type Wake = Arc<dyn Fn() + Send + Sync>;
 impl Link {
     /// Connect to the daemon at `path` and attach to `session`. Blocks for
     /// the welcome; returns the link and the mirror log and node to drive.
-    pub fn connect(path: &Path, session: &str, name: &str, wake: Option<Wake>) -> io::Result<(Link, Log, Node)> {
+    pub fn connect(path: &Path, session: &str, name: &str, kind: AttachmentKind, wake: Option<Wake>) -> io::Result<(Link, Log, Node)> {
         let stream = UnixStream::connect(path)?;
-        Self::over(stream, session, name, wake)
+        Self::over(stream, session, name, kind, wake)
     }
 
-    pub fn over(stream: UnixStream, session: &str, name: &str, wake: Option<Wake>) -> io::Result<(Link, Log, Node)> {
-        let out = Outbound(Arc::new(Mutex::new(BufWriter::new(stream.try_clone()?))));
+    pub fn over(stream: UnixStream, session: &str, name: &str, kind: AttachmentKind, wake: Option<Wake>) -> io::Result<(Link, Log, Node)> {
+        let w = stream.try_clone()?;
+        let closer = stream.try_clone()?;
+        Self::over_streams(
+            Box::new(stream),
+            Box::new(w),
+            Some(Box::new(move || {
+                let _ = closer.shutdown(std::net::Shutdown::Both);
+            })),
+            session,
+            name,
+            kind,
+            wake,
+        )
+    }
+
+    /// Attach over any byte stream pair: a child's stdout and stdin, say,
+    /// with `ssh host apex attach --stdio session` as the child.
+    pub fn over_streams(
+        reader: Box<dyn Read + Send>,
+        writer: Box<dyn Write + Send>,
+        closer: Option<Box<dyn FnOnce() + Send>>,
+        session: &str,
+        name: &str,
+        kind: AttachmentKind,
+        wake: Option<Wake>,
+    ) -> io::Result<(Link, Log, Node)> {
+        let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
-        spawn_reader(stream, tx, wake);
-        out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string() })?;
+        spawn_reader(reader, tx, wake);
+        out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind })?;
         let (attachment, snapshot) = loop {
             match rx.recv().map_err(|_| io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome"))? {
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
@@ -87,11 +129,20 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new() }, log, node))
+        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
         let _ = self.out.send(m);
+    }
+
+    /// Send a proposal to the leader; the answer arrives in `applied`
+    /// under the returned id.
+    pub fn propose(&mut self, p: Proposal) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(&ClientMsg::Propose { id, proposal: p });
+        id
     }
 
     /// Ship every entry the node sequenced since the last flush.
@@ -139,13 +190,23 @@ impl Link {
                     *mark = last;
                 }
             }
-            ServerMsg::Propose(p) => {
-                match proposal::apply(node, log, p) {
-                    Ok(Some(w)) => self.made.push(w),
+            ServerMsg::Propose { id, proposal } => {
+                let result = proposal::apply(node, log, proposal).map_err(|e| e.to_string());
+                match &result {
+                    Ok(Some(w)) => self.made.push(*w),
                     Ok(None) => {}
                     Err(e) => eprintln!("remote: proposal: {e}"),
                 }
                 self.flush(log);
+                if id != 0 {
+                    self.send(&ClientMsg::Applied { id, result });
+                }
+            }
+            ServerMsg::Applied { id, result } => {
+                self.applied.insert(id, result);
+            }
+            ServerMsg::Sessions { names } => {
+                self.sessions = Some(names);
             }
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
@@ -192,8 +253,50 @@ pub struct Remote {
 
 impl Remote {
     pub fn connect(path: &Path, session: &str, name: &str) -> io::Result<Remote> {
-        let (link, log, node) = Link::connect(path, session, name, None)?;
+        Self::connect_as(path, session, name, AttachmentKind::Ui)
+    }
+
+    pub fn connect_as(path: &Path, session: &str, name: &str, kind: AttachmentKind) -> io::Result<Remote> {
+        let (link, log, node) = Link::connect(path, session, name, kind, None)?;
         Ok(Remote { log, node, link })
+    }
+
+    /// Attach through a command's stdin/stdout (`ssh host apex attach
+    /// --stdio`, or the same bridge run locally).
+    pub fn via(cmd: &str, session: &str, name: &str, kind: AttachmentKind) -> io::Result<Remote> {
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()?;
+        let stdin = child.stdin.take().expect("piped");
+        let stdout = child.stdout.take().expect("piped");
+        let closer = Box::new(move || {
+            let _ = child.kill();
+        });
+        let (link, log, node) = Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, name, kind, None)?;
+        Ok(Remote { log, node, link })
+    }
+
+    /// Propose and block for the answer.
+    pub fn propose(&mut self, p: Proposal, timeout: std::time::Duration) -> Result<Option<WindowId>, String> {
+        let id = self.link.propose(p);
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(r) = self.link.applied.remove(&id) {
+                return r;
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return Err("timed out waiting for the leader".into());
+            }
+            match self.step(left) {
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(_) => return Err("connection closed".into()),
+            }
+        }
     }
 
     pub fn attachment(&self) -> AttachmentId {
@@ -223,7 +326,7 @@ impl Remote {
     }
 }
 
-fn spawn_reader(stream: UnixStream, tx: Sender<ServerMsg>, wake: Option<Wake>) {
+fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Option<Wake>) {
     thread::spawn(move || {
         let mut r = BufReader::new(stream);
         loop {

@@ -356,6 +356,18 @@ correctly dirty afterwards. Between the exec and its `Done` the UI knows a
 `Put` is in flight and shows it; a `Failed{exec, reason}` is shown in place
 rather than as an `+Errors` line that scrolls away.
 
+*As built (`apex-server/src/proposal.rs`).* The server never writes a
+shard it does not lead. Every effect it has on buffers, windows or the
+layout is a value of one `Proposal` enum — `OpenWindow`, `NewWindow`,
+`TermWindow`, `SetContent`, `Clean`, `Rename`, `ReplaceRange{version}`,
+`Errors`, `Status`, `Look` — which the leader lowers into entries with
+`proposal::apply`. In-process the client applies proposals the moment the
+server returns them; over the socket they travel as `Propose` messages.
+Only `ReplaceRange` and `Clean` carry a base version; the rest are intents
+lowered against the leader's live state, as this section says. The
+handler predicate is not a general predicate yet: `Handler::Server` is
+resolved by the leader at exec time from the command table.
+
 ---
 
 ## 6. Protocols
@@ -399,6 +411,37 @@ server → client
 - Frames coalesce per display refresh; nothing is sent per keystroke.
 - Attach and re-attach are the same code path: snapshot plus tail per shard,
   lazily per shard as windows become visible.
+
+*As built (`apex-server/src/{proto,daemon,remote}.rs`).* Framing is
+postcard with a `u32` little-endian length prefix — the entries already
+derive serde, so one schema serves the log, snapshots and the wire;
+protobuf stays an option for a gateway. What differs from the sketch:
+
+- **No `Take`/`Grant` round trip.** `Hello{session, name}` makes a new
+  attachment, grants it every leasable shard, and answers `Welcome
+  {attachment, snapshot}` with the *whole* state (§12 on its size). A
+  client that attaches while another holds the leases reclaims them at
+  once — single-player mode collapses transfer-then-reclaim to reclaim.
+  The fenced client stays connected and sees its appends refused. Resuming
+  an attachment by id, `Page`, and `Hash` are not implemented yet.
+- **Mirror logs.** The client runs its `Node` over `Log::mirror`, a log
+  store built from the snapshot that assigns the same sequence numbers
+  the server will store. The client leads with no round trip at all;
+  `flush` ships `Append{shard, entries}` for every led shard, the server
+  answers `Ack{shard, seq}`. Leases are derived from the log store on both
+  sides (`Log::held_by`); the metalog is streamed to the client like any
+  followed shard.
+- **Shard creation is a fire-and-forget request.** `CreateShard{shard}`
+  (sent by the mirror's hook) is processed by the server before the
+  `Append` that follows it on the same connection, and the grant it makes
+  (creator, epoch 1) is the one the mirror assumed. `DeleteShard` likewise.
+- **Terminal input** is not a `Propose` but its own messages (`TermKey`,
+  `TermPaste`, `TermResize`, `TermScroll`); the server's log store still
+  fences them by connection. `OpenFile` and `Plumb` ask the server to look
+  at the file system and answer with a proposal.
+- The daemon keeps a follower replica of the whole session (the "view")
+  for execs and snapshots, and forwards the metalog before any other
+  shard so a client learns of a shard before its entries.
 
 ### 6.2 Control protocol (tools ⇄ server) — *v1*
 
@@ -462,6 +505,24 @@ Configuration is a script of `apex` commands run at server start
 (`~/.config/apex/init`): plumb rules, tools to launch, defaults. Client-side
 settings (fonts, scale) are `apex` commands the client interprets. There is
 no configuration language.
+
+*As built (`apex-cli`).* `apex` is the command; the gpui client is
+`apex-ui`, which `apex attach` launches. Every subcommand attaches to the
+session as a **tool**: it receives the same snapshot a UI would, reads
+from its own replica, and proposes to the leader — there is no separate
+control protocol, only `Propose{id, proposal}` / `Applied{id, result}` on
+the attach protocol, plus `NewSession` and `ListSessions`. A session with
+no UI attached is led by the daemon itself, so scripts work headless and
+a UI that attaches later takes over what they did. `apex attach` starts
+the daemon if the socket does not answer. Implemented: `server ls
+new-session attach [--stdio] new win text edit sel exec events term
+plumb`; `WIN` is an id or a unique substring of a window's name. Not yet:
+`detach lease lsp log`, the init script.
+
+`apex attach host/session` runs `apex-ui --via "ssh host apex attach
+--stdio session"`: the UI speaks frames to the child's stdin/stdout, and
+on the host `apex attach --stdio` copies bytes between its stdio and the
+daemon's socket. The bridge knows nothing of frames.
 
 ---
 
@@ -584,6 +645,19 @@ The server runs where the files are; that is the whole remote story.
 - Directory windows refresh from the same watches. Deleted or renamed files
   are flagged the same way instead of failing at the next `Put`.
 
+*As built (`apex-server/src/watch.rs`).* Parent directories are watched
+with `notify`; the server hashes the file on every event and ignores it
+if the hash equals what it last wrote there or the buffer's recorded disk
+hash. A clean buffer gets `SetContent{version}` — *base-versioned*, which
+matters: the daemon's replica lags the UI by a round trip, so it can
+judge a buffer clean that the user has just typed into. The leader
+lowers a `SetContent` whose version has moved on into `Stale` instead,
+so typing is never overwritten by a reload; `Get` sends an unversioned
+`SetContent`. A dirty buffer gets `Stale{hash}`; `Put` on a stale buffer
+refuses once with "modified since last read" and writes on the second.
+Diffing rather than replacing, directory refresh, and delete/rename
+flags are not done.
+
 ---
 
 ## 10. Terminals and web windows
@@ -641,6 +715,12 @@ below its snapshot, so logs stay bounded. A server restart is a fresh
 world, as acme's is; `Dump`/`Load` of layouts and buffer contents can come
 later.
 
+*Measured:* the attach snapshot carries each buffer's undo and redo
+history, so a session that has absorbed 100k keystrokes ships a 770 KB
+snapshot for 115 KB of text. Undo should be bounded (acme keeps it all,
+but acme never ships it) or left out of the attach snapshot and paged on
+demand; either brings attach down to the cost of the text.
+
 ---
 
 ## 13. Security
@@ -656,27 +736,66 @@ the server's credentials, as acme's do.
 
 1. **`apex-edit`** — the Edit language and libregexp port with the
    acceptance suite of §8a, including the `sam -d` differential harness.
+   *Done.*
 2. **`apex-core`** — buffers, views, undo, shards, entries, `apply`,
    snapshots, hashing, built-in commands, lowering of Edit change logs.
    Property tests: two instances, random entries, equal hashes. Criterion
    benches for apply, view adjustment, snapshot/hash, and replay. No UI: a
-   headless driver replays recorded logs for profiling.
+   headless driver replays recorded logs for profiling. *Done.*
 3. **Server + attach** — registry and metalogs, sessions, attachments,
    leases with transfer-then-reclaim, fencing, the attach protocol over a
    Unix socket, detach/re-attach, terminal rows paged, `+Recovered`.
+   *Done except:* transfer (reclaim only), resume by attachment id, row
+   paging, `+Recovered`.
 4. **Client** — the gpui prototype re-layered as a pure renderer and input
    device over core state, first in-process, then over the socket. Zerox
    becomes two views on one buffer. Multiple sessions per client and the
-   session selector.
+   session selector. *Done except* the session selector.
 5. **CLI + control protocol** — `apex` subcommands, `events`, proposals,
-   `win`/`Watch` ports, plumbing rules as commands.
-6. **Files** — watcher, stale/dirty flow, `Get` in the tag.
+   `win`/`Watch` ports, plumbing rules as commands. *Done except* `Watch`,
+   plumbing rules, `detach`/`lease`/`log`, the init script.
+6. **Files** — watcher, stale/dirty flow, `Get` in the tag. *Done except*
+   directory refresh and diff-based reload.
 7. **Remote** — `apex attach host/session` over ssh stdio; hash checks.
+   *Done except* hash checks; exercised with the bridge run locally, not
+   yet over a real ssh session.
 8. **Tools** — `apex lsp`, agent harness, tool leases.
 
 ---
 
-## 15. Open questions and exploration
+## 15. Measurements
+
+Release builds on an M-series laptop. Core (`apex-core/benches`): a
+keystroke applies in ~260 ns, an edit adjusting 100 views in 0.7 µs, a
+1 MB buffer hashes in 0.9 ms and snapshots round-trip in 0.3 ms, 20k
+entries replay in 2.2 ms. Edit (`apex-edit/benches`): `x/fox/ c/cat/` over
+1M runes in 3.2 ms.
+
+Socket (`apex-bench`, daemon on a thread of the same process, one round
+trip = client → kernel → daemon → kernel → client):
+
+| what | p50 | p99 |
+|---|---|---|
+| ping round trip | 12–20 µs | 18–42 µs |
+| one keystroke: local apply, flush, server ack | 14 µs | 20 µs |
+| 100 000 keystrokes in one flush | 1.8 M entries/s | |
+| attach: connect, snapshot, decode; 120 KB text, 770 KB snapshot | 4.2 ms | |
+| attach; 1.2 M runes, 1.9 MB snapshot | 6.2 ms | |
+| attach; 11.5 M runes, 11.9 MB snapshot | 32 ms | |
+| terminal key → new rows on the client | 180 µs | 260–540 µs |
+
+Through `apex attach --stdio` run locally (the ssh path minus the
+network: two more processes and two pipes per direction): ping 26 µs,
+keystroke → ack 21 µs, throughput unchanged, attach +4.5 ms flat (the
+snapshot crosses two more pipes), terminal key → rows 195 µs.
+
+The transport is nowhere near the budget of a frame; the attach cost is
+the snapshot's undo history (§12), and terminal latency is the pty and
+the parser, not the socket.
+
+---
+
+## 16. Open questions and exploration
 
 ### Exploration: tool-defined shards
 
