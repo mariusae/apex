@@ -260,14 +260,18 @@ impl Server {
         }
     }
 
+    /// Keys go to the live screen: a terminal scrolled back comes back
+    /// to the bottom first (its rows are republished by the next event).
     pub fn term_key(&mut self, id: TermId, key: &TermKey) {
-        if let Some(h) = self.terms.get(&id) {
+        if let Some(h) = self.terms.get_mut(&id) {
+            h.scroll_to_bottom();
             h.key(key);
         }
     }
 
     pub fn term_paste(&mut self, id: TermId, text: &str) {
-        if let Some(h) = self.terms.get(&id) {
+        if let Some(h) = self.terms.get_mut(&id) {
+            h.scroll_to_bottom();
             h.paste(text);
         }
     }

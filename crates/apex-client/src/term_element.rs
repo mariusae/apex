@@ -106,6 +106,15 @@ impl Element for TermElement {
             let fg_default = gpui::black();
             let bg_default = rgb(PALEYELLOW);
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
+            // the selection, if it is in this terminal: acme's yellow
+            let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) });
+            let selected = |x: usize, y: usize| -> bool {
+                match sel {
+                    Some((p0, p1)) => (y, x) >= (p0.1, p0.0) && (y, x) < (p1.1, p1.0),
+                    None => false,
+                }
+            };
+            let sel_bg = rgb(0xeeee9e);
             let mut rows = Vec::with_capacity(t.grid.len());
             let mut row_text = Vec::with_capacity(t.grid.len());
             for (y, row) in t.grid.iter().enumerate() {
@@ -121,6 +130,10 @@ impl Element for TermElement {
                             bgc = Some(fgc);
                             fgc = bg_default;
                         }
+                    }
+                    if selected(x, y) {
+                        bgc = Some(sel_bg);
+                        fgc = gpui::black();
                     }
                     if let Some(b) = bgc {
                         match bgs.last_mut() {

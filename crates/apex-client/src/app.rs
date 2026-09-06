@@ -77,6 +77,8 @@ struct Mouse {
     scrolling: Option<(Target, MouseButton, Pixels)>,
     /// acme's `framescroll`: B1 dragged past the top or bottom of the text.
     autoscroll: Option<(ViewId, i64)>,
+    /// B1 held in a terminal: the selection follows the pointer.
+    term_drag: Option<WindowId>,
     left_as: Option<MouseButton>,
     mods: Modifiers,
 }
@@ -167,6 +169,9 @@ pub struct Acme {
     pub title_shown: String,
     /// The link to the daemon is up (a socket, or a provider's bridge).
     pub connected: bool,
+    /// A selection in a terminal, client-side: the window, and two cell
+    /// positions (column, row) in reading order, the end exclusive.
+    pub term_sel: Option<(WindowId, (usize, usize), (usize, usize))>,
     /// The heartbeat: when the last ping went out.
     last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
@@ -464,6 +469,7 @@ impl Acme {
             title_shown: String::new(),
             connected: true,
             last_ping: None,
+            term_sel: None,
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -960,6 +966,17 @@ impl Acme {
                 }
             }
             (Target::Term(w, t), button) => match (region, button) {
+                (Region::Term(c, r), MouseButton::Left) => {
+                    self.term_sel = Some((w, (c, r), (c, r)));
+                    self.mouse.term_drag = Some(w);
+                    self.node.activecol = self.column_of_view(ViewId::Tag(w));
+                }
+                (Region::Term(c, r), MouseButton::Middle) if self.mouse.term_drag.is_some() => {
+                    // B1+B2 in a terminal: copy (there is nothing to cut)
+                    let _ = (c, r);
+                    self.mouse.chorded = true;
+                    self.term_copy(w, cx);
+                }
                 (Region::Term(c, r), MouseButton::Middle) => {
                     if let Some(word) = self.term_word(w, c, r, is_exec_char) {
                         self.execute(ExecCtx::Window(w), &word, cx);
@@ -988,6 +1005,17 @@ impl Acme {
         let mut changed = false;
         if let Some((_, _, y)) = self.mouse.scrolling.as_mut() {
             *y = pos.y; // the bar follows the pointer's height
+        }
+        if let Some(w) = self.mouse.term_drag {
+            if let (Some(l), Some((sw, anchor, _))) = (self.term_layouts.get(&w), self.term_sel) {
+                if sw == w {
+                    let (c, r) = l.cell_at(pos);
+                    // the end is exclusive: past the pointed-at cell when dragging forward
+                    let end = if (r, c) >= (anchor.1, anchor.0) { ((c + 1).min(l.cols as usize), r) } else { (c, r) };
+                    self.term_sel = Some((w, anchor, end));
+                    changed = true;
+                }
+            }
         }
         if let Some(d) = self.mouse.b1 {
             if let Some(l) = self.layouts.get(&d.view) {
@@ -1070,6 +1098,7 @@ impl Acme {
             MouseButton::Left => {
                 self.mouse.b1 = None;
                 self.mouse.autoscroll = None;
+                self.mouse.term_drag = None;
             }
             MouseButton::Middle => {
                 if let Some(d) = self.mouse.b2.take() {
@@ -1245,6 +1274,43 @@ impl Acme {
         true
     }
 
+    /// The text a terminal selection covers: cells in reading order, rows
+    /// trimmed of trailing blanks, joined by newlines.
+    pub fn term_selected_text(&self, w: WindowId) -> Option<String> {
+        let (sw, a, b) = self.term_sel?;
+        if sw != w {
+            return None;
+        }
+        let (p0, p1) = if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
+        if p0 == p1 {
+            return None;
+        }
+        let win = self.node.state.window(w).ok()?;
+        let Body::Term(t) = win.body else { return None };
+        let term = self.node.state.terms.get(&t)?;
+        let mut out = String::new();
+        for r in p0.1..=p1.1.min(term.grid.len().saturating_sub(1)) {
+            let row = &term.grid[r];
+            let from = if r == p0.1 { p0.0 } else { 0 };
+            let to = if r == p1.1 { p1.0.min(row.len()) } else { row.len() };
+            let line: String = row[from.min(to)..to].iter().map(|c| if c.ch == '\0' { ' ' } else { c.ch }).collect();
+            out.push_str(line.trim_end());
+            if r != p1.1 {
+                out.push('\n');
+            }
+        }
+        Some(out)
+    }
+
+    /// Copy a terminal's selection: to the clipboard, and to the snarf
+    /// buffer so Paste and Send have it.
+    pub fn term_copy(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        let Some(text) = self.term_selected_text(w) else { return };
+        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+        let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text }));
+        self.sync();
+    }
+
     /// acme's `textcomplete`: the path fragment before `q0` goes to the
     /// server, which knows the file system; what comes back is inserted.
     fn complete(&mut self, v: ViewId, q0: usize) {
@@ -1400,13 +1466,20 @@ impl Acme {
             },
         };
         match target {
-            Target::Term(_, t) => {
-                if what == "paste" {
+            Target::Term(w, t) => match what {
+                "paste" => {
                     if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
                         self.term_paste(t, text);
                     }
                 }
-            }
+                "copy" | "cut" => self.term_copy(w, cx),
+                "select-all" => {
+                    if let Some(l) = self.term_layouts.get(&w) {
+                        self.term_sel = Some((w, (0, 0), (l.cols as usize, l.rows.len().saturating_sub(1))));
+                    }
+                }
+                _ => {}
+            },
             Target::View(v) => {
                 match what {
                     "undo" => {
@@ -1635,6 +1708,14 @@ impl Acme {
 
     pub fn execute(&mut self, ctx: ExecCtx, text: &str, cx: &mut Context<Self>) {
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
+        if word == "Snarf" {
+            if let ExecCtx::Window(w) = ctx {
+                if matches!(self.node.state.window(w).map(|x| x.body), Ok(Body::Term(_))) {
+                    self.term_copy(w, cx);
+                    return;
+                }
+            }
+        }
         if word == "Paste" {
             if let Some(t) = cx.read_from_clipboard().and_then(|c| c.text()) {
                 let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: t }));

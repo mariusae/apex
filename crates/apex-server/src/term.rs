@@ -119,6 +119,16 @@ impl TermHost {
     }
 
     /// Positive scrolls towards newer output.
+    /// Back to the live screen (typing goes where the cursor is).
+    pub fn scroll_to_bottom(&mut self) -> bool {
+        let mut t = self.term.lock();
+        if t.grid().display_offset() == 0 {
+            return false;
+        }
+        t.scroll_display(Scroll::Bottom);
+        true
+    }
+
     pub fn scroll(&mut self, delta: isize) {
         self.term.lock().scroll_display(Scroll::Delta(-(delta as i32)));
     }
