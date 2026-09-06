@@ -357,7 +357,13 @@ pub struct Selector {
     pub current: SessionUrl,
     /// Typing a new name for this window's session.
     pub renaming: bool,
+    /// When the caret last became visible: it blinks, and a keystroke
+    /// makes it show at once.
+    pub caret_since: std::time::Instant,
 }
+
+/// The caret's period.
+const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Row {
@@ -377,6 +383,10 @@ impl Row {
 }
 
 impl Selector {
+    pub fn caret_visible(&self) -> bool {
+        (self.caret_since.elapsed().as_millis() / BLINK.as_millis()) % 2 == 0
+    }
+
     pub fn rows(&self) -> Vec<Row> {
         let f = self.filter.trim();
         if self.renaming {
@@ -492,9 +502,24 @@ impl Acme {
             let urls = apex_server::providers::list_sessions(&dest).unwrap_or_default().iter().map(|s| self.url.with_session(s)).collect();
             (dest, urls)
         });
-        let mut sel = Selector { filter: String::new(), cursor: 0, recent: recent(), local, remote, current: self.url.clone(), renaming: false };
+        let mut sel = Selector { filter: String::new(), cursor: 0, recent: recent(), local, remote, current: self.url.clone(), renaming: false, caret_since: std::time::Instant::now() };
         sel.settle();
         self.selector = Some(sel);
+        // blink the caret while the selector is open
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(BLINK).await;
+            let open = cx.update(|cx| this.update(cx, |acme, cx| {
+                let open = acme.selector.is_some();
+                if open {
+                    cx.notify();
+                }
+                open
+            }).unwrap_or(false));
+            if !open {
+                break;
+            }
+        })
+        .detach();
         cx.notify();
     }
 
@@ -506,6 +531,7 @@ impl Acme {
     /// Keys while the selector is open. Returns true if it took the key.
     pub fn selector_key(&mut self, key: &str, ch: Option<&str>, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(sel) = self.selector.as_mut() else { return false };
+        sel.caret_since = std::time::Instant::now();
         match key {
             "escape" => self.close_selector(cx),
             "enter" => {
@@ -645,7 +671,7 @@ impl Acme {
         let rows = sel.rows();
         let hint = if sel.renaming { "New name for this session…" } else { "Search sessions, or type a name or URL to create one…" };
         // the field: the text typed and a caret, or the hint after a caret
-        let caret = div().w(px(1.5)).h(px(16.)).bg(rgb(0x000099)).flex_none();
+        let caret = div().w(px(1.5)).h(px(16.)).flex_none().when(sel.caret_visible(), |d| d.bg(rgb(0x000099)));
         let field = div()
             .px(px(14.))
             .py(px(10.))
