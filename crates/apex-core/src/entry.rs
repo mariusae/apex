@@ -130,15 +130,12 @@ pub enum WindowOp {
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum LayoutOp {
-    /// First entry: the top row's tag buffer.
-    Init { top: BufferId },
-    ColNew { id: ColumnId, tag: BufferId, at: usize, weight: u32 },
-    ColDel { id: ColumnId },
-    ColResize { id: ColumnId, weight: u32 },
-    /// Put a window into a column at an index (moving it if placed already).
-    WinPlace { window: WindowId, col: ColumnId, at: usize, weight: u32 },
-    WinRemove { window: WindowId },
-    WinResize { window: WindowId, weight: u32 },
+    /// First entry: the top row's tag buffer and the row's rectangle.
+    Init { top: BufferId, r: crate::tiling::Rect },
+    /// The whole tiling after an acme layout operation (§tiling): the
+    /// row's rectangle and every column with its windows, in order, with
+    /// their rectangles. The leader computes it; replicas just take it.
+    Arrange { r: crate::tiling::Rect, cols: Vec<crate::state::Column> },
     /// The snarf buffer (acme's is global; the client mirrors the system clipboard).
     Snarf { text: String },
     /// Executed from a column tag or the top row.

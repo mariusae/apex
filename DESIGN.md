@@ -703,6 +703,38 @@ this one (detach, attach).
 - Over a WAN, mosh-style predictive echo is unnecessary for editing (the
   client leads) and only relevant for terminals; it can come later.
 
+*Tiling, as built (`apex-core/src/tiling.rs`).* Window and column
+placement is plan9port acme's, ported function for function from
+`cols.c`, `rows.c` and the geometry of `wind.c`: `coladd` (a new window
+steals the lower half of the last one, or lands at the pointer), `colclose`
+(the next window extends up, else the previous extends down), `colgrow`
+(button 1 a few lines from the neighbours, 2 as big as can be, 3 the
+whole column, leaving the others obscured until the column is "safe"
+again), `colresize`, `colsort`, `coldragwin` (click, shuffle, move to
+another column, flick right, resize against the window above), `rowadd`
+(40% of the last column), `rowresize`, `rowclose`, `rowdragcol`, and
+`makenewwindow`'s choice of where `New` and plumbed files go (the biggest
+empty space, else the biggest window; `activecol` first). The layout shard
+therefore stores pixel rectangles, like acme's `Dump`: each column's and
+window's rectangle, the body rectangle, tag lines, lines shown, and
+acme's `maxlines`. Every operation is computed by the leader against its
+copy and appended as one `Arrange` entry, so replicas take geometry, not
+recompute it; the client reacts to an OS window resize with `rowresize`.
+What acme reads off its frames the tiling asks through an `Info` trait: tag
+line counts and body lines measured in the client's last frame, or
+one-line tags and full bodies for a headless leader. Mouse warps are
+acme's too: into a new window's body near its box, onto `Del` of the
+window that took a closed one's place (or back to where the mouse was
+before the closed window was made), to the layout box after a grow or
+drag, and to the selection when an already open file is plumbed. macOS
+gives no mouse event for a warp, so the client remembers where it put the
+pointer for keyboard routing until the mouse really moves.
+
+^H, ^U and ^W erase exactly as acme's `textbswidth`: ^W skips
+non-alphanumerics, then erases the alphanumeric run, never past the start
+of the line or the window's origin; with a selection, the selection is
+cut first and then the width is erased, as acme does.
+
 *As built (`apex-client/src/shell.rs`, `mac/`).* `mac/build-app.sh`
 makes `Apex.app`: `apex-ui` as the executable, the `apex` command beside
 it, and an icon of Glenda with big eyes (`mac/glenda.svg`, rasterised by

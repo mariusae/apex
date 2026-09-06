@@ -13,6 +13,7 @@ mod app;
 mod shell;
 mod term_element;
 mod text_element;
+mod warp;
 
 use gpui::{
     black, div, prelude::*, px, size, App, Application, Bounds, Context, MouseButton, TitlebarOptions, Window,
@@ -26,11 +27,16 @@ use term_element::TermElement;
 use text_element::TextElement;
 
 impl Render for Acme {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // a pending mouse warp uses the layouts of the frame just drawn
+        self.resolve_warp(window, cx);
+        self.sync();
+        self.measure(window.viewport_size());
         self.sync();
         self.layouts.clear();
         self.term_layouts.clear();
         let me = cx.entity();
+        let font = f32::from(text_element::font_for(false).line_height) as i32;
 
         let root = div()
             .id("apex")
@@ -38,7 +44,6 @@ impl Render for Acme {
             .bg(black())
             .flex()
             .flex_col()
-            .gap(px(2.))
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &shell::Undo, window, cx| this.menu_edit("undo", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Redo, window, cx| this.menu_edit("redo", window, cx)))
@@ -61,51 +66,41 @@ impl Render for Acme {
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
             .on_scroll_wheel(cx.listener(Self::scroll_wheel))
-            .child(self.titlebar(cx))
-            .child(TextElement { acme: me.clone(), view: ViewId::Top });
+            .child(self.titlebar(cx));
 
-        let mut row = div().flex().flex_row().flex_1().min_h_0().gap(px(2.));
-        let layout = self.node.state.layout.clone();
-        for col in &layout.cols {
-            let mut c = div()
-                .flex()
-                .flex_col()
-                .min_w_0()
-                .bg(gpui::white())
-                .gap(px(2.))
-                .child(TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) });
-            {
-                let s = c.style();
-                s.flex_grow = Some((col.weight as f32).max(0.01));
-                s.flex_shrink = Some(1.);
-                s.flex_basis = Some(px(0.).into());
-            }
-            for slot in &col.wins {
-                let w = slot.window;
+        // acme's tiling placed everything; draw each piece where it says
+        let l = self.node.state.layout.clone();
+        let at = |x: i32, y: i32, w: i32, h: i32, el: gpui::AnyElement| {
+            div().absolute().left(px(x as f32)).top(px(y as f32)).w(px(w.max(0) as f32)).h(px(h.max(0) as f32)).overflow_hidden().child(el)
+        };
+        let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden();
+        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
+        for col in &l.cols {
+            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
+            for (i, s) in col.wins.iter().enumerate() {
+                if !col.safe && i > 0 {
+                    continue; // obscured by the full-column window
+                }
+                let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
-                let mut wd = div().flex().flex_col().overflow_hidden().child(TextElement { acme: me.clone(), view: ViewId::Tag(w) });
-                match win.body {
-                    Body::Text(_) => wd = wd.child(TextElement { acme: me.clone(), view: ViewId::Body(w) }),
-                    Body::Term(t) => wd = wd.child(TermElement { acme: me.clone(), window: w, term: t }),
+                let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
+                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()));
+                if s.body.dy() > 0 {
+                    let body = match win.body {
+                        Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
+                        Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
+                    };
+                    area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body));
                 }
-                {
-                    let s = wd.style();
-                    s.flex_grow = Some(slot.weight as f32);
-                    s.flex_shrink = Some(1.);
-                    s.flex_basis = Some(px(0.).into());
-                }
-                c = c.child(wd);
             }
-            row = row.child(c);
         }
-        let root = root.child(row);
+        let root = root.child(area);
         match self.selector_panel(cx) {
             Some(panel) => root.child(panel),
             None => root,
         }
     }
 }
-
 
 /// Where a window's session lives.
 #[derive(Clone, Debug)]

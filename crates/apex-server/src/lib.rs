@@ -177,11 +177,11 @@ impl Server {
 
     /// Propose a window of `col` on a file (or a directory listing). The
     /// leader reuses a window already showing it.
-    pub fn open_file(&self, col: ColumnId, dir: &Path, name: &str, select_line: Option<usize>) -> Result<Proposal, String> {
+    pub fn open_file(&self, col: ColumnId, from: Option<WindowId>, dir: &Path, name: &str, select_line: Option<usize>) -> Result<Proposal, String> {
         let path = resolve(dir, name);
         let (display, text) = self.read_path(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let hash = Text::new(&text).content_hash();
-        Ok(Proposal::OpenWindow { col, name: display, text, hash, select_line })
+        Ok(Proposal::OpenWindow { col, from, name: display, text, hash, select_line })
     }
 
     fn put(&mut self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {
@@ -471,7 +471,7 @@ impl Server {
                 let name = arg.ok_or("New needs a name here")?;
                 let path = resolve(&dir, name);
                 if path.exists() {
-                    props.push(self.open_file(col, &dir, name, None)?);
+                    props.push(self.open_file(col, win, &dir, name, None)?);
                 } else {
                     props.push(Proposal::NewWindow { col, name: path.to_string_lossy().to_string() });
                 }
@@ -512,7 +512,11 @@ impl Server {
                 _ => (cand.clone(), None),
             };
             if std::fs::metadata(resolve(&dir, &path)).is_ok() {
-                if let Ok(p) = self.open_file(col, &dir, &path, line) {
+                let from = match ctx {
+                    ExecCtx::Window(w) => Some(w),
+                    _ => None,
+                };
+                if let Ok(p) = self.open_file(col, from, &dir, &path, line) {
                     return p;
                 }
             }

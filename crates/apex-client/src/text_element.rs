@@ -216,6 +216,16 @@ impl TextLayout {
         }
     }
 
+    /// Where a rune is drawn, if it is on screen: the top-left of its
+    /// glyph, in window coordinates.
+    pub fn point_of(&self, off: usize) -> Option<Point<Pixels>> {
+        let lh = self.line_height;
+        let line = self.lines.iter().find(|l| l.start <= off && (off < l.end || (off == l.end && !l.has_newline)))?;
+        let d = line.to_disp(off);
+        let p = line.layout.position_for_index(d, lh)?;
+        Some(point(self.text_origin.x + p.x, self.text_origin.y + line.y + p.y))
+    }
+
     pub fn lines_that_fit(&self) -> usize {
         ((self.bounds.size.height / self.line_height) as usize).max(1)
     }
@@ -384,14 +394,13 @@ impl Element for TextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
+        // acme's tiling decides every rectangle; the element fills the
+        // box it is given
         let mut style = Style::default();
         style.size.width = relative(1.).into();
+        style.size.height = relative(1.).into();
         let kind = Kind::of(self.view);
-        if kind == Kind::Body {
-            style.flex_grow = 1.;
-            style.flex_shrink = 1.;
-            style.flex_basis = px(0.).into();
-            style.min_size.height = px(0.).into();
+        if kind != Kind::Top && kind != Kind::Top {
             (window.request_layout(style, [], cx), ())
         } else {
             let text: SharedString = self.acme.read(cx).view_text(self.view).into();
@@ -449,7 +458,21 @@ impl Element for TextElement {
 
             let mut lines = Vec::new();
             let mut first = 0;
-            if kind == Kind::Body {
+            if kind != Kind::Body {
+                // what acme's wintaglines asks: how many lines the tag wraps to
+                let mut y = px(0.);
+                let mut n = 0;
+                let mut wrapped = 0usize;
+                while let Some((s, e)) = text.line_range(n) {
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y);
+                    wrapped += li.subs.len().max(1);
+                    y += li.height(lh);
+                    lines.push(li);
+                    n += 1;
+                }
+                let trailing = text_len > 0 && text.char_at(text_len - 1) == '\n';
+                acme.tag_need.insert(view, (wrapped, trailing));
+            } else if kind == Kind::Body {
                 first = text.line_of(src.origin).min(total.saturating_sub(1));
                 for _pass in 0..2 {
                     lines.clear();
@@ -481,14 +504,7 @@ impl Element for TextElement {
                     acme.set_origin(view, origin);
                 }
             } else {
-                let mut y = px(0.);
-                let mut n = 0;
-                while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y);
-                    y += li.height(lh);
-                    lines.push(li);
-                    n += 1;
-                }
+                unreachable!()
             }
             Some(Prepaint {
                 kind,

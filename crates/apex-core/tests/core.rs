@@ -201,7 +201,9 @@ fn columns_new_delete_sort() {
     let wa = node.new_window(&mut log, c2, "a", "").unwrap();
     node.exec(&mut log, ExecCtx::Column(c2), "Sort").unwrap();
     let wins: Vec<WindowId> = node.state.layout.column(c2).unwrap().wins.iter().map(|s| s.window).collect();
-    assert_eq!(wins, vec![wa, wb]);
+    // acme's Newcol made an empty window too; its empty name sorts first
+    assert_eq!(wins.len(), 3);
+    assert_eq!(&wins[1..], &[wa, wb]);
     assert!(matches!(node.exec(&mut log, ExecCtx::Column(c2), "Delcol").unwrap(), Executed::Done(_)));
     assert_eq!(node.state.layout.cols.len(), 1);
     assert!(matches!(node.exec(&mut log, ExecCtx::Column(col), "Delcol").unwrap(), Executed::Failed(..)));

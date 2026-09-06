@@ -8,8 +8,10 @@ use apex_core::*;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Proposal {
-    /// Open a window on `col` showing a file's contents (or a listing).
-    OpenWindow { col: ColumnId, name: String, text: String, hash: String, select_line: Option<usize> },
+    /// Open a window showing a file's contents (or a listing): in the
+    /// active column, else the column of `from`, else `col` (acme's
+    /// `makenewwindow`).
+    OpenWindow { col: ColumnId, from: Option<WindowId>, name: String, text: String, hash: String, select_line: Option<usize> },
     /// A window on a new, empty buffer with this name (`New path`).
     NewWindow { col: ColumnId, name: String },
     /// A window on a terminal the server created.
@@ -44,14 +46,16 @@ pub enum Proposal {
 /// searched in, if any.
 pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<WindowId>, CoreError> {
     match p {
-        Proposal::OpenWindow { col, name, text, hash, select_line } => {
+        Proposal::OpenWindow { col, from, name, text, hash, select_line } => {
             if let Some(w) = node.state.windows.keys().copied().find(|w| node.window_name(*w) == name) {
+                // acme's openfile: show it, and jump the mouse to the selection
                 select(node, log, w, select_line)?;
                 node.seltext = Some(ViewId::Body(w));
+                node.warp = Some(Warp::Sel(w));
                 return Ok(Some(w));
             }
             let b = node.create_buffer(log, &name, &text, Some(hash))?;
-            let w = node.open_window(log, col, b)?;
+            let w = node.make_window(log, from, col, b)?;
             select(node, log, w, select_line)?;
             node.seltext = Some(ViewId::Body(w));
             Ok(Some(w))

@@ -323,7 +323,11 @@ impl Daemon {
             ClientMsg::TermScroll { term, delta } => s.server.term_scroll(&mut s.log, term, delta as isize),
             ClientMsg::OpenFile { col, ctx, name: file } => {
                 let dir = s.server.dir_of(&s.view, ctx);
-                props.push(match s.server.open_file(col, &dir, &file, None) {
+                let from = match ctx {
+                    ExecCtx::Window(w) => Some(w),
+                    _ => None,
+                };
+                props.push(match s.server.open_file(col, from, &dir, &file, None) {
                     Ok(p) => p,
                     Err(e) => Proposal::Errors { col, text: format!("{e}\n") },
                 });

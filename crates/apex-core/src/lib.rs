@@ -14,6 +14,7 @@ pub mod log;
 pub mod node;
 pub mod state;
 pub mod text;
+pub mod tiling;
 
 pub use entry::*;
 pub use ids::*;
@@ -21,3 +22,4 @@ pub use log::{Log, LogError};
 pub use node::{CoreError, EditRun, Executed, Node};
 pub use state::{Applied, ApplyError, State};
 pub use text::Text;
+pub use tiling::{Rect, Warp};

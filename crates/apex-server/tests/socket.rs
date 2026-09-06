@@ -145,8 +145,10 @@ fn a_tool_works_on_a_headless_session_and_a_ui_takes_over() {
     let path = dir.join("h.txt");
     std::fs::write(&path, "b\na\n").unwrap();
     tool.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: path.to_string_lossy().to_string() });
-    assert!(wait(&mut tool, |r| r.node.state.windows.len() == 1));
-    let w = *tool.node.state.windows.keys().next().unwrap();
+    // (Newcol made an empty window too, as acme's does)
+    let named = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w).ends_with("h.txt"));
+    assert!(wait(&mut tool, |r| named(r).is_some()));
+    let w = named(&tool).unwrap();
     // an Edit program, then Put, both by proposal
     let made = tool.propose(Proposal::Edit { window: w, program: ",x/a/ c/A/".into() }, ten).unwrap();
     assert_eq!(made, Some(w));
@@ -169,7 +171,7 @@ fn a_tool_works_on_a_headless_session_and_a_ui_takes_over() {
     drop(ui);
     assert!(wait(&mut tool, |r| r.node.state.meta.leases.get(&Shard::Layout).map(|l| l.holder) == Some(SERVER)));
     tool.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, ten).unwrap();
-    assert!(wait(&mut tool, |r| r.node.state.windows.is_empty()));
+    assert!(wait(&mut tool, |r| named(r).is_none()));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

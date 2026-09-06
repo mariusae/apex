@@ -7,16 +7,19 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui::{
-    px, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
+    point, px, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Window,
 };
 
+use apex_core::node::Erase;
+use apex_core::tiling::{self, Info, SCROLLWID};
 use apex_core::*;
 use apex_server::proto::ClientMsg;
 use apex_server::remote::{new_session, Link, Wake};
 use apex_server::{perform, Server, ServerEvent, TermKey};
 
-use crate::shell::Selector;
+use crate::shell::{Selector, TITLEBAR_HEIGHT};
+use crate::text_element::font_for;
 
 use crate::term_element::TermLayout;
 use crate::text_element::{Source, TextLayout};
@@ -52,17 +55,68 @@ struct Drag {
     anchor: usize,
 }
 
+/// A layout box being dragged: a window's or a column's.
+#[derive(Clone, Copy, Debug)]
+enum BoxTarget {
+    Win(WindowId),
+    Col(ColumnId),
+}
+
 #[derive(Default)]
 struct Mouse {
     b1: Option<Drag>,
     b2: Option<Drag>,
     b3: Option<Drag>,
     chorded: bool,
-    box_drag: Option<(WindowId, Point<Pixels>)>,
+    /// acme's `coldragwin`/`rowdragcol`: the box, the button, where it was pressed.
+    box_drag: Option<(BoxTarget, MouseButton, Point<Pixels>)>,
     left_as: Option<MouseButton>,
     mods: Modifiers,
 }
 
+/// A mouse move acme wants, resolved once the screen shows the new layout.
+#[derive(Clone, Copy, Debug)]
+enum Pending {
+    Warp(Warp),
+    Restore(Point<Pixels>),
+}
+
+/// What acme's tiling asks about text, measured off the last frame.
+struct ClientInfo {
+    font: i32,
+    prop: i32,
+    mono: i32,
+    /// wrapped tag lines and whether the tag ends with a newline
+    tags: HashMap<WindowId, (i32, bool)>,
+    /// (mono?, lines of text from the origin on, a terminal?)
+    bodies: HashMap<WindowId, (bool, i32, bool)>,
+}
+
+impl Info for ClientInfo {
+    fn font_height(&self) -> i32 {
+        self.font
+    }
+    fn taglines(&self, w: WindowId, _width: i32, maxlines: i32) -> i32 {
+        let (n, nl) = self.tags.get(&w).copied().unwrap_or((1, false));
+        tiling::taglines_rule(n, nl, maxlines)
+    }
+    fn body_font_height(&self, w: WindowId) -> i32 {
+        match self.bodies.get(&w) {
+            Some((true, _, _)) => self.mono,
+            Some((false, _, false)) => self.prop,
+            _ => self.mono,
+        }
+    }
+    fn body_nlines(&self, w: WindowId, _width: i32, maxlines: i32) -> i32 {
+        match self.bodies.get(&w) {
+            Some((_, _, true)) => maxlines,
+            Some((_, lines, false)) => (*lines).min(maxlines),
+            None => maxlines,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 enum Region {
     Text(usize),
     Scrollbar,
@@ -103,6 +157,17 @@ pub struct Acme {
     pub socket: Option<std::path::PathBuf>,
     wake: Option<Wake>,
     pub selector: Option<Selector>,
+    /// Measured by the tag elements each frame: wrapped lines, trailing newline.
+    pub tag_need: HashMap<ViewId, (usize, bool)>,
+    pending: Option<Pending>,
+    /// The frame after a layout change has the geometry the warp needs.
+    warp_wait: bool,
+    /// acme's savemouse/restoremouse: the window whose creation moved the
+    /// mouse, and where it was.
+    mouse_saved: Option<(WindowId, Point<Pixels>)>,
+    /// Where the pointer was put by a warp, until the next real mouse event.
+    pointer: Option<Point<Pixels>>,
+    last_mouse: Point<Pixels>,
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
@@ -229,7 +294,7 @@ impl Acme {
         let cwd = server.cwd.clone();
         let names: Vec<&str> = if files.is_empty() { vec!["."] } else { files.iter().map(|s| s.as_str()).collect() };
         for f in names {
-            match server.open_file(col, &cwd, f, None) {
+            match server.open_file(col, None, &cwd, f, None) {
                 Ok(p) => {
                     perform(&mut node, &mut log, vec![p]);
                 }
@@ -324,6 +389,12 @@ impl Acme {
             socket: None,
             wake: None,
             selector: None,
+            tag_need: HashMap::new(),
+            pending: None,
+            warp_wait: false,
+            mouse_saved: None,
+            pointer: None,
+            last_mouse: Point::default(),
             focus: cx.focus_handle(),
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
@@ -346,6 +417,138 @@ impl Acme {
         if let Err(e) = self.node.catch_up(&self.log) {
             eprintln!("catch up: {e}");
         }
+        self.take_warp();
+    }
+
+    /// The mouse move acme would make after the last layout change.
+    fn take_warp(&mut self) {
+        let Some(w) = self.node.warp.take() else { return };
+        let p = match w {
+            Warp::NewWindow(win) => {
+                // savemouse: coming back is possible if this window closes
+                self.mouse_saved = Some((win, self.last_mouse));
+                Pending::Warp(w)
+            }
+            Warp::Closed { window, next } => {
+                // restoremouse
+                let saved = self.mouse_saved.take();
+                match saved {
+                    Some((sw, at)) if sw == window => Pending::Restore(at),
+                    _ => match next {
+                        Some(n) => Pending::Warp(Warp::Closed { window, next: Some(n) }),
+                        None => return,
+                    },
+                }
+            }
+            other => Pending::Warp(other),
+        };
+        self.pending = Some(p);
+        self.warp_wait = true;
+    }
+
+    /// Called at the start of a frame: the previous frame's layouts show
+    /// where things are now, so the pending warp can be placed.
+    pub fn resolve_warp(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(p) = self.pending else { return };
+        if self.warp_wait {
+            // one more frame, so the layouts reflect the change
+            self.warp_wait = false;
+            cx.notify();
+            return;
+        }
+        self.pending = None;
+        let font = font_for(false).line_height;
+        let fonti = f32::from(font) as i32;
+        let l = &self.node.state.layout;
+        let row = |x: i32, y: i32| point(px(x as f32), px(y as f32 + TITLEBAR_HEIGHT));
+        let target = match p {
+            Pending::Restore(at) => Some(at),
+            Pending::Warp(Warp::NewWindow(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
+            Pending::Warp(Warp::WinButton(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID / 2, s.r.y0 + fonti / 2)),
+            Pending::Warp(Warp::ColButton(c)) => l.column(c).map(|c| row(c.r.x0 + SCROLLWID / 2, c.r.y0 + fonti / 2)),
+            Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
+                // movetodel: the rune two past the tag's first space
+                let tag = self.node.state.window(w).ok().map(|x| x.tag);
+                let text = tag.and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+                let n = text.chars().position(|c| c == ' ').map(|i| i + 2).unwrap_or(0);
+                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.point_of(n)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
+            }
+            Pending::Warp(Warp::Closed { next: None, .. }) => None,
+            Pending::Warp(Warp::Sel(w)) => {
+                let q0 = self.node.selection(ViewId::Body(w)).map(|s| s.0).unwrap_or(0);
+                self.layouts.get(&ViewId::Body(w)).and_then(|tl| tl.point_of(q0)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
+            }
+        };
+        if let Some(at) = target {
+            crate::warp::move_to(window, at);
+            self.pointer = Some(at);
+            self.last_mouse = at;
+        }
+    }
+
+    /// Where the pointer is for acme's purposes: where a warp put it, until
+    /// the mouse really moves.
+    fn pointer(&self, window: &Window) -> Point<Pixels> {
+        self.pointer.unwrap_or_else(|| window.mouse_position())
+    }
+
+    /// Give the tiling this frame's measurements, refit any window whose
+    /// tag changed shape (acme's winsettag), and follow the OS window's
+    /// size (rowresize).
+    pub fn measure(&mut self, viewport: gpui::Size<Pixels>) {
+        let font = f32::from(font_for(false).line_height) as i32;
+        let mono = f32::from(font_for(true).line_height) as i32;
+        let mut tags = HashMap::new();
+        let mut bodies = HashMap::new();
+        for (w, win) in &self.node.state.windows {
+            if let Some((n, nl)) = self.tag_need.get(&ViewId::Tag(*w)) {
+                tags.insert(*w, (*n as i32, *nl));
+            }
+            let term = matches!(win.body, Body::Term(_));
+            let lines = match self.layouts.get(&ViewId::Body(*w)) {
+                Some(tl) => tl.total_lines.saturating_sub(tl.first_line) as i32,
+                None => win.body_buffer().and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.text.line_count() as i32).unwrap_or(1),
+            };
+            bodies.insert(*w, (win.mono, lines, term));
+        }
+        self.node.tiling = Box::new(ClientInfo { font, prop: font, mono, tags, bodies });
+        // the OS window
+        let r = tiling::Rect::new(0, 0, f32::from(viewport.width) as i32, (f32::from(viewport.height) - TITLEBAR_HEIGHT) as i32);
+        if r.dx() > 0 && r.dy() > 0 && r != self.node.state.layout.r {
+            let _ = self.node.resize_layout(&mut self.log, r);
+        }
+        // tags that wrap differently than their slot allows for
+        let refit: Vec<WindowId> = self
+            .node
+            .state
+            .layout
+            .cols
+            .iter()
+            .flat_map(|c| c.wins.iter())
+            .filter(|s| {
+                self.tag_need.get(&ViewId::Tag(s.window)).is_some_and(|(n, nl)| {
+                    let fit = (s.r.dy() / font).max(0);
+                    tiling::taglines_rule(*n as i32, *nl, fit.max(s.taglines)) != s.taglines
+                })
+            })
+            .map(|s| s.window)
+            .collect();
+        for w in refit {
+            let _ = self.node.refit_window(&mut self.log, w);
+        }
+    }
+
+    /// The column a view belongs to, for acme's activecol.
+    fn column_of_view(&self, v: ViewId) -> Option<ColumnId> {
+        match v {
+            ViewId::ColTag(c) => Some(c),
+            ViewId::Tag(w) | ViewId::Body(w) => self.node.state.layout.column_of(w),
+            ViewId::Top => None,
+        }
+    }
+
+    fn row_pt(p: Point<Pixels>) -> (i32, i32) {
+        (f32::from(p.x) as i32, (f32::from(p.y) - TITLEBAR_HEIGHT) as i32)
     }
 
     /// An event from the in-process server.
@@ -555,13 +758,30 @@ impl Acme {
             self.close_selector(cx);
             return;
         }
+        self.pointer = None;
+        self.last_mouse = e.position;
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
         let Some((target, region)) = self.locate(e.position) else { return };
+        // a layout box: acme's coldragwin/rowdragcol wait for the release
+        if let (Target::View(v), Region::LayoutBox) = (target, region) {
+            if self.mouse.b1.is_none() {
+                let bt = match v {
+                    ViewId::Tag(w) => Some(BoxTarget::Win(w)),
+                    ViewId::ColTag(c) => Some(BoxTarget::Col(c)),
+                    _ => None,
+                };
+                if let Some(bt) = bt {
+                    self.mouse.box_drag = Some((bt, button, e.position));
+                    return;
+                }
+            }
+        }
         match (target, button) {
             (Target::View(v), MouseButton::Left) => match region {
                 Region::Text(off) => {
                     self.typed_start.remove(&v);
+                    self.node.activecol = self.column_of_view(v); // button 1 only
                     if e.click_count >= 2 {
                         if let Some(t) = self.text_of(v) {
                             let (a, z) = double_click(&t, off);
@@ -574,11 +794,6 @@ impl Acme {
                     self.mouse.chorded = false;
                 }
                 Region::Scrollbar => self.scrollbar_click(v, e.position, -1),
-                Region::LayoutBox => {
-                    if let Some(w) = v.window() {
-                        self.mouse.box_drag = Some((w, e.position));
-                    }
-                }
                 _ => {}
             },
             (Target::View(v), MouseButton::Middle) => {
@@ -592,7 +807,6 @@ impl Acme {
                             self.hl = None;
                         }
                         Region::Scrollbar => self.scrollbar_click(v, e.position, 0),
-                        Region::LayoutBox => self.grow_window(v),
                         _ => {}
                     }
                 }
@@ -608,7 +822,6 @@ impl Acme {
                             self.hl = None;
                         }
                         Region::Scrollbar => self.scrollbar_click(v, e.position, 1),
-                        Region::LayoutBox => self.fill_window(v),
                         _ => {}
                     }
                 }
@@ -635,6 +848,10 @@ impl Acme {
 
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
+        if self.pointer.is_some_and(|p| (p.x - pos.x).abs() > px(1.) || (p.y - pos.y).abs() > px(1.)) {
+            self.pointer = None;
+        }
+        self.last_mouse = pos;
         let mut changed = false;
         if let Some(d) = self.mouse.b1 {
             if let Some(l) = self.layouts.get(&d.view) {
@@ -666,15 +883,31 @@ impl Acme {
 
     pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
+        self.last_mouse = e.position;
+        if let Some((bt, b, start)) = self.mouse.box_drag {
+            if b == button {
+                self.mouse.box_drag = None;
+                let but = match button {
+                    MouseButton::Left => 1,
+                    MouseButton::Middle => 2,
+                    _ => 3,
+                };
+                let (op, p) = (Self::row_pt(start), Self::row_pt(e.position));
+                let r = match bt {
+                    BoxTarget::Win(w) => self.node.drag_window(&mut self.log, w, but, op, p),
+                    BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, op, p),
+                };
+                if let Err(err) = r {
+                    eprintln!("layout: {err}");
+                }
+                self.after();
+                cx.notify();
+                return;
+            }
+        }
         match button {
             MouseButton::Left => {
                 self.mouse.b1 = None;
-                if let Some((w, start)) = self.mouse.box_drag.take() {
-                    let moved = (e.position.x - start.x).abs() > px(4.) || (e.position.y - start.y).abs() > px(4.);
-                    if moved {
-                        self.move_window(w, e.position);
-                    }
-                }
             }
             MouseButton::Middle => {
                 if let Some(d) = self.mouse.b2.take() {
@@ -777,42 +1010,6 @@ impl Acme {
         self.term_scroll(t, n * dir as isize);
     }
 
-    fn slot_weight(&self, w: WindowId) -> u32 {
-        self.node.state.layout.cols.iter().flat_map(|c| c.wins.iter()).find(|s| s.window == w).map(|s| s.weight).unwrap_or(1)
-    }
-
-    fn grow_window(&mut self, view: ViewId) {
-        if let Some(w) = view.window() {
-            let weight = (self.slot_weight(w) * 2).min(64);
-            let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::WinResize { window: w, weight }));
-        }
-    }
-
-    fn fill_window(&mut self, view: ViewId) {
-        let Some(w) = view.window() else { return };
-        let Ok(col) = self.node.column_of(w) else { return };
-        let wins: Vec<WindowId> = self.node.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
-        for o in wins {
-            let weight = if o == w { 1 } else { 0 };
-            let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::WinResize { window: o, weight }));
-        }
-    }
-
-    fn move_window(&mut self, w: WindowId, pos: Point<Pixels>) {
-        let target_col = self.node.state.layout.cols.iter().find(|c| {
-            self.layouts.get(&ViewId::ColTag(c.id)).is_some_and(|l| pos.x >= l.bounds.left() && pos.x <= l.bounds.right())
-        });
-        let Some(c) = target_col else { return };
-        let col = c.id;
-        let at = c
-            .wins
-            .iter()
-            .filter(|s| s.window != w)
-            .position(|s| self.layouts.get(&ViewId::Tag(s.window)).is_some_and(|l| l.bounds.top() > pos.y))
-            .unwrap_or(c.wins.iter().filter(|s| s.window != w).count());
-        let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::WinPlace { window: w, col, at, weight: 1 }));
-    }
-
     pub fn scroll_wheel(&mut self, e: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let Some((target, _)) = self.locate(e.position) else { return };
         let lh = match target {
@@ -846,7 +1043,7 @@ impl Acme {
             self.selector_key(&ks.key, ks.key_char.as_deref(), window, cx);
             return;
         }
-        let target = match self.locate(window.mouse_position()) {
+        let target = match self.locate(self.pointer(window)) {
             Some((t, _)) => t,
             None => match self.node.seltext {
                 Some(v) => Target::View(v),
@@ -865,7 +1062,14 @@ impl Acme {
                     self.term_key(t, term_key(ks));
                 }
             }
-            Target::View(v) => self.text_key(v, ks, cx),
+            Target::View(v) => {
+                // typing makes this the active column (acme's rowtype), but
+                // scrolling does not
+                if !matches!(ks.key.as_str(), "up" | "down" | "left" | "right" | "pageup" | "pagedown") {
+                    self.node.activecol = self.column_of_view(v);
+                }
+                self.text_key(v, ks, cx)
+            }
         }
         cx.notify();
     }
@@ -874,7 +1078,7 @@ impl Acme {
     /// before any key event) does: acme's rule, the text under the
     /// pointer, else the last selected text.
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let target = match self.locate(window.mouse_position()) {
+        let target = match self.locate(self.pointer(window)) {
             Some((t, _)) => t,
             None => match self.node.seltext {
                 Some(v) => Target::View(v),
@@ -961,28 +1165,15 @@ impl Acme {
         let mut typed = true;
         if m.control {
             match ks.key.as_str() {
+                // acme's textbswidth rules, exactly
                 "u" => {
-                    let s = t.line_start(t.line_of(q0));
-                    if s < q0 {
-                        let _ = self.node.select(&mut self.log, v, s, q0);
-                        let _ = self.node.backspace(&mut self.log, v);
-                    }
+                    let _ = self.node.erase(&mut self.log, v, Erase::Line);
                 }
                 "w" => {
-                    let mut a = q0;
-                    while a > 0 && t.char_at(a - 1).is_whitespace() {
-                        a -= 1;
-                    }
-                    while a > 0 && is_word_char(t.char_at(a - 1)) {
-                        a -= 1;
-                    }
-                    if a < q0 {
-                        let _ = self.node.select(&mut self.log, v, a, q0);
-                        let _ = self.node.backspace(&mut self.log, v);
-                    }
+                    let _ = self.node.erase(&mut self.log, v, Erase::Word);
                 }
                 "h" => {
-                    let _ = self.node.backspace(&mut self.log, v);
+                    let _ = self.node.erase(&mut self.log, v, Erase::Char);
                 }
                 "a" => {
                     let s = t.line_start(t.line_of(q0));
@@ -999,7 +1190,7 @@ impl Acme {
         } else {
             match ks.key.as_str() {
                 "backspace" => {
-                    let _ = self.node.backspace(&mut self.log, v);
+                    let _ = self.node.erase(&mut self.log, v, Erase::Char);
                 }
                 "delete" => {
                     let _ = self.node.delete_forward(&mut self.log, v);

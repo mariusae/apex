@@ -46,7 +46,7 @@ fn errors_text(node: &Node) -> String {
 }
 
 fn open(server: &Server, log: &mut Log, node: &mut Node, col: ColumnId, dir: &std::path::Path, name: &str) -> WindowId {
-    let p = server.open_file(col, dir, name, None).unwrap();
+    let p = server.open_file(col, None, dir, name, None).unwrap();
     perform(node, log, vec![p]).unwrap()
 }
 

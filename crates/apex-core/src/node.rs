@@ -10,7 +10,9 @@ use apex_edit::{Edit as EditLang, Intent};
 use crate::entry::*;
 use crate::ids::*;
 use crate::log::{Log, LogError};
-use crate::state::{Applied, ApplyError, State};
+use crate::state::{Applied, ApplyError, Layout, State};
+use crate::text::Text;
+use crate::tiling::{self, Rect, Warp};
 
 pub const WIN_TAG_SUFFIX: &str = " Del Snarf Undo Put | Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
@@ -32,6 +34,17 @@ pub enum CoreError {
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;
+
+/// acme's three erasing keys.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Erase {
+    /// ^H, Backspace
+    Char,
+    /// ^U: to the start of the line
+    Line,
+    /// ^W: the word before the cursor
+    Word,
+}
 
 /// What running a command amounted to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +82,14 @@ pub struct Node {
     /// Windows that were warned once about Del on a dirty buffer.
     warned: BTreeMap<WindowId, Version>,
     edit: EditLang,
+    /// What acme's tiling needs to know about text on screen; the client
+    /// supplies its measurements, a headless leader the defaults.
+    pub tiling: Box<dyn tiling::Info + Send + Sync>,
+    /// Where acme would move the mouse after the last layout change; the
+    /// client takes it.
+    pub warp: Option<Warp>,
+    /// acme's `activecol`: where `New` puts its window.
+    pub activecol: Option<ColumnId>,
 }
 
 fn count(s: &str) -> usize {
@@ -87,7 +108,24 @@ impl Node {
             seltext: None,
             warned: BTreeMap::new(),
             edit: EditLang::new(),
+            tiling: Box::new(tiling::Headless::default()),
+            warp: None,
+            activecol: None,
         }
+    }
+
+    /// Append the whole tiling as it now stands in `l`.
+    fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone() }))?;
+        Ok(())
+    }
+
+    fn place_of(&self, w: WindowId) -> Result<(usize, usize)> {
+        self.state.layout.place_of(w).ok_or_else(|| CoreError::Missing(format!("window {w} is not placed")))
+    }
+
+    fn column_index(&self, col: ColumnId) -> Result<usize> {
+        self.state.layout.column_index(col).ok_or_else(|| CoreError::Missing(format!("column {col}")))
     }
 
     /// Ids are unique per attachment without coordination.
@@ -200,41 +238,60 @@ impl Node {
         Ok(id)
     }
 
-    /// Set up a fresh session's layout: the top row and one column.
+    /// Set up a fresh session's layout: the top row and one column. The
+    /// row's rectangle is a guess until a client resizes it.
     pub fn init_session(&mut self, log: &mut Log) -> Result<ColumnId> {
         let top = self.create_buffer(log, "", TOP_TAG, None)?;
         self.append(log, Shard::Buffer(top), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Top }))?;
         self.create_shard(log, Shard::Layout)?;
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Init { top }))?;
-        self.new_column(log, 0)
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Init { top, r: Rect::new(0, 0, 1100, 700) }))?;
+        self.new_column(log, None)
     }
 
-    pub fn new_column(&mut self, log: &mut Log, at: usize) -> Result<ColumnId> {
+    /// A column at `x` (acme's `rowadd`), or with no `x`, taking 40% of
+    /// the last column.
+    pub fn new_column(&mut self, log: &mut Log, x: Option<i32>) -> Result<ColumnId> {
         let id = ColumnId(self.alloc());
         let tag = self.create_buffer(log, "", COL_TAG, None)?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::ColTag(id) }))?;
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::ColNew { id, tag, at, weight: 1 }))?;
+        let mut l = self.state.layout.clone();
+        if tiling::rowadd(&mut l, tiling::AddingCol::New { id, tag }, x, &*self.tiling).is_none() {
+            self.delete_shard(log, Shard::Buffer(tag))?;
+            return Err(CoreError::Missing("no room for a column".into()));
+        }
+        self.arrange(log, &l)?;
         Ok(id)
     }
 
     pub fn delete_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
-        let c = self.state.layout.column(col).ok_or_else(|| CoreError::Missing(format!("column {col}")))?;
+        let ci = self.column_index(col)?;
+        let c = &self.state.layout.cols[ci];
         if !c.wins.is_empty() {
             return Err(CoreError::Missing("column not empty".into()));
         }
         let tag = c.tag;
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::ColDel { id: col }))?;
+        let mut l = self.state.layout.clone();
+        tiling::rowclose(&mut l, ci, &*self.tiling);
+        self.arrange(log, &l)?;
+        if self.activecol == Some(col) {
+            self.activecol = None;
+        }
         self.delete_shard(log, Shard::Buffer(tag))
     }
 
-    /// A window on a new buffer.
+    /// A window on a new buffer, in `col`, splitting the last window.
     pub fn new_window(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str) -> Result<WindowId> {
         let body = self.create_buffer(log, name, text, None)?;
         self.open_window(log, col, body)
     }
 
-    /// A window on an existing buffer (Zerox is this on the same buffer).
+    /// A window on an existing buffer in `col`, at `y` if given, else
+    /// splitting the last window (acme's `coladd`).
     pub fn open_window(&mut self, log: &mut Log, col: ColumnId, body: BufferId) -> Result<WindowId> {
+        self.open_window_at(log, col, body, None)
+    }
+
+    pub fn open_window_at(&mut self, log: &mut Log, col: ColumnId, body: BufferId, y: Option<i32>) -> Result<WindowId> {
         let name = self.state.buffer(body)?.name.clone();
         let id = WindowId(self.alloc());
         let tag = self.create_buffer(log, "", &format!("{name}{WIN_TAG_SUFFIX}"), None)?;
@@ -242,9 +299,31 @@ impl Node {
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Text(body) }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
         self.append(log, Shard::Buffer(body), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
-        let at = self.state.layout.column(col).map(|c| c.wins.len()).unwrap_or(0);
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::WinPlace { window: id, col, at, weight: 1 }))?;
+        self.place(log, col, id, y)?;
         Ok(id)
+    }
+
+    /// acme's `makenewwindow`: a window on `body` in the active column
+    /// (else the column of `from`, else `fallback`), where the biggest
+    /// empty space or the biggest window is.
+    pub fn make_window(&mut self, log: &mut Log, from: Option<WindowId>, fallback: ColumnId, body: BufferId) -> Result<WindowId> {
+        let col = self
+            .activecol
+            .filter(|c| self.state.layout.column(*c).is_some())
+            .or_else(|| self.seltext.and_then(|v| v.window()).and_then(|w| self.state.layout.column_of(w)))
+            .or_else(|| from.and_then(|w| self.state.layout.column_of(w)))
+            .unwrap_or(fallback);
+        self.activecol = Some(col);
+        let ci = self.column_index(col)?;
+        let y = tiling::newwindow_y(&self.state.layout, ci, from, &*self.tiling);
+        let w = self.open_window_at(log, col, body, y)?;
+        // if(w->body.fr.maxlines < 2) colgrow(w->col, w, 1)
+        let few = self.state.layout.slot(w).is_some_and(|s| s.fr_maxlines(self.tiling.body_font_height(w).max(1)) < 2);
+        if few && from.is_some() {
+            self.grow_window(log, w, 1)?;
+            self.warp = Some(Warp::NewWindow(w));
+        }
+        Ok(w)
     }
 
     /// A window whose body is a terminal (the term shard exists already).
@@ -254,9 +333,95 @@ impl Node {
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Term(term) }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
-        let at = self.state.layout.column(col).map(|c| c.wins.len()).unwrap_or(0);
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::WinPlace { window: id, col, at, weight: 1 }))?;
+        self.place(log, col, id, None)?;
         Ok(id)
+    }
+
+    /// Put a (new) window into a column (acme's `coladd`) and record the
+    /// mouse warp acme makes: near the layout box, in the body.
+    fn place(&mut self, log: &mut Log, col: ColumnId, w: WindowId, y: Option<i32>) -> Result<()> {
+        let ci = self.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::coladd(&mut l, ci, tiling::Adding::New(w), y, &*self.tiling);
+        self.arrange(log, &l)?;
+        self.warp = Some(Warp::NewWindow(w));
+        Ok(())
+    }
+
+    /// A window's tag changed shape (or the client measured it anew):
+    /// refit it in its own space, as acme's `winsettag` does.
+    pub fn refit_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let (ci, wi) = self.place_of(w)?;
+        let mut l = self.state.layout.clone();
+        let r = l.cols[ci].wins[wi].r;
+        let mut full = r;
+        full.y1 = if wi + 1 < l.cols[ci].wins.len() { l.cols[ci].wins[wi + 1].r.y0 - tiling::BORDER } else { l.cols[ci].r.y1 };
+        let last = wi + 1 == l.cols[ci].wins.len();
+        tiling::winresize(&mut l, ci, wi, full, last, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
+    /// acme's `colgrow` on a window's layout box: button 1 a bit, 2 as
+    /// big as can be, 3 the whole column.
+    pub fn grow_window(&mut self, log: &mut Log, w: WindowId, but: i32) -> Result<()> {
+        let (ci, wi) = self.place_of(w)?;
+        let mut l = self.state.layout.clone();
+        tiling::colgrow(&mut l, ci, wi, but, &*self.tiling);
+        self.arrange(log, &l)?;
+        self.warp = Some(Warp::WinButton(w));
+        Ok(())
+    }
+
+    /// acme's `coldragwin`: a window's layout box pressed with `but` at
+    /// `op` and released at `p` (row coordinates).
+    pub fn drag_window(&mut self, log: &mut Log, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
+        let (ci, wi) = self.place_of(w)?;
+        let mut l = self.state.layout.clone();
+        let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        if let Some(c) = self.state.layout.column_of(w) {
+            self.activecol = Some(c);
+        }
+        self.warp = warp;
+        Ok(())
+    }
+
+    /// acme's `rowdragcol`: a column's layout box dragged from `op` to `p`.
+    pub fn drag_column(&mut self, log: &mut Log, col: ColumnId, op: (i32, i32), p: (i32, i32)) -> Result<()> {
+        let ci = self.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        let warp = tiling::rowdragcol(&mut l, ci, op, p, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        self.activecol = Some(col);
+        self.warp = warp;
+        Ok(())
+    }
+
+    /// The row's rectangle changed (the window was resized): acme's
+    /// `rowresize`, keeping every proportion.
+    pub fn resize_layout(&mut self, log: &mut Log, r: Rect) -> Result<()> {
+        if r == self.state.layout.r {
+            return Ok(());
+        }
+        let mut l = self.state.layout.clone();
+        tiling::rowresize(&mut l, r, &*self.tiling);
+        self.arrange(log, &l)
+    }
+
+    /// acme's `Sort`: a column's windows in name order.
+    pub fn sort_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
+        let ci = self.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        let names: BTreeMap<WindowId, String> = l.cols[ci].wins.iter().map(|s| (s.window, self.window_name(s.window))).collect();
+        tiling::colsort(&mut l, ci, |w| names.get(&w).cloned().unwrap_or_default(), &*self.tiling);
+        self.arrange(log, &l)
     }
 
     /// Replace a buffer's whole content (a `Get`, a watcher reload) in one
@@ -279,6 +444,8 @@ impl Node {
             .unwrap_or_default()
     }
 
+    /// acme's `zeroxx`: `coladd(w->col, nil, w, -1)`, another window on
+    /// the same buffer, splitting the column's last window.
     pub fn zerox(&mut self, log: &mut Log, window: WindowId) -> Result<WindowId> {
         let w = self.state.window(window)?;
         let body = w.body_buffer().ok_or_else(|| CoreError::Missing("no body buffer".into()))?;
@@ -286,14 +453,24 @@ impl Node {
         self.open_window(log, col, body)
     }
 
-    /// Close a window. The body buffer's shard goes away with its last view.
+    /// Close a window (acme's `colclose`). The body buffer's shard goes
+    /// away with its last view. When the next window down takes the
+    /// space, acme moves the mouse onto its `Del`; that is recorded in
+    /// `warp`.
     pub fn delete_window(&mut self, log: &mut Log, window: WindowId) -> Result<()> {
         let w = self.state.window(window)?.clone();
         self.append(log, Shard::Buffer(w.tag), Op::Buffer(BufferOp::ViewDel { view: ViewId::Tag(window) }))?;
         if let Some(b) = w.body_buffer() {
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewDel { view: ViewId::Body(window) }))?;
         }
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::WinRemove { window }))?;
+        let mut next = None;
+        if let Some((ci, wi)) = self.state.layout.place_of(window) {
+            let mut l = self.state.layout.clone();
+            let (_, n) = tiling::colclose(&mut l, ci, wi, &*self.tiling);
+            next = n;
+            self.arrange(log, &l)?;
+        }
+        self.warp = Some(Warp::Closed { window, next });
         self.append(log, Shard::Window(window), Op::Window(WindowOp::Delete))?;
         self.delete_shard(log, Shard::Window(window))?;
         self.delete_shard(log, Shard::Buffer(w.tag))?;
@@ -385,6 +562,71 @@ impl Node {
         self.edit_op(log, b, q0, q1 - q0, text, group)?;
         let p = q0 + count(text);
         self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0: p, q1: p }))?;
+        Ok(())
+    }
+
+    /// acme's `textbswidth`: how many runes ^H, ^U or ^W erase before `q0`.
+    pub fn bswidth(text: &Text, q0: usize, kind: Erase) -> usize {
+        if kind == Erase::Char {
+            return 1;
+        }
+        let mut q = q0;
+        let mut skipping = true;
+        while q > 0 {
+            let r = text.char_at(q - 1);
+            if r == '\n' {
+                // eat at most one more character
+                if q == q0 {
+                    q -= 1; // eat the newline
+                }
+                break;
+            }
+            if kind == Erase::Word {
+                let eq = r.is_alphanumeric();
+                if eq && skipping {
+                    skipping = false; // found one; stop skipping
+                } else if !eq && !skipping {
+                    break;
+                }
+            }
+            q -= 1;
+        }
+        q0 - q
+    }
+
+    /// acme's `texttype` for ^H, ^U and ^W (and Backspace, which is ^H):
+    /// a selection is cut first, then the width is erased, never past
+    /// the window's origin.
+    pub fn erase(&mut self, log: &mut Log, view: ViewId, kind: Erase) -> Result<()> {
+        let b = self.view_buffer(view)?;
+        let (q0, q1) = self.selection(view)?;
+        let group = self.typing_group(view);
+        let mut q0 = q0;
+        if q1 > q0 {
+            let text = self.state.buffer(b)?.text.slice(q0, q1);
+            self.append(log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text }))?;
+            self.edit_op(log, b, q0, q1 - q0, "", group)?;
+            self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0, q1: q0 }))?;
+        }
+        if q0 == 0 {
+            return Ok(()); // nothing to erase
+        }
+        let nnb = {
+            let buf = self.state.buffer(b)?;
+            Self::bswidth(&buf.text, q0, kind)
+        };
+        let q1 = q0;
+        q0 = q1 - nnb;
+        // if selection is at beginning of window, avoid deleting invisible text
+        let org = self.state.buffer(b)?.views.get(&view).map(|v| v.origin).unwrap_or(0);
+        if q0 < org {
+            q0 = org;
+        }
+        if q1 <= q0 {
+            return Ok(());
+        }
+        self.edit_op(log, b, q0, q1 - q0, "", group)?;
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0, q1: q0 }))?;
         Ok(())
     }
 
@@ -715,12 +957,15 @@ impl Node {
             }
             "New" => {
                 let col = self.column_ctx(ctx)?;
-                let w = self.new_window(log, col, "", "")?;
+                let body = self.create_buffer(log, "", "", None)?;
+                let w = self.make_window(log, win, col, body)?;
                 self.seltext = Some(ViewId::Body(w));
             }
             "Newcol" => {
-                let at = self.state.layout.cols.len();
-                self.new_column(log, at)?;
+                // acme's newcol: a column with one empty window in it
+                let col = self.new_column(log, None)?;
+                let body = self.create_buffer(log, "", "", None)?;
+                self.open_window(log, col, body)?;
             }
             "Delcol" => {
                 let col = self.column_ctx(ctx)?;
@@ -760,14 +1005,7 @@ impl Node {
             }
             "Sort" => {
                 let col = self.column_ctx(ctx)?;
-                let mut slots = self.state.layout.column(col).map(|c| c.wins.clone()).unwrap_or_default();
-                let name = |n: &Node, w: WindowId| -> String {
-                    n.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).map(|b| b.name.clone()).unwrap_or_default()
-                };
-                slots.sort_by_key(|s| name(self, s.window));
-                for (i, s) in slots.iter().enumerate() {
-                    self.append(log, Shard::Layout, Op::Layout(LayoutOp::WinPlace { window: s.window, col, at: i, weight: s.weight }))?;
-                }
+                self.sort_column(log, col)?;
             }
             "Exit" => return Ok(true),
             _ => return Err(CoreError::Missing(format!("{cmd}: not a built-in"))),

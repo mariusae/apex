@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::buffer::Buffer;
 use crate::entry::*;
 use crate::ids::*;
+use crate::tiling::Rect;
 
 // ---- windows ----------------------------------------------------------------
 
@@ -62,23 +63,41 @@ impl Window {
 
 // ---- layout -----------------------------------------------------------------
 
+/// A window's place in a column, as acme keeps it: its rectangle `r`
+/// (bottom trimmed to whole body lines), the body's rectangle, how many
+/// lines the tag takes, how many lines of text the body shows, and
+/// acme's `w->maxlines` (the most lines it has shown, which `colgrow`
+/// uses as its natural size).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Slot {
     pub window: WindowId,
-    pub weight: u32,
+    pub r: Rect,
+    pub body: Rect,
+    pub taglines: i32,
+    pub nlines: i32,
+    /// acme's `body.fr.maxlines`: whole lines that fit the body. Zero for
+    /// a window obscured by a full-column one, whose rectangles go stale.
+    pub frmax: i32,
+    pub maxlines: i32,
 }
 
+/// A column: its rectangle (the tag is its first line) and its windows
+/// top to bottom. `safe` is acme's: false while one window has been
+/// grown to the whole column and the others are obscured.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Column {
     pub id: ColumnId,
     pub tag: BufferId,
+    pub r: Rect,
+    pub safe: bool,
     pub wins: Vec<Slot>,
-    pub weight: u32,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 pub struct Layout {
     pub top: Option<BufferId>,
+    /// The row's rectangle: the top tag is its first line.
+    pub r: Rect,
     pub cols: Vec<Column>,
     pub snarf: String,
     /// Execs from column tags and the top row.
@@ -92,8 +111,15 @@ impl Layout {
     pub fn column(&self, id: ColumnId) -> Option<&Column> {
         self.cols.iter().find(|c| c.id == id)
     }
-    fn column_mut(&mut self, id: ColumnId) -> Option<&mut Column> {
-        self.cols.iter_mut().find(|c| c.id == id)
+    pub fn column_index(&self, id: ColumnId) -> Option<usize> {
+        self.cols.iter().position(|c| c.id == id)
+    }
+    /// The column and window indices of a placed window.
+    pub fn place_of(&self, w: WindowId) -> Option<(usize, usize)> {
+        self.cols.iter().enumerate().find_map(|(ci, c)| c.wins.iter().position(|s| s.window == w).map(|wi| (ci, wi)))
+    }
+    pub fn slot(&self, w: WindowId) -> Option<&Slot> {
+        self.place_of(w).map(|(ci, wi)| &self.cols[ci].wins[wi])
     }
     fn unplace(&mut self, w: WindowId) {
         for c in &mut self.cols {
@@ -333,35 +359,22 @@ impl State {
                 let r = l.execs.get_mut(exec).ok_or_else(|| ApplyError::Missing(format!("layout exec {exec}")))?;
                 r.1.status = ExecStatus::from(status);
             }
-            LayoutOp::Init { top } => l.top = Some(*top),
-            LayoutOp::ColNew { id, tag, at, weight } => {
-                if l.column(*id).is_some() {
-                    return Err(ApplyError::Exists(format!("column {id}")));
-                }
-                let at = (*at).min(l.cols.len());
-                l.cols.insert(at, Column { id: *id, tag: *tag, wins: Vec::new(), weight: *weight });
+            LayoutOp::Init { top, r } => {
+                l.top = Some(*top);
+                l.r = *r;
             }
-            LayoutOp::ColDel { id } => {
-                l.cols.retain(|c| c.id != *id);
-            }
-            LayoutOp::ColResize { id, weight } => {
-                l.column_mut(*id).ok_or_else(|| ApplyError::Missing(format!("column {id}")))?.weight = *weight;
-            }
-            LayoutOp::WinPlace { window, col, at, weight } => {
-                l.unplace(*window);
-                let c = l.column_mut(*col).ok_or_else(|| ApplyError::Missing(format!("column {col}")))?;
-                let at = (*at).min(c.wins.len());
-                c.wins.insert(at, Slot { window: *window, weight: *weight });
-            }
-            LayoutOp::WinRemove { window } => l.unplace(*window),
-            LayoutOp::WinResize { window, weight } => {
-                for c in &mut l.cols {
-                    for s in &mut c.wins {
-                        if s.window == *window {
-                            s.weight = *weight;
+            LayoutOp::Arrange { r, cols } => {
+                // a window may sit in one place only
+                let mut seen = std::collections::BTreeSet::new();
+                for c in cols {
+                    for s in &c.wins {
+                        if !seen.insert(s.window) {
+                            return Err(ApplyError::Exists(format!("window {} placed twice", s.window)));
                         }
                     }
                 }
+                l.r = *r;
+                l.cols = cols.clone();
             }
             LayoutOp::Snarf { text } => l.snarf = text.clone(),
         }
@@ -508,13 +521,13 @@ impl State {
         }
         h.update(b"layout");
         h.update(&self.layout.top.map(|b| b.0).unwrap_or(0).to_le_bytes());
+        h.update(&postcard::to_stdvec(&self.layout.r).unwrap_or_default());
         for c in &self.layout.cols {
             h.update(&c.id.0.to_le_bytes());
             h.update(&c.tag.0.to_le_bytes());
-            h.update(&c.weight.to_le_bytes());
+            h.update(&postcard::to_stdvec(&(c.r, c.safe)).unwrap_or_default());
             for s in &c.wins {
-                h.update(&s.window.0.to_le_bytes());
-                h.update(&s.weight.to_le_bytes());
+                h.update(&postcard::to_stdvec(s).unwrap_or_default());
             }
         }
         h.update(self.layout.snarf.as_bytes());
