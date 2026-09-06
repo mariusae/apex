@@ -244,3 +244,28 @@ fn the_watcher_reloads_clean_buffers_and_flags_dirty_ones() {
     assert!(wait(&mut c, |r| body(r, w) == "four\n" && !r.node.state.buffer(b).unwrap().stale));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn selection_and_scroll_position_survive_reattach() {
+    let sock = daemon();
+    let mut c = Remote::connect(&sock, "main", "first").unwrap();
+    let col = c.node.state.layout.cols[0].id;
+    let text: String = (0..200).map(|i| format!("line {i}\n")).collect();
+    let w = c.node.new_window(&mut c.log, col, "long", &text).unwrap();
+    let v = ViewId::Body(w);
+    c.node.select(&mut c.log, v, 700, 712).unwrap();
+    let origin = c.node.state.buffer(c.node.view_buffer(v).unwrap()).unwrap().text.line_start(100);
+    c.node.set_origin(&mut c.log, v, origin).unwrap();
+    // what the UI does on every frame
+    c.flush();
+    let b = c.node.view_buffer(v).unwrap();
+    let want = c.log.last_seq(Shard::Buffer(b));
+    assert!(wait(&mut c, |r| r.acked(Shard::Buffer(b)) == want));
+    drop(c);
+
+    let again = Remote::connect(&sock, "main", "second").unwrap();
+    assert_eq!(again.node.selection(v).unwrap(), (700, 712));
+    let view = again.node.state.buffer(b).unwrap().views[&v];
+    assert_eq!(view.origin, origin);
+    assert_eq!(again.node.state.layout.cols[0].wins.len(), 1);
+}
