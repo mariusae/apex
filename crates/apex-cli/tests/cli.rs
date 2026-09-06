@@ -19,7 +19,8 @@ fn daemon() -> PathBuf {
 }
 
 fn apex(sock: &PathBuf, args: &[&str]) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_apex")).arg("--socket").arg(sock).args(args).output().unwrap();
+    // the test daemon's session is "main"; a later --session in `args` wins
+    let out = Command::new(env!("CARGO_BIN_EXE_apex")).arg("--socket").arg(sock).args(["--session", "main"]).args(args).output().unwrap();
     (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
 }
 
