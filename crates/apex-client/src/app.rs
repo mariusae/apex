@@ -608,6 +608,7 @@ impl Acme {
     fn show(&mut self, w: WindowId) {
         self.node.seltext = Some(ViewId::Body(w));
         self.want_visible.insert(ViewId::Body(w));
+        let _ = self.node.reveal(&mut self.log, w); // textshow: a window with no lines grows
     }
 
     fn send(&self, m: ClientMsg) {

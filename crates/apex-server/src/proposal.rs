@@ -56,7 +56,9 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
     match p {
         Proposal::OpenWindow { col, from, name, text, hash, select_line } => {
             if let Some(w) = node.state.windows.keys().copied().find(|w| node.window_name(*w) == name) {
-                // acme's openfile: show it, and jump the mouse to the selection
+                // acme's openfile: show it (a window with no lines grows a
+                // few), and jump the mouse to the selection
+                node.reveal(log, w)?;
                 select(node, log, w, select_line)?;
                 node.seltext = Some(ViewId::Body(w));
                 node.warp = Some(Warp::Sel(ViewId::Body(w)));
@@ -166,6 +168,9 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 });
             if let Some(v) = view {
                 if node.view_buffer(v).is_ok() && node.look(log, v, &text)? {
+                    if let Some(w) = v.window() {
+                        node.reveal(log, w)?; // textshow grows a window with no lines
+                    }
                     node.warp = Some(Warp::Sel(v)); // acme moves the mouse to what it found
                 }
                 return Ok(v.window());

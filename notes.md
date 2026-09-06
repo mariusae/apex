@@ -18,9 +18,10 @@ we should allow the user to configure *providers* that help make these connectio
 
 in plan9port acme, i can type a path, e.g., hit 'New', enter some content, type the path name, and then hit 'Put'. this isn't available in apex.
 
+let's port the rc shell. and run by default in the rc shell.  that will allow us to also define $%, $samfile, etc.
 
-let's port the rc shell. and run by default in the rc shell.
 
+when the content of a window is completely hidden (i.e., we only see the top bar), B3-ing its path doesn't seem to warp/recall it. in plan9port acme it does. doing so in plan9port also reveals a few lines of the content.
 
 select, then release outside, shoudl also B3 correctly.
 

@@ -439,6 +439,20 @@ impl Node {
         Ok(())
     }
 
+    /// acme's `textshow` on a window showing no lines (squeezed to its
+    /// tag, or obscured): grow it a little (`colgrow` with button 1) so
+    /// what is shown can be seen. No mouse warp: that is the caller's.
+    pub fn reveal(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some((ci, wi)) = self.state.layout.place_of(w) else { return Ok(()) };
+        let bf = self.tiling.body_font_height(w).max(1);
+        if self.state.layout.cols[ci].wins[wi].fr_maxlines(bf) > 0 {
+            return Ok(());
+        }
+        let mut l = self.state.layout.clone();
+        tiling::colgrow(&mut l, ci, wi, 1, &*self.tiling);
+        self.arrange(log, &l)
+    }
+
     /// acme's `colgrow` on a window's layout box: button 1 a bit, 2 as
     /// big as can be, 3 the whole column.
     pub fn grow_window(&mut self, log: &mut Log, w: WindowId, but: i32) -> Result<()> {

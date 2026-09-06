@@ -297,3 +297,24 @@ fn arrange_entries_replay_identically() {
     assert_eq!(f.state.layout, n.state.layout);
     let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0 }] };
 }
+
+#[test]
+fn showing_a_window_with_no_lines_grows_it() {
+    let mut log = Log::new();
+    let (a, _) = log.attach(AttachmentKind::Ui, "t");
+    let mut n = Node::new(a);
+    n.catch_up(&log).unwrap();
+    let col = n.init_session(&mut log).unwrap();
+    let w1 = n.new_window(&mut log, col, "a", "x\n").unwrap();
+    let w2 = n.new_window(&mut log, col, "b", "y\n").unwrap();
+    // button 3 on w1's box: w2 is obscured, showing no lines
+    n.grow_window(&mut log, w1, 3).unwrap();
+    assert_eq!(n.state.layout.slot(w2).unwrap().fr_maxlines(17), 0);
+    n.reveal(&mut log, w2).unwrap();
+    assert!(n.state.layout.slot(w2).unwrap().fr_maxlines(17) >= 1);
+    assert!(n.state.layout.cols[0].safe);
+    // a window already showing lines is left alone
+    let before = n.state.layout.clone();
+    n.reveal(&mut log, w2).unwrap();
+    assert_eq!(n.state.layout, before);
+}
