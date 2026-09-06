@@ -167,6 +167,8 @@ pub struct Acme {
     pub title_shown: String,
     /// The link to the daemon is up (a socket, or a provider's bridge).
     pub connected: bool,
+    /// The heartbeat: when the last ping went out.
+    last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -323,6 +325,7 @@ impl Acme {
         };
         self.backend = Backend::Remote(link);
         self.connected = true;
+        self.last_ping = None;
         self.log = log;
         self.node = node;
         self.session = url.session.clone();
@@ -382,7 +385,53 @@ impl Acme {
     }
 
 
+    /// Every few seconds a ping goes to the daemon; a pong that does not
+    /// come back in time means the link is dead even if the socket has
+    /// not closed (ssh gone quiet). A pong after that means it is back.
+    const HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(3);
+    const HEARTBEAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+    fn heartbeat(&mut self) -> bool {
+        let Backend::Remote(link) = &mut self.backend else { return false };
+        let now = std::time::Instant::now();
+        let answered = match (self.last_ping, link.last_pong) {
+            (Some(sent), Some(pong)) => pong >= sent,
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+        let overdue = self.last_ping.is_some_and(|sent| !answered && now.duration_since(sent) > Self::HEARTBEAT_TIMEOUT);
+        let mut changed = false;
+        if overdue && self.connected {
+            self.connected = false;
+            changed = true;
+        } else if answered && !self.connected && link.last_pong.is_some() {
+            self.connected = true;
+            changed = true;
+        }
+        if answered || overdue {
+            link.send(&ClientMsg::Ping { t: now.elapsed().as_millis() as u64 });
+            self.last_ping = Some(now);
+        }
+        changed
+    }
+
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(Self::HEARTBEAT).await;
+            let alive = cx.update(|cx| {
+                this.update(cx, |acme, cx| {
+                    if acme.heartbeat() {
+                        cx.notify();
+                    }
+                    true
+                })
+                .unwrap_or(false)
+            });
+            if !alive {
+                break;
+            }
+        })
+        .detach();
         Acme {
             log,
             node,
@@ -397,6 +446,7 @@ impl Acme {
             pending: None,
             title_shown: String::new(),
             connected: true,
+            last_ping: None,
             warp_wait: false,
             mouse_saved: None,
             pointer: None,

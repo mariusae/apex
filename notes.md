@@ -32,3 +32,7 @@ scroll responsiveness (w/ trackpad)
 in plan9port acme, i can type a path, e.g., hit 'New', enter some content, type the path name, and then hit 'Put'. this isn't available in apex.
 
 then let's see what it would take to implement 'rc'
+
+--
+
+include 'rc' in the distribution, and use it in place of 'sh' for running commands. https://github.com/mariusae/rustrc. as with plan9port acme, define $%, $samfile, (others?), when running commands -- regardless of whether it is through rc, or directly.

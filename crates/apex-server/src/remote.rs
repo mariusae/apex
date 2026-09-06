@@ -56,6 +56,8 @@ pub struct Link {
     pub applied: HashMap<u64, Result<Option<WindowId>, String>>,
     /// The last session listing received.
     pub sessions: Option<Vec<String>>,
+    /// When the last `Pong` arrived (the owner's heartbeat).
+    pub last_pong: Option<std::time::Instant>,
     next_id: u64,
     /// Closes the transport on drop, so the reader thread ends and the
     /// server sees the attachment go.
@@ -160,7 +162,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -245,7 +247,9 @@ impl Link {
             ServerMsg::ShardReady { .. } => {}
             ServerMsg::Welcome { .. } => {}
             ServerMsg::Error { text } => eprintln!("remote: server: {text}"),
-            ServerMsg::Pong { .. } => {}
+            ServerMsg::Pong { .. } => {
+                self.last_pong = Some(std::time::Instant::now());
+            }
         }
         true
     }
