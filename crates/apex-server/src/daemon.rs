@@ -22,21 +22,49 @@ use apex_core::*;
 use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg};
 use crate::{proposal, Proposal, Server, ServerEvent};
 
-/// Where `apexd` listens by default: `$TMPDIR/apex-$USER/main.sock`.
+/// Where `apexd` listens by default: `$TMPDIR/apex-$USER/main.sock`,
+/// with the uid standing in where the environment names no user (a
+/// container's `exec` often sets neither USER nor LOGNAME).
 pub fn default_socket() -> std::path::PathBuf {
+    if let Some(p) = std::env::var_os("APEX_SOCKET") {
+        return std::path::PathBuf::from(p);
+    }
     let base = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into());
-    std::path::PathBuf::from(base).join(format!("apex-{}", std::env::var("USER").unwrap_or_default())).join("main.sock")
+    let who = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .ok()
+        .filter(|u| !u.is_empty())
+        // SAFETY: getuid cannot fail
+        .unwrap_or_else(|| unsafe { libc::getuid() }.to_string());
+    std::path::PathBuf::from(base).join(format!("apex-{who}")).join("main.sock")
+}
+
+/// The session's commands (and its shells) find our own command:
+/// `~/.apex/bin`, where a remote install puts it, goes on the PATH.
+pub fn put_apex_on_path() {
+    let Ok(home) = std::env::var("HOME") else { return };
+    let bin = std::path::Path::new(&home).join(".apex/bin");
+    if !bin.is_dir() {
+        return;
+    }
+    let path = std::env::var("PATH").unwrap_or_default();
+    if std::env::split_paths(&path).any(|p| p == bin) {
+        return;
+    }
+    std::env::set_var("PATH", format!("{}:{path}", bin.display()));
 }
 
 enum Event {
     Accept(UnixStream),
     Msg(u64, ClientMsg),
     Gone(u64),
-    Server(String, ServerEvent),
+    /// From a session's server, by the session's id (names can change).
+    Server(u64, ServerEvent),
 }
 
 struct Conn {
-    session: Option<String>,
+    /// The id of the session attached to.
+    session: Option<u64>,
     attachment: Option<AttachmentId>,
     kind: AttachmentKind,
     out: Sender<ServerMsg>,
@@ -45,6 +73,8 @@ struct Conn {
 }
 
 struct Session {
+    /// Stable across renames; what connections and events refer to.
+    id: u64,
     log: Log,
     server: Server,
     /// Follower replica of every shard, and the leader when no UI is
@@ -62,6 +92,7 @@ struct Pending {
 
 pub struct Daemon {
     sessions: BTreeMap<String, Session>,
+    next_session: u64,
     conns: HashMap<u64, Conn>,
     pending: HashMap<u64, Pending>,
     next_pending: u64,
@@ -74,6 +105,7 @@ impl Daemon {
     /// ends, with one session `session` to begin with. Returns only on a
     /// listener error.
     pub fn run(path: &Path, session: &str) -> io::Result<()> {
+        put_apex_on_path();
         let _ = std::fs::remove_file(path);
         let listener = UnixListener::bind(path)?;
         let (tx, rx) = channel();
@@ -87,7 +119,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { sessions: BTreeMap::new(), conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
+        let mut d = Daemon { sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -99,8 +131,9 @@ impl Daemon {
                 }
                 Event::Msg(id, m) => d.handle(id, m),
                 Event::Gone(id) => d.gone(id),
-                Event::Server(name, ev) => {
-                    if let Some(s) = d.sessions.get_mut(&name) {
+                Event::Server(sid, ev) => {
+                    if let Some(name) = d.name_of(sid) {
+                        let s = d.sessions.get_mut(&name).unwrap();
                         let props = s.server.pump(&mut s.log, &s.view, ev);
                         d.after(&name, props);
                     }
@@ -116,14 +149,15 @@ impl Daemon {
         }
         let log = Log::new();
         let (server, mut srx) = Server::new(&log);
+        let sid = self.next_session;
+        self.next_session += 1;
         {
             let tx = self.tx.clone();
-            let name = name.to_string();
             thread::spawn(move || {
                 use futures::StreamExt;
                 futures::executor::block_on(async move {
                     while let Some(ev) = srx.next().await {
-                        if tx.send(Event::Server(name.clone(), ev)).is_err() {
+                        if tx.send(Event::Server(sid, ev)).is_err() {
                             break;
                         }
                     }
@@ -136,8 +170,25 @@ impl Daemon {
         // the daemon lays the session out (one column, the top tag) so a
         // tool can work before any UI attaches
         view.init_session(&mut log).expect("fresh session");
-        self.sessions.insert(name.to_string(), Session { log, server, view, leader: None });
+        self.sessions.insert(name.to_string(), Session { id: sid, log, server, view, leader: None });
         true
+    }
+
+    fn name_of(&self, sid: u64) -> Option<String> {
+        self.sessions.iter().find(|(_, s)| s.id == sid).map(|(n, _)| n.clone())
+    }
+
+    /// Rename a session; everything attached stays attached.
+    fn rename_session(&mut self, from: &str, to: &str) -> Result<(), String> {
+        if to.is_empty() || to.contains('/') {
+            return Err(format!("bad session name {to:?}"));
+        }
+        if self.sessions.contains_key(to) {
+            return Err(format!("session {to} exists"));
+        }
+        let s = self.sessions.remove(from).ok_or_else(|| format!("no session {from}"))?;
+        self.sessions.insert(to.to_string(), s);
+        Ok(())
     }
 
     fn accept(&mut self, id: u64, s: UnixStream) {
@@ -184,7 +235,8 @@ impl Daemon {
 
     fn gone(&mut self, id: u64) {
         let Some(c) = self.conns.remove(&id) else { return };
-        let (Some(name), Some(a)) = (c.session, c.attachment) else { return };
+        let (Some(sid), Some(a)) = (c.session, c.attachment) else { return };
+        let Some(name) = self.name_of(sid) else { return };
         let Some(s) = self.sessions.get_mut(&name) else { return };
         let e = s.log.detach(a);
         let _ = s.view.state.apply(Shard::Meta, &e);
@@ -210,18 +262,24 @@ impl Daemon {
         match m {
             ClientMsg::Hello { session, name, kind } => self.hello(id, session, name, kind),
             ClientMsg::NewSession { name } => {
-                if self.new_session(&name) {
-                    self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
+                // making a session that exists is fine: it is there
+                if name.is_empty() || name.contains('/') {
+                    self.send(id, ServerMsg::Error { text: format!("bad session name {name:?}") });
                 } else {
-                    self.send(id, ServerMsg::Error { text: format!("session {name} exists") });
+                    self.new_session(&name);
+                    self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
                 }
             }
             ClientMsg::ListSessions => {
                 self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
             }
+            ClientMsg::RenameSession { from, to } => match self.rename_session(&from, &to) {
+                Ok(()) => self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() }),
+                Err(text) => self.send(id, ServerMsg::Error { text }),
+            },
             ClientMsg::Ping { t } => self.send(id, ServerMsg::Pong { t }),
             other => {
-                let Some(name) = self.conns.get(&id).and_then(|c| c.session.clone()) else {
+                let Some(name) = self.conns.get(&id).and_then(|c| c.session).and_then(|sid| self.name_of(sid)) else {
                     self.send(id, ServerMsg::Error { text: "not attached".into() });
                     return;
                 };
@@ -258,8 +316,9 @@ impl Daemon {
         let _ = s.view.catch_up(&s.log);
         let snapshot = s.view.state.to_snapshot();
         let marks: HashMap<Shard, Seq> = s.log.shards().map(|sh| (sh, s.log.last_seq(sh))).collect();
+        let sid = s.id;
         if let Some(c) = self.conns.get_mut(&id) {
-            c.session = Some(session);
+            c.session = Some(sid);
             c.attachment = Some(a);
             c.kind = kind;
             c.sent = marks;
@@ -352,7 +411,7 @@ impl Daemon {
                     }
                 }
             }
-            ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::Ping { .. } => {}
+            ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::RenameSession { .. } | ClientMsg::Ping { .. } => {}
         }
         self.after(name, props);
     }
@@ -400,7 +459,8 @@ impl Daemon {
         // the metalog first: it announces shards before their entries
         let mut shards: Vec<Shard> = s.log.shards().collect();
         shards.sort_by_key(|sh| *sh != Shard::Meta);
-        let members: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session.as_deref() == Some(name)).map(|(id, _)| *id).collect();
+        let sid = s.id;
+        let members: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid)).map(|(id, _)| *id).collect();
         for id in members {
             let c = self.conns.get_mut(&id).unwrap();
             for &shard in &shards {

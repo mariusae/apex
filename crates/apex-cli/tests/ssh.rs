@@ -80,10 +80,10 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     std::env::set_var("APEX_REMOTE_BINARIES", binaries());
     ssh::deploy("box").unwrap();
     // the daemon on the host is started by the bridge; sessions listed
-    assert_eq!(ssh::list_sessions("box").unwrap(), vec!["local".to_string()]);
-    let cmd = ssh::attach_command("box", "local").unwrap();
+    assert_eq!(ssh::list_sessions("box").unwrap(), vec!["default".to_string()]);
+    let cmd = ssh::attach_command("box", "default").unwrap();
     assert!(cmd.starts_with(&format!("{} box ", script.display())), "{cmd}");
-    let mut c = Remote::via(&cmd, "local", "over-ssh", AttachmentKind::Ui).unwrap();
+    let mut c = Remote::via(&cmd, "default", "over-ssh", AttachmentKind::Ui).unwrap();
     let col = c.node.state.layout.cols[0].id;
     let w = c.node.new_window(&mut c.log, col, "remote-notes", "typed over ssh\n").unwrap();
     c.flush();
@@ -95,7 +95,7 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     }
     assert_eq!(c.acked(Shard::Buffer(b)), want, "acked over the bridge");
     // another client on the same "host" sees it
-    let again = Remote::via(&ssh::attach_command("box", "local").unwrap(), "local", "again", AttachmentKind::Tool).unwrap();
+    let again = Remote::via(&ssh::attach_command("box", "default").unwrap(), "default", "again", AttachmentKind::Tool).unwrap();
     assert!(again.node.state.windows.keys().any(|w| again.node.window_name(*w) == "remote-notes"));
     drop(again);
     drop(c);
@@ -125,10 +125,30 @@ fn a_provider_is_a_command_named_apex_provider_on_the_path() {
     // the whole path through the provider
     let (_, installed) = ssh::deploy("sprite:box").unwrap();
     assert!(installed);
-    assert_eq!(ssh::list_sessions("sprite:box").unwrap(), vec!["local".to_string()]);
-    let c = Remote::via(&ssh::attach_command("sprite:box", "local").unwrap(), "local", "over-sprite", AttachmentKind::Ui).unwrap();
+    assert_eq!(ssh::list_sessions("sprite:box").unwrap(), vec!["default".to_string()]);
+    let c = Remote::via(&ssh::attach_command("sprite:box", "default").unwrap(), "default", "over-sprite", AttachmentKind::Ui).unwrap();
     assert_eq!(c.node.state.layout.cols.len(), 1);
     drop(c);
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_file(&sock);
+}
+
+#[test]
+fn session_urls_name_a_provider_an_argument_and_a_session() {
+    use ssh::SessionUrl;
+    let u = SessionUrl::parse("sprite://box/dev").unwrap();
+    assert_eq!(u, SessionUrl { provider: "sprite".into(), arg: "box".into(), session: "dev".into() });
+    assert_eq!(u.to_string(), "sprite://box/dev");
+    assert_eq!(u.dest().as_deref(), Some("sprite:box"));
+    let l = SessionUrl::parse("local:///work").unwrap();
+    assert!(l.is_local());
+    assert_eq!(l.to_string(), "local:///work");
+    assert_eq!(l.dest(), None);
+    // older spellings still read
+    assert_eq!(SessionUrl::parse("work").unwrap(), SessionUrl::local("work"));
+    assert_eq!(SessionUrl::parse("me@host/dev").unwrap().to_string(), "ssh://me@host/dev");
+    assert_eq!(SessionUrl::parse("sprite:box").unwrap().to_string(), "sprite://box/default");
+    assert_eq!(SessionUrl::parse("ssh://me@host").unwrap().session, "default");
+    assert!(SessionUrl::parse("sprite:///nothing").is_none());
+    assert!(SessionUrl::parse("").is_none());
 }

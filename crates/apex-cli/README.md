@@ -6,6 +6,7 @@
 apex [--socket P] [--session S] server               run the daemon (foreground)
 apex ls                                              list sessions
 apex new-session NAME
+apex rename-session [FROM] TO
 apex attach [host/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
 apex new FILE...                                     open files in the first column
 apex win list | win del WIN
@@ -34,7 +35,9 @@ apex exec notes.txt Put
 
 works with no UI running, and a UI attaching later finds the result.
 
-`apex attach dest/session` reaches `dest` through a provider (`user@host`
+Sessions are URLs: `local:///name`, `ssh://user@host/name`,
+`sprite://box/name`; a daemon's first session is `default`. `apex attach
+URL`, or `apex attach dest/session`, reaches `dest` through a provider (`user@host`
 over ssh, or `provider:name` through an `apex-remote-<provider>` script on the
 PATH, see `providers/README.md`), installs (or updates) our `apex` for the
 destination's OS and architecture in `~/.apex/bin` there, then launches

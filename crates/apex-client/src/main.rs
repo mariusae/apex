@@ -25,6 +25,7 @@ use gpui::{
 
 use apex_core::{Body, ViewId};
 
+use apex_server::providers::SessionUrl;
 use app::Acme;
 use term_element::TermElement;
 use text_element::TextElement;
@@ -117,9 +118,10 @@ impl Render for Acme {
 enum Target {
     /// The server in this process, the old prototype's way.
     Local(Vec<String>),
-    Socket { socket: std::path::PathBuf, session: String, files: Vec<String> },
+    /// A session URL: `local:///name` here, or through a provider.
+    Url { url: SessionUrl, files: Vec<String> },
+    /// Through an arbitrary command's stdin/stdout.
     Via { cmd: String, session: String, files: Vec<String> },
-    Remote { host: String, session: String, files: Vec<String> },
 }
 
 fn main() {
@@ -127,7 +129,8 @@ fn main() {
     let mut local = false;
     let mut socket: Option<std::path::PathBuf> = None;
     let mut via: Option<String> = None;
-    let mut ssh: Option<String> = None;
+    let mut remote: Option<String> = None;
+    let mut url: Option<String> = None;
     let mut session: Option<String> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
@@ -140,12 +143,16 @@ fn main() {
                 });
             }
             "--via" => via = Some(args.next().expect("--via CMD")),
-            "--remote" | "--ssh" => ssh = Some(args.next().expect("--remote DESTINATION")),
+            "--remote" | "--ssh" => remote = Some(args.next().expect("--remote DESTINATION")),
+            "--url" => url = Some(args.next().expect("--url URL")),
             "--session" => session = Some(args.next().expect("--session NAME")),
             // Finder passes this when launching a bundle
             a if a.starts_with("-psn_") => {}
             _ => files.push(a),
         }
+    }
+    if let Some(p) = &socket {
+        std::env::set_var("APEX_SOCKET", p);
     }
     let socket = socket.unwrap_or_else(apex_server::daemon::default_socket);
 
@@ -177,55 +184,46 @@ fn main() {
                 });
             }
         });
-        {
-            let socket = socket.clone();
-            cx.on_action(move |_: &shell::NewWindow, cx| {
-                // another window on the active window's session
-                let (host, session) = cx
-                    .active_window()
-                    .and_then(|w| w.downcast::<Acme>())
-                    .and_then(|h| h.read(cx).ok().map(|a| (a.host.clone(), a.session.clone())))
-                    .unwrap_or((None, "local".to_string()));
-                match host {
-                    Some(host) => open_window(cx, Target::Remote { host, session, files: Vec::new() }),
-                    None => {
-                        if shell::ensure_daemon(&socket).is_ok() {
-                            open_window(cx, Target::Socket { socket: socket.clone(), session, files: Vec::new() });
-                        }
-                    }
-                }
-                shell::save_open(cx);
-            });
-        }
+        cx.on_action(move |_: &shell::NewWindow, cx| {
+            // another window on the active window's session
+            let url = cx
+                .active_window()
+                .and_then(|w| w.downcast::<Acme>())
+                .and_then(|h| h.read(cx).ok().map(|a| a.url.clone()))
+                .unwrap_or_else(|| SessionUrl::local(apex_server::providers::DEFAULT_SESSION));
+            open_window(cx, Target::Url { url, files: Vec::new() });
+            shell::save_open(cx);
+        });
 
+        let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
         let targets: Vec<Target> = if local {
             vec![Target::Local(files.clone())]
         } else if let Some(cmd) = via.clone() {
-            vec![Target::Via { cmd, session: session.clone().unwrap_or_else(|| "local".into()), files: files.clone() }]
-        } else if let Some(host) = ssh.clone() {
-            vec![Target::Remote { host, session: session.clone().unwrap_or_else(|| "local".into()), files: files.clone() }]
+            vec![Target::Via { cmd, session: default(), files: files.clone() }]
+        } else if let Some(u) = url.clone() {
+            match SessionUrl::parse(&u) {
+                Some(url) => vec![Target::Url { url, files: files.clone() }],
+                None => {
+                    eprintln!("apex-ui: bad session URL {u:?}");
+                    std::process::exit(2);
+                }
+            }
+        } else if let Some(dest) = remote.clone() {
+            let d = apex_server::providers::Dest::parse(&dest);
+            vec![Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default() }, files: files.clone() }]
         } else {
             if let Err(e) = shell::ensure_daemon(&socket) {
                 eprintln!("apex-ui: {e}");
                 std::process::exit(1);
             }
-            let sessions = match &session {
-                Some(s) => {
-                    let _ = apex_server::remote::new_session(&socket, s);
-                    vec![s.clone()]
-                }
+            let urls = match &session {
+                Some(s) => vec![SessionUrl::local(s)],
                 None => shell::plan(&socket).unwrap_or_else(|e| {
                     eprintln!("apex-ui: {e}");
                     std::process::exit(1);
                 }),
             };
-            sessions
-                .into_iter()
-                .map(|s| match apex_server::providers::split_spec(&s) {
-                    Some((host, sess)) => Target::Remote { host: host.to_string(), session: sess.to_string(), files: Vec::new() },
-                    None => Target::Socket { socket: socket.clone(), session: s, files: files.clone() },
-                })
-                .collect()
+            urls.into_iter().map(|url| Target::Url { url, files: files.clone() }).collect()
         };
         for t in targets {
             open_window(cx, t);
@@ -249,9 +247,8 @@ fn open_window(cx: &mut App, target: Target) {
     bounds.origin.y += px(24. * n);
     let title = match &target {
         Target::Local(_) => "apex".to_string(),
-        Target::Socket { session, .. } => Acme::title(&None, session),
-        Target::Via { cmd, session, .. } => Acme::title(&Some(cmd.split_whitespace().nth(1).unwrap_or(cmd).to_string()), session),
-        Target::Remote { host, session, .. } => Acme::title(&Some(host.clone()), session),
+        Target::Url { url, .. } => Acme::title(url),
+        Target::Via { cmd, session, .. } => format!("{session} via {} — apex", cmd.split_whitespace().nth(1).unwrap_or(cmd)),
     };
     let opened = cx.open_window(
         WindowOptions {
@@ -282,45 +279,45 @@ fn open_window(cx: &mut App, target: Target) {
                     .detach();
                     acme
                 }
-                Target::Socket { .. } | Target::Via { .. } | Target::Remote { .. } => {
+                Target::Url { .. } | Target::Via { .. } => {
                     // the reader thread pokes this channel; the task polls
                     // the link on the UI thread
                     let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
                     let wake: apex_server::remote::Wake = std::sync::Arc::new(move || {
                         let _ = wake_tx.unbounded_send(());
                     });
-                    let (at, session, files) = match target {
-                        Target::Socket { socket, session, files } => (app::Where::Socket(socket), session, files),
-                        Target::Via { cmd, session, files } => (app::Where::Via(cmd), session, files),
-                        Target::Remote { host, session, files } => (app::Where::Remote(host), session, files),
-                        Target::Local(_) => unreachable!(),
-                    };
-                    let acme = match Acme::attach(cx, &at, &session, files, wake.clone()) {
-                        Ok(a) => a,
-                        Err(e) => match at {
-                            // a remembered remote session that cannot be reached:
-                            // fall back to the local daemon, and say so
-                            app::Where::Remote(host) => {
-                                eprintln!("apex-ui: attach {host}/{session}: {e}");
-                                let socket = apex_server::daemon::default_socket();
-                                let _ = shell::ensure_daemon(&socket);
-                                let _ = apex_server::remote::new_session(&socket, "local");
-                                match Acme::attach(cx, &app::Where::Socket(socket), "local", Vec::new(), wake) {
+                    let acme = match target {
+                        Target::Via { cmd, session, files } => match Acme::attach_via(cx, &cmd, &session, files, wake.clone()) {
+                            Ok(a) => a,
+                            Err(e) => {
+                                eprintln!("apex-ui: attach via {cmd}: {e}");
+                                std::process::exit(1);
+                            }
+                        },
+                        Target::Url { url, files } => match Acme::attach(cx, &url, files, wake.clone()) {
+                            Ok(a) => a,
+                            Err(e) if !url.is_local() => {
+                                // a remembered remote session that cannot be
+                                // reached: fall back to the local default, and say so
+                                eprintln!("apex-ui: attach {url}: {e}");
+                                let fallback = SessionUrl::local(apex_server::providers::DEFAULT_SESSION);
+                                match Acme::attach(cx, &fallback, Vec::new(), wake.clone()) {
                                     Ok(mut a) => {
-                                        a.notice(&format!("{host}/{session}: {e}\n"));
+                                        a.notice(&format!("{url}: {e}\n"));
                                         a
                                     }
                                     Err(e) => {
-                                        eprintln!("apex-ui: attach local: {e}");
+                                        eprintln!("apex-ui: attach {fallback}: {e}");
                                         std::process::exit(1);
                                     }
                                 }
                             }
-                            _ => {
-                                eprintln!("apex-ui: attach {session}: {e}");
+                            Err(e) => {
+                                eprintln!("apex-ui: attach {url}: {e}");
                                 std::process::exit(1);
                             }
                         },
+                        Target::Local(_) => unreachable!(),
                     };
                     cx.spawn(async move |this, cx| {
                         use futures::StreamExt;

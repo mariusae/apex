@@ -6,6 +6,7 @@
 //! apex [--socket P] [--session S] server               run the daemon (foreground)
 //! apex ls                                              list sessions
 //! apex new-session NAME
+//! apex rename-session [FROM] TO
 //! apex attach [DEST/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
 //!                                                      DEST/SESSION: on a destination (user@host, provider:name)
 //!                                                      through its provider, installing apex there first
@@ -39,7 +40,7 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut socket = std::env::var("APEX_SOCKET").map(PathBuf::from).unwrap_or_else(|_| default_socket());
-    let mut session = std::env::var("APEX_SESSION").unwrap_or_else(|_| "local".into());
+    let mut session = std::env::var("APEX_SESSION").unwrap_or_else(|_| "default".into());
     let mut ensure = false;
     loop {
         if args.len() >= 2 && (args[0] == "--socket" || args[0] == "--session") {
@@ -69,6 +70,7 @@ fn main() {
         "server" => server(&socket, &session),
         "ls" => ls(&socket, &session),
         "new-session" => new_session(&socket, &session, rest),
+        "rename-session" => rename_session(&socket, &session, rest),
         "attach" => attach(&socket, &session, rest),
         "new" => new(&socket, &session, rest),
         "win" => win(&socket, &session, rest),
@@ -150,22 +152,28 @@ fn ensure_server(socket: &Path, session: &str) -> R {
     Err("server did not start".into())
 }
 
-fn ls(socket: &Path, session: &str) -> R {
-    let mut c = tool(socket, session)?;
-    c.send(&ClientMsg::ListSessions);
-    wait(&mut c, |r| r.link.sessions.is_some())?;
-    for s in c.link.sessions.as_deref().unwrap_or_default() {
+// these three talk to the daemon without attaching to any session
+
+fn ls(socket: &Path, _session: &str) -> R {
+    for s in apex_server::remote::list_sessions(socket).map_err(|e| format!("{}: {e}", socket.display()))? {
         println!("{s}");
     }
     Ok(())
 }
 
+fn rename_session(socket: &Path, session: &str, args: &[String]) -> R {
+    let (from, to) = match args {
+        [a, b] => (a.clone(), b.clone()),
+        [b] => (session.to_string(), b.clone()),
+        _ => return Err("rename-session [FROM] TO".into()),
+    };
+    apex_server::remote::rename_session(socket, &from, &to).map_err(|e| e.to_string())
+}
+
 fn new_session(socket: &Path, session: &str, args: &[String]) -> R {
     let name = args.first().ok_or("new-session NAME")?;
     ensure_server(socket, session)?;
-    let mut c = tool(socket, session)?;
-    c.send(&ClientMsg::NewSession { name: name.clone() });
-    wait(&mut c, |r| r.link.sessions.as_ref().is_some_and(|s| s.contains(name)))
+    apex_server::remote::new_session(socket, name).map_err(|e| e.to_string())
 }
 
 // ---- attach -----------------------------------------------------------------------
@@ -174,6 +182,12 @@ fn attach(socket: &Path, session: &str, args: &[String]) -> R {
     let mut args = args.to_vec();
     let stdio = args.iter().position(|a| a == "--stdio").map(|i| args.remove(i)).is_some();
     let target = if args.first().is_some_and(|a| !Path::new(a).exists()) { args.remove(0) } else { session.to_string() };
+    // a URL names the destination and the session in one
+    let target = match apex_server::providers::SessionUrl::parse(&target) {
+        Some(u) if u.is_local() => u.session,
+        Some(u) => format!("{}/{}", u.dest().unwrap_or_default(), u.session),
+        None => target,
+    };
     if stdio {
         // the bridge on a host: the daemon there may need starting
         ensure_server(socket, &session)?;

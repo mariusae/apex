@@ -13,6 +13,7 @@ use gpui::{
     Window,
 };
 
+use apex_server::providers::SessionUrl;
 use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
@@ -145,11 +146,8 @@ pub fn save_open(cx: &App) {
     for w in cx.windows() {
         if let Some(h) = w.downcast::<Acme>() {
             if let Ok(a) = h.read(cx) {
-                if a.socket.is_some() {
-                    let spec = match &a.host {
-                        Some(h) => format!("{h}/{}", a.session),
-                        None => a.session.clone(),
-                    };
+                if a.socket.is_some() && a.url.provider != "via" {
+                    let spec = a.url.to_string();
                     if !open.contains(&spec) {
                         open.push(spec);
                     }
@@ -160,20 +158,24 @@ pub fn save_open(cx: &App) {
     remember(&open);
 }
 
-/// The sessions to open at launch: the remembered ones that still exist;
-/// else the first existing one; else a new `local`.
-pub fn plan(socket: &Path) -> std::io::Result<Vec<String>> {
+/// The sessions to open at launch: the remembered ones (local ones only
+/// if they still exist; remote ones are tried); else the first existing
+/// local one; else a new `default`.
+pub fn plan(socket: &Path) -> std::io::Result<Vec<SessionUrl>> {
     let existing = list_sessions(socket)?;
-    // remote ones ("host/session") are tried as they are
-    let again: Vec<String> = remembered().into_iter().filter(|s| s.contains('/') || existing.contains(s)).collect();
+    let again: Vec<SessionUrl> = remembered()
+        .iter()
+        .filter_map(|s| SessionUrl::parse(s))
+        .filter(|u| !u.is_local() || existing.contains(&u.session))
+        .collect();
     if !again.is_empty() {
         return Ok(again);
     }
     if let Some(first) = existing.first() {
-        return Ok(vec![first.clone()]);
+        return Ok(vec![SessionUrl::local(first)]);
     }
-    new_session(socket, "local")?;
-    Ok(vec!["local".to_string()])
+    new_session(socket, apex_server::providers::DEFAULT_SESSION)?;
+    Ok(vec![SessionUrl::local(apex_server::providers::DEFAULT_SESSION)])
 }
 
 /// Make sure a daemon answers on `socket`: start one with the `apex`
@@ -196,7 +198,7 @@ pub fn ensure_daemon(socket: &Path) -> std::io::Result<()> {
     let mut started = false;
     for apex in candidates {
         let spawned = Command::new(&apex)
-            .args(["--socket", &socket.to_string_lossy(), "--session", "local", "server"])
+            .args(["--socket", &socket.to_string_lossy(), "--session", apex_server::providers::DEFAULT_SESSION, "server"])
             .current_dir(&home)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -212,7 +214,7 @@ pub fn ensure_daemon(socket: &Path) -> std::io::Result<()> {
         let p = socket.to_path_buf();
         std::thread::spawn(move || {
             let _ = std::env::set_current_dir(&home);
-            let _ = apex_server::daemon::Daemon::run(&p, "local");
+            let _ = apex_server::daemon::Daemon::run(&p, apex_server::providers::DEFAULT_SESSION);
         });
     }
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -329,41 +331,35 @@ mod tests {
 
 // ---- the session selector -----------------------------------------------------------
 
-/// The dropdown under the session name: a filter that is also the name
-/// of a session to create, and the list.
+/// The dropdown under the session name. The filter matches session URLs
+/// and, typed as a name or URL, is a session to make; every session is a
+/// URL: `local:///name`, `ssh://user@host/name`, `sprite://box/name`.
 pub struct Selector {
     pub filter: String,
-    pub sessions: Vec<String>,
     pub cursor: usize,
-    /// The host whose sessions are listed; `None` for the local daemon.
-    pub host: Option<String>,
-    /// Typing a host name to connect to.
-    pub entering_host: bool,
+    /// This window's, recent ones, this machine's, and (for a remote
+    /// window) the destination's.
+    pub listed: Vec<SessionUrl>,
+    /// Typing a new name for this window's session.
+    pub renaming: bool,
 }
 
 impl Selector {
-    /// Rows in order: matching sessions, then "create" if the filter
-    /// names no existing session, then the way to the other side.
     pub fn rows(&self) -> Vec<Row> {
-        if self.entering_host {
-            let h = self.filter.trim();
-            return if h.is_empty() { Vec::new() } else { vec![Row::Connect(h.to_string())] };
+        let f = self.filter.trim();
+        if self.renaming {
+            return if f.is_empty() || f.contains('/') { Vec::new() } else { vec![Row::Rename(f.to_string())] };
         }
-        let f = self.filter.trim().to_lowercase();
-        let mut rows: Vec<Row> = self
-            .sessions
-            .iter()
-            .filter(|s| f.is_empty() || s.to_lowercase().contains(&f))
-            .map(|s| Row::Session(s.clone()))
-            .collect();
-        if !f.is_empty() && !self.sessions.iter().any(|s| s.to_lowercase() == f) {
-            rows.push(Row::Create(self.filter.trim().to_string()));
-        }
-        if f.is_empty() {
-            rows.push(Row::Remote);
-            if self.host.is_some() {
-                rows.push(Row::Local);
+        let fl = f.to_lowercase();
+        let mut rows: Vec<Row> = self.listed.iter().filter(|u| fl.is_empty() || u.to_string().to_lowercase().contains(&fl)).map(|u| Row::Open(u.clone())).collect();
+        if !f.is_empty() {
+            if let Some(u) = SessionUrl::parse(f) {
+                if !self.listed.contains(&u) {
+                    rows.push(Row::Create(u));
+                }
             }
+        } else {
+            rows.push(Row::RenameThis);
         }
         rows
     }
@@ -371,25 +367,68 @@ impl Selector {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Row {
-    Session(String),
-    Create(String),
-    /// "Remote…": type a destination next.
-    Remote,
-    /// Connect to this destination's `local` session.
-    Connect(String),
-    /// Back to the local daemon.
-    Local,
+    Open(SessionUrl),
+    Create(SessionUrl),
+    /// "Rename this session…": type the new name next.
+    RenameThis,
+    Rename(String),
+}
+
+// ---- recent sessions ----------------------------------------------------------------
+
+fn recent_file() -> PathBuf {
+    state_file().with_file_name("recent-sessions")
+}
+
+/// The sessions attached to lately, latest first.
+pub fn recent() -> Vec<SessionUrl> {
+    std::fs::read_to_string(recent_file()).map(|s| s.lines().filter_map(SessionUrl::parse).collect()).unwrap_or_default()
+}
+
+fn write_recent(list: &[SessionUrl]) {
+    let p = recent_file();
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let text: String = list.iter().take(12).map(|u| format!("{u}\n")).collect();
+    let _ = std::fs::write(p, text);
+}
+
+pub fn note_recent(url: &SessionUrl) {
+    let mut list = recent();
+    list.retain(|u| u != url);
+    list.insert(0, url.clone());
+    write_recent(&list);
+}
+
+pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
+    let list: Vec<SessionUrl> = recent().into_iter().map(|u| if u == *old { new.clone() } else { u }).collect();
+    write_recent(&list);
+    let last: Vec<String> = remembered().into_iter().map(|s| if s == old.to_string() { new.to_string() } else { s }).collect();
+    remember(&last);
 }
 
 impl Acme {
     pub fn open_selector(&mut self, cx: &mut Context<Self>) {
-        let Some(socket) = &self.socket else { return };
-        let sessions = match &self.host {
-            Some(h) => apex_server::providers::list_sessions(h).unwrap_or_default(),
-            None => list_sessions(socket).unwrap_or_default(),
+        let Some(socket) = self.socket.clone() else { return };
+        let mut listed = vec![self.url.clone()];
+        let add = |u: SessionUrl, listed: &mut Vec<SessionUrl>| {
+            if !listed.contains(&u) {
+                listed.push(u);
+            }
         };
-        let cursor = sessions.iter().position(|s| *s == self.session).unwrap_or(0);
-        self.selector = Some(Selector { filter: String::new(), sessions, cursor, host: self.host.clone(), entering_host: false });
+        for u in recent() {
+            add(u, &mut listed);
+        }
+        for s in list_sessions(&socket).unwrap_or_default() {
+            add(SessionUrl::local(&s), &mut listed);
+        }
+        if let Some(dest) = self.url.dest() {
+            for s in apex_server::providers::list_sessions(&dest).unwrap_or_default() {
+                add(self.url.with_session(&s), &mut listed);
+            }
+        }
+        self.selector = Some(Selector { filter: String::new(), cursor: 0, listed, renaming: false });
         cx.notify();
     }
 
@@ -437,51 +476,45 @@ impl Acme {
     }
 
     pub fn choose(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
-        let (at, name) = match row {
-            Row::Remote => {
-                // stay open: the filter now takes a host name
+        match row {
+            Row::RenameThis => {
                 if let Some(sel) = self.selector.as_mut() {
-                    sel.entering_host = true;
+                    sel.renaming = true;
                     sel.filter.clear();
                     sel.cursor = 0;
                 }
                 cx.notify();
                 return;
             }
-            Row::Connect(host) => (crate::app::Where::Remote(host), "local".to_string()),
-            Row::Local => (crate::app::Where::Socket(self.socket.clone().unwrap_or_else(apex_server::daemon::default_socket)), "local".to_string()),
-            Row::Session(s) | Row::Create(s) => {
-                let at = match &self.host {
-                    Some(h) => crate::app::Where::Remote(h.clone()),
-                    None => crate::app::Where::Socket(self.socket.clone().unwrap_or_else(apex_server::daemon::default_socket)),
-                };
-                (at, s)
+            Row::Rename(to) => {
+                self.selector = None;
+                self.rename_session(&to, window);
+                save_open(cx);
+                cx.notify();
+                return;
             }
-        };
-        self.selector = None;
-        if name == self.session && matches!((&at, &self.host), (crate::app::Where::Socket(_), None)) {
-            cx.notify();
-            return;
+            Row::Open(url) | Row::Create(url) => {
+                self.selector = None;
+                if url == self.url {
+                    cx.notify();
+                    return;
+                }
+                if let Err(e) = self.reattach(&url, window) {
+                    eprintln!("apex-ui: attach {url}: {e}");
+                    self.notice(&format!("{url}: {e}\n"));
+                }
+                save_open(cx);
+                cx.notify();
+            }
         }
-        if let Err(e) = self.reattach(at.clone(), &name, window) {
-            let what = match &at {
-                crate::app::Where::Remote(h) => format!("{h}/{name}"),
-                _ => name.clone(),
-            };
-            eprintln!("apex-ui: attach {what}: {e}");
-            self.notice(&format!("{what}: {e}\n"));
-        }
-        save_open(cx);
-        cx.notify();
     }
 
     /// The strip at the top: traffic lights live in its left margin; the
-    /// session name is a button.
+    /// session URL is a button.
     pub fn titlebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = match (&self.backend, &self.host) {
-            (Backend::Local(_), _) => "in-process".to_string(),
-            (Backend::Remote(_), Some(h)) => format!("{h}/{}", self.session),
-            (Backend::Remote(_), None) => self.session.clone(),
+        let label = match &self.backend {
+            Backend::Local(_) => "in-process".to_string(),
+            Backend::Remote(_) => self.url.to_string(),
         };
         let clickable = self.socket.is_some();
         let mut button = div()
@@ -543,6 +576,7 @@ impl Acme {
         let sel = self.selector.as_ref()?;
         let rows = sel.rows();
         let cursor = sel.cursor.min(rows.len().saturating_sub(1));
+        let hint = if sel.renaming { "new name for this session, then return" } else { "session, or local:///name · ssh://user@host/name · sprite://box/name" };
         let filter_row = div()
             .px(px(12.))
             .py(px(8.))
@@ -551,12 +585,12 @@ impl Acme {
             .text_size(px(13.))
             .font_family("Lucida Grande")
             .child(if sel.filter.is_empty() {
-                div().text_color(rgb(0x888888)).child(if sel.entering_host { "user@host or provider:name, then return" } else { "Search sessions, or type a new name…" })
+                div().text_color(rgb(0x888888)).child(hint)
             } else {
                 div().text_color(rgb(0x111111)).child(format!("{}▏", sel.filter))
             });
         let mut panel = div()
-            .w(px(360.))
+            .w(px(420.))
             .bg(gpui::white())
             .border_1()
             .border_color(rgb(0xbbbbbb))
@@ -568,24 +602,24 @@ impl Acme {
             .child(filter_row);
         for (i, row) in rows.iter().enumerate() {
             let (text, dim) = match row {
-                Row::Session(s) if *s == self.session => (format!("{s}   (this window)"), false),
-                Row::Session(s) => (s.clone(), false),
-                Row::Create(s) => (format!("Create session “{s}”"), true),
-                Row::Remote => ("Remote…".to_string(), true),
-                Row::Connect(h) => (format!("Connect to {h}"), true),
-                Row::Local => ("Local sessions".to_string(), true),
+                Row::Open(u) if *u == self.url => (format!("{u}   (this window)"), false),
+                Row::Open(u) => (u.to_string(), false),
+                Row::Create(u) => (format!("Create {u}"), true),
+                Row::RenameThis => ("Rename this session…".to_string(), true),
+                Row::Rename(n) => (format!("Rename to “{n}”"), true),
             };
             let row = row.clone();
+            let picked = i == cursor;
             let item = div()
                 .id(("row", i))
                 .px(px(12.))
                 .py(px(6.))
                 .text_size(px(13.))
                 .font_family("Lucida Grande")
-                .text_color(if dim { rgb(0x0000aa) } else { rgb(0x111111) })
+                .text_color(if picked { rgb(0xffffff) } else if dim { rgb(0x0000aa) } else { rgb(0x111111) })
                 .cursor_pointer()
-                .when(i == cursor, |d| d.bg(rgb(0xeaffff)))
-                .hover(|s| s.bg(rgb(0xd8f8f8)))
+                .when(picked, |d| d.bg(rgb(0x000099)))
+                .when(!picked, |d| d.hover(|s| s.bg(rgb(0xd8f8f8))))
                 .child(text)
                 .on_mouse_down(
                     MouseButton::Left,
@@ -597,7 +631,7 @@ impl Acme {
             panel = panel.child(item);
         }
         if rows.is_empty() {
-            panel = panel.child(div().px(px(12.)).py(px(6.)).text_size(px(13.)).text_color(rgb(0x888888)).child("no sessions"));
+            panel = panel.child(div().px(px(12.)).py(px(6.)).text_size(px(13.)).text_color(rgb(0x888888)).child(if sel.renaming { "type a name" } else { "no sessions" }));
         }
         Some(deferred(anchored().position(point(px(72.), px(TITLEBAR_HEIGHT))).child(panel)).with_priority(1))
     }

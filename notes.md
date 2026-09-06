@@ -31,8 +31,16 @@ fully document `apex` command.
 
 terminal titles
 
-mac keyboard shorcuts: cmd-s for Put, cmd-w for Del
+mac keyboard shorcuts: cmd-s for Put, cmd-w for Del, cmd-n for new, cmd-shift-n for new window
 
 --
 
 scroll responsiveness (w/ trackpad)
+
+--
+
+the mouse no longer renders the square handle when selecting a window
+
+--
+
+when switching windows (command-`), let's restore the cursor to the last position in that window, e.g., so i can use command-` to swap, and always restore the cursor correctly

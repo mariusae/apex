@@ -17,6 +17,8 @@ pub enum ClientMsg {
     Hello { session: String, name: String, kind: AttachmentKind },
     NewSession { name: String },
     ListSessions,
+    /// Rename a session; attachments to it stay attached.
+    RenameSession { from: String, to: String },
     /// Entries this client sequenced as leader.
     Append { shard: Shard, entries: Vec<Entry> },
     /// The client allocated a shard; the server records it and grants the

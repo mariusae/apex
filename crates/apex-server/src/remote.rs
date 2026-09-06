@@ -98,6 +98,20 @@ impl Link {
         )
     }
 
+    /// `over_streams`, making the session first if the daemon has none
+    /// of that name (a UI opening a session it was told to).
+    pub fn over_streams_creating(
+        reader: Box<dyn Read + Send>,
+        writer: Box<dyn Write + Send>,
+        closer: Option<Box<dyn FnOnce() + Send>>,
+        session: &str,
+        name: &str,
+        kind: AttachmentKind,
+        wake: Option<Wake>,
+    ) -> io::Result<(Link, Log, Node)> {
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, true)
+    }
+
     /// Attach over any byte stream pair: a child's stdout and stdin, say,
     /// with `ssh host apex attach --stdio session` as the child.
     pub fn over_streams(
@@ -109,9 +123,26 @@ impl Link {
         kind: AttachmentKind,
         wake: Option<Wake>,
     ) -> io::Result<(Link, Log, Node)> {
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn over_streams_inner(
+        reader: Box<dyn Read + Send>,
+        writer: Box<dyn Write + Send>,
+        closer: Option<Box<dyn FnOnce() + Send>>,
+        session: &str,
+        name: &str,
+        kind: AttachmentKind,
+        wake: Option<Wake>,
+        create: bool,
+    ) -> io::Result<(Link, Log, Node)> {
         let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
         spawn_reader(reader, tx, wake);
+        if create {
+            out.send(&ClientMsg::NewSession { name: session.to_string() })?;
+        }
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind })?;
         let (attachment, snapshot) = loop {
             match rx.recv().map_err(|_| io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome"))? {
@@ -268,6 +299,21 @@ pub fn new_session(path: &Path, name: &str) -> io::Result<()> {
         match read_frame::<_, ServerMsg>(&mut r)? {
             Some(ServerMsg::Sessions { .. }) => return Ok(()),
             Some(ServerMsg::Error { text }) if text.contains("exists") => return Ok(()),
+            Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(_) => {}
+            None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
+        }
+    }
+}
+
+/// Rename a session on a daemon, without attaching.
+pub fn rename_session(path: &Path, from: &str, to: &str) -> io::Result<()> {
+    let mut s = UnixStream::connect(path)?;
+    write_frame(&mut s, &ClientMsg::RenameSession { from: from.to_string(), to: to.to_string() })?;
+    let mut r = BufReader::new(s);
+    loop {
+        match read_frame::<_, ServerMsg>(&mut r)? {
+            Some(ServerMsg::Sessions { .. }) => return Ok(()),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),

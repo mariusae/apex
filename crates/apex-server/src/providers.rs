@@ -226,7 +226,86 @@ pub fn split_spec(spec: &str) -> Option<(&str, &str)> {
     if dest.is_empty() {
         return None;
     }
-    Some((dest, if session.is_empty() { "local" } else { session }))
+    Some((dest, if session.is_empty() { DEFAULT_SESSION } else { session }))
+}
+
+/// A daemon's first session.
+pub const DEFAULT_SESSION: &str = "default";
+
+/// A session anywhere, as a URL: `local:///name` (this machine's daemon,
+/// the pseudo-provider that takes no argument), `ssh://user@host/name`,
+/// `sprite://box/name`. The scheme is the provider, the authority its
+/// argument, the path the session.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SessionUrl {
+    pub provider: String,
+    pub arg: String,
+    pub session: String,
+}
+
+impl SessionUrl {
+    pub fn local(session: &str) -> SessionUrl {
+        SessionUrl { provider: "local".into(), arg: String::new(), session: session.to_string() }
+    }
+
+    /// A URL, or what older files and hands write: a bare name is a local
+    /// session, `dest/name` a destination through its provider.
+    pub fn parse(s: &str) -> Option<SessionUrl> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        if let Some((scheme, rest)) = s.split_once("://") {
+            if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                return None;
+            }
+            let (arg, session) = rest.split_once('/').unwrap_or((rest, ""));
+            let session = if session.is_empty() { DEFAULT_SESSION } else { session };
+            if scheme != "local" && arg.is_empty() {
+                return None;
+            }
+            if session.contains('/') {
+                return None;
+            }
+            return Some(SessionUrl { provider: scheme.to_string(), arg: if scheme == "local" { String::new() } else { arg.to_string() }, session: session.to_string() });
+        }
+        match split_spec(s) {
+            Some((dest, session)) => {
+                let d = Dest::parse(dest);
+                Some(SessionUrl { provider: d.provider, arg: d.name, session: session.to_string() })
+            }
+            // a bare destination (`user@host`, `sprite:box`) is its default
+            // session; anything else is a local session's name
+            None if s.contains('@') || s.contains(':') => {
+                let d = Dest::parse(s);
+                Some(SessionUrl { provider: d.provider, arg: d.name, session: DEFAULT_SESSION.to_string() })
+            }
+            None => Some(SessionUrl::local(s)),
+        }
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.provider == "local"
+    }
+
+    /// The destination for `providers.rs`'s functions (`None` for local).
+    pub fn dest(&self) -> Option<String> {
+        if self.is_local() {
+            None
+        } else {
+            Some(Dest { provider: self.provider.clone(), name: self.arg.clone() }.spec())
+        }
+    }
+
+    pub fn with_session(&self, session: &str) -> SessionUrl {
+        SessionUrl { session: session.to_string(), ..self.clone() }
+    }
+}
+
+impl std::fmt::Display for SessionUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}://{}/{}", self.provider, self.arg, self.session)
+    }
 }
 
 fn shell_quote(s: &str) -> String {

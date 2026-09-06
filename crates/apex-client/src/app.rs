@@ -15,7 +15,8 @@ use apex_core::node::Erase;
 use apex_core::tiling::{self, Info, SCROLLWID};
 use apex_core::*;
 use apex_server::proto::ClientMsg;
-use apex_server::remote::{new_session, Link, Wake};
+use apex_server::providers::SessionUrl;
+use apex_server::remote::{Link, Wake};
 use apex_server::{perform, Server, ServerEvent, TermKey};
 
 use crate::shell::{Selector, TITLEBAR_HEIGHT};
@@ -137,18 +138,6 @@ enum Target {
     Term(WindowId, TermId),
 }
 
-/// How to reach a daemon.
-#[derive(Clone, Debug)]
-pub enum Where {
-    Socket(std::path::PathBuf),
-    /// A command whose stdin/stdout carry the frames (ssh to a bridge).
-    Via(String),
-    /// A destination reached through a provider (`providers.rs`):
-    /// `provider:name`, or `user@host` for ssh. Our `apex` is put there
-    /// first, and its daemon started.
-    Remote(String),
-}
-
 /// Where the server is.
 pub enum Backend {
     /// In this process, sharing the log.
@@ -165,8 +154,8 @@ pub struct Acme {
     pub session: String,
     /// The local daemon's socket, when the session can be switched from here.
     pub socket: Option<std::path::PathBuf>,
-    /// The host this window's session is on, if not this machine.
-    pub host: Option<String>,
+    /// Where this window's session is, as a URL.
+    pub url: SessionUrl,
     wake: Option<Wake>,
     pub selector: Option<Selector>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
@@ -239,44 +228,57 @@ impl Acme {
         (Self::over(cx, log, node, Backend::Local(server), "local"), rx)
     }
 
-    /// Attach to a session behind `socket`. `wake` is called from the
-    /// reader thread when there is something to poll.
-    pub fn attach(cx: &mut Context<Self>, at: &Where, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (link, mut log, mut node) = Self::connect(at, session, wake.clone())?;
+    /// Attach to the session at `url`: this machine's daemon (started if
+    /// it must be) or a destination through its provider. `wake` is
+    /// called from the reader thread when there is something to poll.
+    pub fn attach(cx: &mut Context<Self>, url: &SessionUrl, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
+        let (link, mut log, mut node) = Self::connect(url, wake.clone())?;
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };
-        let mut acme = Self::over(cx, log, node, Backend::Remote(link), session);
-        acme.socket = match at {
-            Where::Socket(p) => Some(p.clone()),
-            // a remote window can still switch to the local daemon
-            Where::Via(_) | Where::Remote(_) => Some(apex_server::daemon::default_socket()),
-        };
-        acme.host = match at {
-            Where::Remote(h) => Some(h.clone()),
-            _ => None,
-        };
+        let mut acme = Self::over(cx, log, node, Backend::Remote(link), &url.session);
+        acme.socket = Some(apex_server::daemon::default_socket());
+        acme.url = url.clone();
         acme.wake = Some(wake);
+        crate::shell::note_recent(url);
         acme.open_initial(col, files);
         Ok(acme)
     }
 
-    /// A link to `session` at `at`: the local socket, a command's stdio, or
-    /// a host over ssh (our apex installed there first).
-    fn connect(at: &Where, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
-        match at {
-            Where::Socket(socket) => Link::connect(socket, session, "apex", AttachmentKind::Ui, Some(wake)),
-            Where::Via(cmd) => Self::connect_via(cmd, session, wake),
-            Where::Remote(spec) => {
-                apex_server::providers::deploy(spec)?;
-                let cmd = apex_server::providers::attach_command(spec, session)?;
-                Self::connect_via(&cmd, session, wake)
+    /// A link to the session at `url`, made if it does not exist: the
+    /// local socket, or a destination through its provider (our apex
+    /// installed there first).
+    fn connect(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+        match url.dest() {
+            None => {
+                let socket = apex_server::daemon::default_socket();
+                crate::shell::ensure_daemon(&socket)?;
+                let stream = std::os::unix::net::UnixStream::connect(&socket)?;
+                let w = stream.try_clone()?;
+                let closer = stream.try_clone()?;
+                Link::over_streams_creating(
+                    Box::new(stream),
+                    Box::new(w),
+                    Some(Box::new(move || {
+                        let _ = closer.shutdown(std::net::Shutdown::Both);
+                    })),
+                    &url.session,
+                    "apex",
+                    AttachmentKind::Ui,
+                    Some(wake),
+                )
+            }
+            Some(dest) => {
+                apex_server::providers::deploy(&dest)?;
+                let cmd = apex_server::providers::attach_command(&dest, &url.session)?;
+                Self::connect_via(&cmd, &url.session, wake)
             }
         }
     }
 
-    fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+    /// Attach through a command's stdin and stdout.
+    pub fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         let mut child = std::process::Command::new("sh")
             .arg("-c")
             .arg(cmd)
@@ -288,17 +290,29 @@ impl Acme {
         let closer = Box::new(move || {
             let _ = child.kill();
         });
-        Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))
+        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))
     }
 
-    /// Re-point this window at `session` at `at` (the selector). The old
-    /// attachment ends; its leases return to its daemon.
-    pub fn reattach(&mut self, at: Where, name: &str, window: &mut Window) -> std::io::Result<()> {
+    /// Attach through an arbitrary command (`--via`).
+    pub fn attach_via(cx: &mut Context<Self>, cmd: &str, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
+        let (link, mut log, mut node) = Self::connect_via(cmd, session, wake.clone())?;
+        let col = match node.state.layout.cols.first() {
+            Some(c) => c.id,
+            None => node.init_session(&mut log).map_err(std::io::Error::other)?,
+        };
+        let mut acme = Self::over(cx, log, node, Backend::Remote(link), session);
+        acme.socket = Some(apex_server::daemon::default_socket());
+        acme.url = SessionUrl { provider: "via".into(), arg: cmd.split_whitespace().nth(1).unwrap_or("?").to_string(), session: session.to_string() };
+        acme.wake = Some(wake);
+        acme.open_initial(col, files);
+        Ok(acme)
+    }
+
+    /// Re-point this window at the session at `url` (the selector). The
+    /// old attachment ends; its leases return to its daemon.
+    pub fn reattach(&mut self, url: &SessionUrl, window: &mut Window) -> std::io::Result<()> {
         let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
-        if let Where::Socket(socket) = &at {
-            new_session(socket, name)?;
-        }
-        let (link, mut log, mut node) = Self::connect(&at, name, wake)?;
+        let (link, mut log, mut node) = Self::connect(url, wake)?;
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -306,11 +320,8 @@ impl Acme {
         self.backend = Backend::Remote(link);
         self.log = log;
         self.node = node;
-        self.session = name.to_string();
-        self.host = match &at {
-            Where::Remote(h) => Some(h.clone()),
-            _ => None,
-        };
+        self.session = url.session.clone();
+        self.url = url.clone();
         self.layouts.clear();
         self.term_layouts.clear();
         self.hl = None;
@@ -318,16 +329,28 @@ impl Acme {
         self.want_visible.clear();
         self.typed_start.clear();
         self.selector = None;
-        window.set_window_title(&Self::title(&self.host, name));
+        window.set_window_title(&Self::title(url));
+        crate::shell::note_recent(url);
         self.open_initial(col, Vec::new());
         Ok(())
     }
 
-    pub fn title(host: &Option<String>, session: &str) -> String {
-        match host {
-            Some(h) => format!("{session} on {h} — apex"),
-            None => format!("{session} — apex"),
+    /// Rename this window's session on its daemon.
+    pub fn rename_session(&mut self, to: &str, window: &mut Window) {
+        let from = self.session.clone();
+        if to.is_empty() || to == from {
+            return;
         }
+        self.send(ClientMsg::RenameSession { from: from.clone(), to: to.to_string() });
+        let old = self.url.clone();
+        self.session = to.to_string();
+        self.url = self.url.with_session(to);
+        window.set_window_title(&Self::title(&self.url));
+        crate::shell::renamed_recent(&old, &self.url);
+    }
+
+    pub fn title(url: &SessionUrl) -> String {
+        format!("{url} — apex")
     }
 
     /// Open the files named on the command line; a fresh session with
@@ -350,7 +373,7 @@ impl Acme {
             backend,
             session: session.to_string(),
             socket: None,
-            host: None,
+            url: SessionUrl::local(session),
             wake: None,
             selector: None,
             tag_need: HashMap::new(),

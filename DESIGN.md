@@ -519,8 +519,20 @@ new-session attach [--stdio] new win text edit sel exec events term
 plumb`; `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.
 
-`apex attach dest/session` (and the selector's "Remote…") goes through
-`providers.rs`. A *provider* is an executable `apex-remote-<provider>` on the
+Every session is a URL: `local:///name` on this machine's daemon
+(`local` is the pseudo-provider that takes no argument),
+`ssh://user@host/name`, `sprite://box/name` — scheme is the provider,
+authority its argument, path the session. A daemon's first session is
+`default`. The selector lists this window's session, the recent ones
+(`~/Library/Application Support/apex/recent-sessions`, latest first),
+this machine's, and for a remote window the destination's; what is typed
+filters them, and typed as a name or URL and not listed, becomes
+"Create …" — a bare name is `local:///name`, so making a session never
+lands on the current window's provider by accident. "Rename this
+session…" renames it on its daemon, attachments staying attached
+(`RenameSession`; sessions have ids inside the daemon, names are labels).
+
+`apex attach dest/session` (or a URL) goes through `providers.rs`. A *provider* is an executable `apex-remote-<provider>` on the
 PATH, called as `apex-remote-<provider> DESTINATION COMMAND`: it runs COMMAND, a
 single shell command line, on the destination with stdio connected —
 ssh's own convention, and `ssh` is the built-in provider, so `user@host`
