@@ -1,0 +1,54 @@
+#!/usr/bin/env rc
+# An init for apex sessions: copy it to ~/.apex/init on the host, or on
+# the machine you attach from (it is sourced there after the host's).
+#
+# It makes the shells in this session's terminals name their window after
+# the directory, as acme's win does, whenever it changes (`apex awd`). rc
+# does this on its own (its rcmain sees $TERM_PROGRAM); zsh, bash and
+# fish are told through their environment, since an init cannot reach
+# into their startup files:
+#
+#   zsh   $ZDOTDIR points at a directory whose .zshenv installs the hook
+#         and then hands over to the user's own files
+#   bash  $PROMPT_COMMAND (a startup file that sets its own loses this)
+#   fish  a vendor_conf.d snippet, found through $XDG_DATA_DIRS
+#
+# It runs with $apexsession, $APEX_SOCKET and $apexclient set, so `apex`
+# here acts on the session being made; `apex env` sets what its terminals
+# and commands will get.
+
+dir=$home/.apex/shell
+mkdir -p $dir/zsh $dir/share/fish/vendor_conf.d
+
+# zsh: a .zshenv that hooks chpwd, then continues with the user's files
+{
+	echo '# apex: name the window after the directory (acme''s win), then the user''s own zsh files'
+	echo 'ZDOTDIR=${APEX_USER_ZDOTDIR:-$HOME}'
+	echo 'unset APEX_USER_ZDOTDIR'
+	echo 'if [[ -o interactive ]]; then'
+	echo '	autoload -Uz add-zsh-hook'
+	echo '	__apex_awd() { command apex awd }'
+	echo '	add-zsh-hook chpwd __apex_awd'
+	echo '	__apex_awd'
+	echo 'fi'
+	echo '[[ -f $ZDOTDIR/.zshenv ]] && source $ZDOTDIR/.zshenv'
+} > $dir/zsh/.zshenv
+if(! ~ $#ZDOTDIR 0) apex env APEX_USER_ZDOTDIR=$ZDOTDIR
+apex env ZDOTDIR=$dir/zsh
+
+# bash: the prompt command notices a changed directory
+apex env PROMPT_COMMAND='[[ $PWD != "$__apex_pwd" ]] && __apex_pwd=$PWD && command apex awd'
+
+# fish: a snippet fish loads from every data directory
+{
+	echo '# apex: name the window after the directory (acme''s win)'
+	echo 'if status is-interactive'
+	echo '	function __apex_awd --on-variable PWD'
+	echo '		command apex awd'
+	echo '	end'
+	echo '	__apex_awd'
+	echo 'end'
+} > $dir/share/fish/vendor_conf.d/apex.fish
+xdg=$XDG_DATA_DIRS
+if(~ $#xdg 0) xdg=/usr/local/share:/usr/share
+apex env XDG_DATA_DIRS=$dir/share:$xdg

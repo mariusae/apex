@@ -68,3 +68,7 @@ top row with output in `+Errors`, with `apexsession`, `APEX_SOCKET` and
 the session being made: `apex new`, `apex exec Newcol`, and so on. Exports
 in it die with it; `apex env KEY=VALUE` sets what terminals and commands
 made from then on get, and `apex env` alone prints the environment.
+[examples/init](../../examples/init) is one that has zsh, bash and fish
+name their window after the directory on every `cd`, through their
+environment; rc does that on its own in an apex terminal (its rcmain
+checks `$TERM_PROGRAM`).
