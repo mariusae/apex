@@ -52,6 +52,7 @@ pub struct Log {
     shards: BTreeMap<Shard, ShardLog>,
     leases: BTreeMap<Shard, LeaseState>,
     next_attachment: u64,
+    next_rule: u64,
     /// Set on a mirror: metalog entries come from the server, not from here.
     hook: Option<Box<dyn MirrorHook>>,
 }
@@ -71,7 +72,7 @@ impl Default for Log {
 impl Log {
     /// A new session's store, with its metalog initialised.
     pub fn new() -> Log {
-        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, hook: None };
+        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, next_rule: 1, hook: None };
         log.shards.insert(Shard::Meta, ShardLog::default());
         log.leases.insert(Shard::Meta, LeaseState { holder: SERVER, epoch: 0, released: None });
         log.push_meta(MetaOp::Init);
@@ -83,7 +84,8 @@ impl Log {
     /// as the metalog recorded them. `hook` forwards shard creation and
     /// deletion to the server.
     pub fn mirror(state: &crate::state::State, hook: Box<dyn MirrorHook>) -> Log {
-        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, hook: Some(hook) };
+        let next_rule = state.meta.rules.keys().map(|r| r.0 + 1).max().unwrap_or(1);
+        let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, next_rule, hook: Some(hook) };
         for (shard, seq) in &state.applied {
             log.shards.insert(*shard, ShardLog { entries: Vec::new(), base: *seq });
         }
@@ -260,6 +262,19 @@ impl Log {
 
     pub fn detach(&mut self, attachment: AttachmentId) -> Entry {
         self.push_meta(MetaOp::Detach { attachment })
+    }
+
+    /// Install a plumbing rule, owned by `attachment` (`SERVER`: the
+    /// session's own, until removed).
+    pub fn install_rule(&mut self, attachment: AttachmentId, priority: i32, rule: PlumbRule) -> (RuleId, Entry) {
+        let id = RuleId(self.next_rule);
+        self.next_rule += 1;
+        let e = self.push_meta(MetaOp::PlumbRuleInstall { id, attachment, priority, rule });
+        (id, e)
+    }
+
+    pub fn remove_rule(&mut self, id: RuleId) -> Entry {
+        self.push_meta(MetaOp::PlumbRuleRemove { id })
     }
 
     /// Ask the holder of `shard` to hand over to `to`.

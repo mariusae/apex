@@ -17,7 +17,7 @@ use apex_core::*;
 use apex_server::proto::ClientMsg;
 use apex_server::providers::SessionUrl;
 use apex_server::remote::{Link, Wake};
-use apex_server::{perform, Server, ServerEvent, TermKey};
+use apex_server::{PlumbReq, PlumbStep, perform, Server, ServerEvent, TermKey};
 
 use crate::shell::{Selector, TITLEBAR_HEIGHT};
 use crate::text_element::font_for;
@@ -230,7 +230,9 @@ impl Acme {
         let mut node = Node::new(a);
         node.catch_up(&log).expect("fresh log");
         let col = node.init_session(&mut log).expect("init session");
-        let (server, rx) = Server::new(&log);
+        let (mut server, rx) = Server::new(&log);
+        server.install_default_rules(&mut log);
+        node.catch_up(&log).expect("rules");
         let cwd = server.cwd.clone();
         let names: Vec<&str> = if files.is_empty() { vec!["."] } else { files.iter().map(|s| s.as_str()).collect() };
         for f in names {
@@ -250,7 +252,8 @@ impl Acme {
     /// it must be) or a destination through its provider. `wake` is
     /// called from the reader thread when there is something to poll.
     pub fn attach(cx: &mut Context<Self>, url: &SessionUrl, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (link, mut log, mut node) = Self::connect(url, wake.clone())?;
+        let (mut link, mut log, mut node) = Self::connect(url, wake.clone())?;
+        Self::arm(&mut link);
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -262,6 +265,24 @@ impl Acme {
         crate::shell::note_recent(url);
         acme.open_initial(col, files);
         Ok(acme)
+    }
+
+    /// What this client does for the rules, and the rules it brings: it
+    /// can `open` things the way the platform does, and URLs go there.
+    /// The rules are its own, gone when it detaches.
+    fn arm(link: &mut Link) {
+        link.client_do = Some(Box::new(|verb, args| client_do(verb, args)));
+        let rule = PlumbRule {
+            verb: "plumb".into(),
+            text: Some(r"https?://\S+".into()),
+            file: None,
+            kind: None,
+            isfile: None,
+            isdir: None,
+            action: RuleAction::Client { verb: "open".into(), args: "$0".into() },
+            to: None,
+        };
+        link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
     }
 
     /// A link to the session at `url`, made if it does not exist: the
@@ -304,7 +325,8 @@ impl Acme {
 
     /// Attach through an arbitrary command (`--via`).
     pub fn attach_via(cx: &mut Context<Self>, cmd: &str, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (link, mut log, mut node) = Self::connect_via(cmd, session, wake.clone())?;
+        let (mut link, mut log, mut node) = Self::connect_via(cmd, session, wake.clone())?;
+        Self::arm(&mut link);
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -321,7 +343,8 @@ impl Acme {
     /// old attachment ends; its leases return to its daemon.
     pub fn reattach(&mut self, url: &SessionUrl, window: &mut Window) -> std::io::Result<()> {
         let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
-        let (link, mut log, mut node) = Self::connect(url, wake)?;
+        let (mut link, mut log, mut node) = Self::connect(url, wake)?;
+        Self::arm(&mut link);
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -743,6 +766,16 @@ impl Acme {
             Backend::Local(server) => {
                 let props = server.poll_execs(&mut self.log, &self.node);
                 if let Some(w) = perform(&mut self.node, &mut self.log, props) {
+                    self.show(w);
+                }
+                let mut shown = Vec::new();
+                if let Backend::Local(server) = &mut self.backend {
+                    // a rule's verb, B2'd: walk the rules here and now
+                    for req in server.take_plumb_starts() {
+                        shown.extend(plumb_local(server, &mut self.node, &mut self.log, req));
+                    }
+                }
+                for w in shown {
                     self.show(w);
                 }
                 if let Backend::Local(server) = &mut self.backend {
@@ -1832,18 +1865,59 @@ impl Acme {
         if text.is_empty() {
             return;
         }
-        match &self.backend {
+        match &mut self.backend {
             Backend::Local(server) => {
-                let p = server.plumb(&self.node, ctx, text);
-                if let Some(w) = perform(&mut self.node, &mut self.log, vec![p]) {
+                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None };
+                if let Some(w) = plumb_local(server, &mut self.node, &mut self.log, req) {
                     self.show(w);
                 }
             }
-            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string() }),
+            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false }),
         }
         self.after();
     }
 
+}
+
+/// What this client does when a rule asks it: `open` hands the argument
+/// to the platform (`open` on macOS, `xdg-open` elsewhere). Anything else
+/// is refused, and the server tries the next rule.
+pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
+    match verb {
+        "open" => {
+            let prog = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+            std::process::Command::new(prog)
+                .arg(args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("{prog} {args}: {e}"))
+        }
+        _ => Err(format!("apex-ui cannot {verb}")),
+    }
+}
+
+/// Walk the rules in-process (no daemon): the client answers for itself,
+/// and there are no tools to ask.
+fn plumb_local(server: &mut Server, node: &mut Node, log: &mut Log, req: PlumbReq) -> Option<WindowId> {
+    let (id, mut step) = server.plumb_start(node, req);
+    loop {
+        match step {
+            PlumbStep::Done(props) => return perform(node, log, props),
+            PlumbStep::Trace(_) => return None,
+            PlumbStep::Ask(apex_server::Proposal::ClientDo { verb, args }) => {
+                let r = client_do(&verb, &args);
+                step = server.plumb_next(node, id, r);
+            }
+            PlumbStep::Ask(p) => {
+                perform(node, log, vec![p]);
+                step = server.plumb_next(node, id, Ok(()));
+            }
+            PlumbStep::AskTool { tool, .. } => step = server.plumb_next(node, id, Err(format!("no tool {tool} in-process"))),
+        }
+    }
 }
 
 fn term_key(ks: &Keystroke) -> TermKey {

@@ -227,6 +227,7 @@ dependencies = [
  "criterion",
  "postcard",
  "proptest",
+ "regex",
  "ropey",
  "serde",
  "thiserror 2.0.20",

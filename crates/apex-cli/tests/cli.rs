@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use apex_core::*;
 use apex_server::daemon::Daemon;
+use apex_server::remote::Remote;
 
 fn daemon() -> PathBuf {
     daemon_with(None)
@@ -211,5 +213,110 @@ fn a_new_session_runs_the_hosts_init_then_its_creators() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(grid.contains("v=client"), "grid:\n{grid}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn rules_are_installed_walked_and_tools_may_refuse() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-cli-rules-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("readme.md"), "hello\n").unwrap();
+    let md = dir.join("readme.md").display().to_string();
+    // the defaults are there, owned by the session
+    let ls = ok(&sock, &["plumb", "rule", "ls"]);
+    assert!(ls.contains("session\tp-100\t--text"), "{ls}");
+    // a rule of ours, and its id
+    let id = ok(&sock, &["plumb", "rule", "add", "--verb", "Preview", "--file", r"\.md$", "--run", "echo preview $file"]);
+    assert!(id.trim().starts_with('r'), "{id}");
+    let ls = ok(&sock, &["plumb", "rule", "ls"]);
+    assert!(ls.contains("--verb Preview --file '\\.md$' --run 'echo preview $file'"), "{ls}");
+    // what B3 would do with a path: the default rule opens it
+    let trace = ok(&sock, &["plumb", "--dry-run", &md]);
+    assert!(trace.contains("would open"), "{trace}");
+    // and with a word that is nothing: a Look
+    let trace = ok(&sock, &["plumb", "--dry-run", "nothing-here"]);
+    assert!(trace.trim_end().ends_with("no rule: Look"), "{trace}");
+    // a tool that refuses: the walk goes on to the next rule
+    let tool_sock = sock.clone();
+    let tool = std::thread::spawn(move || {
+        let mut c = Remote::connect_as(&tool_sock, "main", "t", AttachmentKind::Tool).unwrap();
+        let rule = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), to: None };
+        c.rule_add(rule, 10, true, Duration::from_secs(5)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut refused = 0;
+        while Instant::now() < deadline && refused < 1 {
+            let _ = c.step(Duration::from_millis(50));
+            while let Some(p) = c.link.plumbs.pop() {
+                c.plumb_ack(p.id, false);
+                refused += 1;
+            }
+        }
+        // stay a moment so the walk finishes before the rule goes with us
+        std::thread::sleep(Duration::from_millis(500));
+        refused
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(ok(&sock, &["plumb", "rule", "ls"]).contains("\tt\tp10\t--tool t"), "{}", ok(&sock, &["plumb", "rule", "ls"]));
+    ok(&sock, &["B", &md]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["win", "list"]).contains("readme.md") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(ok(&sock, &["win", "list"]).contains("readme.md"), "{}", ok(&sock, &["win", "list"]));
+    // B only asks rules that open in the session: the tool was not asked
+    assert_eq!(tool.join().unwrap(), 0, "B asked the tool");
+    // plain plumbing does ask it, and it refuses; the file opens anyway
+    let tool_sock = sock.clone();
+    std::fs::write(dir.join("other.md"), "x\n").unwrap();
+    let other = dir.join("other.md").display().to_string();
+    let tool = std::thread::spawn(move || {
+        let mut c = Remote::connect_as(&tool_sock, "main", "t", AttachmentKind::Tool).unwrap();
+        let rule = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), to: None };
+        c.rule_add(rule, 10, true, Duration::from_secs(5)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut refused = 0;
+        while Instant::now() < deadline && refused < 1 {
+            let _ = c.step(Duration::from_millis(50));
+            while let Some(p) = c.link.plumbs.pop() {
+                assert_eq!(p.verb, "plumb");
+                c.plumb_ack(p.id, false);
+                refused += 1;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        refused
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    ok(&sock, &["plumb", &other]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["win", "list"]).contains("other.md") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(ok(&sock, &["win", "list"]).contains("other.md"), "{}", ok(&sock, &["win", "list"]));
+    assert_eq!(tool.join().unwrap(), 1, "the tool was asked once");
+    // the tool is gone: so is its rule
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t"));
+    // Preview shows in the .md window's tag, and B2 runs it
+    let (_, wins, _) = apex(&sock, &["win", "list"]);
+    let w = wins.lines().find(|l| l.ends_with("readme.md")).and_then(|l| l.split('\t').next()).unwrap().to_string();
+    ok(&sock, &["exec", &w, "Preview"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    // (the errors window appears with the first output)
+    let errors = || apex(&sock, &["text", "read", "+Errors"]).1;
+    while !errors().contains(&format!("preview {md}")) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(errors().contains(&format!("preview {md}")), "{}", errors());
     let _ = std::fs::remove_dir_all(&dir);
 }

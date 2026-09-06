@@ -20,6 +20,8 @@
 dir=$home/.apex/shell
 mkdir -p $dir/zsh $dir/share/fish/vendor_conf.d
 
+# every shell here gets plan 9's B (rc has it from its rcmain)
+
 # zsh: a .zshenv that hooks chpwd, then continues with the user's files
 {
 	echo '# apex: name the window after the directory (acme''s win), then the user''s own zsh files'
@@ -30,14 +32,15 @@ mkdir -p $dir/zsh $dir/share/fish/vendor_conf.d
 	echo '	__apex_awd() { command apex awd }'
 	echo '	add-zsh-hook chpwd __apex_awd'
 	echo '	__apex_awd'
+	echo '	B() { command apex B "$@" }'
 	echo 'fi'
 	echo '[[ -f $ZDOTDIR/.zshenv ]] && source $ZDOTDIR/.zshenv'
 } > $dir/zsh/.zshenv
 if(! ~ $#ZDOTDIR 0) apex env APEX_USER_ZDOTDIR=$ZDOTDIR
 apex env ZDOTDIR=$dir/zsh
 
-# bash: the prompt command notices a changed directory
-apex env PROMPT_COMMAND='[[ $PWD != "$__apex_pwd" ]] && __apex_pwd=$PWD && command apex awd'
+# bash: the prompt command notices a changed directory, and defines B once
+apex env PROMPT_COMMAND='[[ $PWD != "$__apex_pwd" ]] && __apex_pwd=$PWD && command apex awd; type B >/dev/null 2>&1 || B() { command apex B "$@"; }'
 
 # fish: a snippet fish loads from every data directory
 {
@@ -47,6 +50,7 @@ apex env PROMPT_COMMAND='[[ $PWD != "$__apex_pwd" ]] && __apex_pwd=$PWD && comma
 	echo '		command apex awd'
 	echo '	end'
 	echo '	__apex_awd'
+	echo '	function B; command apex B $argv; end'
 	echo 'end'
 } > $dir/share/fish/vendor_conf.d/apex.fish
 xdg=$XDG_DATA_DIRS

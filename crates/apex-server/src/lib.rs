@@ -30,6 +30,7 @@ use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 
 use apex_core::node::ERRORS;
 use apex_core::state::ExecStatus;
+use apex_core::plumb::{expand, Bindings};
 use apex_core::*;
 
 pub use proposal::Proposal;
@@ -88,6 +89,11 @@ pub struct Server {
     running: std::sync::Arc<std::sync::Mutex<Vec<Running>>>,
     /// Proposals made while performing (a command's name for the top row).
     started: Vec<Proposal>,
+    /// Plumb walks in progress, by id.
+    plumbs: HashMap<u64, Plumb>,
+    next_plumb: u64,
+    /// Verb execs seen by `poll_execs`, for the host to start.
+    plumb_starts: Vec<PlumbReq>,
 }
 
 impl Server {
@@ -133,6 +139,9 @@ impl Server {
             put_warned: BTreeSet::new(),
             running: Default::default(),
             started: Vec::new(),
+            plumbs: HashMap::new(),
+            next_plumb: 1,
+            plumb_starts: Vec::new(),
         };
         (server, rx)
     }
@@ -592,6 +601,11 @@ impl Server {
             }
             "Newweb" => return Err(format!("{cmd}: not implemented")),
             _ => {
+                // a rule's verb offered in this window: the rules take it
+                if let Some(req) = self.verb_request(view, ctx, seq, text) {
+                    self.plumb_starts.push(req);
+                    return Ok(None);
+                }
                 // anything else is a shell command; output goes to +Errors
                 let env = self.command_env(view, ctx);
                 self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { dir: errdir }, env);
@@ -694,32 +708,301 @@ impl Server {
         Proposal::Complete { view, at, text: extension }
     }
 
-    /// B3: open `text` as a file (with optional `:line`) if it names one;
-    /// otherwise the leader searches for it.
-    pub fn plumb(&self, view: &Node, ctx: ExecCtx, text: &str) -> Proposal {
-        let look = Proposal::Look { ctx, text: text.to_string() };
-        let dir = self.dir_of(view, ctx);
-        let Ok(col) = column_of(view, ctx) else { return look };
-        let candidates = [text.to_string(), text.trim_end_matches(['.', ',', ';', ':', ')']).to_string()];
-        for cand in &candidates {
-            let (path, line) = match cand.rsplit_once(':') {
-                Some((p, l)) if !p.is_empty() && !l.is_empty() && l.chars().all(|c| c.is_ascii_digit()) => {
-                    (p.to_string(), l.parse::<usize>().ok())
+    /// The plumbing rules a session starts with, owned by the session at
+    /// a low priority so that anything installed later wins: what B3 did
+    /// before there were rules. `.,;:)` after a name are forgiven.
+    pub fn install_default_rules(&mut self, log: &mut Log) {
+        let r = |text: &str, isfile: Option<&str>, isdir: Option<&str>, edit: &str| PlumbRule {
+            verb: "plumb".into(),
+            text: Some(text.into()),
+            file: None,
+            kind: None,
+            isfile: isfile.map(String::from),
+            isdir: isdir.map(String::from),
+            action: RuleAction::Edit(edit.into()),
+            to: None,
+        };
+        let defaults = [
+            r(r"(\S+?):(\d+)[.,;:)]*", Some("$1"), None, "$1:$2"),
+            r(r"(\S+?)[.,;:)]*", Some("$1"), None, "$1"),
+            r(r"(\S+?)[.,;:)]*", None, Some("$1"), "$1"),
+        ];
+        for rule in defaults {
+            let (_, e) = log.install_rule(SERVER, -100, rule);
+            let _ = self.node.state.apply(Shard::Meta, &e);
+        }
+    }
+
+    /// Start a plumb: the first step of walking the rules. The id names
+    /// the walk to `plumb_next` when a step's answer comes from elsewhere.
+    pub fn plumb_start(&mut self, view: &Node, req: PlumbReq) -> (u64, PlumbStep) {
+        let id = self.next_plumb;
+        self.next_plumb += 1;
+        let win = match req.ctx {
+            ExecCtx::Window(w) => Some(w),
+            _ => None,
+        };
+        let dir = req.dir.clone().unwrap_or_else(|| self.dir_of(view, req.ctx));
+        let (name, kind) = match win {
+            Some(w) => (view.window_name(w), view.window_kind(w)),
+            None => (String::new(), WinKind::File),
+        };
+        let sel = view.seltext.and_then(|v| view.selected_text(v).ok()).unwrap_or_default();
+        let base = Bindings {
+            groups: Vec::new(),
+            file: name.clone(),
+            dir: dir.display().to_string(),
+            win: win.map(|w| w.0.to_string()).unwrap_or_default(),
+            line: String::new(),
+            sel,
+        };
+        let remaining: Vec<(RuleId, apex_core::state::Rule)> = apex_core::plumb::ordered(&view.state.meta.rules).into_iter().map(|(i, r)| (i, r.clone())).collect();
+        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, trace: Vec::new() });
+        let step = self.plumb_advance(view, id);
+        (id, step)
+    }
+
+    /// The answer to an `Ask`/`AskTool` step: taken (`Ok`) or refused,
+    /// after which the walk goes on.
+    pub fn plumb_next(&mut self, view: &Node, id: u64, outcome: Result<(), String>) -> PlumbStep {
+        if let Some(p) = self.plumbs.get_mut(&id) {
+            match outcome {
+                Ok(()) => {
+                    p.trace.push("taken".into());
+                    return self.plumb_finish(id, Vec::new());
                 }
-                _ => (cand.clone(), None),
+                Err(e) => p.trace.push(format!("refused: {e}")),
+            }
+        }
+        self.plumb_advance(view, id)
+    }
+
+    /// Verb execs (a rule's word in a tag, B2'd) found by `poll_execs`,
+    /// to be started by the host.
+    pub fn take_plumb_starts(&mut self) -> Vec<PlumbReq> {
+        std::mem::take(&mut self.plumb_starts)
+    }
+
+    pub fn peek_plumb_starts(&self) -> &[PlumbReq] {
+        &self.plumb_starts
+    }
+
+    fn plumb_finish(&mut self, id: u64, mut props: Vec<Proposal>) -> PlumbStep {
+        let Some(p) = self.plumbs.remove(&id) else { return PlumbStep::Done(props) };
+        if let Some(exec) = p.req.exec {
+            if !p.req.dry {
+                props.push(Proposal::Status { ctx: p.req.ctx, exec, status: ExecStatusOp::Done });
+            }
+        }
+        PlumbStep::Done(props)
+    }
+
+    fn plumb_advance(&mut self, view: &Node, id: u64) -> PlumbStep {
+        loop {
+            let Some(p) = self.plumbs.get_mut(&id) else { return PlumbStep::Done(Vec::new()) };
+            if p.remaining.is_empty() {
+                break;
+            }
+            let (rid, rule) = p.remaining.remove(0);
+            let r = &rule.rule;
+            if r.verb != p.req.verb {
+                continue;
+            }
+            if p.req.edit_only && !matches!(r.action, RuleAction::Edit(_)) {
+                continue;
+            }
+            let owner = if rule.attachment == SERVER { "session".to_string() } else { view.state.meta.attachments.get(&rule.attachment).map(|a| a.name.clone()).unwrap_or_else(|| rule.attachment.to_string()) };
+            let who = format!("{rid} ({owner}, p{})", rule.priority);
+            if !r.applies_to(&p.name, p.kind) {
+                p.trace.push(format!("{who}: not this window"));
+                continue;
+            }
+            let Some(groups) = r.match_text(&p.req.text) else {
+                p.trace.push(format!("{who}: text does not match"));
+                continue;
             };
-            if std::fs::metadata(resolve(&dir, &path)).is_ok() {
-                let from = match ctx {
-                    ExecCtx::Window(w) => Some(w),
-                    _ => None,
-                };
-                if let Ok(p) = self.open_file(col, from, &dir, &path, line) {
-                    return p;
+            let mut b = p.base.clone();
+            b.groups = groups;
+            if let Some(t) = &r.isfile {
+                let path = resolve(&p.dir, &expand(t, &b));
+                if !path.is_file() {
+                    p.trace.push(format!("{who}: {} is not a file", path.display()));
+                    continue;
+                }
+            }
+            if let Some(t) = &r.isdir {
+                let path = resolve(&p.dir, &expand(t, &b));
+                if !path.is_dir() {
+                    p.trace.push(format!("{who}: {} is not a directory", path.display()));
+                    continue;
+                }
+            }
+            let dry = p.req.dry;
+            let (ctx, dir, win) = (p.req.ctx, p.dir.clone(), match p.req.ctx {
+                ExecCtx::Window(w) => Some(w),
+                _ => None,
+            });
+            match &r.action {
+                RuleAction::Edit(t) => {
+                    let target = expand(t, &b);
+                    if dry {
+                        p.trace.push(format!("{who}: would open {target}"));
+                        return self.plumb_trace(id);
+                    }
+                    let (path, line) = split_line(&target);
+                    let opened = column_of(view, ctx).and_then(|col| self.open_file(col, win, &dir, &path, line));
+                    let Some(p) = self.plumbs.get_mut(&id) else { return PlumbStep::Done(Vec::new()) };
+                    match opened {
+                        Ok(prop) => {
+                            p.trace.push(format!("{who}: opened {target}"));
+                            return self.plumb_finish(id, vec![prop]);
+                        }
+                        Err(e) => {
+                            p.trace.push(format!("{who}: {target}: {e}"));
+                            continue;
+                        }
+                    }
+                }
+                RuleAction::Run(t) => {
+                    let cmd = expand(t, &b);
+                    if dry {
+                        p.trace.push(format!("{who}: would run {cmd}"));
+                        return self.plumb_trace(id);
+                    }
+                    p.trace.push(format!("{who}: ran {cmd}"));
+                    let stdin = if b.sel.is_empty() { None } else { Some(b.sel.clone()) };
+                    let exec = p.req.exec;
+                    let errdir = Some(dir.display().to_string());
+                    let env = self.command_env(view, ctx);
+                    let name = command_name(&cmd);
+                    self.spawn_shell_as(name, ctx, exec, cmd, dir, stdin, ShellMode::Errors { dir: errdir }, env);
+                    // the shell reports the status when it is done
+                    self.plumbs.remove(&id);
+                    return PlumbStep::Done(Vec::new());
+                }
+                RuleAction::Client { verb, args } => {
+                    let args = expand(args, &b);
+                    if dry {
+                        p.trace.push(format!("{who}: would ask the client to {verb} {args}"));
+                        return self.plumb_trace(id);
+                    }
+                    p.trace.push(format!("{who}: asked the client to {verb} {args}"));
+                    return PlumbStep::Ask(Proposal::ClientDo { verb: verb.clone(), args });
+                }
+                RuleAction::Tool(name) => {
+                    if dry {
+                        p.trace.push(format!("{who}: would ask {name}"));
+                        return self.plumb_trace(id);
+                    }
+                    p.trace.push(format!("{who}: asked {name}"));
+                    let (verb, text) = (p.req.verb.clone(), p.req.text.clone());
+                    return PlumbStep::AskTool { tool: name.clone(), ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone() };
                 }
             }
         }
-        look
+        // no rule took it
+        let Some(p) = self.plumbs.get_mut(&id) else { return PlumbStep::Done(Vec::new()) };
+        if p.req.dry {
+            p.trace.push(if p.req.verb == "plumb" { "no rule: Look".into() } else { format!("no rule takes {}", p.req.verb) });
+            return self.plumb_trace(id);
+        }
+        let (ctx, text, verb, edit_only, dir) = (p.req.ctx, p.req.text.clone(), p.req.verb.clone(), p.req.edit_only, p.dir.clone());
+        let exec = p.req.exec;
+        if edit_only {
+            // B: the text as a path, then
+            let (path, line) = split_line(&text);
+            let prop = match column_of(view, ctx).and_then(|col| self.open_file(col, None, &dir, &path, line)) {
+                Ok(p) => p,
+                Err(e) => Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{text}: {e}\n") },
+            };
+            return self.plumb_finish(id, vec![prop]);
+        }
+        if verb == "plumb" {
+            return self.plumb_finish(id, vec![Proposal::Look { ctx, text }]);
+        }
+        let mut props = vec![Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{verb}: no rule takes it here\n") }];
+        if let Some(exec) = exec {
+            props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Failed(format!("{verb}: no rule")) });
+        }
+        self.plumbs.remove(&id);
+        PlumbStep::Done(props)
     }
+
+    fn plumb_trace(&mut self, id: u64) -> PlumbStep {
+        let lines = self.plumbs.remove(&id).map(|p| p.trace).unwrap_or_default();
+        PlumbStep::Trace(lines)
+    }
+
+    /// A rule's verb, B2'd in a window: the request that walks the rules
+    /// with that verb, if any rule offers it there.
+    fn verb_request(&self, view: &Node, ctx: ExecCtx, seq: Seq, text: &str) -> Option<PlumbReq> {
+        let mut words = text.split_whitespace();
+        let verb = words.next()?;
+        let (name, kind) = match ctx {
+            ExecCtx::Window(w) => (view.window_name(w), view.window_kind(w)),
+            _ => (String::new(), WinKind::File),
+        };
+        let offered = view.state.meta.rules.values().any(|r| r.rule.verb == verb && r.rule.applies_to(&name, kind));
+        if !offered {
+            return None;
+        }
+        let rest = text[verb.len()..].trim().to_string();
+        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq) })
+    }
+}
+
+/// `name:line` split, when the tail is a number.
+fn split_line(target: &str) -> (String, Option<usize>) {
+    match target.rsplit_once(':') {
+        Some((p, l)) if !p.is_empty() && !l.is_empty() && l.chars().all(|c| c.is_ascii_digit()) => (p.to_string(), l.parse().ok()),
+        _ => (target.to_string(), None),
+    }
+}
+
+/// A plumb, or a verb, to walk the rules with.
+#[derive(Clone, Debug)]
+pub struct PlumbReq {
+    pub ctx: ExecCtx,
+    /// The plumbed text, or a verb's arguments.
+    pub text: String,
+    /// The directory, when the context has none of its own to trust (a
+    /// terminal's cwd, `apex plumb` from a shell).
+    pub dir: Option<PathBuf>,
+    /// `plumb` for B3; a rule's word otherwise.
+    pub verb: String,
+    /// Plan 9's `B`: only rules that open in the session.
+    pub edit_only: bool,
+    /// Only say what would happen.
+    pub dry: bool,
+    /// The exec entry a verb came from, for its status.
+    pub exec: Option<Seq>,
+}
+
+/// One step of a plumb walk, for the host to carry out.
+#[derive(Debug)]
+pub enum PlumbStep {
+    /// Finished: these proposals carry the outcome.
+    Done(Vec<Proposal>),
+    /// Ask the leader (a UI) to do this; `plumb_next` with the answer.
+    Ask(Proposal),
+    /// Ask this tool; `plumb_next` with its answer, or refusal after a
+    /// second of silence.
+    AskTool { tool: String, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String> },
+    /// A dry run's report.
+    Trace(Vec<String>),
+}
+
+struct Plumb {
+    req: PlumbReq,
+    dir: PathBuf,
+    name: String,
+    kind: WinKind,
+    base: Bindings,
+    remaining: Vec<(RuleId, apex_core::state::Rule)>,
+    trace: Vec<String>,
+}
+
+impl Server {
 }
 
 /// In-process convenience: apply proposals through the leader, reporting

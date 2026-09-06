@@ -523,6 +523,22 @@ impl Node {
     }
 
     /// The name shown in a window's tag: its body buffer's name.
+    /// What kind of window this is, for plumbing rules.
+    pub fn window_kind(&self, window: WindowId) -> WinKind {
+        let Ok(w) = self.state.window(window) else { return WinKind::File };
+        if matches!(w.body, Body::Term(_)) {
+            return WinKind::Term;
+        }
+        let name = self.window_name(window);
+        if name.ends_with("+Errors") {
+            WinKind::Errors
+        } else if name.ends_with('/') {
+            WinKind::Dir
+        } else {
+            WinKind::File
+        }
+    }
+
     pub fn window_name(&self, window: WindowId) -> String {
         let Ok(w) = self.state.window(window) else { return String::new() };
         match w.body_buffer() {
@@ -927,6 +943,12 @@ impl Node {
                 if isdir {
                     new.push_str(" Get");
                 }
+            }
+            // the verbs plumbing rules offer here (before the bar: the
+            // system's, like Undo and Put)
+            for v in crate::plumb::verbs_for(&self.state.meta.rules, &name, self.window_kind(w)) {
+                new.push(' ');
+                new.push_str(&v);
             }
             new.push_str(" |");
             let old = self.state.buffer(tag)?.text.to_string();

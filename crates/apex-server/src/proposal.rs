@@ -45,6 +45,10 @@ pub enum Proposal {
     TermName { window: WindowId, name: String },
     /// B3 did not name a file: search the body instead.
     Look { ctx: ExecCtx, text: String },
+    /// A plumbing rule asks the UI to do something (`open` a URL, say).
+    /// Only a UI can; a headless leader refuses, and the server tries the
+    /// next rule.
+    ClientDo { verb: String, args: String },
     /// The file on disk changed under a dirty buffer.
     Stale { buffer: BufferId, hash: String },
     // ---- from tools (the control protocol) ----
@@ -171,6 +175,7 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             }
             Ok(None)
         }
+        Proposal::ClientDo { verb, .. } => Err(CoreError::Missing(format!("no client here can {verb}"))),
         Proposal::Look { ctx, text } => {
             // acme's look3: the search runs in seltext, the text last
             // selected with B1, not necessarily where B3 was clicked

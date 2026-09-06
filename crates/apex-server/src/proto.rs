@@ -36,8 +36,18 @@ pub enum ClientMsg {
     TermText { term: TermId, p0: (u16, u64), p1: (u16, u64) },
     /// Open a file (relative to the window's directory) in a column.
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
-    /// B3: a file, or else a search.
-    Plumb { ctx: ExecCtx, text: String },
+    /// B3, or `apex plumb`: the rule table decides. `dir` stands in for
+    /// the context's directory (a terminal's cwd); `edit_only` is plan 9's
+    /// `B` (only rules that open in the session, else the text as a path);
+    /// `dry` only reports what would happen (`PlumbTrace`).
+    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool },
+    /// A tool's answer to a `Plumb` it was handed: did it take it?
+    PlumbAck { id: u64, ok: bool },
+    /// Install a plumbing rule: owned by this attachment when `mine`
+    /// (gone when it detaches), else by the session. Answered by
+    /// `RuleAdded`.
+    RuleAdd { rule: PlumbRule, priority: i32, mine: bool },
+    RuleRm { id: RuleId },
     /// acme's ^F: complete the path fragment `prefix` typed at `at`.
     Complete { view: ViewId, ctx: ExecCtx, at: usize, prefix: String },
     /// A tool asks the leader to do something; `id` comes back in `Applied`.
@@ -87,6 +97,12 @@ pub enum ServerMsg {
     Pong { t: u64 },
     /// The session's environment, after an `Env`.
     Env { vars: Vec<(String, String)> },
+    /// What a dry-run plumb would do, rule by rule.
+    PlumbTrace { lines: Vec<String> },
+    /// A rule this tool installed names it: does it take this plumb?
+    /// Answer with `PlumbAck{id}` within a second.
+    Plumb { id: u64, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String> },
+    RuleAdded { id: RuleId },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

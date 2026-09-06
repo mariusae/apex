@@ -184,8 +184,77 @@ pub enum AttachmentKind {
 /// metalog only stores and orders rules.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct PlumbRule {
-    pub predicate: String,
-    pub action: String,
+    /// The command this rule answers: `plumb` is B3; anything else is a
+    /// word in the tag of every window the rule applies to, executed by
+    /// B2 there.
+    pub verb: String,
+    /// The plumbed text (for `plumb`) or the arguments (a verb) must match
+    /// this regexp; its groups bind `$0`..`$9`.
+    pub text: Option<String>,
+    /// The window's name must match this regexp.
+    pub file: Option<String>,
+    /// The window must be of this kind.
+    pub kind: Option<WinKind>,
+    /// This (expanded, relative to the window's directory) must be a file.
+    pub isfile: Option<String>,
+    /// This must be a directory.
+    pub isdir: Option<String>,
+    pub action: RuleAction,
+    /// Where a `Run` command's output goes.
+    pub to: Option<RunTo>,
+}
+
+/// What kind of window a rule applies to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum WinKind {
+    File,
+    Dir,
+    Term,
+    Errors,
+}
+
+impl WinKind {
+    pub fn parse(s: &str) -> Option<WinKind> {
+        match s {
+            "file" => Some(WinKind::File),
+            "dir" => Some(WinKind::Dir),
+            "term" => Some(WinKind::Term),
+            "errors" => Some(WinKind::Errors),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            WinKind::File => "file",
+            WinKind::Dir => "dir",
+            WinKind::Term => "term",
+            WinKind::Errors => "errors",
+        }
+    }
+}
+
+/// What a matching rule does. Templates expand `$0`..`$9`, `$file`,
+/// `$dir`, `$win`, `$line`, `$sel`.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum RuleAction {
+    /// Open this path (`name` or `name:line`) in the session: plan 9's
+    /// edit port.
+    Edit(String),
+    /// Run this command on the host, in the window's directory, the
+    /// selection on its stdin.
+    Run(String),
+    /// Ask the UI that asked to do `verb` with `args`; it may refuse.
+    Client { verb: String, args: String },
+    /// Ask the tool attached under this name; it may refuse (NACK).
+    Tool(String),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum RunTo {
+    /// `dir/+Errors`, as B2's output.
+    Errors,
+    /// A new window named after the command.
+    Window,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]

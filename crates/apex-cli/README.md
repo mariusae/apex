@@ -16,7 +16,9 @@ apex sel WIN [Q0 Q1]
 apex exec [WIN] COMMAND                              as if B2
 apex events [--shard S]                              entries as JSON lines, forever
 apex term new | term send TERM TEXT | term read TERM
-apex plumb TEXT
+apex plumb [--dry-run] [--edit] TEXT
+apex plumb rule add FLAGS | rm ID | ls
+apex B FILE[:LINE] ...
 apex label TEXT
 apex awd [LABEL]
 apex env [KEY=VALUE ...]
@@ -80,3 +82,39 @@ sources it was built from. A client of another build stops there and
 says so: the daemon keeps running (its sessions may hold work), and when
 they can be let go, `apex stop` on its machine ends it; the next attach
 starts the current one. The app's Reconnect (⌘R) is that next attach.
+
+## Plumbing rules
+
+B3 (and `apex plumb`) walks the session's rule table in priority order,
+highest first, then by age; the first rule that matches and is taken
+ends the walk, and with none left the text is looked for in the window
+(acme's Look). A rule is one `apex plumb rule add` command:
+
+    --text RE        the plumbed text (a verb's arguments) must match RE, whole;
+                     its groups bind $0..$9
+    --file RE        the window's name must match RE
+    --kind K         file | dir | term | errors
+    --isfile EXPR    EXPR, expanded, is a file (relative to the window's directory)
+    --isdir EXPR     ... a directory
+    --verb NAME      the command this rule answers; `plumb` (B3) unless given.
+                     Any other verb is shown before the | in the tag of every
+                     window the rule applies to, and B2 there brings it here.
+    --edit EXPR      open EXPR (`name` or `name:line`) in the session
+    --run CMD        run CMD on the host in the window's directory, the
+                     selection on stdin, output to dir/+Errors
+    --client-do V A  ask the UI that asked to do V with A (`open` a URL, say);
+                     a UI that cannot refuses, and the walk goes on
+    --tool NAME      ask the tool attached as NAME; it answers within a second
+                     or is taken to refuse (NACK), and the walk goes on
+    --priority N     default 0
+    --mine           owned by this attachment (gone when it detaches) rather
+                     than the session
+
+Templates expand `$0`..`$9`, `$file`, `$dir`, `$win`, `$line`, `$sel`.
+Rules from the CLI are the session's; a UI installs its own on attach
+(URLs go to the platform's `open`) and a tool installs those naming it.
+`apex plumb --dry-run TEXT` prints what each rule would do. `apex B` is
+plan 9's: each argument goes to the rules that open in the session, else
+is opened as a path, from the current directory. The session starts with
+three rules at priority -100 that open `name` and `name:line` when they
+exist, as B3 always did.

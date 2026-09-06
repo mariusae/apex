@@ -58,6 +58,16 @@ pub struct Link {
     pub sessions: Option<Vec<String>>,
     /// The session environment, after an `Env`.
     pub env: Option<Vec<(String, String)>>,
+    /// A dry-run plumb's report, after a `Plumb{dry}`.
+    pub trace: Option<Vec<String>>,
+    /// Plumbs handed to this tool by rules naming it, to answer with
+    /// `PlumbAck`.
+    pub plumbs: Vec<ToolPlumb>,
+    /// The id of the rule last added.
+    pub rule_added: Option<RuleId>,
+    /// What this client does when a rule asks it (`ClientDo`): a UI
+    /// sets it; without one, the request is refused.
+    pub client_do: Option<Box<dyn FnMut(&str, &str) -> Result<(), String> + Send>>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
     next_id: u64,
@@ -174,7 +184,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_do: None, last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -237,7 +247,14 @@ impl Link {
                 }
             }
             ServerMsg::Propose { id, proposal } => {
-                let result = proposal::apply(node, log, proposal).map_err(|e| e.to_string());
+                let result = match proposal {
+                    // a rule asks this client for something only it can do
+                    Proposal::ClientDo { verb, args } => match &mut self.client_do {
+                        Some(f) => f(&verb, &args).map(|_| None),
+                        None => Err(format!("this client cannot {verb}")),
+                    },
+                    p => proposal::apply(node, log, p).map_err(|e| e.to_string()),
+                };
                 match &result {
                     Ok(Some(w)) => self.made.push(*w),
                     Ok(None) => {}
@@ -257,6 +274,9 @@ impl Link {
             ServerMsg::Env { vars } => {
                 self.env = Some(vars);
             }
+            ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
+            ServerMsg::Plumb { id, ctx, verb, text, dir, groups } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups }),
+            ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
             }
@@ -337,6 +357,17 @@ pub fn bridge_child(cmd: &str) -> io::Result<(std::process::ChildStdin, std::pro
         let _ = child.wait();
     });
     Ok((stdin, stdout, closer))
+}
+
+/// A plumb a rule handed to this tool; answer with `Remote::plumb_ack`.
+#[derive(Clone, Debug)]
+pub struct ToolPlumb {
+    pub id: u64,
+    pub ctx: ExecCtx,
+    pub verb: String,
+    pub text: String,
+    pub dir: String,
+    pub groups: Vec<String>,
 }
 
 /// A daemon of another build is not ours to talk to: the error (kind
@@ -451,6 +482,44 @@ impl Remote {
 
     pub fn attachment(&self) -> AttachmentId {
         self.link.attachment
+    }
+
+    /// Block until `ready` says the link has what we wait for.
+    fn wait_for<T>(&mut self, timeout: std::time::Duration, mut ready: impl FnMut(&mut Link) -> Option<T>) -> Result<T, String> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(v) = ready(&mut self.link) {
+                return Ok(v);
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return Err("timed out waiting for the server".into());
+            }
+            match self.step(left) {
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(_) => return Err("connection closed".into()),
+            }
+        }
+    }
+
+    /// Install a plumbing rule and block for its id.
+    pub fn rule_add(&mut self, rule: PlumbRule, priority: i32, mine: bool, timeout: std::time::Duration) -> Result<RuleId, String> {
+        self.link.rule_added = None;
+        self.send(&ClientMsg::RuleAdd { rule, priority, mine });
+        self.wait_for(timeout, |l| l.rule_added.take())
+    }
+
+    /// What a plumb would do, rule by rule.
+    pub fn plumb_dry(&mut self, ctx: ExecCtx, text: &str, dir: Option<String>, edit_only: bool, timeout: std::time::Duration) -> Result<Vec<String>, String> {
+        self.link.trace = None;
+        self.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir, edit_only, dry: true });
+        self.wait_for(timeout, |l| l.trace.take())
+    }
+
+    /// Answer a plumb a rule handed to this tool.
+    pub fn plumb_ack(&self, id: u64, ok: bool) {
+        self.send(&ClientMsg::PlumbAck { id, ok });
     }
 
     /// Set session variables (none: just ask) and block for the

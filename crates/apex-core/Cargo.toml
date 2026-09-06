@@ -11,6 +11,7 @@ serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["use-std"] }
 blake3 = { version = "1", features = ["pure"] } # no C or assembly: cross-compiles anywhere
 thiserror = "2"
+regex = "1"
 
 [dev-dependencies]
 proptest = "1"

@@ -628,6 +628,26 @@ acme's tools port directly because the event model is the same, generalised:
   that fans out to several tools in priority order emulates it if ever
   needed.
 
+*As built (plumbing):* the rule is `PlumbRule{verb, text, file, kind,
+isfile, isdir, action, to}` in the metalog (`PlumbRuleInstall{id,
+attachment, priority}`), owned by the session (`SERVER`) or by an
+attachment, whose rules go with it. A **verb** is the command a rule
+answers: `plumb` is B3; any other verb appears before the `|` of every
+window's tag the rule applies to (`winsettag` computes it, so the tag
+follows the table) and B2 there walks the rules with that verb, ahead of
+the shell. Actions: `Edit` (open in the session), `Run` (a host command,
+the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
+the UI, which may refuse; a headless leader always does), `Tool(name)`
+(`ServerMsg::Plumb` to the attachment of that name, `PlumbAck` within a
+second or taken as NACK). The daemon drives a walk across those answers
+(`Server::plumb_start`/`plumb_next`); an in-process client walks
+synchronously. The trace of a walk is what `apex plumb --dry-run` prints;
+recording it in the exec entry is still to do. Clients say what they can
+do by installing rules on attach (macOS: URLs to `open`), so the server
+holds no platform knowledge. `apex B` is plan 9's `B`, and rc's rcmain
+defines `B` in apex terminals. The one-line rule form was chosen over
+plan 9's rules file: each rule prints as the flags that made it.
+
 Typed client libraries (Rust, Go) are generated from the schema for programs
 that want more than the CLI.
 

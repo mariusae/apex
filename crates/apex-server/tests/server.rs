@@ -342,3 +342,56 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|t| t.exit.is_some())), "exit noticed");
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[test]
+fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
+    let (mut log, mut node, col, mut server, mut rx) = session();
+    server.install_default_rules(&mut log);
+    node.catch_up(&log).unwrap();
+    let dir = std::env::temp_dir().join(format!("apex-verb-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let md = dir.join("notes.md");
+    std::fs::write(&md, "# hi\n").unwrap();
+    // a rule offering Preview on .md files, run as a command
+    let rule = PlumbRule {
+        verb: "Preview".into(),
+        text: None,
+        file: Some(r"\.md$".into()),
+        kind: Some(WinKind::File),
+        isfile: None,
+        isdir: None,
+        action: RuleAction::Run("echo previewing $file".into()),
+        to: None,
+    };
+    let (_, e) = log.install_rule(SERVER, 0, rule);
+    node.state.apply(Shard::Meta, &e).unwrap();
+    let p = server.open_file(col, None, &dir, "notes.md", None).unwrap();
+    let w = perform(&mut node, &mut log, vec![p]).expect("window");
+    node.update_tags(&mut log).unwrap();
+    let tag = node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string();
+    assert!(tag.contains(" Preview |"), "tag: {tag}");
+    // a .txt window does not offer it
+    std::fs::write(dir.join("a.txt"), "x\n").unwrap();
+    let p = server.open_file(col, None, &dir, "a.txt", None).unwrap();
+    let w2 = perform(&mut node, &mut log, vec![p]).expect("window");
+    node.update_tags(&mut log).unwrap();
+    let tag2 = node.state.buffer(node.state.window(w2).unwrap().tag).unwrap().text.to_string();
+    assert!(!tag2.contains("Preview"), "tag: {tag2}");
+    // B2 Preview: the rule runs the command, output in +Errors
+    node.exec(&mut log, ExecCtx::Window(w), "Preview").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    for req in server.take_plumb_starts() {
+        let (_, step) = server.plumb_start(&node, req);
+        assert!(matches!(step, apex_server::PlumbStep::Done(_)), "{step:?}");
+    }
+    let errors = |n: &Node| n.state.windows.keys().find(|w| n.window_name(**w).ends_with("+Errors")).and_then(|w| n.state.window(*w).ok()).and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors(n).contains(&format!("previewing {}", md.display()))), "errors:\n{}", errors(&node));
+    // the default rules: B3 on name:line opens the file at the line
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None };
+    let (_, step) = server.plumb_start(&node, req);
+    match step {
+        apex_server::PlumbStep::Trace(lines) => assert!(lines.iter().any(|l| l.contains("would open a.txt:1")), "{lines:?}"),
+        other => panic!("{other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

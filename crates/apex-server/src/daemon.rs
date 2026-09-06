@@ -20,7 +20,7 @@ use std::thread;
 use apex_core::*;
 
 use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, SessionInit};
-use crate::{proposal, Proposal, Server, ServerEvent};
+use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
 
 /// Start a daemon on `socket` from the `apex` binary at `exe`, detached
 /// from whoever asked: its own session, so that the end of an ssh
@@ -99,6 +99,8 @@ enum Event {
     Gone(u64),
     /// From a session's server, by the session's id (names can change).
     Server(u64, ServerEvent),
+    /// A tool asked to plumb has not answered in time.
+    PlumbTimeout(u64),
 }
 
 struct Conn {
@@ -123,10 +125,12 @@ struct Session {
     leader: Option<u64>,
 }
 
-/// A tool's proposal in flight at the leader: (tool connection, tool's id).
-struct Pending {
-    conn: u64,
-    id: u64,
+/// Something in flight at the leader, by our id for it.
+enum Pending {
+    /// A tool's proposal: (tool connection, tool's id).
+    Tool { conn: u64, id: u64 },
+    /// A plumb walk's `Ask`: (session id, plumb id, who asked).
+    Plumb { session: u64, plumb: u64, asker: u64 },
 }
 
 pub struct Daemon {
@@ -138,6 +142,9 @@ pub struct Daemon {
     conns: HashMap<u64, Conn>,
     pending: HashMap<u64, Pending>,
     next_pending: u64,
+    /// Plumbs handed to tools: our id → (session id, plumb id, asker).
+    tool_plumbs: HashMap<u64, (u64, u64, u64)>,
+    next_tool_plumb: u64,
     rx: Receiver<Event>,
     tx: Sender<Event>,
 }
@@ -172,7 +179,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_init, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_init, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, rx, tx };
         // the daemon's own session is made from this host: its file is
         // both the host's and the creator's, so it runs once
         d.new_session(session, None);
@@ -198,6 +205,7 @@ impl Daemon {
                         d.after(&name, props);
                     }
                 }
+                Event::PlumbTimeout(tid) => d.tool_answered(tid, Err("no answer in time".into())),
             }
         }
         let _ = std::fs::remove_file(path);
@@ -230,9 +238,10 @@ impl Daemon {
                 });
             });
         }
+        let mut log = log;
+        server.install_default_rules(&mut log);
         let mut view = Node::new(SERVER);
         view.catch_up(&log).expect("fresh log");
-        let mut log = log;
         // the daemon lays the session out (one column, the top tag) so a
         // tool can work before any UI attaches
         view.init_session(&mut log).expect("fresh session");
@@ -310,6 +319,10 @@ impl Daemon {
         let (Some(sid), Some(a)) = (c.session, c.attachment) else { return };
         let Some(name) = self.name_of(sid) else { return };
         let Some(s) = self.sessions.get_mut(&name) else { return };
+        for rid in apex_core::plumb::owned_by(&s.view.state.meta.rules, a) {
+            let e = s.log.remove_rule(rid);
+            let _ = s.view.state.apply(Shard::Meta, &e);
+        }
         let e = s.log.detach(a);
         let _ = s.view.state.apply(Shard::Meta, &e);
         if s.leader == Some(id) {
@@ -326,7 +339,7 @@ impl Daemon {
             }
             let _ = s.view.catch_up(&s.log);
         }
-        self.pending.retain(|_, p| p.conn != id);
+        self.pending.retain(|_, p| !matches!(p, Pending::Tool { conn, .. } if *conn == id));
         self.after(&name, Vec::new());
     }
 
@@ -405,6 +418,7 @@ impl Daemon {
         let Some(s) = self.sessions.get_mut(name) else { return };
         let is_leader = s.leader == Some(id);
         let mut props = Vec::new();
+        let mut verbs = false;
         match m {
             ClientMsg::Append { shard, entries } => {
                 let mut last = 0;
@@ -433,6 +447,7 @@ impl Daemon {
                 }
                 let s = self.sessions.get_mut(name).unwrap();
                 props = s.server.poll_execs(&mut s.log, &s.view);
+                verbs = true;
             }
             ClientMsg::CreateShard { shard } => {
                 let Some(a) = self.conns.get(&id).and_then(|c| c.attachment) else { return };
@@ -478,7 +493,30 @@ impl Daemon {
                     Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });
             }
-            ClientMsg::Plumb { ctx, text } => props.push(s.server.plumb(&s.view, ctx, &text)),
+            ClientMsg::Plumb { ctx, text, dir, edit_only, dry } => {
+                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: "plumb".into(), edit_only, dry, exec: None };
+                let (pid, step) = s.server.plumb_start(&s.view, req);
+                self.drive(name, pid, step, id);
+                return;
+            }
+            ClientMsg::PlumbAck { id: tid, ok } => {
+                self.tool_answered(tid, if ok { Ok(()) } else { Err("refused".into()) });
+                return;
+            }
+            ClientMsg::RuleAdd { rule, priority, mine } => {
+                if let Err(e) = rule.check() {
+                    self.send(id, ServerMsg::Error { text: format!("rule: {e}") });
+                    return;
+                }
+                let owner = if mine { self.conns.get(&id).and_then(|c| c.attachment).unwrap_or(SERVER) } else { SERVER };
+                let (rid, e) = s.log.install_rule(owner, priority, rule);
+                let _ = s.view.state.apply(Shard::Meta, &e);
+                self.send(id, ServerMsg::RuleAdded { id: rid });
+            }
+            ClientMsg::RuleRm { id: rid } => {
+                let e = s.log.remove_rule(rid);
+                let _ = s.view.state.apply(Shard::Meta, &e);
+            }
             ClientMsg::Complete { view, ctx, at, prefix } => {
                 let dir = s.server.dir_of(&s.view, ctx);
                 props.push(s.server.complete(view, at, &dir, &prefix));
@@ -488,19 +526,20 @@ impl Daemon {
                 // waits for the answer
                 let pid = self.next_pending;
                 self.next_pending += 1;
-                self.pending.insert(pid, Pending { conn: id, id: tool_id });
+                self.pending.insert(pid, Pending::Tool { conn: id, id: tool_id });
                 self.propose(name, pid, proposal);
             }
             ClientMsg::Applied { id: pid, result } => {
                 if is_leader {
-                    if let Some(p) = self.pending.remove(&pid) {
-                        self.send(p.conn, ServerMsg::Applied { id: p.id, result });
-                    }
+                    self.answered(pid, result);
                 }
             }
             ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::RenameSession { .. } | ClientMsg::Ping { .. } | ClientMsg::Stop => {}
         }
         self.after(name, props);
+        if verbs {
+            self.start_verbs(name);
+        }
     }
 
     /// Route one proposal to the session's leader: the UI, or the daemon
@@ -511,10 +550,80 @@ impl Daemon {
             Some(leader) => self.send(leader, ServerMsg::Propose { id: pid, proposal: p }),
             None => {
                 let result = proposal::apply(&mut s.view, &mut s.log, p).map_err(|e| e.to_string());
-                if let Some(w) = self.pending.remove(&pid) {
-                    self.send(w.conn, ServerMsg::Applied { id: w.id, result });
+                self.answered(pid, result);
+            }
+        }
+    }
+
+    /// The leader's answer to something in flight.
+    fn answered(&mut self, pid: u64, result: Result<Option<WindowId>, String>) {
+        match self.pending.remove(&pid) {
+            Some(Pending::Tool { conn, id }) => self.send(conn, ServerMsg::Applied { id, result }),
+            Some(Pending::Plumb { session, plumb, asker }) => {
+                let Some(name) = self.name_of(session) else { return };
+                let s = self.sessions.get_mut(&name).unwrap();
+                let step = s.server.plumb_next(&s.view, plumb, result.map(|_| ()));
+                self.drive(&name, plumb, step, asker);
+            }
+            None => {}
+        }
+    }
+
+    /// A tool's answer (or its silence) to a plumb handed to it.
+    fn tool_answered(&mut self, tid: u64, outcome: Result<(), String>) {
+        let Some((sid, plumb, asker)) = self.tool_plumbs.remove(&tid) else { return };
+        let Some(name) = self.name_of(sid) else { return };
+        let s = self.sessions.get_mut(&name).unwrap();
+        let step = s.server.plumb_next(&s.view, plumb, outcome);
+        self.drive(&name, plumb, step, asker);
+    }
+
+    /// Carry out one step of a plumb walk, and whatever follows from it.
+    fn drive(&mut self, name: &str, plumb: u64, step: PlumbStep, asker: u64) {
+        let Some(s) = self.sessions.get_mut(name) else { return };
+        let sid = s.id;
+        match step {
+            PlumbStep::Done(props) => self.after(name, props),
+            PlumbStep::Trace(lines) => self.send(asker, ServerMsg::PlumbTrace { lines }),
+            PlumbStep::Ask(proposal) => {
+                let pid = self.next_pending;
+                self.next_pending += 1;
+                self.pending.insert(pid, Pending::Plumb { session: sid, plumb, asker });
+                self.propose(name, pid, proposal);
+            }
+            PlumbStep::AskTool { tool, ctx, verb, text, dir, groups } => {
+                // the tool attached under that name, in this session
+                let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
+                match found {
+                    Some(cid) => {
+                        let tid = self.next_tool_plumb;
+                        self.next_tool_plumb += 1;
+                        self.tool_plumbs.insert(tid, (sid, plumb, asker));
+                        self.send(cid, ServerMsg::Plumb { id: tid, ctx, verb, text, dir, groups });
+                        // a second, then it is taken as refused
+                        let tx = self.tx.clone();
+                        thread::spawn(move || {
+                            thread::sleep(std::time::Duration::from_secs(1));
+                            let _ = tx.send(Event::PlumbTimeout(tid));
+                        });
+                    }
+                    None => {
+                        let step = s.server.plumb_next(&s.view, plumb, Err(format!("no tool {tool} attached")));
+                        self.drive(name, plumb, step, asker);
+                    }
                 }
             }
+        }
+    }
+
+    /// Verb execs the server found while polling: each starts a walk.
+    fn start_verbs(&mut self, name: &str) {
+        let Some(s) = self.sessions.get_mut(name) else { return };
+        let starts = s.server.take_plumb_starts();
+        for req in starts {
+            let s = self.sessions.get_mut(name).unwrap();
+            let (pid, step) = s.server.plumb_start(&s.view, req);
+            self.drive(name, pid, step, 0);
         }
     }
 
@@ -543,6 +652,7 @@ impl Daemon {
                 }
             }
         }
+        let verbs = !s.server.peek_plumb_starts().is_empty();
         // the metalog first: it announces shards before their entries
         let mut shards: Vec<Shard> = s.log.shards().collect();
         shards.sort_by_key(|sh| *sh != Shard::Meta);
@@ -565,6 +675,9 @@ impl Daemon {
             for p in props {
                 self.send(leader, ServerMsg::Propose { id: 0, proposal: p });
             }
+        }
+        if verbs {
+            self.start_verbs(name);
         }
     }
 }

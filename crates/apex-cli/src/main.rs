@@ -19,7 +19,9 @@
 //! apex exec [WIN] COMMAND                              as if B2
 //! apex events [--shard S]                              entries as JSON lines, forever
 //! apex term new | term send TERM TEXT | term read TERM
-//! apex plumb TEXT
+//! apex plumb [--dry-run] [--edit] TEXT                  B3 from here (--edit: plan 9's B)
+//! apex plumb rule add FLAGS | rm ID | ls               the rule table
+//! apex B FILE[:LINE] ...                               open in the session (plan 9's B)
 //! apex env [KEY=VALUE ...]                              set the session's environment (none: show it)
 //! apex label TEXT                                       name this terminal's window (plan9port's label)
 //! apex awd [LABEL]                                      name it pwd/-LABEL (plan9port's awd)
@@ -86,6 +88,7 @@ fn main() {
         "events" => events(&socket, &session, rest),
         "term" => term(&socket, &session, rest),
         "plumb" => plumb(&socket, &session, rest),
+        "B" => b(&socket, &session, rest),
         "label" => label(&rest.join(" ")),
         "env" => env_cmd(&socket, &session, rest),
         "stop" => apex_server::remote::stop(&socket).map_err(|e| format!("{}: {e}", socket.display())),
@@ -103,7 +106,7 @@ fn main() {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|label|awd|env|stop|version ...");
+    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|B|label|awd|env|stop|version ...");
     std::process::exit(2);
 }
 
@@ -460,12 +463,133 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
 }
 
 fn plumb(socket: &Path, session: &str, args: &[String]) -> R {
+    if args.first().is_some_and(|a| a == "rule") {
+        return rule(socket, session, &args[1..]);
+    }
+    let mut dry = false;
+    let mut edit_only = false;
+    let mut words = Vec::new();
+    for a in args {
+        match a.as_str() {
+            "--dry-run" => dry = true,
+            "--edit" => edit_only = true,
+            _ => words.push(a.clone()),
+        }
+    }
+    let text = words.join(" ");
+    if text.is_empty() {
+        return Err("plumb: nothing to plumb".into());
+    }
+    let dir = std::env::current_dir().ok().map(|d| d.display().to_string());
     let mut c = tool(socket, session)?;
-    let text = args.join(" ");
+    if dry {
+        for line in c.plumb_dry(ExecCtx::Top, &text, dir, edit_only, TIMEOUT)? {
+            println!("{line}");
+        }
+        return Ok(());
+    }
     let before = c.node.state.windows.len();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false });
     let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     Ok(())
+}
+
+/// plan 9's `B`: each argument to the edit port, from this directory.
+fn b(socket: &Path, session: &str, args: &[String]) -> R {
+    if args.is_empty() {
+        return Err("usage: B FILE[:LINE] ...".into());
+    }
+    let dir = std::env::current_dir().ok().map(|d| d.display().to_string());
+    let mut c = tool(socket, session)?;
+    for a in args {
+        let before = c.node.state.windows.len();
+        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false });
+        let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
+    }
+    Ok(())
+}
+
+/// `apex plumb rule add|rm|ls`: the session's rule table.
+fn rule(socket: &Path, session: &str, args: &[String]) -> R {
+    let mut c = tool(socket, session)?;
+    match args.first().map(|s| s.as_str()) {
+        Some("add") => {
+            let (rule, priority, mine) = parse_rule(&args[1..])?;
+            let id = c.rule_add(rule, priority, mine, TIMEOUT)?;
+            println!("{id}");
+            Ok(())
+        }
+        Some("rm") => {
+            for a in &args[1..] {
+                let n: u64 = a.trim_start_matches('r').parse().map_err(|_| format!("rule rm: {a}: not a rule id"))?;
+                c.send(&ClientMsg::RuleRm { id: RuleId(n) });
+            }
+            let _ = c.step(Duration::from_millis(50));
+            Ok(())
+        }
+        Some("ls") | None => {
+            let meta = &c.node.state.meta;
+            for (id, r) in apex_core::plumb::ordered(&meta.rules) {
+                let owner = if r.attachment == SERVER { "session".to_string() } else { meta.attachments.get(&r.attachment).map(|a| a.name.clone()).unwrap_or_else(|| r.attachment.to_string()) };
+                println!("{id}\t{owner}\tp{}\t{}", r.priority, r.rule.to_flags());
+            }
+            Ok(())
+        }
+        Some(other) => Err(format!("plumb rule: {other}: add, rm or ls")),
+    }
+}
+
+/// The flags of `apex plumb rule add`, as a rule.
+fn parse_rule(args: &[String]) -> Result<(PlumbRule, i32, bool), String> {
+    let mut r = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool(String::new()), to: None };
+    let mut action: Option<RuleAction> = None;
+    let mut priority = 0;
+    let mut mine = false;
+    let mut i = 0;
+    let mut value = |i: &mut usize, flag: &str| -> Result<String, String> {
+        *i += 1;
+        args.get(*i).cloned().ok_or_else(|| format!("{flag} needs a value"))
+    };
+    while i < args.len() {
+        let flag = args[i].as_str();
+        match flag {
+            "--verb" => r.verb = value(&mut i, flag)?,
+            "--text" => r.text = Some(value(&mut i, flag)?),
+            "--file" => r.file = Some(value(&mut i, flag)?),
+            "--kind" => {
+                let k = value(&mut i, flag)?;
+                r.kind = Some(WinKind::parse(&k).ok_or_else(|| format!("--kind {k}: file, dir, term or errors"))?);
+            }
+            "--isfile" => r.isfile = Some(value(&mut i, flag)?),
+            "--isdir" => r.isdir = Some(value(&mut i, flag)?),
+            "--edit" => action = Some(RuleAction::Edit(value(&mut i, flag)?)),
+            "--run" => action = Some(RuleAction::Run(value(&mut i, flag)?)),
+            "--tool" => action = Some(RuleAction::Tool(value(&mut i, flag)?)),
+            "--client-do" => {
+                let verb = value(&mut i, flag)?;
+                let a = value(&mut i, flag)?;
+                action = Some(RuleAction::Client { verb, args: a });
+            }
+            "--to" => {
+                let t = value(&mut i, flag)?;
+                r.to = Some(match t.as_str() {
+                    "errors" => RunTo::Errors,
+                    "window" => RunTo::Window,
+                    _ => return Err(format!("--to {t}: errors or window")),
+                });
+            }
+            "--priority" => {
+                let v = value(&mut i, flag)?;
+                priority = v.parse().map_err(|_| format!("--priority {v}: not a number"))?;
+            }
+            "--mine" => mine = true,
+            _ => return Err(format!("rule add: {flag}: unknown flag")),
+        }
+        i += 1;
+    }
+    r.action = action.ok_or("rule add: one of --edit, --run, --client-do or --tool")?;
+    r.check()?;
+    Ok((r, priority, mine))
 }
 
 /// plan9port's `label`: name the window this terminal shows, through the
