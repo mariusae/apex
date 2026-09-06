@@ -42,6 +42,8 @@ fn binaries() -> PathBuf {
     let d = dir.join(ssh::local_target());
     std::fs::create_dir_all(&d).unwrap();
     std::fs::copy(env!("CARGO_BIN_EXE_apex"), d.join("apex")).unwrap();
+    // an rc to carry along (any executable will do for the install)
+    std::fs::write(d.join("rc"), "#!/bin/sh\nexec sh \"$@\"\n").unwrap();
     dir
 }
 
@@ -57,6 +59,7 @@ fn deploy_installs_and_updates_our_binary_on_the_host() {
     assert!(installed);
     let there = home.join(".apex/bin/apex");
     assert!(there.is_file());
+    assert!(home.join(".apex/bin/rc").is_file(), "rc carried along");
     // the same binary again: nothing to do
     let (_, installed) = ssh::deploy("box").unwrap();
     assert!(!installed);

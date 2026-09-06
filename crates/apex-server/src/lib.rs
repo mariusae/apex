@@ -464,7 +464,8 @@ impl Server {
                 (_, Some(b)) => ShellMode::Replace { dir: errdir, buffer: b, version: at.version, q0: at.q0, q1: at.q1 },
             };
             let stdin = if kind == b'<' { None } else { Some(input) };
-            self.spawn_shell(ctx, seq, rest.trim().to_string(), dir, stdin, mode);
+            let env = command_env(view, ctx);
+            self.spawn_shell(ctx, seq, rest.trim().to_string(), dir, stdin, mode, env);
             return Ok(None);
         }
         let mut words = text.split_whitespace();
@@ -509,9 +510,11 @@ impl Server {
                 let running = self.running.lock().unwrap().clone();
                 for r in running {
                     if names.iter().any(|n| *n == r.name) {
-                        // SAFETY: a plain signal to a child we started
+                        // the command runs in its own process group (rc and
+                        // what it started): end all of it
+                        // SAFETY: a plain signal to a group we made
                         unsafe {
-                            libc::kill(r.pid as i32, libc::SIGTERM);
+                            libc::kill(-(r.pid as i32), libc::SIGTERM);
                         }
                     }
                 }
@@ -530,21 +533,22 @@ impl Server {
             "Newweb" => return Err(format!("{cmd}: not implemented")),
             _ => {
                 // anything else is a shell command; output goes to +Errors
-                self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { dir: errdir });
+                let env = command_env(view, ctx);
+                self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { dir: errdir }, env);
                 return Ok(None);
             }
         }
         Ok(Some(props))
     }
 
-    fn spawn_shell(&mut self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode) {
+    fn spawn_shell(&mut self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode, env: Vec<(String, String)>) {
         let tx = self.tx.clone();
         let running = self.running.clone();
         let name = command_name(&cmd);
         // acme's waitthread: the name goes into the top row while it runs
         self.started.push(Proposal::CommandStart { name: name.clone() });
         std::thread::spawn(move || {
-            let (out, err, exit) = shell_tracked(&cmd, &dir, stdin, Some(running));
+            let (out, err, exit) = shell_in(&cmd, &dir, stdin, Some(running), &env);
             let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit });
         });
     }
@@ -672,6 +676,65 @@ pub fn shell(cmd: &str, dir: &Path, input: Option<String>) -> (String, String) {
     (out, err)
 }
 
+/// The shell commands run with, as acme's `runproc`: `$acmeshell` if
+/// set, else `rc` (ours, beside us, in `~/.apex/bin`, or on the PATH),
+/// else `sh`.
+pub fn command_shell() -> String {
+    if let Ok(s) = std::env::var("acmeshell") {
+        if !s.is_empty() {
+            return s;
+        }
+    }
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("rc"));
+            // a dev tree: target/rc-host/bin/rc beside target/release or target/debug/deps
+            for up in 1..=3 {
+                let mut d = dir.to_path_buf();
+                for _ in 0..up {
+                    d = match d.parent() {
+                        Some(p) => p.to_path_buf(),
+                        None => break,
+                    };
+                }
+                candidates.push(d.join("rc-host/bin/rc"));
+            }
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(PathBuf::from(home).join(".apex/bin/rc"));
+    }
+    if let Some(p) = candidates.into_iter().find(|p| p.is_file()) {
+        return p.to_string_lossy().to_string();
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        if std::env::split_paths(&path).any(|d| d.join("rc").is_file()) {
+            return "rc".into();
+        }
+    }
+    "sh".into()
+}
+
+/// What acme's `runproc` puts in a command's environment: `winid`, and
+/// for a window on a file, `%` and `samfile` naming it.
+pub fn command_env(view: &Node, ctx: ExecCtx) -> Vec<(String, String)> {
+    let mut env = Vec::new();
+    let w = match ctx {
+        ExecCtx::Window(w) => Some(w),
+        _ => view.seltext.and_then(|v| v.window()),
+    };
+    env.push(("winid".into(), w.map(|w| w.0.to_string()).unwrap_or_else(|| "0".into())));
+    if let Some(w) = w {
+        let name = view.window_name(w);
+        if !name.is_empty() {
+            env.push(("%".into(), name.clone()));
+            env.push(("samfile".into(), name));
+        }
+    }
+    env
+}
+
 /// acme's name for a command (`runproc`): the first word, without any
 /// directory, as it appears in the top row and as `Kill` knows it.
 pub fn command_name(cmd: &str) -> String {
@@ -683,9 +746,25 @@ pub fn command_name(cmd: &str) -> String {
 /// for `Kill` while it lives. The third result is how it ended: empty for
 /// a clean exit, else the status or signal, as acme's wait message.
 pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>) -> (String, String, String) {
-    let child = Command::new("sh")
+    shell_in(cmd, dir, input, running, &[])
+}
+
+/// `shell_tracked` with acme's environment for the command (`winid`,
+/// `%`, `samfile`), run by `rc -c` as acme's `runproc` does.
+pub fn shell_in(cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String) {
+    let mut command = Command::new(command_shell());
+    // acme's runproc clears these before setting its own
+    for k in ["acmeaddr", "winid", "%", "samfile"] {
+        command.env_remove(k);
+    }
+    for (k, v) in env {
+        command.env(k, v);
+    }
+    use std::os::unix::process::CommandExt;
+    let child = command
         .arg("-c")
         .arg(cmd)
+        .process_group(0) // its own group, so Kill reaches what the shell started
         .current_dir(dir)
         .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())

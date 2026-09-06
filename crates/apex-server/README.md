@@ -56,6 +56,13 @@ keystroke → ack 21 µs, attach +4.5 ms flat, terminal 195 µs.
 Run it against a live daemon with `apex-bench --socket PATH`. Note that
 macOS limits socket paths to 104 bytes.
 
+## Commands
+
+B2 commands and pipes run as acme's do: `rc -c command` (mariusae/rustrc,
+carried with the app; `sh` if there is none), in the window's directory,
+with `$winid`, `$%` and `$samfile` set. `Kill name` ends what the server
+started; the top row names running commands.
+
 ## Files
 
 `watch.rs` watches the parent directories of open files. A change to a

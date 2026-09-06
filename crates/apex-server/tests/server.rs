@@ -210,7 +210,7 @@ fn running_commands_are_named_in_the_top_row() {
     poll(&mut server, &mut log, &mut node);
     // acme's waitthread: the name, without directory, at the front
     assert!(top_text(&node).starts_with("sleep "), "{:?}", top_text(&node));
-    node.exec(&mut log, ExecCtx::Window(w), "/bin/false").unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "false").unwrap();
     poll(&mut server, &mut log, &mut node);
     assert!(top_text(&node).starts_with("false sleep "), "{:?}", top_text(&node));
     // false exits 1: its name leaves and the exit is reported
@@ -219,6 +219,29 @@ fn running_commands_are_named_in_the_top_row() {
     node.exec(&mut log, ExecCtx::Window(w), "Kill sleep").unwrap();
     poll(&mut server, &mut log, &mut node);
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !top_text(n).contains("sleep ")));
-    assert!(errors_text(&node).contains("sleep: exit signal 15"), "{:?}", errors_text(&node));
+    // under sh the sleep itself dies of the signal; under rc, rc reports
+    // the death and exits 1, as plan9port's does
+    assert!(errors_text(&node).contains("sleep: exit "), "{:?}", errors_text(&node));
     assert!(top_text(&node).starts_with("Newcol"), "{:?}", top_text(&node));
+}
+
+#[test]
+fn commands_run_in_rc_with_acmes_environment() {
+    let (mut log, mut node, col, mut server, mut rx) = session();
+    let w = node.new_window(&mut log, col, "/tmp/some/file.txt", "").unwrap();
+    // acme's runproc: $winid, $% and $samfile name the window and its file
+    node.exec(&mut log, ExecCtx::Window(w), "echo id=$winid file=$% same=$samfile").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors_text(n).contains("same=/tmp/some/file.txt")), "{}", errors_text(&node));
+    let e = errors_text(&node);
+    assert!(e.contains(&format!("id={}", w.0)) && e.contains("file=/tmp/some/file.txt"), "{e}");
+    // and the shell is rc: its syntax, not sh's
+    let shell = apex_server::command_shell();
+    if shell.ends_with("rc") {
+        node.exec(&mut log, ExecCtx::Window(w), "for(i in a b) echo rc-$i").unwrap();
+        poll(&mut server, &mut log, &mut node);
+        assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors_text(n).contains("rc-b")), "{}", errors_text(&node));
+    } else {
+        eprintln!("no rc built (target/rc-host/bin/rc): commands fell back to {shell}");
+    }
 }

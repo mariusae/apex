@@ -537,6 +537,15 @@ lands on the current window's provider by accident. "Rename this
 session…" renames it on its daemon, attachments staying attached
 (`RenameSession`; sessions have ids inside the daemon, names are labels).
 
+Commands run as plan9port acme runs them: `rc -c command`, with `$winid`
+set to the window's id (or the last selected window's), and `$%` and
+`$samfile` naming the window's file; `$acmeshell` names another shell.
+The `rc` is [mariusae/rustrc](https://github.com/mariusae/rustrc), a
+drop-in port of plan9port's; the app carries it beside `apex` for this
+machine and for each remote target, `deploy` puts both in `~/.apex/bin`
+on a destination, and the daemon puts that directory and its own on the
+session's PATH. Without an `rc`, commands fall back to `sh`.
+
 `apex attach dest/session` (or a URL) goes through `providers.rs`. A *provider* is an executable `apex-remote-<provider>` on the
 PATH, called as `apex-remote-<provider> DESTINATION COMMAND`: it runs COMMAND, a
 single shell command line, on the destination with stdio connected —

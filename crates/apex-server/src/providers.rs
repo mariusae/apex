@@ -143,30 +143,46 @@ pub fn local_target() -> String {
     format!("{os}-{arch}")
 }
 
-/// Our `apex` for `target`: in the app bundle under `Resources/remote/`,
-/// beside a dev binary under `remote/`, in a cross-build's target
-/// directory, or — for this machine's own kind — the `apex` beside us.
+/// What we carry for other machines: our command, and rc to run
+/// commands with.
+pub const CARRIED: [&str; 2] = ["apex", "rc"];
+
+/// Our `apex` for `target` (see [`bundled`]).
 pub fn bundled_binary(target: &str) -> Option<PathBuf> {
+    bundled(target, "apex")
+}
+
+/// Our `name` (`apex` or `rc`) for `target`: in the app bundle under
+/// `Resources/remote/`, beside a dev binary under `remote/`, in a
+/// cross-build's target directory, or — for this machine's own kind —
+/// beside us.
+pub fn bundled(target: &str, name: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?.to_path_buf();
     let mut candidates = Vec::new();
     if let Ok(d) = std::env::var("APEX_REMOTE_BINARIES") {
-        candidates.push(PathBuf::from(d).join(target).join("apex"));
+        candidates.push(PathBuf::from(d).join(target).join(name));
     }
-    candidates.push(dir.join("../Resources/remote").join(target).join("apex"));
-    candidates.push(dir.join("remote").join(target).join("apex"));
-    if let Some(triple) = match target {
+    candidates.push(dir.join("../Resources/remote").join(target).join(name));
+    candidates.push(dir.join("remote").join(target).join(name));
+    let triple = match target {
         "linux-amd64" => Some("x86_64-unknown-linux-musl"),
         "linux-arm64" => Some("aarch64-unknown-linux-musl"),
         _ => None,
-    } {
-        // a dev tree: target/<triple>/release/apex beside target/release
-        if let Some(t) = dir.parent() {
-            candidates.push(t.join(triple).join("release").join("apex"));
+    };
+    // a dev tree: target/<triple>/release/apex and target/rc-<target>/bin/rc
+    // beside target/release
+    if let Some(t) = dir.parent() {
+        if let Some(triple) = triple {
+            candidates.push(t.join(triple).join("release").join(name));
+        }
+        candidates.push(t.join(format!("rc-{target}")).join("bin").join(name));
+        if target == local_target() {
+            candidates.push(t.join("rc-host").join("bin").join(name));
         }
     }
     if target == local_target() {
-        candidates.push(dir.join("apex"));
+        candidates.push(dir.join(name));
     }
     candidates.into_iter().find(|p| p.is_file())
 }
@@ -179,27 +195,37 @@ fn sha256_of(path: &std::path::Path) -> io::Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).split_whitespace().next().unwrap_or("").to_string())
 }
 
-/// Make sure the destination has our `apex`, current with ours. Returns
-/// its path there, and whether it was (re)installed.
+/// Make sure the destination has our `apex` and `rc`, current with
+/// ours, in `~/.apex/bin`. Returns apex's path there, and whether
+/// anything was (re)installed. A missing `rc` for the target is not an
+/// error: commands there run with `sh` then.
 pub fn deploy(host: &str) -> io::Result<(String, bool)> {
     let target = remote_target(host)?;
-    let bin = bundled_binary(&target).ok_or_else(|| io::Error::other(format!("no apex for {target} in this build")))?;
-    let want = sha256_of(&bin)?;
-    let have = run(host, &format!("(sha256sum {REMOTE_BIN} 2>/dev/null || shasum -a 256 {REMOTE_BIN} 2>/dev/null) | cut -c1-64"), None)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if have == want {
-        return Ok((REMOTE_BIN.to_string(), false));
+    let mut installed = false;
+    for name in CARRIED {
+        let Some(bin) = bundled(&target, name) else {
+            if name == "apex" {
+                return Err(io::Error::other(format!("no apex for {target} in this build")));
+            }
+            continue;
+        };
+        let there = format!("$HOME/.apex/bin/{name}");
+        let want = sha256_of(&bin)?;
+        let have = run(host, &format!("(sha256sum {there} 2>/dev/null || shasum -a 256 {there} 2>/dev/null) | cut -c1-64"), None)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if have == want {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        std::fs::File::open(&bin)?.read_to_end(&mut bytes)?;
+        // written beside, then moved: a daemon still running the old one keeps it
+        let install = format!("mkdir -p $HOME/.apex/bin && cat > {there}.new && chmod +x {there}.new && mv {there}.new {there}");
+        run(host, &install, Some(&bytes))?;
+        installed = true;
     }
-    let mut bytes = Vec::new();
-    std::fs::File::open(&bin)?.read_to_end(&mut bytes)?;
-    // written beside, then moved: a daemon still running the old one keeps it
-    let install = format!(
-        "mkdir -p $HOME/.apex/bin && cat > {REMOTE_BIN}.new && chmod +x {REMOTE_BIN}.new && mv {REMOTE_BIN}.new {REMOTE_BIN}"
-    );
-    run(host, &install, Some(&bytes))?;
-    Ok((REMOTE_BIN.to_string(), true))
+    Ok((REMOTE_BIN.to_string(), installed))
 }
 
 /// The command whose stdin and stdout carry the frames: `apex attach

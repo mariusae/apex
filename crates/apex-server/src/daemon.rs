@@ -39,19 +39,24 @@ pub fn default_socket() -> std::path::PathBuf {
     std::path::PathBuf::from(base).join(format!("apex-{who}")).join("main.sock")
 }
 
-/// The session's commands (and its shells) find our own command:
-/// `~/.apex/bin`, where a remote install puts it, goes on the PATH.
+/// The session's commands (and its shells) find our own command and
+/// `rc`: `~/.apex/bin`, where a remote install puts them, and the
+/// directory we run from (the app bundle's) go on the PATH.
 pub fn put_apex_on_path() {
-    let Ok(home) = std::env::var("HOME") else { return };
-    let bin = std::path::Path::new(&home).join(".apex/bin");
-    if !bin.is_dir() {
-        return;
+    let mut dirs = Vec::new();
+    if let Ok(home) = std::env::var("HOME") {
+        dirs.push(std::path::Path::new(&home).join(".apex/bin"));
     }
-    let path = std::env::var("PATH").unwrap_or_default();
-    if std::env::split_paths(&path).any(|p| p == bin) {
-        return;
+    if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+        dirs.push(d);
     }
-    std::env::set_var("PATH", format!("{}:{path}", bin.display()));
+    let mut path = std::env::var("PATH").unwrap_or_default();
+    for d in dirs.into_iter().rev() {
+        if d.is_dir() && !std::env::split_paths(&path).any(|p| p == d) {
+            path = format!("{}:{path}", d.display());
+        }
+    }
+    std::env::set_var("PATH", path);
 }
 
 enum Event {

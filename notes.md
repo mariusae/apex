@@ -35,4 +35,12 @@ then let's see what it would take to implement 'rc'
 
 --
 
-include 'rc' in the distribution, and use it in place of 'sh' for running commands. https://github.com/mariusae/rustrc. as with plan9port acme, define $%, $samfile, (others?), when running commands -- regardless of whether it is through rc, or directly.
+include 'rc' in the distribution, and use it in place of 'sh' for running commands. https://github.com/mariusae/rustrc. as with plan9port acme, define $%, $samfile, (others?), when running commands -- regardless of whether it is through rc, or directly. also make sure that 'rc' is on the path on the server, like we do with 'apex'. so we'll need some way to upload both files on first bootstrap.
+
+--
+
+server version vs. client version. at least display.
+
+
+
+term: on keyboard input, scroll to the end automatically.

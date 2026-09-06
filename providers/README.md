@@ -17,8 +17,9 @@ and the destination's `$HOME`), so a tool that takes argv wraps it in
 `sh -c "$2"`.
 
 That is the whole configuration: there is no configuration file. With a
-provider in place, apex installs its own command on the destination and
-starts a daemon there when you attach, from the command line
+provider in place, apex installs its own command and `rc` (the shell
+commands run with) in `~/.apex/bin` on the destination and starts a daemon
+there when you attach, from the command line
 
 ```
 apex attach sprite:mybox/local
