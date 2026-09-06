@@ -15,7 +15,9 @@ pub enum ClientMsg {
     /// Attach to a session as a new attachment. A UI attachment takes the
     /// leases; a tool follows and proposes.
     Hello { session: String, name: String, kind: AttachmentKind },
-    NewSession { name: String },
+    /// Make a session (fine if it exists), with what its creator brings
+    /// for its init.
+    NewSession { name: String, init: Option<SessionInit> },
     ListSessions,
     /// Rename a session; attachments to it stay attached.
     RenameSession { from: String, to: String },
@@ -44,6 +46,18 @@ pub enum ClientMsg {
     Applied { id: u64, result: Result<Option<WindowId>, String> },
     /// Latency probe.
     Ping { t: u64 },
+    /// Set variables in the session's environment (what terminals and
+    /// commands get); the answer is the whole environment.
+    Env { set: Vec<(String, String)> },
+}
+
+/// What the creator of a session brings: its `~/.apex/init`, sourced on
+/// the host after the host's own (unless it is the same file), and its
+/// name, for `$apexclient`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInit {
+    pub client: String,
+    pub script: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -65,6 +79,8 @@ pub enum ServerMsg {
     ShardReady { shard: Shard },
     Error { text: String },
     Pong { t: u64 },
+    /// The session's environment, after an `Env`.
+    Env { vars: Vec<(String, String)> },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

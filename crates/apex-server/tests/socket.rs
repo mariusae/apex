@@ -15,7 +15,7 @@ fn daemon() -> PathBuf {
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!("apex-socket-test-{}-{n}.sock", std::process::id()));
     let p = path.clone();
-    std::thread::spawn(move || Daemon::run(&p, "main").unwrap());
+    std::thread::spawn(move || Daemon::run_with(&p, "main", None).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
     while !path.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(5));
@@ -180,7 +180,7 @@ fn sessions_are_listed_and_made() {
     let mut c = Remote::connect_as(&sock, "main", "t", AttachmentKind::Tool).unwrap();
     c.send(&ClientMsg::ListSessions);
     assert!(wait(&mut c, |r| r.link.sessions.as_deref() == Some(&["main".to_string()][..])));
-    c.send(&ClientMsg::NewSession { name: "two".into() });
+    c.send(&ClientMsg::NewSession { name: "two".into(), init: None });
     assert!(wait(&mut c, |r| r.link.sessions.as_ref().map(|s| s.len()) == Some(2)));
     let mut two = Remote::connect(&sock, "two", "ui").unwrap();
     let col = two.node.state.layout.cols[0].id;

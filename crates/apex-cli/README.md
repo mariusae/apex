@@ -19,6 +19,7 @@ apex term new | term send TERM TEXT | term read TERM
 apex plumb TEXT
 apex label TEXT
 apex awd [LABEL]
+apex env [KEY=VALUE ...]
 ```
 
 `WIN` is a window id or a unique substring of a window's name. `APEX_SOCKET`
@@ -56,3 +57,14 @@ In rc, `fn cd { builtin cd $1 && apex awd }` keeps the window's name (and
 so where relative names resolve) on the shell's directory; shells that
 report their directory with OSC 7 (`ESC ] 7 ; file://host/path BEL`) or
 set an xterm title get the same treatment.
+
+## Session init
+
+When a session is made, one `rc` on its host sources `~/.apex/init`
+there, then the creator's `~/.apex/init` (shipped in the request; skipped
+when it is the same file). It runs like any command, named `init` in the
+top row with output in `+Errors`, with `apexsession`, `APEX_SOCKET` and
+`apexclient` (the creator's host name) set, so `apex` in it configures
+the session being made: `apex new`, `apex exec Newcol`, and so on. Exports
+in it die with it; `apex env KEY=VALUE` sets what terminals and commands
+made from then on get, and `apex env` alone prints the environment.

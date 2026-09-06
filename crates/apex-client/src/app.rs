@@ -285,6 +285,7 @@ impl Acme {
                     "apex",
                     AttachmentKind::Ui,
                     Some(wake),
+                    apex_server::remote::local_init(),
                 )
             }
             Some(dest) => {
@@ -308,7 +309,7 @@ impl Acme {
         let closer = Box::new(move || {
             let _ = child.kill();
         });
-        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))
+        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake), apex_server::remote::local_init())
     }
 
     /// Attach through an arbitrary command (`--via`).

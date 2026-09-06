@@ -7,11 +7,17 @@ use std::time::{Duration, Instant};
 use apex_server::daemon::Daemon;
 
 fn daemon() -> PathBuf {
+    daemon_with(None)
+}
+
+/// A daemon on a thread, with `host_init` as the host's `~/.apex/init`
+/// (the real one stays out of the tests).
+fn daemon_with(host_init: Option<PathBuf>) -> PathBuf {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!("apex-cli-{}-{n}.sock", std::process::id()));
     let p = path.clone();
-    std::thread::spawn(move || Daemon::run(&p, "main").unwrap());
+    std::thread::spawn(move || Daemon::run_with(&p, "main", host_init).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
     while !path.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(5));
@@ -141,4 +147,69 @@ fn attach_stdio_bridges_the_socket() {
     assert!(ok(&sock, &["win", "list"]).contains("bridged"));
     drop(link);
     let _ = child.kill();
+}
+
+#[test]
+fn a_new_session_runs_the_hosts_init_then_its_creators() {
+    let dir = std::env::temp_dir().join(format!("apex-cli-init-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let apex = env!("CARGO_BIN_EXE_apex");
+    std::fs::write(dir.join("host.txt"), "host\n").unwrap();
+    std::fs::write(dir.join("client.txt"), "client\n").unwrap();
+    // the host's file: apex finds the session through its environment
+    let host_init = dir.join("init");
+    std::fs::write(&host_init, format!("{apex} new {}/host.txt\n{apex} env FROM=host ORDER=$apexsession\n", dir.display())).unwrap();
+    let sock = daemon_with(Some(host_init.clone()));
+    // the daemon's own session ran the host file (its creator's is the same file)
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ok(&sock, &["win", "list"]).contains("host.txt") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // what went wrong, if it did: every +Errors window
+    let errors = |sock: &PathBuf, session: &str| -> String {
+        ok(sock, &["--session", session, "win", "list"])
+            .lines()
+            .filter(|l| l.ends_with("+Errors"))
+            .map(|l| l.split('\t').nth(1).unwrap_or("").trim_start_matches('*').to_string())
+            .map(|w| format!("{w}:\n{}", ok(sock, &["--session", session, "text", "read", &w])))
+            .collect()
+    };
+    assert!(ok(&sock, &["win", "list"]).contains("host.txt"), "{}\n{}", ok(&sock, &["win", "list"]), errors(&sock, "main"));
+    assert!(ok(&sock, &["env"]).contains("FROM=host\n"), "{}", ok(&sock, &["env"]));
+    // a session made from elsewhere: the host's file, then the creator's script
+    let init = apex_server::proto::SessionInit { client: "tester".into(), script: format!("{apex} new {}/client.txt\n{apex} env FROM=client\n", dir.display()) };
+    apex_server::remote::new_session(&sock, "s2", Some(init)).unwrap();
+    let list = |sock: &PathBuf| ok(sock, &["--session", "s2", "win", "list"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !(list(&sock).contains("host.txt") && list(&sock).contains("client.txt")) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let l = list(&sock);
+    let id = |name: &str| l.lines().find(|x| x.ends_with(name)).and_then(|x| x.split('\t').next()).and_then(|n| n.parse::<u64>().ok()).unwrap_or_else(|| panic!("{name} in {l}"));
+    assert!(id("host.txt") < id("client.txt"), "host first:\n{l}");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ok(&sock, &["--session", "s2", "env"]).contains("FROM=client") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let env = ok(&sock, &["--session", "s2", "env"]);
+    assert!(env.contains("FROM=client\n"), "{env}");
+    assert!(env.contains("ORDER=s2\n"), "{env}");
+    assert!(env.contains("apexclient=tester\n"), "{env}");
+    // the init's name left the top row when it was done
+    assert!(!ok(&sock, &["--session", "s2", "text", "read", "+Errors"]).contains("exit"), "init exited cleanly");
+    // a terminal made now sees the environment
+    let t = ok(&sock, &["--session", "s2", "term", "new"]);
+    let t = t.trim().to_string();
+    ok(&sock, &["--session", "s2", "term", "send", &t, "echo v=$FROM\r"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut grid = String::new();
+    while Instant::now() < deadline {
+        grid = ok(&sock, &["--session", "s2", "term", "read", &t]);
+        if grid.contains("v=client") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(grid.contains("v=client"), "grid:\n{grid}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

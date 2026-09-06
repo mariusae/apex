@@ -15,7 +15,7 @@ use std::thread;
 use apex_core::log::MirrorHook;
 use apex_core::*;
 
-use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg};
+use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, SessionInit};
 use crate::{proposal, Proposal};
 
 /// A shared, buffered writer: the mirror hook and the owner both send.
@@ -56,6 +56,8 @@ pub struct Link {
     pub applied: HashMap<u64, Result<Option<WindowId>, String>>,
     /// The last session listing received.
     pub sessions: Option<Vec<String>>,
+    /// The session environment, after an `Env`.
+    pub env: Option<Vec<(String, String)>>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
     next_id: u64,
@@ -110,8 +112,9 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
+        init: Option<SessionInit>,
     ) -> io::Result<(Link, Log, Node)> {
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, true)
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, Some(init))
     }
 
     /// Attach over any byte stream pair: a child's stdout and stdin, say,
@@ -125,7 +128,7 @@ impl Link {
         kind: AttachmentKind,
         wake: Option<Wake>,
     ) -> io::Result<(Link, Log, Node)> {
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, false)
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -137,13 +140,13 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
-        create: bool,
+        create: Option<Option<SessionInit>>,
     ) -> io::Result<(Link, Log, Node)> {
         let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
         spawn_reader(reader, tx, wake);
-        if create {
-            out.send(&ClientMsg::NewSession { name: session.to_string() })?;
+        if let Some(init) = create {
+            out.send(&ClientMsg::NewSession { name: session.to_string(), init })?;
         }
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind })?;
         let (attachment, snapshot) = loop {
@@ -162,7 +165,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -241,6 +244,9 @@ impl Link {
             ServerMsg::Sessions { names } => {
                 self.sessions = Some(names);
             }
+            ServerMsg::Env { vars } => {
+                self.env = Some(vars);
+            }
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
             }
@@ -294,10 +300,18 @@ pub fn list_sessions(path: &Path) -> io::Result<Vec<String>> {
     }
 }
 
-/// Create a session on a daemon; fine if it already exists.
-pub fn new_session(path: &Path, name: &str) -> io::Result<()> {
+/// This machine's `~/.apex/init` and name, for a session made from here.
+pub fn local_init() -> Option<SessionInit> {
+    let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
+    let script = std::fs::read_to_string(Path::new(&home).join(".apex/init")).ok()?;
+    Some(SessionInit { client: crate::term::sysname(), script })
+}
+
+/// Create a session on a daemon, with its creator's init; fine if it
+/// already exists.
+pub fn new_session(path: &Path, name: &str, init: Option<SessionInit>) -> io::Result<()> {
     let mut s = UnixStream::connect(path)?;
-    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string() })?;
+    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string(), init })?;
     let mut r = BufReader::new(s);
     loop {
         match read_frame::<_, ServerMsg>(&mut r)? {
@@ -382,6 +396,28 @@ impl Remote {
 
     pub fn attachment(&self) -> AttachmentId {
         self.link.attachment
+    }
+
+    /// Set session variables (none: just ask) and block for the
+    /// environment that results.
+    pub fn env(&mut self, set: Vec<(String, String)>, timeout: std::time::Duration) -> Result<Vec<(String, String)>, String> {
+        self.link.env = None;
+        self.send(&ClientMsg::Env { set });
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(v) = self.link.env.take() {
+                return Ok(v);
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return Err("timed out waiting for the server".into());
+            }
+            match self.step(left) {
+                Ok(_) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(_) => return Err("connection closed".into()),
+            }
+        }
     }
 
     pub fn send(&self, m: &ClientMsg) {

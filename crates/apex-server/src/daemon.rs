@@ -19,7 +19,7 @@ use std::thread;
 
 use apex_core::*;
 
-use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg};
+use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, SessionInit};
 use crate::{proposal, Proposal, Server, ServerEvent};
 
 /// Where `apexd` listens by default: `$TMPDIR/apex-$USER/main.sock`,
@@ -97,6 +97,8 @@ struct Pending {
 
 pub struct Daemon {
     socket: PathBuf,
+    /// The host's init file for new sessions (`~/.apex/init`).
+    host_init: Option<PathBuf>,
     sessions: BTreeMap<String, Session>,
     next_session: u64,
     conns: HashMap<u64, Conn>,
@@ -111,6 +113,12 @@ impl Daemon {
     /// ends, with one session `session` to begin with. Returns only on a
     /// listener error.
     pub fn run(path: &Path, session: &str) -> io::Result<()> {
+        let host_init = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".apex/init"));
+        Self::run_with(path, session, host_init)
+    }
+
+    /// `run`, with the host's init file given (tests keep it out of `$HOME`).
+    pub fn run_with(path: &Path, session: &str, host_init: Option<PathBuf>) -> io::Result<()> {
         put_apex_on_path();
         let _ = std::fs::remove_file(path);
         let listener = UnixListener::bind(path)?;
@@ -125,8 +133,10 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
-        d.new_session(session);
+        let mut d = Daemon { socket: path.to_path_buf(), host_init, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, rx, tx };
+        // the daemon's own session is made from this host: its file is
+        // both the host's and the creator's, so it runs once
+        d.new_session(session, None);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
             match ev {
@@ -149,7 +159,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn new_session(&mut self, name: &str) -> bool {
+    fn new_session(&mut self, name: &str, init: Option<SessionInit>) -> bool {
         if self.sessions.contains_key(name) {
             return false;
         }
@@ -157,6 +167,9 @@ impl Daemon {
         let (mut server, mut srx) = Server::new(&log);
         // shells and commands in this session know it, and the daemon
         server.env = vec![("apexsession".into(), name.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
+        if let Some(i) = &init {
+            server.env.push(("apexclient".into(), i.client.clone()));
+        }
         let sid = self.next_session;
         self.next_session += 1;
         {
@@ -179,6 +192,10 @@ impl Daemon {
         // tool can work before any UI attaches
         view.init_session(&mut log).expect("fresh session");
         self.sessions.insert(name.to_string(), Session { id: sid, log, server, view, leader: None });
+        // its init runs now, as a command of the session
+        let s = self.sessions.get_mut(name).unwrap();
+        s.server.run_init(&s.view, self.host_init.as_deref(), init.as_ref());
+        self.after(name, Vec::new());
         true
     }
 
@@ -269,12 +286,12 @@ impl Daemon {
     fn handle(&mut self, id: u64, m: ClientMsg) {
         match m {
             ClientMsg::Hello { session, name, kind } => self.hello(id, session, name, kind),
-            ClientMsg::NewSession { name } => {
+            ClientMsg::NewSession { name, init } => {
                 // making a session that exists is fine: it is there
                 if name.is_empty() || name.contains('/') {
                     self.send(id, ServerMsg::Error { text: format!("bad session name {name:?}") });
                 } else {
-                    self.new_session(&name);
+                    self.new_session(&name, init);
                     self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
                 }
             }
@@ -395,6 +412,13 @@ impl Daemon {
             }
             ClientMsg::TermResize { term, cols, rows } => s.server.term_resize(&mut s.log, term, cols, rows),
             ClientMsg::TermScroll { term, delta } => s.server.term_scroll(&mut s.log, term, delta as isize),
+            ClientMsg::Env { set } => {
+                for (k, v) in &set {
+                    s.server.set_env(k, v);
+                }
+                let vars = s.server.env.clone();
+                self.send(id, ServerMsg::Env { vars });
+            }
             ClientMsg::OpenFile { col, ctx, name: file } => {
                 let dir = s.server.dir_of(&s.view, ctx);
                 let from = match ctx {

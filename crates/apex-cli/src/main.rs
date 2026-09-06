@@ -19,6 +19,7 @@
 //! apex events [--shard S]                              entries as JSON lines, forever
 //! apex term new | term send TERM TEXT | term read TERM
 //! apex plumb TEXT
+//! apex env [KEY=VALUE ...]                              set the session's environment (none: show it)
 //! apex label TEXT                                       name this terminal's window (plan9port's label)
 //! apex awd [LABEL]                                      name it pwd/-LABEL (plan9port's awd)
 //! ```
@@ -85,6 +86,7 @@ fn main() {
         "term" => term(&socket, &session, rest),
         "plumb" => plumb(&socket, &session, rest),
         "label" => label(&rest.join(" ")),
+        "env" => env_cmd(&socket, &session, rest),
         "awd" => awd(rest),
         _ => usage(),
     };
@@ -95,7 +97,7 @@ fn main() {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|label|awd ...");
+    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|label|awd|env ...");
     std::process::exit(2);
 }
 
@@ -178,7 +180,7 @@ fn rename_session(socket: &Path, session: &str, args: &[String]) -> R {
 fn new_session(socket: &Path, session: &str, args: &[String]) -> R {
     let name = args.first().ok_or("new-session NAME")?;
     ensure_server(socket, session)?;
-    apex_server::remote::new_session(socket, name).map_err(|e| e.to_string())
+    apex_server::remote::new_session(socket, name, apex_server::remote::local_init()).map_err(|e| e.to_string())
 }
 
 // ---- attach -----------------------------------------------------------------------
@@ -499,4 +501,22 @@ fn awd(args: &[String]) -> R {
     };
     let p = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
     label(&format!("{p}{}-{sys}", if p.ends_with('/') { "" } else { "/" }))
+}
+
+/// The session's environment: what its terminals and commands get beyond
+/// the daemon's own. `KEY=VALUE` sets; nothing prints it.
+fn env_cmd(socket: &Path, session: &str, args: &[String]) -> R {
+    let mut c = tool(socket, session)?;
+    let set: Vec<(String, String)> = args
+        .iter()
+        .map(|a| a.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).ok_or_else(|| format!("env: {a}: not KEY=VALUE")))
+        .collect::<Result<_, _>>()?;
+    let show = set.is_empty();
+    let vars = c.env(set, TIMEOUT)?;
+    if show {
+        for (k, v) in vars {
+            println!("{k}={v}");
+        }
+    }
+    Ok(())
 }

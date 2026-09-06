@@ -572,6 +572,16 @@ scratch HOME.
 
 ---
 
+*As built, session init:* a new session runs one `rc` on its host that
+sources the host's `~/.apex/init`, then the creator's (shipped in
+`NewSession` as `SessionInit{client, script}`, skipped when identical),
+as a command named `init` with output in `+Errors`, and `apexsession`,
+`APEX_SOCKET`, `apexclient` set. The host part comes first so it can
+define what the creator's part uses. `apex env KEY=VALUE` (`ClientMsg::Env`)
+sets the session environment the server gives terminals and commands
+from then on; the creator's script runs on the host, never on the client,
+so no `apex` call crosses the link.
+
 ## 8. Extensibility
 
 acme's tools port directly because the event model is the same, generalised:

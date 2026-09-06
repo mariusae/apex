@@ -38,7 +38,7 @@ pub enum ServerEvent {
     /// A shell command finished: `(ctx, exec seq, stdout, stderr, what to do
     /// with stdout)`, its name as shown in the top row, and how it ended
     /// (acme's wait message: empty for a clean exit).
-    Shell { ctx: ExecCtx, exec: Seq, out: String, err: String, mode: ShellMode, name: String, exit: String },
+    Shell { ctx: ExecCtx, exec: Option<Seq>, out: String, err: String, mode: ShellMode, name: String, exit: String },
     /// A watched directory reported this path.
     File(PathBuf),
 }
@@ -415,7 +415,9 @@ impl Server {
                 if !err.is_empty() {
                     props.push(Proposal::Errors { dir, text: err });
                 }
-                props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Done });
+                if let Some(exec) = exec {
+                    props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Done });
+                }
             }
         }
         props
@@ -596,15 +598,55 @@ impl Server {
     }
 
     fn spawn_shell(&mut self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode, env: Vec<(String, String)>) {
+        let name = command_name(&cmd);
+        self.spawn_shell_as(name, ctx, Some(exec), cmd, dir, stdin, mode, env);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_shell_as(&mut self, name: String, ctx: ExecCtx, exec: Option<Seq>, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode, env: Vec<(String, String)>) {
         let tx = self.tx.clone();
         let running = self.running.clone();
-        let name = command_name(&cmd);
         // acme's waitthread: the name goes into the top row while it runs
         self.started.push(Proposal::CommandStart { name: name.clone() });
         std::thread::spawn(move || {
-            let (out, err, exit) = shell_in(&cmd, &dir, stdin, Some(running), &env);
+            let (out, err, exit) = shell_in_as(&name, &cmd, &dir, stdin, Some(running), &env);
             let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit });
         });
+    }
+
+    /// Set a variable in the session's environment: what terminals and
+    /// commands started from now on get.
+    pub fn set_env(&mut self, k: &str, v: &str) {
+        match self.env.iter_mut().find(|(n, _)| n == k) {
+            Some(e) => e.1 = v.to_string(),
+            None => self.env.push((k.to_string(), v.to_string())),
+        }
+    }
+
+    /// A new session's init: the host's file (`host_init`, normally
+    /// `~/.apex/init`) sourced, then what the creator brought, unless it
+    /// is that same file; one shell reading both, run like any command,
+    /// named `init` in the top row, its output in `+Errors`.
+    pub fn run_init(&mut self, view: &Node, host_init: Option<&Path>, init: Option<&proto::SessionInit>) {
+        let host_text = host_init.and_then(|p| std::fs::read_to_string(p).ok());
+        let mut script = String::new();
+        if let (Some(p), Some(_)) = (host_init, &host_text) {
+            script.push_str(&format!(". {}\n", shell_quote(&p.display().to_string())));
+        }
+        if let Some(i) = init {
+            if !i.script.trim().is_empty() && host_text.as_deref() != Some(i.script.as_str()) {
+                script.push_str(&i.script);
+                if !script.ends_with('\n') {
+                    script.push('\n');
+                }
+            }
+        }
+        if script.is_empty() {
+            return;
+        }
+        let dir = self.cwd.clone();
+        let env = self.command_env(view, ExecCtx::Top);
+        self.spawn_shell_as("init".into(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
     }
 
     /// acme's `textcomplete`, the file-system half: what to insert after
@@ -815,6 +857,16 @@ pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Opti
 /// `shell_tracked` with acme's environment for the command (`winid`,
 /// `%`, `samfile`), run by `rc -c` as acme's `runproc` does.
 pub fn shell_in(cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String) {
+    shell_in_as(&command_name(cmd), cmd, dir, input, running, env)
+}
+
+/// A single-quoted word for rc or sh.
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
+/// `shell_in`, the command known (to `Kill` and the top row) as `name`.
+pub fn shell_in_as(name: &str, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String) {
     let mut command = Command::new(command_shell());
     // acme's runproc clears these before setting its own
     for k in ["acmeaddr", "winid", "%", "samfile"] {
@@ -838,9 +890,8 @@ pub fn shell_in(cmd: &str, dir: &Path, input: Option<String>, running: Option<st
         Err(e) => return (String::new(), format!("{cmd}: {e}\n"), String::new()),
     };
     let pid = child.id();
-    let name = command_name(cmd);
     if let Some(r) = &running {
-        r.lock().unwrap().push(Running { pid, name });
+        r.lock().unwrap().push(Running { pid, name: name.to_string() });
     }
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         std::thread::spawn(move || {
