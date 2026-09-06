@@ -35,6 +35,13 @@ fn fake_host() -> (PathBuf, PathBuf, PathBuf) {
     (script, home, socket)
 }
 
+/// Stop the daemon a test started on its scratch host (by its socket path,
+/// which is this test's alone).
+fn stop_host(socket: &PathBuf) {
+    let _ = std::process::Command::new("pkill").arg("-f").arg("--").arg(format!("--socket {} ", socket.display())).status();
+    let _ = std::fs::remove_file(socket);
+}
+
 /// Our binaries "for other machines": this machine's kind, which is the
 /// apex built for these tests.
 fn binaries() -> PathBuf {
@@ -102,6 +109,7 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     assert!(again.node.state.windows.keys().any(|w| again.node.window_name(*w) == "remote-notes"));
     drop(again);
     drop(c);
+    stop_host(&sock);
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_file(&sock);
 }
@@ -132,6 +140,7 @@ fn a_provider_is_a_command_named_apex_provider_on_the_path() {
     let c = Remote::via(&ssh::attach_command("sprite:box", "default").unwrap(), "default", "over-sprite", AttachmentKind::Ui).unwrap();
     assert_eq!(c.node.state.layout.cols.len(), 1);
     drop(c);
+    stop_host(&sock);
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::remove_file(&sock);
 }
