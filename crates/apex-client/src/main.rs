@@ -52,7 +52,7 @@ impl Render for Acme {
             .flex()
             .flex_col()
             .track_focus(&self.focus)
-            .when(self.dragging_box(), |d| d.cursor_crosshair())
+            .when(self.dragging_box(), |d| d.cursor(cursor::BOX_CURSOR))
             .on_action(cx.listener(|this, _: &shell::Undo, window, cx| this.menu_edit("undo", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Redo, window, cx| this.menu_edit("redo", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Cut, window, cx| this.menu_edit("cut", window, cx)))
@@ -81,7 +81,8 @@ impl Render for Acme {
         let at = |x: i32, y: i32, w: i32, h: i32, el: gpui::AnyElement| {
             div().absolute().left(px(x as f32)).top(px(y as f32)).w(px(w.max(0) as f32)).h(px(h.max(0) as f32)).overflow_hidden().child(el)
         };
-        let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden();
+        // acme's pointer over acme's part of the window only
+        let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden().cursor(cursor::BIG_ARROW);
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
         for col in &l.cols {
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));

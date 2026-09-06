@@ -6,10 +6,11 @@
 //! resolution.
 //!
 //! gpui chooses among the system cursors by name, so the two we need are
-//! put in place by replacing `NSCursor`'s `arrowCursor` and
-//! `crosshairCursor` class methods with ones returning ours: the default
-//! style becomes the big arrow, and asking for a crosshair while dragging
-//! gives the box.
+//! put behind two styles nothing else here asks for: `NSCursor`'s
+//! `dragLinkCursor` class method returns the big arrow and
+//! `dragCopyCursor` the box. The acme area asks for the first (the
+//! second while a layout box is held); the title bar, the session
+//! selector and the menus keep the system arrow.
 
 use std::sync::Once;
 
@@ -183,15 +184,19 @@ extern "C" fn box_cursor(_cls: &Class, _sel: Sel) -> Id {
     unsafe { BOXC }
 }
 
-/// Make the big arrow the default pointer and the box the crosshair, for
-/// the life of the process.
+/// The style the acme area asks for: the big arrow.
+pub const BIG_ARROW: gpui::CursorStyle = gpui::CursorStyle::DragLink;
+/// The style while a layout box is held: the box.
+pub const BOX_CURSOR: gpui::CursorStyle = gpui::CursorStyle::DragCopy;
+
+/// Put the two cursors behind their styles, for the life of the process.
 pub fn install() {
     INSTALL.call_once(|| unsafe {
         ARROW = make(&BIGARROW, &BIGARROW2);
         BOXC = make(&BOX, &BOX2);
         let cls: *const Class = class!(NSCursor);
-        let arrow_m = class_getClassMethod(cls, sel!(arrowCursor));
-        let cross_m = class_getClassMethod(cls, sel!(crosshairCursor));
+        let arrow_m = class_getClassMethod(cls, sel!(dragLinkCursor));
+        let cross_m = class_getClassMethod(cls, sel!(dragCopyCursor));
         if !arrow_m.is_null() {
             let imp: Imp = std::mem::transmute(arrow_cursor as extern "C" fn(&Class, Sel) -> Id);
             method_setImplementation(arrow_m, imp);
@@ -200,7 +205,5 @@ pub fn install() {
             let imp: Imp = std::mem::transmute(box_cursor as extern "C" fn(&Class, Sel) -> Id);
             method_setImplementation(cross_m, imp);
         }
-        // whatever is showing now is the old arrow
-        let _: () = msg_send![ARROW, set];
     });
 }
