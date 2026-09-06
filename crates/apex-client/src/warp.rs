@@ -14,8 +14,6 @@ struct CGPoint {
 extern "C" {
     fn CGWarpMouseCursorPosition(p: CGPoint) -> i32;
     fn CGAssociateMouseAndMouseCursorPosition(connected: bool) -> i32;
-    fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
-    fn CGEventGetLocation(event: *mut std::ffi::c_void) -> CGPoint;
     fn CGEventSourceButtonState(state: i32, button: u32) -> bool;
 }
 
@@ -24,11 +22,6 @@ pub fn button_down() -> bool {
     // kCGEventSourceStateCombinedSessionState = 0; left, right, centre
     unsafe { (0..3).any(|b| CGEventSourceButtonState(0, b)) }
 }
-#[link(name = "CoreFoundation", kind = "framework")]
-extern "C" {
-    fn CFRelease(cf: *mut std::ffi::c_void);
-}
-
 /// Put the pointer at `p`, a point in this window's coordinates.
 pub fn move_to(window: &Window, p: Point<Pixels>) {
     let b = window.bounds();
