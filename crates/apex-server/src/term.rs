@@ -61,18 +61,20 @@ pub fn labelled(text: &str, name: &str) -> String {
 }
 
 /// The directory an OSC 7 report names: a `file://host/path` URL
-/// (percent-encoded), or a plain path.
+/// (percent-encoded), or a plain path. Some shells report `~` for the
+/// home directory; that becomes `$HOME`.
 pub fn cwd_path(s: &str) -> Option<PathBuf> {
     let path = match s.strip_prefix("file://") {
         Some(rest) => &rest[rest.find('/')?..],
-        None if s.starts_with('/') => s,
+        None if s.starts_with('/') || s.starts_with('~') => s,
         None => return None,
     };
+    // percent-decode
     let mut out = Vec::with_capacity(path.len());
     let b = path.as_bytes();
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() + 0 && i + 2 <= b.len() - 1 {
+        if b[i] == b'%' && i + 2 < b.len() {
             if let Ok(v) = u8::from_str_radix(&path[i + 1..i + 3], 16) {
                 out.push(v);
                 i += 3;
@@ -82,7 +84,34 @@ pub fn cwd_path(s: &str) -> Option<PathBuf> {
         out.push(b[i]);
         i += 1;
     }
-    Some(PathBuf::from(String::from_utf8_lossy(&out).to_string()))
+    let path = String::from_utf8_lossy(&out).to_string();
+    // `~` and `~/…` (also after the URL's slash) are the home directory
+    let home = || std::env::var("HOME").ok().filter(|h| !h.is_empty());
+    let tilde = path.strip_prefix('/').unwrap_or(&path);
+    if tilde == "~" {
+        return home().map(PathBuf::from);
+    }
+    if let Some(rest) = tilde.strip_prefix("~/") {
+        return home().map(|h| PathBuf::from(h).join(rest));
+    }
+    Some(PathBuf::from(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cwd_reports_become_paths() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(cwd_path("file://host/a/b%20c").unwrap(), PathBuf::from("/a/b c"));
+        assert_eq!(cwd_path("/a/b").unwrap(), PathBuf::from("/a/b"));
+        assert_eq!(cwd_path("~").unwrap(), PathBuf::from(&home));
+        assert_eq!(cwd_path("~/src").unwrap(), PathBuf::from(&home).join("src"));
+        assert_eq!(cwd_path("file://host/~/src").unwrap(), PathBuf::from(&home).join("src"));
+        assert_eq!(cwd_path("file://host/%7E/x").unwrap(), PathBuf::from(&home).join("x"));
+        assert!(cwd_path("nothing").is_none());
+    }
 }
 
 /// Cell flags in `Cell::flags`.
