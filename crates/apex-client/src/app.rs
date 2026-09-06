@@ -1281,21 +1281,16 @@ impl Acme {
     }
 
     /// The window became active or inactive (cmd-` and friends): coming
-    /// back by the keyboard, put the pointer where it last was here. A
-    /// click into the window already put it somewhere; leave that.
+    /// back, put the pointer where it last was here, wherever it is now.
+    /// Unless a mouse button is down: then a click into the window is
+    /// what activated it, and the pointer stays where the click was.
     pub fn window_activated(&mut self, active: bool, window: &mut Window) {
-        if !active || self.last_mouse == Point::default() {
+        if !active || self.last_mouse == Point::default() || crate::warp::button_down() {
             return;
         }
-        let inside = crate::warp::position_in(window).is_some_and(|p| {
-            let s = window.viewport_size();
-            p.x >= px(0.) && p.y >= px(0.) && p.x < s.width && p.y < s.height
-        });
-        if !inside {
-            let at = self.last_mouse;
-            crate::warp::move_to(window, at);
-            self.pointer = Some(at);
-        }
+        let at = self.last_mouse;
+        crate::warp::move_to(window, at);
+        self.pointer = Some(at);
     }
 
     /// What the Edit menu (and its shortcuts, which arrive as actions
