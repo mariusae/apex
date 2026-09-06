@@ -1077,6 +1077,15 @@ impl Acme {
 
     // ---- execute (B2) and look (B3) ---------------------------------------------
 
+    /// A line for the first column's `+Errors`: where the app tells the
+    /// user things, since acme has no dialogs.
+    pub fn notice(&mut self, msg: &str) {
+        if let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) {
+            let _ = self.node.errors(&mut self.log, col, msg);
+        }
+        self.after();
+    }
+
     fn report(&mut self, ctx: ExecCtx, msg: &str) {
         if let Ok(col) = apex_server::column_of(&self.node, ctx) {
             let _ = self.node.errors(&mut self.log, col, &format!("{msg}\n"));

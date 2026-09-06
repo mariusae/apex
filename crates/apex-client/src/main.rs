@@ -150,6 +150,19 @@ fn main() {
         });
         cx.on_action(|_: &shell::HideApp, cx| cx.hide());
         cx.on_action(|_: &shell::About, _| eprintln!("apex: acme, remade — https://github.com/apex"));
+        cx.on_action(|_: &shell::InstallCli, cx| {
+            let msg = match shell::install_cli() {
+                Ok(where_) => format!("apex command installed: {where_}\n"),
+                Err(e) => format!("apex command not installed: {e}\n"),
+            };
+            eprint!("{msg}");
+            if let Some(h) = cx.active_window().and_then(|w| w.downcast::<Acme>()) {
+                let _ = h.update(cx, |acme, _, cx| {
+                    acme.notice(&msg);
+                    cx.notify();
+                });
+            }
+        });
         {
             let socket = socket.clone();
             cx.on_action(move |_: &shell::NewWindow, cx| {

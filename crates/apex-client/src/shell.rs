@@ -17,7 +17,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, NewWindow, CloseWindow, Sessions, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewWindow, CloseWindow, Sessions, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -31,6 +31,8 @@ pub fn menus() -> Vec<Menu> {
             name: "Apex".into(),
             items: vec![
                 MenuItem::action("About Apex", About),
+                MenuItem::separator(),
+                MenuItem::action("Install apex Command…", InstallCli),
                 MenuItem::separator(),
                 MenuItem::action("Hide Apex", HideApp),
                 MenuItem::separator(),
@@ -180,6 +182,99 @@ pub fn ensure_daemon(socket: &Path) -> std::io::Result<()> {
         std::thread::sleep(Duration::from_millis(20));
     }
     Err(std::io::Error::other("the daemon did not start"))
+}
+
+// ---- the apex command ---------------------------------------------------------------
+
+/// Where the `apex` command gets linked.
+pub const CLI_LINK: &str = "/usr/local/bin/apex";
+
+/// The `apex` command this app carries: the one beside the executable
+/// (in the bundle, `Contents/MacOS/apex`; in a dev tree, `target/release/apex`).
+pub fn bundled_cli() -> std::io::Result<PathBuf> {
+    let p = std::env::current_exe()?.with_file_name("apex");
+    if p.is_file() {
+        Ok(p)
+    } else {
+        Err(std::io::Error::new(std::io::ErrorKind::NotFound, format!("no apex command at {}", p.display())))
+    }
+}
+
+/// Put a symlink at `link` pointing at `target`. A symlink, not a copy,
+/// so rebuilding the app updates the command. Refuses to replace a real
+/// file; replaces a symlink.
+pub fn link_cli(target: &Path, link: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(link) {
+        Ok(m) if m.file_type().is_symlink() => std::fs::remove_file(link)?,
+        Ok(_) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, format!("{} exists and is not a symlink", link.display())));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    if let Some(d) = link.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    std::os::unix::fs::symlink(target, link)
+}
+
+/// Install the command, asking for administrator rights through the
+/// system dialog when `/usr/local/bin` is not ours to write.
+pub fn install_cli() -> Result<String, String> {
+    let target = bundled_cli().map_err(|e| e.to_string())?;
+    let link = Path::new(CLI_LINK);
+    match link_cli(&target, link) {
+        Ok(()) => return Ok(format!("{} → {}", link.display(), target.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {}
+        Err(e) => return Err(format!("{}: {e}", link.display())),
+    }
+    let dir = link.parent().unwrap();
+    let script = format!(
+        "do shell script \"mkdir -p '{}' && ln -sfn '{}' '{}'\" with administrator privileges",
+        dir.display(),
+        target.display(),
+        link.display()
+    );
+    let out = Command::new("osascript").arg("-e").arg(script).output().map_err(|e| format!("osascript: {e}"))?;
+    if out.status.success() {
+        Ok(format!("{} → {}", link.display(), target.display()))
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        if err.contains("-128") {
+            Err("cancelled".into())
+        } else {
+            Err(format!("could not link {}: {}", link.display(), err.trim()))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn links_and_relinks_but_never_clobbers_a_file() {
+        let dir = std::env::temp_dir().join(format!("apex-cli-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let target_a = dir.join("a/apex");
+        let target_b = dir.join("b/apex");
+        std::fs::create_dir_all(target_a.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(target_b.parent().unwrap()).unwrap();
+        std::fs::write(&target_a, "a").unwrap();
+        std::fs::write(&target_b, "b").unwrap();
+        let link = dir.join("bin/apex");
+        link_cli(&target_a, &link).unwrap();
+        assert_eq!(std::fs::read_link(&link).unwrap(), target_a);
+        // a rebuilt app: the link moves
+        link_cli(&target_b, &link).unwrap();
+        assert_eq!(std::fs::read_link(&link).unwrap(), target_b);
+        // a real file in the way is left alone
+        let file = dir.join("bin/real");
+        std::fs::write(&file, "keep").unwrap();
+        assert!(link_cli(&target_a, &file).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 // ---- the session selector -----------------------------------------------------------
