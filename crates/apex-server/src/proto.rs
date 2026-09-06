@@ -31,6 +31,8 @@ pub enum ClientMsg {
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
     /// B3: a file, or else a search.
     Plumb { ctx: ExecCtx, text: String },
+    /// acme's ^F: complete the path fragment `prefix` typed at `at`.
+    Complete { view: ViewId, ctx: ExecCtx, at: usize, prefix: String },
     /// A tool asks the leader to do something; `id` comes back in `Applied`.
     Propose { id: u64, proposal: Proposal },
     /// The leader's answer to a `Propose` it was handed (id 0: nobody waits).

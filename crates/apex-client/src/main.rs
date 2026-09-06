@@ -30,6 +30,10 @@ use text_element::TextElement;
 
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.close_requested {
+            window.remove_window(); // Exit: detach, the session stays
+            return div().into_any_element();
+        }
         // a pending mouse warp uses the layouts of the frame just drawn
         self.resolve_warp(window, cx);
         self.sync();
@@ -100,8 +104,8 @@ impl Render for Acme {
         }
         let root = root.child(area);
         match self.selector_panel(cx) {
-            Some(panel) => root.child(panel),
-            None => root,
+            Some(panel) => root.child(panel).into_any_element(),
+            None => root.into_any_element(),
         }
     }
 }

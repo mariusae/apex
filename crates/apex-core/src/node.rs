@@ -18,7 +18,7 @@ use crate::tiling::{self, Rect, Warp};
 /// are kept up to date by [`Node::update_tags`], as acme's `winsettag`.
 pub const WIN_TAG_SUFFIX: &str = " Del Snarf | Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
-pub const TOP_TAG: &str = "Newcol Newterm Kill Putall Dump Exit ";
+pub const TOP_TAG: &str = "Newcol Newterm Kill Putall Exit ";
 pub const ERRORS: &str = "+Errors";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -865,14 +865,14 @@ impl Node {
         if self.warned.get(&w) == Some(&version) {
             return Ok(true);
         }
-        let col = self.column_of(w)?;
+        let dir = self.error_dir(Some(w));
         if !name.is_empty() {
-            self.errors(log, col, &format!("{name} modified\n"))?;
+            self.errors(log, dir.as_deref(), &format!("{name} modified\n"))?;
         } else {
             if len < 100 {
                 return Ok(true); // don't whine if it's too small
             }
-            self.errors(log, col, "unnamed file modified\n")?;
+            self.errors(log, dir.as_deref(), "unnamed file modified\n")?;
         }
         self.warned.insert(w, version);
         Ok(false)
@@ -898,7 +898,8 @@ impl Node {
             let tag = win.tag;
             let name = self.window_name(w);
             let mut new = format!("{name} Del Snarf");
-            if let Some(b) = win.body_buffer() {
+            let filemenu = !name.ends_with("+Errors");
+            if let (Some(b), true) = (win.body_buffer(), filemenu) {
                 let buf = self.state.buffer(b)?;
                 if !buf.undo.is_empty() {
                     new.push_str(" Undo");
@@ -965,26 +966,36 @@ impl Node {
     }
 
     /// Append to a column's `+Errors` window, creating it if needed.
-    pub fn errors(&mut self, log: &mut Log, col: ColumnId, text: &str) -> Result<WindowId> {
-        let existing = self
-            .state
-            .layout
-            .column(col)
-            .map(|c| c.wins.clone())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|s| s.window)
-            .find(|w| {
-                self.state
-                    .window(*w)
-                    .ok()
-                    .and_then(|w| w.body_buffer())
-                    .and_then(|b| self.state.buffer(b).ok())
-                    .is_some_and(|b| b.name == ERRORS)
-            });
+    /// acme's `errorwin`: the directory of a window's file, which names its
+    /// `+Errors` window. `None` for unnamed windows and terminals.
+    pub fn error_dir(&self, w: Option<WindowId>) -> Option<String> {
+        let name = self.window_name(w?);
+        if name.is_empty() || name.starts_with('+') {
+            return None;
+        }
+        if name.ends_with('/') {
+            return Some(name.trim_end_matches('/').to_string());
+        }
+        name.rsplit_once('/').map(|(d, _)| if d.is_empty() { "/".to_string() } else { d.to_string() })
+    }
+
+    /// acme's `errorwin1`: append `text` to `dir/+Errors` (or `+Errors`),
+    /// making the window in the last column if there is none.
+    pub fn errors(&mut self, log: &mut Log, dir: Option<&str>, text: &str) -> Result<WindowId> {
+        let name = match dir {
+            Some(d) if !d.is_empty() => format!("{}/{ERRORS}", d.trim_end_matches('/')),
+            _ => ERRORS.to_string(),
+        };
+        let existing = self.state.windows.keys().copied().find(|w| self.window_name(*w) == name);
         let window = match existing {
             Some(w) => w,
-            None => self.new_window(log, col, ERRORS, "")?,
+            None => {
+                let col = match self.state.layout.cols.last() {
+                    Some(c) => c.id,
+                    None => self.new_column(log, None)?,
+                };
+                self.new_window(log, col, &name, "")?
+            }
         };
         let view = ViewId::Body(window);
         let b = self.view_buffer(view)?;
@@ -1050,7 +1061,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" => Handler::Leader,
+            | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -1070,7 +1081,14 @@ impl Node {
         }
         self.end_typing();
         let text = text.trim().to_string();
-        let handler = Node::resolve(&text);
+        let mut handler = Node::resolve(&text);
+        if text == "Send" {
+            if let ExecCtx::Window(w) = ctx {
+                if matches!(self.state.window(w).map(|x| x.body), Ok(Body::Term(_))) {
+                    handler = Handler::Server; // the shell gets it
+                }
+            }
+        }
         let at = self.exec_at(ctx);
         let seq = self.append_exec(log, ctx, ExecOp { text: text.clone(), handler: handler.clone(), at })?;
         if handler != Handler::Leader {
@@ -1135,13 +1153,12 @@ impl Node {
             "Edit" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Edit needs a window".into()))?;
                 let run = self.run_edit(log, w, rest)?;
+                let dir = self.error_dir(Some(w));
                 if !run.output.is_empty() {
-                    let col = self.column_of(w)?;
-                    self.errors(log, col, &run.output)?;
+                    self.errors(log, dir.as_deref(), &run.output)?;
                 }
                 for wmsg in run.warnings {
-                    let col = self.column_of(w)?;
-                    self.errors(log, col, &format!("{wmsg}\n"))?;
+                    self.errors(log, dir.as_deref(), &format!("{wmsg}\n"))?;
                 }
                 if !run.intents.is_empty() {
                     return Err(CoreError::Missing("Edit: file and pipe commands are not supported here yet".into()));
@@ -1192,8 +1209,8 @@ impl Node {
                     }
                     _ => {
                         let (name, tab) = (self.window_name(w), self.state.window(w)?.tabstop);
-                        let col = self.column_of(w)?;
-                        self.errors(log, col, &format!("{name}: Tab {tab}\n"))?;
+                        let dir = self.error_dir(Some(w));
+                        self.errors(log, dir.as_deref(), &format!("{name}: Tab {tab}\n"))?;
                     }
                 }
             }
@@ -1208,12 +1225,40 @@ impl Node {
             }
             "ID" => {
                 let w = win.ok_or_else(|| CoreError::Missing("ID needs a window".into()))?;
-                let col = self.column_of(w)?;
-                self.errors(log, col, &format!("{}\n", w.0))?;
+                let dir = self.error_dir(Some(w));
+                self.errors(log, dir.as_deref(), &format!("{}\n", w.0))?;
             }
             "Zerox" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Zerox needs a window".into()))?;
-                self.zerox(log, w)?;
+                let name = self.window_name(w);
+                if name.ends_with('/') {
+                    let dir = self.error_dir(Some(w));
+                    self.errors(log, dir.as_deref(), &format!("{name} is a directory; Zerox illegal\n"))?;
+                } else {
+                    self.zerox(log, w)?;
+                }
+            }
+            "Send" => {
+                // acme's sendx on a text window: the selection, else the
+                // snarf buffer, appended to the body with a newline
+                let w = win.ok_or_else(|| CoreError::Missing("Send needs a window".into()))?;
+                let v = ViewId::Body(w);
+                let mut text = self.selected_text(v).unwrap_or_default();
+                if text.is_empty() {
+                    text = self.state.layout.snarf.clone();
+                }
+                if text.is_empty() {
+                    return Ok(false);
+                }
+                if !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                let b = self.view_buffer(v)?;
+                let end = self.state.buffer(b)?.text.len();
+                self.select(log, v, end, end)?;
+                self.replace_selection(log, v, &text)?;
+                let end = self.state.buffer(b)?.text.len();
+                self.select(log, v, end, end)?;
             }
             "Font" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Font needs a window".into()))?;

@@ -249,6 +249,7 @@ dependencies = [
  "apex-core",
  "apex-edit",
  "futures",
+ "libc",
  "notify",
  "postcard",
  "serde",

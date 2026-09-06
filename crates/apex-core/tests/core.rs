@@ -357,7 +357,7 @@ proptest! {
                         Ok(())
                     }
                 }
-                Action::Errors(s) => node.errors(&mut log, col, s).map(|_| ()),
+                Action::Errors(s) => node.errors(&mut log, None, s).map(|_| ()),
             };
             prop_assert!(r.is_ok(), "{a:?} failed: {r:?}");
             // selections stay inside their buffers
@@ -425,4 +425,41 @@ proptest! {
             (a, b) => prop_assert!(false, "core {a:?} vs edit {b:?}"),
         }
     }
+}
+
+#[test]
+fn errors_go_to_the_directory_window_in_the_last_column() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/proj/main.rs", "fn main() {}\n").unwrap();
+    let c2 = node.new_column(&mut log, None).unwrap();
+    // an error from main.rs's window lands in /tmp/proj/+Errors, in the last column
+    let dir = node.error_dir(Some(w));
+    assert_eq!(dir.as_deref(), Some("/tmp/proj"));
+    let e = node.errors(&mut log, dir.as_deref(), "boom\n").unwrap();
+    assert_eq!(node.window_name(e), "/tmp/proj/+Errors");
+    assert_eq!(node.state.layout.column_of(e), Some(c2));
+    // its tag has no Undo/Put words (acme: filemenu off), and Del never asks
+    node.update_tags(&mut log).unwrap();
+    let tag = node.state.buffer(node.state.window(e).unwrap().tag).unwrap().text.to_string();
+    assert!(tag.starts_with("/tmp/proj/+Errors Del Snarf |"), "{tag}");
+    assert!(matches!(node.exec(&mut log, ExecCtx::Window(e), "Del").unwrap(), Executed::Done(_)));
+    assert!(node.state.window(e).is_err());
+    // no directory: plain +Errors
+    let e = node.errors(&mut log, None, "x\n").unwrap();
+    assert_eq!(node.window_name(e), "+Errors");
+}
+
+#[test]
+fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "notes", "a\n").unwrap();
+    node.append(&mut log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: "from snarf".into() })).unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "Send").unwrap();
+    let b = node.view_buffer(ViewId::Body(w)).unwrap();
+    assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "a\nfrom snarf\n");
+    let d = node.new_window(&mut log, col, "/tmp/", "x\n").unwrap();
+    node.exec(&mut log, ExecCtx::Window(d), "Zerox").unwrap();
+    assert_eq!(node.state.windows.values().filter(|x| x.body_buffer() == node.state.window(d).unwrap().body_buffer()).count(), 1);
+    let errs = node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default();
+    assert!(errs.contains("is a directory; Zerox illegal"), "{errs}");
 }

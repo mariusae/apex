@@ -746,17 +746,25 @@ the mouse to the match; `Tab`, `Indent on|off` (autoindent), `ID`; Up and
 Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
 a third of the window and PageUp/PageDown two thirds; Home and End; the
 erase keys; and the pointers: plan9port's big arrow always, the box while
-a layout box is held. Not yet, no design conflict: the scrollbar scrolling
-continuously while a button is held (`textscroll`, with the pointer pinned
-to the bar); `^F`/Insert filename completion; B1 drag autoscrolling past
-the window edge; the mouse being pushed out of a tag that grows under it
-(`winresize`); `Kill` (the server does not yet track the commands it
-started); `Zerox` refusing directories; newline ignored in column and top
-tags; `+Errors` per directory in the source window's column rather than
-per column. Conflicts with the design, to be decided: `Exit` (acme
-refuses while windows are dirty; here the session survives the client),
-`Dump`/`Load` (acme's session file; here sessions live in the daemon),
-`Send`, `Local`, `Incl`, `Abort`.
+a layout box is held. Also matching: the scrollbar scrolling
+continuously while a button is held, the pointer kept on the bar
+(`textscroll`: 200 ms, then every 80 ms, by the pointer's height in the
+bar); `^F`/Insert filename completion (`textcomplete`, with the file
+system on the server: a unique match completes with `/` or a space, a
+common extension is inserted, otherwise the candidates are listed in
+`+Errors`); B1 dragging past the top or bottom scrolling by the distance
+(`framescroll`); the mouse pulled up as a tag closes under it and pushed
+down as one expands over it (`winresize`); `Kill name` ending every
+running command whose first word is `name` (the server tracks the
+commands it starts); `Zerox` refusing directories; newline ignored in
+column and top tags; `+Errors` named `dir/+Errors` after the directory of
+the window whose command produced the output, made in the last column
+(`errorwin1`), with no `Undo`/`Put` words in its tag. Decided against
+acme, by design: `Exit` detaches this window and the session lives on
+(acme refuses while windows are dirty; nothing is lost here); there is no
+`Dump`/`Load`, sessions are the only persistence; `Send` on a terminal
+types the snarf buffer plus a newline into the shell and on a text window
+appends it to the body; `Local`, `Incl` and `Abort` are not commands.
 
 ^H, ^U and ^W erase exactly as acme's `textbswidth`: ^W skips
 non-alphanumerics, then erases the alphanumeric run, never past the start

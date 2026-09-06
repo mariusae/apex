@@ -42,7 +42,7 @@ fn body_text(node: &Node, w: WindowId) -> String {
 }
 
 fn errors_text(node: &Node) -> String {
-    node.state.buffers.values().find(|b| b.name == "+Errors").map(|b| b.text.to_string()).unwrap_or_default()
+    node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default()
 }
 
 fn open(server: &Server, log: &mut Log, node: &mut Node, col: ColumnId, dir: &std::path::Path, name: &str) -> WindowId {
@@ -156,4 +156,46 @@ fn newterm_runs_a_shell() {
     assert!(!node.state.windows.contains_key(&w));
     node.catch_up(&log).unwrap();
     assert!(!node.state.terms.contains_key(&t));
+}
+
+#[test]
+fn kill_ends_a_running_command() {
+    let (mut log, mut node, col, mut server, mut rx) = session();
+    let w = node.new_window(&mut log, col, "scratch", "").unwrap();
+    let t0 = Instant::now();
+    node.exec(&mut log, ExecCtx::Window(w), "sleep 30").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    std::thread::sleep(Duration::from_millis(200));
+    node.exec(&mut log, ExecCtx::Window(w), "Kill sleep").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    // the sleep's exec completes long before 30 s
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| {
+        n.state.window(w).unwrap().execs.values().next().map(|e| e.status != ExecStatus::Pending).unwrap_or(false)
+    }));
+    assert!(t0.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn completion_extends_a_path_or_lists_candidates() {
+    let (mut log, mut node, col, server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-complete-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("subdir")).unwrap();
+    std::fs::write(dir.join("alpha.txt"), "").unwrap();
+    std::fs::write(dir.join("alpine.txt"), "").unwrap();
+    let w = node.new_window(&mut log, col, "scratch", "al").unwrap();
+    let v = ViewId::Body(w);
+    node.select(&mut log, v, 2, 2).unwrap();
+    // "al" → "alp" (common extension), then nothing more: the candidates are listed
+    let p = server.complete(v, 2, &dir, "al");
+    assert!(matches!(p, apex_server::Proposal::Complete { text: ref t, .. } if t == "p"), "{p:?}");
+    perform(&mut node, &mut log, vec![p]);
+    assert_eq!(body_text(&node, w), "alp");
+    let p = server.complete(v, 3, &dir, "alp");
+    assert!(matches!(p, apex_server::Proposal::Errors { text: ref t, .. } if t.contains("alpha.txt") && t.contains("alpine.txt")), "{p:?}");
+    // a unique directory completes with a slash, a unique file with a space
+    assert!(matches!(server.complete(v, 3, &dir, "su"), apex_server::Proposal::Complete { text: ref t, .. } if t == "bdir/"));
+    assert!(matches!(server.complete(v, 3, &dir, "alph"), apex_server::Proposal::Complete { text: ref t, .. } if t == "a.txt "));
+    assert!(matches!(server.complete(v, 3, &dir, "zz"), apex_server::Proposal::Errors { text: ref t, .. } if t.contains("no matches")));
+    let _ = std::fs::remove_dir_all(&dir);
 }

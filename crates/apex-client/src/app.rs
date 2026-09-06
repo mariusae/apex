@@ -72,6 +72,10 @@ struct Mouse {
     chord_arg: bool,
     /// acme's `coldragwin`/`rowdragcol`: the box, the button, where it was pressed.
     box_drag: Option<(BoxTarget, MouseButton, Point<Pixels>)>,
+    /// acme's `textscroll`: a scrollbar button held, and the pointer's height.
+    scrolling: Option<(Target, MouseButton, Pixels)>,
+    /// acme's `framescroll`: B1 dragged past the top or bottom of the text.
+    autoscroll: Option<(ViewId, i64)>,
     left_as: Option<MouseButton>,
     mods: Modifiers,
 }
@@ -161,6 +165,8 @@ pub struct Acme {
     pub selector: Option<Selector>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
+    /// `Exit`: the next frame closes this window.
+    pub close_requested: bool,
     pending: Option<Pending>,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
@@ -220,7 +226,7 @@ impl Acme {
                     perform(&mut node, &mut log, vec![p]);
                 }
                 Err(e) => {
-                    let _ = node.errors(&mut log, col, &format!("{e}\n"));
+                    let _ = node.errors(&mut log, Some(&cwd.to_string_lossy()), &format!("{e}\n"));
                 }
             }
         }
@@ -311,6 +317,7 @@ impl Acme {
             wake: None,
             selector: None,
             tag_need: HashMap::new(),
+            close_requested: false,
             pending: None,
             warp_wait: false,
             mouse_saved: None,
@@ -479,7 +486,27 @@ impl Acme {
             .map(|s| s.window)
             .collect();
         for w in refit {
+            let before = self.node.state.layout.slot(w).copied();
             let _ = self.node.refit_window(&mut self.log, w);
+            let after = self.node.state.layout.slot(w).copied();
+            // acme's winresize: pull the mouse up as a tag closes under it,
+            // push it down as a tag expands over it
+            if let (Some(b), Some(a)) = (before, after) {
+                let m = Self::row_pt(self.last_mouse);
+                let in_tag = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.r.y0 <= y && y < s.tag_y1(font);
+                let in_body = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.body.y0 <= y && y < s.body.y1;
+                let mut to = None;
+                if in_tag(&b, m.1) && !in_tag(&a, m.1) {
+                    to = Some(a.tag_y1(font) - 3);
+                } else if in_body(&b, m.1) && in_tag(&a, m.1) {
+                    to = Some(a.tag_y1(font) + 3);
+                }
+                if let Some(y) = to {
+                    let at = point(self.last_mouse.x, px(y as f32 + TITLEBAR_HEIGHT));
+                    self.pending = Some(Pending::Restore(at));
+                    self.warp_wait = false;
+                }
+            }
         }
     }
 
@@ -697,7 +724,7 @@ impl Acme {
         b
     }
 
-    pub fn mouse_down(&mut self, e: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.selector.is_some() {
             // a click anywhere else dismisses the dropdown
             self.close_selector(cx);
@@ -743,7 +770,7 @@ impl Acme {
                     self.mouse.b1 = Some(Drag { view: v, anchor: off });
                     self.mouse.chorded = false;
                 }
-                Region::Scrollbar => self.scrollbar_click(v, e.position, -1),
+                Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Left, e.position, window, cx),
                 _ => {}
             },
             (Target::View(v), MouseButton::Middle) => {
@@ -756,7 +783,7 @@ impl Acme {
                             self.mouse.b2 = Some(Drag { view: v, anchor: off });
                             self.hl = None;
                         }
-                        Region::Scrollbar => self.scrollbar_click(v, e.position, 0),
+                        Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Middle, e.position, window, cx),
                         _ => {}
                     }
                 }
@@ -771,7 +798,7 @@ impl Acme {
                             self.mouse.b3 = Some(Drag { view: v, anchor: off });
                             self.hl = None;
                         }
-                        Region::Scrollbar => self.scrollbar_click(v, e.position, 1),
+                        Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Right, e.position, window, cx),
                         _ => {}
                     }
                 }
@@ -787,8 +814,8 @@ impl Acme {
                         self.look(ExecCtx::Window(w), &word);
                     }
                 }
-                (Region::TermScrollbar, MouseButton::Left) => self.term_scrollbar_click(w, t, e.position, -1),
-                (Region::TermScrollbar, MouseButton::Right) => self.term_scrollbar_click(w, t, e.position, 1),
+                (Region::TermScrollbar, MouseButton::Left) => self.start_scrolling(Target::Term(w, t), MouseButton::Left, e.position, window, cx),
+                (Region::TermScrollbar, MouseButton::Right) => self.start_scrolling(Target::Term(w, t), MouseButton::Right, e.position, window, cx),
                 _ => {}
             },
             _ => {}
@@ -803,16 +830,41 @@ impl Acme {
         }
         self.last_mouse = pos;
         let mut changed = false;
+        if let Some((_, _, y)) = self.mouse.scrolling.as_mut() {
+            *y = pos.y; // the bar follows the pointer's height
+        }
         if let Some(d) = self.mouse.b1 {
             if let Some(l) = self.layouts.get(&d.view) {
                 let off = l.offset_at(pos);
                 let above = pos.y < l.bounds.top();
                 let below = pos.y > l.bounds.bottom();
                 let _ = self.node.select(&mut self.log, d.view, d.anchor.min(off), d.anchor.max(off));
-                if above {
-                    self.scroll_by(d.view, -1);
-                } else if below {
-                    self.scroll_by(d.view, 1);
+                // acme's framescroll: keep scrolling while the pointer is outside
+                let want = if above { Some(-1) } else if below { Some(1) } else { None };
+                match want {
+                    Some(dir) => {
+                        let fresh = self.mouse.autoscroll.is_none();
+                        self.mouse.autoscroll = Some((d.view, dir));
+                        if fresh {
+                            self.autoscroll_step();
+                            cx.spawn(async move |this, cx| loop {
+                                cx.background_executor().timer(std::time::Duration::from_millis(80)).await;
+                                let going = cx.update(|cx| {
+                                    this.update(cx, |acme, cx| {
+                                        let r = acme.autoscroll_step();
+                                        cx.notify();
+                                        r
+                                    })
+                                    .unwrap_or(false)
+                                });
+                                if !going {
+                                    break;
+                                }
+                            })
+                            .detach();
+                        }
+                    }
+                    None => self.mouse.autoscroll = None,
                 }
                 changed = true;
             }
@@ -834,6 +886,9 @@ impl Acme {
     pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
+        if self.mouse.scrolling.is_some_and(|(_, b, _)| b == button) {
+            self.mouse.scrolling = None;
+        }
         if let Some((bt, b, start)) = self.mouse.box_drag {
             if b == button {
                 self.mouse.box_drag = None;
@@ -858,6 +913,7 @@ impl Acme {
         match button {
             MouseButton::Left => {
                 self.mouse.b1 = None;
+                self.mouse.autoscroll = None;
             }
             MouseButton::Middle => {
                 if let Some(d) = self.mouse.b2.take() {
@@ -941,6 +997,117 @@ impl Acme {
             b += 1;
         }
         Some(chars[a..b].iter().collect())
+    }
+
+    /// acme's `textscroll`: a button on the scrollbar keeps scrolling while
+    /// it is held, by an amount that follows the pointer's height in the
+    /// bar; the pointer is kept on the bar. Returns false once released.
+    pub fn scroll_step(&mut self, window: &mut Window) -> bool {
+        let Some((target, button, y)) = self.mouse.scrolling else { return false };
+        let dir = match button {
+            MouseButton::Left => -1,
+            MouseButton::Middle => 0,
+            _ => 1,
+        };
+        let (bounds, pos) = match target {
+            Target::View(v) => {
+                let Some(l) = self.layouts.get(&v) else { return false };
+                (l.bounds, point(l.bounds.left() + px(SCROLLWID as f32 / 2.), y))
+            }
+            Target::Term(w, _) => {
+                let Some(l) = self.term_layouts.get(&w) else { return false };
+                (l.bounds, point(l.bounds.left() + px(SCROLLWID as f32 / 2.), y))
+            }
+        };
+        let y = y.clamp(bounds.top(), bounds.bottom());
+        match target {
+            Target::View(v) => self.scrollbar_click(v, point(pos.x, y), dir),
+            Target::Term(w, t) => self.term_scrollbar_click(w, t, point(pos.x, y), dir),
+        }
+        let at = point(pos.x, y);
+        crate::warp::move_to(window, at);
+        self.pointer = Some(at);
+        self.sync();
+        true
+    }
+
+    fn start_scrolling(&mut self, target: Target, button: MouseButton, pos: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        self.mouse.scrolling = Some((target, button, pos.y));
+        self.scroll_step(window);
+        // debounce, then repeat while the button is down (acme: 200 ms, then 80 ms)
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(200)).await;
+            loop {
+                let going = cx.update(|cx| {
+                    this.update(cx, |acme, cx| {
+                        let r = acme.mouse.scrolling.is_some() && acme.with_window(cx, |acme, window| acme.scroll_step(window));
+                        cx.notify();
+                        r
+                    })
+                    .unwrap_or(false)
+                });
+                if !going {
+                    break;
+                }
+                cx.background_executor().timer(std::time::Duration::from_millis(80)).await;
+            }
+        })
+        .detach();
+    }
+
+    /// Run `f` with this view's window, if it is open.
+    fn with_window(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Self, &mut Window) -> bool) -> bool {
+        let Some(handle) = cx.active_window().or_else(|| cx.windows().into_iter().next()) else { return false };
+        let mut result = false;
+        let _ = handle.update(cx, |_, window, _| {
+            result = f(self, window);
+        });
+        result
+    }
+
+    /// One tick of acme's `framescroll`: scroll by how far the pointer is
+    /// past the edge, and extend the selection to the text at the edge.
+    fn autoscroll_step(&mut self) -> bool {
+        let Some((v, dir)) = self.mouse.autoscroll else { return false };
+        let Some(d) = self.mouse.b1 else { return false };
+        let Some(l) = self.layouts.get(&v) else { return false };
+        let (top, bottom, lh) = (l.bounds.top(), l.bounds.bottom(), l.line_height);
+        let pos = self.last_mouse;
+        let dist = if dir < 0 { top - pos.y } else { pos.y - bottom };
+        if dist <= px(0.) {
+            self.mouse.autoscroll = None;
+            return false;
+        }
+        let lines = ((f32::from(dist) / f32::from(lh)) as i64).max(1);
+        self.scroll_by(v, dir * lines);
+        self.sync();
+        if let Some(l) = self.layouts.get(&v) {
+            let edge = point(pos.x, if dir < 0 { l.bounds.top() } else { l.bounds.bottom() - px(1.) });
+            let off = l.offset_at(edge);
+            let _ = self.node.select(&mut self.log, v, d.anchor.min(off), d.anchor.max(off));
+        }
+        true
+    }
+
+    /// acme's `textcomplete`: the path fragment before `q0` goes to the
+    /// server, which knows the file system; what comes back is inserted.
+    fn complete(&mut self, v: ViewId, q0: usize) {
+        let Some(t) = self.text_of(v) else { return };
+        let mut q = q0;
+        while q > 0 && is_file_char(t.char_at(q - 1)) {
+            q -= 1;
+        }
+        let prefix = t.slice(q, q0);
+        let ctx = self.ctx_of(v);
+        match &mut self.backend {
+            Backend::Local(server) => {
+                let dir = server.dir_of(&self.node, ctx);
+                let p = server.complete(v, q0, &dir, &prefix);
+                perform(&mut self.node, &mut self.log, vec![p]);
+            }
+            Backend::Remote(link) => link.send(&ClientMsg::Complete { view: v, ctx, at: q0, prefix }),
+        }
+        self.after();
     }
 
     fn scrollbar_click(&mut self, view: ViewId, pos: Point<Pixels>, dir: i64) {
@@ -1105,6 +1272,15 @@ impl Acme {
         }
         let Some(t) = self.text_of(v) else { return };
         let Ok((q0, q1)) = self.node.selection(v) else { return };
+        // acme: newline is ignored in column tags and the top row
+        if ks.key == "enter" && matches!(v, ViewId::ColTag(_) | ViewId::Top) {
+            return;
+        }
+        // acme's ^F / Insert: complete the file name before the cursor
+        if (m.control && ks.key == "f") || ks.key == "insert" {
+            self.complete(v, q0);
+            return;
+        }
         let fit = self.layouts.get(&v).map(|l| l.lines_that_fit()).unwrap_or(1) as i64;
         // acme's texttype in a tag: Up shrinks it to one line, Down expands it
         if let ViewId::Tag(w) = v {
@@ -1254,16 +1430,16 @@ impl Acme {
     /// A line for the first column's `+Errors`: where the app tells the
     /// user things, since acme has no dialogs.
     pub fn notice(&mut self, msg: &str) {
-        if let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) {
-            let _ = self.node.errors(&mut self.log, col, msg);
-        }
+        let _ = self.node.errors(&mut self.log, None, msg);
         self.after();
     }
 
     fn report(&mut self, ctx: ExecCtx, msg: &str) {
-        if let Ok(col) = apex_server::column_of(&self.node, ctx) {
-            let _ = self.node.errors(&mut self.log, col, &format!("{msg}\n"));
-        }
+        let dir = match ctx {
+            ExecCtx::Window(w) => self.node.error_dir(Some(w)),
+            _ => None,
+        };
+        let _ = self.node.errors(&mut self.log, dir.as_deref(), &format!("{msg}\n"));
     }
 
     pub fn execute(&mut self, ctx: ExecCtx, text: &str, cx: &mut Context<Self>) {
@@ -1274,7 +1450,10 @@ impl Acme {
             }
         }
         match self.node.exec(&mut self.log, ctx, text) {
-            Ok(Executed::Quit(_)) => cx.quit(),
+            Ok(Executed::Quit(_)) => match self.backend {
+                Backend::Local(_) => cx.quit(),
+                Backend::Remote(_) => self.close_requested = true, // Exit detaches; the session lives on
+            },
             Ok(Executed::Failed(_, reason)) => self.report(ctx, &reason),
             Ok(_) => {}
             Err(e) => self.report(ctx, &e.to_string()),

@@ -12,6 +12,7 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 postcard = { version = "1", features = ["use-std"] }
 notify = "8"
+libc = "0.2"
 
 [[bin]]
 name = "apexd"

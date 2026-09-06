@@ -41,10 +41,18 @@ pub enum ServerEvent {
 
 #[derive(Clone, Debug)]
 pub enum ShellMode {
-    /// Output goes to `+Errors`.
-    Errors { col: ColumnId },
+    /// Output goes to `dir/+Errors`.
+    Errors { dir: Option<String> },
     /// Output replaces a range of a buffer (`|cmd`, `<cmd`).
-    Replace { col: ColumnId, buffer: BufferId, version: Version, q0: usize, q1: usize },
+    Replace { dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize },
+}
+
+/// A command the server started and has not seen finish: `Kill name`
+/// ends every one whose first word is `name`, as acme's does.
+#[derive(Clone, Debug)]
+pub struct Running {
+    pub pid: u32,
+    pub name: String,
 }
 
 /// The server. `node` is its replica as the `SERVER` attachment: it leads
@@ -65,6 +73,7 @@ pub struct Server {
     watches: watch::Watches,
     /// Stale buffers `Put` has refused once (acme: the second Put writes).
     put_warned: BTreeSet<BufferId>,
+    running: std::sync::Arc<std::sync::Mutex<Vec<Running>>>,
 }
 
 impl Server {
@@ -107,6 +116,7 @@ impl Server {
             windowed: BTreeSet::new(),
             watches,
             put_warned: BTreeSet::new(),
+            running: Default::default(),
         };
         (server, rx)
     }
@@ -325,19 +335,19 @@ impl Server {
                 self.publish_term(log, id);
             }
             ServerEvent::Shell { ctx, exec, out, err, mode } => {
-                let col = mode_col(&mode);
+                let dir = mode_dir(&mode);
                 match mode {
-                    ShellMode::Errors { col } => {
+                    ShellMode::Errors { dir } => {
                         if !out.is_empty() {
-                            props.push(Proposal::Errors { col, text: out });
+                            props.push(Proposal::Errors { dir, text: out });
                         }
                     }
-                    ShellMode::Replace { col, buffer, version, q0, q1 } => {
-                        props.push(Proposal::ReplaceRange { col, buffer, version, q0, q1, text: out });
+                    ShellMode::Replace { dir, buffer, version, q0, q1 } => {
+                        props.push(Proposal::ReplaceRange { dir, buffer, version, q0, q1, text: out });
                     }
                 }
                 if !err.is_empty() {
-                    props.push(Proposal::Errors { col, text: err });
+                    props.push(Proposal::Errors { dir, text: err });
                 }
                 props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Done });
             }
@@ -408,9 +418,8 @@ impl Server {
                 }
                 Ok(None) => {} // asynchronous; status comes with the result
                 Err(reason) => {
-                    if let Ok(col) = column_of(view, ctx) {
-                        props.push(Proposal::Errors { col, text: format!("{reason}\n") });
-                    }
+                    let dir = self.dir_of(view, ctx).to_string_lossy().to_string();
+                    props.push(Proposal::Errors { dir: Some(dir), text: format!("{reason}\n") });
                     props.push(Proposal::Status { ctx, exec: seq, status: ExecStatusOp::Failed(reason) });
                 }
             }
@@ -423,6 +432,7 @@ impl Server {
     fn perform(&mut self, log: &mut Log, view: &Node, ctx: ExecCtx, seq: Seq, text: &str, at: ExecAt) -> Result<Option<Vec<Proposal>>, String> {
         let dir = self.dir_of(view, ctx);
         let col = column_of(view, ctx)?;
+        let errdir = Some(dir.to_string_lossy().to_string());
         let win = match ctx {
             ExecCtx::Window(w) => Some(w),
             _ => None,
@@ -436,8 +446,8 @@ impl Server {
                 .map(|b| b.text.slice(at.q0, at.q1))
                 .unwrap_or_default();
             let mode = match (kind, at.buffer) {
-                (b'>', _) | (_, None) => ShellMode::Errors { col },
-                (_, Some(b)) => ShellMode::Replace { col, buffer: b, version: at.version, q0: at.q0, q1: at.q1 },
+                (b'>', _) | (_, None) => ShellMode::Errors { dir: errdir },
+                (_, Some(b)) => ShellMode::Replace { dir: errdir, buffer: b, version: at.version, q0: at.q0, q1: at.q1 },
             };
             let stdin = if kind == b'<' { None } else { Some(input) };
             self.spawn_shell(ctx, seq, rest.trim().to_string(), dir, stdin, mode);
@@ -445,7 +455,7 @@ impl Server {
         }
         let mut words = text.split_whitespace();
         let cmd = words.next().unwrap_or("");
-        let arg = words.next();
+        let arg = words.clone().next();
         let mut props = Vec::new();
         match cmd {
             "Put" => {
@@ -479,10 +489,34 @@ impl Server {
             "Newterm" => {
                 props.push(self.new_term(log, col, &dir)?);
             }
-            "Kill" | "Dump" | "Load" | "Newweb" => return Err(format!("{cmd}: not implemented")),
+            "Kill" => {
+                // acme's xkill: every running command whose name is given
+                let names: Vec<&str> = words.collect();
+                let running = self.running.lock().unwrap().clone();
+                for r in running {
+                    if names.iter().any(|n| *n == r.name) {
+                        // SAFETY: a plain signal to a child we started
+                        unsafe {
+                            libc::kill(r.pid as i32, libc::SIGTERM);
+                        }
+                    }
+                }
+            }
+            "Send" => {
+                // acme's sendx for a terminal: the snarf buffer, with a
+                // newline, typed into the shell
+                let w = win.ok_or("Send needs a window")?;
+                let Some(Body::Term(t)) = view.state.window(w).ok().map(|x| x.body) else { return Err("Send: not a terminal".into()) };
+                let mut text = view.state.layout.snarf.clone();
+                if !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                self.term_paste(t, &text);
+            }
+            "Newweb" => return Err(format!("{cmd}: not implemented")),
             _ => {
                 // anything else is a shell command; output goes to +Errors
-                self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { col });
+                self.spawn_shell(ctx, seq, text.to_string(), dir, None, ShellMode::Errors { dir: errdir });
                 return Ok(None);
             }
         }
@@ -491,10 +525,52 @@ impl Server {
 
     fn spawn_shell(&self, ctx: ExecCtx, exec: Seq, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode) {
         let tx = self.tx.clone();
+        let running = self.running.clone();
         std::thread::spawn(move || {
-            let (out, err) = shell(&cmd, &dir, stdin);
+            let (out, err) = shell_tracked(&cmd, &dir, stdin, Some(running));
             let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode });
         });
+    }
+
+    /// acme's `textcomplete`, the file-system half: what to insert after
+    /// `prefix` (a path fragment typed at `at` in `view`, relative to
+    /// `dir`), or the candidates in `+Errors` when it is not decided.
+    pub fn complete(&self, view: ViewId, at: usize, dir: &Path, prefix: &str) -> Proposal {
+        let (dirpart, base) = match prefix.rsplit_once('/') {
+            Some((d, b)) => (if d.is_empty() { "/".to_string() } else { d.to_string() }, b.to_string()),
+            None => (String::new(), prefix.to_string()),
+        };
+        let where_ = if dirpart.is_empty() { dir.to_path_buf() } else { resolve(dir, &dirpart) };
+        let errdir = Some(dir.to_string_lossy().to_string());
+        let mut names: Vec<(String, bool)> = match std::fs::read_dir(&where_) {
+            Ok(rd) => rd
+                .filter_map(|e| e.ok())
+                .map(|e| (e.file_name().to_string_lossy().to_string(), e.file_type().map(|t| t.is_dir()).unwrap_or(false)))
+                .filter(|(n, _)| n.starts_with(&base))
+                .collect(),
+            Err(e) => return Proposal::Errors { dir: errdir, text: format!("{}: {e}\n", where_.display()) },
+        };
+        names.sort();
+        if names.is_empty() {
+            return Proposal::Errors { dir: errdir, text: format!("{}{}*: no matches\n", if dirpart.is_empty() { String::new() } else { format!("{dirpart}/") }, base) };
+        }
+        // the longest common extension of the candidates past what is typed
+        let first: Vec<char> = names[0].0.chars().collect();
+        let mut common = first.len();
+        for (n, _) in &names[1..] {
+            let c: Vec<char> = n.chars().collect();
+            common = common.min(first.iter().zip(c.iter()).take_while(|(a, b)| a == b).count());
+        }
+        let typed = base.chars().count();
+        let mut extension: String = first[typed..common.max(typed)].iter().collect();
+        if names.len() == 1 {
+            extension.push(if names[0].1 { '/' } else { ' ' });
+        }
+        if extension.is_empty() {
+            let list: String = names.iter().map(|(n, d)| format!("{n}{}\n", if *d { "/" } else { "" })).collect();
+            return Proposal::Errors { dir: errdir, text: list };
+        }
+        Proposal::Complete { view, at, text: extension }
     }
 
     /// B3: open `text` as a file (with optional `:line`) if it names one;
@@ -538,9 +614,9 @@ pub fn perform(node: &mut Node, log: &mut Log, props: Vec<Proposal>) -> Option<W
     made
 }
 
-fn mode_col(m: &ShellMode) -> ColumnId {
+fn mode_dir(m: &ShellMode) -> Option<String> {
     match m {
-        ShellMode::Errors { col } | ShellMode::Replace { col, .. } => *col,
+        ShellMode::Errors { dir } | ShellMode::Replace { dir, .. } => dir.clone(),
     }
 }
 
@@ -575,6 +651,12 @@ pub fn resolve(dir: &Path, name: &str) -> PathBuf {
 
 /// Run `sh -c cmd` in `dir`, feeding `input` on stdin. Returns (stdout, stderr).
 pub fn shell(cmd: &str, dir: &Path, input: Option<String>) -> (String, String) {
+    shell_tracked(cmd, dir, input, None)
+}
+
+/// `shell`, registering the child in `running` (by its first word) for
+/// `Kill` while it lives.
+pub fn shell_tracked(cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>) -> (String, String) {
     let child = Command::new("sh")
         .arg("-c")
         .arg(cmd)
@@ -587,15 +669,24 @@ pub fn shell(cmd: &str, dir: &Path, input: Option<String>) -> (String, String) {
         Ok(c) => c,
         Err(e) => return (String::new(), format!("{cmd}: {e}\n")),
     };
+    let pid = child.id();
+    let name = cmd.split_whitespace().next().unwrap_or("").to_string();
+    if let Some(r) = &running {
+        r.lock().unwrap().push(Running { pid, name });
+    }
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         std::thread::spawn(move || {
             let _ = stdin.write_all(input.as_bytes());
         });
     }
-    match child.wait_with_output() {
+    let out = match child.wait_with_output() {
         Ok(o) => (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string()),
         Err(e) => (String::new(), format!("{cmd}: {e}\n")),
+    };
+    if let Some(r) = &running {
+        r.lock().unwrap().retain(|x| x.pid != pid);
     }
+    out
 }
 
 impl Drop for Server {

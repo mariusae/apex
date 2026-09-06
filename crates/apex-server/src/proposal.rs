@@ -25,9 +25,12 @@ pub enum Proposal {
     /// `Put newname`: rename the buffer and its window's tag.
     Rename { buffer: BufferId, window: WindowId, name: String },
     /// Pipe output replacing a range, valid at `version`.
-    ReplaceRange { col: ColumnId, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
-    /// Text for the column's `+Errors`.
-    Errors { col: ColumnId, text: String },
+    ReplaceRange { dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
+    /// Text for `dir/+Errors` (acme's errorwin), or plain `+Errors`.
+    Errors { dir: Option<String>, text: String },
+    /// Filename completion (acme's ^F): insert `text` at `at` in `view`,
+    /// if the insertion point is still there.
+    Complete { view: ViewId, at: usize, text: String },
     /// The outcome of an exec.
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// B3 did not name a file: search the body instead.
@@ -95,7 +98,7 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.set_content(log, tag, &format!("{name} {rest}"))?;
             Ok(None)
         }
-        Proposal::ReplaceRange { col, buffer, version, q0, q1, text } => {
+        Proposal::ReplaceRange { dir, buffer, version, q0, q1, text } => {
             let ok = node.state.buffer(buffer).map(|b| b.version == version).unwrap_or(false);
             if ok {
                 let view = node.state.buffer(buffer)?.views.keys().next().copied();
@@ -104,13 +107,19 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                     node.replace_selection(log, v, &text)?;
                 }
             } else {
-                node.errors(log, col, &format!("pipe output not applied: buffer changed meanwhile\n{text}"))?;
+                node.errors(log, dir.as_deref(), &format!("pipe output not applied: buffer changed meanwhile\n{text}"))?;
             }
             Ok(None)
         }
-        Proposal::Errors { col, text } => {
-            node.errors(log, col, &text)?;
+        Proposal::Errors { dir, text } => {
+            node.errors(log, dir.as_deref(), &text)?;
             Ok(None)
+        }
+        Proposal::Complete { view, at, text } => {
+            if node.selection(view)? == (at, at) {
+                node.insert(log, view, &text)?;
+            }
+            Ok(view.window())
         }
         Proposal::Status { ctx, exec, status } => {
             // the window may be gone (Del); the metalog is the record then
@@ -158,8 +167,8 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         Proposal::Edit { window, program } => {
             let run = node.run_edit(log, window, &program)?;
             if !run.output.is_empty() {
-                let col = node.column_of(window)?;
-                node.errors(log, col, &run.output)?;
+                let dir = node.error_dir(Some(window));
+                node.errors(log, dir.as_deref(), &run.output)?;
             }
             Ok(Some(window))
         }

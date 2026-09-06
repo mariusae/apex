@@ -329,10 +329,14 @@ impl Daemon {
                 };
                 props.push(match s.server.open_file(col, from, &dir, &file, None) {
                     Ok(p) => p,
-                    Err(e) => Proposal::Errors { col, text: format!("{e}\n") },
+                    Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });
             }
             ClientMsg::Plumb { ctx, text } => props.push(s.server.plumb(&s.view, ctx, &text)),
+            ClientMsg::Complete { view, ctx, at, prefix } => {
+                let dir = s.server.dir_of(&s.view, ctx);
+                props.push(s.server.complete(view, at, &dir, &prefix));
+            }
             ClientMsg::Propose { id: tool_id, proposal } => {
                 // a tool's proposal: hand it to the leader, remembering who
                 // waits for the answer
