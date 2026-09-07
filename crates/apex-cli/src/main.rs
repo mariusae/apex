@@ -557,10 +557,10 @@ fn version(_: &Ctx, _: &Parsed) -> R {
 
 fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
     match p.args.first().map(String::as_str) {
-        Some("lsp") => apex_tools::lsp::run(&ctx.socket, &ctx.session),
+        Some("lsp") => apex_tool_lsp::run(&ctx.socket, &ctx.session),
         Some("win") => {
             let dir = std::env::current_dir().map_err(|e| e.to_string())?;
-            apex_tools::win::run(&ctx.socket, &ctx.session, &dir, &p.args[1..])
+            apex_tool_win::run(&ctx.socket, &ctx.session, &dir, &p.args[1..])
         }
         _ => Err("usage".into()),
     }

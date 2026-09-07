@@ -1,11 +1,10 @@
 [package]
-name = "apex-tools"
+name = "apex-tool-win"
 version.workspace = true
 edition.workspace = true
-description = "apex tool: the tools that come with apex (win, lsp), through the public API only"
+description = "apex tool win: acme's win as an apex tool, through the public API only"
 
 [dependencies]
 apex-core = { path = "../apex-core" }
 apex-server = { path = "../apex-server" }
-serde_json = "1"
 libc = "0.2"

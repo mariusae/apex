@@ -41,7 +41,7 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     // sh without -i: cooked, no readline, as rc is (rc's rcmain from the
     // published rustrc still wants plan9port's 9 for win, so not here)
     std::thread::spawn(move || {
-        let _ = apex_tools::win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
+        let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
     });
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
     let name = format!("{}/-sh", dir.display());

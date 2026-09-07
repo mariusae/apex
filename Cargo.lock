@@ -201,7 +201,8 @@ dependencies = [
  "apex-core",
  "apex-edit",
  "apex-server",
- "apex-tools",
+ "apex-tool-lsp",
+ "apex-tool-win",
  "serde_json",
 ]
 
@@ -260,13 +261,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "apex-tools"
+name = "apex-tool-lsp"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "serde_json",
+]
+
+[[package]]
+name = "apex-tool-win"
 version = "0.1.0"
 dependencies = [
  "apex-core",
  "apex-server",
  "libc",
- "serde_json",
 ]
 
 [[package]]
