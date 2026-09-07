@@ -79,6 +79,11 @@ pub enum ClientMsg {
     /// by name or pid (acme's Kill; `Ps` answers with what is left).
     Ps,
     Kill { targets: Vec<String> },
+    /// A running program says what it is called: the command of process
+    /// group `group` (the shell's pid) takes `name` in the top row, `ps`
+    /// and `Kill`; a program of no known group (started from the profile,
+    /// say) is adopted under `pid` for as long as this connection lasts.
+    Named { name: String, group: u32, pid: u32, cmd: String },
     /// `ReadFile`, and again with every change to the file until
     /// `Unwatch`, this connection goes, or (a UI) it is fenced.
     Watch { path: String },

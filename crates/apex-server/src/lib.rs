@@ -71,6 +71,10 @@ pub struct Running {
     pub ctx: ExecCtx,
     /// Seconds since the epoch.
     pub started: u64,
+    /// Not started by us: a program that announced itself (`Named`),
+    /// ended by its pid rather than a group, gone with its connection.
+    #[serde(default)]
+    pub adopted: bool,
 }
 
 /// The server. `node` is its replica as the `SERVER` attachment: it leads
@@ -526,10 +530,42 @@ impl Server {
                 continue;
             }
             let ctx = self.node.state.windows.values().find(|w| w.body == Body::Term(*id)).map(|w| ExecCtx::Window(w.id)).unwrap_or(ExecCtx::Top);
-            out.push(Running { pid: h.pid, name: h.name.clone(), cmd: h.cmd.clone(), dir: h.dir.display().to_string(), ctx, started: h.started });
+            out.push(Running { pid: h.pid, name: h.name.clone(), cmd: h.cmd.clone(), dir: h.dir.display().to_string(), ctx, started: h.started, adopted: false });
         }
         out.sort_by_key(|r| r.started);
         out
+    }
+
+    /// A program said what it is called (`Named`): the entry of its group
+    /// takes the name (the top row follows); a program of no known group
+    /// is adopted. Returns the pid to forget when the announcer goes, for
+    /// an adoption.
+    pub fn name_process(&mut self, name: &str, group: u32, pid: u32, cmd: &str) -> Option<u32> {
+        let mut running = self.running.lock().unwrap();
+        if let Some(r) = running.iter_mut().find(|r| r.pid == group) {
+            if r.name != name {
+                self.started.push(Proposal::CommandExit { name: r.name.clone() });
+                self.started.push(Proposal::CommandStart { name: name.to_string() });
+                r.name = name.to_string();
+            }
+            return None;
+        }
+        if running.iter().any(|r| r.pid == pid) {
+            return None;
+        }
+        let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        running.push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: String::new(), ctx: ExecCtx::Top, started, adopted: true });
+        self.started.push(Proposal::CommandStart { name: name.to_string() });
+        Some(pid)
+    }
+
+    /// An adopted program's announcer went: the entry goes too.
+    pub fn forget_process(&mut self, pid: u32) {
+        let mut running = self.running.lock().unwrap();
+        if let Some(i) = running.iter().position(|r| r.pid == pid && r.adopted) {
+            let r = running.remove(i);
+            self.started.push(Proposal::CommandExit { name: r.name });
+        }
     }
 
     /// acme's xkill: end every running command whose name (or pid) is
@@ -540,9 +576,10 @@ impl Server {
         let mut n = 0;
         for r in running {
             if r.name == target || r.pid.to_string() == target {
-                // SAFETY: a plain signal to a group we made
+                // SAFETY: a plain signal to a group we made, or to a
+                // program that announced itself
                 unsafe {
-                    libc::kill(-(r.pid as i32), libc::SIGTERM);
+                    libc::kill(if r.adopted { r.pid as i32 } else { -(r.pid as i32) }, libc::SIGTERM);
                 }
                 n += 1;
             }
@@ -718,7 +755,8 @@ impl Server {
         // acme's waitthread: the name goes into the top row while it runs
         self.started.push(Proposal::CommandStart { name: name.clone() });
         std::thread::spawn(move || {
-            let (out, err, exit) = shell_in_ctx(&name, ctx, &cmd, &dir, stdin, Some(running), &env);
+            // the name as it is at the end: the program may have renamed itself
+            let (out, err, exit, name) = shell_in_named(&name, ctx, &cmd, &dir, stdin, Some(running), &env);
             let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit });
         });
     }
@@ -1285,6 +1323,13 @@ pub fn shell_in_as(name: &str, cmd: &str, dir: &Path, input: Option<String>, run
 
 /// `shell_in_as`, recording where it was started from.
 pub fn shell_in_ctx(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String) {
+    let (out, err, exit, _) = shell_in_named(name, ctx, cmd, dir, input, running, env);
+    (out, err, exit)
+}
+
+/// `shell_in_ctx`, returning as well the command's name as it was when
+/// it ended (a program may have said what it is called meanwhile).
+pub fn shell_in_named(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String, String) {
     let mut command = Command::new(command_shell());
     // acme's runproc clears these before setting its own
     for k in ["acmeaddr", "winid", "%", "samfile"] {
@@ -1305,12 +1350,12 @@ pub fn shell_in_ctx(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Opti
         .spawn();
     let mut child = match child {
         Ok(c) => c,
-        Err(e) => return (String::new(), format!("{cmd}: {e}\n"), String::new()),
+        Err(e) => return (String::new(), format!("{cmd}: {e}\n"), String::new(), name.to_string()),
     };
     let pid = child.id();
     if let Some(r) = &running {
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        r.lock().unwrap().push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: dir.display().to_string(), ctx, started });
+        r.lock().unwrap().push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: dir.display().to_string(), ctx, started, adopted: false });
     }
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         std::thread::spawn(move || {
@@ -1330,10 +1375,15 @@ pub fn shell_in_ctx(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Opti
         }
         Err(e) => (String::new(), format!("{cmd}: {e}\n"), String::new()),
     };
+    let mut final_name = name.to_string();
     if let Some(r) = &running {
-        r.lock().unwrap().retain(|x| x.pid != pid);
+        let mut r = r.lock().unwrap();
+        if let Some(x) = r.iter().find(|x| x.pid == pid) {
+            final_name = x.name.clone();
+        }
+        r.retain(|x| x.pid != pid);
     }
-    out
+    (out.0, out.1, out.2, final_name)
 }
 
 impl Drop for Server {

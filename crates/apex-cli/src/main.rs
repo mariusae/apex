@@ -221,7 +221,9 @@ started from them), as the top row names them. One per line: the pid,
 the name (the first word, what Kill and apex kill go by), where it was
 started from (a window id, or top), when, its directory, and the whole
 command line. Terminals' shells are listed too while they run, named
-after the shell (or the command Newterm was given)." },
+after the shell (or the command Newterm was given). A program may say
+what it is called (apex tool lsp is lsp, not apex); one the server did
+not start is listed for as long as it stays connected." },
     Cmd { name: "kill", usage: "apex kill NAME|PID...", short: "end running commands", flags: &[], run: kill, long: "\
 Kill ends every running command named NAME, or the one with pid PID, as
 Kill in the top row does: the command's process group is sent SIGTERM,

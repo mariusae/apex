@@ -470,6 +470,10 @@ client → server
   Complete{view, ctx, at, prefix}         ^F
   Propose{id, proposal} · Applied{id, result}
   Env{set} · Set{key, value, attachment?} · Ps · Kill{targets}
+  Named{name, group, pid, cmd}            what a program is called: the entry of its process
+                                          group (the shell the server started) takes the name in
+                                          the top row, ps and Kill; a group the server did not
+                                          start is adopted under pid until this connection goes
   ReadFile{path} · Watch{path} · Unwatch{path}
 
 server → client
@@ -584,7 +588,13 @@ plumb B env set cat lsp label awd version`; flags are Go's (`-flag=value`)
 and `apex help` documents everything, `apex help <topic>` included;
 `apex ps` and `apex kill` see and end what the server runs (the
 `Running` list behind the top row's names: pid, name, origin, start
-time, directory, command line); `WIN` is an id or a unique substring of a window's name. Not yet:
+time, directory, command line). A program says what it is called with
+`Named`, so `apex tool lsp` is `lsp` in the top row, not `apex`: the
+server renames the entry of the announcer's process group (the exit
+reports the new name too), or adopts an announcer it did not start (from
+the profile, say) for as long as its connection lasts, ending it by pid.
+`apex tool win` and `apex tool lsp` announce themselves once, after
+attaching. `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.
 
 Every session is a URL: `local:///name` on this machine's daemon

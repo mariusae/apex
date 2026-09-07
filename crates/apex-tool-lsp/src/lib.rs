@@ -255,6 +255,8 @@ pub struct Tool {
 /// Run the tool on the session at `socket`, until the link ends.
 pub fn run(socket: &Path, session: &str) -> Result<(), String> {
     let remote = Remote::connect_as(socket, session, "lsp", AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
+    // `apex tool lsp` is called lsp, not apex, in the top row and ps
+    remote.announce("lsp");
     let (tx, rx) = channel();
     let mut t = Tool { remote, servers: HashMap::new(), docs: HashMap::new(), waiting: HashMap::new(), tx, rx, failed: Vec::new() };
     t.install_rules()?;

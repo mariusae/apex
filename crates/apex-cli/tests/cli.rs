@@ -437,3 +437,44 @@ fn ps_lists_running_commands_and_kill_ends_them() {
     assert!(line.contains("-l -c 'sleep 60'"), "{line}");
     let _ = t;
 }
+
+#[test]
+fn programs_say_what_they_are_called() {
+    let sock = daemon();
+    // `apex tool lsp` started by the server is called lsp, not apex,
+    // in ps and Kill: the tool announces itself (Named) for its group
+    let cmd = format!("{} tool lsp", env!("CARGO_BIN_EXE_apex"));
+    ok(&sock, &["exec", &cmd]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ok(&sock, &["ps"]).contains("\tlsp\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ps = ok(&sock, &["ps"]);
+    let line = ps.lines().find(|l| l.contains("\tlsp\t")).unwrap_or_else(|| panic!("{ps}"));
+    assert!(line.contains("tool lsp"), "{line}");
+    assert!(!ps.contains("\tapex\t"), "{ps}");
+    // a program of no known group is adopted for as long as it is connected
+    let r = Remote::connect_as(&sock, "main", "orphan", AttachmentKind::Tool).unwrap();
+    r.send(&apex_server::proto::ClientMsg::Named { name: "orphan".into(), group: 4_000_000, pid: 4_000_001, cmd: "orphan -x".into() });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["ps"]).contains("\torphan\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ps = ok(&sock, &["ps"]);
+    let line = ps.lines().find(|l| l.contains("\torphan\t")).unwrap_or_else(|| panic!("{ps}"));
+    assert!(line.starts_with("4000001\t") && line.contains("orphan -x"), "{line}");
+    drop(r);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["ps"]).contains("\torphan\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ok(&sock, &["ps"]).contains("\torphan\t"));
+    // Kill by the announced name ends the tool
+    let left = ok(&sock, &["kill", "lsp"]);
+    assert!(!left.contains("\tlsp\t"), "{left}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["ps"]).contains("\tlsp\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ok(&sock, &["ps"]).contains("\tlsp\t"));
+}

@@ -144,8 +144,9 @@ the user's shell. `Kill Win` ends it.
 ### Language servers
 
 `apex tool lsp` is a tool like any other, started from the host's profile
-(`apex tool lsp &`) or a terminal; it attaches as `lsp`, and nothing in the
-daemon knows it. It runs one language server per workspace root for the
+(`apex tool lsp &`) or a terminal; it attaches as `lsp`, is `lsp` in the
+top row and `apex ps` (`Kill lsp` ends it), and nothing in the daemon
+knows it. It runs one language server per workspace root for the
 files open in the session (`lsp.LANG` names the command: `apex set
 lsp.go gopls`; gopls, rust-analyzer, pyright, typescript-language-server
 and clangd are the defaults), opens and closes documents as buffers come

@@ -186,6 +186,8 @@ struct Win {
 pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(), String> {
     let name = format!("win-{}", std::process::id());
     let mut remote = Remote::connect_as(socket, session, &name, AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
+    // `apex tool win` is called win, not apex, in the top row and ps
+    remote.announce("win");
     // the window: dir/-host, or dir/-cmd, as win names it
     let label = match cmd.first() {
         Some(c) => apex_server::command_name(c),
@@ -385,13 +387,15 @@ impl Win {
         if !self.addtype(at, text) {
             return; // an interrupt tossed the typing
         }
-        if self.raw() {
-            // raw: keys leave the window at once, the shell shows what it wants
+        let raw = self.raw();
+        self.sendtype();
+        if raw {
+            // raw: keys leave the window at once, the shell shows what it
+            // wants; sendtype moved the point past them, so back it comes
             let n = text.chars().count();
             self.to_remove.push((q0, q0 + n));
-            self.p -= n;
+            self.p = self.p.saturating_sub(n);
         }
-        self.sendtype();
         if text.ends_with('\n') {
             self.cook = true;
         }

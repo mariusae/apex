@@ -113,6 +113,9 @@ struct Conn {
     sent: HashMap<Shard, Seq>,
     /// Files this connection subscribed to (`Watch`).
     watched: BTreeSet<String>,
+    /// Programs adopted at this connection's word (`Named`), forgotten
+    /// when it goes.
+    adopted: Vec<u32>,
 }
 
 struct Session {
@@ -311,7 +314,7 @@ impl Daemon {
                 }
             }
         });
-        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), watched: BTreeSet::new() });
+        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), watched: BTreeSet::new(), adopted: Vec::new() });
     }
 
     fn send(&self, id: u64, m: ServerMsg) {
@@ -328,6 +331,9 @@ impl Daemon {
         let (Some(sid), Some(a)) = (c.session, c.attachment) else { return };
         let Some(name) = self.name_of(sid) else { return };
         let Some(s) = self.sessions.get_mut(&name) else { return };
+        for pid in &c.adopted {
+            s.server.forget_process(*pid);
+        }
         for rid in apex_core::plumb::owned_by(&s.view.state.meta.rules, a) {
             let e = s.log.remove_rule(rid);
             let _ = s.view.state.apply(Shard::Meta, &e);
@@ -562,6 +568,13 @@ impl Daemon {
                 let procs = s.server.processes();
                 self.send(id, ServerMsg::Ps { procs });
                 return;
+            }
+            ClientMsg::Named { name: pname, group, pid, cmd } => {
+                if let Some(pid) = s.server.name_process(&pname, group, pid, &cmd) {
+                    if let Some(c) = self.conns.get_mut(&id) {
+                        c.adopted.push(pid);
+                    }
+                }
             }
             ClientMsg::Kill { targets } => {
                 for t in &targets {

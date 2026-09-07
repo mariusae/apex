@@ -563,6 +563,16 @@ impl Remote {
         self.wait_for(timeout, |l| l.ps.take())
     }
 
+    /// Say what this program is called: its entry in the top row, `ps`
+    /// and `Kill` takes `name` (the command of our process group), or a
+    /// new one is made for us if none was started by the server.
+    pub fn announce(&self, name: &str) {
+        // SAFETY: plain libc queries
+        let group = unsafe { libc::getpgrp() } as u32;
+        let cmd = std::env::args().collect::<Vec<_>>().join(" ");
+        self.send(&ClientMsg::Named { name: name.to_string(), group, pid: std::process::id(), cmd });
+    }
+
     /// End running commands by name or pid; what is left.
     pub fn kill(&mut self, targets: Vec<String>, timeout: std::time::Duration) -> Result<Vec<crate::Running>, String> {
         self.link.ps = None;
