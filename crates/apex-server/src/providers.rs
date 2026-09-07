@@ -82,6 +82,27 @@ impl Dest {
     }
 }
 
+/// The providers a session can be reached through: `local` (this
+/// machine's daemon), `ssh` (built in), and every `apex-remote-NAME` on
+/// the PATH, as NAME.
+pub fn available() -> Vec<String> {
+    let mut out = vec!["local".to_string(), "ssh".to_string()];
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if let Some(p) = name.strip_prefix("apex-remote-") {
+                    if !p.is_empty() && e.path().is_file() && !out.iter().any(|x| x == p) {
+                        out.push(p.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 fn on_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
@@ -339,5 +360,24 @@ fn shell_quote(s: &str) -> String {
         s.to_string()
     } else {
         format!("'{}'", s.replace('\'', "'\\''"))
+    }
+}
+
+#[cfg(test)]
+mod available_tests {
+    #[test]
+    fn providers_are_the_built_in_ones_and_what_the_path_carries() {
+        let dir = std::env::temp_dir().join(format!("apex-providers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("apex-remote-zed"), "#!/bin/sh\n").unwrap();
+        let old = std::env::var_os("PATH").unwrap_or_default();
+        let mut paths: Vec<std::path::PathBuf> = std::env::split_paths(&old).collect();
+        paths.insert(0, dir.clone());
+        std::env::set_var("PATH", std::env::join_paths(paths).unwrap());
+        let got = super::available();
+        std::env::set_var("PATH", old);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(&got[..2], &["local".to_string(), "ssh".to_string()]);
+        assert!(got.contains(&"zed".to_string()), "{got:?}");
     }
 }

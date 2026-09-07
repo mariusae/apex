@@ -1008,6 +1008,13 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
+- *As built, the picker:* ⌘K's rows read label first, then the host
+dimmed, then the provider in parentheses. "Connect to a Session…"
+opens a form: the providers as pills to choose from (`local`, `ssh`,
+and every `apex-remote-NAME` on the PATH, ←→ or a letter picks one),
+the host (not for local), the label (the default session when empty);
+enter connects, esc backs out. A URL typed into the search still
+creates directly.
 - *As built, parked sessions:* switching a window to another session
 (⌘K) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
 session is parked, still attached and still leading, in an app-wide

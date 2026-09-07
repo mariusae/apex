@@ -415,6 +415,8 @@ pub struct Selector {
     pub current: SessionUrl,
     /// Typing a new name for this window's session.
     pub renaming: bool,
+    /// The connect form: a provider, a host, a label.
+    pub connect: Option<Connect>,
     /// When the caret last became visible: it blinks, and a keystroke
     /// makes it show at once.
     pub caret_since: std::time::Instant,
@@ -431,6 +433,87 @@ pub enum Row {
     /// "Rename this session…": type the new name next.
     RenameThis,
     Rename(String),
+    /// "Connect to a session…": the form next.
+    Connect,
+}
+
+/// The connect form's fields.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Field {
+    Provider,
+    Host,
+    Label,
+}
+
+/// Connecting to a session: a provider chosen from what is available
+/// (`local`, `ssh`, every `apex-remote-NAME` on the PATH), the host it
+/// takes (none for local), and the session's label.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Connect {
+    pub providers: Vec<String>,
+    pub provider: usize,
+    pub host: String,
+    pub label: String,
+    pub field: Field,
+}
+
+impl Connect {
+    pub fn new() -> Connect {
+        Connect { providers: apex_server::providers::available(), provider: 0, host: String::new(), label: String::new(), field: Field::Provider }
+    }
+
+    pub fn provider(&self) -> &str {
+        self.providers.get(self.provider).map(String::as_str).unwrap_or("local")
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.provider() == "local"
+    }
+
+    /// The fields in order, the host left out for local.
+    fn fields(&self) -> Vec<Field> {
+        if self.is_local() { vec![Field::Provider, Field::Label] } else { vec![Field::Provider, Field::Host, Field::Label] }
+    }
+
+    pub fn next_field(&mut self, delta: i32) {
+        let fields = self.fields();
+        let i = fields.iter().position(|f| *f == self.field).unwrap_or(0) as i32 + delta;
+        let i = i.clamp(0, fields.len() as i32 - 1) as usize;
+        self.field = fields[i];
+    }
+
+    pub fn next_provider(&mut self, delta: i32) {
+        let n = self.providers.len() as i32;
+        if n > 0 {
+            self.provider = ((self.provider as i32 + delta).rem_euclid(n)) as usize;
+        }
+        if self.is_local() && self.field == Field::Host {
+            self.field = Field::Label;
+        }
+    }
+
+    /// The session the form names, once it names one.
+    pub fn url(&self) -> Option<SessionUrl> {
+        let label = self.label.trim();
+        let session = if label.is_empty() { apex_server::providers::DEFAULT_SESSION } else { label };
+        if session.contains('/') {
+            return None;
+        }
+        if self.is_local() {
+            return Some(SessionUrl::local(session));
+        }
+        let host = self.host.trim();
+        if host.is_empty() {
+            return None;
+        }
+        Some(SessionUrl { provider: self.provider().to_string(), arg: host.to_string(), session: session.to_string() })
+    }
+}
+
+/// How a session reads in the picker: its label first, then the host,
+/// then the provider in parentheses (the host and provider dimmed).
+pub fn session_parts(u: &SessionUrl) -> (String, String, String) {
+    (u.session.clone(), u.arg.clone(), format!("({})", u.provider))
 }
 
 impl Row {
@@ -446,6 +529,9 @@ impl Selector {
 
     pub fn rows(&self) -> Vec<Row> {
         let f = self.filter.trim();
+        if self.connect.is_some() {
+            return Vec::new(); // the form is the panel then
+        }
         if self.renaming {
             return if f.is_empty() || f.contains('/') { Vec::new() } else { vec![Row::Rename(f.to_string())] };
         }
@@ -480,6 +566,7 @@ impl Selector {
                 }
             }
         } else {
+            actions.push(Row::Connect);
             actions.push(Row::RenameThis);
         }
         if !actions.is_empty() {
@@ -570,7 +657,7 @@ impl Acme {
             let urls = apex_server::providers::list_sessions(&dest).unwrap_or_default().iter().map(|s| self.url.with_session(s)).collect();
             (dest, urls)
         });
-        let mut sel = Selector { filter: String::new(), cursor: 0, recent: recent(), local, remote, current: self.url.clone(), renaming: false, caret_since: std::time::Instant::now() };
+        let mut sel = Selector { filter: String::new(), cursor: 0, recent: recent(), local, remote, current: self.url.clone(), renaming: false, connect: None, caret_since: std::time::Instant::now() };
         sel.settle();
         self.selector = Some(sel);
         // blink the caret while the selector is open
@@ -604,6 +691,56 @@ impl Acme {
     pub fn selector_key(&mut self, key: &str, ch: Option<&str>, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(sel) = self.selector.as_mut() else { return false };
         sel.caret_since = std::time::Instant::now();
+        if let Some(form) = sel.connect.as_mut() {
+            // the connect form: up and down between fields, left and right
+            // (or space) through the providers, enter connects, esc backs out
+            match key {
+                "escape" => {
+                    sel.connect = None;
+                    sel.settle();
+                }
+                "enter" => {
+                    if let Some(url) = form.url() {
+                        self.choose(Row::Create(url), window, cx);
+                        return true;
+                    }
+                }
+                "up" => form.next_field(-1),
+                "down" | "tab" => form.next_field(1),
+                "left" if form.field == Field::Provider => form.next_provider(-1),
+                "right" if form.field == Field::Provider => form.next_provider(1),
+                "space" if form.field == Field::Provider => form.next_provider(1),
+                "backspace" => match form.field {
+                    Field::Host => {
+                        form.host.pop();
+                    }
+                    Field::Label => {
+                        form.label.pop();
+                    }
+                    Field::Provider => {}
+                },
+                _ => {
+                    if let Some(c) = ch.filter(|c| !c.chars().any(char::is_control)) {
+                        match form.field {
+                            Field::Host => form.host.push_str(c),
+                            Field::Label => form.label.push_str(c),
+                            Field::Provider => {
+                                // a letter picks the provider starting with it
+                                let lc = c.to_lowercase();
+                                if let Some(i) = form.providers.iter().position(|p| p.to_lowercase().starts_with(&lc)) {
+                                    form.provider = i;
+                                    if form.is_local() && form.field == Field::Host {
+                                        form.field = Field::Label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            cx.notify();
+            return true;
+        }
         match key {
             "escape" => self.close_selector(cx),
             "enter" => {
@@ -643,6 +780,13 @@ impl Acme {
     pub fn choose(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         match row {
             Row::Header(_) | Row::Divider => {}
+            Row::Connect => {
+                if let Some(sel) = self.selector.as_mut() {
+                    sel.connect = Some(Connect::new());
+                    sel.filter.clear();
+                }
+                cx.notify();
+            }
             Row::RenameThis => {
                 if let Some(sel) = self.selector.as_mut() {
                     sel.renaming = true;
@@ -682,6 +826,77 @@ impl Acme {
                 cx.notify();
             }
         }
+    }
+
+    /// The connect form: the providers as a row of pills (the chosen one
+    /// marked), then the host and the label as fields; the active one
+    /// carries the caret.
+    fn connect_form(&self, form: &Connect, caret_on: bool, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let row = |label: &str, active: bool| {
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(12.))
+                .px(px(14.))
+                .py(px(8.))
+                .text_size(px(14.))
+                .font_family(UI_FONT)
+                .when(active, |d| d.bg(rgb(0xeaffff)))
+                .child(div().w(px(80.)).text_color(rgb(0x6f6f6f)).text_size(px(12.)).child(label.to_string()))
+        };
+        let caret = |on: bool| div().w(px(1.5)).h(px(16.)).flex_none().when(on, |d| d.bg(rgb(0x000099)));
+        let field = |value: &str, hint: &str, active: bool| {
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(1.))
+                .when(!value.is_empty(), |d| d.child(div().text_color(rgb(0x111111)).child(value.to_string())))
+                .when(active, |d| d.child(caret(caret_on)))
+                .when(value.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child(hint.to_string())))
+        };
+        // the providers: pills, the chosen one filled; a click picks one
+        let mut pills = div().flex().flex_row().items_center().gap(px(6.));
+        for (i, p) in form.providers.iter().enumerate() {
+            let chosen = i == form.provider;
+            pills = pills.child(
+                div()
+                    .id(("provider", i))
+                    .px(px(8.))
+                    .py(px(2.))
+                    .rounded(px(10.))
+                    .border_1()
+                    .border_color(rgb(0xb8b8b8))
+                    .when(chosen, |d| d.bg(rgb(0x000099)).text_color(rgb(0xffffff)).border_color(rgb(0x000099)))
+                    .when(!chosen, |d| d.text_color(rgb(0x111111)).hover(|s| s.bg(rgb(0xe4e4e4))))
+                    .cursor_pointer()
+                    .child(p.clone())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            if let Some(f) = this.selector.as_mut().and_then(|s| s.connect.as_mut()) {
+                                f.provider = i;
+                                f.field = Field::Provider;
+                                if f.is_local() && f.field == Field::Host {
+                                    f.field = Field::Label;
+                                }
+                            }
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    ),
+            );
+        }
+        let mut el = div().flex().flex_col().py(px(6.)).child(row("Provider", form.field == Field::Provider).child(pills));
+        if !form.is_local() {
+            el = el.child(row("Host", form.field == Field::Host).child(field(&form.host, "user@host, a box name…", form.field == Field::Host)));
+        }
+        el = el.child(row("Label", form.field == Field::Label).child(field(&form.label, "default", form.field == Field::Label)));
+        let ready = form.url().is_some();
+        let hint = if ready { "enter connects  ·  ↑↓ fields  ·  ←→ providers  ·  esc back" } else { "a host is needed  ·  ↑↓ fields  ·  ←→ providers  ·  esc back" };
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(hint));
+        el.into_any_element()
     }
 
     /// The strip at the top: traffic lights live in its left margin; the
@@ -783,11 +998,17 @@ impl Acme {
                 Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(0xdddddd)).into_any_element(),
                 Row::Open(u) | Row::Create(u) => {
                     let is_current = matches!(row, Row::Open(u) if *u == self.url);
-                    let text = match row {
-                        Row::Create(u) => format!("Create {u}"),
-                        _ => u.to_string(),
-                    };
                     let create = matches!(row, Row::Create(_));
+                    let (label, host, provider) = session_parts(u);
+                    let mut text = div().flex().flex_row().items_baseline().gap(px(8.));
+                    if create {
+                        text = text.child(div().child("Create"));
+                    }
+                    text = text.child(div().child(label));
+                    if !host.is_empty() {
+                        text = text.child(div().text_color(rgb(0x8a8a8a)).child(host));
+                    }
+                    let text = text.child(div().text_color(rgb(0x8a8a8a)).text_size(px(12.)).child(provider));
                     let r = row.clone();
                     let mut d = div()
                         .id(("row", i))
@@ -804,7 +1025,7 @@ impl Acme {
                         .cursor_pointer()
                         .when(picked, |d| d.bg(rgb(0x9eeeee)))
                         .when(!picked, |d| d.hover(|s| s.bg(rgb(0xe4e4e4))))
-                        .child(div().child(text));
+                        .child(text);
                     if is_current {
                         d = d.child(div().text_color(rgb(0x000099)).child("✓"));
                     }
@@ -842,9 +1063,10 @@ impl Acme {
                     )
                     .into_any_element()
                 }
-                Row::RenameThis | Row::Rename(_) => {
+                Row::RenameThis | Row::Rename(_) | Row::Connect => {
                     let text = match row {
                         Row::Rename(n) => format!("Rename to “{n}”"),
+                        Row::Connect => "Connect to a Session…".to_string(),
                         _ => "Rename This Session…".to_string(),
                     };
                     let r = row.clone();
@@ -872,10 +1094,10 @@ impl Acme {
             };
             list = list.child(el);
         }
-        if rows.is_empty() {
+        if rows.is_empty() && sel.connect.is_none() {
             list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(if sel.renaming { "Type a name" } else { "No sessions" }));
         }
-        let panel = div()
+        let mut panel = div()
             .w(px(620.))
             .bg(rgb(0xf4f4f4))
             .border_1()
@@ -884,9 +1106,41 @@ impl Acme {
             .shadow_lg()
             .flex()
             .flex_col()
-            .overflow_hidden()
-            .child(field)
-            .child(list);
+            .overflow_hidden();
+        panel = match &sel.connect {
+            Some(form) => panel.child(self.connect_form(form, sel.caret_visible(), cx)),
+            None => panel.child(field).child(list),
+        };
         Some(deferred(anchored().position(point(px(72.), px(self.top() - 2.))).child(panel)).with_priority(1))
+    }
+}
+
+#[cfg(test)]
+mod connect_tests {
+    use super::*;
+
+    #[test]
+    fn the_form_names_a_session_once_it_can() {
+        let mut f = Connect { providers: vec!["local".into(), "ssh".into(), "sprite".into()], provider: 0, host: String::new(), label: String::new(), field: Field::Provider };
+        // local needs no host; an empty label is the default session
+        assert_eq!(f.url().unwrap().to_string(), "local:///default");
+        f.label = "notes".into();
+        assert_eq!(f.url().unwrap().to_string(), "local:///notes");
+        assert_eq!(f.fields(), vec![Field::Provider, Field::Label]);
+        // elsewhere: a host is needed
+        f.next_provider(1);
+        assert_eq!(f.provider(), "ssh");
+        assert!(f.url().is_none());
+        f.host = "me@box".into();
+        assert_eq!(f.url().unwrap().to_string(), "ssh://me@box/notes");
+        assert_eq!(f.fields(), vec![Field::Provider, Field::Host, Field::Label]);
+        // back to local from the host field: the field moves on
+        f.field = Field::Host;
+        f.next_provider(-1);
+        assert_eq!(f.field, Field::Label);
+        f.label = "a/b".into();
+        assert!(f.url().is_none(), "a slash is no label");
+        let (label, host, provider) = session_parts(&SessionUrl::parse("sprite://apex-test/default").unwrap());
+        assert_eq!((label.as_str(), host.as_str(), provider.as_str()), ("default", "apex-test", "(sprite)"));
     }
 }
