@@ -256,6 +256,9 @@ path is fetched with `GET file://` on the plane (the disk, with no
 link), answered with a content type from the extension, and watched
 from then on (one watch stream per path per page, capped at 200,
 ended with the page); a change after the first frame reloads the page.
+WebKit dispatches a custom scheme only when the URL has a host, so the
+client loads `apexfile:///path` as `apexfile://localhost/path` and maps
+navigations back; the session never sees the `localhost` form.
 
 A custom scheme handled by the client: `apexfile:///path` is
 `GET file:///path` on the plane. With it:

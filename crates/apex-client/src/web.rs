@@ -101,10 +101,10 @@ impl Webs {
             let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
             let (wake1, wake2) = (self.wake.clone(), self.wake.clone());
             let mut b = wry::WebViewBuilder::new()
-                .with_url(url)
+                .with_url(&webkit_url(url))
                 .with_bounds(rect)
                 .with_navigation_handler(move |u| {
-                    let _ = tx1.send((w, WebEvent::Navigated(u)));
+                    let _ = tx1.send((w, WebEvent::Navigated(apex_url(&u))));
                     if let Some(k) = &wake1 {
                         k();
                     }
@@ -137,7 +137,7 @@ impl Webs {
         if h.url != url {
             // the state moved the page (a Goto, another client): follow
             h.url = url.to_string();
-            let _ = h.view.load_url(url);
+            let _ = h.view.load_url(&webkit_url(url));
         }
         if h.bounds != Some(bounds) {
             let _ = h.view.set_bounds(rect);
@@ -211,6 +211,10 @@ struct Fetcher {
 impl Fetcher {
     fn serve(&self, request: wry::http::Request<Vec<u8>>, responder: wry::RequestAsyncResponder) {
         let url = request.uri().to_string();
+        let debug = std::env::var_os("APEX_WEB_DEBUG").is_some();
+        if debug {
+            eprintln!("web: apexfile request {url} (plane: {})", self.plane.is_some());
+        }
         let path = match file_url_path(&format!("file://{}", url.strip_prefix("apexfile://").unwrap_or(&url))) {
             Some(p) => p,
             None => return respond(responder, 400, "text/plain", format!("{url}: not a host file").into_bytes()),
@@ -230,6 +234,9 @@ impl Fetcher {
             self.watch(&path);
         }
         let mime = if status == 200 { mime_for(&path) } else { "text/plain; charset=utf-8" };
+        if debug {
+            eprintln!("web: apexfile {path}: {status}, {} bytes, {mime}", body.len());
+        }
         respond(responder, status, mime, body);
     }
 
@@ -269,6 +276,23 @@ impl Fetcher {
             }
             watches.lock().unwrap().remove(&path);
         });
+    }
+}
+
+/// WebKit dispatches a custom scheme only with a host in the URL: our
+/// `apexfile:///path` loads as `apexfile://localhost/path`.
+fn webkit_url(url: &str) -> String {
+    match url.strip_prefix("apexfile:///") {
+        Some(rest) => format!("apexfile://localhost/{rest}"),
+        None => url.to_string(),
+    }
+}
+
+/// The form the session names a host file by, back from WebKit's.
+fn apex_url(url: &str) -> String {
+    match url.strip_prefix("apexfile://localhost/") {
+        Some(rest) => format!("apexfile:///{rest}"),
+        None => url.to_string(),
     }
 }
 
