@@ -415,6 +415,8 @@ fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, w
     acme.session = url.session.clone();
     acme.wake = Some(wake);
     acme.connected = false;
+    // remembered like any window, on the session it is meant for
+    acme.socket = Some(apex_server::daemon::default_socket());
     let msg = Acme::connect_error(url, e);
     acme.notice(&msg);
     acme

@@ -508,6 +508,8 @@ impl Acme {
         self.node = node;
         self.session = url.session.clone();
         self.url = url.clone();
+        // a window that started offline is one to remember now
+        self.socket = Some(apex_server::daemon::default_socket());
         self.layouts.clear();
         self.term_layouts.clear();
         self.hl = None;
