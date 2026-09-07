@@ -1,0 +1,9 @@
+[package]
+name = "apex-tool-preview"
+version.workspace = true
+edition.workspace = true
+description = "apex tool preview: a file shown as a page, live from its buffer through a converter (WEB.md §3)"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }

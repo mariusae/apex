@@ -209,8 +209,6 @@ pub struct Acme {
     previews: Vec<(u64, String, Option<String>, u32)>,
     /// Remote files being previewed: subscribed, their copies kept current.
     live: std::collections::HashMap<String, Live>,
-    /// The extensions Preview is offered for, as last derived.
-    preview_wanted: std::collections::BTreeSet<String>,
     /// The heartbeat: when the last ping went out.
     last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
@@ -372,45 +370,6 @@ impl Acme {
         Ok(None)
     }
 
-    /// Preview is offered where a setting names an app for the file's
-    /// kind (`Preview.md`, say), not for the fallback: one rule of ours
-    /// per such extension, kept in step with the settings.
-    fn sync_preview_rules(&mut self) {
-        let Backend::Remote(link) = &mut self.backend else { return };
-        let me = link.attachment;
-        let meta = &self.node.state.meta;
-        let wanted = preview_exts(meta, me);
-        if wanted == self.preview_wanted {
-            return;
-        }
-        let installed: Vec<(RuleId, String)> = meta
-            .rules
-            .iter()
-            .filter(|(_, r)| r.attachment == me && r.rule.verb == "Preview")
-            .filter_map(|(id, r)| r.rule.file.as_deref().and_then(ext_of_pattern).map(|e| (*id, e)))
-            .collect();
-        for ext in wanted.iter() {
-            if !installed.iter().any(|(_, e)| e == ext) && !self.preview_wanted.contains(ext) {
-                let rule = PlumbRule {
-                    verb: "Preview".into(),
-                    text: None,
-                    file: Some(pattern_of_ext(ext)),
-                    kind: Some(WinKind::File),
-                    isfile: None,
-                    isdir: None,
-                    action: RuleAction::Client { verb: "preview".into(), args: "$file".into() },
-                    to: None,
-                };
-                link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
-            }
-        }
-        for (id, ext) in installed {
-            if !wanted.contains(&ext) {
-                link.send(&ClientMsg::RuleRm { id });
-            }
-        }
-        self.preview_wanted = wanted;
-    }
 
     /// What rules asked this client to do since the last poll: `open`
     /// and `preview`, answered when done. A preview of a remote file
@@ -631,7 +590,6 @@ impl Acme {
         self.selector = None;
         // a new attachment: its rules are installed afresh, and previews
         // of the old session are over
-        self.preview_wanted.clear();
         self.previews.clear();
         self.live.clear();
         window.set_window_title(&Self::title(url));
@@ -794,7 +752,6 @@ impl Acme {
             snarfouts: Vec::new(),
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
-            preview_wanted: std::collections::BTreeSet::new(),
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -1057,7 +1014,9 @@ impl Acme {
             self.show(w);
         }
         self.answer_asks();
-        self.sync_preview_rules();
+        // what the proposals just applied left to do: places to go (a
+        // tool's Goto opens a file), tags to refit, the warp
+        self.sync();
         alive
     }
 
@@ -2542,57 +2501,6 @@ struct Live {
     child: Option<std::process::Child>,
 }
 
-/// The extensions Preview is offered for: every `Preview.EXT` setting
-/// this attachment sees (its own, then the session's).
-fn preview_exts(meta: &apex_core::state::Meta, me: AttachmentId) -> std::collections::BTreeSet<String> {
-    let mut out = std::collections::BTreeSet::new();
-    for owner in [me, SERVER] {
-        if let Some(m) = meta.settings.get(&owner) {
-            out.extend(m.keys().filter_map(|k| k.strip_prefix("Preview.")).filter(|e| !e.is_empty()).map(|e| e.to_lowercase()));
-        }
-    }
-    out
-}
-
-/// The `--file` pattern of our Preview rule for an extension, and back.
-fn pattern_of_ext(ext: &str) -> String {
-    format!("(?i)\\.{}$", regex_escape(ext))
-}
-
-fn ext_of_pattern(p: &str) -> Option<String> {
-    p.strip_prefix("(?i)\\.").and_then(|r| r.strip_suffix('$')).map(regex_unescape)
-}
-
-fn regex_escape(s: &str) -> String {
-    let mut out = String::new();
-    for c in s.chars() {
-        if !c.is_ascii_alphanumeric() {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-fn regex_unescape(s: &str) -> String {
-    let mut out = String::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            if let Some(n) = chars.next() {
-                out.push(n);
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// What this client does when a rule asks it, in-process: `open` hands
-/// the argument to the platform (`open` on macOS, `xdg-open` elsewhere),
-/// `preview` shows a local file with the platform's previewer. Anything
-/// else is refused, and the server tries the next rule.
 pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
     match verb {
         "open" => spawn_quiet(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }, &[args]).map(|_| ()),
@@ -2601,9 +2509,6 @@ pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
     }
 }
 
-/// Show `path` with `app`, or with the platform's previewer: Quick Look
-/// on macOS, `xdg-open` elsewhere. Returns the previewer's process when
-/// it lives as long as the preview does.
 fn open_preview(app: Option<&str>, path: &Path) -> Result<Option<std::process::Child>, String> {
     let p = path.to_string_lossy().to_string();
     match app {
@@ -2614,9 +2519,6 @@ fn open_preview(app: Option<&str>, path: &Path) -> Result<Option<std::process::C
     }
 }
 
-/// A local copy of a remote file for previewing, under this client's
-/// temporary directory, keeping the host's path so neighbours can be
-/// fetched beside it later.
 fn preview_copy(url: &SessionUrl, path: &str, bytes: &[u8]) -> Result<PathBuf, String> {
     let host: String = format!("{}-{}", url.provider, url.arg).chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' }).collect();
     let copy = std::env::temp_dir().join("apex-preview").join(host).join(path.trim_start_matches('/'));
@@ -2627,8 +2529,6 @@ fn preview_copy(url: &SessionUrl, path: &str, bytes: &[u8]) -> Result<PathBuf, S
     Ok(copy)
 }
 
-/// Walk the rules in-process (no daemon): the client answers for itself,
-/// and there are no tools to ask.
 fn plumb_local(server: &mut Server, node: &mut Node, log: &mut Log, req: PlumbReq) -> Option<WindowId> {
     let (id, mut step) = server.plumb_start(node, req);
     loop {
@@ -2655,23 +2555,5 @@ fn term_key(ks: &Keystroke) -> TermKey {
         shift: ks.modifiers.shift,
         control: ks.modifiers.control,
         alt: ks.modifiers.alt,
-    }
-}
-
-#[cfg(test)]
-mod preview_tests {
-    use super::*;
-
-    #[test]
-    fn preview_extensions_come_from_direct_settings_only() {
-        let mut meta = apex_core::state::Meta::default();
-        let me = AttachmentId(7);
-        meta.settings.entry(SERVER).or_default().insert("Preview".into(), "Quick".into());
-        meta.settings.entry(SERVER).or_default().insert("Preview.html".into(), "Safari".into());
-        meta.settings.entry(me).or_default().insert("Preview.MD".into(), "Marked".into());
-        let exts: Vec<String> = preview_exts(&meta, me).into_iter().collect();
-        assert_eq!(exts, vec!["html", "md"]);
-        assert_eq!(ext_of_pattern(&pattern_of_ext("c++")).as_deref(), Some("c++"));
-        assert_eq!(pattern_of_ext("md"), r"(?i)\.md$");
     }
 }

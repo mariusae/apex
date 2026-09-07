@@ -322,9 +322,20 @@ impl Daemon {
         let tx = self.tx.clone();
         thread::spawn(move || {
             let mut r = BufReader::new(reader);
-            while let Ok(Some(m)) = read_frame::<_, ClientMsg>(&mut r) {
-                if tx.send(Event::Msg(id, m)).is_err() {
-                    break;
+            loop {
+                match read_frame::<_, ClientMsg>(&mut r) {
+                    Ok(Some(m)) => {
+                        if tx.send(Event::Msg(id, m)).is_err() {
+                            break;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        // a frame we could not read: the connection is over,
+                        // and this is why (a build of another wire, say)
+                        eprintln!("apexd: connection {id}: {e}");
+                        break;
+                    }
                 }
             }
             let _ = tx.send(Event::Gone(id));
@@ -1052,6 +1063,7 @@ impl Daemon {
         // script, a rename) is named before anything reports its end
         let mut props = { let mut all = s.server.take_started(); all.extend(props); all };
         s.server.close_orphan_terms(&mut s.log, &s.view);
+        s.server.sync_preview_rules(&mut s.log, &s.view);
         s.server.sync_watches(&s.view);
         let _ = s.view.catch_up(&s.log);
         // the daemon leads: its own proposals apply here and now

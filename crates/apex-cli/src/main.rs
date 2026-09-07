@@ -262,7 +262,7 @@ removes one. Plumb rule add installs one, owned by the session (or by
 this attachment with -mine, gone when it detaches):
 
 	apex plumb rule add -text='https?://\\S+' -client=open -args='$0'
-	apex plumb rule add -verb=Preview -file='\\.md$' -run='glow $file'
+	apex plumb rule add -verb=Preview -file='\\.md$' -run='open -a Marked $file' -priority=10
 	apex plumb rule add -file='\\.go$' -text='\\w+' -tool=lsp -priority=10
 
 See apex help rules for the predicates, the actions, and the templates." },
@@ -291,8 +291,12 @@ when that client detaches. A client reads its own settings first, then
 the session's. With no arguments, set prints every setting with its
 owner. Settings in use:
 
-	Preview.EXT APP   the app that previews files with that extension
-	Preview APP       the app for previews no other setting names
+	Preview.EXT CMD   the converter for files with that extension: a
+	                  command reading the file on stdin, writing HTML
+	                  (apex help preview); .md and .markdown have
+	                  'apex md', .html, .htm and .svg 'cat' unless set;
+	                  an empty value turns one off
+	Preview APP       the app a rule's own -client=preview falls back to
 	lsp.LANG CMD      the language server for LANG (apex help tool)
 	Newterm.shell SH  the shell Newterm runs (a path, or a name on the
 	                  daemon's PATH); the daemon's $SHELL otherwise" },
@@ -317,7 +321,21 @@ and the exit status is 1 then. What the host answers today:
 The plane is HTTP-shaped: a request opens a numbered stream, the answer
 is a status and a body, and a watch or a tunnel is a stream that does
 not end on its own." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "preview", usage: "apex preview FILE", short: "show FILE as a page, live", flags: &[], run: preview_cmd, long: "\
+Preview shows FILE as a page (Preview in its tag does the same): the
+file's buffer, opened if it is not, goes through the converter its
+extension names in the settings (Preview.EXT, see apex help set) and
+the HTML is a window named FILE+Preview beside it, kept so as the
+buffer changes, unsaved edits included. The converter runs on the
+host as apex tool preview FILE, a command named preview (apex ps,
+Kill preview); it ends with either window. Relative links in the page
+resolve in the file's directory (apexfile://)." },
+    Cmd { name: "md", usage: "apex md <MARKDOWN", short: "Markdown on stdin to HTML on stdout", flags: &[], run: md, long: "\
+Md converts Markdown on stdin to an HTML page on stdout: CommonMark
+with tables, footnotes, strikethrough and task lists, with a small
+stylesheet. It is the converter Preview uses for .md and .markdown
+files unless a setting names another." },
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp | apex tool preview FILE", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -665,9 +683,60 @@ fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
             let dir = std::env::current_dir().map_err(|e| e.to_string())?;
             apex_tool_win::run(&ctx.socket, &ctx.session, &dir, &p.args[1..])
         }
+        Some("preview") => match p.args.get(1) {
+            Some(file) => match apex_tool_preview::run(&ctx.socket, &ctx.session, file) {
+                Err(e) if e == "shown" => Ok(()), // another preview of it is up: shown
+                r => r,
+            },
+            None => Err("usage".into()),
+        },
         _ => Err("usage".into()),
     }
 }
+
+/// `apex preview FILE`: the tool, run on the host as a command of the
+/// session (so the terminal is free and the top row names it).
+fn preview_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    let [file] = p.args.as_slice() else { return Err("usage".into()) };
+    let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
+    let mut c = tool(ctx)?;
+    let text = format!("apex tool preview {}", apex_server::shell_quote(&file));
+    c.propose(Proposal::Exec { ctx: ExecCtx::Top, text }, TIMEOUT)?;
+    Ok(())
+}
+
+/// `apex md`: Markdown on stdin to an HTML page on stdout.
+fn md(_: &Ctx, _: &Parsed) -> R {
+    let mut text = String::new();
+    std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+    let html = markdown_page(&text);
+    std::io::stdout().write_all(html.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Markdown as a whole page, with the stylesheet Preview pages get.
+pub fn markdown_page(text: &str) -> String {
+    use pulldown_cmark::{html, Options, Parser};
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_FOOTNOTES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+    let mut body = String::new();
+    html::push_html(&mut body, Parser::new_ext(text, opts));
+    format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><style>{MD_STYLE}</style></head><body>\n{body}</body></html>\n")
+}
+
+const MD_STYLE: &str = "\
+body { max-width: 46em; margin: 1.5em auto; padding: 0 1em; font: 16px/1.5 -apple-system, system-ui, sans-serif; color: #222; background: #fff; }
+h1, h2, h3 { line-height: 1.25; margin: 1.2em 0 .5em; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } h3 { font-size: 1.15em; }
+pre, code { font: 13px/1.45 ui-monospace, Menlo, monospace; } code { background: #f4f4f0; padding: .1em .3em; border-radius: 3px; }
+pre { background: #f4f4f0; padding: .8em 1em; overflow-x: auto; border-radius: 4px; } pre code { background: none; padding: 0; }
+blockquote { margin: 1em 0; padding: 0 1em; color: #555; border-left: 3px solid #ddd; }
+table { border-collapse: collapse; margin: 1em 0; } th, td { border: 1px solid #ccc; padding: .3em .6em; text-align: left; }
+img { max-width: 100%; } a { color: #0645ad; } hr { border: 0; border-top: 1px solid #ddd; margin: 2em 0; }
+ul.contains-task-list { list-style: none; padding-left: 1.2em; }
+";
 
 fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
     let (from, to) = match p.args.as_slice() {
@@ -757,6 +826,12 @@ fn find_window(c: &Remote, spec: &str) -> Result<WindowId, String> {
     if let Ok(n) = spec.parse::<u64>() {
         let w = WindowId(n);
         return c.node.state.window(w).map(|_| w).map_err(|e| e.to_string());
+    }
+    // a name exactly first (notes.md beside notes.md+Preview), then a
+    // unique substring
+    let exact: Vec<WindowId> = c.node.state.windows.keys().copied().filter(|w| c.node.window_name(*w) == spec).collect();
+    if exact.len() == 1 {
+        return Ok(exact[0]);
     }
     let hits: Vec<WindowId> = c.node.state.windows.keys().copied().filter(|w| c.node.window_name(*w).contains(spec)).collect();
     match hits.len() {

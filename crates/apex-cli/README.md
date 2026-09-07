@@ -74,15 +74,20 @@ client. `apex set KEY VALUE` there records a setting of that client's,
 gone when it detaches; the same command from the profile, or from a
 terminal, records the session's. A client reads its own settings first,
 then the session's, and `apex set` alone lists them all. `Preview`
-is offered in the tools menu of every file whose extension a `Preview.EXT`
-setting names an app for (`apex set Preview.md Marked`); `Preview` alone is the
-fallback app when a rule of your own asks to preview something else, and
-without it the platform previews (Quick Look on macOS). A remote file is
-fetched into a local copy and the copy is kept current while the preview
-lives: the app watches the file on the session's I/O plane (`apex io
--watch GET file://PATH` from a shell; `apex cat` is the one-shot form)
-until Quick Look exits, the file's window goes, or the app loses its
-lead.
+is offered in the tools menu of every file whose extension has a
+converter, a command reading the file on stdin and writing HTML, named
+by a `Preview.EXT` setting (`apex set Preview.rst 'pandoc -f rst -t
+html5'`); Markdown has `apex md` and HTML and SVG `cat` unless set. It
+runs `apex tool preview FILE` on the host, which shows the file's
+buffer as a page in a window `FILE+Preview` beside it, live as you
+type, until either window goes; `apex preview FILE` does the same from
+a shell. An application instead is a rule of your own: `apex plumb rule
+add -verb=Preview -file='\.md$' -run='open -a Marked $file'
+-priority=10`; a rule with `-client=preview` shows the file in the
+`Preview` app on the machine the UI runs on (Quick Look without one),
+fetching a remote file into a copy kept current on the session's I/O
+plane (`apex io -watch GET file://PATH` from a shell; `apex cat` is the
+one-shot form).
 [examples/profile](../../examples/profile) is one that has zsh, bash and fish
 name their window after the directory on every `cd`, through their
 environment; rc does that on its own in an apex terminal (its rcmain

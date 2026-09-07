@@ -760,3 +760,75 @@ fn a_web_views_proxy_and_files_ride_the_plane() {
     let _ = std::fs::remove_dir_all(&dir);
     drop(c);
 }
+
+#[test]
+fn preview_is_a_live_pipe_through_a_converter() {
+    let sock = daemon();
+    // the rules the settings derive: the defaults, then a converter of our own
+    let rules = ok(&sock, &["plumb", "rule", "ls"]);
+    assert!(rules.contains("-verb=Preview") && rules.contains(r"\.md$") && rules.contains("tool preview $file"), "{rules}");
+    assert!(!rules.contains(r"\.txt$"), "{rules}");
+    ok(&sock, &["set", "Preview.txt", "sed 's/one/ONE/; s/^/<p>/; s/$/<\\/p>/'"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.txt$") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.txt$"));
+    // a file, not open: the tool opens it, makes FILE+Preview beside it
+    // with the converter's output, live
+    let dir = std::env::temp_dir().join(format!("apex-cli-preview-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("notes.txt");
+    std::fs::write(&file, "one\n").unwrap();
+    let path = file.display().to_string();
+    let mut tool = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "tool", "preview", &path]).stderr(std::process::Stdio::piped()).spawn().unwrap();
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let preview = format!("{path}+Preview");
+    let find = |r: &Remote, name: &str| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w) == name);
+    let text_of = |r: &Remote, w: WindowId| r.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| r.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(50));
+        if find(&c, &preview).is_some_and(|w| text_of(&c, w).contains("<p>ONE</p>")) {
+            break;
+        }
+    }
+    let src = find(&c, &path).expect("the file opened");
+    let page = find(&c, &preview).expect("a preview window");
+    assert_eq!(text_of(&c, page), "<p>ONE</p>\n");
+    assert!(matches!(c.node.state.window(page).unwrap().body, Body::Html(_)));
+    assert!(c.node.window_live(page), "the page is live while the tool runs");
+    // an edit to the source: the page follows, unsaved
+    let b = c.node.state.window(src).unwrap().body_buffer().unwrap();
+    let version = c.node.state.buffer(b).unwrap().version;
+    c.propose(apex_server::Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 3, q1: 3, text: " two".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && text_of(&c, page) != "<p>ONE two</p>\n" {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert_eq!(text_of(&c, page), "<p>ONE two</p>\n");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "one\n", "the file itself is untouched");
+    // the tool is a command named preview; Del of the page ends it
+    assert!(ok(&sock, &["ps"]).contains("\tpreview\t"), "{}", ok(&sock, &["ps"]));
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Del".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && tool.try_wait().unwrap().is_none() {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    let status = tool.try_wait().unwrap().expect("the tool exits with the page");
+    assert!(status.success(), "{status}");
+    // no converter: a plain complaint
+    let odd = dir.join("thing.zzz");
+    std::fs::write(&odd, "x").unwrap();
+    let (success, _, err) = apex(&sock, &["tool", "preview", &odd.display().to_string()]);
+    assert!(!success && err.contains("no converter for .zzz"), "{err}");
+    // apex md: a page
+    let md = Command::new(env!("CARGO_BIN_EXE_apex")).args(["md"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    {
+        use std::io::Write;
+        md.stdin.as_ref().unwrap().write_all(b"# Title\n\n- [x] done\n\n| a | b |\n|---|---|\n| 1 | 2 |\n").unwrap();
+    }
+    let out = String::from_utf8_lossy(&md.wait_with_output().unwrap().stdout).to_string();
+    assert!(out.starts_with("<!doctype html>") && out.contains("<h1>Title</h1>") && out.contains("<table>") && out.contains("checked"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

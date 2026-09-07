@@ -299,6 +299,26 @@ directory when there is one (the preview tool sets it; §3.2).
 
 ## 3. Preview
 
+*As built (stage 7):* `apex tool preview FILE` (crate
+`apex-tool-preview`, a command named `preview`) opens the file if need
+be (a `Goto`), finds or makes `FILE+Preview` as an HTML window
+(`OpenHtml`) in the column beside the source, marks it live, and
+renders the source buffer through the converter on every change once
+it has settled for 250 ms, writing the page as a minimal diff
+(`ReplaceRange` over the changed span); it ends with either window and
+a second `Preview` warps to a live one. Converters are
+`Preview.EXT` settings, `apex_core::preview` resolving the session's,
+then any attachment's, then the defaults (`md`/`markdown`: `apex md`,
+`html`/`htm`/`svg`: `cat`; an empty setting turns one off). The server
+derives the rules for every setting it sees (session and attachments
+alike), so the client derives none; `apex preview FILE` runs the tool
+as a command of the session; `apex md` is pulldown-cmark with tables,
+footnotes, strikethrough, task lists and a small stylesheet. External
+applications are a rule (`-run='open -a Marked $file' -priority=10`);
+the client's `-client=preview` action (a local app or Quick Look on a
+watched copy) stays for rules that ask for it. Not yet: line markers
+and following dot (§3.3).
+
 ### 3.1 A pipe, live from the buffer
 
 `Preview` on a file window runs `apex tool preview` on the host, a

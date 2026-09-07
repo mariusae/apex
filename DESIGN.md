@@ -668,10 +668,14 @@ host, never on the client, so no `apex` call crosses the link. A client's
 with `apexattachment` set, so `apex set` there records the attachment's
 own settings (`MetaOp::Set{owner}`, dropped on detach); `apex set` from
 the profile records the session's. Clients resolve a key through their
-own settings, then the session's. The UI keeps one `Preview` rule of its
-own per extension a `Preview.EXT` setting names an app for, so the verb
-is offered only where a direct setting exists; `Preview` alone is the
-fallback app, else Quick Look. The client drives file I/O on the I/O
+own settings, then the session's. `Preview` is a live pipe through a
+converter (WEB.md §3, built): `Preview.EXT` names a command that reads
+the file on stdin and writes HTML (`apex md` for Markdown, `cat` for
+HTML and SVG unless set), the server keeps one rule per such extension
+running `apex tool preview $file`, and the tool renders the buffer into
+an HTML window `FILE+Preview` beside it as it changes. `Preview` alone
+names the app a rule's `-client=preview` falls back to, else Quick
+Look. The client drives file I/O on the I/O
 plane (WEB.md §1, built): `GET file://path` is one-shot, with a `Watch`
 header the stream stays open and every change brings a `Body` holding a
 `FileFrame{version, path, bytes}` (the daemon adds the path to the

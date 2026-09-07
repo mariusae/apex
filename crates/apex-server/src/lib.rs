@@ -911,6 +911,49 @@ impl Server {
         }
     }
 
+    /// The Preview rules (WEB.md §3): one of the server's per extension a
+    /// converter exists for, running `apex tool preview` on the file;
+    /// kept in step with the settings (the session's and every
+    /// attachment's), so the verb is offered exactly where it works.
+    pub fn sync_preview_rules(&mut self, log: &mut Log, view: &Node) {
+        let wanted = apex_core::preview::exts(&view.state.meta);
+        let installed: Vec<(RuleId, String)> = view
+            .state
+            .meta
+            .rules
+            .iter()
+            .filter(|(_, r)| r.attachment == SERVER && r.rule.verb == "Preview")
+            .filter_map(|(id, r)| r.rule.file.as_deref().and_then(apex_core::preview::ext_of_pattern).map(|e| (*id, e)))
+            .collect();
+        if installed.iter().map(|(_, e)| e.clone()).collect::<BTreeSet<_>>() == wanted {
+            return;
+        }
+        let apex = std::env::current_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|_| "apex".into());
+        for ext in &wanted {
+            if installed.iter().any(|(_, e)| e == ext) {
+                continue;
+            }
+            let rule = PlumbRule {
+                verb: "Preview".into(),
+                text: None,
+                file: Some(apex_core::preview::pattern_of_ext(ext)),
+                kind: Some(WinKind::File),
+                isfile: None,
+                isdir: None,
+                action: RuleAction::Run(format!("{apex} tool preview $file")),
+                to: None,
+            };
+            let (_, e) = log.install_rule(SERVER, -10, rule);
+            let _ = self.node.state.apply(Shard::Meta, &e);
+        }
+        for (id, ext) in installed {
+            if !wanted.contains(&ext) {
+                let e = log.remove_rule(id);
+                let _ = self.node.state.apply(Shard::Meta, &e);
+            }
+        }
+    }
+
     /// Start a plumb: the first step of walking the rules. The id names
     /// the walk to `plumb_next` when a step's answer comes from elsewhere.
     pub fn plumb_start(&mut self, view: &Node, req: PlumbReq) -> (u64, PlumbStep) {

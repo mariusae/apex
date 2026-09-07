@@ -20,6 +20,12 @@
 # The shell Newterm runs: the daemon's $SHELL unless a setting names one.
 # apex set Newterm.shell zsh
 
+# Preview: a converter per extension (stdin to HTML on stdout). Markdown
+# has `apex md` and HTML and SVG `cat` already; more, or others:
+# apex set Preview.rst 'pandoc -f rst -t html5'
+# apex set Preview.dot 'dot -Tsvg'
+# apex set Preview.md 'pandoc -f gfm -t html5 -s'
+
 dir=$home/.apex/shell
 mkdir -p $dir/zsh $dir/share/fish/vendor_conf.d
 
