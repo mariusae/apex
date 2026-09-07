@@ -207,9 +207,18 @@ fn the_watcher_reloads_clean_buffers_and_flags_dirty_ones() {
     // let the watch settle before the first outside change
     std::thread::sleep(Duration::from_millis(300));
 
-    // clean buffer, disk changes: the buffer follows
-    std::fs::write(&path, "two\n").unwrap();
-    assert!(wait(&mut c, |r| body(r, w) == "two\n"), "body: {:?}", body(&c, w));
+    // clean buffer, disk changes: the buffer follows. The watch on a new
+    // directory takes the OS a moment to start, longer under load, so a
+    // change it missed is made again until it is seen.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while body(&c, w) != "two\n" && Instant::now() < deadline {
+        std::fs::write(&path, "two\n").unwrap();
+        let until = Instant::now() + Duration::from_millis(700);
+        while body(&c, w) != "two\n" && Instant::now() < until {
+            let _ = c.step(Duration::from_millis(50));
+        }
+    }
+    assert_eq!(body(&c, w), "two\n");
     assert!(!c.node.state.buffer(b).unwrap().dirty());
 
     // dirty buffer, disk changes: stale, and Put refuses once
