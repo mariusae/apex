@@ -40,7 +40,9 @@ pub enum ClientMsg {
     /// the context's directory (a terminal's cwd); `edit_only` is plan 9's
     /// `B` (only rules that open in the session, else the text as a path);
     /// `dry` only reports what would happen (`PlumbTrace`).
-    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool },
+    /// `at` is where the pointer (or dot) was, `sel` the text as
+    /// expanded or swept, when the plumb came from a buffer.
+    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool, at: Option<Span>, sel: Option<Span> },
     /// A tool's answer to a `Plumb` it was handed: did it take it?
     PlumbAck { id: u64, ok: bool },
     /// Install a plumbing rule: owned by this attachment when `mine`
@@ -112,7 +114,7 @@ pub enum ServerMsg {
     PlumbTrace { lines: Vec<String> },
     /// A rule this tool installed names it: does it take this plumb?
     /// Answer with `PlumbAck{id}` within a second.
-    Plumb { id: u64, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String> },
+    Plumb { id: u64, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
     RuleAdded { id: RuleId },
     File { path: String, bytes: Result<Vec<u8>, String> },
 }

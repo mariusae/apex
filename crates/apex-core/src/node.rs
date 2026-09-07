@@ -944,12 +944,6 @@ impl Node {
                     new.push_str(" Get");
                 }
             }
-            // the verbs plumbing rules offer here (before the bar: the
-            // system's, like Undo and Put)
-            for v in crate::plumb::verbs_for(&self.state.meta.rules, &name, self.window_kind(w)) {
-                new.push(' ');
-                new.push_str(&v);
-            }
             new.push_str(" |");
             let old = self.state.buffer(tag)?.text.to_string();
             let k = old.chars().position(|c| c == '|').map(|i| i + 1).unwrap_or(old.chars().count());

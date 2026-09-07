@@ -111,6 +111,15 @@ impl fmt::Display for ViewId {
 }
 
 /// Where a command was executed from.
+/// A range of a buffer, as a plumb reports where its text came from:
+/// `q0 == q1` is a point.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Span {
+    pub buffer: BufferId,
+    pub q0: usize,
+    pub q1: usize,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum ExecCtx {
     Window(WindowId),

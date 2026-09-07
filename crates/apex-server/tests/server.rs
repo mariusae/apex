@@ -367,16 +367,17 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     node.state.apply(Shard::Meta, &e).unwrap();
     let p = server.open_file(col, None, &dir, "notes.md", None).unwrap();
     let w = perform(&mut node, &mut log, vec![p]).expect("window");
+    // the verb is offered in the window's tools menu (B4), not its tag
+    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_name(w), n.window_kind(w));
+    assert_eq!(verbs(&node, w), vec!["Preview"]);
     node.update_tags(&mut log).unwrap();
     let tag = node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string();
-    assert!(tag.contains(" Preview |"), "tag: {tag}");
+    assert!(!tag.contains("Preview"), "tag: {tag}");
     // a .txt window does not offer it
     std::fs::write(dir.join("a.txt"), "x\n").unwrap();
     let p = server.open_file(col, None, &dir, "a.txt", None).unwrap();
     let w2 = perform(&mut node, &mut log, vec![p]).expect("window");
-    node.update_tags(&mut log).unwrap();
-    let tag2 = node.state.buffer(node.state.window(w2).unwrap().tag).unwrap().text.to_string();
-    assert!(!tag2.contains("Preview"), "tag: {tag2}");
+    assert!(verbs(&node, w2).is_empty());
     // B2 Preview: the rule runs the command, output in +Errors
     node.exec(&mut log, ExecCtx::Window(w), "Preview").unwrap();
     poll(&mut server, &mut log, &mut node);
@@ -387,7 +388,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     let errors = |n: &Node| n.state.windows.keys().find(|w| n.window_name(**w).ends_with("+Errors")).and_then(|w| n.state.window(*w).ok()).and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors(n).contains(&format!("previewing {}", md.display()))), "errors:\n{}", errors(&node));
     // the default rules: B3 on name:line opens the file at the line
-    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None };
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None };
     let (_, step) = server.plumb_start(&node, req);
     match step {
         apex_server::PlumbStep::Trace(lines) => assert!(lines.iter().any(|l| l.contains("would open a.txt:1")), "{lines:?}"),

@@ -22,6 +22,7 @@ use apex_server::remote::{Link, Wake};
 use apex_server::{PlumbReq, PlumbStep, perform, Server, ServerEvent, TermKey};
 
 use crate::shell::{Selector, TITLEBAR_HEIGHT};
+use crate::menu;
 use crate::text_element::font_for;
 
 use crate::term_element::TermLayout;
@@ -181,6 +182,10 @@ pub struct Acme {
     snarf_wanted: Option<String>,
     /// A B2/B3 sweep in a terminal, shown in the button's colour.
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
+    /// The tools menu while B4 is held.
+    pub menu: Option<menu::Menu>,
+    /// What the menu ran last: it opens on that item.
+    menu_last: Option<String>,
     /// Previews of remote files waiting for their first bytes: (ask id,
     /// path, app).
     previews: Vec<(u64, String, Option<String>)>,
@@ -653,6 +658,8 @@ impl Acme {
             term_sel: None,
             snarf_wanted: None,
             term_hl: None,
+            menu: None,
+            menu_last: None,
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
             preview_wanted: std::collections::BTreeSet::new(),
@@ -1076,6 +1083,8 @@ impl Acme {
             MouseButton::Middle
         } else if e.modifiers.platform {
             MouseButton::Right
+        } else if e.modifiers.shift {
+            MouseButton::Navigate(gpui::NavigationDirection::Back) // B4: the tools menu
         } else {
             MouseButton::Left
         };
@@ -1087,6 +1096,22 @@ impl Acme {
         if self.selector.is_some() {
             // a click anywhere else dismisses the dropdown
             self.close_selector(cx);
+            return;
+        }
+        if self.menu.is_some() {
+            return; // held open by its button; nothing else until it closes
+        }
+        if matches!(self.logical_button_peek(e), MouseButton::Navigate(_)) {
+            self.logical_button(e);
+            let at = match self.locate(e.position) {
+                Some((Target::View(v), _)) => v.window(),
+                Some((Target::Term(w, _), _)) => Some(w),
+                None => None,
+            };
+            if let Some(w) = at {
+                self.menu_open(w, e.position, window);
+            }
+            cx.notify();
             return;
         }
         self.pointer = None;
@@ -1194,6 +1219,12 @@ impl Acme {
 
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
+        if self.menu.is_some() {
+            self.menu_track(pos);
+            self.last_mouse = pos;
+            cx.notify();
+            return;
+        }
         if self.pointer.is_some_and(|p| (p.x - pos.x).abs() > px(1.) || (p.y - pos.y).abs() > px(1.)) {
             self.pointer = None;
         }
@@ -1347,14 +1378,16 @@ impl Acme {
             }
             MouseButton::Right => {
                 if let Some(d) = self.mouse.b3.take() {
-                    let text = self.take_range(d, HlKind::Look);
+                    let found = self.take_range_at(d, HlKind::Look);
                     self.hl = None;
-                    if let Some(text) = text {
-                        self.look(self.ctx_of(d.view), &text);
+                    if let Some((text, (lo, hi))) = found {
+                        // where the button went down, and what it took
+                        let spans = self.node.view_buffer(d.view).ok().map(|b| (Span { buffer: b, q0: d.anchor, q1: d.anchor }, Span { buffer: b, q0: lo, q1: hi }));
+                        self.look_at(self.ctx_of(d.view), &text, spans.map(|s| s.0), spans.map(|s| s.1));
                     }
                 }
             }
-            _ => {}
+            MouseButton::Navigate(_) => self.menu_up(cx),
         }
         cx.notify();
     }
@@ -1376,15 +1409,20 @@ impl Acme {
     }
 
     fn take_range(&mut self, d: Drag, kind: HlKind) -> Option<String> {
+        self.take_range_at(d, kind).map(|(t, _)| t)
+    }
+
+    /// `take_range`, with where the text came from.
+    fn take_range_at(&mut self, d: Drag, kind: HlKind) -> Option<(String, (usize, usize))> {
         let t = self.text_of(d.view)?;
         if let Some((hv, lo, hi, _)) = self.hl {
             if hv == d.view && lo < hi {
-                return Some(t.slice(lo, hi));
+                return Some((t.slice(lo, hi), (lo, hi)));
             }
         }
         let (q0, q1) = self.node.selection(d.view).ok()?;
         if q0 < q1 && q0 <= d.anchor && d.anchor <= q1 {
-            return Some(t.slice(q0, q1));
+            return Some((t.slice(q0, q1), (q0, q1)));
         }
         let pred: fn(char) -> bool = match kind {
             HlKind::Exec => is_exec_char,
@@ -1394,7 +1432,7 @@ impl Acme {
         if a == z {
             return None;
         }
-        Some(t.slice(a, z))
+        Some((t.slice(a, z), (a, z)))
     }
 
     /// The text between two `(column, history line)` positions, from the
@@ -1570,6 +1608,113 @@ impl Acme {
             if s != prev {
                 cx.write_to_clipboard(ClipboardItem::new_string(s.clone()));
                 self.snarf_wanted = None;
+            }
+        }
+    }
+
+    /// `logical_button` without recording it.
+    fn logical_button_peek(&self, e: &MouseDownEvent) -> MouseButton {
+        if e.button != MouseButton::Left {
+            return e.button;
+        }
+        if e.modifiers.alt {
+            MouseButton::Middle
+        } else if e.modifiers.platform {
+            MouseButton::Right
+        } else if e.modifiers.shift {
+            MouseButton::Navigate(gpui::NavigationDirection::Back)
+        } else {
+            MouseButton::Left
+        }
+    }
+
+    /// B4 on a window: the tools menu (libdraw's `menuhit`, as the
+    /// mariusae/plan9port acme uses it): the verbs the rules offer this
+    /// window, popped up so the last one chosen is under the pointer,
+    /// which is warped onto it; tracked while the button is held; the
+    /// item under the pointer on release runs as B2 would, none if it is
+    /// released outside.
+    fn menu_open(&mut self, w: WindowId, at: Point<Pixels>, window: &mut Window) {
+        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w));
+        if items.is_empty() {
+            return;
+        }
+        let fs = crate::text_element::font_for(false);
+        let ih = f32::from(fs.line_height) as i32 + menu::VSPACING;
+        let fh = f32::from(fs.line_height) as i32;
+        let run = |len: usize| gpui::TextRun { len, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+        let widths: Vec<i32> = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), fs.size, &[run(i.len())], None).width).ceil() as i32).collect();
+        let maxwid = widths.iter().copied().max().unwrap_or(0);
+        let nitem = items.len() as i32;
+        let lasthit = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l)).unwrap_or(0) as i32;
+        // the screen, for menuhit, is acme's area
+        let screen = self.node.state.layout.r;
+        let screenitem = (screen.dy() - 10) / ih;
+        let (scrolling, nitemdrawn, wid, off, lasti) = if nitem > menu::MAXUNSCROLL || nitem > screenitem {
+            let nitemdrawn = menu::NSCROLL.min(screenitem).max(1);
+            let off = (lasthit - nitemdrawn / 2).clamp(0, (nitem - nitemdrawn).max(0));
+            (true, nitemdrawn, maxwid + menu::GAP + menu::SCROLLWID, off, lasthit - off)
+        } else {
+            (false, nitem, maxwid, 0, lasthit)
+        };
+        let (mx, my) = Self::row_pt(at);
+        // r = insetrect(Rect(0,0,wid,n*ih), -Margin), moved so item lasti is centred on the pointer
+        let mut r = tiling::Rect::new(-menu::MARGIN, -menu::MARGIN, wid + menu::MARGIN, nitemdrawn * ih + menu::MARGIN);
+        let (dx, dy) = (mx - wid / 2, my - (lasti * ih + fh / 2));
+        r = tiling::Rect::new(r.x0 + dx, r.y0 + dy, r.x1 + dx, r.y1 + dy);
+        let mut px_ = 0;
+        let mut py_ = 0;
+        if r.x1 > screen.x1 {
+            px_ = screen.x1 - r.x1;
+        }
+        if r.y1 > screen.y1 {
+            py_ = screen.y1 - r.y1;
+        }
+        if r.x0 < screen.x0 {
+            px_ = screen.x0 - r.x0;
+        }
+        if r.y0 < screen.y0 {
+            py_ = screen.y0 - r.y0;
+        }
+        let menur = tiling::Rect::new(r.x0 + px_, r.y0 + py_, r.x1 + px_, r.y1 + py_);
+        let textr = tiling::Rect::new(menur.x1 - menu::MARGIN - maxwid, menur.y0 + menu::MARGIN, menur.x1 - menu::MARGIN, menur.y0 + menu::MARGIN + nitemdrawn * ih);
+        let scrollr = if scrolling { tiling::Rect::new(menur.x0 + menu::BORDER, menur.y0 + menu::BORDER, menur.x0 + menu::BORDER + menu::SCROLLWID, menur.y1 - menu::BORDER) } else { tiling::Rect::new(0, 0, 0, 0) };
+        let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih, maxwid };
+        // moveto: the pointer onto the item, so a click alone repeats it
+        let ir = m.item_rect(lasti);
+        let center = point(px(((ir.x0 + ir.x1) / 2) as f32), px(((ir.y0 + ir.y1) / 2) as f32 + TITLEBAR_HEIGHT));
+        crate::warp::move_to(window, center);
+        self.pointer = Some(center);
+        self.last_mouse = center;
+        self.menu = Some(m);
+    }
+
+    /// The pointer moved with the menu's button held: highlight what is
+    /// under it, none outside; on the scroll bar, scroll.
+    fn menu_track(&mut self, pos: Point<Pixels>) {
+        let Some(m) = self.menu.as_mut() else { return };
+        let (x, y) = Self::row_pt(pos);
+        let i = m.sel(x, y);
+        if i >= 0 {
+            m.lasti = i;
+            return;
+        }
+        m.lasti = -1;
+        if m.scrolling && m.scrollr.contains(x, y) {
+            let nitem = m.items.len() as i32;
+            let mut noff = ((y - m.scrollr.y0) * nitem) / m.scrollr.dy().max(1) - m.nitemdrawn / 2;
+            noff = noff.clamp(0, (nitem - m.nitemdrawn).max(0));
+            m.off = noff;
+        }
+    }
+
+    /// The menu's button came up: the highlighted item runs.
+    fn menu_up(&mut self, cx: &mut Context<Self>) {
+        let Some(m) = self.menu.take() else { return };
+        if m.lasti >= 0 {
+            if let Some(item) = m.items.get((m.lasti + m.off) as usize).cloned() {
+                self.menu_last = Some(item.clone());
+                self.execute(ExecCtx::Window(m.window), &item, cx);
             }
         }
     }
@@ -2007,18 +2152,24 @@ impl Acme {
     }
 
     pub fn look(&mut self, ctx: ExecCtx, text: &str) {
+        self.look_at(ctx, text, None, None);
+    }
+
+    /// B3: plumb `text` from `ctx`, saying where it came from when it
+    /// came from a buffer (`at`: the pointer; `sel`: what was taken).
+    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>) {
         let text = text.trim();
         if text.is_empty() {
             return;
         }
         match &mut self.backend {
             Backend::Local(server) => {
-                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None };
+                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at, sel };
                 if let Some(w) = plumb_local(server, &mut self.node, &mut self.log, req) {
                     self.show(w);
                 }
             }
-            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false }),
+            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel }),
         }
         self.after();
     }

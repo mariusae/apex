@@ -80,8 +80,8 @@ client. `apex set KEY VALUE` there records a setting of that client's,
 gone when it detaches; the same command from the profile, or from a
 terminal, records the session's. A client reads its own settings first,
 then the session's, and `apex set` alone lists them all. `Preview`
-appears in the tag of every file whose extension a `Preview.EXT` setting
-names an app for (`apex set Preview.md Marked`); `Preview` alone is the
+is offered in the tools menu of every file whose extension a `Preview.EXT`
+setting names an app for (`apex set Preview.md Marked`); `Preview` alone is the
 fallback app when a rule of your own asks to preview something else, and
 without it the platform previews (Quick Look on macOS). A remote file is
 fetched into a local copy and the copy is kept current while the preview
@@ -115,8 +115,9 @@ ends the walk, and with none left the text is looked for in the window
     --isfile EXPR    EXPR, expanded, is a file (relative to the window's directory)
     --isdir EXPR     ... a directory
     --verb NAME      the command this rule answers; `plumb` (B3) unless given.
-                     Any other verb is shown before the | in the tag of every
-                     window the rule applies to, and B2 there brings it here.
+                     Any other verb is offered in the tools menu (B4, or
+                     shift-click) of every window the rule applies to, and
+                     runs there as B2 would; B2 on the word does the same.
     --edit EXPR      open EXPR (`name` or `name:line`) in the session
     --run CMD        run CMD on the host in the window's directory, the
                      selection on stdin, output to dir/+Errors

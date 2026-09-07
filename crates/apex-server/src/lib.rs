@@ -948,8 +948,8 @@ impl Server {
                         return self.plumb_trace(id);
                     }
                     p.trace.push(format!("{who}: asked {name}"));
-                    let (verb, text) = (p.req.verb.clone(), p.req.text.clone());
-                    return PlumbStep::AskTool { tool: name.clone(), ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone() };
+                    let (verb, text, at, sel) = (p.req.verb.clone(), p.req.text.clone(), p.req.at, p.req.sel);
+                    return PlumbStep::AskTool { tool: name.clone(), ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel };
                 }
             }
         }
@@ -1000,7 +1000,12 @@ impl Server {
             return None;
         }
         let rest = text[verb.len()..].trim().to_string();
-        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq) })
+        // a verb acts on the window's dot
+        let at = match ctx {
+            ExecCtx::Window(w) => view.view_buffer(ViewId::Body(w)).ok().and_then(|b| view.selection(ViewId::Body(w)).ok().map(|(q0, q1)| Span { buffer: b, q0, q1 })),
+            _ => None,
+        };
+        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None })
     }
 }
 
@@ -1029,6 +1034,9 @@ pub struct PlumbReq {
     pub dry: bool,
     /// The exec entry a verb came from, for its status.
     pub exec: Option<Seq>,
+    /// Where the pointer or dot was, and what was expanded or swept.
+    pub at: Option<Span>,
+    pub sel: Option<Span>,
 }
 
 /// One step of a plumb walk, for the host to carry out.
@@ -1040,7 +1048,7 @@ pub enum PlumbStep {
     Ask(Proposal),
     /// Ask this tool; `plumb_next` with its answer, or refusal after a
     /// second of silence.
-    AskTool { tool: String, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String> },
+    AskTool { tool: String, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
     /// A dry run's report.
     Trace(Vec<String>),
 }

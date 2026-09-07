@@ -284,7 +284,7 @@ impl Link {
                 self.env = Some(vars);
             }
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
-            ServerMsg::Plumb { id, ctx, verb, text, dir, groups } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups }),
+            ServerMsg::Plumb { id, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups, at, sel }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::File { path, bytes } => self.files.push((path, bytes)),
             ServerMsg::Ack { shard, seq } => {
@@ -378,6 +378,9 @@ pub struct ToolPlumb {
     pub text: String,
     pub dir: String,
     pub groups: Vec<String>,
+    /// Where the pointer or dot was, and what was expanded or swept.
+    pub at: Option<Span>,
+    pub sel: Option<Span>,
 }
 
 /// A daemon of another build is not ours to talk to: the error (kind
@@ -533,7 +536,7 @@ impl Remote {
     /// What a plumb would do, rule by rule.
     pub fn plumb_dry(&mut self, ctx: ExecCtx, text: &str, dir: Option<String>, edit_only: bool, timeout: std::time::Duration) -> Result<Vec<String>, String> {
         self.link.trace = None;
-        self.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir, edit_only, dry: true });
+        self.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir, edit_only, dry: true, at: None, sel: None });
         self.wait_for(timeout, |l| l.trace.take())
     }
 

@@ -512,8 +512,8 @@ impl Daemon {
                     Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });
             }
-            ClientMsg::Plumb { ctx, text, dir, edit_only, dry } => {
-                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: "plumb".into(), edit_only, dry, exec: None };
+            ClientMsg::Plumb { ctx, text, dir, edit_only, dry, at, sel } => {
+                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: "plumb".into(), edit_only, dry, exec: None, at, sel };
                 let (pid, step) = s.server.plumb_start(&s.view, req);
                 self.drive(name, pid, step, id);
                 return;
@@ -676,7 +676,7 @@ impl Daemon {
                 self.pending.insert(pid, Pending::Plumb { session: sid, plumb, asker });
                 self.propose(name, pid, proposal);
             }
-            PlumbStep::AskTool { tool, ctx, verb, text, dir, groups } => {
+            PlumbStep::AskTool { tool, ctx, verb, text, dir, groups, at, sel } => {
                 // the tool attached under that name, in this session
                 let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
                 match found {
@@ -684,7 +684,7 @@ impl Daemon {
                         let tid = self.next_tool_plumb;
                         self.next_tool_plumb += 1;
                         self.tool_plumbs.insert(tid, (sid, plumb, asker));
-                        self.send(cid, ServerMsg::Plumb { id: tid, ctx, verb, text, dir, groups });
+                        self.send(cid, ServerMsg::Plumb { id: tid, ctx, verb, text, dir, groups, at, sel });
                         // a second, then it is taken as refused
                         let tx = self.tx.clone();
                         thread::spawn(move || {

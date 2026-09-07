@@ -495,7 +495,7 @@ fn plumb(socket: &Path, session: &str, args: &[String]) -> R {
         return Ok(());
     }
     let before = c.node.state.windows.len();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None });
     let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     Ok(())
 }
@@ -509,7 +509,7 @@ fn b(socket: &Path, session: &str, args: &[String]) -> R {
     let mut c = tool(socket, session)?;
     for a in args {
         let before = c.node.state.windows.len();
-        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false });
+        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false, at: None, sel: None });
         let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     }
     Ok(())

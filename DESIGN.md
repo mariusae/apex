@@ -646,10 +646,18 @@ acme's tools port directly because the event model is the same, generalised:
 isfile, isdir, action, to}` in the metalog (`PlumbRuleInstall{id,
 attachment, priority}`), owned by the session (`SERVER`) or by an
 attachment, whose rules go with it. A **verb** is the command a rule
-answers: `plumb` is B3; any other verb appears before the `|` of every
-window's tag the rule applies to (`winsettag` computes it, so the tag
-follows the table) and B2 there walks the rules with that verb, ahead of
-the shell. Actions: `Edit` (open in the session), `Run` (a host command,
+answers: `plumb` is B3; any other verb is offered in the window's
+**tools menu** on B4 (shift-click without a fourth button): libdraw's
+`menuhit` as mariusae/plan9port's acme pops it up (`client/menu.rs`, the
+numbers and colours menuhit's) — the verbs the rules offer this window,
+opened so that the last one chosen sits under the pointer, which is
+warped onto it, so a click alone repeats it; tracked while the button is
+held, the item under the pointer highlighted in negative, none outside;
+released on an item it runs as B2 would, released outside nothing runs;
+more than 25 items scroll. Verbs are not written into tags. B2 on a
+verb's word walks the rules with it, ahead of the shell. A `Plumb`
+carries where it came from: `at`, the pointer or dot as a `Span`, and
+`sel`, what was expanded or swept, either or both. Actions: `Edit` (open in the session), `Run` (a host command,
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
 the UI, which may refuse; a headless leader always does), `Tool(name)`
 (`ServerMsg::Plumb` to the attachment of that name, `PlumbAck` within a

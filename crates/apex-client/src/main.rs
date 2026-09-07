@@ -13,6 +13,7 @@
 
 mod app;
 mod cursor;
+mod menu;
 mod shell;
 mod term_element;
 mod text_element;
@@ -87,6 +88,10 @@ impl Render for Acme {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Right, cx.listener(Self::mouse_up))
+            // B4: the tools menu (a real fourth button, or shift-click)
+            .on_mouse_down(MouseButton::Navigate(gpui::NavigationDirection::Back), cx.listener(Self::mouse_down))
+            .on_mouse_up(MouseButton::Navigate(gpui::NavigationDirection::Back), cx.listener(Self::mouse_up))
+            .on_mouse_up_out(MouseButton::Navigate(gpui::NavigationDirection::Back), cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
             .on_scroll_wheel(cx.listener(Self::scroll_wheel))
@@ -120,6 +125,9 @@ impl Render for Acme {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body));
                 }
             }
+        }
+        if let Some(m) = &self.menu {
+            area = area.child(menu_element(m, font));
         }
         let root = root.child(area);
         match self.selector_panel(cx) {
@@ -400,4 +408,68 @@ fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, w
     let msg = Acme::connect_error(url, e);
     acme.notice(&msg);
     acme
+}
+
+/// menuhit's painting: the box, its border, the items centred, the
+/// highlighted one in negative, and the scroll bar when there is one.
+fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
+    use gpui::{div, px, rgb};
+    let r = m.menur;
+    let mut el = div()
+        .absolute()
+        .left(px(r.x0 as f32))
+        .top(px(r.y0 as f32))
+        .w(px(r.dx() as f32))
+        .h(px(r.dy() as f32))
+        .bg(rgb(menu::BACK))
+        .border(px(menu::BLACKBORDER as f32))
+        .border_color(rgb(menu::BORD));
+    // children are placed relative to the menu's own origin
+    for i in 0..m.nitemdrawn {
+        let ir = m.item_rect(i);
+        let text = m.items.get((i + m.off) as usize).cloned().unwrap_or_default();
+        let hl = i == m.lasti;
+        el = el.child(
+            div()
+                .absolute()
+                .left(px((ir.x0 - r.x0 - menu::BLACKBORDER) as f32))
+                .top(px((ir.y0 - r.y0 - menu::BLACKBORDER) as f32))
+                .w(px(ir.dx() as f32))
+                .h(px(ir.dy() as f32))
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(rgb(if hl { menu::HIGH } else { menu::BACK }))
+                .text_color(rgb(if hl { menu::HTEXT } else { menu::TEXT }))
+                .font_family("Lucida Grande")
+                .text_size(px(13.))
+                .line_height(px(font as f32))
+                .child(text),
+        );
+    }
+    if m.scrolling {
+        let sr = m.scrollr;
+        let th = m.thumb();
+        el = el.child(
+            div()
+                .absolute()
+                .left(px((sr.x0 - r.x0 - menu::BLACKBORDER) as f32))
+                .top(px((sr.y0 - r.y0 - menu::BLACKBORDER) as f32))
+                .w(px(sr.dx() as f32))
+                .h(px(sr.dy() as f32))
+                .bg(rgb(menu::BACK))
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(0.))
+                        .top(px((th.y0 - sr.y0) as f32))
+                        .w(px(sr.dx() as f32))
+                        .h(px(th.dy() as f32))
+                        .border(px(1.))
+                        .border_color(rgb(menu::BORD))
+                        .bg(rgb(menu::HIGH)),
+                ),
+        );
+    }
+    el.into_any_element()
 }
