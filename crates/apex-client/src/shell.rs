@@ -178,17 +178,6 @@ pub fn remember(windows: &[Remembered]) {
     let _ = std::fs::write(p, text);
 }
 
-/// The sessions the remembered windows were on (each once).
-pub fn remembered_sessions() -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for r in remembered() {
-        if !out.contains(&r.url) {
-            out.push(r.url);
-        }
-    }
-    out
-}
-
 /// Record every open window, its session and its frame, unless the app
 /// is quitting (then what was recorded is what we want back next time).
 pub fn save_open(cx: &mut App) {

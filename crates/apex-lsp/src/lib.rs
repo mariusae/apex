@@ -61,14 +61,23 @@ pub fn language_of(path: &str) -> Option<&'static Language> {
 pub fn root_of(path: &Path, lang: &Language) -> PathBuf {
     let dir = path.parent().unwrap_or(path);
     let mut d = dir;
+    let mut nearest: Option<PathBuf> = None;
     loop {
         if lang.roots.iter().any(|m| d.join(m).exists()) {
-            return d.to_path_buf();
+            // a Cargo workspace (or Go workspace) above a crate is the root
+            let outer = lang.id == "rust" && std::fs::read_to_string(d.join("Cargo.toml")).is_ok_and(|s| s.contains("[workspace]"));
+            if outer || lang.id != "rust" {
+                return d.to_path_buf();
+            }
+            nearest.get_or_insert_with(|| d.to_path_buf());
         }
         match d.parent() {
             Some(p) => d = p,
             None => break,
         }
+    }
+    if let Some(n) = nearest {
+        return n;
     }
     let mut d = dir;
     loop {
@@ -107,7 +116,7 @@ impl Server {
             .current_dir(&key.1)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(if debug() { Stdio::inherit() } else { Stdio::null() })
             .spawn()
             .map_err(|e| format!("{cmd}: {e}"))?;
         let stdin: Box<dyn Write + Send> = Box::new(child.stdin.take().expect("piped"));
@@ -297,8 +306,12 @@ impl Tool {
                 match ev {
                     Event::Lsp(key, v) => self.on_lsp(key, v),
                     Event::LspGone(key) => {
+                        // it died: say so, and do not start it again
                         self.servers.remove(&key);
                         self.docs.retain(|_, (k, _)| *k != key);
+                        self.failed.push(key.clone());
+                        let msg = format!("lsp: the {} server for {} exited (APEX_LSP_DEBUG=1 shows why)\n", key.0, key.1.display());
+                        self.errors(Some(&key.1.display().to_string()), &msg);
                     }
                 }
             }
