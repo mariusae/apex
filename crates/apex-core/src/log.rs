@@ -277,6 +277,15 @@ impl Log {
         self.push_meta(MetaOp::PlumbRuleRemove { id })
     }
 
+    /// Record a setting of `owner`'s (`SERVER`: the session's).
+    pub fn set(&mut self, owner: AttachmentId, key: &str, value: &str) -> Entry {
+        self.push_meta(MetaOp::Set { owner, key: key.to_string(), value: value.to_string() })
+    }
+
+    pub fn unset(&mut self, owner: AttachmentId, key: &str) -> Entry {
+        self.push_meta(MetaOp::Unset { owner, key: key.to_string() })
+    }
+
     /// Ask the holder of `shard` to hand over to `to`.
     pub fn request(&mut self, shard: Shard, to: AttachmentId) -> Result<Entry, LogError> {
         if shard.is_pinned() {

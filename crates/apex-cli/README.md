@@ -22,6 +22,8 @@ apex B FILE[:LINE] ...
 apex label TEXT
 apex awd [LABEL]
 apex env [KEY=VALUE ...]
+apex set [KEY VALUE]
+apex cat PATH
 ```
 
 `WIN` is a window id or a unique substring of a window's name. `APEX_SOCKET`
@@ -60,17 +62,29 @@ so where relative names resolve) on the shell's directory; shells that
 report their directory with OSC 7 (`ESC ] 7 ; file://host/path BEL`) or
 set an xterm title get the same treatment.
 
-## Session init
+## Profile and attach
 
-When a session is made, one `rc` on its host sources `~/.apex/init`
-there, then the creator's `~/.apex/init` (shipped in the request; skipped
-when it is the same file). It runs like any command, named `init` in the
-top row with output in `+Errors`, with `apexsession`, `APEX_SOCKET` and
-`apexclient` (the creator's host name) set, so `apex` in it configures
-the session being made: `apex new`, `apex exec Newcol`, and so on. Exports
-in it die with it; `apex env KEY=VALUE` sets what terminals and commands
-made from then on get, and `apex env` alone prints the environment.
-[examples/init](../../examples/init) is one that has zsh, bash and fish
+Two scripts, like a shell's profile and rc. When a session is made, one
+`rc` on its host sources `~/.apex/profile` there, then the creator's
+`~/.apex/profile` (shipped in the request; skipped when it is the same
+file). It runs like any command, named `profile` in the top row with
+output in `+Errors`, with `apexsession`, `APEX_SOCKET` and `apexclient`
+(the creator's host name) set, so `apex` in it configures the session
+being made: `apex new`, `apex exec Newcol`, and so on. Exports in it die
+with it; `apex env KEY=VALUE` sets what terminals and commands made from
+then on get, and `apex env` alone prints the environment.
+
+Every time a client attaches, its `~/.apex/attach` runs on the host the
+same way, named `attach`, with `apexattachment` naming the attaching
+client. `apex set KEY VALUE` there records a setting of that client's,
+gone when it detaches; the same command from the profile, or from a
+terminal, records the session's. A client reads its own settings first,
+then the session's, and `apex set` alone lists them all. `Preview` in a
+file window's tag is the app's: `Preview.EXT` names the app for that
+extension and `Preview` the fallback, else the platform previews it
+(Quick Look on macOS); a remote file is fetched first (`apex cat` is the
+same request from the shell).
+[examples/profile](../../examples/profile) is one that has zsh, bash and fish
 name their window after the directory on every `cd`, through their
 environment; rc does that on its own in an apex terminal (its rcmain
 checks `$TERM_PROGRAM`).

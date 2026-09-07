@@ -583,15 +583,24 @@ scratch HOME.
 
 ---
 
-*As built, session init:* a new session runs one `rc` on its host that
-sources the host's `~/.apex/init`, then the creator's (shipped in
-`NewSession` as `SessionInit{client, script}`, skipped when identical),
-as a command named `init` with output in `+Errors`, and `apexsession`,
+*As built, profile and attach:* a new session runs one `rc` on its host
+that sources the host's `~/.apex/profile`, then the creator's (shipped
+in `NewSession` as `Script{client, text}`, skipped when identical), as a
+command named `profile` with output in `+Errors`, and `apexsession`,
 `APEX_SOCKET`, `apexclient` set. The host part comes first so it can
-define what the creator's part uses. `apex env KEY=VALUE` (`ClientMsg::Env`)
-sets the session environment the server gives terminals and commands
-from then on; the creator's script runs on the host, never on the client,
-so no `apex` call crosses the link.
+define what the creator's part uses. `apex env KEY=VALUE`
+(`ClientMsg::Env`) sets the session environment the server gives
+terminals and commands from then on; the creator's script runs on the
+host, never on the client, so no `apex` call crosses the link. A client's
+`~/.apex/attach` runs the same way on every attach (`Hello` carries it),
+with `apexattachment` set, so `apex set` there records the attachment's
+own settings (`MetaOp::Set{owner}`, dropped on detach); `apex set` from
+the profile records the session's. Clients resolve a key through their
+own settings, then the session's: `Preview.EXT`/`Preview` name the app
+the UI's `preview` uses, else Quick Look. The client drives file I/O
+(`ReadFile`/`File`): a remote file is fetched into a local copy under a
+path that mirrors the host's, so later inline views can refresh the same
+way.
 
 ## 8. Extensibility
 

@@ -273,4 +273,8 @@ pub enum MetaOp {
     LeaseReclaim { shard: Shard, from: AttachmentId, epoch: Epoch, seq: Seq },
     PlumbRuleInstall { id: RuleId, attachment: AttachmentId, priority: i32, rule: PlumbRule },
     PlumbRuleRemove { id: RuleId },
+    /// A setting: the session's (`SERVER`) or one attachment's, which go
+    /// with it. A client reads its own, then the session's.
+    Set { owner: AttachmentId, key: String, value: String },
+    Unset { owner: AttachmentId, key: String },
 }

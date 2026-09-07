@@ -186,7 +186,7 @@ pub fn plan(socket: &Path) -> std::io::Result<Vec<SessionUrl>> {
     if let Some(first) = existing.first() {
         return Ok(vec![SessionUrl::local(first)]);
     }
-    new_session(socket, apex_server::providers::DEFAULT_SESSION, apex_server::remote::local_init())?;
+    new_session(socket, apex_server::providers::DEFAULT_SESSION, apex_server::remote::local_profile())?;
     Ok(vec![SessionUrl::local(apex_server::providers::DEFAULT_SESSION)])
 }
 

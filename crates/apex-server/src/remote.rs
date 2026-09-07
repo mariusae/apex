@@ -15,7 +15,7 @@ use std::thread;
 use apex_core::log::MirrorHook;
 use apex_core::*;
 
-use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, SessionInit};
+use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, Script};
 use crate::{proposal, Proposal};
 
 /// A shared, buffered writer: the mirror hook and the owner both send.
@@ -43,6 +43,7 @@ impl MirrorHook for Hook {
 
 pub struct Link {
     pub attachment: AttachmentId,
+    pub kind: AttachmentKind,
     out: Outbound,
     /// Messages from the server, delivered by the reader thread.
     pub rx: Receiver<ServerMsg>,
@@ -65,9 +66,12 @@ pub struct Link {
     pub plumbs: Vec<ToolPlumb>,
     /// The id of the rule last added.
     pub rule_added: Option<RuleId>,
-    /// What this client does when a rule asks it (`ClientDo`): a UI
-    /// sets it; without one, the request is refused.
-    pub client_do: Option<Box<dyn FnMut(&str, &str) -> Result<(), String> + Send>>,
+    /// What rules asked this client to do (`ClientDo`): (id, verb, args),
+    /// for the owner to carry out and answer with `Applied{id}`. Only a
+    /// UI is asked; anything else refuses at once.
+    pub client_asks: Vec<(u64, String, String)>,
+    /// Files read from the host, after a `ReadFile`.
+    pub files: Vec<(String, Result<Vec<u8>, String>)>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
     next_id: u64,
@@ -130,9 +134,10 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
-        init: Option<SessionInit>,
+        profile: Option<Script>,
     ) -> io::Result<(Link, Log, Node)> {
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, Some(init))
+        let attach = if kind == AttachmentKind::Ui { local_attach() } else { None };
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, Some(profile), attach)
     }
 
     /// Attach over any byte stream pair: a child's stdout and stdin, say,
@@ -146,7 +151,8 @@ impl Link {
         kind: AttachmentKind,
         wake: Option<Wake>,
     ) -> io::Result<(Link, Log, Node)> {
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, None)
+        let attach = if kind == AttachmentKind::Ui { local_attach() } else { None };
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, None, attach)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -158,15 +164,16 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
-        create: Option<Option<SessionInit>>,
+        create: Option<Option<Script>>,
+        attach: Option<Script>,
     ) -> io::Result<(Link, Log, Node)> {
         let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
         spawn_reader(reader, tx, wake);
-        if let Some(init) = create {
-            out.send(&ClientMsg::NewSession { name: session.to_string(), init })?;
+        if let Some(profile) = create {
+            out.send(&ClientMsg::NewSession { name: session.to_string(), profile })?;
         }
-        out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind })?;
+        out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach })?;
         let (attachment, snapshot) = loop {
             match rx.recv().map_err(|_| io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome"))? {
                 ServerMsg::Build { id } => check_build(&id)?,
@@ -184,7 +191,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_do: None, last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), files: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -248,11 +255,13 @@ impl Link {
             }
             ServerMsg::Propose { id, proposal } => {
                 let result = match proposal {
-                    // a rule asks this client for something only it can do
-                    Proposal::ClientDo { verb, args } => match &mut self.client_do {
-                        Some(f) => f(&verb, &args).map(|_| None),
-                        None => Err(format!("this client cannot {verb}")),
-                    },
+                    // a rule asks this client for something only it can
+                    // do: the owner answers when it has done it
+                    Proposal::ClientDo { verb, args } if self.kind == AttachmentKind::Ui => {
+                        self.client_asks.push((id, verb, args));
+                        return true;
+                    }
+                    Proposal::ClientDo { verb, .. } => Err(format!("this client cannot {verb}")),
                     p => proposal::apply(node, log, p).map_err(|e| e.to_string()),
                 };
                 match &result {
@@ -277,6 +286,7 @@ impl Link {
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
             ServerMsg::Plumb { id, ctx, verb, text, dir, groups } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
+            ServerMsg::File { path, bytes } => self.files.push((path, bytes)),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
             }
@@ -394,18 +404,28 @@ pub fn stop(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// This machine's `~/.apex/init` and name, for a session made from here.
-pub fn local_init() -> Option<SessionInit> {
+/// This machine's `~/.apex/NAME` and its name, as a script for a host.
+pub fn local_script(name: &str) -> Option<Script> {
     let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
-    let script = std::fs::read_to_string(Path::new(&home).join(".apex/init")).ok()?;
-    Some(SessionInit { client: crate::term::sysname(), script })
+    let text = std::fs::read_to_string(Path::new(&home).join(".apex").join(name)).ok()?;
+    Some(Script { client: crate::term::sysname(), text })
+}
+
+/// `~/.apex/profile`: run once, on the host, when a session is made from here.
+pub fn local_profile() -> Option<Script> {
+    local_script("profile")
+}
+
+/// `~/.apex/attach`: run on the host every time this machine attaches.
+pub fn local_attach() -> Option<Script> {
+    local_script("attach")
 }
 
 /// Create a session on a daemon, with its creator's init; fine if it
 /// already exists.
-pub fn new_session(path: &Path, name: &str, init: Option<SessionInit>) -> io::Result<()> {
+pub fn new_session(path: &Path, name: &str, profile: Option<Script>) -> io::Result<()> {
     let mut s = UnixStream::connect(path)?;
-    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string(), init })?;
+    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string(), profile })?;
     let mut r = BufReader::new(s);
     loop {
         match read_frame::<_, ServerMsg>(&mut r)? {
@@ -515,6 +535,38 @@ impl Remote {
         self.link.trace = None;
         self.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir, edit_only, dry: true });
         self.wait_for(timeout, |l| l.trace.take())
+    }
+
+    /// The bytes of a file on the host.
+    pub fn read_file(&mut self, path: &str, timeout: std::time::Duration) -> Result<Vec<u8>, String> {
+        self.send(&ClientMsg::ReadFile { path: path.to_string() });
+        let want = path.to_string();
+        self.wait_for(timeout, |l| {
+            let i = l.files.iter().position(|(p, _)| *p == want)?;
+            Some(l.files.remove(i).1)
+        })?
+    }
+
+    /// Attach with an explicit attach script (tests; a UI sends its
+    /// `~/.apex/attach` on its own).
+    pub fn connect_with(path: &Path, session: &str, name: &str, kind: AttachmentKind, attach: Option<Script>) -> io::Result<Remote> {
+        let s = UnixStream::connect(path)?;
+        let w = s.try_clone()?;
+        let closer = s.try_clone()?;
+        let (link, log, node) = Link::over_streams_inner(
+            Box::new(s),
+            Box::new(w),
+            Some(Box::new(move || {
+                let _ = closer.shutdown(std::net::Shutdown::Both);
+            })),
+            session,
+            name,
+            kind,
+            None,
+            None,
+            attach,
+        )?;
+        Ok(Remote { log, node, link })
     }
 
     /// Answer a plumb a rule handed to this tool.

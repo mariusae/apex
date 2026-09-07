@@ -19,7 +19,7 @@ use std::thread;
 
 use apex_core::*;
 
-use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, SessionInit};
+use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, Script};
 use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
 
 /// Start a daemon on `socket` from the `apex` binary at `exe`, detached
@@ -136,7 +136,7 @@ enum Pending {
 pub struct Daemon {
     socket: PathBuf,
     /// The host's init file for new sessions (`~/.apex/init`).
-    host_init: Option<PathBuf>,
+    host_profile: Option<PathBuf>,
     sessions: BTreeMap<String, Session>,
     next_session: u64,
     conns: HashMap<u64, Conn>,
@@ -154,12 +154,12 @@ impl Daemon {
     /// ends, with one session `session` to begin with. Returns only on a
     /// listener error.
     pub fn run(path: &Path, session: &str) -> io::Result<()> {
-        let host_init = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".apex/init"));
-        Self::run_with(path, session, host_init)
+        let host_profile = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".apex/profile"));
+        Self::run_with(path, session, host_profile)
     }
 
     /// `run`, with the host's init file given (tests keep it out of `$HOME`).
-    pub fn run_with(path: &Path, session: &str, host_init: Option<PathBuf>) -> io::Result<()> {
+    pub fn run_with(path: &Path, session: &str, host_profile: Option<PathBuf>) -> io::Result<()> {
         put_apex_on_path();
         // whoever started us may go (an ssh session, a terminal): we stay
         // SAFETY: setting a signal disposition.
@@ -179,7 +179,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_init, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, rx, tx };
         // the daemon's own session is made from this host: its file is
         // both the host's and the creator's, so it runs once
         d.new_session(session, None);
@@ -212,7 +212,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn new_session(&mut self, name: &str, init: Option<SessionInit>) -> bool {
+    fn new_session(&mut self, name: &str, profile: Option<Script>) -> bool {
         if self.sessions.contains_key(name) {
             return false;
         }
@@ -220,7 +220,7 @@ impl Daemon {
         let (mut server, mut srx) = Server::new(&log);
         // shells and commands in this session know it, and the daemon
         server.env = vec![("apexsession".into(), name.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
-        if let Some(i) = &init {
+        if let Some(i) = &profile {
             server.env.push(("apexclient".into(), i.client.clone()));
         }
         let sid = self.next_session;
@@ -248,7 +248,7 @@ impl Daemon {
         self.sessions.insert(name.to_string(), Session { id: sid, log, server, view, leader: None });
         // its init runs now, as a command of the session
         let s = self.sessions.get_mut(name).unwrap();
-        s.server.run_init(&s.view, self.host_init.as_deref(), init.as_ref());
+        s.server.run_profile(&s.view, self.host_profile.as_deref(), profile.as_ref());
         self.after(name, Vec::new());
         true
     }
@@ -345,13 +345,13 @@ impl Daemon {
 
     fn handle(&mut self, id: u64, m: ClientMsg) {
         match m {
-            ClientMsg::Hello { session, name, kind } => self.hello(id, session, name, kind),
-            ClientMsg::NewSession { name, init } => {
+            ClientMsg::Hello { session, name, kind, attach } => self.hello(id, session, name, kind, attach),
+            ClientMsg::NewSession { name, profile } => {
                 // making a session that exists is fine: it is there
                 if name.is_empty() || name.contains('/') {
                     self.send(id, ServerMsg::Error { text: format!("bad session name {name:?}") });
                 } else {
-                    self.new_session(&name, init);
+                    self.new_session(&name, profile);
                     self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
                 }
             }
@@ -374,7 +374,7 @@ impl Daemon {
         }
     }
 
-    fn hello(&mut self, id: u64, session: String, name: String, kind: AttachmentKind) {
+    fn hello(&mut self, id: u64, session: String, name: String, kind: AttachmentKind, attach: Option<Script>) {
         let Some(s) = self.sessions.get_mut(&session) else {
             self.send(id, ServerMsg::Error { text: format!("no session {session}") });
             return;
@@ -410,6 +410,11 @@ impl Daemon {
             c.sent = marks;
         }
         self.send(id, ServerMsg::Welcome { attachment: a, snapshot });
+        // the client's attach script runs now, as the attachment's own
+        if let Some(script) = attach {
+            let s = self.sessions.get_mut(&session).unwrap();
+            s.server.run_attach(&s.view, a, &script);
+        }
         // the others learn from the metalog that the leases moved
         self.after(&session, Vec::new());
     }
@@ -516,6 +521,23 @@ impl Daemon {
             ClientMsg::RuleRm { id: rid } => {
                 let e = s.log.remove_rule(rid);
                 let _ = s.view.state.apply(Shard::Meta, &e);
+            }
+            ClientMsg::Set { key, value, attachment } => {
+                let owner = match attachment {
+                    Some(a) if s.view.state.meta.attachments.contains_key(&a) => a,
+                    Some(a) => {
+                        self.send(id, ServerMsg::Error { text: format!("set: no attachment {a}") });
+                        return;
+                    }
+                    None => SERVER,
+                };
+                let e = s.log.set(owner, &key, &value);
+                let _ = s.view.state.apply(Shard::Meta, &e);
+            }
+            ClientMsg::ReadFile { path } => {
+                let bytes = std::fs::read(&path).map_err(|e| e.to_string());
+                self.send(id, ServerMsg::File { path, bytes });
+                return;
             }
             ClientMsg::Complete { view, ctx, at, prefix } => {
                 let dir = s.server.dir_of(&s.view, ctx);

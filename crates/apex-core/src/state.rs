@@ -180,6 +180,16 @@ pub struct Meta {
     pub attachments: BTreeMap<AttachmentId, Attachment>,
     pub leases: BTreeMap<Shard, Lease>,
     pub rules: BTreeMap<RuleId, Rule>,
+    /// Settings by owner: the session's under `SERVER`, an attachment's
+    /// under its id (gone when it detaches).
+    pub settings: BTreeMap<AttachmentId, BTreeMap<String, String>>,
+}
+
+impl Meta {
+    /// A setting as `a` sees it: its own, else the session's.
+    pub fn setting(&self, a: AttachmentId, key: &str) -> Option<&str> {
+        self.settings.get(&a).and_then(|m| m.get(key)).or_else(|| self.settings.get(&SERVER).and_then(|m| m.get(key))).map(String::as_str)
+    }
 }
 
 // ---- state ------------------------------------------------------------------
@@ -475,6 +485,7 @@ impl State {
             }
             MetaOp::Detach { attachment } => {
                 m.attachments.remove(attachment);
+                m.settings.remove(attachment);
             }
             MetaOp::LeaseRequest { shard, to } => {
                 let l = m.leases.get_mut(shard).ok_or_else(|| ApplyError::Missing(format!("lease {shard}")))?;
@@ -497,6 +508,17 @@ impl State {
             }
             MetaOp::PlumbRuleRemove { id } => {
                 m.rules.remove(id);
+            }
+            MetaOp::Set { owner, key, value } => {
+                m.settings.entry(*owner).or_default().insert(key.clone(), value.clone());
+            }
+            MetaOp::Unset { owner, key } => {
+                if let Some(s) = m.settings.get_mut(owner) {
+                    s.remove(key);
+                    if s.is_empty() {
+                        m.settings.remove(owner);
+                    }
+                }
             }
         }
         Ok(Applied::Ok)

@@ -11,6 +11,8 @@ use gpui::{
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Window,
 };
 
+use std::path::{Path, PathBuf};
+
 use apex_core::node::Erase;
 use apex_core::tiling::{self, Info, SCROLLWID};
 use apex_core::*;
@@ -179,6 +181,8 @@ pub struct Acme {
     snarf_wanted: Option<String>,
     /// A B2/B3 sweep in a terminal, shown in the button's colour.
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
+    /// Previews of remote files waiting for their bytes: (ask id, path, app).
+    previews: Vec<(u64, String, Option<String>)>,
     /// The heartbeat: when the last ping went out.
     last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
@@ -271,8 +275,7 @@ impl Acme {
     /// can `open` things the way the platform does, and URLs go there.
     /// The rules are its own, gone when it detaches.
     fn arm(link: &mut Link) {
-        link.client_do = Some(Box::new(|verb, args| client_do(verb, args)));
-        let rule = PlumbRule {
+        let urls = PlumbRule {
             verb: "plumb".into(),
             text: Some(r"https?://\S+".into()),
             file: None,
@@ -282,7 +285,70 @@ impl Acme {
             action: RuleAction::Client { verb: "open".into(), args: "$0".into() },
             to: None,
         };
-        link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
+        link.send(&ClientMsg::RuleAdd { rule: urls, priority: -10, mine: true });
+        // Preview on every file: the app the settings name for its kind,
+        // else the platform's previewer
+        let preview = PlumbRule {
+            verb: "Preview".into(),
+            text: None,
+            file: None,
+            kind: Some(WinKind::File),
+            isfile: None,
+            isdir: None,
+            action: RuleAction::Client { verb: "preview".into(), args: "$file".into() },
+            to: None,
+        };
+        link.send(&ClientMsg::RuleAdd { rule: preview, priority: -10, mine: true });
+    }
+
+    /// What rules asked this client to do since the last poll: `open`
+    /// and `preview`, answered when done. A preview of a remote file
+    /// first asks the host for its bytes.
+    fn answer_asks(&mut self) {
+        let Backend::Remote(link) = &mut self.backend else { return };
+        let asks = std::mem::take(&mut link.client_asks);
+        let files = std::mem::take(&mut link.files);
+        let me = link.attachment;
+        for (id, verb, args) in asks {
+            match verb.as_str() {
+                "open" => {
+                    let result = client_do("open", &args).map(|_| None);
+                    self.send(ClientMsg::Applied { id, result });
+                }
+                "preview" => {
+                    let app = self.preview_app(me, &args);
+                    if self.url.is_local() {
+                        let result = open_preview(app.as_deref(), Path::new(&args)).map(|_| None);
+                        self.send(ClientMsg::Applied { id, result });
+                    } else {
+                        // the file is on the host: fetch it, then show the copy
+                        self.previews.push((id, args.clone(), app));
+                        self.send(ClientMsg::ReadFile { path: args });
+                    }
+                }
+                other => {
+                    self.send(ClientMsg::Applied { id, result: Err(format!("apex-ui cannot {other}")) });
+                }
+            }
+        }
+        for (path, bytes) in files {
+            let Some(i) = self.previews.iter().position(|(_, p, _)| *p == path) else { continue };
+            let (id, _, app) = self.previews.remove(i);
+            let result = bytes.and_then(|b| {
+                let copy = preview_copy(&self.url, &path, &b)?;
+                open_preview(app.as_deref(), &copy)
+            });
+            self.send(ClientMsg::Applied { id, result: result.map(|_| None) });
+        }
+    }
+
+    /// The app that previews `path`, from the settings: this attachment's
+    /// then the session's `Preview.EXT`, then `Preview`; none means the
+    /// platform's own previewer.
+    fn preview_app(&self, me: AttachmentId, path: &str) -> Option<String> {
+        let meta = &self.node.state.meta;
+        let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase());
+        ext.and_then(|e| meta.setting(me, &format!("Preview.{e}")).map(String::from)).or_else(|| meta.setting(me, "Preview").map(String::from))
     }
 
     /// A link to the session at `url`, made if it does not exist: the
@@ -306,7 +372,7 @@ impl Acme {
                     "apex",
                     AttachmentKind::Ui,
                     Some(wake),
-                    apex_server::remote::local_init(),
+                    apex_server::remote::local_profile(),
                 )
             }
             Some(dest) => {
@@ -320,7 +386,7 @@ impl Acme {
     /// Attach through a command's stdin and stdout.
     pub fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         let (stdin, stdout, closer) = apex_server::remote::bridge_child(cmd)?;
-        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake), apex_server::remote::local_init())
+        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake), apex_server::remote::local_profile())
     }
 
     /// Attach through an arbitrary command (`--via`).
@@ -512,6 +578,7 @@ impl Acme {
             term_sel: None,
             snarf_wanted: None,
             term_hl: None,
+            previews: Vec::new(),
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -743,6 +810,7 @@ impl Acme {
         for w in link.take_made() {
             self.show(w);
         }
+        self.answer_asks();
         alive
     }
 
@@ -1879,24 +1947,53 @@ impl Acme {
 
 }
 
-/// What this client does when a rule asks it: `open` hands the argument
-/// to the platform (`open` on macOS, `xdg-open` elsewhere). Anything else
-/// is refused, and the server tries the next rule.
+/// Run a program detached, for something the platform shows.
+fn spawn_quiet(prog: &str, args: &[&str]) -> Result<(), String> {
+    std::process::Command::new(prog)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("{prog} {}: {e}", args.join(" ")))
+}
+
+/// What this client does when a rule asks it, in-process: `open` hands
+/// the argument to the platform (`open` on macOS, `xdg-open` elsewhere),
+/// `preview` shows a local file with the platform's previewer. Anything
+/// else is refused, and the server tries the next rule.
 pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
     match verb {
-        "open" => {
-            let prog = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
-            std::process::Command::new(prog)
-                .arg(args)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .map(|_| ())
-                .map_err(|e| format!("{prog} {args}: {e}"))
-        }
+        "open" => spawn_quiet(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }, &[args]),
+        "preview" => open_preview(None, Path::new(args)),
         _ => Err(format!("apex-ui cannot {verb}")),
     }
+}
+
+/// Show `path` with `app`, or with the platform's previewer: Quick Look
+/// on macOS, `xdg-open` elsewhere.
+fn open_preview(app: Option<&str>, path: &Path) -> Result<(), String> {
+    let p = path.to_string_lossy().to_string();
+    match app {
+        Some(app) if cfg!(target_os = "macos") => spawn_quiet("open", &["-a", app, &p]),
+        Some(app) => spawn_quiet(app, &[&p]),
+        None if cfg!(target_os = "macos") => spawn_quiet("qlmanage", &["-p", &p]),
+        None => spawn_quiet("xdg-open", &[&p]),
+    }
+}
+
+/// A local copy of a remote file for previewing, under this client's
+/// temporary directory, keeping the host's path so neighbours can be
+/// fetched beside it later.
+fn preview_copy(url: &SessionUrl, path: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let host: String = format!("{}-{}", url.provider, url.arg).chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' }).collect();
+    let copy = std::env::temp_dir().join("apex-preview").join(host).join(path.trim_start_matches('/'));
+    if let Some(d) = copy.parent() {
+        std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+    }
+    std::fs::write(&copy, bytes).map_err(|e| format!("{}: {e}", copy.display()))?;
+    Ok(copy)
 }
 
 /// Walk the rules in-process (no daemon): the client answers for itself,

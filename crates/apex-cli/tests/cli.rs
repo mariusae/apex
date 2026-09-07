@@ -6,20 +6,21 @@ use std::time::{Duration, Instant};
 
 use apex_core::*;
 use apex_server::daemon::Daemon;
+use apex_server::proto::Script;
 use apex_server::remote::Remote;
 
 fn daemon() -> PathBuf {
     daemon_with(None)
 }
 
-/// A daemon on a thread, with `host_init` as the host's `~/.apex/init`
+/// A daemon on a thread, with `host_profile` as the host's `~/.apex/profile`
 /// (the real one stays out of the tests).
-fn daemon_with(host_init: Option<PathBuf>) -> PathBuf {
+fn daemon_with(host_profile: Option<PathBuf>) -> PathBuf {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!("apex-cli-{}-{n}.sock", std::process::id()));
     let p = path.clone();
-    std::thread::spawn(move || Daemon::run_with(&p, "main", host_init).unwrap());
+    std::thread::spawn(move || Daemon::run_with(&p, "main", host_profile).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
     while !path.exists() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(5));
@@ -152,16 +153,16 @@ fn attach_stdio_bridges_the_socket() {
 }
 
 #[test]
-fn a_new_session_runs_the_hosts_init_then_its_creators() {
+fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     let dir = std::env::temp_dir().join(format!("apex-cli-init-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let apex = env!("CARGO_BIN_EXE_apex");
     std::fs::write(dir.join("host.txt"), "host\n").unwrap();
     std::fs::write(dir.join("client.txt"), "client\n").unwrap();
     // the host's file: apex finds the session through its environment
-    let host_init = dir.join("init");
-    std::fs::write(&host_init, format!("{apex} new {}/host.txt\n{apex} env FROM=host ORDER=$apexsession\n", dir.display())).unwrap();
-    let sock = daemon_with(Some(host_init.clone()));
+    let host_profile = dir.join("profile");
+    std::fs::write(&host_profile, format!("{apex} new {}/host.txt\n{apex} env FROM=host ORDER=$apexsession\n", dir.display())).unwrap();
+    let sock = daemon_with(Some(host_profile.clone()));
     // the daemon's own session ran the host file (its creator's is the same file)
     let deadline = Instant::now() + Duration::from_secs(10);
     while !ok(&sock, &["win", "list"]).contains("host.txt") && Instant::now() < deadline {
@@ -179,8 +180,8 @@ fn a_new_session_runs_the_hosts_init_then_its_creators() {
     assert!(ok(&sock, &["win", "list"]).contains("host.txt"), "{}\n{}", ok(&sock, &["win", "list"]), errors(&sock, "main"));
     assert!(ok(&sock, &["env"]).contains("FROM=host\n"), "{}", ok(&sock, &["env"]));
     // a session made from elsewhere: the host's file, then the creator's script
-    let init = apex_server::proto::SessionInit { client: "tester".into(), script: format!("{apex} new {}/client.txt\n{apex} env FROM=client\n", dir.display()) };
-    apex_server::remote::new_session(&sock, "s2", Some(init)).unwrap();
+    let profile = apex_server::proto::Script { client: "tester".into(), text: format!("{apex} new {}/client.txt\n{apex} env FROM=client\n", dir.display()) };
+    apex_server::remote::new_session(&sock, "s2", Some(profile)).unwrap();
     let list = |sock: &PathBuf| ok(sock, &["--session", "s2", "win", "list"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     while !(list(&sock).contains("host.txt") && list(&sock).contains("client.txt")) && Instant::now() < deadline {
@@ -318,5 +319,47 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(errors().contains(&format!("preview {md}")), "{}", errors());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_attach_script_sets_the_clients_own_settings_and_cat_reads_files() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-cli-attach-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("bytes.bin"), b"\x00\x01hello\xff").unwrap();
+    // a session setting, from anywhere
+    ok(&sock, &["set", "Preview", "Quick"]);
+    let bin = env!("CARGO_BIN_EXE_apex");
+    // a client attaching with a script: its set is its own
+    let script = Script { client: "tester".into(), text: format!("{bin} set Preview.md Marked\n") };
+    let c = Remote::connect_with(&sock, "main", "ui", AttachmentKind::Ui, Some(script)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ok(&sock, &["set"]).contains("ui\tPreview.md\tMarked") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let listing = ok(&sock, &["set"]);
+    assert!(listing.contains("session\tPreview\tQuick\n"), "{listing}");
+    assert!(listing.contains("ui\tPreview.md\tMarked\n"), "{listing}");
+    // the client sees its own first, then the session's
+    let me = c.attachment();
+    let mut r = Remote::connect_as(&sock, "main", "look", AttachmentKind::Tool).unwrap();
+    let _ = r.step(Duration::from_millis(100));
+    assert_eq!(r.node.state.meta.setting(me, "Preview.md"), Some("Marked"));
+    assert_eq!(r.node.state.meta.setting(me, "Preview"), Some("Quick"));
+    assert_eq!(r.node.state.meta.setting(r.attachment(), "Preview.md"), None);
+    // and when it goes, its settings go
+    drop(c);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["set"]).contains("Marked") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ok(&sock, &["set"]).contains("Marked"));
+    // cat: the bytes of a file on the host
+    let out = Command::new(bin).arg("--socket").arg(&sock).args(["--session", "main", "cat"]).arg(dir.join("bytes.bin")).output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(out.stdout, b"\x00\x01hello\xff");
+    let (success, _, err) = apex(&sock, &["cat", "/nowhere/at/all"]);
+    assert!(!success && err.contains("No such file"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }

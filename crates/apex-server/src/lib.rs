@@ -35,6 +35,7 @@ use apex_core::*;
 
 pub use proposal::Proposal;
 pub use term::{TermEvent, TermHost, TermKey};
+pub use proto::Script;
 
 /// Something that happened off the main thread and needs the server's
 /// attention on it.
@@ -646,19 +647,19 @@ impl Server {
         }
     }
 
-    /// A new session's init: the host's file (`host_init`, normally
+    /// A new session's init: the host's file (`host_profile`, normally
     /// `~/.apex/init`) sourced, then what the creator brought, unless it
     /// is that same file; one shell reading both, run like any command,
     /// named `init` in the top row, its output in `+Errors`.
-    pub fn run_init(&mut self, view: &Node, host_init: Option<&Path>, init: Option<&proto::SessionInit>) {
-        let host_text = host_init.and_then(|p| std::fs::read_to_string(p).ok());
+    pub fn run_profile(&mut self, view: &Node, host_profile: Option<&Path>, init: Option<&proto::Script>) {
+        let host_text = host_profile.and_then(|p| std::fs::read_to_string(p).ok());
         let mut script = String::new();
-        if let (Some(p), Some(_)) = (host_init, &host_text) {
+        if let (Some(p), Some(_)) = (host_profile, &host_text) {
             script.push_str(&format!(". {}\n", shell_quote(&p.display().to_string())));
         }
         if let Some(i) = init {
-            if !i.script.trim().is_empty() && host_text.as_deref() != Some(i.script.as_str()) {
-                script.push_str(&i.script);
+            if !i.text.trim().is_empty() && host_text.as_deref() != Some(i.text.as_str()) {
+                script.push_str(&i.text);
                 if !script.ends_with('\n') {
                     script.push('\n');
                 }
@@ -669,7 +670,25 @@ impl Server {
         }
         let dir = self.cwd.clone();
         let env = self.command_env(view, ExecCtx::Top);
-        self.spawn_shell_as("init".into(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
+        self.spawn_shell_as("profile".into(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
+    }
+
+    /// A client's attach script (`~/.apex/attach` where it runs), run on
+    /// this host every time it attaches, with `apexattachment` naming it
+    /// so `apex set` there is the attachment's own; output in `+Errors`.
+    pub fn run_attach(&mut self, view: &Node, attachment: AttachmentId, script: &Script) {
+        if script.text.trim().is_empty() {
+            return;
+        }
+        let dir = self.cwd.clone();
+        let mut env = self.command_env(view, ExecCtx::Top);
+        env.push(("apexattachment".into(), attachment.0.to_string()));
+        env.push(("apexclient".into(), script.client.clone()));
+        let mut text = script.text.clone();
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        self.spawn_shell_as("attach".into(), ExecCtx::Top, None, text, dir, None, ShellMode::Errors { dir: None }, env);
     }
 
     /// acme's `textcomplete`, the file-system half: what to insert after

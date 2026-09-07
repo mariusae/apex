@@ -23,6 +23,8 @@
 //! apex plumb rule add FLAGS | rm ID | ls               the rule table
 //! apex B FILE[:LINE] ...                               open in the session (plan 9's B)
 //! apex env [KEY=VALUE ...]                              set the session's environment (none: show it)
+//! apex set [KEY VALUE]                                  a setting, the session's or (from an attach script) the client's
+//! apex cat PATH                                         the bytes of a file on the host
 //! apex label TEXT                                       name this terminal's window (plan9port's label)
 //! apex awd [LABEL]                                      name it pwd/-LABEL (plan9port's awd)
 //! ```
@@ -91,6 +93,8 @@ fn main() {
         "B" => b(&socket, &session, rest),
         "label" => label(&rest.join(" ")),
         "env" => env_cmd(&socket, &session, rest),
+        "set" => set(&socket, &session, rest),
+        "cat" => cat(&socket, &session, rest),
         "stop" => apex_server::remote::stop(&socket).map_err(|e| format!("{}: {e}", socket.display())),
         "version" => {
             println!("apex build {}", apex_server::BUILD_ID);
@@ -106,7 +110,7 @@ fn main() {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|B|label|awd|env|stop|version ...");
+    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|B|label|awd|env|set|cat|stop|version ...");
     std::process::exit(2);
 }
 
@@ -175,7 +179,7 @@ fn rename_session(socket: &Path, session: &str, args: &[String]) -> R {
 fn new_session(socket: &Path, session: &str, args: &[String]) -> R {
     let name = args.first().ok_or("new-session NAME")?;
     ensure_server(socket, session)?;
-    apex_server::remote::new_session(socket, name, apex_server::remote::local_init()).map_err(|e| e.to_string())
+    apex_server::remote::new_session(socket, name, apex_server::remote::local_profile()).map_err(|e| e.to_string())
 }
 
 // ---- attach -----------------------------------------------------------------------
@@ -548,7 +552,7 @@ fn parse_rule(args: &[String]) -> Result<(PlumbRule, i32, bool), String> {
     let mut priority = 0;
     let mut mine = false;
     let mut i = 0;
-    let mut value = |i: &mut usize, flag: &str| -> Result<String, String> {
+    let value = |i: &mut usize, flag: &str| -> Result<String, String> {
         *i += 1;
         args.get(*i).cloned().ok_or_else(|| format!("{flag} needs a value"))
     };
@@ -636,5 +640,41 @@ fn env_cmd(socket: &Path, session: &str, args: &[String]) -> R {
             println!("{k}={v}");
         }
     }
+    Ok(())
+}
+
+/// `apex set KEY VALUE`: a setting of the session's, or of the attaching
+/// client's when run from its attach script (`$apexattachment`). `apex
+/// set` alone lists them all.
+fn set(socket: &Path, session: &str, args: &[String]) -> R {
+    let mut c = tool(socket, session)?;
+    match args {
+        [] => {
+            let meta = &c.node.state.meta;
+            for (owner, map) in &meta.settings {
+                let who = if *owner == SERVER { "session".to_string() } else { meta.attachments.get(owner).map(|a| a.name.clone()).unwrap_or_else(|| owner.to_string()) };
+                for (k, v) in map {
+                    println!("{who}\t{k}\t{v}");
+                }
+            }
+            Ok(())
+        }
+        [key, value] => {
+            let attachment = std::env::var("apexattachment").ok().and_then(|a| a.parse::<u64>().ok()).map(AttachmentId);
+            c.send(&ClientMsg::Set { key: key.clone(), value: value.clone(), attachment });
+            let _ = c.step(Duration::from_millis(50));
+            Ok(())
+        }
+        _ => Err("usage: apex set [KEY VALUE]".into()),
+    }
+}
+
+/// The bytes of a file on the session's host, to stdout.
+fn cat(socket: &Path, session: &str, args: &[String]) -> R {
+    use std::io::Write;
+    let [path] = args else { return Err("usage: apex cat PATH".into()) };
+    let mut c = tool(socket, session)?;
+    let bytes = c.read_file(path, TIMEOUT)?;
+    std::io::stdout().write_all(&bytes).map_err(|e| e.to_string())?;
     Ok(())
 }

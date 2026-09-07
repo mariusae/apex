@@ -14,10 +14,10 @@ use crate::term::TermKey;
 pub enum ClientMsg {
     /// Attach to a session as a new attachment. A UI attachment takes the
     /// leases; a tool follows and proposes.
-    Hello { session: String, name: String, kind: AttachmentKind },
+    Hello { session: String, name: String, kind: AttachmentKind, attach: Option<Script> },
     /// Make a session (fine if it exists), with what its creator brings
     /// for its init.
-    NewSession { name: String, init: Option<SessionInit> },
+    NewSession { name: String, profile: Option<Script> },
     ListSessions,
     /// Rename a session; attachments to it stay attached.
     RenameSession { from: String, to: String },
@@ -61,15 +61,22 @@ pub enum ClientMsg {
     Env { set: Vec<(String, String)> },
     /// The daemon exits, its sessions with it (to run a newer build).
     Stop,
+    /// A setting: the session's, or `attachment`'s (an attach script
+    /// names the attaching client through `$apexattachment`).
+    Set { key: String, value: String, attachment: Option<AttachmentId> },
+    /// The bytes of a file on the host, for a client that shows or
+    /// previews it: answered by `File`.
+    ReadFile { path: String },
 }
 
-/// What the creator of a session brings: its `~/.apex/init`, sourced on
-/// the host after the host's own (unless it is the same file), and its
-/// name, for `$apexclient`.
+/// A client's script, run on the host: its `~/.apex/profile` when it
+/// makes a session (after the host's own, unless it is the same file),
+/// its `~/.apex/attach` whenever it attaches; and its name, for
+/// `$apexclient`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SessionInit {
+pub struct Script {
     pub client: String,
-    pub script: String,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,6 +110,7 @@ pub enum ServerMsg {
     /// Answer with `PlumbAck{id}` within a second.
     Plumb { id: u64, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String> },
     RuleAdded { id: RuleId },
+    File { path: String, bytes: Result<Vec<u8>, String> },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
