@@ -174,6 +174,16 @@ on the same URL, not a shared page.
 
 ### 2.2 Rendering
 
+*Spike (stage 3), done:* a `wry` 0.56 child view built with
+`build_as_child` on gpui's `Window` (which implements
+`HasWindowHandle`) sits exactly at the rectangle gpui gives, in logical
+coordinates with a top-left origin, moves with `set_bounds`, and hides
+and shows with `set_visible`; the `mac-proxy` feature's
+`with_proxy_config(ProxyConfig::Http)` sent the page's traffic to a
+localhost `CONNECT` proxy on macOS 26; and a gpui element painted over
+the same area is indeed hidden behind the native view. `wry` is the
+dependency.
+
 gpui has no web view; Zed's `gpui_web` is gpui compiled to WebAssembly,
 not a browser. The view is a native `WKWebView` (WebKitGTK on Linux)
 placed as a child view of the gpui window at the rectangle the layout
