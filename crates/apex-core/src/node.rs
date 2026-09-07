@@ -156,6 +156,9 @@ pub struct Node {
     pub seltext: Option<ViewId>,
     /// What `errors` appended, for the client to show (`take_shows`).
     pub shows: Vec<(ViewId, usize)>,
+    /// Places to go (`Goto`, `Back`, `Fwd`), for the client (or a headless
+    /// leader) to open and select (`take_gotos`).
+    pub gotos: Vec<Loc>,
     /// Windows that were warned once about Del on a dirty buffer.
     warned: BTreeMap<WindowId, Version>,
     edit: EditLang,
@@ -184,6 +187,7 @@ impl Node {
             typing: None,
             seltext: None,
             shows: Vec::new(),
+            gotos: Vec::new(),
             warned: BTreeMap::new(),
             edit: EditLang::new(),
             tiling: Box::new(tiling::Headless::default()),
@@ -1097,6 +1101,64 @@ impl Node {
         self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0, q1: end }))?;
         self.shows.push((view, q0));
         Ok(window)
+    }
+
+    pub fn take_gotos(&mut self) -> Vec<Loc> {
+        std::mem::take(&mut self.gotos)
+    }
+
+    /// Where the user is: the window last selected in, and its dot.
+    pub fn current_loc(&self) -> Option<Loc> {
+        let v = self.seltext?;
+        let w = v.window()?;
+        let name = self.window_name(w);
+        if name.is_empty() {
+            return None;
+        }
+        let (q0, q1) = self.selection(ViewId::Body(w)).ok()?;
+        Some(Loc { name, pos: Pos::Chars(q0, q1) })
+    }
+
+    /// The character range a position names in `w`'s body.
+    pub fn loc_range(&self, w: WindowId, pos: &Pos) -> Option<(usize, usize)> {
+        let b = self.view_buffer(ViewId::Body(w)).ok()?;
+        let t = &self.state.buffer(b).ok()?.text;
+        let n = t.len();
+        Some(match pos {
+            Pos::Keep => return None,
+            Pos::Chars(q0, q1) => ((*q0).min(n), (*q1).min(n).max((*q0).min(n))),
+            Pos::Line(l) => {
+                // the whole line, its newline included, as acme's address does
+                let line = l.saturating_sub(1).min(t.line_count().saturating_sub(1));
+                t.line_range(line).map(|(s, e)| (s, (e + 1).min(n))).unwrap_or((n, n))
+            }
+            Pos::LineCol(line, col) => {
+                let line = (*line).min(t.line_count().saturating_sub(1));
+                let Some((s, e)) = t.line_range(line) else { return Some((n, n)) };
+                let mut units = 0;
+                let mut chars = 0;
+                for c in t.slice(s, e).chars() {
+                    if units >= *col {
+                        break;
+                    }
+                    units += c.len_utf16();
+                    chars += 1;
+                }
+                (s + chars, s + chars)
+            }
+        })
+    }
+
+    /// Land at a location whose window is open: select, show, warp.
+    pub fn land(&mut self, log: &mut Log, loc: &Loc) -> Result<Option<WindowId>> {
+        let Some(w) = self.state.windows.keys().copied().find(|w| self.window_name(*w) == loc.name) else { return Ok(None) };
+        if let Some((q0, q1)) = self.loc_range(w, &loc.pos) {
+            self.select(log, ViewId::Body(w), q0, q1)?;
+        }
+        self.reveal(log, w)?;
+        self.seltext = Some(ViewId::Body(w));
+        self.warp = Some(Warp::Sel(ViewId::Body(w)));
+        Ok(Some(w))
     }
 
     /// Positions a client should bring on screen (acme's `textshow`),

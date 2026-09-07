@@ -76,8 +76,17 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     // Fmt: the server's edit replaces the text
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Fmt".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text_of(n, "main.go").as_deref() == Some("package main\n\nfunc f() {}\n")), "formatted: {:?}", text_of(&c.node, "main.go"));
-    // what the verbs menu would offer this window
+    // what the verbs menu would offer this window: the lsp's, and the stack's
     let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w));
-    assert_eq!(verbs, apex_tool_lsp::VERBS.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    let want: Vec<String> = apex_tool_lsp::VERBS.iter().chain(apex_tool_lsp::NAV_VERBS.iter()).map(|s| s.to_string()).collect();
+    assert_eq!(verbs, want);
+    // Def recorded where we came from: Back returns there
+    c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false });
+    // (the formatted text's line 1 is empty: the server's column clamps to its start)
+    assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((13, 13))), "def again: {:?}", c.node.selection(ViewId::Body(w)));
+    assert!(until(&mut c, |n| !n.state.layout.nav_back.is_empty()), "stack");
+    c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Back".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((0, 0))), "back: {:?}", c.node.selection(ViewId::Body(w)));
     let _ = std::fs::remove_dir_all(&root);
 }

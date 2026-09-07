@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 
 use apex_core::text::Text;
 use apex_core::*;
-use apex_server::proto::{ClientMsg, ServerMsg};
+use apex_server::proto::ServerMsg;
 use apex_server::remote::{Remote, ToolPlumb};
 use apex_server::Proposal;
 
@@ -31,6 +31,9 @@ pub mod pos;
 const TIMEOUT: Duration = Duration::from_secs(10);
 /// The verbs offered in source windows.
 pub const VERBS: [&str; 7] = ["Def", "Refs", "Type", "Hov", "Sig", "Fmt", "Rn"];
+/// Offered everywhere: the session's navigation stack (Goto records
+/// every jump; these pop it).
+pub const NAV_VERBS: [&str; 2] = ["Back", "Fwd"];
 
 /// A language the tool knows: how to recognise its files, what to run,
 /// and what marks a workspace root.
@@ -313,6 +316,10 @@ impl Tool {
         for v in VERBS {
             self.remote.rule_add(rule(v, None), 0, true, TIMEOUT)?;
         }
+        for v in NAV_VERBS {
+            let r = PlumbRule { verb: v.into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), to: None };
+            self.remote.rule_add(r, 0, true, TIMEOUT)?;
+        }
         Ok(())
     }
 
@@ -556,6 +563,15 @@ impl Tool {
 
     /// A rule named us: B3 on an identifier, or a verb from the menu.
     fn on_plumb(&mut self, p: ToolPlumb) {
+        if p.verb == "Back" || p.verb == "Fwd" {
+            // the session's stack: pop it, and the leader lands there
+            match self.propose(Proposal::Nav { back: p.verb == "Back" }, TIMEOUT) {
+                Ok(_) => {}
+                Err(e) => self.errors(Some(&p.dir), &format!("{}: {e}\n", p.verb)),
+            }
+            self.remote.plumb_ack(p.id, true);
+            return;
+        }
         let span = p.at.or(p.sel);
         let Some(span) = span else {
             self.remote.plumb_ack(p.id, false);
@@ -716,27 +732,22 @@ impl Tool {
         }
     }
 
-    /// Show `path` at an LSP range: the window if it is open, else opened
-    /// through the session; then the range selected.
+    /// Go to `path` at an LSP range: one jump (`Goto`), which records
+    /// where the user left from; the leader opens the file if it must.
+    /// The range is a selection when the buffer is here to count in, a
+    /// line and column otherwise.
     fn open_at(&mut self, path: &Path, range: &Value) -> bool {
         let name = path.display().to_string();
-        let find = |node: &Node| node.state.windows.keys().copied().find(|w| node.window_name(*w) == name);
-        let mut w = find(&self.remote.node);
-        if w.is_none() {
-            let Some(col) = self.remote.node.state.layout.cols.first().map(|c| c.id) else { return false };
-            self.remote.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: name.clone() });
-            let deadline = std::time::Instant::now() + TIMEOUT;
-            while w.is_none() && std::time::Instant::now() < deadline {
-                let _ = self.step(Duration::from_millis(50));
-                w = find(&self.remote.node);
+        let open = self.remote.node.state.buffers.values().find(|b| b.name == name).map(|b| b.text.clone());
+        let pos = match open {
+            Some(text) => {
+                let q0 = pos::offset(&text, &range["start"]);
+                let q1 = pos::offset(&text, &range["end"]);
+                Pos::Chars(q0, q1.max(q0))
             }
-        }
-        let Some(w) = w else { return false };
-        let Some(b) = self.remote.node.state.window(w).ok().and_then(|x| x.body_buffer()) else { return false };
-        let Ok(buf) = self.remote.node.state.buffer(b) else { return false };
-        let q0 = pos::offset(&buf.text, &range["start"]);
-        let q1 = pos::offset(&buf.text, &range["end"]);
-        self.propose(Proposal::Select { view: ViewId::Body(w), q0, q1: q1.max(q0) }, TIMEOUT).is_ok()
+            None => Pos::LineCol(range["start"]["line"].as_u64().unwrap_or(0) as usize, range["start"]["character"].as_u64().unwrap_or(0) as usize),
+        };
+        self.propose(Proposal::Goto { loc: Loc { name, pos } }, TIMEOUT).is_ok()
     }
 }
 

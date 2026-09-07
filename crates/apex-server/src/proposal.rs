@@ -61,6 +61,12 @@ pub enum Proposal {
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
+    /// Take the user to a place: the origin goes on the back stack; the
+    /// window is opened if it must be (the leader asks the server), and
+    /// selected, shown, and warped to.
+    Goto { loc: Loc },
+    /// `Back` (or `Fwd`): to the top of that stack.
+    Nav { back: bool },
     /// Insert at an address, valid at `version`, leaving the selection
     /// alone (what a tool writing output at a point wants; `ReplaceRange`
     /// selects what it put, as a pipe's output is selected).
@@ -192,6 +198,28 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             let at = at.min(b.text.len());
             node.insert_text(log, buffer, at, &text)?;
             Ok(None)
+        }
+        Proposal::Goto { loc } => {
+            let from = node.current_loc();
+            node.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: loc.clone() }))?;
+            let w = node.land(log, &loc)?;
+            if w.is_none() {
+                node.gotos.push(loc); // the window must be opened first
+            }
+            Ok(w)
+        }
+        Proposal::Nav { back } => {
+            let stack = if back { &node.state.layout.nav_back } else { &node.state.layout.nav_forward };
+            let Some(loc) = stack.last().cloned() else {
+                return Err(CoreError::Missing(if back { "nothing to go back to".into() } else { "nothing to go forward to".into() }));
+            };
+            let at = node.current_loc();
+            node.append(log, Shard::Layout, Op::Layout(LayoutOp::NavPop { back, at }))?;
+            let w = node.land(log, &loc)?;
+            if w.is_none() {
+                node.gotos.push(loc);
+            }
+            Ok(w)
         }
         Proposal::Live { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;

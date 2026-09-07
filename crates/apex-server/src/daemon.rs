@@ -751,6 +751,17 @@ impl Daemon {
                     }
                 }
                 let _ = s.view.update_tags(&mut s.log);
+                // places to go whose windows are not open: open them, land
+                for loc in s.view.take_gotos() {
+                    let col = s.view.state.layout.cols.first().map(|c| c.id);
+                    let dir = PathBuf::from(&loc.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+                    if let Some(col) = col {
+                        if let Ok(p) = s.server.open_file(col, None, &dir, &loc.name, None) {
+                            let _ = proposal::apply(&mut s.view, &mut s.log, p);
+                            let _ = s.view.land(&mut s.log, &loc);
+                        }
+                    }
+                }
                 // what the daemon just did may have handed the server more
                 props = s.server.poll_execs(&mut s.log, &s.view);
                 s.server.close_orphan_terms(&mut s.log, &s.view);

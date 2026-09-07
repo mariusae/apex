@@ -947,10 +947,7 @@ impl Server {
                 }
             }
             let dry = p.req.dry;
-            let (ctx, dir, win) = (p.req.ctx, p.dir.clone(), match p.req.ctx {
-                ExecCtx::Window(w) => Some(w),
-                _ => None,
-            });
+            let (ctx, dir) = (p.req.ctx, p.dir.clone());
             match &r.action {
                 RuleAction::Edit(t) => {
                     let target = expand(t, &b);
@@ -959,18 +956,14 @@ impl Server {
                         return self.plumb_trace(id);
                     }
                     let (path, line) = split_line(&target);
-                    let opened = column_of(view, ctx).and_then(|col| self.open_file(col, win, &dir, &path, line));
-                    let Some(p) = self.plumbs.get_mut(&id) else { return PlumbStep::Done(Vec::new()) };
-                    match opened {
-                        Ok(prop) => {
-                            p.trace.push(format!("{who}: opened {target}"));
-                            return self.plumb_finish(id, vec![prop]);
-                        }
-                        Err(e) => {
-                            p.trace.push(format!("{who}: {target}: {e}"));
-                            continue;
-                        }
+                    let full = resolve(&dir, &path);
+                    if !full.exists() {
+                        p.trace.push(format!("{who}: {target}: no such file"));
+                        continue;
                     }
+                    p.trace.push(format!("{who}: opened {target}"));
+                    let loc = Loc { name: full.display().to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) };
+                    return self.plumb_finish(id, vec![Proposal::Goto { loc }]);
                 }
                 RuleAction::Run(t) => {
                     let cmd = expand(t, &b);
@@ -1028,9 +1021,11 @@ impl Server {
         if edit_only {
             // B: the text as a path, then
             let (path, line) = split_line(&text);
-            let prop = match column_of(view, ctx).and_then(|col| self.open_file(col, None, &dir, &path, line)) {
-                Ok(p) => p,
-                Err(e) => Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{text}: {e}\n") },
+            let full = resolve(&dir, &path);
+            let prop = if full.exists() {
+                Proposal::Goto { loc: Loc { name: full.display().to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) } }
+            } else {
+                Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{text}: no such file\n") }
             };
             return self.plumb_finish(id, vec![prop]);
         }

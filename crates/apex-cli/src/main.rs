@@ -302,7 +302,9 @@ to the definition (with none, the walk goes on to the path rules and
 Look), and the tools menu of a source window offers Def Refs Type Hov Sig
 Fmt Rn. Definitions open and select; references, hover and signatures go
 to +Errors; Fmt replaces the text with the server's formatting; Rn NAME
-renames.
+renames. Back and Fwd, offered everywhere, walk the session's navigation
+stack: every jump (Def, B3 on file:line, apex B, the app's cmd-p) records
+where it left from, and Back returns there, Fwd undoes a Back.
 
 Start it from the host's profile: apex tool lsp & (see apex help scripts).
 APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr." },

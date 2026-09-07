@@ -148,6 +148,12 @@ pub enum LayoutOp {
     Arrange { r: crate::tiling::Rect, cols: Vec<crate::state::Column> },
     /// The snarf buffer (acme's is global; the client mirrors the system clipboard).
     Snarf { text: String },
+    /// A jump (`Goto`): where it left from goes on the back stack, and
+    /// the forward stack is cleared.
+    Visit { from: Option<Loc>, to: Loc },
+    /// `Back` or `Fwd`: the top of that stack goes, and where the user
+    /// was goes on the other.
+    NavPop { back: bool, at: Option<Loc> },
     /// Executed from a column tag or the top row.
     Exec { ctx: ExecCtx, op: ExecOp },
     Status { exec: Seq, status: ExecStatusOp },
@@ -206,6 +212,28 @@ pub struct PlumbRule {
     pub action: RuleAction,
     /// Where a `Run` command's output goes.
     pub to: Option<RunTo>,
+}
+
+/// A place in the session: a window by name (a file's path), and where
+/// in it. Session state, so that a session re-attached elsewhere has the
+/// same headspace.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Loc {
+    pub name: String,
+    pub pos: Pos,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Pos {
+    /// Leave the selection as it is (a bare path).
+    Keep,
+    /// Character offsets.
+    Chars(usize, usize),
+    /// A line, 1-based (`name:12`).
+    Line(usize),
+    /// A line and column as language servers count: 0-based, the column
+    /// in UTF-16 units.
+    LineCol(usize, usize),
 }
 
 /// What kind of window a rule applies to.

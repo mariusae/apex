@@ -109,6 +109,10 @@ pub struct Layout {
     pub snarf: String,
     /// Execs from column tags and the top row.
     pub execs: BTreeMap<Seq, (ExecCtx, ExecRecord)>,
+    /// Where jumps left from, latest last (`Back`), and where `Back`
+    /// left from (`Fwd`).
+    pub nav_back: Vec<Loc>,
+    pub nav_forward: Vec<Loc>,
 }
 
 impl Layout {
@@ -400,6 +404,25 @@ impl State {
                 l.cols = cols.clone();
             }
             LayoutOp::Snarf { text } => l.snarf = text.clone(),
+            LayoutOp::Visit { from, to } => {
+                if let Some(f) = from {
+                    if f != to && l.nav_back.last() != Some(f) {
+                        l.nav_back.push(f.clone());
+                        if l.nav_back.len() > 50 {
+                            l.nav_back.remove(0);
+                        }
+                    }
+                }
+                l.nav_forward.clear();
+            }
+            LayoutOp::NavPop { back, at } => {
+                let (from, onto) = if *back { (&mut l.nav_back, &mut l.nav_forward) } else { (&mut l.nav_forward, &mut l.nav_back) };
+                if from.pop().is_some() {
+                    if let Some(a) = at {
+                        onto.push(a.clone());
+                    }
+                }
+            }
         }
         Ok(Applied::Ok)
     }

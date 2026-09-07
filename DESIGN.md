@@ -868,6 +868,19 @@ this one (detach, attach).
   screen the origin is set so that it sits a quarter of the window down
   (`Node::errors` records the position; the client's element applies
   textshow's rule).
+- *As built:* navigation is session state, so a session re-attached
+  elsewhere keeps its headspace: `Layout{nav_back, nav_forward}` of
+  `Loc{name, pos}` (`Pos::Keep|Chars|Line|LineCol`), moved by
+  `LayoutOp::Visit{from, to}` and `NavPop{back, at}`. One proposal
+  makes a jump, `Goto{loc}`: the leader records the origin (its
+  `seltext` and dot), lands (select, reveal, warp) when the window is
+  open, else leaves the place for whoever opens files (the app asks the
+  server and lands when the window arrives; a headless daemon opens it
+  itself). The lsp tool lands through `Goto`; plumbs to `file:line` and
+  `apex B` are `Goto`s; ⌘P picks are too. `Back` and `Fwd` are verbs the
+  lsp tool offers everywhere and answers with `Nav{back}`, which pops;
+  ⌘[ and ⌘] are a UI hack that executes those words in the window under
+  the pointer, on purpose: the keys are not the functionality.
 - *As built:* ⌘P (File ▸ Go to…) is Zed's file finder in acme's colours
   (`client/finder.rs`): every open window of the session (files,
   directories, terminals, win, +Errors, marked ● or ▶) and the files

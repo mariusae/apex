@@ -188,6 +188,8 @@ pub struct Acme {
     pub fullscreen: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
     show_at: HashMap<ViewId, usize>,
+    /// A place to go once its file is open (asked of the server).
+    pending_goto: Option<Loc>,
     /// ⌘P, when open.
     pub finder: Option<crate::finder::Finder>,
     /// The windows as of the last frame, to notice closings.
@@ -748,6 +750,7 @@ impl Acme {
             term_hl: None,
             fullscreen: false,
             show_at: HashMap::new(),
+            pending_goto: None,
             finder: None,
             last_windows: std::collections::BTreeMap::new(),
             chooser: false,
@@ -782,6 +785,19 @@ impl Acme {
         self.track_closed();
         for (v, q) in self.node.take_shows() {
             self.show_at.insert(v, q);
+        }
+        for loc in self.node.take_gotos() {
+            self.goto(loc);
+        }
+        // a place whose file was being opened: land once it is
+        if let Some(loc) = self.pending_goto.clone() {
+            if self.node.state.windows.keys().any(|w| self.node.window_name(*w) == loc.name) {
+                self.pending_goto = None;
+                let _ = self.node.land(&mut self.log, &loc);
+                if let Some(w) = self.node.state.windows.keys().copied().find(|w| self.node.window_name(*w) == loc.name) {
+                    self.want_visible.insert(ViewId::Body(w));
+                }
+            }
         }
         if let Backend::Remote(link) = &mut self.backend {
             link.flush(&self.log);
@@ -1751,6 +1767,29 @@ impl Acme {
         }
     }
 
+    /// Go to a place: land if its window is open; else have the server
+    /// open the file, and land when it arrives.
+    pub fn goto(&mut self, loc: Loc) {
+        match self.node.land(&mut self.log, &loc) {
+            Ok(Some(w)) => {
+                self.want_visible.insert(ViewId::Body(w));
+            }
+            _ => {
+                let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) else { return };
+                self.pending_goto = Some(loc.clone());
+                match &mut self.backend {
+                    Backend::Remote(link) => link.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: loc.name.clone() }),
+                    Backend::Local(server) => {
+                        let dir = std::path::Path::new(&loc.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
+                        if let Ok(p) = server.open_file(col, None, &dir, &loc.name, None) {
+                            perform(&mut self.node, &mut self.log, vec![p]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// `logical_button` without recording it.
     fn logical_button_peek(&self, e: &MouseDownEvent) -> MouseButton {
         if e.button != MouseButton::Left {
@@ -1986,7 +2025,7 @@ impl Acme {
     pub fn menu_command(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         let ctx = match self.window_at_pointer(window) {
             Some(w) => ExecCtx::Window(w),
-            None if text == "New" => ExecCtx::Top,
+            None if text == "New" || text == "Back" || text == "Fwd" => ExecCtx::Top,
             None => return,
         };
         self.execute(ctx, text, cx);

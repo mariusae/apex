@@ -456,3 +456,43 @@ fn a_name_typed_into_the_tag_is_where_put_writes() {
     assert!(!node.state.buffer(b).unwrap().dirty());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn jumps_stack_up_and_back_returns() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-nav-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+    std::fs::write(dir.join("b.txt"), "x\ny\n").unwrap();
+    // a.txt open, dot on line 2: the origin
+    let p = server.open_file(col, None, &dir, "a.txt", None).unwrap();
+    let a = perform(&mut node, &mut log, vec![p]).unwrap();
+    node.select(&mut log, ViewId::Body(a), 4, 7).unwrap();
+    node.seltext = Some(ViewId::Body(a));
+    // a jump to b.txt:2, its window not open yet: the origin is recorded,
+    // the place is left for whoever opens files
+    let b_name = dir.join("b.txt").display().to_string();
+    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Goto { loc: Loc { name: b_name.clone(), pos: Pos::Line(2) } }).unwrap();
+    assert!(r.is_none());
+    assert_eq!(node.state.layout.nav_back.len(), 1);
+    assert_eq!(node.state.layout.nav_back[0].pos, Pos::Chars(4, 7));
+    let gotos = node.take_gotos();
+    assert_eq!(gotos.len(), 1);
+    // opened (as the daemon or the app would), landing selects line 2
+    let p = server.open_file(col, None, &dir, "b.txt", None).unwrap();
+    let b = perform(&mut node, &mut log, vec![p]).unwrap();
+    node.land(&mut log, &gotos[0]).unwrap();
+    assert_eq!(node.selection(ViewId::Body(b)).unwrap(), (2, 4));
+    assert_eq!(node.seltext, Some(ViewId::Body(b)));
+    // Back: to a.txt at 4..7; where we were goes forward
+    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: true }).unwrap();
+    assert_eq!(r, Some(a));
+    assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (4, 7));
+    assert!(node.state.layout.nav_back.is_empty());
+    assert_eq!(node.state.layout.nav_forward.len(), 1);
+    // and Fwd returns
+    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false }).unwrap();
+    assert_eq!(r, Some(b));
+    assert!(apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false }).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

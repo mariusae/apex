@@ -75,6 +75,10 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(cx)))
+            // a UI hack, on purpose: the keys just say the verbs, which a
+            // tool answers
+            .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::NavFwd, window, cx| this.menu_command("Fwd", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
                 this.reconnect(window);
                 cx.notify();

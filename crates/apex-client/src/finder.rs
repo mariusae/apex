@@ -16,9 +16,8 @@ use gpui::{anchored, deferred, div, point, prelude::*, px, rgb, Context, MouseBu
 
 use apex_core::*;
 use apex_server::providers::SessionUrl;
-use apex_server::proto::ClientMsg;
 
-use crate::app::{Acme, Backend};
+use crate::app::Acme;
 use crate::shell::{BLINK, UI_FONT};
 
 /// How many closed files a session remembers.
@@ -271,20 +270,11 @@ impl Acme {
     /// column, which warps to the new window.
     pub fn pick(&mut self, p: Pick, cx: &mut Context<Self>) {
         self.finder = None;
-        match p {
-            Pick::Entry(Entry { window: Some(w), .. }) => {
-                self.show(w);
-                self.node.warp = Some(Warp::Sel(ViewId::Body(w)));
-            }
-            Pick::Entry(Entry { name, .. }) => {
-                if let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) {
-                    match &mut self.backend {
-                        Backend::Remote(link) => link.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name }),
-                        Backend::Local(_) => self.execute(ExecCtx::Top, &format!("New {name}"), cx),
-                    }
-                }
-            }
-        }
+        // a jump: the origin goes on the back stack, and we land there
+        let Pick::Entry(Entry { name, .. }) = p;
+        let loc = Loc { name, pos: Pos::Keep };
+        let _ = apex_server::proposal::apply(&mut self.node, &mut self.log, apex_server::Proposal::Goto { loc });
+        self.sync();
         self.after();
         cx.notify();
     }
