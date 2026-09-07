@@ -27,6 +27,7 @@ use crate::text_element::font_for;
 
 use crate::term_element::TermLayout;
 use crate::web::{Nav, WebEvent, Webs};
+use crate::pool::{Parked, Pool, WakeTarget};
 use crate::text_element::{Source, TextLayout};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -168,6 +169,9 @@ pub struct Acme {
     /// Where this window's session is, as a URL.
     pub url: SessionUrl,
     pub wake: Option<Wake>,
+    /// Where the current link's wake goes: this window, until the
+    /// session is parked.
+    pub wake_target: Option<WakeTarget>,
     pub selector: Option<Selector>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
@@ -293,7 +297,13 @@ impl Acme {
     /// it must be) or a destination through its provider. `wake` is
     /// called from the reader thread when there is something to poll.
     pub fn attach(cx: &mut Context<Self>, url: &SessionUrl, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (mut link, mut log, mut node) = Self::connect(url, wake.clone())?;
+        // parked here (a window closed on it, say): shown at once
+        if let Some(p) = Pool::take(cx, url) {
+            let mut acme = Self::from_parked(cx, p, wake.clone());
+            acme.open_initial(acme.node.state.layout.cols.first().map(|c| c.id).unwrap_or(ColumnId(0)), files);
+            return Ok(acme);
+        }
+        let (mut link, mut log, mut node, target) = Self::connect_targeted(url, wake.clone())?;
         Self::arm(&mut link);
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
@@ -303,9 +313,179 @@ impl Acme {
         acme.socket = Some(apex_server::daemon::default_socket());
         acme.url = url.clone();
         acme.wake = Some(wake);
+        acme.wake_target = Some(target);
         crate::shell::note_recent(url);
         acme.open_initial(col, files);
         Ok(acme)
+    }
+
+    /// A window on a parked session: its state as it was left, its wake
+    /// pointed here.
+    fn from_parked(cx: &mut Context<Self>, p: Parked, wake: Wake) -> Acme {
+        p.target.set(wake.clone());
+        let mut acme = Self::over(cx, p.log, p.node, Backend::Remote(p.link), &p.url.session);
+        acme.socket = Some(apex_server::daemon::default_socket());
+        acme.url = p.url.clone();
+        acme.wake = Some(wake);
+        acme.wake_target = Some(p.target);
+        acme.previews = p.previews;
+        acme.live = p.live;
+        acme.snarfouts = p.snarfouts;
+        acme.pending_goto = p.pending_goto;
+        crate::shell::note_recent(&acme.url.clone());
+        acme
+    }
+
+    /// Take this window's session off it, still attached, for the pool:
+    /// what a switch or a close does. The window is left on nothing (a
+    /// blank in-process log) until it shows something else. None when
+    /// there is no link to keep.
+    pub fn park(&mut self) -> Option<Parked> {
+        if !matches!(self.backend, Backend::Remote(_)) || !self.connected {
+            return None;
+        }
+        let target = self.wake_target.take()?;
+        // a blank stand-in, as an offline window has
+        let mut log = Log::new();
+        let (a, _) = log.attach(AttachmentKind::Ui, "apex");
+        let mut node = Node::new(a);
+        let _ = node.catch_up(&log);
+        let _ = node.init_session(&mut log);
+        let (server, _rx) = Server::new(&log);
+        let Backend::Remote(link) = std::mem::replace(&mut self.backend, Backend::Local(server)) else { unreachable!() };
+        let log = std::mem::replace(&mut self.log, log);
+        let node = std::mem::replace(&mut self.node, node);
+        self.connected = false;
+        self.webs = Webs::new(None, None);
+        self.layouts.clear();
+        self.term_layouts.clear();
+        self.hl = None;
+        self.mouse = Mouse::default();
+        self.want_visible.clear();
+        self.typed_start.clear();
+        Some(Parked {
+            link,
+            log,
+            node,
+            url: self.url.clone(),
+            target,
+            previews: std::mem::take(&mut self.previews),
+            live: std::mem::take(&mut self.live),
+            snarfouts: std::mem::take(&mut self.snarfouts),
+            pending_goto: self.pending_goto.take(),
+            parked_at: std::time::Instant::now(),
+        })
+    }
+
+    /// Park this window's session in the pool (the window is closing).
+    pub fn park_into_pool(&mut self, cx: &mut gpui::App) {
+        if let Some(p) = self.park() {
+            Pool::park(cx, p);
+        }
+    }
+
+    /// Close this window now: the session parked, the window gone, without
+    /// waiting for a frame (a window nobody can see never draws one).
+    pub fn close_now(&mut self, cx: &mut Context<Self>) {
+        self.park_into_pool(cx);
+        let mine = cx.entity_id();
+        cx.defer(move |cx| {
+            for h in cx.windows() {
+                if let Some(h) = h.downcast::<Acme>() {
+                    let _ = h.update(cx, |_, window, cx| {
+                        if cx.entity_id() == mine {
+                            window.remove_window();
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /// Show the session at `url` in this window: parked, it is back at
+    /// once; local, it is attached now; elsewhere, the window says it is
+    /// attaching and the attach comes back from a thread. What this
+    /// window showed is parked first.
+    pub fn switch_to(&mut self, url: &SessionUrl, window: &mut Window, cx: &mut Context<Self>) {
+        let wake = self.wake.clone();
+        if let Some(p) = self.park() {
+            Pool::park(cx, p);
+        }
+        if let Some(p) = Pool::take(cx, url) {
+            self.adopt_parked(p, window);
+            return;
+        }
+        if url.is_local() {
+            if let Err(e) = self.reattach(url, window) {
+                eprintln!("apex-ui: attach {url}: {e}");
+                let msg = Acme::connect_error(url, &e);
+                self.notice(&msg);
+            }
+            return;
+        }
+        let Some(wake) = wake else { return };
+        self.url = url.clone();
+        self.session = url.session.clone();
+        window.set_window_title(&Self::title(url));
+        self.notice(&format!("{url}: attaching…\n"));
+        crate::shell::log_line(&format!("attaching to {url} in the background"));
+        let (u, w) = (url.clone(), wake);
+        let connecting = cx.background_executor().spawn(async move { Acme::connect_targeted(&u, w) });
+        let url = url.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let r = connecting.await;
+            let _ = this.update_in(cx, |acme, window, cx| {
+                match r {
+                    Ok((link, log, node, target)) => {
+                        if acme.url == url && !acme.connected {
+                            if let Err(e) = acme.adopt(link, log, node, target, &url, Vec::new(), window) {
+                                acme.notice(&Acme::connect_error(&url, &e));
+                            } else {
+                                crate::shell::log_line(&format!("attached to {url}"));
+                            }
+                        } else {
+                            // the window moved on meanwhile: keep it, parked
+                            let parked = Parked { link, log, node, url: url.clone(), target, previews: Vec::new(), live: std::collections::HashMap::new(), snarfouts: Vec::new(), pending_goto: None, parked_at: std::time::Instant::now() };
+                            Pool::park(cx, parked);
+                        }
+                    }
+                    Err(e) => {
+                        crate::shell::log_line(&format!("attach {url}: {e}"));
+                        if acme.url == url {
+                            acme.notice(&Acme::connect_error(&url, &e));
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// A parked session back in this window.
+    fn adopt_parked(&mut self, p: Parked, window: &mut Window) {
+        if let Some(wake) = &self.wake {
+            p.target.set(wake.clone());
+        }
+        self.backend = Backend::Remote(p.link);
+        self.connected = true;
+        self.last_ping = None;
+        self.log = p.log;
+        self.node = p.node;
+        self.session = p.url.session.clone();
+        self.url = p.url.clone();
+        self.wake_target = Some(p.target);
+        self.previews = p.previews;
+        self.live = p.live;
+        self.snarfouts = p.snarfouts;
+        self.pending_goto = p.pending_goto;
+        self.socket = Some(apex_server::daemon::default_socket());
+        self.chooser = false;
+        self.webs = Webs::new(self.io_plane(), self.wake.clone());
+        self.selector = None;
+        window.set_window_title(&Self::title(&p.url));
+        crate::shell::note_recent(&p.url);
+        self.sync();
     }
 
     /// What this client does for the rules, and the rules it brings: it
@@ -511,6 +691,14 @@ impl Acme {
     /// A link to the session at `url`, made if it does not exist: the
     /// local socket, or a destination through its provider (our apex
     /// installed there first).
+    /// `connect`, with the wake behind a target that can move: to this
+    /// window now, to the pool when the session is parked.
+    fn connect_targeted(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node, WakeTarget)> {
+        let target = WakeTarget::new(wake);
+        let (link, log, node) = Self::connect(url, target.forwarding())?;
+        Ok((link, log, node, target))
+    }
+
     fn connect(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         match url.dest() {
             None => {
@@ -566,15 +754,18 @@ impl Acme {
     /// old attachment ends; its leases return to its daemon.
     pub fn reattach(&mut self, url: &SessionUrl, window: &mut Window) -> std::io::Result<()> {
         let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
-        let (link, log, node) = Self::connect(url, wake)?;
-        self.adopt(link, log, node, url, Vec::new(), window)
+        let (link, log, node, target) = Self::connect_targeted(url, wake)?;
+        self.adopt(link, log, node, target, url, Vec::new(), window)
     }
 
     /// Take a fresh link (made by `connect`, on any thread) as this
     /// window's: the second half of `reattach`, and what an attach made
     /// in the background comes back to.
-    pub fn adopt(&mut self, mut link: Link, mut log: Log, mut node: Node, url: &SessionUrl, files: Vec<String>, window: &mut Window) -> std::io::Result<()> {
+    pub fn adopt(&mut self, mut link: Link, mut log: Log, mut node: Node, target: WakeTarget, url: &SessionUrl, files: Vec<String>, window: &mut Window) -> std::io::Result<()> {
         Self::arm(&mut link);
+        if let Some(old) = self.wake_target.replace(target) {
+            drop(old);
+        }
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -610,8 +801,8 @@ impl Acme {
     /// `connect`, for a thread: a remote attach can take a while (the
     /// binary uploaded when it changed, a daemon started there) and must
     /// not hold the UI meanwhile.
-    pub fn connect_blocking(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
-        Self::connect(url, wake)
+    pub fn connect_blocking(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node, WakeTarget)> {
+        Self::connect_targeted(url, wake)
     }
 
     /// Attach to this window's session again: a fresh link and snapshot,
@@ -792,6 +983,7 @@ impl Acme {
             socket: None,
             url: SessionUrl::local(session),
             wake: None,
+            wake_target: None,
             selector: None,
             tag_need: HashMap::new(),
             close_requested: false,
@@ -1104,6 +1296,11 @@ impl Acme {
         // what the proposals just applied left to do: places to go (a
         // tool's Goto opens a file), tags to refit, the warp
         self.sync();
+        // an Exit proposed from outside (apex exec Exit) closes the window
+        if std::mem::take(&mut self.node.quit_requested) {
+            crate::shell::log_line(&format!("Exit from outside: closing the window on {}", self.url));
+            self.close_requested = true;
+        }
         alive
     }
 
@@ -2602,7 +2799,7 @@ impl Acme {
         match self.node.exec(&mut self.log, ctx, text) {
             Ok(Executed::Quit(_)) => match self.backend {
                 Backend::Local(_) => cx.quit(),
-                Backend::Remote(_) => self.close_requested = true, // Exit detaches; the session lives on
+                Backend::Remote(_) => self.close_now(cx), // Exit: the session lives on, parked
             },
             Ok(Executed::Failed(_, reason)) => self.report(ctx, &reason),
             Ok(_) => {}
@@ -2672,7 +2869,7 @@ fn spawn_quiet(prog: &str, args: &[&str]) -> Result<std::process::Child, String>
 }
 
 /// A remote file being previewed from a local copy.
-struct Live {
+pub struct Live {
     copy: PathBuf,
     /// The watch stream on the I/O plane, ended with the preview.
     stream: u32,

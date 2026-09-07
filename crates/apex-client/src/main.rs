@@ -17,6 +17,7 @@ mod finder;
 mod menu;
 mod shell;
 mod term_element;
+mod pool;
 mod text_element;
 mod warp;
 mod web;
@@ -36,7 +37,9 @@ use text_element::TextElement;
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.close_requested {
-            window.remove_window(); // Exit: detach, the session stays
+            shell::log_line(&format!("closing the window on {}", self.url));
+            self.park_into_pool(cx);
+            window.remove_window(); // Exit: the session stays, parked
             return div().into_any_element();
         }
         // a pending mouse warp uses the layouts of the frame just drawn
@@ -85,7 +88,11 @@ impl Render for Acme {
                 this.reconnect(window);
                 cx.notify();
             }))
-            .on_action(cx.listener(|_, _: &shell::CloseWindow, window, _| window.remove_window()))
+            .on_action(cx.listener(|this, _: &shell::CloseWindow, window, cx| {
+                // the session stays, parked: a window on it later is instant
+                this.park_into_pool(cx);
+                window.remove_window()
+            }))
             .on_action(cx.listener(|_, _: &shell::ToggleFullScreen, window, _| window.toggle_fullscreen()))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
@@ -223,6 +230,7 @@ fn main() {
     }
     gpui_platform::application().run(move |cx: &mut App| {
         cursor::install();
+        pool::Pool::install(cx);
         cx.set_menus(shell::menus());
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
@@ -239,6 +247,7 @@ fn main() {
                         let _ = h.update(cx, |acme, _, _| acme.close_link());
                     }
                 }
+                pool::Pool::close_all(cx);
                 cx.quit();
             });
         });
@@ -408,8 +417,8 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                 let r = connecting.await;
                                 let _ = this.update_in(cx, |acme, window, cx| {
                                     match r {
-                                        Ok((link, log, node)) => {
-                                            if let Err(e) = acme.adopt(link, log, node, &url, files, window) {
+                                        Ok((link, log, node, target)) => {
+                                            if let Err(e) = acme.adopt(link, log, node, target, &url, files, window) {
                                                 acme.notice(&Acme::connect_error(&url, &e));
                                             } else {
                                                 shell::log_line(&format!("attached to {url}"));
@@ -445,6 +454,9 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                     eprintln!("apex-ui: server went away");
                                 }
                                 acme.settle_snarf(cx);
+                                if acme.close_requested {
+                                    acme.close_now(cx);
+                                }
                                 cx.notify();
                             });
                             if r.is_err() {
@@ -472,6 +484,16 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             view
         },
     );
+    if let Ok(h) = &opened {
+        // the red button too: the session stays, parked
+        let h = *h;
+        let _ = h.update(cx, |_, window, cx| {
+            window.on_window_should_close(cx, move |_, cx| {
+                let _ = h.update(cx, |acme, _, cx| acme.park_into_pool(cx));
+                true
+            });
+        });
+    }
     match opened {
         Ok(h) => Some(h),
         Err(e) => {

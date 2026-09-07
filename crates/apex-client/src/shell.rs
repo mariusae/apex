@@ -677,11 +677,7 @@ impl Acme {
                     cx.notify();
                     return;
                 }
-                if let Err(e) = self.reattach(&url, window) {
-                    eprintln!("apex-ui: attach {url}: {e}");
-                    let msg = Acme::connect_error(&url, &e);
-                    self.notice(&msg);
-                }
+                self.switch_to(&url, window, cx);
                 cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }

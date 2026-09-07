@@ -159,6 +159,9 @@ pub struct Node {
     /// Places to go (`Goto`, `Back`, `Fwd`), for the client (or a headless
     /// leader) to open and select (`take_gotos`).
     pub gotos: Vec<Loc>,
+    /// `Exit` was executed (by anyone: a tag, `apex exec`): the client
+    /// showing this replica should close its window.
+    pub quit_requested: bool,
     /// Windows that were warned once about Del on a dirty buffer.
     warned: BTreeMap<WindowId, Version>,
     edit: EditLang,
@@ -188,6 +191,7 @@ impl Node {
             seltext: None,
             shows: Vec::new(),
             gotos: Vec::new(),
+            quit_requested: false,
             warned: BTreeMap::new(),
             edit: EditLang::new(),
             tiling: Box::new(tiling::Headless::default()),
@@ -1316,6 +1320,9 @@ impl Node {
                 let gone = matches!(ctx, ExecCtx::Window(w) if self.state.window(w).is_err());
                 if !gone {
                     self.append_status(log, ctx, seq, ExecStatusOp::Done)?;
+                }
+                if quit {
+                    self.quit_requested = true;
                 }
                 Ok(if quit { Executed::Quit(seq) } else { Executed::Done(seq) })
             }

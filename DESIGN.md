@@ -1008,6 +1008,20 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
+- *As built, parked sessions:* switching a window to another session
+(⌘K) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
+session is parked, still attached and still leading, in an app-wide
+pool (`client/pool.rs`, a gpui global), where a task tends every
+parked link: entries applied, tools' proposals answered, tags
+refreshed, gotos opened, the rules' asks answered as far as an unseen
+session can (`open` yes; the rest declined). A window asked for a
+parked session, by ⌘K or as a new window, takes it back at once with
+its state as it was left (web views are made again). A link's wake goes
+through a target that moves between the window and the pool. Eight stay
+parked, the least recently parked let go beyond that; a parked link
+that ends is dropped; quitting closes them all, and nothing is parked
+across a launch (a remembered window attaches afresh). Switching to a
+session elsewhere attaches in the background like a launch does.
 - *As built:* Enter repeats the leading whitespace of the line it ends,
 up to dot, in every body: acme's `-a`, always on. The title bar shows,
 left of the connection mark, the heartbeat's round trip and the log's
