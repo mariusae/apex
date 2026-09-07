@@ -877,8 +877,8 @@ this one (detach, attach).
   files by recency; a query, a fuzzy score in the spirit of Zed's
   matcher (file name best, then after `/` and at word starts, runs of
   consecutive matches, a penalty for the wrong case and for long paths),
-  open before closed at equal scores; the query itself as a path to open
-  last. Enter or a click shows the window or opens the file.
+  open before closed at equal scores. Enter or a click shows the window
+  or opens the file, and warps the pointer to it as acme's warps do.
 - *As built:* full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
   title bar, acme's area is the whole screen, and a window's full-screen
   state is remembered with its frame. shift-B3 looks backwards (the

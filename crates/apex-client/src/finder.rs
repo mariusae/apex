@@ -33,11 +33,10 @@ pub struct Entry {
     pub kind: WinKind,
 }
 
-/// A choice: an entry, or the query typed, to open as a path.
+/// A choice: an entry.
 #[derive(Clone, Debug)]
 pub enum Pick {
     Entry(Entry),
-    Open(String),
 }
 
 pub struct Finder {
@@ -56,19 +55,14 @@ impl Finder {
     /// What the list shows for the query, ranked.
     pub fn picks(&self) -> Vec<Pick> {
         let q = self.filter.trim();
-        let mut picks: Vec<Pick> = if q.is_empty() {
+        if q.is_empty() {
             self.entries.iter().cloned().map(Pick::Entry).collect()
         } else {
             let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| score(q, &e.name).map(|s| (s, i, e))).collect();
             // best first; open before closed; then the order we had
             scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(b.2.window.is_some().cmp(&a.2.window.is_some())).then(a.1.cmp(&b.1)));
             scored.into_iter().map(|(_, _, e)| Pick::Entry(e.clone())).collect()
-        };
-        // the query as a path to open, when it is not already what is listed
-        if !q.is_empty() && !self.entries.iter().any(|e| e.name == q) {
-            picks.push(Pick::Open(q.to_string()));
         }
-        picks
     }
 
     pub fn move_cursor(&mut self, by: i32) {
@@ -272,13 +266,17 @@ impl Acme {
         }
     }
 
-    /// Go there: an open window is shown; a closed file, or a path typed,
-    /// is opened in the first column.
+    /// Go there: an open window is shown and the pointer warped to it (as
+    /// acme warps to what it opens); a closed file is opened in the first
+    /// column, which warps to the new window.
     pub fn pick(&mut self, p: Pick, cx: &mut Context<Self>) {
         self.finder = None;
         match p {
-            Pick::Entry(Entry { window: Some(w), .. }) => self.show(w),
-            Pick::Entry(Entry { name, .. }) | Pick::Open(name) => {
+            Pick::Entry(Entry { window: Some(w), .. }) => {
+                self.show(w);
+                self.node.warp = Some(Warp::Sel(ViewId::Body(w)));
+            }
+            Pick::Entry(Entry { name, .. }) => {
                 if let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) {
                     match &mut self.backend {
                         Backend::Remote(link) => link.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name }),
@@ -320,25 +318,20 @@ impl Acme {
             .gap(px(1.))
             .when(!f.filter.is_empty(), |d| d.child(div().text_color(rgb(0x111111)).child(f.filter.clone())))
             .child(caret)
-            .when(f.filter.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child("Go to a window, a file closed lately, or a path…")));
+            .when(f.filter.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child("Go to a window, or a file closed lately…")));
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;
-            let (name, dir, mark, mark_color, open) = match pick {
-                Pick::Entry(e) => {
-                    let (dir, base) = match e.name.rfind('/') {
-                        Some(k) if k + 1 < e.name.len() => (e.name[..=k].to_string(), e.name[k + 1..].to_string()),
-                        _ => (String::new(), e.name.clone()),
-                    };
-                    let open = e.window.is_some();
-                    let (mark, color) = match (open, e.kind) {
-                        (true, WinKind::Term) => ("▶", 0x990099),
-                        (true, _) => ("●", 0x000099),
-                        (false, _) => ("○", 0x8a8a8a),
-                    };
-                    (base, dir, mark, color, open)
-                }
-                Pick::Open(p) => (format!("Open {p}"), String::new(), "＋", 0x000099, true),
+            let Pick::Entry(e) = pick;
+            let (dir, name) = match e.name.rfind('/') {
+                Some(k) if k + 1 < e.name.len() => (e.name[..=k].to_string(), e.name[k + 1..].to_string()),
+                _ => (String::new(), e.name.clone()),
+            };
+            let open = e.window.is_some();
+            let (mark, mark_color) = match (open, e.kind) {
+                (true, WinKind::Term) => ("▶", 0x990099),
+                (true, _) => ("●", 0x000099),
+                (false, _) => ("○", 0x8a8a8a),
             };
             let p = pick.clone();
             let row = div()
@@ -412,6 +405,6 @@ mod tests {
         };
         let picks = f.picks();
         assert!(matches!(&picks[0], Pick::Entry(e) if e.name == "/x/open.rs"), "{picks:?}");
-        assert!(matches!(picks.last(), Some(Pick::Open(p)) if p == "rs"));
+        assert_eq!(picks.len(), 2);
     }
 }
