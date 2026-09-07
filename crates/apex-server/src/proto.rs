@@ -1,5 +1,13 @@
 //! The attach protocol: postcard-encoded messages in length-prefixed frames
 //! over a Unix socket (or any byte stream, e.g. ssh's stdio).
+//!
+//! `PROTOCOL` is the version of everything on the wire: the messages
+//! here, the proposals (`proposal.rs`), the entries, ops and state they
+//! carry (apex-core's `entry.rs`, `state.rs`, `ids.rs`), `TermKey`,
+//! `Running`. Postcard is not self-describing, so any change to any of
+//! those is a new protocol: **bump `PROTOCOL` with the change.** A daemon
+//! says its version first on every connection (`ServerMsg::Build`), and
+//! a client of another version stops there with advice.
 
 use std::io::{self, Read, Write};
 
@@ -9,6 +17,10 @@ use apex_core::*;
 
 use crate::proposal::Proposal;
 use crate::term::TermKey;
+
+/// The wire's version. Bump it whenever anything on the wire changes
+/// (see the module doc); nothing else tells a daemon and a client apart.
+pub const PROTOCOL: u32 = 1;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -108,7 +120,9 @@ pub enum ServerMsg {
     /// The daemon's build id, its first frame on every connection. This
     /// variant stays first, and as it is, so that any client can read it
     /// whatever else changed.
-    Build { id: String },
+    /// The first frame on every connection, frozen in this shape: the
+    /// daemon's `PROTOCOL` and, to say which binary it is, its build id.
+    Build { protocol: u32, id: String },
     /// The attachment id and a snapshot of the whole session state, with
     /// this attachment already holding its leases.
     Welcome { attachment: AttachmentId, snapshot: Vec<u8> },

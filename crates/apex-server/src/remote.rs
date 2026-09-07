@@ -180,7 +180,7 @@ impl Link {
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach })?;
         let (attachment, snapshot) = loop {
             match rx.recv().map_err(|_| io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome"))? {
-                ServerMsg::Build { id } => check_build(&id)?,
+                ServerMsg::Build { protocol, id } => check_build(protocol, &id)?,
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
                 ServerMsg::Error { text } => return Err(io::Error::other(text)),
                 _ => {}
@@ -340,7 +340,7 @@ pub fn list_sessions(path: &Path) -> io::Result<Vec<String>> {
         match read_frame::<_, ServerMsg>(&mut r)? {
             Some(ServerMsg::Sessions { names }) => return Ok(names),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
-            Some(ServerMsg::Build { id }) => check_build(&id)?,
+            Some(ServerMsg::Build { protocol, id }) => check_build(protocol, &id)?,
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
         }
@@ -389,15 +389,20 @@ pub struct ToolPlumb {
     pub sel: Option<Span>,
 }
 
-/// A daemon of another build is not ours to talk to: the error (kind
-/// `Unsupported`) says what to do about it.
-pub fn check_build(id: &str) -> io::Result<()> {
-    if id == crate::BUILD_ID {
+/// A daemon speaking another protocol version is not ours to talk to:
+/// the error (kind `Unsupported`) says what to do about it. Another
+/// build with the same protocol is fine.
+pub fn check_build(protocol: u32, id: &str) -> io::Result<()> {
+    if protocol == crate::proto::PROTOCOL {
         return Ok(());
     }
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        format!("the daemon is apex build {id}, this is {}; when its sessions can be let go, stop it (`apex stop` on its machine) and attach again", crate::BUILD_ID),
+        format!(
+            "the daemon speaks apex protocol {protocol} (build {id}), this is protocol {} (build {}); when its sessions can be let go, stop it (`apex stop` on its machine) and attach again",
+            crate::proto::PROTOCOL,
+            crate::BUILD_ID
+        ),
     ))
 }
 
@@ -441,7 +446,7 @@ pub fn new_session(path: &Path, name: &str, profile: Option<Script>) -> io::Resu
             Some(ServerMsg::Sessions { .. }) => return Ok(()),
             Some(ServerMsg::Error { text }) if text.contains("exists") => return Ok(()),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
-            Some(ServerMsg::Build { id }) => check_build(&id)?,
+            Some(ServerMsg::Build { protocol, id }) => check_build(protocol, &id)?,
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
         }
@@ -457,7 +462,7 @@ pub fn rename_session(path: &Path, from: &str, to: &str) -> io::Result<()> {
         match read_frame::<_, ServerMsg>(&mut r)? {
             Some(ServerMsg::Sessions { .. }) => return Ok(()),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
-            Some(ServerMsg::Build { id }) => check_build(&id)?,
+            Some(ServerMsg::Build { protocol, id }) => check_build(protocol, &id)?,
             Some(_) => {}
             None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
         }
@@ -694,11 +699,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn another_build_is_refused_with_advice() {
-        assert!(check_build(crate::BUILD_ID).is_ok());
-        let e = check_build("000000000000").unwrap_err();
+    fn another_protocol_is_refused_with_advice() {
+        // the same protocol from any build is fine; another protocol is not
+        assert!(check_build(crate::proto::PROTOCOL, crate::BUILD_ID).is_ok());
+        assert!(check_build(crate::proto::PROTOCOL, "000000000000").is_ok());
+        let e = check_build(crate::proto::PROTOCOL + 1, "000000000000").unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::Unsupported);
         assert!(e.to_string().contains("apex stop"), "{e}");
-        assert!(e.to_string().contains(crate::BUILD_ID), "{e}");
+        assert!(e.to_string().contains(&format!("protocol {}", crate::proto::PROTOCOL)), "{e}");
     }
 }

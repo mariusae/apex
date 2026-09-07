@@ -623,7 +623,7 @@ fn kill(ctx: &Ctx, p: &Parsed) -> R {
 }
 
 fn version(_: &Ctx, _: &Parsed) -> R {
-    println!("apex build {}", apex_server::BUILD_ID);
+    println!("apex build {} protocol {}", apex_server::BUILD_ID, apex_server::proto::PROTOCOL);
     Ok(())
 }
 

@@ -89,11 +89,15 @@ checks `$TERM_PROGRAM`).
 
 ## Builds
 
-A daemon's first word on every connection is its build id, a hash of the
-sources it was built from. A client of another build stops there and
+A daemon's first word on every connection is its protocol version (and
+its build id, a hash of the sources it was built from, to say which
+binary it is). A client of another protocol version stops there and
 says so: the daemon keeps running (its sessions may hold work), and when
 they can be let go, `apex stop` on its machine ends it; the next attach
 starts the current one. The app's Reconnect (⌘⇧R) is that next attach.
+The version is `PROTOCOL` in `apex-server/src/proto.rs`, bumped by hand
+with every change to what goes over the wire; builds that differ
+elsewhere talk to each other.
 
 ## Plumbing rules
 

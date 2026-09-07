@@ -477,7 +477,7 @@ client → server
   ReadFile{path} · Watch{path} · Unwatch{path}
 
 server → client
-  Build{id}                               first frame, frozen: refuse another build
+  Build{protocol, id}                     first frame, frozen: refuse another protocol version
   Welcome{attachment, snapshot} · Entries{shard, entries} · Ack{shard, seq} · ShardReady{shard}
   Propose{id, proposal} · Applied{id, result}
   Sessions{names} · Error{text} · Pong{t} · Env{vars} · RuleAdded{id}
@@ -500,13 +500,18 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
 ```
 
-*As built, builds:* the daemon's first frame on every connection is
-`ServerMsg::Build{id}`, a hash of the workspace sources computed at build
-time (the same on every target, so the client can compare itself with the
-binary it carries for a host). The variant stays first and unchanged. A
-client of another build stops at that frame with an `Unsupported` error
-that says what to do: when the daemon's sessions can be let go, `apex
-stop` on its machine, then attach again (Reconnect, ⌘⇧R). The daemon is
+*As built, versions:* the daemon's first frame on every connection is
+`ServerMsg::Build{protocol, id}`: `PROTOCOL`, a number in `proto.rs`
+bumped by hand with every change to anything on the wire (messages,
+proposals, entries, ops, state, since postcard is not self-describing),
+and the build id, a hash of the workspace sources computed at build time
+(the same on every target), which only says which binary it is. The
+variant stays first and unchanged. A client of another protocol version
+stops at that frame with an `Unsupported` error that says what to do:
+when the daemon's sessions can be let go, `apex stop` on its machine,
+then attach again (Reconnect, ⌘⇧R). Builds of the same protocol talk
+to each other, so a rebuild for a bug fix in the client needs no
+restart of the daemon. The daemon is
 never restarted behind the user's back: its sessions may hold work. When
 the local daemon refuses at startup, the app opens an in-process window
 showing the error, pointed at the session so Reconnect tries it again.

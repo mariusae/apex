@@ -286,7 +286,7 @@ impl Daemon {
     fn accept(&mut self, id: u64, s: UnixStream) {
         let (out, orx) = channel::<ServerMsg>();
         // the first word: which apex this is
-        let _ = out.send(ServerMsg::Build { id: crate::BUILD_ID.to_string() });
+        let _ = out.send(ServerMsg::Build { protocol: crate::proto::PROTOCOL, id: crate::BUILD_ID.to_string() });
         let reader = match s.try_clone() {
             Ok(r) => r,
             Err(_) => return,
