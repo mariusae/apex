@@ -65,6 +65,9 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     let version = c.node.state.buffer(b).unwrap().version;
     c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: end, q1: end, text: "echo again\n".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).ends_with("again\n") || text(n).contains("\nagain\n")), "output:\n{}", text(&c.node));
+    // live while the shell runs: neither clean nor dirty, though edited
+    assert!(c.node.window_live(w));
+    assert!(c.node.state.buffer(b).unwrap().dirty());
     // the tools menu offers Interrupt and EOF here
     let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &name, WinKind::File);
     assert_eq!(verbs, vec!["Interrupt", "EOF"]);

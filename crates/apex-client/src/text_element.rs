@@ -29,6 +29,10 @@ pub const PALEBLUEGREEN: u32 = 0xEAFFFF; // tagcols[BACK]
 pub const PALEGREYGREEN: u32 = 0x9EEEEE; // tagcols[HIGH] DPalegreygreen
 pub const PURPLEBLUE: u32 = 0x8888CC; // tagcols[BORD] DPurpleblue; also colbutton
 pub const MEDBLUE: u32 = 0x000099; // modbutton fill, DMedblue
+/// A live window's handle: a process is behind it. Dark yellow, the
+/// complement of the dirty handle's blue, in acme's own family (the
+/// scrollbar's DDarkyellow is 0x99994C).
+pub const LIVE: u32 = 0x999900;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
@@ -263,6 +267,9 @@ pub struct Source {
     pub kind: Kind,
     pub mono: bool,
     pub dirty: bool,
+    /// A process is behind the window (a terminal's, a win's): neither
+    /// clean nor dirty.
+    pub live: bool,
     pub unsynced: bool,
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
@@ -289,6 +296,7 @@ pub struct Prepaint {
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
     dirty: bool,
+    live: bool,
     unsynced: bool,
     fenced: bool,
 }
@@ -520,6 +528,7 @@ impl Element for TextElement {
                 sel: src.sel,
                 hl: src.hl,
                 dirty: src.dirty,
+                live: src.live,
                 unsynced: src.unsynced,
                 fenced: src.fenced,
             })
@@ -566,6 +575,8 @@ impl Element for TextElement {
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
                     let fillc = if pp.unsynced {
                         rgb(MEDGREEN)
+                    } else if pp.live {
+                        rgb(LIVE)
                     } else if pp.dirty {
                         rgb(MEDBLUE)
                     } else {

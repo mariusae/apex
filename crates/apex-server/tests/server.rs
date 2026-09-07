@@ -404,12 +404,15 @@ fn newterm_with_a_command_runs_it_instead_of_a_shell() {
     poll(&mut server, &mut log, &mut node);
     let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
     assert!(node.window_name(w).ends_with("/-printf"), "{}", node.window_name(w));
+    // live while it runs
+    assert!(node.window_live(w));
     let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
     server.close_orphan_terms(&mut log, &node);
     let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("ran here")), "grid:\n{}", rows(&node));
-    // and it is done when the command is
+    // and it is done when the command is: no longer live
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|t| t.exit.is_some())), "exit noticed");
+    assert!(!node.window_live(w));
 }
 
 #[test]

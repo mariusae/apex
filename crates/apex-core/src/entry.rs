@@ -125,6 +125,10 @@ pub enum WindowOp {
     Indent { on: bool },
     /// acme's `tagexpand`: whether the tag shows all its lines (Down) or one (Up).
     TagExpand { on: bool },
+    /// A process is behind this window (a win tool's shell): live, a
+    /// state beside clean and dirty. `by` is the attachment that keeps
+    /// it so; the state ends with that attachment, or with `None`.
+    Live { by: Option<AttachmentId> },
     /// B2 (or the CLI) executed something in this window.
     Exec(ExecOp),
     Status { exec: Seq, status: ExecStatusOp },

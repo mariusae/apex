@@ -221,8 +221,15 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
         };
         remote.rule_add(rule, 0, true, TIMEOUT)?;
     }
+    let me = remote.attachment();
     let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new() };
-    w.main_loop()
+    // live while the shell is: the handle says so, Del does not ask
+    let _ = w.propose(Proposal::Live { window, by: Some(me) }, TIMEOUT);
+    let r = w.main_loop();
+    if w.remote.node.state.window(window).is_ok() {
+        let _ = w.propose(Proposal::Live { window, by: None }, TIMEOUT);
+    }
+    r
 }
 
 fn regex_escape(s: &str) -> String {

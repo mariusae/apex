@@ -857,6 +857,14 @@ this one (detach, attach).
   protocol support.
 - Fonts, geometry and colours are client-side. Colours follow plan9port
   exactly (`README.md`, Colours).
+- *As built:* a window is **live** when a process is behind it: a
+  terminal whose program runs, or a text window a tool keeps so
+  (`WindowOp::Live{by}`, the win tool's attachment; the state ends with
+  the program, or with that attachment, so a crashed tool leaves nothing
+  stuck). A third state beside clean and dirty: the handle is dark yellow
+  (`0x999900`, the complement of the dirty handle's blue, in acme's own
+  family), `Del` does not ask (the text is a transcript, not a file), and
+  `apex win list` marks it `>`.
 - *As built:* the app remembers every window with its session URL and
   its frame (`last-sessions`, one line each), saved on every move or
   resize and on Quit, and opens them all again at launch, each on its

@@ -57,6 +57,9 @@ pub enum Proposal {
     /// Run an Edit program on a window's body.
     Edit { window: WindowId, program: String },
     Select { view: ViewId, q0: usize, q1: usize },
+    /// A tool's process is behind this window (`by` its attachment), or
+    /// no longer is (`None`).
+    Live { window: WindowId, by: Option<AttachmentId> },
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -176,6 +179,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::ClientDo { verb, .. } => Err(CoreError::Missing(format!("no client here can {verb}"))),
+        Proposal::Live { window, by } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;
+            Ok(None)
+        }
         Proposal::Look { ctx, text } => {
             // acme's look3: the search runs in seltext, the text last
             // selected with B1, not necessarily where B3 was clicked

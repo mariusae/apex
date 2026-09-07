@@ -536,6 +536,17 @@ impl Node {
         Ok(())
     }
 
+    /// Is a process behind this window: a terminal whose program runs, or a
+    /// text window a tool (win) keeps live? A third state beside clean and
+    /// dirty; it ends with the program, or with the tool's attachment.
+    pub fn window_live(&self, w: WindowId) -> bool {
+        let Ok(win) = self.state.window(w) else { return false };
+        match win.body {
+            Body::Term(t) => self.state.terms.get(&t).is_some_and(|t| t.exit.is_none()),
+            _ => win.live.is_some_and(|a| self.state.meta.attachments.contains_key(&a)),
+        }
+    }
+
     /// What kind of window this is, for plumbing rules.
     pub fn window_kind(&self, window: WindowId) -> WinKind {
         let Ok(w) = self.state.window(window) else { return WinKind::File };
@@ -893,8 +904,8 @@ impl Node {
         let name = self.window_name(w);
         let isdir = name.ends_with('/');
         let isscratch = name.ends_with("+Errors") || name.ends_with("/guide");
-        if isscratch || isdir {
-            return Ok(true);
+        if isscratch || isdir || self.window_live(w) {
+            return Ok(true); // a live window's text is a transcript, not a file
         }
         if !self.window_dirty(w) {
             return Ok(true);

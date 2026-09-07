@@ -55,6 +55,8 @@ pub struct Window {
     /// acme's `tagexpand`: false after Up in the tag, true after Down.
     pub tagexpand: bool,
     pub execs: BTreeMap<Seq, ExecRecord>,
+    /// The attachment whose process is behind this window (`WindowOp::Live`).
+    pub live: Option<AttachmentId>,
 }
 
 impl Window {
@@ -347,12 +349,13 @@ impl State {
                 if self.windows.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("window {id}")));
                 }
-                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: false, tagexpand: true, execs: BTreeMap::new() });
+                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: false, tagexpand: true, execs: BTreeMap::new(), live: None });
             }
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),
             WindowOp::Indent { on } => self.window_mut(id)?.autoindent = *on,
             WindowOp::TagExpand { on } => self.window_mut(id)?.tagexpand = *on,
+            WindowOp::Live { by } => self.window_mut(id)?.live = *by,
             WindowOp::Exec(x) => {
                 self.window_mut(id)?.execs.insert(seq, ExecRecord::new(x));
             }

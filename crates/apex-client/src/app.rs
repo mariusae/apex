@@ -968,19 +968,20 @@ impl Acme {
         let b = self.node.view_buffer(view).ok()?;
         let buf = self.node.state.buffer(b).ok()?;
         let v = buf.view(view);
-        let (mono, dirty) = match view {
+        let (mono, dirty, live) = match view {
             ViewId::Body(w) | ViewId::Tag(w) => {
                 let win = self.node.state.window(w).ok()?;
                 let dirty = win.body_buffer().and_then(|b| self.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                (win.mono, dirty)
+                (win.mono, dirty, self.node.window_live(w))
             }
-            _ => (false, false),
+            _ => (false, false, false),
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         Some(Source {
             kind: Kind::of(view),
             mono,
             dirty,
+            live,
             unsynced: false,
             fenced: self.fenced(),
             text: buf.text.clone(),

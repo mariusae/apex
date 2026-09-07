@@ -184,8 +184,9 @@ Open opens each FILE (relative to the current directory) in the first
 column, as B2 on `New FILE` would, and prints the id and name of each
 window. A file already open gets no second window." },
     Cmd { name: "win", usage: "apex win list | apex win del WIN", short: "list windows, delete one", flags: &[], run: win, long: "\
-Win list prints every window: its id, a * when it holds unsaved text, and
-its name, column by column. Win del WIN deletes a window as Del would: a
+Win list prints every window: its id, a mark (* for unsaved text, > for
+a live window: a process behind it, a terminal's or a win's, which is
+neither clean nor dirty), and its name, column by column. Win del WIN deletes a window as Del would: a
 dirty window is warned once, and deleted the second time. WIN is a window
 id or a unique substring of a name (see apex help windows)." },
     Cmd { name: "text", usage: "apex text read [-addr=ADDR] WIN", short: "read a window's text", flags: &[flag("addr", "print only this address (sam syntax: 3,5 or /re/)")], run: text, long: "\
@@ -731,7 +732,8 @@ fn win(ctx: &Ctx, p: &Parsed) -> R {
                 for slot in &col.wins {
                     let w = slot.window;
                     let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                    println!("{}\t{}{}", w.0, if dirty { "*" } else { " " }, c.node.window_name(w));
+                    let mark = if c.node.window_live(w) { ">" } else if dirty { "*" } else { " " };
+                    println!("{}\t{mark}{}", w.0, c.node.window_name(w));
                 }
             }
             Ok(())
