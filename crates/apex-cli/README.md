@@ -90,7 +90,7 @@ A daemon's first word on every connection is its build id, a hash of the
 sources it was built from. A client of another build stops there and
 says so: the daemon keeps running (its sessions may hold work), and when
 they can be let go, `apex stop` on its machine ends it; the next attach
-starts the current one. The app's Reconnect (⌘R) is that next attach.
+starts the current one. The app's Reconnect (⌘⇧R) is that next attach.
 
 ## Plumbing rules
 

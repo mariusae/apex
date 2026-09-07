@@ -635,7 +635,7 @@ impl Acme {
     /// error, and for a daemon of another build, how to get going again.
     pub fn connect_error(url: &SessionUrl, e: &std::io::Error) -> String {
         if e.kind() == std::io::ErrorKind::Unsupported {
-            format!("{url}: {e}: Reconnect (⌘R)\n")
+            format!("{url}: {e}: Reconnect (⌘⇧R)\n")
         } else {
             format!("{url}: {e}\n")
         }

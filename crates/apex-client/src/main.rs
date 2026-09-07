@@ -71,6 +71,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Paste, window, cx| this.menu_edit("paste", window, cx)))
             .on_action(cx.listener(|this, _: &shell::SelectAll, window, cx| this.menu_command("Edit ,", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Put, window, cx| this.menu_command("Put", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Get, window, cx| this.menu_command("Get", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
@@ -447,7 +448,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
 
 /// A window with nothing behind it when the local daemon cannot be
 /// attached (another build, say): an in-process session showing the
-/// error, pointed at `url` so Reconnect (⌘R) tries again.
+/// error, pointed at `url` so Reconnect (⌘⇧R) tries again.
 fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, wake: apex_server::remote::Wake, e: &std::io::Error) -> Acme {
     eprintln!("apex-ui: attach {url}: {e}");
     let mut acme = offline_window(cx, url, files, wake);

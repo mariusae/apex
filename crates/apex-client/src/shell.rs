@@ -18,7 +18,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -59,6 +59,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Enter Full Screen", ToggleFullScreen),
                 MenuItem::separator(),
                 MenuItem::action("Put", Put),
+                MenuItem::action("Get", Get),
                 MenuItem::action("Del", Del),
                 MenuItem::separator(),
                 MenuItem::action("Close Window", CloseWindow),
@@ -91,7 +92,8 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-w", Del, None),
         KeyBinding::new("cmd-shift-w", CloseWindow, None),
         KeyBinding::new("cmd-k", Sessions, None),
-        KeyBinding::new("cmd-r", Reconnect, None),
+        KeyBinding::new("cmd-r", Get, None),
+        KeyBinding::new("cmd-shift-r", Reconnect, None),
         KeyBinding::new("cmd-p", Goto, None),
         KeyBinding::new("cmd-[", NavBack, None),
         KeyBinding::new("cmd-]", NavFwd, None),
