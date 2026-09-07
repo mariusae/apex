@@ -261,7 +261,8 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     while !ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
-    assert!(ok(&sock, &["plumb", "rule", "ls"]).contains("\tt\tp10\t--tool t"), "{}", ok(&sock, &["plumb", "rule", "ls"]));
+    let ls = ok(&sock, &["plumb", "rule", "ls"]);
+    assert!(ls.contains("\tt(a") && ls.contains("p10\t--tool t"), "{ls}");
     ok(&sock, &["B", &md]);
     let deadline = Instant::now() + Duration::from_secs(5);
     while !ok(&sock, &["win", "list"]).contains("readme.md") && Instant::now() < deadline {
@@ -335,12 +336,12 @@ fn an_attach_script_sets_the_clients_own_settings_and_cat_reads_files() {
     let script = Script { client: "tester".into(), text: format!("{bin} set Preview.md Marked\n") };
     let c = Remote::connect_with(&sock, "main", "ui", AttachmentKind::Ui, Some(script)).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !ok(&sock, &["set"]).contains("ui\tPreview.md\tMarked") && Instant::now() < deadline {
+    while !ok(&sock, &["set"]).contains("\tPreview.md\tMarked") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
     let listing = ok(&sock, &["set"]);
     assert!(listing.contains("session\tPreview\tQuick\n"), "{listing}");
-    assert!(listing.contains("ui\tPreview.md\tMarked\n"), "{listing}");
+    assert!(listing.contains("ui(a") && listing.contains("\tPreview.md\tMarked\n"), "{listing}");
     // the client sees its own first, then the session's
     let me = c.attachment();
     let mut r = Remote::connect_as(&sock, "main", "look", AttachmentKind::Tool).unwrap();

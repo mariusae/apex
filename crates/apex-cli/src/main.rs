@@ -536,7 +536,7 @@ fn rule(socket: &Path, session: &str, args: &[String]) -> R {
         Some("ls") | None => {
             let meta = &c.node.state.meta;
             for (id, r) in apex_core::plumb::ordered(&meta.rules) {
-                let owner = if r.attachment == SERVER { "session".to_string() } else { meta.attachments.get(&r.attachment).map(|a| a.name.clone()).unwrap_or_else(|| r.attachment.to_string()) };
+                let owner = if r.attachment == SERVER { "session".to_string() } else { meta.attachments.get(&r.attachment).map(|a| format!("{}({})", a.name, r.attachment)).unwrap_or_else(|| r.attachment.to_string()) };
                 println!("{id}\t{owner}\tp{}\t{}", r.priority, r.rule.to_flags());
             }
             Ok(())
@@ -652,7 +652,7 @@ fn set(socket: &Path, session: &str, args: &[String]) -> R {
         [] => {
             let meta = &c.node.state.meta;
             for (owner, map) in &meta.settings {
-                let who = if *owner == SERVER { "session".to_string() } else { meta.attachments.get(owner).map(|a| a.name.clone()).unwrap_or_else(|| owner.to_string()) };
+                let who = if *owner == SERVER { "session".to_string() } else { meta.attachments.get(owner).map(|a| format!("{}({owner})", a.name)).unwrap_or_else(|| owner.to_string()) };
                 for (k, v) in map {
                     println!("{who}\t{k}\t{v}");
                 }

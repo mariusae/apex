@@ -499,6 +499,11 @@ impl Acme {
         self.want_visible.clear();
         self.typed_start.clear();
         self.selector = None;
+        // a new attachment: its rules are installed afresh, and previews
+        // of the old session are over
+        self.preview_wanted.clear();
+        self.previews.clear();
+        self.live.clear();
         window.set_window_title(&Self::title(url));
         crate::shell::note_recent(url);
         self.open_initial(col, Vec::new());
