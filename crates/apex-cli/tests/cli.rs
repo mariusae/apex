@@ -499,16 +499,22 @@ fn editor_opens_the_file_and_returns_when_its_window_goes() {
     let path = file.display().to_string();
     // $EDITOR is set for commands and terminals
     let env = ok(&sock, &["env"]);
+    // one word, apex-editor beside a binary named apex; here the daemon is
+    // the test binary, so the fallback `EXE editor`, unquoted
     let editor = env.lines().find(|l| l.starts_with("EDITOR=")).unwrap_or_else(|| panic!("{env}"));
-    assert!(editor.ends_with(" editor") && !editor.contains('\''), "{editor}");
-    // `$EDITOR file` at a shell prompt: the value splits into the daemon's
-    // binary (here the test's) and the word, no quotes in the way
     let value = editor.trim_start_matches("EDITOR=");
+    assert!(!value.contains('\''), "{value}");
     let exe = value.trim_end_matches(" editor");
     assert!(std::path::Path::new(exe).is_file(), "{value}");
-    // the editor blocks while the window is open
+    // `apex-editor FILE` (the link $EDITOR names) is `apex editor FILE`,
+    // and blocks while the window is open
+    let link = dir.join("apex-editor");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_apex"), &link).unwrap();
     let (s2, p2) = (sock.clone(), path.clone());
-    let child = std::thread::spawn(move || apex(&s2, &["editor", &p2]));
+    let child = std::thread::spawn(move || {
+        let out = Command::new(&link).env("APEX_SOCKET", &s2).env("apexsession", "main").arg(&p2).output().unwrap();
+        (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
+    });
     let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
     let open = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w) == path);
     let deadline = Instant::now() + Duration::from_secs(5);

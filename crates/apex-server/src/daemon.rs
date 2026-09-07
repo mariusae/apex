@@ -229,15 +229,9 @@ impl Daemon {
         let (mut server, mut srx) = Server::new(&log);
         // shells and commands in this session know it, and the daemon
         server.env = vec![("apexsession".into(), name.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
-        // $EDITOR opens in the session and returns when the window goes.
-        // Unquoted: `$EDITOR file` at a zsh or rc prompt does not split
-        // quotes off, so quoting would only be right under `sh -c` (git);
-        // a path that needs quoting (a space) is quoted and works there.
-        if let Ok(exe) = std::env::current_exe() {
-            let exe = exe.display().to_string();
-            let safe = exe.chars().all(|c| c.is_ascii_alphanumeric() || "/._-+".contains(c));
-            let exe = if safe { exe } else { crate::shell_quote(&exe) };
-            server.env.push(("EDITOR".into(), format!("{exe} editor")));
+        // $EDITOR opens in the session and returns when the window goes
+        if let Some(editor) = editor_command() {
+            server.env.push(("EDITOR".into(), editor));
         }
         if let Some(i) = &profile {
             server.env.push(("apexclient".into(), i.client.clone()));
@@ -760,6 +754,7 @@ impl Daemon {
 
     /// Forward new entries to every connection of the session, and the
     /// server's proposals to its leader.
+    /// (see `editor_command`)
     fn after(&mut self, name: &str, props: Vec<Proposal>) {
         let Some(s) = self.sessions.get_mut(name) else { return };
         // starts first: a command started by what we just did (the attach
@@ -824,5 +819,30 @@ impl Daemon {
         if verbs {
             self.start_verbs(name);
         }
+    }
+}
+
+/// What `$EDITOR` is in a session: one word, since `$EDITOR file` at a
+/// zsh or rc prompt is not split into words (only sh and bash do that,
+/// and git runs it under `sh -c`). So it is `apex-editor`, a link to the
+/// binary beside it that the CLI recognises by its name and runs as
+/// `apex editor`; the daemon makes the link when it is missing and the
+/// directory allows. Failing that, `PATH/apex editor`, which still
+/// works under `sh -c`.
+fn editor_command() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let two_words = format!("{} editor", exe.display());
+    if exe.file_name().and_then(|n| n.to_str()) != Some("apex") {
+        return Some(two_words); // a test binary: leave its directory alone
+    }
+    let link = exe.with_file_name("apex-editor");
+    if !link.exists() {
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink("apex", &link);
+    }
+    if link.exists() {
+        Some(link.display().to_string())
+    } else {
+        Some(two_words)
     }
 }

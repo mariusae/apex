@@ -263,7 +263,9 @@ Editor is plan9port's editinacme for apex, for use as $EDITOR: it opens
 FILE in the session (through the rules that open in the session, as B
 does, so an open window is shown and the pointer warped to it), waits
 until the file's window is deleted, and exits. Terminals and commands
-have EDITOR set to it unless the profile says otherwise." },
+have EDITOR set to apex-editor, a link to the apex binary beside it that
+does the same (one word, since zsh and rc do not split $EDITOR into
+words), unless the profile says otherwise." },
     Cmd { name: "env", usage: "apex env [KEY=VALUE...]", short: "the session's environment", flags: &[], run: env_cmd, long: "\
 Env sets variables in the session's environment: what every terminal and
 command started from then on gets, beyond the daemon's own. With no
@@ -414,7 +416,12 @@ becomes a file."),
 ];
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // `apex-editor FILE`, the link $EDITOR names: `apex editor FILE`
+    let argv0 = std::env::args().next().unwrap_or_default();
+    if argv0.rsplit('/').next() == Some("apex-editor") {
+        args.insert(0, "editor".into());
+    }
     let global = match parse(GLOBAL, &args) {
         Ok(p) => p,
         Err(e) if e == "help" => overview(),
