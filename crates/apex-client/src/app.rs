@@ -26,7 +26,7 @@ use crate::menu;
 use crate::text_element::font_for;
 
 use crate::term_element::TermLayout;
-use crate::web::{WebEvent, Webs};
+use crate::web::{Nav, WebEvent, Webs};
 use crate::text_element::{Source, TextLayout};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -721,6 +721,30 @@ impl Acme {
     }
 
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
+        // keys follow the pointer over pages too: a native view keeps the
+        // pointer's moves to itself, so the system is asked, often
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(std::time::Duration::from_millis(100)).await;
+            let alive = cx.update(|cx| {
+                let mine = this.entity_id();
+                let mut alive = false;
+                for h in cx.windows() {
+                    if let Some(h) = h.downcast::<Acme>() {
+                        let _ = h.update(cx, |acme, window, cx| {
+                            if cx.entity_id() == mine {
+                                alive = true;
+                                acme.web_focus_tick(window);
+                            }
+                        });
+                    }
+                }
+                alive || this.upgrade().is_some()
+            });
+            if !alive {
+                break;
+            }
+        })
+        .detach();
         cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(Self::HEARTBEAT).await;
             let alive = cx.update(|cx| {
@@ -913,7 +937,22 @@ impl Acme {
     /// Where the pointer is for acme's purposes: where a warp put it, until
     /// the mouse really moves.
     fn pointer(&self, window: &Window) -> Point<Pixels> {
+        // over a page the pointer's moves never reach gpui: ask the system
+        if !self.webs.is_empty() {
+            if let Some(p) = crate::web::native_mouse(window) {
+                if self.webs.window_at(p).is_some() {
+                    return p;
+                }
+            }
+        }
         self.pointer.unwrap_or_else(|| window.mouse_position())
+    }
+
+    /// Keys follow the pointer between pages and the rest (WEB.md §2.2).
+    pub fn web_focus_tick(&mut self, window: &Window) {
+        if !self.webs.is_empty() && !self.overlay_up() {
+            self.webs.focus_tick(window);
+        }
     }
 
     /// Give the tiling this frame's measurements, refit any window whose
@@ -2154,7 +2193,11 @@ impl Acme {
     /// The window acme would act on: the one under the pointer, else the
     /// last selected text's.
     fn window_at_pointer(&self, window: &Window) -> Option<WindowId> {
-        match self.locate(self.pointer(window)) {
+        let pos = self.pointer(window);
+        if let Some(w) = self.webs.window_at(pos) {
+            return Some(w); // a page: the window is its
+        }
+        match self.locate(pos) {
             Some((Target::View(v), _)) => v.window().or_else(|| self.node.seltext.and_then(|s| s.window())),
             Some((Target::Term(w, _), _)) => Some(w),
             None => self.node.seltext.and_then(|s| s.window()),
@@ -2450,6 +2493,21 @@ impl Acme {
             let _ = self.node.commit_tag(&mut self.log, w);
         }
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
+        // a page's own history and reload: Back, Fwd, Get in a web window
+        if let ExecCtx::Window(w) = ctx {
+            if self.node.state.window(w).map(|x| x.body) == Ok(Body::Web) {
+                let nav = match word.as_str() {
+                    "Back" => Some(Nav::Back),
+                    "Fwd" => Some(Nav::Fwd),
+                    "Get" => Some(Nav::Reload),
+                    _ => None,
+                };
+                if let Some(nav) = nav {
+                    self.webs.go(w, nav);
+                    return;
+                }
+            }
+        }
         if word == "Snarf" {
             if let ExecCtx::Window(w) = ctx {
                 if matches!(self.node.state.window(w).map(|x| x.body), Ok(Body::Term(_))) {

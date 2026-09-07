@@ -17,7 +17,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gpui::{Bounds, Pixels, Window};
+use gpui::{Bounds, Pixels, Point, Window};
 
 use apex_core::WindowId;
 use apex_server::plane::{alias_loopback_url, mime_for, start_connect_proxy, unalias_url, IoPlane};
@@ -78,6 +78,15 @@ pub struct Webs {
     proxy: Option<u16>,
     /// Wakes the UI when a page reports something.
     wake: Option<Wake>,
+    /// The page the keyboard was given to, the pointer being over it.
+    focused: Option<WindowId>,
+}
+
+/// What Back, Fwd and Get do in a web window's tag.
+pub enum Nav {
+    Back,
+    Fwd,
+    Reload,
 }
 
 impl Webs {
@@ -95,7 +104,43 @@ impl Webs {
         if std::env::var_os("APEX_WEB_DEBUG").is_some() {
             eprintln!("web: views over a plane: {}, proxy port {proxy:?}", plane.is_some());
         }
-        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake }
+        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None }
+    }
+
+    /// The shown page under `pos`, if any.
+    pub fn window_at(&self, pos: Point<Pixels>) -> Option<WindowId> {
+        self.hosts.iter().find(|(_, h)| h.shown && h.bounds.is_some_and(|b| b.contains(&pos))).map(|(w, _)| *w)
+    }
+
+    /// The page's history and reload: Back, Fwd, Get in its tag.
+    pub fn go(&self, w: WindowId, nav: Nav) {
+        let Some(h) = self.hosts.get(&w) else { return };
+        let _ = match nav {
+            Nav::Back => h.view.go_back(),
+            Nav::Fwd => h.view.go_forward(),
+            Nav::Reload => h.view.reload(),
+        };
+    }
+
+    /// Keys go where the pointer is, as everywhere in acme: over a page
+    /// the page has the keyboard (the window's first responder), over
+    /// anything else gpui's view does. Called on a timer while pages
+    /// exist, since a native view keeps the pointer's moves to itself.
+    pub fn focus_tick(&mut self, window: &Window) {
+        let Some(pos) = native_mouse(window) else { return };
+        let over = self.window_at(pos);
+        if over == self.focused {
+            return;
+        }
+        match over {
+            Some(w) => {
+                if let Some(h) = self.hosts.get(&w) {
+                    let _ = h.view.focus();
+                }
+            }
+            None => focus_ui(window),
+        }
+        self.focused = over;
     }
 
     fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
@@ -163,6 +208,15 @@ impl Webs {
                         return true;
                     }
                     let _ = tx1.send((w, WebEvent::Link(apex_url(&u))));
+                    if let Some(k) = &wake1 {
+                        k();
+                    }
+                    return false;
+                }
+                if let Some(rest) = u.strip_prefix("file://") {
+                    // a file link: the host's file, through apexfile://
+                    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+                    let _ = tx1.send((w, WebEvent::Reroute(format!("apexfile://{path}"))));
                     if let Some(k) = &wake1 {
                         k();
                     }
@@ -515,12 +569,58 @@ fn webkit_url(url: &str) -> String {
     }
 }
 
-/// The form the session names a page by, back from the view's.
+/// The form the session names a page by, back from the view's; a
+/// `file://` link is the host's file.
 fn apex_url(url: &str) -> String {
+    if let Some(rest) = url.strip_prefix("file://") {
+        let path = rest.strip_prefix("localhost").unwrap_or(rest);
+        return format!("apexfile://{path}");
+    }
     match url.strip_prefix("apexfile://localhost/") {
         Some(rest) => format!("apexfile:///{rest}"),
         None => unalias_url(url),
     }
+}
+
+/// Where the pointer is, in the window's own coordinates, asked of the
+/// system: a native view keeps the pointer's moves over it to itself,
+/// so gpui's last known position is stale there.
+#[cfg(target_os = "macos")]
+pub fn native_mouse(window: &Window) -> Option<Point<Pixels>> {
+    use objc::{class, msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct P {
+        x: f64,
+        y: f64,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct R {
+        origin: P,
+        size: P,
+    }
+    let h = HasWindowHandle::window_handle(window).ok()?;
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return None };
+    let view = h.ns_view.as_ptr() as *mut objc::runtime::Object;
+    // SAFETY: plain AppKit queries on the main thread, on gpui's own view
+    unsafe {
+        let ns_window: *mut objc::runtime::Object = msg_send![view, window];
+        if ns_window.is_null() {
+            return None;
+        }
+        let screen: P = msg_send![class!(NSEvent), mouseLocation];
+        let in_window: P = msg_send![ns_window, convertPointFromScreen: screen];
+        let frame: R = msg_send![view, frame];
+        // AppKit's y grows upward from the bottom of the view; gpui's downward
+        Some(Point { x: gpui::px((in_window.x - frame.origin.x) as f32), y: gpui::px((frame.size.y - (in_window.y - frame.origin.y)) as f32) })
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn native_mouse(_window: &Window) -> Option<Point<Pixels>> {
+    None
 }
 
 fn respond(responder: wry::RequestAsyncResponder, status: u16, mime: &str, body: Vec<u8>) {

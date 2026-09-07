@@ -608,3 +608,31 @@ fn html_windows_are_text_shown_as_a_page() {
     let slot = node.state.layout.cols.iter().flat_map(|c| c.wins.iter()).find(|s| s.window == w).cloned().expect("placed");
     assert!(slot.body.dy() > 0, "{slot:?}");
 }
+
+#[test]
+fn web_opens_a_page_on_the_url_given_or_selected() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    // typed after the word: a URL as it is
+    node.exec(&mut log, ExecCtx::Top, "Web https://example.com/").unwrap();
+    let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
+    assert_eq!(node.window_name(w), "https://example.com/");
+    assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().contains(" Back Fwd Get "));
+    // selected in a text window: a file:// URL and a bare path are the host's files
+    let t = node.new_window(&mut log, col, "/tmp/here/notes.txt", "see file:///tmp/a.html and also doc.html\n").unwrap();
+    node.select(&mut log, ViewId::Body(t), 4, 22).unwrap();
+    node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
+    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_name(w.id)).collect();
+    assert!(names.contains(&"apexfile:///tmp/a.html".to_string()), "{names:?}");
+    node.select(&mut log, ViewId::Body(t), 32, 40).unwrap();
+    node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
+    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_name(w.id)).collect();
+    assert!(names.contains(&"apexfile:///tmp/here/doc.html".to_string()), "{names:?}");
+    assert_eq!(apex_core::node::web_url("file://localhost/x/y", "/d"), "apexfile:///x/y");
+    assert_eq!(apex_core::node::web_url("/abs/p", "/d"), "apexfile:///abs/p");
+    assert_eq!(apex_core::node::web_url("rel/p", "/d/"), "apexfile:///d/rel/p");
+    // nothing given or selected: the command fails, saying so
+    node.select(&mut log, ViewId::Body(t), 0, 0).unwrap();
+    let r = node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
+    assert!(matches!(r, apex_core::node::Executed::Failed(_, ref why) if why.contains("Web needs a URL")), "{r:?}");
+    assert!(apex_core::node::TOP_TAG.contains(" Web "));
+}

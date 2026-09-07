@@ -18,7 +18,7 @@ use crate::tiling::{self, Rect, Warp};
 /// are kept up to date by [`Node::update_tags`], as acme's `winsettag`.
 pub const WIN_TAG_SUFFIX: &str = " Del Snarf | Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
-pub const TOP_TAG: &str = "Newcol Newterm Win Kill Putall Exit ";
+pub const TOP_TAG: &str = "Newcol Newterm Win Web Kill Putall Exit ";
 pub const ERRORS: &str = "+Errors";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -420,10 +420,11 @@ impl Node {
     }
 
     /// A web window on `url` in `col` (WEB.md §2): its tag names the URL,
-    /// as a terminal's names its directory; the client renders the page.
+    /// as a terminal's names its directory; the client renders the page,
+    /// and Back, Fwd and Get in the tag are the page's history and reload.
     pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
         let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{url} Del Snarf | Look "), None)?;
+        let tag = self.create_buffer(log, "", &format!("{url} Del Snarf Back Fwd Get | Look "), None)?;
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Web }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
@@ -1270,7 +1271,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" => Handler::Leader,
+            | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "Web" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -1447,6 +1448,20 @@ impl Node {
                     self.zerox(log, w)?;
                 }
             }
+            "Web" => {
+                // a web window on the URL given, else the selected text: a
+                // file:// URL or a path is the host's file (apexfile://)
+                let arg = text.trim().strip_prefix("Web").map(str::trim).unwrap_or("").to_string();
+                let target = if !arg.is_empty() { arg } else { self.seltext.and_then(|v| self.selected_text(v).ok()).unwrap_or_default().trim().to_string() };
+                if target.is_empty() {
+                    return Err(CoreError::Missing("Web needs a URL or a file, given or selected".into()));
+                }
+                let dir = win.map(|w| self.window_name(w)).and_then(|n| std::path::Path::new(&n).parent().map(|d| d.display().to_string())).unwrap_or_default();
+                let url = web_url(&target, &dir);
+                let col = win.and_then(|w| self.column_of(w).ok()).or_else(|| self.state.layout.cols.first().map(|c| c.id)).ok_or_else(|| CoreError::Missing("no column".into()))?;
+                let w = self.open_web_window(log, col, &url)?;
+                self.seltext = Some(ViewId::Body(w));
+            }
             "Send" => {
                 // acme's sendx on a text window: the selection, else the
                 // snarf buffer, appended to the body with a newline
@@ -1496,4 +1511,22 @@ impl Node {
             .and_then(|b| self.state.buffer(b).ok())
             .is_some_and(|b| b.views.iter().filter(|(v, _)| matches!(v, ViewId::Body(_))).count() <= 1)
     }
+}
+
+/// What `Web` opens for `target`, typed or selected in a window whose
+/// directory is `dir`: a URL as it is, a `file://` URL as the host's
+/// file (`apexfile://`), a path likewise, relative ones from `dir`.
+pub fn web_url(target: &str, dir: &str) -> String {
+    if let Some(rest) = target.strip_prefix("file://") {
+        let path = rest.strip_prefix("localhost").unwrap_or(rest);
+        return format!("apexfile://{path}");
+    }
+    if crate::is_url(target) {
+        return target.to_string();
+    }
+    if target.starts_with('/') {
+        return format!("apexfile://{target}");
+    }
+    let dir = dir.trim_end_matches('/');
+    format!("apexfile://{dir}/{target}")
 }

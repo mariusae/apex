@@ -193,6 +193,21 @@ when the layout does not draw the window, dropped with the window; a
 name that changed under it (a Goto, another client) is loaded. The
 view's traffic is its own until stage 5.
 
+*Keys and the pointer:* a native view keeps the pointer's moves over
+it to itself, so the client asks the system where the pointer is
+(`native_mouse`) whenever a page could be under it: the page under the
+pointer is "the window" for ⌘[, ⌘] and the rest, and a timer gives the
+keyboard to the page under the pointer and back to gpui's view when it
+leaves, as keys follow the pointer everywhere in acme. A web window's
+tag carries `Back Fwd Get`, the page's history and reload, which the
+client does itself (⌘[ and ⌘] reach them through the window under the
+pointer); in other windows those words stay the navigation stack's.
+`Web` in the top row opens a web window on the URL given after it or
+selected: `file://` URLs and paths are the host's files (`apexfile://`,
+relative paths from the window's directory), and a `file://` link
+followed in a page goes the same way. The page's own context menu
+(back, forward, reload) is WebKit's, untouched.
+
 *Spike (stage 3), done:* a `wry` 0.56 child view built with
 `build_as_child` on gpui's `Window` (which implements
 `HasWindowHandle`) sits exactly at the rectangle gpui gives, in logical
