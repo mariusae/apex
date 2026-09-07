@@ -1224,6 +1224,11 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // a click in acme's part of the window takes the keyboard back
+        // from any page that had it
+        if !self.webs.is_empty() {
+            crate::web::focus_ui(window);
+        }
         if self.finder.is_some() {
             self.close_finder(cx); // a click anywhere else dismisses it
             return;

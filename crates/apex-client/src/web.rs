@@ -192,11 +192,19 @@ impl Webs {
 
     /// Hide every view not in `shown` (windows the layout does not draw:
     /// obscured by a full-column window, no body room), and drop the
-    /// views of windows that are gone.
+    /// views of windows that are gone. A view that had the keyboard
+    /// hands it back to the window's own view first: keys must not be
+    /// left with a hidden or vanished responder.
     pub fn settle(&mut self, shown: &HashSet<WindowId>, alive: impl Fn(WindowId) -> bool) {
+        for (w, h) in self.hosts.iter() {
+            if !alive(*w) {
+                let _ = h.view.focus_parent();
+            }
+        }
         self.hosts.retain(|w, _| alive(*w));
         for (w, h) in self.hosts.iter_mut() {
             if !shown.contains(w) && h.shown {
+                let _ = h.view.focus_parent();
                 let _ = h.view.set_visible(false);
                 h.shown = false;
             }
@@ -352,6 +360,36 @@ impl Fetcher {
         });
     }
 }
+
+/// Give the keyboard back to gpui's own view: a click in acme's part of
+/// the window after a page had it. A web view that is the window's
+/// first responder keeps it until someone takes it, and keys then reach
+/// gpui by a roundabout route (WebKit passing them up the responder
+/// chain) that delivers them twice.
+#[cfg(target_os = "macos")]
+pub fn focus_ui(window: &Window) {
+    use objc::{msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    // gpui's own `window_handle` is another thing: the trait's, by name
+    let Ok(h) = HasWindowHandle::window_handle(window) else { return };
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return };
+    let view = h.ns_view.as_ptr() as *mut objc::runtime::Object;
+    // SAFETY: the view is gpui's own NSView, alive while the window is;
+    // plain AppKit messages on the main thread.
+    unsafe {
+        let ns_window: *mut objc::runtime::Object = msg_send![view, window];
+        if ns_window.is_null() {
+            return;
+        }
+        let first: *mut objc::runtime::Object = msg_send![ns_window, firstResponder];
+        if first != view {
+            let _: bool = msg_send![ns_window, makeFirstResponder: view];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn focus_ui(_window: &Window) {}
 
 /// What a view shows: a URL, or a buffer's HTML.
 enum Page<'a> {

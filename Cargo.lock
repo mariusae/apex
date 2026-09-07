@@ -220,6 +220,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "objc",
+ "raw-window-handle",
  "wry",
 ]
 

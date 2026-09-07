@@ -20,3 +20,4 @@ core-text = "21"
 objc = "0.2"
 # web windows: a native web view as a child of the gpui window (WEB.md §2)
 wry = { version = "0.56", features = ["mac-proxy"] }
+raw-window-handle = "0.6"
