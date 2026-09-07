@@ -13,6 +13,7 @@
 
 mod app;
 mod cursor;
+mod finder;
 mod menu;
 mod shell;
 mod term_element;
@@ -73,6 +74,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
+            .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(cx)))
             .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
                 this.reconnect(window);
                 cx.notify();
@@ -133,7 +135,11 @@ impl Render for Acme {
             area = area.child(menu_element(m, font));
         }
         let root = root.child(area);
-        match self.selector_panel(cx) {
+        let root = match self.selector_panel(cx) {
+            Some(panel) => root.child(panel),
+            None => root,
+        };
+        match self.finder_panel(cx) {
             Some(panel) => root.child(panel).into_any_element(),
             None => root.into_any_element(),
         }

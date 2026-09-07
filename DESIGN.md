@@ -863,6 +863,17 @@ this one (detach, attach).
   protocol support.
 - Fonts, geometry and colours are client-side. Colours follow plan9port
   exactly (`README.md`, Colours).
+- *As built:* ⌘P (File ▸ Go to…) is Zed's file finder in acme's colours
+  (`client/finder.rs`): every open window of the session (files,
+  directories, terminals, win, +Errors, marked ● or ▶) and the files
+  closed lately (○, "closed": the last fifty per session, each once,
+  kept in `recent-files` on this machine, noticed as windows go), ranked
+  as Zed ranks: nothing typed, open windows in layout order then closed
+  files by recency; a query, a fuzzy score in the spirit of Zed's
+  matcher (file name best, then after `/` and at word starts, runs of
+  consecutive matches, a penalty for the wrong case and for long paths),
+  open before closed at equal scores; the query itself as a path to open
+  last. Enter or a click shows the window or opens the file.
 - *As built:* full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
   title bar, acme's area is the whole screen, and a window's full-screen
   state is remembered with its frame. shift-B3 looks backwards (the

@@ -186,6 +186,10 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
+    /// ⌘P, when open.
+    pub finder: Option<crate::finder::Finder>,
+    /// The windows as of the last frame, to notice closings.
+    pub last_windows: std::collections::BTreeMap<WindowId, String>,
     /// A new window with the picker open and nothing attached yet: it
     /// closes if the picker is dismissed, and is not remembered.
     pub chooser: bool,
@@ -741,6 +745,8 @@ impl Acme {
             snarf_wanted: None,
             term_hl: None,
             fullscreen: false,
+            finder: None,
+            last_windows: std::collections::BTreeMap::new(),
             chooser: false,
             menu: None,
             menu_last: None,
@@ -770,6 +776,7 @@ impl Acme {
     pub fn sync(&mut self) {
         // acme's winsettag: Undo/Redo/Put/Get come and go with the state
         let _ = self.node.update_tags(&mut self.log);
+        self.track_closed();
         if let Backend::Remote(link) = &mut self.backend {
             link.flush(&self.log);
         }
@@ -995,7 +1002,7 @@ impl Acme {
         alive
     }
 
-    fn show(&mut self, w: WindowId) {
+    pub fn show(&mut self, w: WindowId) {
         self.node.seltext = Some(ViewId::Body(w));
         self.want_visible.insert(ViewId::Body(w));
         let _ = self.node.reveal(&mut self.log, w); // textshow: a window with no lines grows
@@ -1010,7 +1017,7 @@ impl Acme {
     /// After a command: in-process, let the server perform what it was
     /// handed and close terminals whose windows are gone; over a socket,
     /// ship what we sequenced. Then catch up.
-    fn after(&mut self) {
+    pub fn after(&mut self) {
         match &mut self.backend {
             Backend::Local(server) => {
                 let props = server.poll_execs(&mut self.log, &self.node);
@@ -1190,6 +1197,10 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.finder.is_some() {
+            self.close_finder(cx); // a click anywhere else dismisses it
+            return;
+        }
         if self.selector.is_some() {
             if self.chooser {
                 return; // a new window's picker stays until Escape or a choice
@@ -1912,6 +1923,11 @@ impl Acme {
 
     /// Keys go to the text under the pointer, as in acme.
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.finder.is_some() {
+            let ks = &e.keystroke;
+            self.finder_key(&ks.key, ks.key_char.as_deref(), cx);
+            return;
+        }
         if self.selector.is_some() {
             let ks = &e.keystroke;
             self.selector_key(&ks.key, ks.key_char.as_deref(), window, cx);
