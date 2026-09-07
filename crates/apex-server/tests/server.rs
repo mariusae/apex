@@ -496,3 +496,33 @@ fn jumps_stack_up_and_back_returns() {
     assert!(apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false }).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn osc8_hyperlinks_reach_the_grid() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    // a link, as printf writes it: OSC 8 ; ; uri ST text OSC 8 ; ; ST
+    let cmd = "printf '\\033]8;;http://x.example/z\\033\\\\LINKED\\033]8;;\\033\\\\ plain\\n'\r";
+    for c in cmd.chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    let linked = |n: &Node| -> Option<(String, bool)> {
+        let term = n.state.terms.get(&t)?;
+        for row in &term.grid {
+            let text: String = row.iter().map(|c| c.ch).collect();
+            if let Some(i) = text.find("LINKED plain") {
+                let l = row[i];
+                let p = row[i + "LINKED ".len()];
+                let uri = if l.link == 0 { String::new() } else { term.links[l.link as usize - 1].clone() };
+                return Some((uri, p.link == 0));
+            }
+        }
+        None
+    };
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| linked(n).is_some_and(|(u, _)| !u.is_empty())), "{:?}", linked(&node));
+    let (uri, plain_unlinked) = linked(&node).unwrap();
+    assert_eq!(uri, "http://x.example/z");
+    assert!(plain_unlinked, "text after the link carries no link");
+}

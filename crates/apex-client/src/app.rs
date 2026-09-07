@@ -1482,7 +1482,8 @@ impl Acme {
                 let text = match (swept, button) {
                     (Some(t), _) => Some(t),
                     (None, MouseButton::Middle) => self.term_word(w, cell.0, cell.1, is_exec_char),
-                    (None, _) => self.term_word(w, cell.0, cell.1, is_file_char),
+                    // B3 on an OSC 8 link plumbs the link, not its text
+                    (None, _) => self.term_link(w, cell.0, cell.1).or_else(|| self.term_word(w, cell.0, cell.1, is_file_char)),
                 };
                 if let Some(text) = text {
                     match button {
@@ -1619,6 +1620,16 @@ impl Acme {
             out.push_str(s.trim_end());
         }
         Some(out).filter(|s| !s.trim().is_empty())
+    }
+
+    /// The OSC 8 hyperlink under a terminal cell, if any.
+    fn term_link(&self, w: WindowId, c: usize, r: usize) -> Option<String> {
+        let t = self.node.state.terms.get(&self.term_of(w)?)?;
+        let cell = t.grid.get(r)?.get(c)?;
+        if cell.link == 0 {
+            return None;
+        }
+        t.links.get(cell.link as usize - 1).cloned()
     }
 
     fn term_word(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<String> {

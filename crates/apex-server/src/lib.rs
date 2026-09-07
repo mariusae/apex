@@ -282,10 +282,11 @@ impl Server {
     /// Start a shell in a new pinned terminal shard; propose its window.
     /// A terminal window in `col`: the user's shell, or `cmd` run by it
     /// (acme's `win cmd`), named `dir/-host` or `dir/-cmd`.
-    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path, cmd: Option<&str>) -> Result<Proposal, String> {
+    /// `shell`: the session's `Newterm.shell` setting, if any.
+    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path, cmd: Option<&str>, shell: Option<&str>) -> Result<Proposal, String> {
         let id = TermId(self.next_term);
         self.next_term += 1;
-        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone(), &self.env, cmd)?;
+        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone(), &self.env, cmd, shell)?;
         self.node.create_shard(log, Shard::Term(id)).map_err(|e| e.to_string())?;
         self.node
             .append(log, Shard::Term(id), Op::Term(TermOp::Create { cols: 80, rows: 24 }))
@@ -708,7 +709,8 @@ impl Server {
             "Newterm" => {
                 // `Newterm cmd args`: the terminal runs that instead of a shell
                 let rest = text[cmd.len()..].trim();
-                props.push(self.new_term(log, col, &dir, if rest.is_empty() { None } else { Some(rest) })?);
+                let shell = view.state.meta.setting(SERVER, "Newterm.shell").map(String::from);
+                props.push(self.new_term(log, col, &dir, if rest.is_empty() { None } else { Some(rest) }, shell.as_deref())?);
             }
             "Win" => {
                 // acme's win: the tool, run as a command named Win (so Kill

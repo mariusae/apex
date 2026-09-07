@@ -230,8 +230,9 @@ Kill in the top row does: the command's process group is sent SIGTERM,
 so what a shell started goes with it. The commands left running are
 listed afterwards, as ps lists them." },
     Cmd { name: "term", usage: "apex term new [CMD...] | apex term send TERM TEXT | apex term read TERM", short: "terminals", flags: &[], run: term, long: "\
-Term new makes a terminal window running the user's shell, or CMD
-through it (as Newterm does), and prints the terminal's id. Term send
+Term new makes a terminal window running the user's shell (the
+Newterm.shell setting, else the daemon's $SHELL), or CMD through it (as
+Newterm does), and prints the terminal's id. Term send
 types TEXT into terminal TERM; a final newline is the Enter key. Term
 read prints the terminal's screen." },
     Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path")], run: plumb, long: "\
@@ -277,7 +278,9 @@ owner. Settings in use:
 
 	Preview.EXT APP   the app that previews files with that extension
 	Preview APP       the app for previews no other setting names
-	lsp.LANG CMD      the language server for LANG (apex help tool)" },
+	lsp.LANG CMD      the language server for LANG (apex help tool)
+	Newterm.shell SH  the shell Newterm runs (a path, or a name on the
+	                  daemon's PATH); the daemon's $SHELL otherwise" },
     Cmd { name: "cat", usage: "apex cat PATH", short: "the bytes of a file on the host", flags: &[], run: cat, long: "\
 Cat prints the file PATH as it is on the session's host, whatever machine
 the command runs on." },

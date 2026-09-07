@@ -17,6 +17,9 @@
 # here acts on the session being made; `apex env` sets what its terminals
 # and commands will get.
 
+# The shell Newterm runs: the daemon's $SHELL unless a setting names one.
+# apex set Newterm.shell zsh
+
 dir=$home/.apex/shell
 mkdir -p $dir/zsh $dir/share/fish/vendor_conf.d
 

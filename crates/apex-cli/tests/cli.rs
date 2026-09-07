@@ -524,3 +524,17 @@ fn editor_opens_the_file_and_returns_when_its_window_goes() {
     assert!(err.contains(&format!("editing {}", file.display())), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn newterm_shell_is_a_setting() {
+    let sock = daemon();
+    ok(&sock, &["set", "Newterm.shell", "/bin/sh"]);
+    let t = ok(&sock, &["term", "new"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["ps"]).contains("/bin/sh -l") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ps = ok(&sock, &["ps"]);
+    assert!(ps.contains("/bin/sh -l"), "{ps}");
+    let _ = t;
+}

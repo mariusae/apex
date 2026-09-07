@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use apex_core::{Cell, TermId, WindowId};
-use apex_server::term::FLAG_BOLD;
+use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
 use crate::text_element::{font_for, rgb, FontSpec, BUT2COL, BUT3COL, MARGIN, PALEYELLOW, SCROLLWID, YELLOWGREEN};
@@ -135,7 +135,7 @@ impl Element for TermElement {
                 let mut runs: Vec<TextRun> = Vec::new();
                 let mut bgs: Vec<(u16, u16, Hsla)> = Vec::new();
                 for (x, cell) in row.iter().enumerate() {
-                    let Cell { ch, fg, bg, flags } = *cell;
+                    let Cell { ch, fg, bg, flags, link } = *cell;
                     let mut fgc = if fg == 0 { fg_default } else { color(fg) };
                     let mut bgc = if bg == 0 { None } else { Some(color(bg)) };
                     if let Some((cx_, cy)) = cursor {
@@ -158,9 +158,17 @@ impl Element for TermElement {
                     line.push(if ch == '\0' { ' ' } else { ch });
                     let len = line.len() - start;
                     let _bold = flags & FLAG_BOLD != 0;
+                    // underlined text, and OSC 8 links (B3 on one plumbs it)
+                    let ul = flags & FLAG_UNDERLINE != 0 || link != 0;
                     match runs.last_mut() {
-                        Some(r) if r.color == fgc => r.len += len,
-                        _ => runs.push(run(len, fgc)),
+                        Some(r) if r.color == fgc && r.underline.is_some() == ul => r.len += len,
+                        _ => {
+                            let mut r = run(len, fgc);
+                            if ul {
+                                r.underline = Some(gpui::UnderlineStyle { thickness: px(1.), color: Some(fgc), wavy: false });
+                            }
+                            runs.push(r);
+                        }
                     }
                 }
                 row_text.push(line.clone());

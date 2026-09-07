@@ -895,7 +895,16 @@ that through the login shell instead of a shell, named `dir/-cmd`, as
 `win cmd` does. The
 shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,
 `apexsession` and `APEX_SOCKET` set, so `apex` inside it addresses the
-session it runs in; commands run from tags get the same two.
+session it runs in; commands run from tags get the same two. The shell
+is the `Newterm.shell` setting (`apex set Newterm.shell zsh` in the
+profile), else the daemon's `$SHELL`. Keys go xterm-style with option
+as meta: ESC before the key itself (opt-b is `ESC b`, not `∫`),
+opt-left/right as `ESC b`/`ESC f` (Terminal.app's defaults, what zsh
+and bash bind for words), opt-backspace `ESC DEL`, and other modified
+keys in xterm's `CSI 1;m` form (opt-up is `ESC [1;3A`). OSC 8
+hyperlinks travel in the term shard (`Cell::link` into
+`TermOp::Links`), draw underlined, and B3 on one plumbs the link
+rather than its text.
 
 **Web windows** are out of v1. The prototype's headless-Chrome screencast
 is a server-side renderer and fits the model, but it is bandwidth-heavy

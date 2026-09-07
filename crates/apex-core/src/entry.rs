@@ -167,6 +167,9 @@ pub struct Cell {
     pub fg: u32,
     pub bg: u32,
     pub flags: u8,
+    /// An OSC 8 hyperlink: 1-based index into the terminal's `links`, 0
+    /// for none.
+    pub link: u16,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -174,6 +177,8 @@ pub enum TermOp {
     Create { cols: u16, rows: u16 },
     /// Replace viewport rows starting at `first`.
     Rows { first: u16, rows: Vec<Vec<Cell>> },
+    /// The hyperlinks the viewport's cells refer to (OSC 8), by index.
+    Links { links: Vec<String> },
     Cursor { col: u16, row: u16, visible: bool },
     Resize { cols: u16, rows: u16 },
     Exit { status: i32 },

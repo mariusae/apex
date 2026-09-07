@@ -202,14 +202,19 @@ pub struct TermHost {
 }
 
 impl TermHost {
-    /// Start the user's shell as a login shell in `dir`, a truecolor
-    /// xterm with `extra` (the session, the socket) in its environment;
-    /// with `cmd`, the login shell runs that instead (acme's `win cmd`).
-    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>) -> Result<TermHost, String> {
+    /// Start the user's shell (`shell` when the session names one, the
+    /// `Newterm.shell` setting; else $SHELL) as a login shell in `dir`, a
+    /// truecolor xterm with `extra` (the session, the socket) in its
+    /// environment; with `cmd`, the login shell runs that instead (acme's
+    /// `win cmd`).
+    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>, shell: Option<&str>) -> Result<TermHost, String> {
         tty::setup_env();
-        let shell = match std::env::var_os("SHELL") {
-            Some(s) if !s.is_empty() => PathBuf::from(s),
-            _ => PathBuf::from("/bin/sh"),
+        let shell = match shell.map(str::trim).filter(|s| !s.is_empty()) {
+            Some(s) => PathBuf::from(s),
+            None => match std::env::var_os("SHELL") {
+                Some(s) if !s.is_empty() => PathBuf::from(s),
+                _ => PathBuf::from("/bin/sh"),
+            },
         };
         let args = match cmd {
             Some(c) => vec!["-l".to_string(), "-c".to_string(), c.to_string()],
@@ -331,7 +336,21 @@ impl TermHost {
 
     /// Encode a keystroke xterm-style and send it.
     pub fn key(&self, k: &TermKey) {
-        let app_cursor = self.mode().contains(TermMode::APP_CURSOR);
+        let out = encode_key(k, self.mode().contains(TermMode::APP_CURSOR));
+        if !out.is_empty() {
+            self.write(&out);
+        }
+    }
+}
+
+/// A keystroke as xterm sends it, with option as meta (ESC before the
+/// key, as Terminal.app and iTerm2's "Esc+" do): so opt-b, opt-f,
+/// opt-backspace are zsh's and bash's word keys, and opt-left/right
+/// send ESC b / ESC f (Terminal.app's defaults, what the shells bind)
+/// rather than xterm's modified arrows, which they do not. Other
+/// modified keys are xterm's `CSI 1;m` forms.
+pub fn encode_key(k: &TermKey, app_cursor: bool) -> Vec<u8> {
+    {
         let mut out: Vec<u8> = Vec::new();
         let modp = 1 + u8::from(k.shift) + 2 * u8::from(k.alt) + 4 * u8::from(k.control);
         let csi_mod = |out: &mut Vec<u8>, f: &str| {
@@ -350,9 +369,17 @@ impl TermHost {
                 out.extend_from_slice(format!("\x1b[{n}~").as_bytes());
             }
         };
+        let alt_only = k.alt && !k.shift && !k.control;
         match k.key.as_str() {
             "enter" => out.push(b'\r'),
-            "backspace" => out.push(if k.alt { 0x1b } else { 0x7f }),
+            "backspace" => {
+                if k.alt {
+                    out.push(0x1b);
+                }
+                out.push(0x7f);
+            }
+            "left" if alt_only => out.extend_from_slice(b"\x1bb"),
+            "right" if alt_only => out.extend_from_slice(b"\x1bf"),
             "tab" => {
                 if k.shift {
                     out.extend_from_slice(b"\x1b[Z");
@@ -404,21 +431,67 @@ impl TermHost {
                     out.push(b);
                 }
             }
+            key if k.alt => {
+                // option as meta: ESC, then the key itself, not the
+                // character the option layer composes (∫ for opt-b)
+                let base = if key == "space" { " ".to_string() } else { key.to_string() };
+                if base.chars().count() == 1 {
+                    out.push(0x1b);
+                    let c = base.chars().next().unwrap();
+                    let c = if k.shift && c.is_ascii_lowercase() { c.to_ascii_uppercase() } else { c };
+                    let mut b = [0u8; 4];
+                    out.extend_from_slice(c.encode_utf8(&mut b).as_bytes());
+                } else if let Some(t) = &k.text {
+                    out.push(0x1b);
+                    out.extend_from_slice(t.as_bytes());
+                }
+            }
             _ => {
                 if let Some(t) = &k.text {
                     if !t.is_empty() {
-                        if k.alt {
-                            out.push(0x1b);
-                        }
                         out.extend_from_slice(t.as_bytes());
                     }
                 }
             }
         }
-        if !out.is_empty() {
-            self.write(&out);
-        }
+        out
     }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+
+    fn k(key: &str, text: Option<&str>, shift: bool, control: bool, alt: bool) -> TermKey {
+        TermKey { key: key.into(), text: text.map(String::from), shift, control, alt }
+    }
+
+    #[test]
+    fn option_is_meta_and_arrows_are_what_the_shells_bind() {
+        // opt-b: ESC b, not the ∫ the option layer composes
+        assert_eq!(encode_key(&k("b", Some("∫"), false, false, true), false), b"\x1bb");
+        assert_eq!(encode_key(&k("b", Some("ı"), true, false, true), false), b"\x1bB");
+        assert_eq!(encode_key(&k("space", Some(" "), false, false, true), false), b"\x1b ");
+        // opt-left/right are ESC b / ESC f; with shift too, xterm's form
+        assert_eq!(encode_key(&k("left", None, false, false, true), false), b"\x1bb");
+        assert_eq!(encode_key(&k("right", None, false, false, true), false), b"\x1bf");
+        assert_eq!(encode_key(&k("left", None, true, false, true), false), b"\x1b[1;4D");
+        // opt-up/down are xterm's meta arrows
+        assert_eq!(encode_key(&k("up", None, false, false, true), false), b"\x1b[1;3A");
+        assert_eq!(encode_key(&k("down", None, false, false, true), false), b"\x1b[1;3B");
+        // opt-backspace deletes a word: ESC DEL
+        assert_eq!(encode_key(&k("backspace", None, false, false, true), false), b"\x1b\x7f");
+        assert_eq!(encode_key(&k("backspace", None, false, false, false), false), b"\x7f");
+        // plain and application-cursor arrows, control letters, text
+        assert_eq!(encode_key(&k("up", None, false, false, false), false), b"\x1b[A");
+        assert_eq!(encode_key(&k("up", None, false, false, false), true), b"\x1bOA");
+        assert_eq!(encode_key(&k("c", None, false, true, false), false), b"\x03");
+        assert_eq!(encode_key(&k("c", None, false, true, true), false), b"\x1b\x03");
+        assert_eq!(encode_key(&k("a", Some("a"), false, false, false), false), b"a");
+    }
+}
+
+impl TermHost {
 
     /// The viewport as term-shard ops: all rows, then the cursor.
     pub fn snapshot_ops(&self) -> Vec<TermOp> {
@@ -429,8 +502,9 @@ impl TermHost {
         let bg_default = Rgb { r: 0xff, g: 0xff, b: 0xea };
         let rows_n = t.grid().screen_lines();
         let cols_n = t.grid().columns();
-        let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0 };
+        let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0, link: 0 };
         let mut rows: Vec<Vec<Cell>> = vec![vec![blank; cols_n]; rows_n];
+        let mut links: Vec<String> = Vec::new();
         let off = content.display_offset as i32;
         for cell in content.display_iter {
             let row = cell.point.line.0 + off;
@@ -466,7 +540,19 @@ impl TermHost {
                 f |= FLAG_UNDERLINE;
             }
             let ch = if flags.contains(Flags::HIDDEN) || cell.c == '\0' { ' ' } else { cell.c };
-            rows[row as usize][col] = Cell { ch, fg: pack(fg), bg: bg.map(pack).unwrap_or(0), flags: f };
+            // OSC 8: the link's index, the table shared by the viewport
+            let link = match cell.hyperlink() {
+                Some(h) => {
+                    let uri = h.uri();
+                    let i = links.iter().position(|u| u == uri).unwrap_or_else(|| {
+                        links.push(uri.to_string());
+                        links.len() - 1
+                    });
+                    (i + 1).min(u16::MAX as usize) as u16
+                }
+                None => 0,
+            };
+            rows[row as usize][col] = Cell { ch, fg: pack(fg), bg: bg.map(pack).unwrap_or(0), flags: f, link };
         }
         let cursor = content.cursor;
         let visible = cursor.shape != CursorShape::Hidden;
@@ -475,6 +561,7 @@ impl TermHost {
         drop(t);
         vec![
             TermOp::View { top },
+            TermOp::Links { links },
             TermOp::Rows { first: 0, rows },
             TermOp::Cursor { col: cursor.point.column.0 as u16, row: crow, visible },
         ]

@@ -146,6 +146,8 @@ pub struct Term {
     pub cols: u16,
     pub rows: u16,
     pub grid: Vec<Vec<Cell>>,
+    /// OSC 8 hyperlinks the grid's cells point into (`Cell::link` - 1).
+    pub links: Vec<String>,
     pub cursor: (u16, u16),
     pub cursor_visible: bool,
     pub exit: Option<i32>,
@@ -433,13 +435,14 @@ impl State {
                 if self.terms.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("term {id}")));
                 }
-                let blank = vec![Cell { ch: ' ', fg: 0, bg: 0, flags: 0 }; *cols as usize];
+                let blank = vec![Cell { ch: ' ', fg: 0, bg: 0, flags: 0, link: 0 }; *cols as usize];
                 self.terms.insert(
                     id,
                     Term {
                         cols: *cols,
                         rows: *rows,
                         grid: vec![blank; *rows as usize],
+                        links: Vec::new(),
                         cursor: (0, 0),
                         cursor_visible: true,
                         exit: None,
@@ -458,6 +461,7 @@ impl State {
                             }
                         }
                     }
+                    TermOp::Links { links } => t.links = links.clone(),
                     TermOp::Cursor { col, row, visible } => {
                         t.cursor = (*col, *row);
                         t.cursor_visible = *visible;
@@ -465,7 +469,7 @@ impl State {
                     TermOp::Resize { cols, rows } => {
                         t.cols = *cols;
                         t.rows = *rows;
-                        let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0 };
+                        let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0, link: 0 };
                         t.grid.resize(*rows as usize, vec![blank; *cols as usize]);
                         for r in &mut t.grid {
                             r.resize(*cols as usize, blank);
