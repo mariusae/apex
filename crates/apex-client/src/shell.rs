@@ -218,6 +218,13 @@ pub fn save_open(cx: &mut App) {
     if debug {
         eprintln!("apex-ui: save_open: {} window(s): {:?}", open.len(), open.iter().map(|r| r.url.clone()).collect::<Vec<_>>());
     }
+    // a line in the log beside the file, for when the app ran from the Finder
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let line = format!("{stamp} pid {} saved {} of {} window(s): {:?}\n", std::process::id(), open.len(), cx.windows().len(), open.iter().map(|r| r.url.clone()).collect::<Vec<_>>());
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(state_file().with_file_name("log")) {
+        use std::io::Write;
+        let _ = f.write_all(line.as_bytes());
+    }
     remember(&open);
 }
 
