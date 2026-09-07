@@ -30,7 +30,10 @@ pub enum ClientMsg {
     TermKey { term: TermId, key: TermKey },
     TermPaste { term: TermId, text: String },
     TermResize { term: TermId, cols: u16, rows: u16 },
-    TermScroll { term: TermId, delta: i64 },
+    /// The wheel over a terminal, `delta` lines (positive: down), `at`
+    /// the cell under the pointer when it was the wheel (the program
+    /// may be reporting the mouse), none from the scrollbar.
+    TermScroll { term: TermId, delta: i64, at: Option<(u16, u16)> },
     /// Snarf the text between two `(column, history line)` positions of a
     /// terminal (the end exclusive); the answer is a `Snarf` proposal.
     TermText { term: TermId, p0: (u16, u64), p1: (u16, u64) },

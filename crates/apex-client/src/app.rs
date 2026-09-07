@@ -1080,9 +1080,14 @@ impl Acme {
     }
 
     fn term_scroll(&mut self, t: TermId, delta: isize) {
+        self.term_wheel(t, delta, None)
+    }
+
+    /// The wheel at a cell (`at`), which the program may be reading.
+    fn term_wheel(&mut self, t: TermId, delta: isize, at: Option<(u16, u16)>) {
         match &mut self.backend {
-            Backend::Local(server) => server.term_scroll(&mut self.log, t, delta),
-            Backend::Remote(link) => link.send(&ClientMsg::TermScroll { term: t, delta: delta as i64 }),
+            Backend::Local(server) => server.term_wheel(&mut self.log, t, delta, at),
+            Backend::Remote(link) => link.send(&ClientMsg::TermScroll { term: t, delta: delta as i64, at }),
         }
         self.sync();
     }
@@ -1960,7 +1965,7 @@ impl Acme {
     }
 
     pub fn scroll_wheel(&mut self, e: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let Some((target, _)) = self.locate(e.position) else { return };
+        let Some((target, region)) = self.locate(e.position) else { return };
         let lh = match target {
             Target::Term(w, _) => self.term_layouts.get(&w).map(|l| l.line_height),
             Target::View(v) => self.layouts.get(&v).map(|l| l.line_height),
@@ -1977,7 +1982,13 @@ impl Acme {
         match target {
             Target::View(v) => self.scroll_by(v, n),
             Target::Term(_, t) => {
-                self.term_scroll(t, n as isize);
+                // the cell under the pointer: a program reading the mouse
+                // gets the wheel there
+                let at = match region {
+                    Region::Term(c, r) => Some((c as u16, r as u16)),
+                    _ => None,
+                };
+                self.term_wheel(t, n as isize, at);
             }
         }
         cx.notify();

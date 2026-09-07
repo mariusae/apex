@@ -350,8 +350,16 @@ impl Server {
     }
 
     pub fn term_scroll(&mut self, log: &mut Log, id: TermId, delta: isize) {
+        self.term_wheel(log, id, delta, None)
+    }
+
+    /// The wheel at a cell: the program's when it asked for the mouse
+    /// (or wants arrows on its alternate screen), else the scrollback.
+    pub fn term_wheel(&mut self, log: &mut Log, id: TermId, delta: isize, at: Option<(u16, u16)>) {
         if let Some(h) = self.terms.get_mut(&id) {
-            h.scroll(delta);
+            if !h.wheel(delta, at) {
+                h.scroll(delta);
+            }
             self.publish_term(log, id);
         }
     }

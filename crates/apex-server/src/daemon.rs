@@ -508,7 +508,7 @@ impl Daemon {
                 return;
             }
             ClientMsg::TermResize { term, cols, rows } => s.server.term_resize(&mut s.log, term, cols, rows),
-            ClientMsg::TermScroll { term, delta } => s.server.term_scroll(&mut s.log, term, delta as isize),
+            ClientMsg::TermScroll { term, delta, at } => s.server.term_wheel(&mut s.log, term, delta as isize, at),
             ClientMsg::Env { set } => {
                 for (k, v) in &set {
                     s.server.set_env(k, v);

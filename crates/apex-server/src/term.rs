@@ -315,6 +315,45 @@ impl TermHost {
         self.term.lock().scroll_display(Scroll::Delta(-(delta as i32)));
     }
 
+    /// The wheel as the program sees it, if it does: `delta` lines at
+    /// cell `at`. With mouse reporting on, wheel buttons (64 up, 65
+    /// down) in SGR or X10 form, one per line; on the alternate screen
+    /// with alternate scroll (DECSET 1007, on by default), up and down
+    /// arrows instead, as xterm sends them. False when the wheel is
+    /// ours to scroll the display with.
+    pub fn wheel(&self, delta: isize, at: Option<(u16, u16)>) -> bool {
+        let mode = self.mode();
+        let Some((col, row)) = at else { return false };
+        let n = delta.unsigned_abs();
+        if mode.intersects(TermMode::MOUSE_MODE) {
+            let button = if delta < 0 { 64 } else { 65 };
+            let mut out = Vec::new();
+            for _ in 0..n {
+                if mode.contains(TermMode::SGR_MOUSE) {
+                    out.extend_from_slice(format!("\x1b[<{button};{};{}M", col + 1, row + 1).as_bytes());
+                } else {
+                    // X10: 32 + button, 32 + 1-based col and row, bytes
+                    let (c, r) = ((col as usize + 33).min(255) as u8, (row as usize + 33).min(255) as u8);
+                    out.extend_from_slice(&[0x1b, b'[', b'M', 32 + button as u8, c, r]);
+                }
+            }
+            self.write(&out);
+            return true;
+        }
+        if mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL) {
+            let key = if delta < 0 { "up" } else { "down" };
+            let k = TermKey { key: key.into(), text: None, shift: false, control: false, alt: false };
+            let one = encode_key(&k, mode.contains(TermMode::APP_CURSOR));
+            let mut out = Vec::new();
+            for _ in 0..n {
+                out.extend_from_slice(&one);
+            }
+            self.write(&out);
+            return true;
+        }
+        false
+    }
+
     pub fn window_size(&self) -> WindowSize {
         WindowSize { num_lines: self.rows, num_cols: self.cols, cell_width: 8, cell_height: 16 }
     }

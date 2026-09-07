@@ -526,3 +526,37 @@ fn osc8_hyperlinks_reach_the_grid() {
     assert_eq!(uri, "http://x.example/z");
     assert!(plain_unlinked, "text after the link carries no link");
 }
+
+#[test]
+fn the_wheel_reaches_programs_that_read_the_mouse() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    let type_line = |server: &mut Server, log: &mut Log, line: &str| {
+        for c in line.chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    // SGR mouse reporting on, then cat -v shows what the program reads
+    type_line(&mut server, &mut log, "printf '\\033[?1000h\\033[?1006h'; cat -v\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("cat -v")));
+    std::thread::sleep(Duration::from_millis(200));
+    // a wheel notch up at column 2, row 3: button 64 there, 1-based
+    server.term_wheel(&mut log, t, -1, Some((2, 3)));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[<64;3;4M")), "{}", grid_text(&node));
+    // from the scrollbar (no cell) the wheel is ours: nothing reaches cat
+    server.term_wheel(&mut log, t, 1, None);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |_| true));
+    assert!(!grid_text(&node).contains("^[[<65"), "{}", grid_text(&node));
+    // mouse off, alternate screen: the wheel is arrow keys (alternate scroll).
+    // ^D twice: the first hands cat the pending report, the second is EOF
+    type_line(&mut server, &mut log, "\u{4}\u{4}");
+    type_line(&mut server, &mut log, "printf '\\033[?1000l\\033[?1006l\\033[?1049h'; echo READY; cat -v\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("READY")), "{}", grid_text(&node));
+    std::thread::sleep(Duration::from_millis(200));
+    server.term_wheel(&mut log, t, 2, Some((0, 0)));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[B^[[B")), "{}", grid_text(&node));
+}

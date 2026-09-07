@@ -906,7 +906,12 @@ and bash bind for words), opt-backspace `ESC DEL`, and other modified
 keys in xterm's `CSI 1;m` form (opt-up is `ESC [1;3A`). OSC 8
 hyperlinks travel in the term shard (`Cell::link` into
 `TermOp::Links`), draw underlined, and B3 on one plumbs the link
-rather than its text.
+rather than its text. The wheel over a terminal goes to the program
+when it asked for the mouse (DECSET 1000/1002/1003: wheel buttons 64
+and 65 at the cell, SGR or X10 form) or runs on the alternate screen
+with alternate scroll (DECSET 1007, xterm's default: up and down
+arrows); otherwise it scrolls the scrollback, as the scrollbar always
+does.
 
 **Web windows** are out of v1. The prototype's headless-Chrome screencast
 is a server-side renderer and fits the model, but it is bandwidth-heavy
