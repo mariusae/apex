@@ -1011,6 +1011,14 @@ impl Server {
         }
         // no rule took it
         let Some(p) = self.plumbs.get_mut(&id) else { return PlumbStep::Done(Vec::new()) };
+        if let Some((word, span)) = p.req.alt.take() {
+            // acme's expand: the word, now that the longer text found nothing
+            p.trace.push(format!("nothing took {:?}: as the word {word:?}", p.req.text));
+            p.req.text = word;
+            p.req.sel = Some(span);
+            p.remaining = apex_core::plumb::ordered(&view.state.meta.rules).into_iter().map(|(i, r)| (i, r.clone())).collect();
+            return self.plumb_advance(view, id);
+        }
         if p.req.dry {
             p.trace.push(if p.req.verb == "plumb" { "no rule: Look".into() } else { format!("no rule takes {}", p.req.verb) });
             return self.plumb_trace(id);
@@ -1061,7 +1069,7 @@ impl Server {
             ExecCtx::Window(w) => view.view_buffer(ViewId::Body(w)).ok().and_then(|b| view.selection(ViewId::Body(w)).ok().map(|(q0, q1)| Span { buffer: b, q0, q1 })),
             _ => None,
         };
-        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None })
+        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None })
     }
 }
 
@@ -1093,6 +1101,9 @@ pub struct PlumbReq {
     /// Where the pointer or dot was, and what was expanded or swept.
     pub at: Option<Span>,
     pub sel: Option<Span>,
+    /// The word within `text`: acme's `expand` tries the file-name
+    /// expansion first and, should nothing take it, the word.
+    pub alt: Option<(String, Span)>,
 }
 
 /// One step of a plumb walk, for the host to carry out.

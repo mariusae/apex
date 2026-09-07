@@ -387,8 +387,19 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     }
     let errors = |n: &Node| n.state.windows.keys().find(|w| n.window_name(**w).ends_with("+Errors")).and_then(|w| n.state.window(*w).ok()).and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors(n).contains(&format!("previewing {}", md.display()))), "errors:\n{}", errors(&node));
+    // acme's expand: nothing takes `s.pchr` (no such file), so the word is tried
+    let word = ("pchr".to_string(), Span { buffer: BufferId(0), q0: 2, q1: 6 });
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "s.pchr".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None, alt: Some(word) };
+    let (_, step) = server.plumb_start(&node, req);
+    match step {
+        apex_server::PlumbStep::Trace(lines) => {
+            assert!(lines.iter().any(|l| l.contains("as the word \"pchr\"")), "{lines:?}");
+            assert!(lines.last().is_some_and(|l| l.contains("Look")), "{lines:?}");
+        }
+        other => panic!("{other:?}"),
+    }
     // the default rules: B3 on name:line opens the file at the line
-    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None };
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None, alt: None };
     let (_, step) = server.plumb_start(&node, req);
     match step {
         apex_server::PlumbStep::Trace(lines) => assert!(lines.iter().any(|l| l.contains("would open a.txt:1")), "{lines:?}"),

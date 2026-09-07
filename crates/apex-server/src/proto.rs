@@ -42,7 +42,9 @@ pub enum ClientMsg {
     /// `dry` only reports what would happen (`PlumbTrace`).
     /// `at` is where the pointer (or dot) was, `sel` the text as
     /// expanded or swept, when the plumb came from a buffer.
-    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool, at: Option<Span>, sel: Option<Span> },
+    /// `alt` is the word within `text` (acme's isalnum expansion), tried
+    /// when no rule takes `text` (the file-name expansion).
+    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)> },
     /// A tool's answer to a `Plumb` it was handed: did it take it?
     PlumbAck { id: u64, ok: bool },
     /// Install a plumbing rule: owned by this attachment when `mine`

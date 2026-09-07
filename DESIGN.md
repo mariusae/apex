@@ -661,7 +661,10 @@ released on an item it runs as B2 would, released outside nothing runs;
 more than 25 items scroll. Verbs are not written into tags. B2 on a
 verb's word walks the rules with it, ahead of the shell. A `Plumb`
 carries where it came from: `at`, the pointer or dot as a `Span`, and
-`sel`, what was expanded or swept, either or both. Actions: `Edit` (open in the session), `Run` (a host command,
+`sel`, what was expanded or swept, either or both; and `alt`, the word
+(acme's `isalnum` expansion) within the file-name expansion (`isfilec`:
+alnum and `.-+/:@`), which the walk tries when nothing takes the longer
+text, before Look, as acme's `expand` does (`expandfile`, then the word). Actions: `Edit` (open in the session), `Run` (a host command,
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
 the UI, which may refuse; a headless leader always does), `Tool(name)`
 (`ServerMsg::Plumb` to the attachment of that name, `PlumbAck` within a

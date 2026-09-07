@@ -212,8 +212,15 @@ pub struct Acme {
     typed_start: HashMap<ViewId, usize>,
 }
 
+/// acme's `isalnum` (text.c): anything but space, controls and ASCII
+/// punctuation (so `_` counts).
+fn is_alnum(c: char) -> bool {
+    let u = c as u32;
+    u > 0x20 && !(0x7F..=0xA0).contains(&u) && !".!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".contains(c)
+}
+/// acme's `isfilec` (look.c): alnum, and `.-+/:@`.
 fn is_file_char(c: char) -> bool {
-    c.is_alphanumeric() || ".-+/:@_~$#".contains(c)
+    is_alnum(c) || ".-+/:@".contains(c)
 }
 fn is_exec_char(c: char) -> bool {
     is_file_char(c) || "<|>".contains(c)
@@ -1386,9 +1393,24 @@ impl Acme {
                     let found = self.take_range_at(d, HlKind::Look);
                     self.hl = None;
                     if let Some((text, (lo, hi))) = found {
-                        // where the button went down, and what it took
-                        let spans = self.node.view_buffer(d.view).ok().map(|b| (Span { buffer: b, q0: d.anchor, q1: d.anchor }, Span { buffer: b, q0: lo, q1: hi }));
-                        self.look_at(self.ctx_of(d.view), &text, spans.map(|s| s.0), spans.map(|s| s.1));
+                        // where the button went down, and what it took;
+                        // acme's expand: the file-name expansion first, then,
+                        // should nothing take it, the word (isalnum)
+                        let b = self.node.view_buffer(d.view).ok();
+                        let at = b.map(|b| Span { buffer: b, q0: d.anchor, q1: d.anchor });
+                        let sel = b.map(|b| Span { buffer: b, q0: lo, q1: hi });
+                        let alt = match (b, self.text_of(d.view)) {
+                            (Some(b), Some(t)) => {
+                                let (a, z) = expand(&t, d.anchor, is_alnum);
+                                if a < z && (a, z) != (lo, hi) && lo <= a && z <= hi {
+                                    Some((t.slice(a, z), Span { buffer: b, q0: a, q1: z }))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
+                        self.look_at(self.ctx_of(d.view), &text, at, sel, alt);
                     }
                 }
             }
@@ -2166,24 +2188,25 @@ impl Acme {
     }
 
     pub fn look(&mut self, ctx: ExecCtx, text: &str) {
-        self.look_at(ctx, text, None, None);
+        self.look_at(ctx, text, None, None, None);
     }
 
     /// B3: plumb `text` from `ctx`, saying where it came from when it
-    /// came from a buffer (`at`: the pointer; `sel`: what was taken).
-    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>) {
+    /// came from a buffer (`at`: the pointer; `sel`: what was taken;
+    /// `alt`: the word within it, tried when nothing takes the text).
+    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>) {
         let text = text.trim();
         if text.is_empty() {
             return;
         }
         match &mut self.backend {
             Backend::Local(server) => {
-                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at, sel };
+                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at, sel, alt };
                 if let Some(w) = plumb_local(server, &mut self.node, &mut self.log, req) {
                     self.show(w);
                 }
             }
-            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel }),
+            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel, alt }),
         }
         self.after();
     }
