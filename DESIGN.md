@@ -878,7 +878,8 @@ this one (detach, attach).
   and the scrollbar's dark yellow beside it), `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`.
   The app offers `Snarfout` in terminals and win windows: the last
-  command's output, the lines between the last two prompts
+  command as `$ cmd` (the prompt normalised) and its output, the lines
+  between the last two prompts
   (`transcript::last_output`: the last line is the prompt, earlier
   prompts begin like it and carry its marker), read from the host for a
   terminal (`TermRead`), into the snarf buffer and clipboard.
