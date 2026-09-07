@@ -10,7 +10,7 @@
 //! runs as the `SERVER` attachment), so tools can work on a headless
 //! session and a UI that attaches later takes it over.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{self, BufReader, BufWriter};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -111,6 +111,8 @@ struct Conn {
     out: Sender<ServerMsg>,
     /// How far each shard has been forwarded to this connection.
     sent: HashMap<Shard, Seq>,
+    /// Files this connection subscribed to (`Watch`).
+    watched: BTreeSet<String>,
 }
 
 struct Session {
@@ -202,7 +204,11 @@ impl Daemon {
                     if let Some(name) = d.name_of(sid) {
                         let s = d.sessions.get_mut(&name).unwrap();
                         let props = s.server.pump(&mut s.log, &s.view, ev);
+                        let changed = s.server.take_changed();
                         d.after(&name, props);
+                        for p in changed {
+                            d.file_changed(sid, &p);
+                        }
                     }
                 }
                 Event::PlumbTimeout(tid) => d.tool_answered(tid, Err("no answer in time".into())),
@@ -305,7 +311,7 @@ impl Daemon {
                 }
             }
         });
-        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new() });
+        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), watched: BTreeSet::new() });
     }
 
     fn send(&self, id: u64, m: ServerMsg) {
@@ -315,6 +321,9 @@ impl Daemon {
     }
 
     fn gone(&mut self, id: u64) {
+        if let Some(name) = self.conns.get(&id).and_then(|c| c.session).and_then(|sid| self.name_of(sid)) {
+            self.drop_watches(id, &name);
+        }
         let Some(c) = self.conns.remove(&id) else { return };
         let (Some(sid), Some(a)) = (c.session, c.attachment) else { return };
         let Some(name) = self.name_of(sid) else { return };
@@ -381,6 +390,7 @@ impl Daemon {
         };
         let (a, e) = s.log.attach(kind, &name);
         let _ = s.view.state.apply(Shard::Meta, &e);
+        let mut fenced_old = None;
         if kind == AttachmentKind::Ui {
             // transfer else reclaim: single-player, so reclaim now
             for shard in s.log.shards().collect::<Vec<_>>() {
@@ -397,7 +407,7 @@ impl Daemon {
                     let _ = s.view.state.apply(Shard::Meta, &e);
                 }
             }
-            s.leader = Some(id);
+            fenced_old = s.leader.replace(id).filter(|old| *old != id);
         }
         let _ = s.view.catch_up(&s.log);
         let snapshot = s.view.state.to_snapshot();
@@ -410,6 +420,10 @@ impl Daemon {
             c.sent = marks;
         }
         self.send(id, ServerMsg::Welcome { attachment: a, snapshot });
+        if let Some(old) = fenced_old {
+            // the UI that led is fenced now: what it watched ends
+            self.drop_watches(old, &session);
+        }
         // the client's attach script runs now, as the attachment's own
         if let Some(script) = attach {
             let s = self.sessions.get_mut(&session).unwrap();
@@ -539,6 +553,22 @@ impl Daemon {
                 self.send(id, ServerMsg::File { path, bytes });
                 return;
             }
+            ClientMsg::Watch { path } => {
+                s.server.subscribe(&s.view, Path::new(&path));
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.watched.insert(path.clone());
+                }
+                let bytes = std::fs::read(&path).map_err(|e| e.to_string());
+                self.send(id, ServerMsg::File { path, bytes });
+                return;
+            }
+            ClientMsg::Unwatch { path } => {
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.watched.remove(&path);
+                }
+                self.unwatch_unused(name, &path);
+                return;
+            }
             ClientMsg::Complete { view, ctx, at, prefix } => {
                 let dir = s.server.dir_of(&s.view, ctx);
                 props.push(s.server.complete(view, at, &dir, &prefix));
@@ -574,6 +604,39 @@ impl Daemon {
                 let result = proposal::apply(&mut s.view, &mut s.log, p).map_err(|e| e.to_string());
                 self.answered(pid, result);
             }
+        }
+    }
+
+    /// A subscribed file changed: every connection of the session that
+    /// watches it gets the bytes.
+    fn file_changed(&mut self, sid: u64, path: &Path) {
+        let p = path.to_string_lossy().to_string();
+        let watchers: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid) && c.watched.contains(&p)).map(|(id, _)| *id).collect();
+        if watchers.is_empty() {
+            return;
+        }
+        let bytes = std::fs::read(path).map_err(|e| e.to_string());
+        for id in watchers {
+            self.send(id, ServerMsg::File { path: p.clone(), bytes: bytes.clone() });
+        }
+    }
+
+    /// Stop watching `path` for the session unless another connection
+    /// still wants it.
+    fn unwatch_unused(&mut self, name: &str, path: &str) {
+        let Some(s) = self.sessions.get_mut(name) else { return };
+        let sid = s.id;
+        let wanted = self.conns.values().any(|c| c.session == Some(sid) && c.watched.contains(path));
+        if !wanted {
+            s.server.unsubscribe(&s.view, Path::new(path));
+        }
+    }
+
+    /// Drop every subscription of a connection (it is gone, or fenced).
+    fn drop_watches(&mut self, id: u64, name: &str) {
+        let paths: Vec<String> = self.conns.get_mut(&id).map(|c| std::mem::take(&mut c.watched).into_iter().collect()).unwrap_or_default();
+        for p in paths {
+            self.unwatch_unused(name, &p);
         }
     }
 

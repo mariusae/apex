@@ -181,8 +181,13 @@ pub struct Acme {
     snarf_wanted: Option<String>,
     /// A B2/B3 sweep in a terminal, shown in the button's colour.
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
-    /// Previews of remote files waiting for their bytes: (ask id, path, app).
+    /// Previews of remote files waiting for their first bytes: (ask id,
+    /// path, app).
     previews: Vec<(u64, String, Option<String>)>,
+    /// Remote files being previewed: subscribed, their copies kept current.
+    live: std::collections::HashMap<String, Live>,
+    /// The extensions Preview is offered for, as last derived.
+    preview_wanted: std::collections::BTreeSet<String>,
     /// The heartbeat: when the last ping went out.
     last_ping: Option<std::time::Instant>,
     /// The frame after a layout change has the geometry the warp needs.
@@ -286,19 +291,46 @@ impl Acme {
             to: None,
         };
         link.send(&ClientMsg::RuleAdd { rule: urls, priority: -10, mine: true });
-        // Preview on every file: the app the settings name for its kind,
-        // else the platform's previewer
-        let preview = PlumbRule {
-            verb: "Preview".into(),
-            text: None,
-            file: None,
-            kind: Some(WinKind::File),
-            isfile: None,
-            isdir: None,
-            action: RuleAction::Client { verb: "preview".into(), args: "$file".into() },
-            to: None,
-        };
-        link.send(&ClientMsg::RuleAdd { rule: preview, priority: -10, mine: true });
+    }
+
+    /// Preview is offered where a setting names an app for the file's
+    /// kind (`Preview.md`, say), not for the fallback: one rule of ours
+    /// per such extension, kept in step with the settings.
+    fn sync_preview_rules(&mut self) {
+        let Backend::Remote(link) = &mut self.backend else { return };
+        let me = link.attachment;
+        let meta = &self.node.state.meta;
+        let wanted = preview_exts(meta, me);
+        if wanted == self.preview_wanted {
+            return;
+        }
+        let installed: Vec<(RuleId, String)> = meta
+            .rules
+            .iter()
+            .filter(|(_, r)| r.attachment == me && r.rule.verb == "Preview")
+            .filter_map(|(id, r)| r.rule.file.as_deref().and_then(ext_of_pattern).map(|e| (*id, e)))
+            .collect();
+        for ext in wanted.iter() {
+            if !installed.iter().any(|(_, e)| e == ext) && !self.preview_wanted.contains(ext) {
+                let rule = PlumbRule {
+                    verb: "Preview".into(),
+                    text: None,
+                    file: Some(pattern_of_ext(ext)),
+                    kind: Some(WinKind::File),
+                    isfile: None,
+                    isdir: None,
+                    action: RuleAction::Client { verb: "preview".into(), args: "$file".into() },
+                    to: None,
+                };
+                link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
+            }
+        }
+        for (id, ext) in installed {
+            if !wanted.contains(&ext) {
+                link.send(&ClientMsg::RuleRm { id });
+            }
+        }
+        self.preview_wanted = wanted;
     }
 
     /// What rules asked this client to do since the last poll: `open`
@@ -320,10 +352,17 @@ impl Acme {
                     if self.url.is_local() {
                         let result = open_preview(app.as_deref(), Path::new(&args)).map(|_| None);
                         self.send(ClientMsg::Applied { id, result });
+                    } else if let Some(live) = self.live.get_mut(&args) {
+                        // already previewing: show it again
+                        let result = open_preview(app.as_deref(), &live.copy).map(|child| {
+                            live.child = child;
+                        });
+                        self.send(ClientMsg::Applied { id, result: result.map(|_| None) });
                     } else {
-                        // the file is on the host: fetch it, then show the copy
+                        // the file is on the host: subscribe, and show the
+                        // copy as it arrives and changes
                         self.previews.push((id, args.clone(), app));
-                        self.send(ClientMsg::ReadFile { path: args });
+                        self.send(ClientMsg::Watch { path: args });
                     }
                 }
                 other => {
@@ -332,13 +371,44 @@ impl Acme {
             }
         }
         for (path, bytes) in files {
-            let Some(i) = self.previews.iter().position(|(_, p, _)| *p == path) else { continue };
-            let (id, _, app) = self.previews.remove(i);
-            let result = bytes.and_then(|b| {
-                let copy = preview_copy(&self.url, &path, &b)?;
-                open_preview(app.as_deref(), &copy)
-            });
-            self.send(ClientMsg::Applied { id, result: result.map(|_| None) });
+            if let Some(i) = self.previews.iter().position(|(_, p, _)| *p == path) {
+                // the first bytes: the copy opens
+                let (id, _, app) = self.previews.remove(i);
+                let result = bytes.and_then(|b| {
+                    let copy = preview_copy(&self.url, &path, &b)?;
+                    let child = open_preview(app.as_deref(), &copy)?;
+                    self.live.insert(path.clone(), Live { copy, app, child });
+                    Ok(())
+                });
+                if result.is_err() {
+                    self.send(ClientMsg::Unwatch { path });
+                }
+                self.send(ClientMsg::Applied { id, result: result.map(|_| None) });
+            } else if let Some(live) = self.live.get(&path) {
+                // a change: the copy follows, and the previewer sees it
+                if let Ok(b) = bytes {
+                    let _ = std::fs::write(&live.copy, b);
+                }
+            }
+        }
+        self.end_stale_previews();
+    }
+
+    /// A live preview ends with its previewer (Quick Look's process),
+    /// with the file's window, or with our lead; its subscription with it.
+    fn end_stale_previews(&mut self) {
+        let fenced = self.fenced();
+        let mut done = Vec::new();
+        for (path, live) in self.live.iter_mut() {
+            let exited = live.child.as_mut().is_some_and(|c| c.try_wait().map(|s| s.is_some()).unwrap_or(true));
+            let window_gone = !self.node.state.buffers.values().any(|b| b.name == *path);
+            if exited || window_gone || fenced {
+                done.push(path.clone());
+            }
+        }
+        for path in done {
+            self.live.remove(&path);
+            self.send(ClientMsg::Unwatch { path });
         }
     }
 
@@ -579,6 +649,8 @@ impl Acme {
             snarf_wanted: None,
             term_hl: None,
             previews: Vec::new(),
+            live: std::collections::HashMap::new(),
+            preview_wanted: std::collections::BTreeSet::new(),
             warp_wait: false,
             mouse_saved: None,
             pointer: None,
@@ -811,6 +883,7 @@ impl Acme {
             self.show(w);
         }
         self.answer_asks();
+        self.sync_preview_rules();
         alive
     }
 
@@ -1948,15 +2021,70 @@ impl Acme {
 }
 
 /// Run a program detached, for something the platform shows.
-fn spawn_quiet(prog: &str, args: &[&str]) -> Result<(), String> {
+fn spawn_quiet(prog: &str, args: &[&str]) -> Result<std::process::Child, String> {
     std::process::Command::new(prog)
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
-        .map(|_| ())
         .map_err(|e| format!("{prog} {}: {e}", args.join(" ")))
+}
+
+/// A remote file being previewed from a local copy.
+struct Live {
+    copy: PathBuf,
+    app: Option<String>,
+    /// The previewer, when it is a process that lives as long as the
+    /// preview (Quick Look); `open -a App` returns at once and is not.
+    child: Option<std::process::Child>,
+}
+
+/// The extensions Preview is offered for: every `Preview.EXT` setting
+/// this attachment sees (its own, then the session's).
+fn preview_exts(meta: &apex_core::state::Meta, me: AttachmentId) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for owner in [me, SERVER] {
+        if let Some(m) = meta.settings.get(&owner) {
+            out.extend(m.keys().filter_map(|k| k.strip_prefix("Preview.")).filter(|e| !e.is_empty()).map(|e| e.to_lowercase()));
+        }
+    }
+    out
+}
+
+/// The `--file` pattern of our Preview rule for an extension, and back.
+fn pattern_of_ext(ext: &str) -> String {
+    format!("(?i)\\.{}$", regex_escape(ext))
+}
+
+fn ext_of_pattern(p: &str) -> Option<String> {
+    p.strip_prefix("(?i)\\.").and_then(|r| r.strip_suffix('$')).map(regex_unescape)
+}
+
+fn regex_escape(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if !c.is_ascii_alphanumeric() {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn regex_unescape(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(n) = chars.next() {
+                out.push(n);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// What this client does when a rule asks it, in-process: `open` hands
@@ -1965,21 +2093,22 @@ fn spawn_quiet(prog: &str, args: &[&str]) -> Result<(), String> {
 /// else is refused, and the server tries the next rule.
 pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
     match verb {
-        "open" => spawn_quiet(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }, &[args]),
-        "preview" => open_preview(None, Path::new(args)),
+        "open" => spawn_quiet(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }, &[args]).map(|_| ()),
+        "preview" => open_preview(None, Path::new(args)).map(|_| ()),
         _ => Err(format!("apex-ui cannot {verb}")),
     }
 }
 
 /// Show `path` with `app`, or with the platform's previewer: Quick Look
-/// on macOS, `xdg-open` elsewhere.
-fn open_preview(app: Option<&str>, path: &Path) -> Result<(), String> {
+/// on macOS, `xdg-open` elsewhere. Returns the previewer's process when
+/// it lives as long as the preview does.
+fn open_preview(app: Option<&str>, path: &Path) -> Result<Option<std::process::Child>, String> {
     let p = path.to_string_lossy().to_string();
     match app {
-        Some(app) if cfg!(target_os = "macos") => spawn_quiet("open", &["-a", app, &p]),
-        Some(app) => spawn_quiet(app, &[&p]),
-        None if cfg!(target_os = "macos") => spawn_quiet("qlmanage", &["-p", &p]),
-        None => spawn_quiet("xdg-open", &[&p]),
+        Some(app) if cfg!(target_os = "macos") => spawn_quiet("open", &["-a", app, &p]).map(|_| None),
+        Some(app) => spawn_quiet(app, &[&p]).map(Some),
+        None if cfg!(target_os = "macos") => spawn_quiet("qlmanage", &["-p", &p]).map(Some),
+        None => spawn_quiet("xdg-open", &[&p]).map(|_| None),
     }
 }
 
@@ -2024,5 +2153,23 @@ fn term_key(ks: &Keystroke) -> TermKey {
         shift: ks.modifiers.shift,
         control: ks.modifiers.control,
         alt: ks.modifiers.alt,
+    }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    #[test]
+    fn preview_extensions_come_from_direct_settings_only() {
+        let mut meta = apex_core::state::Meta::default();
+        let me = AttachmentId(7);
+        meta.settings.entry(SERVER).or_default().insert("Preview".into(), "Quick".into());
+        meta.settings.entry(SERVER).or_default().insert("Preview.html".into(), "Safari".into());
+        meta.settings.entry(me).or_default().insert("Preview.MD".into(), "Marked".into());
+        let exts: Vec<String> = preview_exts(&meta, me).into_iter().collect();
+        assert_eq!(exts, vec!["html", "md"]);
+        assert_eq!(ext_of_pattern(&pattern_of_ext("c++")).as_deref(), Some("c++"));
+        assert_eq!(pattern_of_ext("md"), r"(?i)\.md$");
     }
 }

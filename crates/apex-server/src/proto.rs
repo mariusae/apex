@@ -67,6 +67,10 @@ pub enum ClientMsg {
     /// The bytes of a file on the host, for a client that shows or
     /// previews it: answered by `File`.
     ReadFile { path: String },
+    /// `ReadFile`, and again with every change to the file until
+    /// `Unwatch`, this connection goes, or (a UI) it is fenced.
+    Watch { path: String },
+    Unwatch { path: String },
 }
 
 /// A client's script, run on the host: its `~/.apex/profile` when it

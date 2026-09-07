@@ -547,6 +547,21 @@ impl Remote {
         })?
     }
 
+    /// Subscribe to a file on the host: its bytes now, and after each
+    /// change (`link.files`) until `unwatch`.
+    pub fn watch(&mut self, path: &str, timeout: std::time::Duration) -> Result<Vec<u8>, String> {
+        self.send(&ClientMsg::Watch { path: path.to_string() });
+        let want = path.to_string();
+        self.wait_for(timeout, |l| {
+            let i = l.files.iter().position(|(p, _)| *p == want)?;
+            Some(l.files.remove(i).1)
+        })?
+    }
+
+    pub fn unwatch(&self, path: &str) {
+        self.send(&ClientMsg::Unwatch { path: path.to_string() });
+    }
+
     /// Attach with an explicit attach script (tests; a UI sends its
     /// `~/.apex/attach` on its own).
     pub fn connect_with(path: &Path, session: &str, name: &str, kind: AttachmentKind, attach: Option<Script>) -> io::Result<Remote> {

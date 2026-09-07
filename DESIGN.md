@@ -596,11 +596,16 @@ host, never on the client, so no `apex` call crosses the link. A client's
 with `apexattachment` set, so `apex set` there records the attachment's
 own settings (`MetaOp::Set{owner}`, dropped on detach); `apex set` from
 the profile records the session's. Clients resolve a key through their
-own settings, then the session's: `Preview.EXT`/`Preview` name the app
-the UI's `preview` uses, else Quick Look. The client drives file I/O
-(`ReadFile`/`File`): a remote file is fetched into a local copy under a
-path that mirrors the host's, so later inline views can refresh the same
-way.
+own settings, then the session's. The UI keeps one `Preview` rule of its
+own per extension a `Preview.EXT` setting names an app for, so the verb
+is offered only where a direct setting exists; `Preview` alone is the
+fallback app, else Quick Look. The client drives file I/O: `ReadFile`
+is one-shot, `Watch` streams `File` on every change (the daemon adds the
+path to the watcher and fans changes out to subscribers) until
+`Unwatch`, the connection goes, or a UI is fenced; a remote preview is a
+subscribed local copy under a path mirroring the host's, ended with the
+previewer's process, the file's window, or the lead. Inline views later
+refresh the same way.
 
 ## 8. Extensibility
 

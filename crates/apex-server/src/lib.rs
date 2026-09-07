@@ -95,6 +95,10 @@ pub struct Server {
     next_plumb: u64,
     /// Verb execs seen by `poll_execs`, for the host to start.
     plumb_starts: Vec<PlumbReq>,
+    /// Files clients subscribed to (`Watch`), beyond the buffers' own.
+    subscribed: BTreeSet<PathBuf>,
+    /// Subscribed files that changed, for the host to report.
+    changed: Vec<PathBuf>,
 }
 
 impl Server {
@@ -143,6 +147,8 @@ impl Server {
             plumbs: HashMap::new(),
             next_plumb: 1,
             plumb_starts: Vec::new(),
+            subscribed: BTreeSet::new(),
+            changed: Vec::new(),
         };
         (server, rx)
     }
@@ -368,7 +374,13 @@ impl Server {
     pub fn pump(&mut self, log: &mut Log, view: &Node, ev: ServerEvent) -> Vec<Proposal> {
         let mut props = Vec::new();
         match ev {
-            ServerEvent::File(path) => props.extend(self.file_changed(view, &path)),
+            ServerEvent::File(path) => {
+                let named = self.watches.as_named(&path);
+                if self.subscribed.contains(&named) {
+                    self.changed.push(named);
+                }
+                props.extend(self.file_changed(view, &path));
+            }
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
                 // a new name for the window, from a label (acme's win)
@@ -441,14 +453,31 @@ impl Server {
     }
 
     /// Keep the directory watches in step with the files open in `view`.
+    /// Watch `path` for a subscriber (beyond the buffers).
+    pub fn subscribe(&mut self, view: &Node, path: &Path) {
+        self.subscribed.insert(path.to_path_buf());
+        self.sync_watches(view);
+    }
+
+    pub fn unsubscribe(&mut self, view: &Node, path: &Path) {
+        self.subscribed.remove(path);
+        self.sync_watches(view);
+    }
+
+    /// Subscribed files that changed since the last call.
+    pub fn take_changed(&mut self) -> Vec<PathBuf> {
+        std::mem::take(&mut self.changed)
+    }
+
     pub fn sync_watches(&mut self, view: &Node) {
-        let files: Vec<PathBuf> = view
+        let mut files: Vec<PathBuf> = view
             .state
             .buffers
             .values()
             .filter(|b| !b.name.is_empty() && !b.name.starts_with('+') && !b.name.ends_with('/') && b.name.starts_with('/'))
             .map(|b| PathBuf::from(&b.name))
             .collect();
+        files.extend(self.subscribed.iter().cloned());
         self.watches.sync(files.iter().map(|p| p.as_path()));
     }
 

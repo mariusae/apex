@@ -363,3 +363,40 @@ fn an_attach_script_sets_the_clients_own_settings_and_cat_reads_files() {
     assert!(!success && err.contains("No such file"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_watched_file_streams_its_changes_until_unwatched() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-cli-watch-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("live.md");
+    std::fs::write(&path, "one\n").unwrap();
+    let p = path.display().to_string();
+    let mut c = Remote::connect_as(&sock, "main", "viewer", AttachmentKind::Tool).unwrap();
+    // the bytes now
+    assert_eq!(c.watch(&p, Duration::from_secs(5)).unwrap(), b"one\n");
+    // and again when the file changes
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&path, "two\n").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut got = None;
+    while Instant::now() < deadline && got.is_none() {
+        let _ = c.step(Duration::from_millis(100));
+        got = c.link.files.iter().position(|(q, b)| *q == p && b.as_deref() == Ok(b"two\n")).map(|i| c.link.files.remove(i));
+    }
+    assert!(got.is_some(), "no update after the change");
+    // not after unwatch (settled: the change's own events all arrived)
+    c.unwatch(&p);
+    let settle = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < settle {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    c.link.files.clear();
+    std::fs::write(&path, "three\n").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(100));
+    }
+    assert!(!c.link.files.iter().any(|(q, b)| *q == p && b.as_deref() == Ok(b"three\n")), "still streaming after unwatch");
+    let _ = std::fs::remove_dir_all(&dir);
+}

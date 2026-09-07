@@ -79,11 +79,15 @@ same way, named `attach`, with `apexattachment` naming the attaching
 client. `apex set KEY VALUE` there records a setting of that client's,
 gone when it detaches; the same command from the profile, or from a
 terminal, records the session's. A client reads its own settings first,
-then the session's, and `apex set` alone lists them all. `Preview` in a
-file window's tag is the app's: `Preview.EXT` names the app for that
-extension and `Preview` the fallback, else the platform previews it
-(Quick Look on macOS); a remote file is fetched first (`apex cat` is the
-same request from the shell).
+then the session's, and `apex set` alone lists them all. `Preview`
+appears in the tag of every file whose extension a `Preview.EXT` setting
+names an app for (`apex set Preview.md Marked`); `Preview` alone is the
+fallback app when a rule of your own asks to preview something else, and
+without it the platform previews (Quick Look on macOS). A remote file is
+fetched into a local copy and the copy is kept current while the preview
+lives: the app subscribes to the file (`Watch`, `apex cat` is the
+one-shot form) until Quick Look exits, the file's window goes, or the
+app loses its lead.
 [examples/profile](../../examples/profile) is one that has zsh, bash and fish
 name their window after the directory on every `cd`, through their
 environment; rc does that on its own in an apex terminal (its rcmain
