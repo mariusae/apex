@@ -18,6 +18,8 @@ pub enum Proposal {
     TermWindow { col: ColumnId, name: String, term: TermId },
     /// A web window on `url` in `col` (`Newweb URL`, `apex web open`).
     OpenWeb { col: ColumnId, url: String },
+    /// A window whose buffer `text` is HTML shown as a page (`apex web`).
+    OpenHtml { col: ColumnId, name: String, text: String },
     /// The client rendering a web window says where its page went: the
     /// window's name follows, the place left goes on the navigation stack.
     WebNavigate { window: WindowId, url: String },
@@ -111,6 +113,11 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         Proposal::OpenWeb { col, url } => {
             node.catch_up(log)?;
             let w = node.open_web_window(log, col, &url)?;
+            Ok(Some(w))
+        }
+        Proposal::OpenHtml { col, name, text } => {
+            node.catch_up(log)?;
+            let w = node.open_html_window(log, col, &name, &text)?;
             Ok(Some(w))
         }
         Proposal::WebNavigate { window, url } => {

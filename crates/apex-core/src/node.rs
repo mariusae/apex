@@ -431,6 +431,21 @@ impl Node {
         Ok(id)
     }
 
+    /// A window whose text is HTML shown as a page (WEB.md §2.5): a
+    /// buffer named `name` holding `text`, as `new_window` makes one,
+    /// with a body the client renders.
+    pub fn open_html_window(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str) -> Result<WindowId> {
+        let id = WindowId(self.alloc());
+        let body = self.create_buffer(log, name, text, None)?;
+        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf | Look "), None)?;
+        self.create_shard(log, Shard::Window(id))?;
+        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Html(body) }))?;
+        self.append(log, Shard::Buffer(body), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
+        self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
+        self.place(log, col, id, None)?;
+        Ok(id)
+    }
+
     /// A web window went somewhere: its name follows the page, and the
     /// place it left goes onto the navigation stack, so Back returns.
     pub fn web_navigate(&mut self, log: &mut Log, w: WindowId, url: &str) -> Result<()> {
@@ -599,7 +614,7 @@ impl Node {
         if matches!(w.body, Body::Term(_)) {
             return WinKind::Term;
         }
-        if w.body == Body::Web {
+        if matches!(w.body, Body::Web | Body::Html(_)) {
             return WinKind::Web;
         }
         let name = self.window_name(window);

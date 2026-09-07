@@ -32,6 +32,8 @@ pub enum WebEvent {
     Title(String),
     /// A host file the page uses changed: load it again.
     Reload,
+    /// A link followed in a page rendered from a buffer: open it.
+    Link(String),
 }
 
 /// One window's view.
@@ -42,6 +44,9 @@ pub struct WebHost {
     url: String,
     bounds: Option<Bounds<Pixels>>,
     shown: bool,
+    /// A page from a buffer: the buffer version shown, and the directory
+    /// its relative links resolve in.
+    html: Option<(u64, String)>,
     /// Watch streams on the host files this page fetched, by path.
     watches: Arc<Mutex<HashMap<String, u32>>>,
     plane: Option<IoPlane>,
@@ -95,57 +100,91 @@ impl Webs {
     /// Put window `w`'s view at `bounds`, building it on `url` the first
     /// time; shown or not.
     pub fn place(&mut self, w: WindowId, url: &str, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
-        let rect = Self::rect(bounds);
         if !self.hosts.contains_key(&w) {
-            let watches: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
-            let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
-            let (wake1, wake2) = (self.wake.clone(), self.wake.clone());
-            let mut b = wry::WebViewBuilder::new()
-                .with_url(&webkit_url(url))
-                .with_bounds(rect)
-                .with_navigation_handler(move |u| {
-                    let _ = tx1.send((w, WebEvent::Navigated(apex_url(&u))));
-                    if let Some(k) = &wake1 {
-                        k();
-                    }
-                    true
-                })
-                .with_document_title_changed_handler(move |t| {
-                    let _ = tx2.send((w, WebEvent::Title(t)));
-                    if let Some(k) = &wake2 {
-                        k();
-                    }
-                });
-            if let Some(port) = self.proxy {
-                b = b.with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host: "127.0.0.1".into(), port: port.to_string() }));
-            }
-            let fetcher = Fetcher { plane: self.plane.clone(), watches: watches.clone(), events: self.tx.clone(), wake: self.wake.clone(), window: w };
-            b = b.with_asynchronous_custom_protocol("apexfile".into(), move |_, request, responder| {
-                let f = fetcher.clone();
-                std::thread::spawn(move || f.serve(request, responder));
-            });
-            match b.build_as_child(window) {
-                Ok(view) => {
-                    let _ = view.set_visible(visible);
-                    self.hosts.insert(w, WebHost { view, url: url.to_string(), bounds: Some(bounds), shown: visible, watches, plane: self.plane.clone() });
-                }
-                Err(e) => eprintln!("web: {url}: {e}"),
-            }
+            self.build(w, Page::Url(url), bounds, window, visible);
             return;
         }
+        let rect = Self::rect(bounds);
         let h = self.hosts.get_mut(&w).unwrap();
         if h.url != url {
             // the state moved the page (a Goto, another client): follow
             h.url = url.to_string();
             let _ = h.view.load_url(&webkit_url(url));
         }
-        if h.bounds != Some(bounds) {
-            let _ = h.view.set_bounds(rect);
-            h.bounds = Some(bounds);
+        h.settle_view(rect, bounds, visible);
+    }
+
+    /// Show a buffer's HTML (`version`) as window `w`'s page, relative
+    /// links resolving in `dir` on the host: the page is patched in place
+    /// when the version moves, so scroll and state in it survive.
+    pub fn place_html(&mut self, w: WindowId, html: &str, version: u64, dir: &str, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
+        if !self.hosts.contains_key(&w) {
+            self.build(w, Page::Html { html, version, dir }, bounds, window, visible);
+            return;
         }
-        if h.shown != visible {
-            let _ = h.view.set_visible(visible);
-            h.shown = visible;
+        let rect = Self::rect(bounds);
+        let h = self.hosts.get_mut(&w).unwrap();
+        if h.html.as_ref().is_some_and(|(v, _)| *v != version) {
+            h.html = Some((version, dir.to_string()));
+            let _ = h.view.evaluate_script(&morph_script(&with_base(html, dir)));
+        }
+        h.settle_view(rect, bounds, visible);
+    }
+
+    fn build(&mut self, w: WindowId, page: Page, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
+        let rect = Self::rect(bounds);
+        let watches: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
+        let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
+        let (wake1, wake2) = (self.wake.clone(), self.wake.clone());
+        let from_buffer = matches!(page, Page::Html { .. });
+        let mut b = wry::WebViewBuilder::new().with_bounds(rect);
+        b = match page {
+            Page::Url(url) => b.with_url(&webkit_url(url)),
+            Page::Html { html, dir, .. } => b.with_html(with_base(html, dir)),
+        };
+        b = b
+            .with_navigation_handler(move |u| {
+                if from_buffer {
+                    // our page does not go anywhere: a link is a window
+                    if u == "about:blank" || u.is_empty() {
+                        return true;
+                    }
+                    let _ = tx1.send((w, WebEvent::Link(apex_url(&u))));
+                    if let Some(k) = &wake1 {
+                        k();
+                    }
+                    return false;
+                }
+                let _ = tx1.send((w, WebEvent::Navigated(apex_url(&u))));
+                if let Some(k) = &wake1 {
+                    k();
+                }
+                true
+            })
+            .with_document_title_changed_handler(move |t| {
+                let _ = tx2.send((w, WebEvent::Title(t)));
+                if let Some(k) = &wake2 {
+                    k();
+                }
+            });
+        if let Some(port) = self.proxy {
+            b = b.with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host: "127.0.0.1".into(), port: port.to_string() }));
+        }
+        let fetcher = Fetcher { plane: self.plane.clone(), watches: watches.clone(), events: self.tx.clone(), wake: self.wake.clone(), window: w };
+        b = b.with_asynchronous_custom_protocol("apexfile".into(), move |_, request, responder| {
+            let f = fetcher.clone();
+            std::thread::spawn(move || f.serve(request, responder));
+        });
+        let (url, html) = match page {
+            Page::Url(url) => (url.to_string(), None),
+            Page::Html { version, dir, .. } => (String::new(), Some((version, dir.to_string()))),
+        };
+        match b.build_as_child(window) {
+            Ok(view) => {
+                let _ = view.set_visible(visible);
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, watches, plane: self.plane.clone() });
+            }
+            Err(e) => eprintln!("web: {w}: {e}"),
         }
     }
 
@@ -170,10 +209,16 @@ impl Webs {
         }
     }
 
-    /// Load the page again (a host file it uses changed).
-    pub fn reload(&self, w: WindowId) {
-        if let Some(h) = self.hosts.get(&w) {
-            let _ = h.view.reload();
+    /// Load the page again (a host file it uses changed). A page from a
+    /// buffer is loaded from its text again at the next placement.
+    pub fn reload(&mut self, w: WindowId) {
+        if let Some(h) = self.hosts.get_mut(&w) {
+            match &mut h.html {
+                Some((version, _)) => *version = u64::MAX, // stale: the next place() morphs it in
+                None => {
+                    let _ = h.view.reload();
+                }
+            }
         }
     }
 
@@ -277,6 +322,89 @@ impl Fetcher {
             watches.lock().unwrap().remove(&path);
         });
     }
+}
+
+/// What a view shows: a URL, or a buffer's HTML.
+enum Page<'a> {
+    Url(&'a str),
+    Html { html: &'a str, version: u64, dir: &'a str },
+}
+
+impl WebHost {
+    fn settle_view(&mut self, rect: wry::Rect, bounds: Bounds<Pixels>, visible: bool) {
+        if self.bounds != Some(bounds) {
+            let _ = self.view.set_bounds(rect);
+            self.bounds = Some(bounds);
+        }
+        if self.shown != visible {
+            let _ = self.view.set_visible(visible);
+            self.shown = visible;
+        }
+    }
+}
+
+/// The HTML with a `<base>` on the window's directory on the host, so
+/// relative links and resources resolve there, unless it brings its own.
+fn with_base(html: &str, dir: &str) -> String {
+    if dir.is_empty() || html.to_ascii_lowercase().contains("<base ") {
+        return html.to_string();
+    }
+    let base = format!("<base href=\"apexfile://localhost{}/\">", dir.trim_end_matches('/'));
+    let lower = html.to_ascii_lowercase();
+    match lower.find("<head>") {
+        Some(i) => format!("{}{}{}", &html[..i + 6], base, &html[i + 6..]),
+        None => format!("{base}{html}"),
+    }
+}
+
+/// A script that patches the document into `html` in place (a small
+/// morphdom): nodes are matched by position and name, attributes and
+/// text updated, so scroll position and page state survive re-renders.
+fn morph_script(html: &str) -> String {
+    let json = js_string(html);
+    format!(
+        r#"(function(){{
+const doc = new DOMParser().parseFromString({json}, 'text/html');
+function morph(a, b) {{
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) {{ a.replaceWith(b.cloneNode(true)); return; }}
+  if (a.nodeType === 3 || a.nodeType === 8) {{ if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }}
+  if (a.nodeType === 1) {{
+    for (const at of Array.from(a.attributes)) if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+    for (const at of Array.from(b.attributes)) if (a.getAttribute(at.name) !== at.value) a.setAttribute(at.name, at.value);
+  }}
+  const ac = Array.from(a.childNodes), bc = Array.from(b.childNodes);
+  for (let i = 0; i < Math.max(ac.length, bc.length); i++) {{
+    if (i >= bc.length) {{ ac[i].remove(); continue; }}
+    if (i >= ac.length) {{ a.appendChild(bc[i].cloneNode(true)); continue; }}
+    morph(ac[i], bc[i]);
+  }}
+}}
+morph(document.head, doc.head);
+morph(document.body, doc.body);
+}})();"#
+    )
+}
+
+/// `s` as a JavaScript string literal.
+fn js_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
+            '<' => out.push_str("\\u003c"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// WebKit dispatches a custom scheme only with a host in the URL: our

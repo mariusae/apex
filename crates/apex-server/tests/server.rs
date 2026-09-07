@@ -588,3 +588,23 @@ fn newweb_opens_a_web_window_whose_name_follows_the_page() {
     poll(&mut server, &mut log, &mut node);
     assert!(errors_text(&node).contains("Newweb needs a URL"), "{}", errors_text(&node));
 }
+
+#[test]
+fn html_windows_are_text_shown_as_a_page() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let w = apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::OpenHtml { col, name: "/tmp/x/+web".into(), text: "<h1>hi</h1>".into() }]).expect("a window");
+    let win = node.state.window(w).unwrap();
+    let Body::Html(b) = win.body else { panic!("{:?}", win.body) };
+    assert_eq!(win.body_buffer(), Some(b));
+    assert_eq!(node.window_name(w), "/tmp/x/+web");
+    assert_eq!(node.window_kind(w), WinKind::Web);
+    assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "<h1>hi</h1>");
+    // its text is edited as any buffer's: the page follows the version
+    let version = node.state.buffer(b).unwrap().version;
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 4, q1: 6, text: "yo".into() }]);
+    assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "<h1>yo</h1>");
+    assert!(node.state.buffer(b).unwrap().version > version);
+    // and it is placed in the column like any window, with body room
+    let slot = node.state.layout.cols.iter().flat_map(|c| c.wins.iter()).find(|s| s.window == w).cloned().expect("placed");
+    assert!(slot.body.dy() > 0, "{slot:?}");
+}

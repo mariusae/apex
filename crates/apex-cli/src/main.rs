@@ -235,12 +235,19 @@ Newterm.shell setting, else the daemon's $SHELL), or CMD through it (as
 Newterm does), and prints the terminal's id. Term send
 types TEXT into terminal TERM; a final newline is the Enter key. Term
 read prints the terminal's screen." },
-    Cmd { name: "web", usage: "apex web open URL", short: "web windows", flags: &[], run: web, long: "\
+    Cmd { name: "web", usage: "apex web open URL | apex web [-name NAME] <HTML", short: "web windows", flags: &[flag("name", "the window's name (default DIR/+web)")], run: web, long: "\
 Web open makes a web window on URL in the session, as Newweb URL in a
 tag does, and prints the window's id. The page is rendered by the
 client showing the session; only the URL is session state (its name in
 the tag), so a reattach loads the page anew, and where the page goes
-the name follows, with Back and Fwd along the navigation stack." },
+the name follows, with Back and Fwd along the navigation stack.
+
+Web alone reads HTML on stdin into a window shown as a page: the HTML
+is the window's text (edit, Put and Get it as text; the page follows
+every change in place), named NAME, or +web in the current directory.
+Relative links in it resolve against the window's directory on the
+host (apexfile://). A link followed in such a page opens a web window
+on it." },
     Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path")], run: plumb, long: "\
 Plumb sends TEXT through the session's plumbing rules from the current
 directory, as B3 on it would: the first rule that matches and is taken
@@ -1217,21 +1224,35 @@ fn set(ctx: &Ctx, p: &Parsed) -> R {
     }
 }
 
-/// `apex web open URL`: a web window on URL.
+/// `apex web open URL`: a web window on URL; `apex web [-name NAME]`:
+/// HTML on stdin shown as a page.
 fn web(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    let col = c.node.state.layout.cols.first().map(|c| c.id).ok_or("no column")?;
+    let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
     match p.args.as_slice() {
         [open, url] if open == "open" => {
-            let mut c = tool(ctx)?;
-            let col = c.node.state.layout.cols.first().map(|c| c.id).ok_or("no column")?;
-            let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
             c.propose(Proposal::OpenWeb { col, url: url.clone() }, TIMEOUT)?;
-            wait(&mut c, |r| r.node.state.windows.keys().any(|w| !before.contains(w)))?;
-            let w = c.node.state.windows.keys().find(|w| !before.contains(w)).unwrap();
-            println!("{}", w.0);
-            Ok(())
         }
-        _ => Err("usage".into()),
+        [] => {
+            let mut text = String::new();
+            if !std::io::stdin().is_terminal() {
+                std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+            }
+            let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+            let name = match p.get("name") {
+                Some(n) if n.starts_with('/') => n.to_string(),
+                Some(n) => cwd.join(n).display().to_string(),
+                None => cwd.join("+web").display().to_string(),
+            };
+            c.propose(Proposal::OpenHtml { col, name, text }, TIMEOUT)?;
+        }
+        _ => return Err("usage".into()),
     }
+    wait(&mut c, |r| r.node.state.windows.keys().any(|w| !before.contains(w)))?;
+    let w = c.node.state.windows.keys().find(|w| !before.contains(w)).unwrap();
+    println!("{}", w.0);
+    Ok(())
 }
 
 /// `apex io [-watch] METHOD URL`: one request on the I/O plane.

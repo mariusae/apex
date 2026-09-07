@@ -941,7 +941,9 @@ shows opens a web window on it. The view's traffic goes through the
 host: a localhost `CONNECT` proxy per link whose tunnels are streams
 on the I/O plane; `apexfile:///path` is a host file fetched on the
 plane and watched, the page reloading when it changes (WEB.md §2.3,
-§2.4).
+§2.4). `Body::Html(buffer)` is a text buffer shown as a page
+(`cmd | apex web`, `Proposal::OpenHtml`), patched in place as it
+changes (WEB.md §2.5).
 
 ---
 

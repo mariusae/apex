@@ -1862,8 +1862,8 @@ impl Acme {
     /// (built on the window's name, the URL, the first time), hidden
     /// while a gpui overlay would be under it.
     pub fn web_place(&mut self, w: WindowId, bounds: gpui::Bounds<Pixels>, window: &Window) {
-        let url = self.node.window_name(w);
-        if url.is_empty() {
+        let name = self.node.window_name(w);
+        if name.is_empty() {
             return;
         }
         if self.webs.is_empty() && !self.webs.armed() {
@@ -1871,7 +1871,19 @@ impl Acme {
             self.webs = Webs::new(self.io_plane(), self.wake.clone());
         }
         let visible = !self.overlay_up();
-        self.webs.place(w, &url, bounds, window, visible);
+        if std::env::var_os("APEX_WEB_DEBUG").is_some() {
+            eprintln!("web: place {w} {name} at {bounds:?} body {:?}", self.node.state.window(w).map(|x| x.body));
+        }
+        match self.node.state.window(w).map(|x| x.body) {
+            Ok(Body::Html(b)) => {
+                // the buffer's HTML as a page, following its every version
+                let Ok(buf) = self.node.state.buffer(b) else { return };
+                let (text, version) = (buf.text.to_string(), buf.version);
+                let dir = std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default();
+                self.webs.place_html(w, &text, version, &dir, bounds, window, visible);
+            }
+            _ => self.webs.place(w, &name, bounds, window, visible),
+        }
     }
 
     /// The session's I/O plane for the web views' threads, when a link
@@ -1904,6 +1916,8 @@ impl Acme {
                 }
                 WebEvent::Title(_) => {}
                 WebEvent::Reload => self.webs.reload(w),
+                // a link followed in a page of ours: a web window on it
+                WebEvent::Link(url) => self.goto(Loc { name: url, pos: Pos::Keep }),
             }
         }
     }

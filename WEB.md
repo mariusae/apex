@@ -273,6 +273,17 @@ MIME types come from the extension; the response headers carry them.
 
 ### 2.5 HTML from a buffer
 
+*As built (stage 6):* `Body::Html(buffer)`, a text buffer the client
+shows as a page: `cmd | apex web [-name NAME]` (`Proposal::OpenHtml`,
+the name `DIR/+web` unless given), edited, put and got as text. The
+view is built with the HTML and, on every later version, patched in
+place by an injected script (a small morphdom: nodes matched by
+position and name, attributes and text updated), so scroll and state
+survive; a `<base>` on the window's directory (`apexfile://`) is
+added unless the HTML brings one. A link followed in such a page does
+not navigate it: it opens a web window on the link (a `Goto`).
+`WinKind::Web` too.
+
 A web body may render a text buffer instead of a URL: `cmd | apex web`
 makes a window whose body buffer holds the HTML and whose view renders
 it. The HTML lives in the log, which is fine at the sizes commands and

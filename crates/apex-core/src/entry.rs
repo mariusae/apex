@@ -50,6 +50,10 @@ pub enum Body {
     /// A web page, rendered by the client; the URL is the window's name
     /// (its tag's first word), nothing else is session state (WEB.md §2).
     Web,
+    /// A text buffer holding HTML, rendered by the client as a page
+    /// (`cmd | apex web`, a Preview): edited, put and got as text, shown
+    /// as its page (WEB.md §2.5).
+    Html(BufferId),
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]

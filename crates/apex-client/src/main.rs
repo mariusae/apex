@@ -134,7 +134,7 @@ impl Render for Acme {
                     let body = match win.body {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
-                        Body::Web => {
+                        Body::Web | Body::Html(_) => {
                             // the native view goes where this canvas lands
                             webs_shown.insert(w);
                             let me2 = me.clone();
