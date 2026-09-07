@@ -285,7 +285,10 @@ fn the_daemon_says_its_build_first_and_stops_when_told() {
     let mut r = std::io::BufReader::new(s);
     let first = apex_server::proto::read_frame::<_, apex_server::proto::ServerMsg>(&mut r).unwrap().unwrap();
     match first {
-        apex_server::proto::ServerMsg::Build { id } => assert_eq!(id, apex_server::BUILD_ID),
+        apex_server::proto::ServerMsg::Build { protocol, id } => {
+            assert_eq!(protocol, apex_server::proto::PROTOCOL);
+            assert_eq!(id, apex_server::BUILD_ID);
+        }
         other => panic!("first frame: {other:?}"),
     }
     drop(r);

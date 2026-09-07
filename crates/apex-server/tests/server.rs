@@ -560,3 +560,31 @@ fn the_wheel_reaches_programs_that_read_the_mouse() {
     server.term_wheel(&mut log, t, 2, Some((0, 0)));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[B^[[B")), "{}", grid_text(&node));
 }
+
+#[test]
+fn newweb_opens_a_web_window_whose_name_follows_the_page() {
+    let (mut log, mut node, _col, mut server, _rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newweb https://example.com/").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
+    assert_eq!(node.window_name(w), "https://example.com/");
+    assert_eq!(node.window_kind(w), WinKind::Web);
+    assert!(node.state.window(w).unwrap().body_buffer().is_none());
+    // the page goes somewhere: the name follows, the place left is behind us
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::WebNavigate { window: w, url: "https://example.com/two".into() }]);
+    assert_eq!(node.window_name(w), "https://example.com/two");
+    let back = node.state.layout.nav_back.last().cloned().expect("a place to go back to");
+    assert_eq!(back.name, "https://example.com/");
+    // the same URL again is no move
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::WebNavigate { window: w, url: "https://example.com/two".into() }]);
+    assert_eq!(node.state.layout.nav_back.len(), 1);
+    // Back: no window shows that page now, so it is a place to open
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Nav { back: true }]);
+    let gotos = node.take_gotos();
+    assert_eq!(gotos.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), vec!["https://example.com/"]);
+    assert!(apex_core::is_url("https://example.com/") && apex_core::is_url("apexfile:///a") && !apex_core::is_url("/a/b") && !apex_core::is_url("a://"));
+    // Newweb alone is an error
+    node.exec(&mut log, ExecCtx::Top, "Newweb").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert!(errors_text(&node).contains("Newweb needs a URL"), "{}", errors_text(&node));
+}

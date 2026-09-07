@@ -47,6 +47,9 @@ impl Op {
 pub enum Body {
     Text(BufferId),
     Term(TermId),
+    /// A web page, rendered by the client; the URL is the window's name
+    /// (its tag's first word), nothing else is session state (WEB.md §2).
+    Web,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -219,6 +222,14 @@ pub struct PlumbRule {
     pub to: Option<RunTo>,
 }
 
+/// Is this name a URL (a web window's), not a path? `scheme://...`.
+pub fn is_url(name: &str) -> bool {
+    match name.split_once("://") {
+        Some((scheme, rest)) => !scheme.is_empty() && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)) && !rest.is_empty(),
+        None => false,
+    }
+}
+
 /// A place in the session: a window by name (a file's path), and where
 /// in it. Session state, so that a session re-attached elsewhere has the
 /// same headspace.
@@ -248,6 +259,7 @@ pub enum WinKind {
     Dir,
     Term,
     Errors,
+    Web,
 }
 
 impl WinKind {
@@ -257,6 +269,7 @@ impl WinKind {
             "dir" => Some(WinKind::Dir),
             "term" => Some(WinKind::Term),
             "errors" => Some(WinKind::Errors),
+            "web" => Some(WinKind::Web),
             _ => None,
         }
     }
@@ -266,6 +279,7 @@ impl WinKind {
             WinKind::Dir => "dir",
             WinKind::Term => "term",
             WinKind::Errors => "errors",
+            WinKind::Web => "web",
         }
     }
 }

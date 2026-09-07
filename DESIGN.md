@@ -499,6 +499,7 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Exec{ctx, text} · Edit{window, program} · Select{view, q0, q1}
   Live{window, by?}                                    a process behind a window
   Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
+  OpenWeb{col, url} · WebNavigate{window, url}         a web window; its page moved (WEB.md §2)
 ```
 
 *As built, versions:* the daemon's first frame on every connection is
@@ -930,7 +931,13 @@ over ssh, and the alternative (URL as server state, client-side rendering)
 breaks "all state on the server" for page state. *Decided:* the URL is
 the state, rendering is the client's, and network and file I/O go
 through the server on an I/O plane beside the log; see WEB.md, which
-also makes Preview a live pipe through a converter.
+also makes Preview a live pipe through a converter. *As built:*
+`Body::Web`, the URL as the window's name (its tag's first word, as a
+terminal's directory is), `Newweb URL` and `apex web open URL`
+(`Proposal::OpenWeb`), the client's `wry` view over the body, its
+navigations `WebNavigate` proposals that rename the window and push
+the place left onto the navigation stack; a `Goto` to a URL nobody
+shows opens a web window on it.
 
 ---
 

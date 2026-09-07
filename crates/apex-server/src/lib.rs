@@ -186,6 +186,9 @@ impl Server {
                         return h.dir.clone();
                     }
                 }
+                if win.body == Body::Web {
+                    return self.cwd.clone(); // a page has no directory here
+                }
             }
             let name = leader.window_name(w);
             let p = Path::new(&name);
@@ -747,7 +750,14 @@ impl Server {
                 }
                 self.term_paste(log, t, &text);
             }
-            "Newweb" => return Err(format!("{cmd}: not implemented")),
+            "Newweb" => {
+                // acme's word for a web window: on the URL given
+                let url = text[cmd.len()..].trim();
+                if url.is_empty() {
+                    return Err("Newweb needs a URL".into());
+                }
+                props.push(Proposal::OpenWeb { col, url: url.to_string() });
+            }
             _ => {
                 // a rule's verb offered in this window: the rules take it
                 if let Some(req) = self.verb_request(view, ctx, seq, text) {

@@ -235,6 +235,12 @@ Newterm.shell setting, else the daemon's $SHELL), or CMD through it (as
 Newterm does), and prints the terminal's id. Term send
 types TEXT into terminal TERM; a final newline is the Enter key. Term
 read prints the terminal's screen." },
+    Cmd { name: "web", usage: "apex web open URL", short: "web windows", flags: &[], run: web, long: "\
+Web open makes a web window on URL in the session, as Newweb URL in a
+tag does, and prints the window's id. The page is rendered by the
+client showing the session; only the URL is session state (its name in
+the tag), so a reattach loads the page anew, and where the page goes
+the name follows, with Back and Fwd along the navigation stack." },
     Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path")], run: plumb, long: "\
 Plumb sends TEXT through the session's plumbing rules from the current
 directory, as B3 on it would: the first rule that matches and is taken
@@ -401,7 +407,7 @@ Predicates (all given must hold):
 	-text=RE      the plumbed text (a verb's arguments) matches RE, whole;
 	              its groups bind $0..$9
 	-file=RE      the window's name matches RE
-	-kind=K       file, dir, term or errors
+	-kind=K       file, dir, term, errors or web
 	-isfile=EXPR  EXPR, expanded, is a file (relative to the window's directory)
 	-isdir=EXPR   ... a directory
 Actions (exactly one):
@@ -1205,6 +1211,23 @@ fn set(ctx: &Ctx, p: &Parsed) -> R {
             let attachment = std::env::var("apexattachment").ok().and_then(|a| a.parse::<u64>().ok()).map(AttachmentId);
             c.send(&ClientMsg::Set { key: key.clone(), value: value.clone(), attachment });
             let _ = c.step(Duration::from_millis(50));
+            Ok(())
+        }
+        _ => Err("usage".into()),
+    }
+}
+
+/// `apex web open URL`: a web window on URL.
+fn web(ctx: &Ctx, p: &Parsed) -> R {
+    match p.args.as_slice() {
+        [open, url] if open == "open" => {
+            let mut c = tool(ctx)?;
+            let col = c.node.state.layout.cols.first().map(|c| c.id).ok_or("no column")?;
+            let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
+            c.propose(Proposal::OpenWeb { col, url: url.clone() }, TIMEOUT)?;
+            wait(&mut c, |r| r.node.state.windows.keys().any(|w| !before.contains(w)))?;
+            let w = c.node.state.windows.keys().find(|w| !before.contains(w)).unwrap();
+            println!("{}", w.0);
             Ok(())
         }
         _ => Err("usage".into()),

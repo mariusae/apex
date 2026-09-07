@@ -63,7 +63,7 @@ impl Window {
     pub fn body_buffer(&self) -> Option<BufferId> {
         match self.body {
             Body::Text(b) => Some(b),
-            Body::Term(_) => None,
+            Body::Term(_) | Body::Web => None,
         }
     }
 }
@@ -574,6 +574,9 @@ impl State {
                 Body::Term(t) => {
                     h.update(&[2]);
                     h.update(&t.0.to_le_bytes());
+                }
+                Body::Web => {
+                    h.update(&[3]);
                 }
             }
             h.update(&[w.mono as u8, w.autoindent as u8, w.tagexpand as u8]);

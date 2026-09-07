@@ -19,9 +19,10 @@ mod shell;
 mod term_element;
 mod text_element;
 mod warp;
+mod web;
 
 use gpui::{
-    black, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
+    black, canvas, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
     WindowBounds, WindowOptions,
 };
 
@@ -116,6 +117,8 @@ impl Render for Acme {
         // a layout box is held (the innermost hitbox's style wins)
         let pointer = if self.dragging_box() { cursor::BOX_CURSOR } else { cursor::BIG_ARROW };
         let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden().cursor(pointer);
+        // web windows drawn this frame keep their native views; the rest hide
+        let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
         for col in &l.cols {
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
@@ -131,6 +134,19 @@ impl Render for Acme {
                     let body = match win.body {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
+                        Body::Web => {
+                            // the native view goes where this canvas lands
+                            webs_shown.insert(w);
+                            let me2 = me.clone();
+                            canvas(
+                                move |bounds, window, cx| {
+                                    me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .size_full()
+                            .into_any_element()
+                        }
                     };
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body));
                 }
@@ -139,6 +155,8 @@ impl Render for Acme {
         if let Some(m) = &self.menu {
             area = area.child(menu_element(m, font));
         }
+        let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
+        self.webs.settle(&webs_shown, |w| alive.contains(&w));
         let root = root.child(area);
         let root = match self.selector_panel(cx) {
             Some(panel) => root.child(panel),

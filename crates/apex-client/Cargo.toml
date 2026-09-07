@@ -18,3 +18,5 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", branch = "main"
 futures = "0.3"
 core-text = "21"
 objc = "0.2"
+# web windows: a native web view as a child of the gpui window (WEB.md §2)
+wry = { version = "0.56", features = ["mac-proxy"] }

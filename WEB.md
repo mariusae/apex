@@ -140,6 +140,16 @@ plane headlessly; it is the first thing to build after the frames.
 
 ### 2.1 State
 
+*As built (stage 4):* no web shard. `Body::Web` carries nothing; the
+URL is the window's name, the first word of its tag, exactly as a
+terminal's directory is (the buffer-less naming already existed), so
+`WebNavigate{window, url}` is a tag edit plus a `Visit` on the
+navigation stack, and `OpenWeb{col, url}` makes the window. Titles are
+not kept yet. `WinKind::Web` for rules (`-kind=web`). A `Goto` to a URL
+no window shows opens a web window on it (the daemon and the client
+both), which is also what Back does after a page moved on: a new window
+on the old page rather than the same window going back.
+
 A third body kind beside text and terminal:
 
 ```
@@ -173,6 +183,13 @@ Two ways to open one:
 on the same URL, not a shared page.
 
 ### 2.2 Rendering
+
+*As built (stage 4):* `client/web.rs` keeps one `wry` view per web
+window, placed by a `canvas` element at the body's rectangle every
+frame, hidden while the tools menu, the finder or the picker is up and
+when the layout does not draw the window, dropped with the window; a
+name that changed under it (a Goto, another client) is loaded. The
+view's traffic is its own until stage 5.
 
 *Spike (stage 3), done:* a `wry` 0.56 child view built with
 `build_as_child` on gpui's `Window` (which implements

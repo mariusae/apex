@@ -419,6 +419,37 @@ impl Node {
         Ok(id)
     }
 
+    /// A web window on `url` in `col` (WEB.md §2): its tag names the URL,
+    /// as a terminal's names its directory; the client renders the page.
+    pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
+        let id = WindowId(self.alloc());
+        let tag = self.create_buffer(log, "", &format!("{url} Del Snarf | Look "), None)?;
+        self.create_shard(log, Shard::Window(id))?;
+        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Web }))?;
+        self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
+        self.place(log, col, id, None)?;
+        Ok(id)
+    }
+
+    /// A web window went somewhere: its name follows the page, and the
+    /// place it left goes onto the navigation stack, so Back returns.
+    pub fn web_navigate(&mut self, log: &mut Log, w: WindowId, url: &str) -> Result<()> {
+        let win = self.state.window(w)?;
+        if win.body != Body::Web {
+            return Err(CoreError::Missing(format!("window {w}: not a web window")));
+        }
+        let from = self.window_name(w);
+        if from == url {
+            return Ok(());
+        }
+        let tag = win.tag;
+        let rest = self.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
+        let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
+        self.set_content(log, tag, &format!("{url} {rest}"))?;
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: Some(Loc { name: from, pos: Pos::Keep }), to: Loc { name: url.to_string(), pos: Pos::Keep } }))?;
+        Ok(())
+    }
+
     /// Put a (new) window into a column (acme's `coladd`) and record the
     /// mouse warp acme makes: near the layout box, in the body.
     fn place(&mut self, log: &mut Log, col: ColumnId, w: WindowId, y: Option<i32>) -> Result<()> {
@@ -567,6 +598,9 @@ impl Node {
         let Ok(w) = self.state.window(window) else { return WinKind::File };
         if matches!(w.body, Body::Term(_)) {
             return WinKind::Term;
+        }
+        if w.body == Body::Web {
+            return WinKind::Web;
         }
         let name = self.window_name(window);
         if name.ends_with("+Errors") {

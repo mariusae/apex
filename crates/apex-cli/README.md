@@ -147,7 +147,9 @@ it to the shell (an old command line again), Send, and Interrupt
 and EOF in the tools menu, and `Snarfout` (in terminals too): the last
 command as `$ cmd`, the prompt normalised, and its output, found between
 the last two prompts, into the snarf buffer. `Win` in a tag runs it in the window's
-directory with `$acmeshell` (rc); `Newterm` is the real terminal running
+directory with `$acmeshell` (rc); `Newweb URL` (or `apex web open URL`)
+is a web window, the page rendered by the client and the URL its name;
+`Newterm` is the real terminal running
 the user's shell. `Kill Win` ends it.
 
 ### Language servers

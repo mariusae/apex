@@ -19,13 +19,14 @@ use apex_core::*;
 use apex_server::proto::{ClientMsg, FileFrame, IoFrame};
 use apex_server::providers::SessionUrl;
 use apex_server::remote::{Link, Wake};
-use apex_server::{PlumbReq, PlumbStep, perform, Server, ServerEvent, TermKey};
+use apex_server::{PlumbReq, PlumbStep, Proposal, perform, Server, ServerEvent, TermKey};
 
 use crate::shell::{Selector, TITLEBAR_HEIGHT};
 use crate::menu;
 use crate::text_element::font_for;
 
 use crate::term_element::TermLayout;
+use crate::web::{WebEvent, Webs};
 use crate::text_element::{Source, TextLayout};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -223,6 +224,8 @@ pub struct Acme {
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
+    /// The native views of web windows (WEB.md §2).
+    pub webs: Webs,
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
     mouse: Mouse,
     want_visible: HashSet<ViewId>,
@@ -620,6 +623,7 @@ impl Acme {
         self.chooser = false;
         self.layouts.clear();
         self.term_layouts.clear();
+        self.webs = Webs::new();
         self.hl = None;
         self.mouse = Mouse::default();
         self.want_visible.clear();
@@ -798,6 +802,7 @@ impl Acme {
             focus: cx.focus_handle(),
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
+            webs: Webs::new(),
             hl: None,
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
@@ -811,6 +816,7 @@ impl Acme {
     /// runs after every input handler and on every frame, so nothing the
     /// user typed is ever more than a frame away from the daemon.
     pub fn sync(&mut self) {
+        self.web_events();
         // acme's winsettag: Undo/Redo/Put/Get come and go with the state
         let _ = self.node.update_tags(&mut self.log);
         self.track_closed();
@@ -1830,6 +1836,14 @@ impl Acme {
             }
             _ => {
                 let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) else { return };
+                if apex_core::is_url(&loc.name) {
+                    // a page: a web window, here and now (we lead)
+                    perform(&mut self.node, &mut self.log, vec![Proposal::OpenWeb { col, url: loc.name.clone() }]);
+                    if let Ok(Some(w)) = self.node.land(&mut self.log, &loc) {
+                        self.want_visible.insert(ViewId::Body(w));
+                    }
+                    return;
+                }
                 self.pending_goto = Some(loc.clone());
                 match &mut self.backend {
                     Backend::Remote(link) => link.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: loc.name.clone() }),
@@ -1840,6 +1854,42 @@ impl Acme {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// A web window's body landed at `bounds`: its native view goes there
+    /// (built on the window's name, the URL, the first time), hidden
+    /// while a gpui overlay would be under it.
+    pub fn web_place(&mut self, w: WindowId, bounds: gpui::Bounds<Pixels>, window: &Window) {
+        let url = self.node.window_name(w);
+        if url.is_empty() {
+            return;
+        }
+        let visible = !self.overlay_up();
+        self.webs.place(w, &url, bounds, window, visible);
+    }
+
+    /// Is a gpui overlay up that a native view would hide?
+    fn overlay_up(&self) -> bool {
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some()
+    }
+
+    /// What the pages did: a navigation moves the window's name and the
+    /// navigation stack (`WebNavigate`); titles are not kept yet.
+    fn web_events(&mut self) {
+        if self.webs.is_empty() {
+            return;
+        }
+        for (w, ev) in self.webs.drain() {
+            match ev {
+                WebEvent::Navigated(url) => {
+                    self.webs.navigated(w, &url);
+                    if self.node.window_name(w) != url {
+                        perform(&mut self.node, &mut self.log, vec![Proposal::WebNavigate { window: w, url }]);
+                    }
+                }
+                WebEvent::Title(_) => {}
             }
         }
     }

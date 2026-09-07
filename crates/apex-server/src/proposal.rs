@@ -16,6 +16,11 @@ pub enum Proposal {
     NewWindow { col: ColumnId, name: String },
     /// A window on a terminal the server created.
     TermWindow { col: ColumnId, name: String, term: TermId },
+    /// A web window on `url` in `col` (`Newweb URL`, `apex web open`).
+    OpenWeb { col: ColumnId, url: String },
+    /// The client rendering a web window says where its page went: the
+    /// window's name follows, the place left goes on the navigation stack.
+    WebNavigate { window: WindowId, url: String },
     /// Replace a buffer's content: unconditionally (`Get`), or only if the
     /// buffer is still at `version` (a watched file changed) — a buffer
     /// edited meanwhile is flagged stale instead.
@@ -102,6 +107,15 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.catch_up(log)?;
             let w = node.open_term_window(log, col, &name, term)?;
             Ok(Some(w))
+        }
+        Proposal::OpenWeb { col, url } => {
+            node.catch_up(log)?;
+            let w = node.open_web_window(log, col, &url)?;
+            Ok(Some(w))
+        }
+        Proposal::WebNavigate { window, url } => {
+            node.web_navigate(log, window, &url)?;
+            Ok(None)
         }
         Proposal::SetContent { buffer, version, text, hash } => {
             let b = node.state.buffer(buffer)?;
