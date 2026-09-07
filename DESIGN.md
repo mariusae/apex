@@ -671,7 +671,7 @@ holds no platform knowledge. `apex B` is plan 9's `B`, and rc's rcmain
 defines `B` in apex terminals. The one-line rule form was chosen over
 plan 9's rules file: each rule prints as the flags that made it.
 
-*As built (`apex lsp`, crate `apex-lsp`):* unprivileged, as intended: a
+*As built (`apex tool lsp`, crate `apex-tools`):* unprivileged, as intended: a
 tool attachment named `lsp` that keeps a replica, reads `Entries` before
 applying them to turn `BufferOp::Edit` into incremental `didChange`
 (positions computed against the text as it still is), proposes
@@ -681,7 +681,13 @@ identifier at priority 10, the verbs `Def Refs Type Hov Sig Fmt Rn` in
 the tools menu. Servers from settings (`lsp.LANG`), one per workspace
 root found by markers; diagnostics in `root/+lsp`. Not yet: completion,
 format on Put (needs rules ahead of builtins), semantic predicates for
-rules ("in a comment").
+rules ("in a comment"). `apex tool win` (same crate) is acme's win
+ported from win.c: the shell on a cooked, echoing pty, the output point
+and typing run kept from the buffer's entry stream (our own inserts told
+apart by a queue of what we proposed), echo cancelled, ^C/DEL/^D as win
+reads them, raw mode when echo is off; `Win` in the top tag runs it as a
+command named Win. Unbound control keys are inserted as acme inserts
+them, which is what lets win see ^D.
 
 Typed client libraries (Rust, Go) are generated from the schema for programs
 that want more than the CLI.

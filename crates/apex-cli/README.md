@@ -9,7 +9,7 @@ apex [-socket=PATH] [-session=NAME] [-ensure-server] <command> [arguments]
 
 server, ls, stop, new-session, rename-session, attach
 new, open, win, text, edit, sel, exec, events, term
-plumb, B, env, set, cat, lsp, label, awd, version
+plumb, B, env, set, cat, tool, label, awd, version
 ```
 
 Flags are Go's: `-flag=value`, or `-flag` for a boolean, before the
@@ -130,10 +130,19 @@ is opened as a path, from the current directory. The session starts with
 three rules at priority -100 that open `name` and `name:line` when they
 exist, as B3 always did.
 
-## Language servers
+## Tools: win and lsp
 
-`apex lsp` is a tool like any other, started from the host's profile
-(`apex lsp &`) or a terminal; it attaches as `lsp`, and nothing in the
+`apex tool win [CMD...]` is acme's win, a shell in a text window: the
+editable transcript, with the shell's output at the output point and
+your typing sent line by line, ^C/DEL to interrupt, Send, and Interrupt
+and EOF in the tools menu. `Win` in a tag runs it in the window's
+directory with `$acmeshell` (rc); `Newterm` is the real terminal running
+the user's shell. `Kill Win` ends it.
+
+### Language servers
+
+`apex tool lsp` is a tool like any other, started from the host's profile
+(`apex tool lsp &`) or a terminal; it attaches as `lsp`, and nothing in the
 daemon knows it. It runs one language server per workspace root for the
 files open in the session (`lsp.LANG` names the command: `apex set
 lsp.go gopls`; gopls, rust-analyzer, pyright, typescript-language-server

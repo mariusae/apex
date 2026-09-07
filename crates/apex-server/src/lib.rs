@@ -612,6 +612,16 @@ impl Server {
                 let rest = text[cmd.len()..].trim();
                 props.push(self.new_term(log, col, &dir, if rest.is_empty() { None } else { Some(rest) })?);
             }
+            "Win" => {
+                // acme's win: the tool, run as a command named Win (so Kill
+                // Win ends it), with $acmeshell or the command given
+                let rest = text[cmd.len()..].trim();
+                let apex = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_else(|_| "apex".into());
+                let command = format!("{} tool win {rest}", shell_quote(&apex));
+                let env = self.command_env(view, ctx);
+                self.spawn_shell_as("Win".into(), ctx, Some(seq), command, dir, None, ShellMode::Errors { dir: errdir }, env);
+                return Ok(None);
+            }
             "Kill" => {
                 // acme's xkill: every running command whose name is given
                 let names: Vec<&str> = words.collect();

@@ -2008,6 +2008,12 @@ impl Acme {
                     let _ = self.node.select(&mut self.log, v, e, e);
                     typed = false;
                 }
+                // acme inserts any other control character as itself: win
+                // reads ^D and ^C out of the text
+                k if k.len() == 1 && k.as_bytes()[0].is_ascii_lowercase() => {
+                    let c = (k.as_bytes()[0] - b'a' + 1) as char;
+                    self.type_text(v, &c.to_string());
+                }
                 _ => typed = false,
             }
         } else {

@@ -255,12 +255,28 @@ owner. Settings in use:
 
 	Preview.EXT APP   the app that previews files with that extension
 	Preview APP       the app for previews no other setting names
-	lsp.LANG CMD      the language server for LANG (apex help lsp)" },
+	lsp.LANG CMD      the language server for LANG (apex help tool)" },
     Cmd { name: "cat", usage: "apex cat PATH", short: "the bytes of a file on the host", flags: &[], run: cat, long: "\
 Cat prints the file PATH as it is on the session's host, whatever machine
 the command runs on." },
-    Cmd { name: "lsp", usage: "apex lsp", short: "language servers, as a tool", flags: &[], run: lsp, long: "\
-Lsp attaches to the session as the tool named lsp and runs language
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+Tool runs one of the tools that come with apex. None is privileged: each
+attaches to the session like anything else on this command line and works
+through the same protocol.
+
+apex tool win [CMD...] is acme's win: a shell ($acmeshell, rc by default;
+or CMD) in a text window named dir/-host in the last column, the editable
+transcript. The shell's output is inserted at the output point; what you
+type after it goes to the shell at each newline (or ^D), and the point
+moves past it; ^C or DEL typed interrupts and drops the typing; Send
+appends the snarf buffer and a newline; the tools menu offers Interrupt
+and EOF; labels in the output (awd) name the window. A program that
+turns echo off (a password) is served raw: keys go at once and leave the
+window. Win in a tag runs this in the window's directory; Kill Win ends
+it. Newterm is the other kind of shell window: a real terminal, running
+the user's shell.
+
+apex tool lsp attaches as the tool named lsp and runs language
 servers for the files open in it, one per workspace root: gopls,
 rust-analyzer, pyright, typescript-language-server and clangd unless a
 setting lsp.LANG names another command. Documents are opened as buffers
@@ -274,7 +290,7 @@ Fmt Rn. Definitions open and select; references, hover and signatures go
 to +Errors; Fmt replaces the text with the server's formatting; Rn NAME
 renames.
 
-Start it from the host's profile: apex lsp & (see apex help scripts).
+Start it from the host's profile: apex tool lsp & (see apex help scripts).
 APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr." },
     Cmd { name: "label", usage: "apex label TEXT", short: "name this terminal's window", flags: &[], run: label_cmd, long: "\
 Label names the window of the terminal it runs in, through the escape
@@ -317,7 +333,7 @@ on its host sources ~/.apex/profile there, then the creator's
 like any command, named profile in the top row with its output in
 +Errors, with apexsession, APEX_SOCKET and apexclient set, so apex in it
 configures the session: apex open, apex exec Newcol, apex env, apex set,
-apex plumb rule add, apex lsp &.
+apex plumb rule add, apex tool lsp &.
 
 Every time a client attaches, its ~/.apex/attach runs on the host the
 same way, with apexattachment naming the attaching client, so apex set
@@ -539,8 +555,15 @@ fn version(_: &Ctx, _: &Parsed) -> R {
     Ok(())
 }
 
-fn lsp(ctx: &Ctx, _: &Parsed) -> R {
-    apex_lsp::run(&ctx.socket, &ctx.session)
+fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    match p.args.first().map(String::as_str) {
+        Some("lsp") => apex_tools::lsp::run(&ctx.socket, &ctx.session),
+        Some("win") => {
+            let dir = std::env::current_dir().map_err(|e| e.to_string())?;
+            apex_tools::win::run(&ctx.socket, &ctx.session, &dir, &p.args[1..])
+        }
+        _ => Err("usage".into()),
+    }
 }
 
 fn rename_session(ctx: &Ctx, p: &Parsed) -> R {

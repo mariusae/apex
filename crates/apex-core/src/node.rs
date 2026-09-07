@@ -18,7 +18,7 @@ use crate::tiling::{self, Rect, Warp};
 /// are kept up to date by [`Node::update_tags`], as acme's `winsettag`.
 pub const WIN_TAG_SUFFIX: &str = " Del Snarf | Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
-pub const TOP_TAG: &str = "Newcol Newterm Kill Putall Exit ";
+pub const TOP_TAG: &str = "Newcol Newterm Win Kill Putall Exit ";
 pub const ERRORS: &str = "+Errors";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

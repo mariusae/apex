@@ -200,8 +200,8 @@ version = "0.1.0"
 dependencies = [
  "apex-core",
  "apex-edit",
- "apex-lsp",
  "apex-server",
+ "apex-tools",
  "serde_json",
 ]
 
@@ -244,15 +244,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apex-lsp"
-version = "0.1.0"
-dependencies = [
- "apex-core",
- "apex-server",
- "serde_json",
-]
-
-[[package]]
 name = "apex-server"
 version = "0.1.0"
 dependencies = [
@@ -266,6 +257,16 @@ dependencies = [
  "postcard",
  "serde",
  "sha2",
+]
+
+[[package]]
+name = "apex-tools"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "libc",
+ "serde_json",
 ]
 
 [[package]]

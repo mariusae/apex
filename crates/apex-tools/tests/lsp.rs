@@ -55,7 +55,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     // the tool
     let s2 = sock.clone();
     std::thread::spawn(move || {
-        let _ = apex_lsp::run(&s2, "main");
+        let _ = apex_tools::lsp::run(&s2, "main");
     });
     // its rules arrive, and the diagnostics window with the opened text's length
     assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Fmt")), "rules installed");
@@ -78,6 +78,6 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert!(until(&mut c, |n| text_of(n, "main.go").as_deref() == Some("package main\n\nfunc f() {}\n")), "formatted: {:?}", text_of(&c.node, "main.go"));
     // what the verbs menu would offer this window
     let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w));
-    assert_eq!(verbs, apex_lsp::VERBS.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    assert_eq!(verbs, apex_tools::lsp::VERBS.iter().map(|s| s.to_string()).collect::<Vec<_>>());
     let _ = std::fs::remove_dir_all(&root);
 }

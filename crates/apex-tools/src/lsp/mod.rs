@@ -1,4 +1,4 @@
-//! `apex lsp`: language servers as an apex tool. It is not privileged: it
+//! `apex tool lsp`: language servers as an apex tool. It is not privileged: it
 //! attaches like any tool, keeps a replica, reads buffer edits off the
 //! entry stream to feed servers incrementally, proposes what they answer,
 //! and installs plumbing rules that name it. Servers come from settings
@@ -259,6 +259,37 @@ pub fn run(socket: &Path, session: &str) -> Result<(), String> {
 }
 
 impl Tool {
+
+    /// One message, through `before` first; false when the link ended.
+    fn step(&mut self, timeout: Duration) -> bool {
+        match self.remote.link.rx.recv_timeout(timeout) {
+            Ok(m) => {
+                self.before(&m);
+                self.remote.handle(m)
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => true,
+            Err(_) => false,
+        }
+    }
+
+    /// Propose and wait for the answer, every message on the way seen
+    /// by `before` (Remote::propose would apply them behind our back).
+    fn propose(&mut self, p: Proposal, timeout: Duration) -> Result<Option<WindowId>, String> {
+        let id = self.remote.link.propose(p);
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(r) = self.remote.link.applied.remove(&id) {
+                return r;
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return Err("timed out waiting for the leader".into());
+            }
+            if !self.step(left.min(Duration::from_millis(50))) {
+                return Err("connection closed".into());
+            }
+        }
+    }
     fn setting(&self, key: &str) -> Option<String> {
         self.remote.node.state.meta.setting(self.remote.attachment(), key).map(String::from)
     }
@@ -418,7 +449,7 @@ impl Tool {
     }
 
     fn errors(&mut self, dir: Option<&str>, text: &str) {
-        let _ = self.remote.propose(Proposal::Errors { dir: dir.map(String::from), text: text.to_string() }, TIMEOUT);
+        let _ = self.propose(Proposal::Errors { dir: dir.map(String::from), text: text.to_string() }, TIMEOUT);
     }
 
     /// A message from a server: an answer to something we asked, or a
@@ -505,12 +536,12 @@ impl Tool {
                     return;
                 }
                 let Some(col) = node.state.layout.cols.last().map(|c| c.id) else { return };
-                match self.remote.propose(Proposal::NewWindow { col, name: name.clone() }, TIMEOUT) {
+                match self.propose(Proposal::NewWindow { col, name: name.clone() }, TIMEOUT) {
                     Ok(Some(w)) => {
                         // its entries may still be on their way
                         let deadline = std::time::Instant::now() + TIMEOUT;
                         while self.remote.node.state.window(w).is_err() && std::time::Instant::now() < deadline {
-                            let _ = self.remote.step(Duration::from_millis(20));
+                            let _ = self.step(Duration::from_millis(20));
                         }
                         w
                     }
@@ -520,7 +551,7 @@ impl Tool {
         };
         let Some(buffer) = self.remote.node.state.window(w).ok().and_then(|x| x.body_buffer()) else { return };
         let hash = Text::new(&text).content_hash();
-        let _ = self.remote.propose(Proposal::SetContent { buffer, version: None, text, hash }, TIMEOUT);
+        let _ = self.propose(Proposal::SetContent { buffer, version: None, text, hash }, TIMEOUT);
     }
 
     /// A rule named us: B3 on an identifier, or a verb from the menu.
@@ -637,7 +668,7 @@ impl Tool {
                 }
                 let len = buf.text.len();
                 let version = buf.version;
-                self.remote.propose(Proposal::ReplaceRange { dir: Some(dir.to_string()), buffer, version, q0: 0, q1: len, text: new }, TIMEOUT).is_ok()
+                self.propose(Proposal::ReplaceRange { dir: Some(dir.to_string()), buffer, version, q0: 0, q1: len, text: new }, TIMEOUT).is_ok()
             }
             "Rn" => {
                 // the workspace edit: open buffers through the session, the
@@ -666,7 +697,7 @@ impl Tool {
                     match open {
                         Some((b, version, text, len)) => {
                             let new = pos::apply_edits(&text, &edits);
-                            let _ = self.remote.propose(Proposal::ReplaceRange { dir: Some(dir.to_string()), buffer: b, version, q0: 0, q1: len, text: new }, TIMEOUT);
+                            let _ = self.propose(Proposal::ReplaceRange { dir: Some(dir.to_string()), buffer: b, version, q0: 0, q1: len, text: new }, TIMEOUT);
                         }
                         None => {
                             if let Ok(s) = std::fs::read_to_string(&path) {
@@ -696,7 +727,7 @@ impl Tool {
             self.remote.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: name.clone() });
             let deadline = std::time::Instant::now() + TIMEOUT;
             while w.is_none() && std::time::Instant::now() < deadline {
-                let _ = self.remote.step(Duration::from_millis(50));
+                let _ = self.step(Duration::from_millis(50));
                 w = find(&self.remote.node);
             }
         }
@@ -705,7 +736,7 @@ impl Tool {
         let Ok(buf) = self.remote.node.state.buffer(b) else { return false };
         let q0 = pos::offset(&buf.text, &range["start"]);
         let q1 = pos::offset(&buf.text, &range["end"]);
-        self.remote.propose(Proposal::Select { view: ViewId::Body(w), q0, q1: q1.max(q0) }, TIMEOUT).is_ok()
+        self.propose(Proposal::Select { view: ViewId::Body(w), q0, q1: q1.max(q0) }, TIMEOUT).is_ok()
     }
 }
 
