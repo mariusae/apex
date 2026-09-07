@@ -400,3 +400,30 @@ fn a_watched_file_streams_its_changes_until_unwatched() {
     assert!(!c.link.files.iter().any(|(q, b)| *q == p && b.as_deref() == Ok(b"three\n")), "still streaming after unwatch");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn ps_lists_running_commands_and_kill_ends_them() {
+    let sock = daemon();
+    ok(&sock, &["exec", "sleep 30"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["ps"]).contains("\tsleep\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ps = ok(&sock, &["ps"]);
+    let line = ps.lines().find(|l| l.contains("\tsleep\t")).unwrap_or_else(|| panic!("{ps}"));
+    let fields: Vec<&str> = line.split('\t').collect();
+    assert!(fields[0].parse::<u32>().is_ok(), "pid: {line}");
+    assert_eq!(fields[1], "sleep");
+    assert_eq!(fields[2], "top");
+    assert_eq!(fields[5], "sleep 30");
+    // an unknown name is an error; the right one ends it
+    let (success, _, err) = apex(&sock, &["kill", "nothing-runs-here"]);
+    assert!(!success && err.contains("no such command"), "{err}");
+    let left = ok(&sock, &["kill", "sleep"]);
+    assert!(!left.contains("\tsleep\t"), "{left}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["ps"]).contains("\tsleep\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ok(&sock, &["ps"]).contains("\tsleep\t"));
+}

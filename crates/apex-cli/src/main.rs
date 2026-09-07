@@ -214,6 +214,19 @@ JSON object per line: the shard, its sequence number, the attachment that
 appended it, and the operation. It runs until the connection ends. This
 is acme's event file, generalised: a tool that wants to follow edits,
 selections, or windows reads this." },
+    Cmd { name: "ps", usage: "apex ps", short: "the commands the session is running", flags: &[], run: ps, long: "\
+Ps lists the commands the session's server is running: what B2 started
+from a tag (shell commands, Win, the profile and attach scripts, tools
+started from them), as the top row names them. One per line: the pid,
+the name (the first word, what Kill and apex kill go by), where it was
+started from (a window id, or top), when, its directory, and the whole
+command line. Terminals' shells are not commands and are not listed;
+their windows show them." },
+    Cmd { name: "kill", usage: "apex kill NAME|PID...", short: "end running commands", flags: &[], run: kill, long: "\
+Kill ends every running command named NAME, or the one with pid PID, as
+Kill in the top row does: the command's process group is sent SIGTERM,
+so what a shell started goes with it. The commands left running are
+listed afterwards, as ps lists them." },
     Cmd { name: "term", usage: "apex term new [CMD...] | apex term send TERM TEXT | apex term read TERM", short: "terminals", flags: &[], run: term, long: "\
 Term new makes a terminal window running the user's shell, or CMD
 through it (as Newterm does), and prints the terminal's id. Term send
@@ -549,6 +562,41 @@ fn ls(ctx: &Ctx, _: &Parsed) -> R {
 
 fn stop(ctx: &Ctx, _: &Parsed) -> R {
     apex_server::remote::stop(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))
+}
+
+fn print_procs(procs: &[apex_server::Running]) {
+    for r in procs {
+        let from = match r.ctx {
+            ExecCtx::Window(w) => w.0.to_string(),
+            ExecCtx::Column(c) => format!("col {c}"),
+            ExecCtx::Top => "top".into(),
+        };
+        let started = std::time::UNIX_EPOCH + Duration::from_secs(r.started);
+        let ago = std::time::SystemTime::now().duration_since(started).map(|d| d.as_secs()).unwrap_or(0);
+        let when = if ago < 60 { format!("{ago}s ago") } else if ago < 3600 { format!("{}m ago", ago / 60) } else { format!("{}h{:02}m ago", ago / 3600, (ago % 3600) / 60) };
+        println!("{}\t{}\t{from}\t{when}\t{}\t{}", r.pid, r.name, r.dir, r.cmd);
+    }
+}
+
+fn ps(ctx: &Ctx, _: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    print_procs(&c.ps(TIMEOUT)?);
+    Ok(())
+}
+
+fn kill(ctx: &Ctx, p: &Parsed) -> R {
+    if p.args.is_empty() {
+        return Err("usage".into());
+    }
+    let mut c = tool(ctx)?;
+    let before = c.ps(TIMEOUT)?;
+    let known = |t: &String| before.iter().any(|r| r.name == *t || r.pid.to_string() == *t);
+    if let Some(t) = p.args.iter().find(|t| !known(t)) {
+        return Err(format!("{t}: no such command; apex ps lists them"));
+    }
+    let left = c.kill(p.args.clone(), TIMEOUT)?;
+    print_procs(&left);
+    Ok(())
 }
 
 fn version(_: &Ctx, _: &Parsed) -> R {

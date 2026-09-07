@@ -8,7 +8,7 @@ apex help <command> | <topic>              what one does; apex <command> -h is t
 apex [-socket=PATH] [-session=NAME] [-ensure-server] <command> [arguments]
 
 server, ls, stop, new-session, rename-session, attach
-new, open, win, text, edit, sel, exec, events, term
+new, open, win, text, edit, sel, exec, events, term, ps, kill
 plumb, B, env, set, cat, tool, label, awd, version
 ```
 

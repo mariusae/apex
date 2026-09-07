@@ -72,6 +72,8 @@ pub struct Link {
     pub client_asks: Vec<(u64, String, String)>,
     /// Files read from the host, after a `ReadFile`.
     pub files: Vec<(String, Result<Vec<u8>, String>)>,
+    /// The running commands, after a `Ps` or `Kill`.
+    pub ps: Option<Vec<crate::Running>>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
     next_id: u64,
@@ -191,7 +193,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), files: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), files: Vec::new(), ps: None, last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -287,6 +289,7 @@ impl Link {
             ServerMsg::Plumb { id, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups, at, sel }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::File { path, bytes } => self.files.push((path, bytes)),
+            ServerMsg::Ps { procs } => self.ps = Some(procs),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
             }
@@ -548,6 +551,20 @@ impl Remote {
             let i = l.files.iter().position(|(p, _)| *p == want)?;
             Some(l.files.remove(i).1)
         })?
+    }
+
+    /// The commands the server runs now.
+    pub fn ps(&mut self, timeout: std::time::Duration) -> Result<Vec<crate::Running>, String> {
+        self.link.ps = None;
+        self.send(&ClientMsg::Ps);
+        self.wait_for(timeout, |l| l.ps.take())
+    }
+
+    /// End running commands by name or pid; what is left.
+    pub fn kill(&mut self, targets: Vec<String>, timeout: std::time::Duration) -> Result<Vec<crate::Running>, String> {
+        self.link.ps = None;
+        self.send(&ClientMsg::Kill { targets });
+        self.wait_for(timeout, |l| l.ps.take())
     }
 
     /// Subscribe to a file on the host: its bytes now, and after each

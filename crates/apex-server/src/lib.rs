@@ -59,10 +59,18 @@ pub enum ShellMode {
 
 /// A command the server started and has not seen finish: `Kill name`
 /// ends every one whose first word is `name`, as acme's does.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Running {
     pub pid: u32,
+    /// As the top row and `Kill` know it: the command's first word.
     pub name: String,
+    /// The whole command line, as the shell got it.
+    pub cmd: String,
+    pub dir: String,
+    /// Where it was started from.
+    pub ctx: ExecCtx,
+    /// Seconds since the epoch.
+    pub started: u64,
 }
 
 /// The server. `node` is its replica as the `SERVER` attachment: it leads
@@ -509,6 +517,29 @@ impl Server {
         }
     }
 
+    /// The commands running now: what the top row names and `Kill` ends.
+    pub fn processes(&self) -> Vec<Running> {
+        self.running.lock().unwrap().clone()
+    }
+
+    /// acme's xkill: end every running command whose name (or pid) is
+    /// `target`, with its process group (rc and what it started). How
+    /// many were signalled.
+    pub fn kill(&self, target: &str) -> usize {
+        let running = self.running.lock().unwrap().clone();
+        let mut n = 0;
+        for r in running {
+            if r.name == target || r.pid.to_string() == target {
+                // SAFETY: a plain signal to a group we made
+                unsafe {
+                    libc::kill(-(r.pid as i32), libc::SIGTERM);
+                }
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// Perform every pending exec addressed to the server, as seen in
     /// `view`. Returns the proposals that carry the results.
     pub fn poll_execs(&mut self, log: &mut Log, view: &Node) -> Vec<Proposal> {
@@ -624,17 +655,8 @@ impl Server {
             }
             "Kill" => {
                 // acme's xkill: every running command whose name is given
-                let names: Vec<&str> = words.collect();
-                let running = self.running.lock().unwrap().clone();
-                for r in running {
-                    if names.iter().any(|n| *n == r.name) {
-                        // the command runs in its own process group (rc and
-                        // what it started): end all of it
-                        // SAFETY: a plain signal to a group we made
-                        unsafe {
-                            libc::kill(-(r.pid as i32), libc::SIGTERM);
-                        }
-                    }
+                for name in words {
+                    self.kill(name);
                 }
             }
             "Send" => {
@@ -676,7 +698,7 @@ impl Server {
         // acme's waitthread: the name goes into the top row while it runs
         self.started.push(Proposal::CommandStart { name: name.clone() });
         std::thread::spawn(move || {
-            let (out, err, exit) = shell_in_as(&name, &cmd, &dir, stdin, Some(running), &env);
+            let (out, err, exit) = shell_in_ctx(&name, ctx, &cmd, &dir, stdin, Some(running), &env);
             let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit });
         });
     }
@@ -1229,6 +1251,11 @@ pub fn shell_quote(s: &str) -> String {
 
 /// `shell_in`, the command known (to `Kill` and the top row) as `name`.
 pub fn shell_in_as(name: &str, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String) {
+    shell_in_ctx(name, ExecCtx::Top, cmd, dir, input, running, env)
+}
+
+/// `shell_in_as`, recording where it was started from.
+pub fn shell_in_ctx(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String) {
     let mut command = Command::new(command_shell());
     // acme's runproc clears these before setting its own
     for k in ["acmeaddr", "winid", "%", "samfile"] {
@@ -1253,7 +1280,8 @@ pub fn shell_in_as(name: &str, cmd: &str, dir: &Path, input: Option<String>, run
     };
     let pid = child.id();
     if let Some(r) = &running {
-        r.lock().unwrap().push(Running { pid, name: name.to_string() });
+        let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        r.lock().unwrap().push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: dir.display().to_string(), ctx, started });
     }
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         std::thread::spawn(move || {

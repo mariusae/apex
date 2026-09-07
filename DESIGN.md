@@ -533,7 +533,10 @@ a UI that attaches later takes over what they did. `apex attach` starts
 the daemon if the socket does not answer. Implemented: `server ls
 new-session attach [-stdio] new open win text edit sel exec events term
 plumb B env set cat lsp label awd version`; flags are Go's (`-flag=value`)
-and `apex help` documents everything, `apex help <topic>` included; `WIN` is an id or a unique substring of a window's name. Not yet:
+and `apex help` documents everything, `apex help <topic>` included;
+`apex ps` and `apex kill` see and end what the server runs (the
+`Running` list behind the top row's names: pid, name, origin, start
+time, directory, command line); `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.
 
 Every session is a URL: `local:///name` on this machine's daemon

@@ -553,6 +553,21 @@ impl Daemon {
                 self.send(id, ServerMsg::File { path, bytes });
                 return;
             }
+            ClientMsg::Ps => {
+                let procs = s.server.processes();
+                self.send(id, ServerMsg::Ps { procs });
+                return;
+            }
+            ClientMsg::Kill { targets } => {
+                for t in &targets {
+                    s.server.kill(t);
+                }
+                // a moment for the groups to go, then what is left
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let procs = s.server.processes();
+                self.send(id, ServerMsg::Ps { procs });
+                return;
+            }
             ClientMsg::Watch { path } => {
                 s.server.subscribe(&s.view, Path::new(&path));
                 if let Some(c) = self.conns.get_mut(&id) {

@@ -69,6 +69,10 @@ pub enum ClientMsg {
     /// The bytes of a file on the host, for a client that shows or
     /// previews it: answered by `File`.
     ReadFile { path: String },
+    /// The commands the server is running (`Ps` answers), and ending them
+    /// by name or pid (acme's Kill; `Ps` answers with what is left).
+    Ps,
+    Kill { targets: Vec<String> },
     /// `ReadFile`, and again with every change to the file until
     /// `Unwatch`, this connection goes, or (a UI) it is fenced.
     Watch { path: String },
@@ -117,6 +121,7 @@ pub enum ServerMsg {
     Plumb { id: u64, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
     RuleAdded { id: RuleId },
     File { path: String, bytes: Result<Vec<u8>, String> },
+    Ps { procs: Vec<crate::Running> },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
