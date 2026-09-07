@@ -830,5 +830,11 @@ fn preview_is_a_live_pipe_through_a_converter() {
     }
     let out = String::from_utf8_lossy(&md.wait_with_output().unwrap().stdout).to_string();
     assert!(out.starts_with("<!doctype html>") && out.contains("<h1>Title</h1>") && out.contains("<table>") && out.contains("checked"), "{out}");
+    // a marker with the source line before every block: the title on 1,
+    // the list item on 3, the table on 5
+    let flat = out.replace('\n', "");
+    assert!(flat.contains(r#"<span class="apex-line" data-line="1"></span><h1>Title</h1>"#), "{out}");
+    assert!(flat.contains(r#"data-line="3"></span><li>"#), "{out}");
+    assert!(flat.contains(r#"data-line="5"></span><table>"#), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -37,7 +37,8 @@ pub fn spawn_server(exe: &Path, socket: &Path, session: &str) -> io::Result<()> 
         .current_dir(&home)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        // what the daemon says goes beside its socket, where it can be read
+        .stderr(daemon_log(socket).map(std::process::Stdio::from).unwrap_or_else(std::process::Stdio::null));
     // SAFETY: setsid in the child before exec; it only touches the child.
     unsafe {
         cmd.pre_exec(|| {
@@ -1125,6 +1126,12 @@ impl Daemon {
             self.start_verbs(name);
         }
     }
+}
+
+/// The daemon's log, `apexd.log` beside its socket, appended to.
+fn daemon_log(socket: &Path) -> Option<std::fs::File> {
+    let dir = socket.parent()?;
+    std::fs::OpenOptions::new().create(true).append(true).open(dir.join("apexd.log")).ok()
 }
 
 /// What `$EDITOR` is in a session: one word, since `$EDITOR file` at a

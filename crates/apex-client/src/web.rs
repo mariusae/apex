@@ -47,6 +47,8 @@ pub struct WebHost {
     /// A page from a buffer: the buffer version shown, and the directory
     /// its relative links resolve in.
     html: Option<(u64, String)>,
+    /// The source line the page was last scrolled to follow.
+    followed: Option<usize>,
     /// Watch streams on the host files this page fetched, by path.
     watches: Arc<Mutex<HashMap<String, u32>>>,
     plane: Option<IoPlane>,
@@ -182,7 +184,7 @@ impl Webs {
         match b.build_as_child(window) {
             Ok(view) => {
                 let _ = view.set_visible(visible);
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, watches, plane: self.plane.clone() });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, followed: None, watches, plane: self.plane.clone() });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -207,6 +209,33 @@ impl Webs {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.url = url.to_string();
         }
+    }
+
+    /// Scroll window `w`'s page to the block whose marker (`data-line`,
+    /// as `apex md` writes them) is the last at or before `line`: the
+    /// preview follows dot in its source (WEB.md §3.3). Nothing happens
+    /// when the page carries no markers.
+    pub fn follow_line(&mut self, w: WindowId, line: usize) {
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        if h.followed == Some(line) {
+            return;
+        }
+        h.followed = Some(line);
+        let js = format!(
+            r#"(function(){{
+const want = {line};
+let best = null, bestLine = -1;
+for (const el of document.querySelectorAll('[data-line]')) {{
+  const n = parseInt(el.getAttribute('data-line'), 10);
+  if (!isNaN(n) && n <= want && n > bestLine) {{ best = el; bestLine = n; }}
+}}
+if (best) {{
+  const y = best.getBoundingClientRect().top + window.scrollY - Math.floor(window.innerHeight / 4);
+  window.scrollTo({{ top: Math.max(0, y), behavior: 'auto' }});
+}}
+}})();"#
+        );
+        let _ = h.view.evaluate_script(&js);
     }
 
     /// Load the page again (a host file it uses changed). A page from a

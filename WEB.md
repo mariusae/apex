@@ -389,6 +389,14 @@ with the client-side action and a watch stream behind it, as today.
 
 ### 3.3 Following dot
 
+*As built (stage 8):* `apex md` writes an empty `<span class="apex-line"
+data-line="N">` before every block (paragraph, heading, quote, code,
+item, table, HTML block) with the source line it starts on, from 1;
+the client, placing a `FILE+Preview` page each frame, takes dot's line
+in FILE's window and scrolls the page so the last marker at or before
+it sits a quarter down the view, only when that line changed. Any
+converter that writes such markers gets the same.
+
 Because the tool sees the source window's selection in the log, the
 preview can follow dot. `apex md` emits `data-line="N"` on block
 elements (pulldown-cmark gives byte offsets; the converter maps them to

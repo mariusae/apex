@@ -24,7 +24,8 @@ it is in, and `EDITOR` set to `apex-editor`, a link to the binary that
 is plan9port's editinacme, `apex editor`: the file opens in the session
 and the command returns when its window is deleted); `apex attach`
 starts a daemon if the
-socket does not answer.
+socket does not answer. A daemon started that way writes what it has
+to say to `apexd.log` beside its socket.
 
 Every subcommand attaches as a tool: it gets the session snapshot, reads
 from its own replica, and proposes to the leader — the UI if one is

@@ -333,8 +333,11 @@ resolve in the file's directory (apexfile://)." },
     Cmd { name: "md", usage: "apex md <MARKDOWN", short: "Markdown on stdin to HTML on stdout", flags: &[], run: md, long: "\
 Md converts Markdown on stdin to an HTML page on stdout: CommonMark
 with tables, footnotes, strikethrough and task lists, with a small
-stylesheet. It is the converter Preview uses for .md and .markdown
-files unless a setting names another." },
+stylesheet. Every block is preceded by an empty span carrying the
+source line it starts on (data-line, counted from 1), which is how a
+preview follows dot; a converter of your own may do the same. It is the
+converter Preview uses for .md and .markdown files unless a setting
+names another." },
     Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp | apex tool preview FILE", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
@@ -722,8 +725,20 @@ pub fn markdown_page(text: &str) -> String {
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+    // a marker before every block with the source line it starts on, so
+    // a preview can follow dot (WEB.md §3.3)
+    let line_starts: Vec<usize> = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
+    let line_at = |offset: usize| line_starts.partition_point(|&s| s <= offset);
+    let mut events: Vec<pulldown_cmark::Event> = Vec::new();
+    for (ev, range) in Parser::new_ext(text, opts).into_offset_iter() {
+        use pulldown_cmark::{CowStr, Event, Tag};
+        if let Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::BlockQuote(_) | Tag::CodeBlock(_) | Tag::Item | Tag::Table(_) | Tag::HtmlBlock) = &ev {
+            events.push(Event::Html(CowStr::from(format!("<span class=\"apex-line\" data-line=\"{}\"></span>", line_at(range.start)))));
+        }
+        events.push(ev);
+    }
     let mut body = String::new();
-    html::push_html(&mut body, Parser::new_ext(text, opts));
+    html::push_html(&mut body, events.into_iter());
     format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><style>{MD_STYLE}</style></head><body>\n{body}</body></html>\n")
 }
 

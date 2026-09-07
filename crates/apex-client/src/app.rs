@@ -1009,6 +1009,9 @@ impl Acme {
     pub fn poll_remote(&mut self) -> bool {
         let Backend::Remote(link) = &mut self.backend else { return true };
         let alive = link.poll(&mut self.node, &mut self.log);
+        if self.connected && !alive {
+            crate::shell::log_line(&format!("link to {} ended", self.url));
+        }
         self.connected = alive;
         for w in link.take_made() {
             self.show(w);
@@ -1840,9 +1843,24 @@ impl Acme {
                 let (text, version) = (buf.text.to_string(), buf.version);
                 let dir = std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default();
                 self.webs.place_html(w, &text, version, &dir, bounds, window, visible);
+                // a preview follows dot in its source (WEB.md §3.3)
+                if let Some(line) = self.preview_source_line(&name) {
+                    self.webs.follow_line(w, line);
+                }
             }
             _ => self.webs.place(w, &name, bounds, window, visible),
         }
+    }
+
+    /// For a window named `FILE+Preview`: the line (from 1) dot is on in
+    /// FILE's window, when it is open.
+    fn preview_source_line(&self, name: &str) -> Option<usize> {
+        let source = name.strip_suffix("+Preview")?;
+        let w = self.node.state.windows.keys().copied().find(|w| self.node.window_name(*w) == source)?;
+        let b = self.node.state.window(w).ok()?.body_buffer()?;
+        let buf = self.node.state.buffer(b).ok()?;
+        let (q0, _) = self.node.selection(ViewId::Body(w)).ok()?;
+        Some(buf.text.line_of(q0.min(buf.text.len())) + 1)
     }
 
     /// The session's I/O plane for the web views' threads, when a link
