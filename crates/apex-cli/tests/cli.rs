@@ -660,14 +660,14 @@ fn tunnels_and_fetches_go_through_the_host() {
     // GET http://: fetched by the host, headers and body streamed back
     let g = c.io_open("GET", &format!("http://127.0.0.1:{http_port}/hello?x=1"), &[]);
     let (status, body) = c.io_collect(g, Duration::from_secs(5)).unwrap();
-    assert_eq!(status, 200);
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
     assert_eq!(String::from_utf8_lossy(&body), "GET /hello?x=1 HTTP/1.1|");
     // a body goes with a POST once the client ends its side; statuses pass through
     let p = c.io_open("POST", &format!("http://127.0.0.1:{http_port}/in"), &[("Content-Type", "text/plain")]);
     c.io_send(p, b"payload");
     c.io_end(p);
     let (status, body) = c.io_collect(p, Duration::from_secs(5)).unwrap();
-    assert_eq!(status, 200);
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
     assert_eq!(String::from_utf8_lossy(&body), "POST /in HTTP/1.1|payload");
     let m = c.io_open("GET", &format!("http://127.0.0.1:{http_port}/missing"), &[]);
     let (status, body) = c.io_collect(m, Duration::from_secs(5)).unwrap();
