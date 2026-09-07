@@ -205,15 +205,14 @@ pub fn save_open(cx: &mut App) {
 }
 
 /// The windows to open at launch: the remembered ones, each on its
-/// session and at its frame (local sessions only if they still exist;
-/// remote ones are tried); else one on the first existing local session;
-/// else one on a new `default`.
+/// session and at its frame (a session that is gone, after `apex stop`
+/// say, is made again, empty: attaching creates it); else one on the
+/// first existing local session; else one on a new `default`.
 pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<WindowBounds>)>> {
     let existing = list_sessions(socket)?;
     let again: Vec<(SessionUrl, Option<WindowBounds>)> = remembered()
         .iter()
         .filter_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame.map(|b| if r.fullscreen { WindowBounds::Fullscreen(b) } else { WindowBounds::Windowed(b) }))))
-        .filter(|(u, _)| !u.is_local() || existing.contains(&u.session))
         .collect();
     if !again.is_empty() {
         return Ok(again);
