@@ -229,9 +229,15 @@ impl Daemon {
         let (mut server, mut srx) = Server::new(&log);
         // shells and commands in this session know it, and the daemon
         server.env = vec![("apexsession".into(), name.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
-        // $EDITOR opens in the session and returns when the window goes
+        // $EDITOR opens in the session and returns when the window goes.
+        // Unquoted: `$EDITOR file` at a zsh or rc prompt does not split
+        // quotes off, so quoting would only be right under `sh -c` (git);
+        // a path that needs quoting (a space) is quoted and works there.
         if let Ok(exe) = std::env::current_exe() {
-            server.env.push(("EDITOR".into(), format!("{} editor", crate::shell_quote(&exe.display().to_string()))));
+            let exe = exe.display().to_string();
+            let safe = exe.chars().all(|c| c.is_ascii_alphanumeric() || "/._-+".contains(c));
+            let exe = if safe { exe } else { crate::shell_quote(&exe) };
+            server.env.push(("EDITOR".into(), format!("{exe} editor")));
         }
         if let Some(i) = &profile {
             server.env.push(("apexclient".into(), i.client.clone()));

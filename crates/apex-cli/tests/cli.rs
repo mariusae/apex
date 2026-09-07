@@ -499,7 +499,13 @@ fn editor_opens_the_file_and_returns_when_its_window_goes() {
     let path = file.display().to_string();
     // $EDITOR is set for commands and terminals
     let env = ok(&sock, &["env"]);
-    assert!(env.lines().any(|l| l.starts_with("EDITOR=") && l.ends_with(" editor")), "{env}");
+    let editor = env.lines().find(|l| l.starts_with("EDITOR=")).unwrap_or_else(|| panic!("{env}"));
+    assert!(editor.ends_with(" editor") && !editor.contains('\''), "{editor}");
+    // `$EDITOR file` at a shell prompt: the value splits into the daemon's
+    // binary (here the test's) and the word, no quotes in the way
+    let value = editor.trim_start_matches("EDITOR=");
+    let exe = value.trim_end_matches(" editor");
+    assert!(std::path::Path::new(exe).is_file(), "{value}");
     // the editor blocks while the window is open
     let (s2, p2) = (sock.clone(), path.clone());
     let child = std::thread::spawn(move || apex(&s2, &["editor", &p2]));
