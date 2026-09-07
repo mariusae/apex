@@ -128,10 +128,10 @@ lease never moves):
 | shard | one per | entries | default leader |
 |---|---|---|---|
 | `buffer` | buffer | `Create`, `Edit{version, q0, nd, text, group}`, `Undo/Redo{version}`, `Clean{version}`, `Stale{hash}`, `Rename`, `ViewAdd/Del{view}`, `Select{view, q0, q1}`, `Origin{view, off}` | server |
-| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done|Failed|Unknown}`, `Delete` | server |
-| `layout` | session | `Init{top}`, `ColNew/Del/Resize`, `WinPlace{window, col, at}`, `WinRemove`, `WinResize`, `Snarf`, `Exec` from column tags and the top row | server |
+| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done|Failed|Unknown}`, `Delete`; *as built also* `Tab`, `Indent`, `TagExpand`, `Live{by}` | server |
+| `layout` | session | `Init{top}`, `ColNew/Del/Resize`, `WinPlace{window, col, at}`, `WinRemove`, `WinResize`, `Snarf`, `Exec` from column tags and the top row; *as built also* `Arrange{r, cols}`, `Status`, `Visit{from, to}`, `NavPop{back, at}` (the navigation stacks, `Layout{nav_back, nav_forward}` of `Loc{name, pos}`) | server |
 | `term` | terminal | `Rows{seq, rows: [cells]}`, `Cursor`, `Mode`, `Resize`, `Exit` | server, **pinned** |
-| `metalog` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}`, `PlumbRuleInstall/Remove{attachment, priority, predicate, action}` | server, **pinned** |
+| `metalog` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}`, `PlumbRuleInstall/Remove{attachment, priority, predicate, action}`; *as built also* `Set/Unset{owner, key, value}` (settings, the session's or an attachment's) | server, **pinned** |
 | `registry` | server | `SessionNew/Del/Rename` | server, **pinned** |
 
 The **metalog** is the session's authority on everything *about* shards
@@ -447,6 +447,54 @@ protobuf stays an option for a gateway. What differs from the sketch:
 - The daemon keeps a follower replica of the whole session (the "view")
   for execs and snapshots, and forwards the metalog before any other
   shard so a client learns of a shard before its entries.
+
+*As built, the wire (`proto.rs`, `proposal.rs`; postcard frames, u32 LE
+length):*
+
+```
+client → server
+  Hello{session, name, kind, attach?}     attach; a UI ships its ~/.apex/attach
+  NewSession{name, profile?}              make a session (idempotent), the creator's profile shipped
+  ListSessions · RenameSession{from, to} · Stop · Ping{t}
+  Append{shard, entries}                  entries this client sequenced as leader
+  CreateShard{shard} · DeleteShard{shard}
+  TermKey{term, key} · TermPaste · TermResize · TermScroll{term, delta}
+  TermText{term, p0, p1}                  snarf a terminal range (answer: a Snarf proposal)
+  TermRead{term, from, to}                a terminal's lines, scrollback included → TermLines
+  OpenFile{col, ctx, name}                the server reads the file and proposes OpenWindow
+  Plumb{ctx, text, dir?, edit_only, dry, at?, sel?, alt?, reverse}
+                                          B3 / apex plumb / B; at: the pointer, sel: what was taken,
+                                          alt: the word within, reverse: shift-B3
+  PlumbAck{id, ok}                        a tool's answer to a Plumb it was handed
+  RuleAdd{rule, priority, mine} · RuleRm{id}
+  Complete{view, ctx, at, prefix}         ^F
+  Propose{id, proposal} · Applied{id, result}
+  Env{set} · Set{key, value, attachment?} · Ps · Kill{targets}
+  ReadFile{path} · Watch{path} · Unwatch{path}
+
+server → client
+  Build{id}                               first frame, frozen: refuse another build
+  Welcome{attachment, snapshot} · Entries{shard, entries} · Ack{shard, seq} · ShardReady{shard}
+  Propose{id, proposal} · Applied{id, result}
+  Sessions{names} · Error{text} · Pong{t} · Env{vars} · RuleAdded{id}
+  PlumbTrace{lines}                       a dry run's report
+  Plumb{id, ctx, verb, text, dir, groups, at?, sel?}
+                                          a rule named this tool; answer PlumbAck within a second
+  File{path, bytes}                       ReadFile's answer, and every change while Watched
+  Ps{procs} · TermLines{term, text}
+
+proposals (tools and the server → the leader; applied by whoever leads)
+  OpenWindow{col, from?, name, text, hash, select_line?} · NewWindow{col, name} · TermWindow{col, name, term}
+  SetContent{buffer, version?, text, hash} · Clean · Rename{buffer, window, name} · Stale
+  ReplaceRange{dir?, buffer, version, q0, q1, text}   pipe output: selected, as acme's
+  Insert{buffer, version, at, text}                    at a point, the selection left alone (win)
+  Errors{dir?, text} · Complete{view, at, text} · Snarf{text} · TermName{window, name}
+  CommandStart{name} · CommandExit{name} · Status{ctx, exec, status}
+  Look{ctx, text, reverse} · ClientDo{verb, args}     the last resort of a plumb; a UI's own verbs
+  Exec{ctx, text} · Edit{window, program} · Select{view, q0, q1}
+  Live{window, by?}                                    a process behind a window
+  Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
+```
 
 *As built, builds:* the daemon's first frame on every connection is
 `ServerMsg::Build{id}`, a hash of the workspace sources computed at build
