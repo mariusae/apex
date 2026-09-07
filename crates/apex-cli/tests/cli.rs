@@ -453,6 +453,16 @@ fn programs_say_what_they_are_called() {
     let line = ps.lines().find(|l| l.contains("\tlsp\t")).unwrap_or_else(|| panic!("{ps}"));
     assert!(line.contains("tool lsp"), "{line}");
     assert!(!ps.contains("\tapex\t"), "{ps}");
+    // the top row says lsp too, now, not at the next command
+    let mut viewer = Remote::connect_as(&sock, "main", "viewer", AttachmentKind::Tool).unwrap();
+    let top_text = |n: &Node| n.state.layout.top.and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !top_text(&viewer.node).starts_with("lsp ") && Instant::now() < deadline {
+        let _ = viewer.step(Duration::from_millis(20));
+    }
+    assert!(top_text(&viewer.node).starts_with("lsp "), "{:?}", top_text(&viewer.node));
+    assert!(!top_text(&viewer.node).contains("apex "), "{:?}", top_text(&viewer.node));
+    drop(viewer);
     // a program of no known group is adopted for as long as it is connected
     let r = Remote::connect_as(&sock, "main", "orphan", AttachmentKind::Tool).unwrap();
     r.send(&apex_server::proto::ClientMsg::Named { name: "orphan".into(), group: 4_000_000, pid: 4_000_001, cmd: "orphan -x".into() });

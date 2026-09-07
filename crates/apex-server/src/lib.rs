@@ -543,7 +543,9 @@ impl Server {
     pub fn name_process(&mut self, name: &str, group: u32, pid: u32, cmd: &str) -> Option<u32> {
         let mut running = self.running.lock().unwrap();
         if let Some(r) = running.iter_mut().find(|r| r.pid == group) {
-            if r.name != name {
+            // a name the server gave on purpose (Win, attach) stays; the
+            // default one, the command's first word (apex), gives way
+            if r.name != name && r.name == command_name(&r.cmd) {
                 self.started.push(Proposal::CommandExit { name: r.name.clone() });
                 self.started.push(Proposal::CommandStart { name: name.to_string() });
                 r.name = name.to_string();
@@ -557,6 +559,14 @@ impl Server {
         running.push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: String::new(), ctx: ExecCtx::Top, started, adopted: true });
         self.started.push(Proposal::CommandStart { name: name.to_string() });
         Some(pid)
+    }
+
+    /// The top row's starts and ends waiting to be applied (commands
+    /// started outside an exec: scripts, adoptions, renames). The daemon
+    /// takes them after everything it does, so a start never trails its
+    /// own exit.
+    pub fn take_started(&mut self) -> Vec<Proposal> {
+        std::mem::take(&mut self.started)
     }
 
     /// An adopted program's announcer went: the entry goes too.

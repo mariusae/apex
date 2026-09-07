@@ -750,8 +750,11 @@ impl Daemon {
 
     /// Forward new entries to every connection of the session, and the
     /// server's proposals to its leader.
-    fn after(&mut self, name: &str, mut props: Vec<Proposal>) {
+    fn after(&mut self, name: &str, props: Vec<Proposal>) {
         let Some(s) = self.sessions.get_mut(name) else { return };
+        // starts first: a command started by what we just did (the attach
+        // script, a rename) is named before anything reports its end
+        let mut props = { let mut all = s.server.take_started(); all.extend(props); all };
         s.server.close_orphan_terms(&mut s.log, &s.view);
         s.server.sync_watches(&s.view);
         let _ = s.view.catch_up(&s.log);
