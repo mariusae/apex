@@ -959,7 +959,10 @@ this one (detach, attach).
   title bar, acme's area is the whole screen, and a window's full-screen
   state is remembered with its frame. shift-B3 looks backwards (the
   mariusae/plan9port acme's `look3(..., reverse)`: `search` with reverse,
-  the last occurrence ending before dot, wrapping). The picker's recent
+  the last occurrence ending before dot, wrapping) — unless there is
+  somewhere to go back to (the navigation stack is not empty) and a rule
+  offers `Back` in the window (the lsp tool's): then shift-B3 is Back,
+  the mirror of the B3 that went there, exactly what ⌘[ issues. The picker's recent
   sessions carry a × that forgets them.
 - *As built:* a window is **live** when a process is behind it: a
   terminal whose program runs, or a text window a tool keeps so

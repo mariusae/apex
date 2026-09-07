@@ -1538,7 +1538,14 @@ impl Acme {
                             _ => None,
                         };
                         let reverse = self.mouse.b3_reverse;
-                        self.look_at(self.ctx_of(d.view), &text, at, sel, alt, reverse);
+                        let ctx = self.ctx_of(d.view);
+                        if reverse && self.back_offered(d.view.window()) {
+                            // shift-B3 in a stack: B3 went somewhere, this
+                            // comes back (the Back verb, as cmd-[ issues it)
+                            self.execute(ctx, "Back", cx);
+                        } else {
+                            self.look_at(ctx, &text, at, sel, alt, reverse);
+                        }
                     }
                 }
             }
@@ -2341,6 +2348,20 @@ impl Acme {
             self.want_visible.insert(v);
         }
         self.after();
+    }
+
+    /// Is there somewhere to go back to, and a rule here that takes the
+    /// Back verb (the lsp tool's)? Then shift-B3 is Back, not a reverse
+    /// look.
+    fn back_offered(&self, w: Option<WindowId>) -> bool {
+        if self.node.state.layout.nav_back.is_empty() {
+            return false;
+        }
+        let (name, kind) = match w {
+            Some(w) => (self.node.window_name(w), self.node.window_kind(w)),
+            None => (String::new(), WinKind::File),
+        };
+        apex_core::plumb::verbs_for(&self.node.state.meta.rules, &name, kind).iter().any(|v| v == "Back")
     }
 
     pub fn look(&mut self, ctx: ExecCtx, text: &str) {
