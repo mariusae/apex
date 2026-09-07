@@ -279,6 +279,9 @@ pub struct Source {
     pub origin: usize,
     pub hl: Option<(usize, usize, HlKind)>,
     pub want_visible: bool,
+    /// Bring this position on screen, a quarter of the window down when
+    /// it is not (acme's `textshow` for new `+Errors` text).
+    pub show_at: Option<usize>,
 }
 
 pub struct TextElement {
@@ -498,11 +501,20 @@ impl Element for TextElement {
                         lines.push(li);
                         n += 1;
                     }
+                    let last_full = if y <= height { n } else { n.saturating_sub(1) };
+                    if let Some(q) = src.show_at {
+                        // textshow: the start of the new text, maxlines/4 from the top
+                        let cl = text.line_of(q.min(text_len));
+                        if cl < first || cl >= last_full {
+                            first = cl.saturating_sub(fit / 4);
+                            continue;
+                        }
+                        break;
+                    }
                     if !src.want_visible {
                         break;
                     }
                     let cl = text.line_of(src.sel.1);
-                    let last_full = if y <= height { n } else { n.saturating_sub(1) };
                     if cl < first {
                         first = cl;
                     } else if cl >= last_full {
@@ -512,7 +524,7 @@ impl Element for TextElement {
                     }
                 }
                 let origin = text.line_start(first);
-                if origin != src.origin || src.want_visible {
+                if origin != src.origin || src.want_visible || src.show_at.is_some() {
                     acme.set_origin(view, origin);
                 }
             } else {

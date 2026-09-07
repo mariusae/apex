@@ -863,6 +863,11 @@ this one (detach, attach).
   protocol support.
 - Fonts, geometry and colours are client-side. Colours follow plan9port
   exactly (`README.md`, Colours).
+- *As built:* `+Errors` behaves as acme's `flushwarnings`: new text is
+  appended, selected (`textshow(q0, end, 1)`), and when its start is off
+  screen the origin is set so that it sits a quarter of the window down
+  (`Node::errors` records the position; the client's element applies
+  textshow's rule).
 - *As built:* ⌘P (File ▸ Go to…) is Zed's file finder in acme's colours
   (`client/finder.rs`): every open window of the session (files,
   directories, terminals, win, +Errors, marked ● or ▶) and the files

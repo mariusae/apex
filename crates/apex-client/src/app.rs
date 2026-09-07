@@ -186,6 +186,8 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
+    /// Positions to bring on screen (new `+Errors` text), by view.
+    show_at: HashMap<ViewId, usize>,
     /// ⌘P, when open.
     pub finder: Option<crate::finder::Finder>,
     /// The windows as of the last frame, to notice closings.
@@ -745,6 +747,7 @@ impl Acme {
             snarf_wanted: None,
             term_hl: None,
             fullscreen: false,
+            show_at: HashMap::new(),
             finder: None,
             last_windows: std::collections::BTreeMap::new(),
             chooser: false,
@@ -777,6 +780,9 @@ impl Acme {
         // acme's winsettag: Undo/Redo/Put/Get come and go with the state
         let _ = self.node.update_tags(&mut self.log);
         self.track_closed();
+        for (v, q) in self.node.take_shows() {
+            self.show_at.insert(v, q);
+        }
         if let Backend::Remote(link) = &mut self.backend {
             link.flush(&self.log);
         }
@@ -1092,6 +1098,7 @@ impl Acme {
             origin: v.origin,
             hl,
             want_visible: self.want_visible.remove(&view),
+            show_at: self.show_at.remove(&view),
         })
     }
 

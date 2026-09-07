@@ -154,6 +154,8 @@ pub struct Node {
     typing: Option<(ViewId, GroupId)>,
     /// The most recently selected text (acme's `seltext`).
     pub seltext: Option<ViewId>,
+    /// What `errors` appended, for the client to show (`take_shows`).
+    pub shows: Vec<(ViewId, usize)>,
     /// Windows that were warned once about Del on a dirty buffer.
     warned: BTreeMap<WindowId, Version>,
     edit: EditLang,
@@ -181,6 +183,7 @@ impl Node {
             next_group: 1,
             typing: None,
             seltext: None,
+            shows: Vec::new(),
             warned: BTreeMap::new(),
             edit: EditLang::new(),
             tiling: Box::new(tiling::Headless::default()),
@@ -1085,12 +1088,21 @@ impl Node {
         };
         let view = ViewId::Body(window);
         let b = self.view_buffer(view)?;
-        let end = self.state.buffer(b)?.text.len();
+        let q0 = self.state.buffer(b)?.text.len();
         let group = self.new_group();
-        self.edit_op(log, b, end, 0, text, group)?;
+        self.edit_op(log, b, q0, 0, text, group)?;
         let end = self.state.buffer(b)?.text.len();
-        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0: end, q1: end }))?;
+        // acme's flushwarnings: textshow(q0, end): the new text selected,
+        // and its start brought on screen
+        self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Select { view, q0, q1: end }))?;
+        self.shows.push((view, q0));
         Ok(window)
+    }
+
+    /// Positions a client should bring on screen (acme's `textshow`),
+    /// since the last call: the start of new `+Errors` text.
+    pub fn take_shows(&mut self) -> Vec<(ViewId, usize)> {
+        std::mem::take(&mut self.shows)
     }
 
     // ---- commands (B2) ---------------------------------------------------------
