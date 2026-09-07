@@ -57,8 +57,10 @@ pub struct WebHost {
     html: Option<(u64, String)>,
     /// The source line the page was last scrolled to follow.
     followed: Option<usize>,
-    /// Loading now: the handle pulses.
-    loading: bool,
+    /// Loading since: the handle pulses. Set the moment a load is asked
+    /// for (WebKit says "started" only once content arrives), cleared
+    /// when the page finishes, or after a while when it never says so.
+    loading: Option<std::time::Instant>,
     /// Watch streams on the host files this page fetched, by path.
     watches: Arc<Mutex<HashMap<String, u32>>>,
     plane: Option<IoPlane>,
@@ -120,8 +122,9 @@ impl Webs {
     }
 
     /// The page's history and reload: Back, Fwd, Get in its tag.
-    pub fn go(&self, w: WindowId, nav: Nav) {
-        let Some(h) = self.hosts.get(&w) else { return };
+    pub fn go(&mut self, w: WindowId, nav: Nav) {
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        h.loading = Some(std::time::Instant::now());
         let _ = match nav {
             Nav::Back => h.view.go_back(),
             Nav::Fwd => h.view.go_forward(),
@@ -169,6 +172,7 @@ impl Webs {
         if h.url != url {
             // the state moved the page (a Goto, another client): follow
             h.url = url.to_string();
+            h.loading = Some(std::time::Instant::now());
             let _ = h.view.load_url(&webkit_url(url));
         }
         h.settle_view(rect, bounds, visible);
@@ -280,7 +284,8 @@ impl Webs {
         match b.build_as_child(window) {
             Ok(view) => {
                 let _ = view.set_visible(visible);
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, followed: None, loading: false, watches, plane: self.plane.clone() });
+                let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, followed: None, loading, watches, plane: self.plane.clone() });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -307,26 +312,30 @@ impl Webs {
         }
     }
 
-    /// Is window `w`'s page loading?
+    /// Is window `w`'s page loading? Not after half a minute without a
+    /// word from WebKit: a load that failed says nothing.
     pub fn loading(&self, w: WindowId) -> bool {
-        self.hosts.get(&w).is_some_and(|h| h.loading)
+        self.hosts.get(&w).is_some_and(|h| h.loading.is_some_and(|t| t.elapsed() < Duration::from_secs(30)))
     }
 
     pub fn any_loading(&self) -> bool {
-        self.hosts.values().any(|h| h.loading)
+        self.hosts.keys().any(|w| self.loading(*w))
     }
 
+    /// WebKit's word: content started arriving (already pulsing, mostly),
+    /// or the page is done.
     pub fn set_loading(&mut self, w: WindowId, on: bool) {
         if let Some(h) = self.hosts.get_mut(&w) {
-            h.loading = on;
+            h.loading = if on { h.loading.or_else(|| Some(std::time::Instant::now())) } else { None };
         }
     }
 
     /// The page of `w` went to `url`, by its own doing: remember, so the
-    /// name following it is not taken for a move to load.
+    /// name following it is not taken for a move to load; it is loading.
     pub fn navigated(&mut self, w: WindowId, url: &str) {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.url = url.to_string();
+            h.loading = Some(std::time::Instant::now());
         }
     }
 
@@ -334,6 +343,7 @@ impl Webs {
     pub fn load(&mut self, w: WindowId, url: &str) {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.url = url.to_string();
+            h.loading = Some(std::time::Instant::now());
             let _ = h.view.load_url(&webkit_url(url));
         }
     }
