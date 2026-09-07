@@ -649,7 +649,8 @@ scratch HOME.
 that sources the host's `~/.apex/profile`, then the creator's (shipped
 in `NewSession` as `Script{client, text}`, skipped when identical), as a
 command named `profile` with output in `+Errors`, and `apexsession`,
-`APEX_SOCKET`, `apexclient` set. The host part comes first so it can
+`APEX_SOCKET`, `apexclient` set, and `EDITOR` to `apex editor`
+(editinacme: the file plumbed to edit, exit when its window goes). The host part comes first so it can
 define what the creator's part uses. `apex env KEY=VALUE`
 (`ClientMsg::Env`) sets the session environment the server gives
 terminals and commands from then on; the creator's script runs on the

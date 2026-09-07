@@ -257,6 +257,12 @@ B opens each FILE in the session from the current directory, at LINE when
 given, through the plumbing rules that open in the session (see apex
 help rules), else as a path. It is plan 9's B: a shell in an apex terminal
 has it as a function." },
+    Cmd { name: "editor", usage: "apex editor FILE", short: "$EDITOR: open FILE, exit when its window is deleted", flags: &[], run: editor, long: "\
+Editor is plan9port's editinacme for apex, for use as $EDITOR: it opens
+FILE in the session (through the rules that open in the session, as B
+does, so an open window is shown and the pointer warped to it), waits
+until the file's window is deleted, and exits. Terminals and commands
+have EDITOR set to it unless the profile says otherwise." },
     Cmd { name: "env", usage: "apex env [KEY=VALUE...]", short: "the session's environment", flags: &[], run: env_cmd, long: "\
 Env sets variables in the session's environment: what every terminal and
 command started from then on gets, beyond the daemon's own. With no
@@ -985,6 +991,29 @@ fn b(ctx: &Ctx, p: &Parsed) -> R {
         let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     }
     Ok(())
+}
+
+/// `apex editor FILE`: editinacme. The absolute path, "editing FILE" on
+/// stderr, the file plumbed to edit, then wait for the window named
+/// after it to go. The log is read from before the plumb, as
+/// editinacme opens acme's log first, so a quick Del is not missed.
+fn editor(ctx: &Ctx, p: &Parsed) -> R {
+    let [file] = p.args.as_slice() else { return Err("usage".into()) };
+    let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
+    let mut c = tool(ctx)?;
+    eprintln!("editor: editing {file}");
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false });
+    let open = |r: &Remote| r.node.state.windows.keys().any(|w| r.node.window_name(*w) == file);
+    wait(&mut c, |r| open(r)).map_err(|_| format!("{file}: not opened"))?;
+    loop {
+        if !open(&c) {
+            return Ok(());
+        }
+        match c.step(Duration::from_millis(100)) {
+            Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(_) => return Err("connection closed".into()),
+        }
+    }
 }
 
 /// `apex plumb rule add|rm|ls`: the session's rule table.

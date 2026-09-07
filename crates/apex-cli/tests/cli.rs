@@ -488,3 +488,39 @@ fn programs_say_what_they_are_called() {
     }
     assert!(!ok(&sock, &["ps"]).contains("\tlsp\t"));
 }
+
+#[test]
+fn editor_opens_the_file_and_returns_when_its_window_goes() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-editor-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("note.txt");
+    std::fs::write(&file, "hello\n").unwrap();
+    let path = file.display().to_string();
+    // $EDITOR is set for commands and terminals
+    let env = ok(&sock, &["env"]);
+    assert!(env.lines().any(|l| l.starts_with("EDITOR=") && l.ends_with(" editor")), "{env}");
+    // the editor blocks while the window is open
+    let (s2, p2) = (sock.clone(), path.clone());
+    let child = std::thread::spawn(move || apex(&s2, &["editor", &p2]));
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let open = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w) == path);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while open(&c).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let w = open(&c).expect("the file's window");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!child.is_finished(), "editor returned while the window was open");
+    // Del: the window goes and the editor returns
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !child.is_finished() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(child.is_finished(), "editor did not return after Del");
+    let (success, _, err) = child.join().unwrap();
+    assert!(success, "{err}");
+    assert!(err.contains(&format!("editing {}", file.display())), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
