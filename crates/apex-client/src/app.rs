@@ -733,7 +733,9 @@ impl Acme {
                         let _ = h.update(cx, |acme, window, cx| {
                             if cx.entity_id() == mine {
                                 alive = true;
-                                acme.web_focus_tick(window);
+                                if acme.web_focus_tick(window) {
+                                    cx.notify();
+                                }
                             }
                         });
                     }
@@ -948,11 +950,18 @@ impl Acme {
         self.pointer.unwrap_or_else(|| window.mouse_position())
     }
 
-    /// Keys follow the pointer between pages and the rest (WEB.md §2.2).
-    pub fn web_focus_tick(&mut self, window: &Window) {
-        if !self.webs.is_empty() && !self.overlay_up() {
+    /// Keys follow the pointer between pages and the rest (WEB.md §2.2);
+    /// what the pages reported is taken; true when something should be
+    /// drawn again (a page is loading: its handle pulses).
+    pub fn web_focus_tick(&mut self, window: &Window) -> bool {
+        if self.webs.is_empty() {
+            return false;
+        }
+        self.web_events();
+        if !self.overlay_up() {
             self.webs.focus_tick(window);
         }
+        self.webs.any_loading()
     }
 
     /// Give the tiling this frame's measurements, refit any window whose
@@ -1150,13 +1159,23 @@ impl Acme {
         let b = self.node.view_buffer(view).ok()?;
         let buf = self.node.state.buffer(b).ok()?;
         let v = buf.view(view);
-        let (mono, dirty, live) = match view {
+        let (mono, dirty, live, pulse) = match view {
             ViewId::Body(w) | ViewId::Tag(w) => {
                 let win = self.node.state.window(w).ok()?;
                 let dirty = win.body_buffer().and_then(|b| self.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                (win.mono, dirty, self.node.window_live(w))
+                // a page is live as a terminal is; while it loads, its
+                // handle breathes between live and pale
+                let web = win.body == Body::Web;
+                let pulse = if web && self.webs.loading(w) {
+                    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) % 1200;
+                    let t = ms as f32 / 1200.0;
+                    Some(if t < 0.5 { t * 2.0 } else { 2.0 - t * 2.0 })
+                } else {
+                    None
+                };
+                (win.mono, dirty, web || self.node.window_live(w), pulse)
             }
-            _ => (false, false, false),
+            _ => (false, false, false, None),
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         Some(Source {
@@ -1164,6 +1183,7 @@ impl Acme {
             mono,
             dirty,
             live,
+            pulse,
             unsynced: false,
             fenced: self.fenced(),
             text: buf.text.clone(),
@@ -1953,6 +1973,9 @@ impl Acme {
                 WebEvent::Reload => self.webs.reload(w),
                 // a link followed in a page of ours: a web window on it
                 WebEvent::Link(url) => self.goto(Loc { name: url, pos: Pos::Keep }),
+                // a file link with a line: the file, at that line
+                WebEvent::Open(path, line) => self.goto(Loc { name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
+                WebEvent::Loading(on) => self.webs.set_loading(w, on),
                 // the host's loopback, by its bare name: through the proxy
                 WebEvent::Reroute(url) => {
                     self.webs.load(w, &url);

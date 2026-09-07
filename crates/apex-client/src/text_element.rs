@@ -29,6 +29,16 @@ pub const PALEBLUEGREEN: u32 = 0xEAFFFF; // tagcols[BACK]
 pub const PALEGREYGREEN: u32 = 0x9EEEEE; // tagcols[HIGH] DPalegreygreen
 pub const PURPLEBLUE: u32 = 0x8888CC; // tagcols[BORD] DPurpleblue; also colbutton
 pub const MEDBLUE: u32 = 0x000099; // modbutton fill, DMedblue
+/// `a` towards `b` by `t` (0..1), per channel.
+pub fn mix(a: u32, b: u32, t: f32) -> u32 {
+    let ch = |shift: u32| {
+        let x = ((a >> shift) & 0xff) as f32;
+        let y = ((b >> shift) & 0xff) as f32;
+        ((x + (y - x) * t).round().clamp(0.0, 255.0) as u32) << shift
+    };
+    ch(16) | ch(8) | ch(0)
+}
+
 /// A live window's handle: a process is behind it. Dark magenta with a
 /// quarter of yellow in it (a raspberry): unlike the dirty blue, the
 /// fenced red, the unsynced green, and the scrollbar's dark yellow.
@@ -270,6 +280,9 @@ pub struct Source {
     /// A process is behind the window (a terminal's, a win's): neither
     /// clean nor dirty.
     pub live: bool,
+    /// A page loading: how far (0..1) the handle is from live towards
+    /// pale this instant.
+    pub pulse: Option<f32>,
     pub unsynced: bool,
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
@@ -300,6 +313,7 @@ pub struct Prepaint {
     hl: Option<(usize, usize, HlKind)>,
     dirty: bool,
     live: bool,
+    pulse: Option<f32>,
     unsynced: bool,
     fenced: bool,
 }
@@ -541,6 +555,7 @@ impl Element for TextElement {
                 hl: src.hl,
                 dirty: src.dirty,
                 live: src.live,
+                pulse: src.pulse,
                 unsynced: src.unsynced,
                 fenced: src.fenced,
             })
@@ -587,6 +602,8 @@ impl Element for TextElement {
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
                     let fillc = if pp.unsynced {
                         rgb(MEDGREEN)
+                    } else if let (true, Some(t)) = (pp.live, pp.pulse) {
+                        rgb(mix(LIVE, 0xFFFFEA, t * 0.85))
                     } else if pp.live {
                         rgb(LIVE)
                     } else if pp.dirty {

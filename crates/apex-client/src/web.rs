@@ -37,6 +37,11 @@ pub enum WebEvent {
     /// A page went for the host's loopback by its bare name, which the
     /// view would take for the client's: load it under the alias instead.
     Reroute(String),
+    /// A `file://` link with a line (`?line=N`): the file in a text
+    /// window, at that line.
+    Open(String, Option<usize>),
+    /// The page started (true) or finished loading.
+    Loading(bool),
 }
 
 /// One window's view.
@@ -52,6 +57,8 @@ pub struct WebHost {
     html: Option<(u64, String)>,
     /// The source line the page was last scrolled to follow.
     followed: Option<usize>,
+    /// Loading now: the handle pulses.
+    loading: bool,
     /// Watch streams on the host files this page fetched, by path.
     watches: Arc<Mutex<HashMap<String, u32>>>,
     plane: Option<IoPlane>,
@@ -187,10 +194,15 @@ impl Webs {
     fn build(&mut self, w: WindowId, page: Page, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
         let rect = Self::rect(bounds);
         let watches: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
-        let (tx1, tx2) = (self.tx.clone(), self.tx.clone());
-        let (wake1, wake2) = (self.wake.clone(), self.wake.clone());
+        let (tx1, tx2, tx3) = (self.tx.clone(), self.tx.clone(), self.tx.clone());
+        let (wake1, wake2, wake3) = (self.wake.clone(), self.wake.clone(), self.wake.clone());
         let from_buffer = matches!(page, Page::Html { .. });
-        let mut b = wry::WebViewBuilder::new().with_bounds(rect);
+        let mut b = wry::WebViewBuilder::new().with_bounds(rect).with_on_page_load_handler(move |ev, _| {
+            let _ = tx3.send((w, WebEvent::Loading(matches!(ev, wry::PageLoadEvent::Started))));
+            if let Some(k) = &wake3 {
+                k();
+            }
+        });
         b = match page {
             Page::Url(url) => {
                 if std::env::var_os("APEX_WEB_DEBUG").is_some() {
@@ -202,6 +214,14 @@ impl Webs {
         };
         b = b
             .with_navigation_handler(move |u| {
+                if let Some((path, line)) = file_link(&u) {
+                    // a file link with a line: the file in a text window there
+                    let _ = tx1.send((w, WebEvent::Open(path, Some(line))));
+                    if let Some(k) = &wake1 {
+                        k();
+                    }
+                    return false;
+                }
                 if from_buffer {
                     // our page does not go anywhere: a link is a window
                     if u == "about:blank" || u.is_empty() {
@@ -260,7 +280,7 @@ impl Webs {
         match b.build_as_child(window) {
             Ok(view) => {
                 let _ = view.set_visible(visible);
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, followed: None, watches, plane: self.plane.clone() });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, followed: None, loading: false, watches, plane: self.plane.clone() });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -284,6 +304,21 @@ impl Webs {
                 let _ = h.view.set_visible(false);
                 h.shown = false;
             }
+        }
+    }
+
+    /// Is window `w`'s page loading?
+    pub fn loading(&self, w: WindowId) -> bool {
+        self.hosts.get(&w).is_some_and(|h| h.loading)
+    }
+
+    pub fn any_loading(&self) -> bool {
+        self.hosts.values().any(|h| h.loading)
+    }
+
+    pub fn set_loading(&mut self, w: WindowId, on: bool) {
+        if let Some(h) = self.hosts.get_mut(&w) {
+            h.loading = on;
         }
     }
 
@@ -582,6 +617,19 @@ fn apex_url(url: &str) -> String {
     }
 }
 
+/// A `file://` link carrying a line (`?line=N`, or `#L123` as GitHub
+/// writes it): the host's path, percent-decoded, and the line.
+fn file_link(url: &str) -> Option<(String, usize)> {
+    let rest = url.strip_prefix("file://")?;
+    let (before_frag, frag) = rest.split_once('#').map(|(a, b)| (a, Some(b))).unwrap_or((rest, None));
+    let (path_part, query) = before_frag.split_once('?').map(|(a, b)| (a, Some(b))).unwrap_or((before_frag, None));
+    let line = query
+        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("line=")).and_then(|v| v.parse().ok()))
+        .or_else(|| frag.and_then(|f| f.strip_prefix('L')).and_then(|v| v.split('-').next()).and_then(|v| v.parse().ok()))?;
+    let path = file_url_path(&format!("file://{path_part}"))?;
+    Some((path.display().to_string(), line))
+}
+
 /// Where the pointer is, in the window's own coordinates, asked of the
 /// system: a native view keeps the pointer's moves over it to itself,
 /// so gpui's last known position is stale there.
@@ -626,4 +674,21 @@ pub fn native_mouse(_window: &Window) -> Option<Point<Pixels>> {
 fn respond(responder: wry::RequestAsyncResponder, status: u16, mime: &str, body: Vec<u8>) {
     let r = wry::http::Response::builder().status(status).header("Content-Type", mime).header("Access-Control-Allow-Origin", "*").body(body).unwrap();
     responder.respond(r);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_links_with_a_line_open_the_file_there() {
+        assert_eq!(file_link("file:///a/b.md?line=12"), Some(("/a/b.md".to_string(), 12)));
+        assert_eq!(file_link("file://localhost/a/b%20c.go?x=1&line=3"), Some(("/a/b c.go".to_string(), 3)));
+        assert_eq!(file_link("file:///a/b.md#L7-L9"), Some(("/a/b.md".to_string(), 7)));
+        assert_eq!(file_link("file:///a/b.md"), None);
+        assert_eq!(file_link("https://x/?line=3"), None);
+        assert_eq!(apex_url("file:///a/b.html"), "apexfile:///a/b.html");
+        assert_eq!(webkit_url("apexfile:///a/b.html"), "apexfile://localhost/a/b.html");
+        assert_eq!(webkit_url("http://localhost:8/"), "http://localhost.apex-host:8/");
+    }
 }

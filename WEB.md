@@ -205,8 +205,15 @@ pointer); in other windows those words stay the navigation stack's.
 `Web` in the top row opens a web window on the URL given after it or
 selected: `file://` URLs and paths are the host's files (`apexfile://`,
 relative paths from the window's directory), and a `file://` link
-followed in a page goes the same way. The page's own context menu
-(back, forward, reload) is WebKit's, untouched.
+followed in a page goes the same way, and a `file://` link carrying a
+line (`?line=N`, or GitHub's `#L7`) opens the file in a text window at
+that line instead (a `Goto`). The page's own context menu (back,
+forward, reload) is WebKit's, untouched. A web window's handle shows
+the live colour, as a terminal's does, and breathes towards pale while
+the page loads (WebKit's page-load events, drawn on the pointer timer).
+`apex md` pages are styled as GitHub renders Markdown: its stylesheet
+(github-markdown-css, MIT, in `apex-cli/src`) in a `.markdown-body`
+article laid out as GitHub does.
 
 *Spike (stage 3), done:* a `wry` 0.56 child view built with
 `build_as_child` on gpui's `Window` (which implements

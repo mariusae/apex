@@ -332,8 +332,8 @@ Kill preview); it ends with either window. Relative links in the page
 resolve in the file's directory (apexfile://)." },
     Cmd { name: "md", usage: "apex md <MARKDOWN", short: "Markdown on stdin to HTML on stdout", flags: &[], run: md, long: "\
 Md converts Markdown on stdin to an HTML page on stdout: CommonMark
-with tables, footnotes, strikethrough and task lists, with a small
-stylesheet. Every block is preceded by an empty span carrying the
+with tables, footnotes, strikethrough and task lists, styled as GitHub
+renders Markdown (its own stylesheet, fonts included). Every block is preceded by an empty span carrying the
 source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
@@ -739,19 +739,13 @@ pub fn markdown_page(text: &str) -> String {
     }
     let mut body = String::new();
     html::push_html(&mut body, events.into_iter());
-    format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><style>{MD_STYLE}</style></head><body>\n{body}</body></html>\n")
+    format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>{MD_STYLE}\n{MD_PAGE}</style></head><body><article class=\"markdown-body\">\n{body}</article></body></html>\n")
 }
 
-const MD_STYLE: &str = "\
-body { max-width: 46em; margin: 1.5em auto; padding: 0 1em; font: 16px/1.5 -apple-system, system-ui, sans-serif; color: #222; background: #fff; }
-h1, h2, h3 { line-height: 1.25; margin: 1.2em 0 .5em; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } h3 { font-size: 1.15em; }
-pre, code { font: 13px/1.45 ui-monospace, Menlo, monospace; } code { background: #f4f4f0; padding: .1em .3em; border-radius: 3px; }
-pre { background: #f4f4f0; padding: .8em 1em; overflow-x: auto; border-radius: 4px; } pre code { background: none; padding: 0; }
-blockquote { margin: 1em 0; padding: 0 1em; color: #555; border-left: 3px solid #ddd; }
-table { border-collapse: collapse; margin: 1em 0; } th, td { border: 1px solid #ccc; padding: .3em .6em; text-align: left; }
-img { max-width: 100%; } a { color: #0645ad; } hr { border: 0; border-top: 1px solid #ddd; margin: 2em 0; }
-ul.contains-task-list { list-style: none; padding-left: 1.2em; }
-";
+/// GitHub's own Markdown stylesheet (github-markdown-css, MIT), and the
+/// page around it as GitHub lays it out.
+const MD_STYLE: &str = include_str!("github-markdown-light.css");
+const MD_PAGE: &str = ".markdown-body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; } @media (max-width: 767px) { .markdown-body { padding: 15px; } } body { margin: 0; background: #fff; }";
 
 fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
     let (from, to) = match p.args.as_slice() {
