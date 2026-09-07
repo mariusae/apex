@@ -209,8 +209,9 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
     let env = vec![("winid".to_string(), window.0.to_string())];
     let (tx, rx) = channel();
     let shell = Shell::spawn(&argv, dir, &env, tx)?;
-    // the verbs in the tools menu of this window
-    for verb in ["Interrupt", "EOF"] {
+    // the verbs in the tools menu of this window, and every other B2
+    // command here (win's 'x' event: typed to the shell)
+    for verb in ["Interrupt", "EOF", apex_core::plumb::EXEC] {
         let rule = PlumbRule {
             verb: verb.into(),
             text: None,
@@ -561,7 +562,8 @@ impl Win {
         let _ = self.propose(Proposal::ReplaceRange { dir: None, buffer: self.buffer, version, q0, q1, text: String::new() }, TIMEOUT);
     }
 
-    /// The menu's verbs: Interrupt, EOF.
+    /// The menu's verbs, Interrupt and EOF, and any other B2 command in
+    /// the window (win's 'x'/'X' events): typed to the shell.
     fn on_plumb(&mut self, p: ToolPlumb) {
         if p.ctx != ExecCtx::Window(self.window) {
             self.remote.plumb_ack(p.id, false); // another win's window
@@ -576,7 +578,35 @@ impl Win {
                 self.shell.write(&[0x04]);
                 self.remote.plumb_ack(p.id, true);
             }
+            apex_core::plumb::EXEC => {
+                self.remote.plumb_ack(p.id, true);
+                self.send_command(&p.text);
+            }
             _ => self.remote.plumb_ack(p.id, false),
+        }
+    }
+
+    /// win's `sende`: the text, with a newline, appended after the typing
+    /// as if typed there (so `before` sends it to the shell), dot after it.
+    fn send_command(&mut self, text: &str) {
+        let mut text = text.to_string();
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        for _ in 0..20 {
+            let Ok(buf) = self.remote.node.state.buffer(self.buffer) else { return };
+            let end = (self.p + self.typing.chars().count()).min(buf.text.len());
+            let version = buf.version;
+            match self.propose(Proposal::Insert { buffer: self.buffer, version, at: end, text: text.clone() }, TIMEOUT) {
+                Ok(_) => {
+                    let n = text.chars().count();
+                    let _ = self.propose(Proposal::Select { view: ViewId::Body(self.window), q0: end + n, q1: end + n }, TIMEOUT);
+                    return;
+                }
+                Err(_) => {
+                    let _ = self.step(Duration::from_millis(20));
+                }
+            }
         }
     }
 }

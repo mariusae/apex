@@ -363,7 +363,10 @@ highest first, then by age; the first rule that matches and is taken ends
 the walk, and with none left the text is looked for in the window (Look).
 A rule's verb is the command it answers: plumb is B3; any other verb is
 offered in the tools menu (B4, or shift-click) of every window the rule
-applies to, and B2 on the word does the same.
+applies to, and B2 on the word does the same. The verb exec is special:
+it takes every B2 command in the windows it applies to that no builtin
+and no other verb took, the whole line as its text (win's rule, so that
+B2 on an old command line runs it again); it is no word in the menu.
 
 Predicates (all given must hold):
 	-text=RE      the plumbed text (a verb's arguments) matches RE, whole;

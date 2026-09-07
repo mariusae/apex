@@ -751,7 +751,12 @@ and typing run kept from the buffer's entry stream (our own inserts told
 apart by a queue of what we proposed), echo cancelled, ^C/DEL/^D as win
 reads them, raw mode when echo is off; `Win` in the top tag runs it as a
 command named Win. Unbound control keys are inserted as acme inserts
-them, which is what lets win see ^D.
+them, which is what lets win see ^D. B2 on any text in its window (win's
+'x'/'X' events, `sende`) types it to the shell, appended after the typing
+with a newline, dot after it: win holds a rule with the special verb
+`exec`, which takes every B2 command in the windows it applies to that
+no builtin and no other verb took, the whole line as its text, and is no
+word in the tools menu.
 
 Typed client libraries (Rust, Go) are generated from the schema for programs
 that want more than the CLI.

@@ -1094,10 +1094,15 @@ impl Server {
             _ => (String::new(), WinKind::File),
         };
         let offered = view.state.meta.rules.values().any(|r| r.rule.verb == verb && r.rule.applies_to(&name, kind));
-        if !offered {
+        // no rule offers the word: a rule for every command here (win's
+        // exec) takes the whole line
+        let (verb, rest) = if offered {
+            (verb, text[verb.len()..].trim().to_string())
+        } else if view.state.meta.rules.values().any(|r| r.rule.verb == apex_core::plumb::EXEC && r.rule.applies_to(&name, kind)) {
+            (apex_core::plumb::EXEC, text.trim().to_string())
+        } else {
             return None;
-        }
-        let rest = text[verb.len()..].trim().to_string();
+        };
         // a verb acts on the window's dot
         let at = match ctx {
             ExecCtx::Window(w) => view.view_buffer(ViewId::Body(w)).ok().and_then(|b| view.selection(ViewId::Body(w)).ok().map(|(q0, q1)| Span { buffer: b, q0, q1 })),

@@ -134,7 +134,8 @@ exist, as B3 always did.
 
 `apex tool win [CMD...]` is acme's win, a shell in a text window: the
 editable transcript, with the shell's output at the output point and
-your typing sent line by line, ^C/DEL to interrupt, Send, and Interrupt
+your typing sent line by line, ^C/DEL to interrupt, B2 on any text typing
+it to the shell (an old command line again), Send, and Interrupt
 and EOF in the tools menu, and `Snarfout` (in terminals too): the last
 command as `$ cmd`, the prompt normalised, and its output, found between
 the last two prompts, into the snarf buffer. `Win` in a tag runs it in the window's

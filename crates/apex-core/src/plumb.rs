@@ -181,10 +181,15 @@ pub fn ordered(rules: &BTreeMap<RuleId, Rule>) -> Vec<(RuleId, &Rule)> {
 
 /// The verbs a window shows in its tag: every rule that applies to it
 /// and answers something other than `plumb`, once each, in order.
+/// The verb that takes every B2 command in a window that nothing else
+/// took (no builtin, no verb rule): win's, so that B2 on an old command
+/// line types it to the shell. Not a word in the menu.
+pub const EXEC: &str = "exec";
+
 pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (_, r) in ordered(rules) {
-        if r.rule.verb != "plumb" && r.rule.applies_to(name, kind) && !out.contains(&r.rule.verb) {
+        if r.rule.verb != "plumb" && r.rule.verb != EXEC && r.rule.applies_to(name, kind) && !out.contains(&r.rule.verb) {
             out.push(r.rule.verb.clone());
         }
     }
