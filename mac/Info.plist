@@ -16,5 +16,12 @@
   <key>NSSupportsAutomaticGraphicsSwitching</key> <true/>
   <key>LSApplicationCategoryType</key> <string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key> <string>apex</string>
+	<!-- pages on a host's own network are plain http as often as not:
+	     Apex shows what a browser would, so cleartext loads are allowed -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

@@ -218,6 +218,9 @@ fn proxy_one(plane: IoPlane, mut c: TcpStream) {
     let line = text.lines().next().unwrap_or("").to_string();
     let mut parts = line.split_whitespace();
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or("").to_string());
+    if std::env::var_os("APEX_WEB_DEBUG").is_some() {
+        eprintln!("proxy: request {line:?}");
+    }
     if method != "CONNECT" || target.is_empty() {
         let _ = c.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         return;
@@ -227,11 +230,22 @@ fn proxy_one(plane: IoPlane, mut c: TcpStream) {
         Some((h, port)) => format!("{}:{port}", unalias_host(h)),
         None => target,
     };
+    let debug = std::env::var_os("APEX_WEB_DEBUG").is_some();
+    if debug {
+        eprintln!("proxy: {line} -> CONNECT {target}");
+    }
     let (stream, rx) = plane.open("CONNECT", &target, &[]);
     // the answer: up, or not
     match rx.recv_timeout(Duration::from_secs(30)) {
-        Ok(IoFrame::Response { status: 200, .. }) => {}
+        Ok(IoFrame::Response { status: 200, .. }) => {
+            if debug {
+                eprintln!("proxy: {target}: up");
+            }
+        }
         Ok(IoFrame::Response { status, .. }) => {
+            if debug {
+                eprintln!("proxy: {target}: {status}");
+            }
             let _ = c.write_all(format!("HTTP/1.1 502 Bad Gateway\r\nX-Apex-Status: {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes());
             plane.close(stream);
             return;

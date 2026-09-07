@@ -238,7 +238,11 @@ proxy undoes (`127-0-0-1.apex-host`, `localhost.apex-host`); the
 session sees the bare name, navigations are mapped back, and a link to
 a bare loopback name inside a page is rerouted the same way. Absolute
 loopback URLs in a page's own resources (images, scripts) still go to
-the client's loopback: a known gap.
+the client's loopback, and the page's server sees the alias in its
+`Host` header: known gaps. The app bundle allows cleartext loads
+(`NSAllowsArbitraryLoads`), since App Transport Security would
+otherwise refuse `http://` to anything but a bare localhost, the alias
+included.
 
 `WKWebView` cannot intercept `http` or `https` with a scheme handler;
 only custom schemes. It can, on macOS 14 and later, take a per-data-store

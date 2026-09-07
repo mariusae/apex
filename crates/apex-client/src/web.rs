@@ -92,6 +92,9 @@ impl Webs {
                 None
             }
         });
+        if std::env::var_os("APEX_WEB_DEBUG").is_some() {
+            eprintln!("web: views over a plane: {}, proxy port {proxy:?}", plane.is_some());
+        }
         Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake }
     }
 
@@ -144,7 +147,12 @@ impl Webs {
         let from_buffer = matches!(page, Page::Html { .. });
         let mut b = wry::WebViewBuilder::new().with_bounds(rect);
         b = match page {
-            Page::Url(url) => b.with_url(&webkit_url(url)),
+            Page::Url(url) => {
+                if std::env::var_os("APEX_WEB_DEBUG").is_some() {
+                    eprintln!("web: {w} loads {}", webkit_url(url));
+                }
+                b.with_url(&webkit_url(url))
+            }
             Page::Html { html, dir, .. } => b.with_html(with_base(html, dir)),
         };
         b = b
@@ -181,6 +189,9 @@ impl Webs {
                 }
             });
         if let Some(port) = self.proxy {
+            if std::env::var_os("APEX_WEB_DEBUG").is_some() {
+                eprintln!("web: {w} through the proxy on {port}");
+            }
             b = b.with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host: "127.0.0.1".into(), port: port.to_string() }));
         }
         let fetcher = Fetcher { plane: self.plane.clone(), watches: watches.clone(), events: self.tx.clone(), wake: self.wake.clone(), window: w };
