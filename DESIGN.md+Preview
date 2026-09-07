@@ -1,0 +1,1322 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>body { max-width: 46em; margin: 1.5em auto; padding: 0 1em; font: 16px/1.5 -apple-system, system-ui, sans-serif; color: #222; background: #fff; }
+h1, h2, h3 { line-height: 1.25; margin: 1.2em 0 .5em; } h1 { font-size: 1.8em; } h2 { font-size: 1.4em; } h3 { font-size: 1.15em; }
+pre, code { font: 13px/1.45 ui-monospace, Menlo, monospace; } code { background: #f4f4f0; padding: .1em .3em; border-radius: 3px; }
+pre { background: #f4f4f0; padding: .8em 1em; overflow-x: auto; border-radius: 4px; } pre code { background: none; padding: 0; }
+blockquote { margin: 1em 0; padding: 0 1em; color: #555; border-left: 3px solid #ddd; }
+table { border-collapse: collapse; margin: 1em 0; } th, td { border: 1px solid #ccc; padding: .3em .6em; text-align: left; }
+img { max-width: 100%; } a { color: #0645ad; } hr { border: 0; border-top: 1px solid #ddd; margin: 2em 0; }
+ul.contains-task-list { list-style: none; padding-left: 1.2em; }
+</style></head><body>
+<span class="apex-line" data-line="1"></span>
+<h1>apex — design</h1>
+<span class="apex-line" data-line="3"></span>
+<p><code>apex</code> is a modernised acme: text-first, mouse-oriented, plumbing everywhere,
+fast and simple. It keeps acme's interaction model and adds what acme lacks
+for today's work: a client–server split so the UI can detach and re-attach
+locally or over ssh, embedded terminals for running coding agents, and an
+extensibility API that does not depend on 9P or a mounted filesystem.</p>
+<span class="apex-line" data-line="9"></span>
+<p>This document is the source of truth for the architecture. Sections marked
+<em>v1</em> are in scope for the first milestone; everything else is design intent.
+The current gpui prototype (<code>acme-gpui</code>) is the seed of the client.</p>
+<hr />
+<span class="apex-line" data-line="15"></span>
+<h2>1. Goals and non-goals</h2>
+<span class="apex-line" data-line="17"></span>
+<p>Goals:</p>
+<ul>
+<span class="apex-line" data-line="19"></span>
+<li><strong>The acme experience.</strong> Three-button mouse, tags, columns, B2 executes,
+B3 looks, chords, everything is text. Colours, fonts and geometry follow
+plan9port. Speed is a feature: no perceptible latency for local editing.</li>
+<span class="apex-line" data-line="22"></span>
+<li><strong>All state on the server.</strong> The UI is a renderer plus an input device. A
+client can detach at any time and re-attach with full fidelity; the
+server keeps scrollback and history and serves them on demand.</li>
+<span class="apex-line" data-line="25"></span>
+<li><strong>Remotable.</strong> <code>apex attach host</code> over ssh is the remote story. Files stay
+where the server runs; nothing is synchronised.</li>
+<span class="apex-line" data-line="27"></span>
+<li><strong>Agents.</strong> Terminal windows are first-class. An agent runs in one and
+drives the editor through the same CLI a shell script would use.</li>
+<span class="apex-line" data-line="29"></span>
+<li><strong>Extensibility at least as good as acme's</strong>, with few concepts, exposed
+through the <code>apex</code> command (tmux-style) and a typed protocol for programs.</li>
+<span class="apex-line" data-line="31"></span>
+<li><strong>Modern extensions fit:</strong> LSP, formatters, file watchers, agents.</li>
+</ul>
+<span class="apex-line" data-line="33"></span>
+<p>Non-goals (for now): multiple simultaneous UI clients editing the same
+session ("single player mode": one UI attachment per session at a time), a
+plugin language, a configuration language, web windows, persistence of the
+server's state across restarts, Windows.</p>
+<span class="apex-line" data-line="38"></span>
+<h3>Terminology</h3>
+<ul>
+<span class="apex-line" data-line="40"></span>
+<li><strong>Session</strong>: what tmux calls a session — a whole workspace (its shards,
+layout, windows, terminals) living on one server. A server hosts many.</li>
+<span class="apex-line" data-line="42"></span>
+<li><strong>Attachment</strong>: the fenced identity a client gets when it attaches to a
+session. Leases are granted to attachments. A client may hold several
+attachments at once, to sessions on local and remote servers.</li>
+<span class="apex-line" data-line="45"></span>
+<li><strong>Connection</strong>: a socket. Connections drop and resume without affecting
+attachments or sessions.</li>
+</ul>
+<span class="apex-line" data-line="48"></span>
+<h3>Principles</h3>
+<ul>
+<span class="apex-line" data-line="50"></span>
+<li><strong>Nothing is ever lost.</strong> Whenever the system must set something aside —
+unflushed edits from a fenced attachment, a buffer overwritten by <code>Get</code>,
+a disk change under a dirty buffer — every version is kept and shown,
+with provenance, in a <code>+Recovered</code> buffer or in the tag. Silent discard
+is a bug.</li>
+<span class="apex-line" data-line="55"></span>
+<li><strong>State on the server, rendering on the client.</strong> The client is a
+renderer and input device with a replica; if it lacks data for an
+operation it hands the operation to the server (§5) rather than blocking.</li>
+</ul>
+<hr />
+<span class="apex-line" data-line="61"></span>
+<h2>2. Overview</h2>
+<span class="apex-line" data-line="63"></span>
+<pre><code>                 ┌──────────────────────────── server (one per host) ───────────────────────────┐
+                 │  logs + snapshots      state machine (core crate)      ptys / files / procs  │
+                 │  fencing / attachments plumber, Edit language          file watcher          │
+                 └───────────┬───────────────────────────┬────────────────────────┬─────────────┘
+       attach protocol       │                           │ control protocol       │
+   (unix socket / ssh stdio) │                           │ (same frames)          │
+                 ┌───────────┴──────────┐     ┌──────────┴──────────┐   ┌─────────┴─────────┐
+                 │  UI client (gpui)    │     │  apex CLI / scripts │   │ tools: lsp, agent │
+                 │  state machine       │     │  win, Watch, ...    │   │ formatter, ...    │
+                 │  (core crate, leader │     └─────────────────────┘   └───────────────────┘
+                 │   for its shards)    │
+                 └──────────────────────┘
+</code></pre>
+<span class="apex-line" data-line="78"></span>
+<p>Three kinds of process:</p>
+<ul>
+<span class="apex-line" data-line="80"></span>
+<li><strong>Server.</strong> A daemon, one per host, hosting many sessions. Owns the logs
+(in memory), sequences or stores every change, runs ptys and external
+programs, watches files, hosts the plumber. Runs where the files are.</li>
+<span class="apex-line" data-line="83"></span>
+<li><strong>UI client.</strong> Attaches to one or more sessions (one OS window each).
+Mirrors each session's state, renders it, and while attached <em>leads</em> the
+shards a user edits (buffers, windows, layout) so editing never waits on
+a round trip.</li>
+<span class="apex-line" data-line="87"></span>
+<li><strong>Tools.</strong> Anything else: the <code>apex</code> CLI, shell scripts, <code>apex lsp</code>, an
+agent harness. Tools read state and <em>propose</em> changes through the server.</li>
+</ul>
+<span class="apex-line" data-line="90"></span>
+<p>The <strong>core crate</strong> (<code>apex-core</code>) is shared by server and client: buffers,
+selections, undo, plumbing rules, built-in commands, and the state machine
+that applies log entries. The Edit language is its own crate (<code>apex-edit</code>,
+§8a) that core depends on. Neither has UI, I/O or a dependency on gpui, so
+both nodes run the identical code and hold the identical state, and the UI
+is a separate layer that only reads state and emits entries.</p>
+<hr />
+<span class="apex-line" data-line="99"></span>
+<h2>3. Model</h2>
+<span class="apex-line" data-line="101"></span>
+<h3>3.1 Nouns</h3>
+<span class="apex-line" data-line="103"></span>
+<p>Four nouns, mirroring acme's files:</p>
+<span class="apex-line" data-line="105"></span><table><thead><tr><th>noun</th><th>acme equivalent</th><th>contents</th></tr></thead><tbody>
+<tr><td><strong>Buffer</strong></td><td><code>File</code></td><td>id, name, rope, version, undo history, dirty/stale flags, disk hash</td></tr>
+<tr><td><strong>Window</strong></td><td><code>Window</code>/<code>Text</code></td><td>id, tag view, body view, kind (<code>text</code> | <code>term</code> | <code>web</code>), column slot</td></tr>
+<tr><td><strong>Event</strong></td><td><code>event</code> file</td><td>the log itself: edits, selections, layout changes, executions</td></tr>
+<tr><td><strong>Command</strong></td><td>writing to <code>ctl</code>, B2</td><td>"execute this string in the context of that window"</td></tr>
+</tbody></table>
+<span class="apex-line" data-line="112"></span>
+<p>A <strong>view</strong> is <code>(buffer id, q0, q1, origin)</code>: acme's <code>Text</code>. A window has a
+tag view and, for text windows, a body view. Two windows may view one buffer
+(Zerox) with independent selections and origins; an edit in either shows in
+both, undo is per buffer, and only the last window on a dirty buffer warns
+on Del. Every tag is its own buffer. <code>+Errors</code> is a buffer.</p>
+<span class="apex-line" data-line="118"></span>
+<p>Terminal and web windows have no body buffer; their body state is a
+server-owned emulator grid or page.</p>
+<span class="apex-line" data-line="121"></span>
+<h3>3.2 Shards</h3>
+<span class="apex-line" data-line="123"></span>
+<p>State is partitioned into <strong>shards</strong>, each an independent replicated state
+machine with its own log and its own lease. A shard is either <em>leasable</em>
+(its lease moves between attachments) or <em>pinned</em> (its leader is fixed and the
+lease never moves):</p>
+<span class="apex-line" data-line="128"></span><table><thead><tr><th>shard</th><th>one per</th><th>entries</th><th>default leader</th></tr></thead><tbody>
+<tr><td><code>buffer</code></td><td>buffer</td><td><code>Create</code>, <code>Edit{version, q0, nd, text, group}</code>, <code>Undo/Redo{version}</code>, <code>Clean{version}</code>, <code>Stale{hash}</code>, <code>Rename</code>, <code>ViewAdd/Del{view}</code>, <code>Select{view, q0, q1}</code>, <code>Origin{view, off}</code></td><td>server</td></tr>
+<tr><td><code>window</code></td><td>window</td><td><code>Create{tag, body}</code>, <code>Font</code>, <code>Exec{text, handler, at}</code>, `Status{exec, Done</td><td>Failed</td></tr>
+<tr><td><code>layout</code></td><td>session</td><td><code>Init{top}</code>, <code>ColNew/Del/Resize</code>, <code>WinPlace{window, col, at}</code>, <code>WinRemove</code>, <code>WinResize</code>, <code>Snarf</code>, <code>Exec</code> from column tags and the top row; <em>as built also</em> <code>Arrange{r, cols}</code>, <code>Status</code>, <code>Visit{from, to}</code>, <code>NavPop{back, at}</code> (the navigation stacks, <code>Layout{nav_back, nav_forward}</code> of <code>Loc{name, pos}</code>)</td><td>server</td></tr>
+<tr><td><code>term</code></td><td>terminal</td><td><code>Rows{seq, rows: [cells]}</code>, <code>Cursor</code>, <code>Mode</code>, <code>Resize</code>, <code>Exit</code></td><td>server, <strong>pinned</strong></td></tr>
+<tr><td><code>metalog</code></td><td>session</td><td><code>ShardNew/Del</code>, <code>Attach/Detach</code>, <code>LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}</code>, <code>PlumbRuleInstall/Remove{attachment, priority, predicate, action}</code>; <em>as built also</em> <code>Set/Unset{owner, key, value}</code> (settings, the session's or an attachment's)</td><td>server, <strong>pinned</strong></td></tr>
+<tr><td><code>registry</code></td><td>server</td><td><code>SessionNew/Del/Rename</code></td><td>server, <strong>pinned</strong></td></tr>
+</tbody></table>
+<span class="apex-line" data-line="137"></span>
+<p>The <strong>metalog</strong> is the session's authority on everything <em>about</em> shards
+rather than in them: which shards exist, which attachment holds which lease
+at which epoch, every transfer or reclaim, and the plumbing rule table
+(§8), so a reader can tell what happened and why. Fencing is decided there
+and enforced by the log store against its latest state. Layout
+cross-references windows and buffers but, being leasable, cannot be the
+source of truth for what exists. The server-wide <strong>registry</strong> lists
+sessions.</p>
+<span class="apex-line" data-line="146"></span>
+<p><strong>Views (selections and origins) live in the buffer shard</strong>, not the
+window shard: a buffer edit adjusts every view on the buffer, so <code>Select</code>
+and <code>Edit</code> must share one sequence or replicas could interleave them
+differently and disagree. Column tags and the top row have views too.</p>
+<span class="apex-line" data-line="151"></span>
+<p>Cross-shard operations are several entries in several logs with no
+atomicity between them. acme has none either. Zerox is a <code>layout.WinNew</code>
+plus a <code>window.*</code> entry naming the buffer and version; the reader tolerates
+seeing them in either order.</p>
+<span class="apex-line" data-line="156"></span>
+<h3>3.3 The state machine</h3>
+<span class="apex-line" data-line="158"></span>
+<pre><code>state(shard) = apply*(snapshot(shard, N), entries N+1..)
+</code></pre>
+<span class="apex-line" data-line="162"></span>
+<p>Rules that keep both nodes identical:</p>
+<ol>
+<span class="apex-line" data-line="164"></span>
+<li><code>apply</code> is deterministic and pure: no clock, no randomness, no I/O.</li>
+<span class="apex-line" data-line="165"></span>
+<li>Anything with an effect is an <strong>exec entry</strong> (§5) naming its handler.
+<code>apply</code> records it as state; the node matching the handler performs the
+effect and its outcome comes back as further entries referencing the
+exec's sequence. <strong>Effects fire on live observation only, once</strong>: a
+performer acts on an exec it sees arrive at the head of a live stream,
+never while replaying a tail on attach or restart, and appends
+<code>Done{exec_seq}</code> or <code>Failed{exec_seq, reason}</code> (or <code>Unknown</code> after a
+crash between the two — at-most-once, the right default for a shell
+command; <code>Put</code> is idempotent anyway).</li>
+<span class="apex-line" data-line="174"></span>
+<li>An edit to a buffer adjusts every view on that buffer (selection and
+origin), in one place in the core crate, exactly as acme's <code>textinsert</code>
+walks <code>file-&gt;text[]</code>.</li>
+<span class="apex-line" data-line="177"></span>
+<li>Snapshots are a pure function of the log prefix. Either node may take one.</li>
+<span class="apex-line" data-line="178"></span>
+<li>Divergence is detectable: nodes hash shard state at attach and
+periodically; a mismatch is a bug in <code>apply</code>, surfaced immediately.
+Tests feed random entry sequences to two instances and compare.</li>
+</ol>
+<span class="apex-line" data-line="182"></span>
+<p>Terminal grids are the one thing not reconstructible from their raw input
+(the emulator has no serialisable state), so terminal entries are grid rows,
+not pty bytes. The raw pty byte stream is still logged to disk for
+<code>apex term log</code>, search and agent transcripts, but correctness never depends
+on replaying it.</p>
+<hr />
+<span class="apex-line" data-line="190"></span>
+<h2>4. Leadership: attachments, leases, fencing</h2>
+<span class="apex-line" data-line="192"></span>
+<h3>4.1 Attachments</h3>
+<span class="apex-line" data-line="194"></span>
+<p>An <strong>attachment</strong> is explicit and server-issued (<code>apex attach</code> creates one,
+recorded in the session's metalog), with a monotonically increasing id.
+Leases are granted to attachments, never to connections. A dropped
+connection does not end an attachment: the client reconnects, presents its
+attachment id, and both sides resume from the last acknowledged sequence,
+keeping their tails. Nothing is lost on a network blip.</p>
+<span class="apex-line" data-line="201"></span>
+<p>Resuming is decided per shard, and the two directions differ:</p>
+<ul>
+<span class="apex-line" data-line="203"></span>
+<li>Shards the attachment <strong>leads</strong> (buffers, windows, layout): the client is
+ahead of the server, not behind. It flushes its unflushed tail; there is
+nothing to replay.</li>
+<span class="apex-line" data-line="206"></span>
+<li>Shards the attachment <strong>follows</strong> (terminals, tool-led buffers): the
+server chooses, by size, between replaying the tail since the last
+acknowledged sequence and sending a fresh snapshot. If the tail is larger
+than the snapshot (or over a fixed threshold), it re-snapshots — an hour
+of agent output is a huge tail and a small grid. Time away is only a
+hint; bytes decide.</li>
+</ul>
+<span class="apex-line" data-line="213"></span>
+<p>Proposals addressed to a leader whose attachment is disconnected are held
+briefly, then rejected with "leader unreachable" so tools retry rather than
+hang. Once the attachment is fenced, proposals go to the new leader.</p>
+<span class="apex-line" data-line="217"></span>
+<p><em>As built:</em> a client that has lost its leases (another UI attached and
+took them) sees it in the metalog it follows, and shows it: the square
+at the top-left of the top row fills red, the title bar reads
+"fenced", and the window title says another client leads.</p>
+<span class="apex-line" data-line="222"></span>
+<p>While an attachment holds entries the server has not acknowledged, the
+affected buffers are <strong>unsynced</strong> — a state distinct from dirty (§9), shown
+in the tag box in its own colour. It clears when the attachment resumes
+and flushes; if the attachment is fenced instead, §4.4 applies.</p>
+<span class="apex-line" data-line="227"></span>
+<h3>4.2 Leases</h3>
+<span class="apex-line" data-line="229"></span>
+<p>Every shard has exactly one <strong>leader</strong> at any time: the holder of its lease.
+Only the leader appends to the shard's log; everyone else <strong>proposes</strong> to
+the leader (§5). The lease carries a <strong>fence epoch</strong>, bumped on every
+transfer and every reclaim.</p>
+<ul>
+<span class="apex-line" data-line="234"></span>
+<li>On attach, the UI attachment takes the leases for <code>layout</code>, every
+<code>window</code>, and every <code>buffer</code> it shows, in one bulk grant. It takes further buffer
+leases lazily as it opens them. Editing, selecting and rearranging then
+happen locally with no round trip; entries stream to the server
+asynchronously, batched per frame.</li>
+<span class="apex-line" data-line="239"></span>
+<li><code>term</code> shards are <strong>pinned</strong> to the server: the lease never moves. The
+client is a follower that renders rows and proposes keystrokes. Terminals
+therefore never suffer lease loss.</li>
+<span class="apex-line" data-line="242"></span>
+<li>A tool may take a <code>buffer</code> lease for exclusive multi-step work (an agent
+rewriting a file). While it holds it, the UI's edits to that buffer become
+proposals routed through the tool, so human and agent edits are serialised
+without interleaving. Tool leases have a TTL so a crashed tool cannot lock
+a file forever. This is opt-in; the default for tools is to propose.</li>
+</ul>
+<span class="apex-line" data-line="248"></span>
+<h3>4.3 Fencing</h3>
+<span class="apex-line" data-line="250"></span>
+<p>Every append and every proposal — terminal keystrokes included — carries
+<code>(attachment id, fence epoch)</code> for the shard. The server's log store, which
+every attachment must go through, refuses anything stale. A client that still
+believes it leads cannot append, cannot propose and cannot type into a
+terminal.</p>
+<span class="apex-line" data-line="256"></span>
+<h3>4.4 Transfer and reclaim</h3>
+<span class="apex-line" data-line="258"></span>
+<p>Both are driven through the metalog, and a new UI attachment always
+tries the first before the second:</p>
+<ul>
+<span class="apex-line" data-line="261"></span>
+<li><strong>Transfer</strong> (cooperative): the server appends <code>LeaseRequest</code>; the holder,
+if connected, flushes and appends <code>LeaseRelease{seq}</code>; the server appends
+<code>LeaseGrant{new holder, epoch+1, seq}</code>. Lossless.</li>
+<span class="apex-line" data-line="264"></span>
+<li><strong>Reclaim</strong>: the holder does not answer within a short deadline (it is
+disconnected or wedged). The server appends <code>LeaseReclaim{epoch+1, last flushed seq}</code> and grants from there; the old attachment is dead from that
+instant, whether or not it ever returns. The deadline is the one timeout
+that is not garbage collection, and it is safe because a reclaim is only
+ever lossy, never incorrect. Other timeouts only collect attachments
+nobody will resume and expire tool leases.</li>
+<span class="apex-line" data-line="271"></span>
+<li><strong>Recovery</strong>: a fenced client re-attaches only as a <em>new</em> attachment,
+takes fresh snapshots, and re-submits its unflushed tail as
+base-versioned proposals. Where versions still match they apply and
+nothing is lost; where they don't, the text goes into <code>+Recovered</code> with
+provenance (attachment, time, base version) so work is un-sequenced
+rather than lost.</li>
+</ul>
+<span class="apex-line" data-line="278"></span>
+<p>The UI flushes every frame, so the unflushed tail is milliseconds of typing.
+Server acks give an honest "unsynced" signal; the tag's layout box can show
+it.</p>
+<span class="apex-line" data-line="282"></span>
+<p>Every entry records the attachment and epoch that wrote it. <code>apex log</code>
+shows provenance: "this edit came from the agent's attachment".</p>
+<hr />
+<span class="apex-line" data-line="287"></span>
+<h2>5. Proposals and commands</h2>
+<span class="apex-line" data-line="289"></span>
+<p>Tools write through one verb:</p>
+<span class="apex-line" data-line="291"></span>
+<pre><code>propose(shard, base_version, ops) -&gt; Accepted{seq} | Rejected{current_version}
+</code></pre>
+<span class="apex-line" data-line="295"></span>
+<p>The server routes a proposal to the shard's current leader (itself
+included); the caller never learns who that was. A proposal is applied
+atomically and in order within its shard, so a formatter's hundred edits
+travel as one proposal and cannot interleave with typing. There are no
+cross-shard proposals.</p>
+<span class="apex-line" data-line="301"></span>
+<p>Commands are what B2 does, and they are <strong>log entries</strong>, exactly as acme
+writes every B2 and B3 to its <code>event</code> file:</p>
+<span class="apex-line" data-line="304"></span>
+<pre><code>Exec{ text, window, at_seq, handler }      handler ∈ { leader, server, tool(name) }
+</code></pre>
+<span class="apex-line" data-line="308"></span>
+<p>The leader appends the exec like any entry (provenance, and <code>apex events</code>
+shows what was executed). The node matching <code>handler</code> performs it and
+appends the outcome. Resolution of the handler is recorded in the entry so
+it replays as data:</p>
+<span class="apex-line" data-line="313"></span><table><thead><tr><th>command</th><th>handler</th><th>outcome</th></tr></thead><tbody>
+<tr><td><code>Cut Paste Snarf Undo Redo Look Edit Font Zerox</code>, layout commands</td><td>leader</td><td>concrete entries, no round trip</td></tr>
+<tr><td><code>Put Get</code>, <code>New</code> on a path, <code>Newterm Newweb</code>, <code>|cmd &lt;cmd &gt;cmd</code>, unknown words (shell)</td><td>server</td><td>proposals the leader applies; terminal rows</td></tr>
+<tr><td>words a tool registered for (<code>Definition</code>, <code>Format</code>, ...)</td><td>tool(name)</td><td>proposals</td></tr>
+<tr><td>B3 text</td><td>server (plumber)</td><td>a further exec, or a window</td></tr>
+</tbody></table>
+<span class="apex-line" data-line="320"></span>
+<p>This is acme's model where a tool may consume an event and act instead of
+acme, made explicit. Locally the split is invisible; remotely it is ssh's:
+editing is instant, running things costs one round trip.</p>
+<span class="apex-line" data-line="324"></span>
+<p>The <code>|cmd</code>, <code>&lt;cmd</code>, <code>&gt;cmd</code> forms are commands whose input is the selection.
+The input text is not stored in the entry: the exec sits at a sequence and
+any replica reconstructs the text from the state there. What the entry does
+carry is the buffer id, its version and the range, because the exec lives in
+the window log and the text in a buffer log; cross-shard ordering must never
+be guessed. The output, being an effect, returns as a proposal against that
+version.</p>
+<span class="apex-line" data-line="332"></span>
+<p><strong>Handlers also give the client a fallback.</strong> A command the client can
+satisfy from mirrored state runs locally; one it cannot — <code>Look</code> past the
+mirrored part of a huge buffer, <code>Edit</code> over paged text — it appends with
+<code>handler: server</code>. The server evaluates it and proposes the resulting
+selection and origin; the client's ordinary "not in view, page it" path
+fetches the text. Full mirroring (§6.1) is therefore an optimisation, not an
+invariant.</p>
+<span class="apex-line" data-line="340"></span>
+<p><strong>Proposals may be intents; entries are always concrete.</strong> A proposal is
+either concrete ops against a base version (a formatter that diffed the
+version it read) or an <em>intent</em> the leader evaluates against its exact
+current state and lowers into concrete entries: <code>SetContent{text}</code> (the
+result of <code>Get</code> or a file-watch reload), an Edit program (<code>apex edit</code>), a
+selection by address. Intents have no base-version race, because the leader
+runs them on the live text.</p>
+<span class="apex-line" data-line="348"></span>
+<p>The lease never moves for a server-side action. <code>Get</code> on a client-led buffer
+is: leader appends <code>Exec{Get, handler: server}</code> → server sees it live, reads
+the file → server <code>Propose{SetContent}</code> → leader diffs, appends the edits
+and <code>Clean{version}</code> → server appends <code>Done</code>.
+<code>Put</code> is the mirror: server applies its replica to <code>at_seq</code> (the entries are
+ahead of the exec on the same stream), writes the file, records the hash so
+the watcher ignores the event, and proposes <code>Clean{version}</code>. Handing the
+lease to the server instead would cost two transfers, stall typing while the
+server held it, and open a fencing window on a buffer being edited.</p>
+<span class="apex-line" data-line="358"></span>
+<p><code>Clean{v}</code> means <em>clean as of version v</em>; dirty is derived as "current
+version ≠ clean version", so typing during a slow <code>Put</code> leaves the buffer
+correctly dirty afterwards. Between the exec and its <code>Done</code> the UI knows a
+<code>Put</code> is in flight and shows it; a <code>Failed{exec, reason}</code> is shown in place
+rather than as an <code>+Errors</code> line that scrolls away.</p>
+<span class="apex-line" data-line="364"></span>
+<p><em>As built (<code>apex-server/src/proposal.rs</code>).</em> The server never writes a
+shard it does not lead. Every effect it has on buffers, windows or the
+layout is a value of one <code>Proposal</code> enum — <code>OpenWindow</code>, <code>NewWindow</code>,
+<code>TermWindow</code>, <code>SetContent</code>, <code>Clean</code>, <code>Rename</code>, <code>ReplaceRange{version}</code>,
+<code>Errors</code>, <code>Status</code>, <code>Look</code> — which the leader lowers into entries with
+<code>proposal::apply</code>. In-process the client applies proposals the moment the
+server returns them; over the socket they travel as <code>Propose</code> messages.
+Only <code>ReplaceRange</code> and <code>Clean</code> carry a base version; the rest are intents
+lowered against the leader's live state, as this section says. The
+handler predicate is not a general predicate yet: <code>Handler::Server</code> is
+resolved by the leader at exec time from the command table.</p>
+<hr />
+<span class="apex-line" data-line="378"></span>
+<h2>6. Protocols</h2>
+<span class="apex-line" data-line="380"></span>
+<p>One schema (protobuf), one framing (length-prefixed messages), two
+"services" on it. Transport is a Unix socket locally. Remotely,
+<code>apex attach host</code> runs <code>ssh host apex attach -stdio</code> and speaks the same
+frames over the pipe — no socket forwarding, no daemon beyond sshd. gRPC is
+not the transport (HTTP/2 over stdio is awkward and the attach path must be
+the fastest thing in the system); it can be a later gateway.</p>
+<span class="apex-line" data-line="387"></span>
+<h3>6.1 Attach protocol (UI ⇄ server) — <em>v1</em></h3>
+<span class="apex-line" data-line="389"></span>
+<p>Tuned for one thing: the client mirrors only what it can see.</p>
+<span class="apex-line" data-line="391"></span>
+<pre><code>client → server
+  Hello{session, attachment?: id}            attach to a session, or resume an attachment
+  Take{shards}                               bulk lease request (on attach)
+  Append{shard, epoch, entries}              leader appends (incl. Exec), batched per frame
+  Propose{shard, epoch, base, ops}           for shards it doesn't lead (term input)
+  Page{term, rows: range}                    demand-page scrollback
+  Ack{shard, seq}
+
+server → client
+  Welcome{attachment, fenced?: reason}
+  Grant{shard, epoch, seq} | Deny
+  Snapshot{shard, seq, state}                full buffer / window / layout / term grid
+  Entries{shard, from, entries}              tail, or server-authored rows
+  Propose{shard, base, ops}                  server asking the leader to apply
+  Ack{shard, seq}
+  Hash{shard, seq, hash}                     divergence check
+</code></pre>
+<ul>
+<span class="apex-line" data-line="410"></span>
+<li>Buffers a window shows are mirrored in full by default (acme loads whole
+files; they are bounded by what a person opens), so <code>Look</code>, <code>Edit</code> and
+B2 built-ins run locally. Where a buffer is too large to mirror, the
+client pages it and hands those commands to the server (§5).</li>
+<span class="apex-line" data-line="414"></span>
+<li>Terminal scrollback and <code>+Errors</code>-like unbounded output are demand-paged
+by row range. Attach sends the visible grid (a 200×50 grid is ~50 KB).</li>
+<span class="apex-line" data-line="416"></span>
+<li>Frames coalesce per display refresh; nothing is sent per keystroke.</li>
+<span class="apex-line" data-line="417"></span>
+<li>Attach and re-attach are the same code path: snapshot plus tail per shard,
+lazily per shard as windows become visible.</li>
+</ul>
+<span class="apex-line" data-line="420"></span>
+<p><em>As built (<code>apex-server/src/{proto,daemon,remote}.rs</code>).</em> Framing is
+postcard with a <code>u32</code> little-endian length prefix — the entries already
+derive serde, so one schema serves the log, snapshots and the wire;
+protobuf stays an option for a gateway. What differs from the sketch:</p>
+<ul>
+<span class="apex-line" data-line="425"></span>
+<li><strong>No <code>Take</code>/<code>Grant</code> round trip.</strong> <code>Hello{session, name}</code> makes a new
+attachment, grants it every leasable shard, and answers <code>Welcome {attachment, snapshot}</code> with the <em>whole</em> state (§12 on its size). A
+client that attaches while another holds the leases reclaims them at
+once — single-player mode collapses transfer-then-reclaim to reclaim.
+The fenced client stays connected and sees its appends refused. Resuming
+an attachment by id, <code>Page</code>, and <code>Hash</code> are not implemented yet.</li>
+<span class="apex-line" data-line="432"></span>
+<li><strong>Mirror logs.</strong> The client runs its <code>Node</code> over <code>Log::mirror</code>, a log
+store built from the snapshot that assigns the same sequence numbers
+the server will store. The client leads with no round trip at all;
+<code>flush</code> ships <code>Append{shard, entries}</code> for every led shard, the server
+answers <code>Ack{shard, seq}</code>. Leases are derived from the log store on both
+sides (<code>Log::held_by</code>); the metalog is streamed to the client like any
+followed shard.</li>
+<span class="apex-line" data-line="439"></span>
+<li><strong>Shard creation is a fire-and-forget request.</strong> <code>CreateShard{shard}</code>
+(sent by the mirror's hook) is processed by the server before the
+<code>Append</code> that follows it on the same connection, and the grant it makes
+(creator, epoch 1) is the one the mirror assumed. <code>DeleteShard</code> likewise.</li>
+<span class="apex-line" data-line="443"></span>
+<li><strong>Terminal input</strong> is not a <code>Propose</code> but its own messages (<code>TermKey</code>,
+<code>TermPaste</code>, <code>TermResize</code>, <code>TermScroll</code>); the server's log store still
+fences them by connection. <code>OpenFile</code> and <code>Plumb</code> ask the server to look
+at the file system and answer with a proposal.</li>
+<span class="apex-line" data-line="447"></span>
+<li>The daemon keeps a follower replica of the whole session (the "view")
+for execs and snapshots, and forwards the metalog before any other
+shard so a client learns of a shard before its entries.</li>
+</ul>
+<span class="apex-line" data-line="451"></span>
+<p><em>As built, the wire (<code>proto.rs</code>, <code>proposal.rs</code>; postcard frames, u32 LE
+length):</em></p>
+<span class="apex-line" data-line="454"></span>
+<pre><code>client → server
+  Hello{session, name, kind, attach?}     attach; a UI ships its ~/.apex/attach
+  NewSession{name, profile?}              make a session (idempotent), the creator's profile shipped
+  ListSessions · RenameSession{from, to} · Stop · Ping{t}
+  Append{shard, entries}                  entries this client sequenced as leader
+  CreateShard{shard} · DeleteShard{shard}
+  TermKey{term, key} · TermPaste · TermResize · TermScroll{term, delta}
+  TermText{term, p0, p1}                  snarf a terminal range (answer: a Snarf proposal)
+  TermRead{term, from, to}                a terminal's lines, scrollback included → TermLines
+  OpenFile{col, ctx, name}                the server reads the file and proposes OpenWindow
+  Plumb{ctx, text, dir?, edit_only, dry, at?, sel?, alt?, reverse}
+                                          B3 / apex plumb / B; at: the pointer, sel: what was taken,
+                                          alt: the word within, reverse: shift-B3
+  PlumbAck{id, ok}                        a tool's answer to a Plumb it was handed
+  RuleAdd{rule, priority, mine} · RuleRm{id}
+  Complete{view, ctx, at, prefix}         ^F
+  Propose{id, proposal} · Applied{id, result}
+  Env{set} · Set{key, value, attachment?} · Ps · Kill{targets}
+  Named{name, group, pid, cmd}            what a program is called: the entry of its process
+                                          group (the shell the server started) takes the name in
+                                          the top row, ps and Kill; a group the server did not
+                                          start is adopted under pid until this connection goes
+  Io{stream, frame}                       the I/O plane (WEB.md §1): Request opens a stream
+                                          the client numbers; Body, End, Reset
+
+server → client
+  Build{protocol, id}                     first frame, frozen: refuse another protocol version
+  Welcome{attachment, snapshot} · Entries{shard, entries} · Ack{shard, seq} · ShardReady{shard}
+  Propose{id, proposal} · Applied{id, result}
+  Sessions{names} · Error{text} · Pong{t} · Env{vars} · RuleAdded{id}
+  PlumbTrace{lines}                       a dry run's report
+  Plumb{id, ctx, verb, text, dir, groups, at?, sel?}
+                                          a rule named this tool; answer PlumbAck within a second
+  Io{stream, frame}                       Response{status, headers}, Body, End, Reset
+  Ps{procs} · TermLines{term, text}
+
+proposals (tools and the server → the leader; applied by whoever leads)
+  OpenWindow{col, from?, name, text, hash, select_line?} · NewWindow{col, name} · TermWindow{col, name, term}
+  SetContent{buffer, version?, text, hash} · Clean · Rename{buffer, window, name} · Stale
+  ReplaceRange{dir?, buffer, version, q0, q1, text}   pipe output: selected, as acme's
+  Insert{buffer, version, at, text}                    at a point, the selection left alone (win)
+  Errors{dir?, text} · Complete{view, at, text} · Snarf{text} · TermName{window, name}
+  CommandStart{name} · CommandExit{name} · Status{ctx, exec, status}
+  Look{ctx, text, reverse} · ClientDo{verb, args}     the last resort of a plumb; a UI's own verbs
+  Exec{ctx, text} · Edit{window, program} · Select{view, q0, q1}
+  Live{window, by?}                                    a process behind a window
+  Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
+  OpenWeb{col, url} · WebNavigate{window, url}         a web window; its page moved (WEB.md §2)
+</code></pre>
+<span class="apex-line" data-line="505"></span>
+<p><em>As built, versions:</em> the daemon's first frame on every connection is
+<code>ServerMsg::Build{protocol, id}</code>: <code>PROTOCOL</code>, a number in <code>proto.rs</code>
+bumped by hand with every change to anything on the wire (messages,
+proposals, entries, ops, state, since postcard is not self-describing),
+and the build id, a hash of the workspace sources computed at build time
+(the same on every target), which only says which binary it is. The
+variant stays first and unchanged. A client of another protocol version
+stops at that frame with an <code>Unsupported</code> error that says what to do:
+when the daemon's sessions can be let go, <code>apex stop</code> on its machine,
+then attach again (Reconnect, ⌘⇧R). Builds of the same protocol talk
+to each other, so a rebuild for a bug fix in the client needs no
+restart of the daemon. The daemon is
+never restarted behind the user's back: its sessions may hold work. When
+the local daemon refuses at startup, the app opens an in-process window
+showing the error, pointed at the session so Reconnect tries it again.</p>
+<span class="apex-line" data-line="521"></span>
+<h3>6.2 Control protocol (tools ⇄ server) — <em>v1</em></h3>
+<span class="apex-line" data-line="523"></span>
+<p>Same frames, request/response plus subscription:</p>
+<span class="apex-line" data-line="525"></span>
+<pre><code>Read{buffer, range|addr}                     text at the latest flushed version
+Info{window|buffer|layout}
+Propose{...}                                 §5
+Exec{window, text}
+Subscribe{shards?, since}                    stream of entries (the acme event file, generalised)
+Lease{take|release, buffer, ttl}             opt-in exclusive editing
+Term{new|send|read|log}
+Plumb{text, context}
+</code></pre>
+<span class="apex-line" data-line="536"></span>
+<p>Reads answer from the server's replica, which lags the leader by
+microseconds locally or by link latency remotely; every answer carries the
+version it is valid at.</p>
+<span class="apex-line" data-line="540"></span>
+<h3>6.3 Schema sketch</h3>
+<span class="apex-line" data-line="542"></span>
+<pre><code class="language-proto">message Entry   { uint64 seq = 1; uint64 attachment = 2; uint32 epoch = 3; oneof op { ... } }
+message Edit    { uint64 version = 1; uint64 start = 2; uint64 end = 3; string text = 4; }
+message Select  { Part part = 1; uint64 q0 = 2; uint64 q1 = 3; }
+message Rows    { uint32 first = 1; repeated Row rows = 2; }        // Row = repeated Cell
+message Cell    { uint32 ch = 1; uint32 fg = 2; uint32 bg = 3; uint32 flags = 4; }
+message Propose { Shard shard = 1; uint64 base = 2; repeated Op ops = 3; }
+message Exec    { uint64 window = 1; string text = 2; uint64 at_seq = 3; Handler handler = 4; }
+message Done    { uint64 exec_seq = 1; }   // also Failed{reason}, Unknown
+</code></pre>
+<hr />
+<span class="apex-line" data-line="555"></span>
+<h2>7. The <code>apex</code> command — <em>v1 subset marked ●</em></h2>
+<span class="apex-line" data-line="557"></span>
+<p>The CLI is the stable public API. Scripts never see the wire.</p>
+<span class="apex-line" data-line="559"></span>
+<pre><code>● apex server [--socket P]           start the daemon (also auto-started by attach)
+● apex ls [host]                     list sessions on a server
+● apex new-session [host/]name       create a session
+● apex attach [host/]session [--stdio]  attach a UI to a session (transfer, else fence, other UI attachments)
+● apex detach                        drop the current attachment (leases return to the server)
+● apex new &lt;path&gt;...                 open files (windows in the current column)
+● apex win list|del|move|resize      layout
+● apex text read &lt;buf&gt; [--addr A]    read a buffer or address range
+● apex edit &lt;buf&gt; '&lt;Edit program&gt;'   run the Edit language (a proposal)
+● apex sel &lt;win&gt; [q0 q1]             read/set a selection
+● apex exec &lt;win&gt; '&lt;command&gt;'        as if B2
+● apex events [--since N] [--shard S] stream entries as JSON lines
+● apex term new|send|read|log        terminals
+  apex plumb &lt;text&gt;
+  apex lease take|release &lt;buf&gt;
+  apex lsp ...                       LSP bridge (§8)
+  apex log [&lt;shard&gt;]                 provenance
+</code></pre>
+<span class="apex-line" data-line="579"></span>
+<p>Configuration is a script of <code>apex</code> commands run at server start
+(<code>~/.config/apex/init</code>): plumb rules, tools to launch, defaults. Client-side
+settings (fonts, scale) are <code>apex</code> commands the client interprets. There is
+no configuration language.</p>
+<span class="apex-line" data-line="584"></span>
+<p><em>As built (<code>apex-cli</code>).</em> <code>apex</code> is the command; the gpui client is
+<code>apex-ui</code>, which <code>apex attach</code> launches. Every subcommand attaches to the
+session as a <strong>tool</strong>: it receives the same snapshot a UI would, reads
+from its own replica, and proposes to the leader — there is no separate
+control protocol, only <code>Propose{id, proposal}</code> / <code>Applied{id, result}</code> on
+the attach protocol, plus <code>NewSession</code> and <code>ListSessions</code>. A session with
+no UI attached is led by the daemon itself, so scripts work headless and
+a UI that attaches later takes over what they did. <code>apex attach</code> starts
+the daemon if the socket does not answer. Implemented: <code>server ls new-session attach [-stdio] new open win text edit sel exec events term plumb B env set cat lsp label awd version</code>; flags are Go's (<code>-flag=value</code>)
+and <code>apex help</code> documents everything, <code>apex help &lt;topic&gt;</code> included;
+<code>apex ps</code> and <code>apex kill</code> see and end what the server runs (the
+<code>Running</code> list behind the top row's names: pid, name, origin, start
+time, directory, command line). A program says what it is called with
+<code>Named</code>, so <code>apex tool lsp</code> is <code>lsp</code> in the top row, not <code>apex</code>: the
+server renames the entry of the announcer's process group (the exit
+reports the new name too), or adopts an announcer it did not start (from
+the profile, say) for as long as its connection lasts, ending it by pid.
+<code>apex tool win</code> and <code>apex tool lsp</code> announce themselves once, after
+attaching. <code>WIN</code> is an id or a unique substring of a window's name. Not yet:
+<code>detach lease lsp log</code>, the init script.</p>
+<span class="apex-line" data-line="607"></span>
+<p>Every session is a URL: <code>local:///name</code> on this machine's daemon
+(<code>local</code> is the pseudo-provider that takes no argument),
+<code>ssh://user@host/name</code>, <code>sprite://box/name</code> — scheme is the provider,
+authority its argument, path the session. A daemon's first session is
+<code>default</code>. The selector lists this window's session, the recent ones
+(<code>~/Library/Application Support/apex/recent-sessions</code>, latest first),
+this machine's, and for a remote window the destination's; what is typed
+filters them, and typed as a name or URL and not listed, becomes
+"Create …" — a bare name is <code>local:///name</code>, so making a session never
+lands on the current window's provider by accident. "Rename this
+session…" renames it on its daemon, attachments staying attached
+(<code>RenameSession</code>; sessions have ids inside the daemon, names are labels).</p>
+<span class="apex-line" data-line="620"></span>
+<p>Commands run as plan9port acme runs them: <code>rc -c command</code>, with <code>$winid</code>
+set to the window's id (or the last selected window's), and <code>$%</code> and
+<code>$samfile</code> naming the window's file; <code>$acmeshell</code> names another shell.
+The <code>rc</code> is <a href="https://github.com/mariusae/rustrc">mariusae/rustrc</a>, a
+drop-in port of plan9port's; the app carries it beside <code>apex</code> for this
+machine and for each remote target, <code>deploy</code> puts both in <code>~/.apex/bin</code>
+on a destination, and the daemon puts that directory and its own on the
+session's PATH. Without an <code>rc</code>, commands fall back to <code>sh</code>.</p>
+<span class="apex-line" data-line="629"></span>
+<p><code>apex attach dest/session</code> (or a URL) goes through <code>providers.rs</code>. A <em>provider</em> is an executable <code>apex-remote-&lt;provider&gt;</code> on the
+PATH, called as <code>apex-remote-&lt;provider&gt; DESTINATION COMMAND</code>: it runs COMMAND, a
+single shell command line, on the destination with stdio connected —
+ssh's own convention, and <code>ssh</code> is the built-in provider, so <code>user@host</code>
+needs nothing. Other destinations are <code>provider:name</code> (<code>sprite:mybox</code>)
+and need only that script (<code>providers/apex-remote-sprite</code> is one: <code>sprite exec -s "$1" -- sh -c "$2"</code>). This keeps the rule that there is no
+configuration file: the provider script is the whole configuration. The
+destination needs nothing but the provider's access. We ask <code>uname -sm</code>,
+pick the <code>apex</code> we carry for that OS and architecture (the Mac app
+bundles <code>linux-amd64</code>, cross-compiled statically against musl with Zig
+as the linker, and its own <code>darwin-arm64</code>), compare its sha256 with
+<code>~/.apex/bin/apex</code> there, upload it over ssh's stdin if it differs, and
+run <code>~/.apex/bin/apex -session=S attach -stdio</code>, which starts the
+daemon on the host if it must and copies bytes between its stdio and
+the daemon's socket. The bridge knows nothing of frames; the UI speaks
+them to the child's stdin/stdout exactly as to a socket. A remote
+window's selector lists the host's sessions (<code>apex --ensure-server ls</code>
+there); "Local sessions" leads back. Remembered sessions are
+<code>host/session</code>; one that cannot be reached at launch falls back to the
+local <code>local</code> with the error in <code>+Errors</code>. <code>APEX_SSH</code> names the ssh
+program, which the tests point at a script running the commands under a
+scratch HOME.</p>
+<hr />
+<span class="apex-line" data-line="655"></span>
+<p><em>As built, profile and attach:</em> a new session runs one <code>rc</code> on its host
+that sources the host's <code>~/.apex/profile</code>, then the creator's (shipped
+in <code>NewSession</code> as <code>Script{client, text}</code>, skipped when identical), as a
+command named <code>profile</code> with output in <code>+Errors</code>, and <code>apexsession</code>,
+<code>APEX_SOCKET</code>, <code>apexclient</code> set, and <code>EDITOR</code> to <code>apex-editor</code>, a link
+beside the binary the CLI knows by name as <code>apex editor</code> (editinacme:
+the file plumbed to edit, exit when its window goes; one word, since
+zsh and rc do not split <code>$EDITOR</code> into words). The host part comes first so it can
+define what the creator's part uses. <code>apex env KEY=VALUE</code>
+(<code>ClientMsg::Env</code>) sets the session environment the server gives
+terminals and commands from then on; the creator's script runs on the
+host, never on the client, so no <code>apex</code> call crosses the link. A client's
+<code>~/.apex/attach</code> runs the same way on every attach (<code>Hello</code> carries it),
+with <code>apexattachment</code> set, so <code>apex set</code> there records the attachment's
+own settings (<code>MetaOp::Set{owner}</code>, dropped on detach); <code>apex set</code> from
+the profile records the session's. Clients resolve a key through their
+own settings, then the session's. <code>Preview</code> is a live pipe through a
+converter (WEB.md §3, built): <code>Preview.EXT</code> names a command that reads
+the file on stdin and writes HTML (<code>apex md</code> for Markdown, <code>cat</code> for
+HTML and SVG unless set), the server keeps one rule per such extension
+running <code>apex tool preview $file</code>, and the tool renders the buffer into
+an HTML window <code>FILE+Preview</code> beside it as it changes. <code>Preview</code> alone
+names the app a rule's <code>-client=preview</code> falls back to, else Quick
+Look. The client drives file I/O on the I/O
+plane (WEB.md §1, built): <code>GET file://path</code> is one-shot, with a <code>Watch</code>
+header the stream stays open and every change brings a <code>Body</code> holding a
+<code>FileFrame{version, path, bytes}</code> (the daemon adds the path to the
+watcher and fans changes out to every watch stream) until the client
+ends the stream or its connection goes; <code>PUT file://path</code> writes. A
+stream belongs to its connection, so fencing changes nothing. A remote
+preview is a watch stream feeding a local copy under a path mirroring
+the host's, ended with the previewer's process, the file's window, or
+the lead. <code>CONNECT host:port</code> tunnels bytes to the host's network and
+<code>http(s)://</code> is fetched by the host (stage 2, built). <code>apex io</code> is the
+plane from a shell; <code>apex cat</code> is <code>GET</code>.</p>
+<span class="apex-line" data-line="691"></span>
+<h2>8. Extensibility</h2>
+<span class="apex-line" data-line="693"></span>
+<p>acme's tools port directly because the event model is the same, generalised:</p>
+<ul>
+<span class="apex-line" data-line="695"></span>
+<li><code>win</code> → <code>apex term new</code>.</li>
+<span class="apex-line" data-line="696"></span>
+<li><code>Watch</code> → twenty lines over <code>apex events</code>.</li>
+<span class="apex-line" data-line="697"></span>
+<li>acme-lsp → <code>apex lsp</code>: subscribes to versioned buffer edits, feeds language
+servers incrementally (the log <em>is</em> an incremental sync protocol), writes
+diagnostics into a buffer, and installs plumb rules so B3 on an identifier
+goes to its definition. Formatting is one proposal.</li>
+<span class="apex-line" data-line="701"></span>
+<li>Agents run in a terminal window and <strong>edit files directly</strong>; the server
+detects the edits through the file watcher (§9): a clean buffer takes
+them as proposals, a dirty one is flagged stale with <code>Get</code> in the tag,
+and by the nothing-is-lost principle a person's unsaved edit and the
+agent's write both stay visible. The CLI is a second door for agents
+that want to read selections, open windows or write to <code>+Errors</code>; a
+harness that needs exclusivity may take a buffer lease.</li>
+<span class="apex-line" data-line="708"></span>
+<li><strong>Plumbing</strong> is a rule table, as in acme, with two additions. Tools
+install and remove rules at runtime, with a priority, as <strong>metalog
+entries</strong>: the table is replicated state, the client can display it,
+<code>apex log</code> shows who installed what, and a tool's rules are tied to its
+attachment — when the tool detaches or is garbage-collected, a metalog
+entry removes them.
+A rule may target a tool, which may <strong>NACK</strong>, after which the server
+falls through to the next matching rule. Predicates are richer than
+acme's: file type, syntactic context ("in a comment"), selection shape.
+So "LSP handles identifiers in source files; paths in comments get the
+default" is two rules, and only the tool a rule names is consulted. The
+exec entry records the chain (rule matched, tool NACKed, next rule
+fired), and <code>apex plumb --dry-run</code> shows it. Bidding — every plumber
+voting on every B3 — is deliberately not the model: it makes each click
+wait for the slowest plumber and its outcome hard to predict; a rule
+that fans out to several tools in priority order emulates it if ever
+needed.</li>
+</ul>
+<span class="apex-line" data-line="726"></span>
+<p><em>As built (plumbing):</em> the rule is <code>PlumbRule{verb, text, file, kind, isfile, isdir, action, to}</code> in the metalog (<code>PlumbRuleInstall{id, attachment, priority}</code>), owned by the session (<code>SERVER</code>) or by an
+attachment, whose rules go with it. A <strong>verb</strong> is the command a rule
+answers: <code>plumb</code> is B3; any other verb is offered in the window's
+<strong>tools menu</strong> on B4 (shift-click without a fourth button): libdraw's
+<code>menuhit</code> as mariusae/plan9port's acme pops it up (<code>client/menu.rs</code>, the
+numbers and colours menuhit's) — the verbs the rules offer this window,
+opened so that the last one chosen sits under the pointer, which is
+warped onto it, so a click alone repeats it; tracked while the button is
+held, the item under the pointer highlighted in negative, none outside;
+released on an item it runs as B2 would, released outside nothing runs;
+more than 25 items scroll. Verbs are not written into tags. B2 on a
+verb's word walks the rules with it, ahead of the shell. A <code>Plumb</code>
+carries where it came from: <code>at</code>, the pointer or dot as a <code>Span</code>, and
+<code>sel</code>, what was expanded or swept, either or both; and <code>alt</code>, the word
+(acme's <code>isalnum</code> expansion) within the file-name expansion (<code>isfilec</code>:
+alnum and <code>.-+/:@</code>), which the walk tries when nothing takes the longer
+text, before Look, as acme's <code>expand</code> does (<code>expandfile</code>, then the word). Actions: <code>Edit</code> (open in the session), <code>Run</code> (a host command,
+the selection on stdin), <code>Client{verb,args}</code> (a <code>ClientDo</code> proposal to
+the UI, which may refuse; a headless leader always does), <code>Tool(name)</code>
+(<code>ServerMsg::Plumb</code> to the attachment of that name, <code>PlumbAck</code> within a
+second or taken as NACK). The daemon drives a walk across those answers
+(<code>Server::plumb_start</code>/<code>plumb_next</code>); an in-process client walks
+synchronously. The trace of a walk is what <code>apex plumb --dry-run</code> prints;
+recording it in the exec entry is still to do. Clients say what they can
+do by installing rules on attach (macOS: URLs to <code>open</code>), so the server
+holds no platform knowledge. <code>apex B</code> is plan 9's <code>B</code>, and rc's rcmain
+defines <code>B</code> in apex terminals. The one-line rule form was chosen over
+plan 9's rules file: each rule prints as the flags that made it.</p>
+<span class="apex-line" data-line="757"></span>
+<p><em>As built (<code>apex tool lsp</code>, crate <code>apex-tool-lsp</code>):</em> unprivileged, as intended: a
+tool attachment named <code>lsp</code> that keeps a replica, reads <code>Entries</code> before
+applying them to turn <code>BufferOp::Edit</code> into incremental <code>didChange</code>
+(positions computed against the text as it still is), proposes
+<code>Select</code>/<code>ReplaceRange</code>/<code>Errors</code>/<code>NewWindow</code>+<code>SetContent</code> for what
+servers answer, and installs rules owned by its attachment: B3 on an
+identifier at priority 10, the verbs <code>Def Refs Type Hov Sig Fmt Rn</code> in
+the tools menu. Servers from settings (<code>lsp.LANG</code>), one per workspace
+root found by markers; diagnostics in <code>root/+lsp</code>. Not yet: completion,
+format on Put (needs rules ahead of builtins), semantic predicates for
+rules ("in a comment"). <code>apex tool win</code> (crate <code>apex-tool-win</code>) is acme's win
+ported from win.c: the shell on a cooked, echoing pty, the output point
+and typing run kept from the buffer's entry stream (our own inserts told
+apart by a queue of what we proposed), echo cancelled, ^C/DEL/^D as win
+reads them, raw mode when echo is off; <code>Win</code> in the top tag runs it as a
+command named Win. Unbound control keys are inserted as acme inserts
+them, which is what lets win see ^D. B2 on any text in its window (win's
+'x'/'X' events, <code>sende</code>) types it to the shell, appended after the typing
+with a newline, dot after it: win holds a rule with the special verb
+<code>exec</code>, which takes every B2 command in the windows it applies to that
+no builtin and no other verb took, the whole line as its text, and is no
+word in the tools menu.</p>
+<span class="apex-line" data-line="780"></span>
+<p>Typed client libraries (Rust, Go) are generated from the schema for programs
+that want more than the CLI.</p>
+<hr />
+<span class="apex-line" data-line="785"></span>
+<h2>8a. The Edit language — <code>apex-edit</code> — <em>v1</em></h2>
+<span class="apex-line" data-line="787"></span>
+<p>The Edit language is an <strong>independent crate</strong>, a careful port of plan9port's
+acme implementation rather than a reimplementation from the manual:</p>
+<span class="apex-line" data-line="790"></span><table><thead><tr><th>source (plan9port <code>src/cmd/acme</code>, <code>src/libregexp</code>)</th><th>role</th></tr></thead><tbody>
+<tr><td><code>edit.c</code></td><td>parser: addresses, commands, text and regexp arguments, <code>{ }</code> blocks</td></tr>
+<tr><td><code>ecmd.c</code></td><td>command semantics: <code>a c i d s m t x y g v p = u B D &lt; | &gt;</code>, address evaluation</td></tr>
+<tr><td><code>elog.c</code></td><td>the change log: a command's edits are collected against the original text and applied atomically at the end, with acme's ordering and overlap rules</td></tr>
+<tr><td><code>libregexp</code></td><td>plan 9 regular expressions: <strong>leftmost-longest</strong> matching, <code>\n</code> in classes, no backreferences; Rust's <code>regex</code> crate is leftmost-first and is not a substitute</td></tr>
+</tbody></table>
+<span class="apex-line" data-line="797"></span>
+<p>Scope is acme's table exactly: sam's language minus <code>k n q ! cd</code>, plus acme's
+<code>B</code> and <code>D</code>. Everything with an effect (<code>u e r w b B D &lt; | &gt;</code>) is not
+performed by the crate; it is returned as an intent for the caller (core,
+then the handler) to carry out, so the crate stays pure. Where acme and sam
+disagree (dot after a change, changes out of sequence, <code>$</code> at the end of an
+unterminated text, the bare newline command) the crate follows acme; the
+crate's README lists them. <code>X</code>/<code>Y</code> are not supported (no file menu).</p>
+<span class="apex-line" data-line="805"></span>
+<p>Interface: the crate takes a text (a trait over char-indexed, read-only
+text, satisfied by a rope or a <code>&amp;str</code>), a dot, and a program, and returns the
+resulting change log (<code>Vec&lt;Change{start, end, text}&gt;</code> in original
+coordinates, already validated non-overlapping and ordered), the new dot,
+any output (<code>p</code>, <code>=</code>), and any intents. Core lowers the change log into
+concrete <code>Edit</code> entries (§5).</p>
+<span class="apex-line" data-line="812"></span>
+<p><strong>Acceptance tests</strong> are the definition of "carefully ported":</p>
+<ol>
+<span class="apex-line" data-line="814"></span>
+<li><em>Golden tests</em> written from <code>sam(1)</code> and acme's documented semantics,
+one file per feature: each address form and combination, default
+addresses per command, <code>s</code> with <code>&amp;</code> <code>\1</code>..<code>\9</code> and <code>g</code>, <code>x</code>/<code>y</code>/<code>g</code>/<code>v</code>
+nesting, empty matches (<code>x/^/</code>, <code>x/$/</code>), <code>{ }</code> blocks, <code>m</code>/<code>t</code> including
+moves into the moved range, <code>u</code> counts, error cases (overlapping changes,
+changes out of order, bad addresses) with acme's exact messages.</li>
+<span class="apex-line" data-line="820"></span>
+<li><em>Differential tests against plan9port.</em> <code>sam -d</code> runs the same language
+from stdin on a file. A test harness builds plan9port's <code>sam</code> from source
+(clang only, no dependencies) into the test directory, feeds it each
+program and input, and compares the resulting file and <code>p</code>/<code>=</code> output
+with the crate's. Skipped when plan9port cannot be built; run in CI.
+Programs come from the golden corpus and from a generator (random
+addresses and commands over random small texts), so the comparison covers
+cases nobody thought to write down.</li>
+<span class="apex-line" data-line="828"></span>
+<li><em>Regexp differential tests.</em> <code>,x/re/ =#</code> in <code>sam -d</code> prints the char
+address of every match, which makes sam itself the regexp oracle:
+generated patterns and texts, compared match by match, including the
+leftmost-longest cases and empty-match stepping.</li>
+<span class="apex-line" data-line="832"></span>
+<li><em>Performance:</em> <code>x/re/ c/.../</code> over multi-megabyte texts, thousands of
+matches, and deep nesting, with criterion, so regressions are visible
+before the UI exists.</li>
+</ol>
+<span class="apex-line" data-line="836"></span>
+<h2>9. Files</h2>
+<span class="apex-line" data-line="838"></span>
+<p>The server runs where the files are; that is the whole remote story.</p>
+<ul>
+<span class="apex-line" data-line="840"></span>
+<li>Three derived flags per buffer, each with its own signal: <strong>dirty</strong> =
+version differs from the version at last load or <code>Put</code> (acme's <code>Put</code>
+appears in the tag); <strong>stale</strong> = the disk changed underneath (<code>Get</code> in
+the tag); <strong>unsynced</strong> = the leader holds entries the server has not
+acknowledged (§4.1, the tag box).</li>
+<span class="apex-line" data-line="845"></span>
+<li><strong>Watching.</strong> The server watches the parent directories of open files
+(editors and <code>git checkout</code> replace files by rename, which breaks per-file
+watches) with FSEvents/inotify via the <code>notify</code> crate, debounced. On an
+event it hashes the file; an unchanged hash (<code>touch</code>, the server's own Put)
+is ignored.</li>
+<span class="apex-line" data-line="850"></span>
+<li><strong>Clean buffer, disk changed:</strong> the server diffs the new content against
+its replica at version V and proposes the edits with base V. Diffing rather
+than replacing lets every view's selection and origin adjust through the
+normal edit path. If the proposal is rejected because the user typed
+meanwhile, the buffer is now dirty and falls into the next case. The
+clean-buffer case works by version alone; no lease is taken.</li>
+<span class="apex-line" data-line="856"></span>
+<li><strong>Dirty buffer, disk changed:</strong> the buffer is marked <code>stale</code> with the disk
+hash and <code>Get</code> appears in the tag — the word is the signal and the
+affordance, as with <code>Put</code>. <code>Put</code> refuses once with acme's "modified since
+last read" message and overwrites on the second <code>Put</code>. <code>Get</code> reloads. A
+later <code>Merge</code> may three-way merge base, buffer and disk.</li>
+<span class="apex-line" data-line="861"></span>
+<li>Directory windows refresh from the same watches. Deleted or renamed files
+are flagged the same way instead of failing at the next <code>Put</code>.</li>
+</ul>
+<span class="apex-line" data-line="864"></span>
+<p><em>As built (<code>apex-server/src/watch.rs</code>).</em> Parent directories are watched
+with <code>notify</code>; the server hashes the file on every event and ignores it
+if the hash equals what it last wrote there or the buffer's recorded disk
+hash. A clean buffer gets <code>SetContent{version}</code> — <em>base-versioned</em>, which
+matters: the daemon's replica lags the UI by a round trip, so it can
+judge a buffer clean that the user has just typed into. The leader
+lowers a <code>SetContent</code> whose version has moved on into <code>Stale</code> instead,
+so typing is never overwritten by a reload; <code>Get</code> sends an unversioned
+<code>SetContent</code>. A dirty buffer gets <code>Stale{hash}</code>; <code>Put</code> on a stale buffer
+refuses once with "modified since last read" and writes on the second.
+Diffing rather than replacing, directory refresh, and delete/rename
+flags are not done.</p>
+<hr />
+<span class="apex-line" data-line="879"></span>
+<h2>10. Terminals and web windows</h2>
+<span class="apex-line" data-line="881"></span>
+<p><strong>Terminals</strong> use alacritty_terminal on the server: pty, reader thread and
+grid. The <code>term</code> shard is pinned to the server. The client renders rows from
+its mirror and proposes keystrokes. Attach sends the visible grid; scrollback
+is paged. Resizing is a proposal (<code>Resize{cols, rows}</code>) the server applies to
+the pty. Selection inside a terminal (v2) is a <code>window</code> shard entry like any
+other selection, computed over the mirrored rows, so B2/B3 on terminal text
+work exactly as in text windows.</p>
+<span class="apex-line" data-line="889"></span>
+<p><em>As built:</em> terminal selection is client-side, not a shard entry. The
+term shard carries <code>View{top}</code>, the history line in the viewport's first
+row, and a selection is two <code>(column, history line)</code> positions, so it
+stays on its text as the terminal scrolls. B1 drag selects (acme's
+yellow); cmd-c / Edit ▸ Copy, <code>Snarf</code> in the window's tag, or the B1+B2
+chord send <code>TermText</code> to the server, which has the scrollback, and its
+answer is a <code>Snarf</code> proposal (so Paste and Send have the text); the
+clipboard follows the snarf buffer. Wrapped lines join, as in alacritty.
+cmd-a selects the viewport. B2 and B3 sweep too (acme's <code>textselect23</code>,
+in but2col/but3col): what was swept is executed or plumbed, a plain click
+takes the word under it, and the B1 selection is left alone. Keys and
+pastes first scroll the terminal
+back to the bottom, republishing the rows at once. History lines are
+numbered from the oldest line kept, so a selection drifts once the
+scrollback limit truncates; a selection does not outlive that.</p>
+<span class="apex-line" data-line="905"></span>
+<p><em>As built, labels and environment:</em> the pty loop is alacritty's with
+<code>win</code>'s label scan in front of the parser: <code>ESC ] ; text BEL</code> (plan9port's
+<code>label</code>/<code>awd</code>, or <code>apex label</code>/<code>apex awd</code>) names the window as win does
+(<code>/-host</code> appended unless the label brings its own <code>-</code> component); OSC 7
+(<code>file://host/path</code>) moves the name's directory; an xterm title (OSC 0/2)
+is a label too. The name's directory becomes the terminal's, where B2/B3
+resolve relative names. A new terminal is <code>dir/-host</code> (win's naming); <code>Newterm cmd args</code> runs
+that through the login shell instead of a shell, named <code>dir/-cmd</code>, as
+<code>win cmd</code> does. The
+shell is a truecolor <code>xterm-256color</code> with <code>TERM_PROGRAM=apex</code>,
+<code>apexsession</code> and <code>APEX_SOCKET</code> set, so <code>apex</code> inside it addresses the
+session it runs in; commands run from tags get the same two. The shell
+is the <code>Newterm.shell</code> setting (<code>apex set Newterm.shell zsh</code> in the
+profile), else the daemon's <code>$SHELL</code>. Keys go xterm-style with option
+as meta: ESC before the key itself (opt-b is <code>ESC b</code>, not <code>∫</code>),
+opt-left/right as <code>ESC b</code>/<code>ESC f</code> (Terminal.app's defaults, what zsh
+and bash bind for words), opt-backspace <code>ESC DEL</code>, and other modified
+keys in xterm's <code>CSI 1;m</code> form (opt-up is <code>ESC [1;3A</code>). OSC 8
+hyperlinks travel in the term shard (<code>Cell::link</code> into
+<code>TermOp::Links</code>), draw underlined, and B3 on one plumbs the link
+rather than its text. The wheel over a terminal goes to the program
+when it asked for the mouse (DECSET 1000/1002/1003: wheel buttons 64
+and 65 at the cell, SGR or X10 form) or runs on the alternate screen
+with alternate scroll (DECSET 1007, xterm's default: up and down
+arrows); otherwise it scrolls the scrollback, as the scrollbar always
+does.</p>
+<span class="apex-line" data-line="932"></span>
+<p><strong>Web windows</strong> are out of v1. The prototype's headless-Chrome screencast
+is a server-side renderer and fits the model, but it is bandwidth-heavy
+over ssh, and the alternative (URL as server state, client-side rendering)
+breaks "all state on the server" for page state. <em>Decided:</em> the URL is
+the state, rendering is the client's, and network and file I/O go
+through the server on an I/O plane beside the log; see WEB.md, which
+also makes Preview a live pipe through a converter. <em>As built:</em>
+<code>Body::Web</code>, the URL as the window's name (its tag's first word, as a
+terminal's directory is), <code>Newweb URL</code> and <code>apex web open URL</code>
+(<code>Proposal::OpenWeb</code>), the client's <code>wry</code> view over the body, its
+navigations <code>WebNavigate</code> proposals that rename the window and push
+the place left onto the navigation stack; a <code>Goto</code> to a URL nobody
+shows opens a web window on it. The view's traffic goes through the
+host: a localhost <code>CONNECT</code> proxy per link whose tunnels are streams
+on the I/O plane; <code>apexfile:///path</code> is a host file fetched on the
+plane and watched, the page reloading when it changes (WEB.md §2.3,
+§2.4). <code>Body::Html(buffer)</code> is a text buffer shown as a page
+(<code>cmd | apex web</code>, <code>Proposal::OpenHtml</code>), patched in place as it
+changes (WEB.md §2.5).</p>
+<hr />
+<span class="apex-line" data-line="954"></span>
+<h2>11. Client</h2>
+<span class="apex-line" data-line="956"></span>
+<p>The gpui prototype becomes the client. It holds one attachment per OS
+window, each to a session on a local or remote server. The window title is
+<code>host/session</code>; clicking it opens the <strong>session selector</strong>, listing sessions
+on the servers the client knows, with "new local session" and "new remote
+session" at the bottom. Switching is opening another window or re-pointing
+this one (detach, attach).</p>
+<ul>
+<span class="apex-line" data-line="963"></span>
+<li>Holds a full replica of the shards it leads and a paged replica of
+terminals. Rendering reads only local state; the element code
+(<code>text_element</code>, <code>term_element</code>, <code>web_element</code>) already paints from its own
+records and needs no change.</li>
+<span class="apex-line" data-line="967"></span>
+<li>Input routing: B1/keys on a led buffer → local apply + append. B2 → §5
+split. B3 → plumb command to the server unless it is a plain <code>Look</code>, which
+runs locally. Keys over a terminal → proposal. Wheel/scroll → local
+<code>window.Origin</code> entry (leased) or a page request for terminals.</li>
+<span class="apex-line" data-line="971"></span>
+<li>Scroll origin is a <code>window</code> entry so re-attach lands where you were; it is
+cheap because it is coalesced per frame like everything else.</li>
+<span class="apex-line" data-line="973"></span>
+<li>The system clipboard is client-side, so Snarf/Paste work remotely with no
+protocol support.</li>
+<span class="apex-line" data-line="975"></span>
+<li>Fonts, geometry and colours are client-side. Colours follow plan9port
+exactly (<code>README.md</code>, Colours).</li>
+<span class="apex-line" data-line="977"></span>
+<li><em>As built:</em> <code>+Errors</code> behaves as acme's <code>flushwarnings</code>: new text is
+appended, selected (<code>textshow(q0, end, 1)</code>), and when its start is off
+screen the origin is set so that it sits a quarter of the window down
+(<code>Node::errors</code> records the position; the client's element applies
+textshow's rule).</li>
+<span class="apex-line" data-line="982"></span>
+<li><em>As built:</em> navigation is session state, so a session re-attached
+elsewhere keeps its headspace: <code>Layout{nav_back, nav_forward}</code> of
+<code>Loc{name, pos}</code> (<code>Pos::Keep|Chars|Line|LineCol</code>), moved by
+<code>LayoutOp::Visit{from, to}</code> and <code>NavPop{back, at}</code>. One proposal
+makes a jump, <code>Goto{loc}</code>: the leader records the origin (its
+<code>seltext</code> and dot), lands (select, reveal, warp) when the window is
+open, else leaves the place for whoever opens files (the app asks the
+server and lands when the window arrives; a headless daemon opens it
+itself). The lsp tool lands through <code>Goto</code>; plumbs to <code>file:line</code> and
+<code>apex B</code> are <code>Goto</code>s; ⌘P picks are too. <code>Back</code> and <code>Fwd</code> are verbs the
+lsp tool offers everywhere and answers with <code>Nav{back}</code>, which pops;
+⌘[ and ⌘] are a UI hack that executes those words in the window under
+the pointer, on purpose: the keys are not the functionality.</li>
+<span class="apex-line" data-line="995"></span>
+<li><em>As built:</em> ⌘P (File ▸ Go to…) is Zed's file finder in acme's colours
+(<code>client/finder.rs</code>): every open window of the session (files,
+directories, terminals, win, +Errors, marked ● or ▶) and the files
+closed lately (○, "closed": the last fifty per session, each once,
+kept in <code>recent-files</code> on this machine, noticed as windows go), ranked
+as Zed ranks: nothing typed, open windows in layout order then closed
+files by recency; a query, a fuzzy score in the spirit of Zed's
+matcher (file name best, then after <code>/</code> and at word starts, runs of
+consecutive matches, a penalty for the wrong case and for long paths),
+open before closed at equal scores. Enter or a click shows the window
+or opens the file, and warps the pointer to it as acme's warps do.</li>
+<span class="apex-line" data-line="1006"></span>
+<li><em>As built:</em> full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
+title bar, acme's area is the whole screen, and a window's full-screen
+state is remembered with its frame. shift-B3 looks backwards (the
+mariusae/plan9port acme's <code>look3(..., reverse)</code>: <code>search</code> with reverse,
+the last occurrence ending before dot, wrapping) — unless there is
+somewhere to go back to (the navigation stack is not empty) and a rule
+offers <code>Back</code> in the window (the lsp tool's): then shift-B3 is Back,
+the mirror of the B3 that went there, exactly what ⌘[ issues. The picker's recent
+sessions carry a × that forgets them.</li>
+<span class="apex-line" data-line="1015"></span>
+<li><em>As built:</em> a window is <strong>live</strong> when a process is behind it: a
+terminal whose program runs, or a text window a tool keeps so
+(<code>WindowOp::Live{by}</code>, the win tool's attachment; the state ends with
+the program, or with that attachment, so a crashed tool leaves nothing
+stuck). A third state beside clean and dirty: the handle is a raspberry
+(<code>0xB24073</code>, dark magenta with a quarter of yellow: unlike the dirty
+blue, the fenced red, the unsynced green and the scrollbar's dark
+yellow beside it), <code>Del</code> does not ask (the text is a transcript, not a file), and
+<code>apex win list</code> marks it <code>&gt;</code>.
+The app offers <code>Snarfout</code> in terminals and win windows: the last
+command as <code>$ cmd</code> (the prompt normalised) and its output, the lines
+between the last two prompts
+(<code>transcript::last_output</code>: the last line is the prompt, earlier
+prompts begin like it and carry its marker), read from the host for a
+terminal (<code>TermRead</code>), into the snarf buffer and clipboard.</li>
+<span class="apex-line" data-line="1030"></span>
+<li><em>As built:</em> the app remembers every window with its session URL and
+its frame (<code>last-sessions</code>, one line each), saved on every move or
+resize and on Quit, and opens them all again at launch, each on its
+session and where it was. The name in a tag is editable, as acme's is:
+<code>winsettag</code> leaves a typed first word alone, a click in the tag or a
+command from the window commits it (<code>wincommit</code>: the buffer takes the
+name), and <code>Put</code> resolves a relative name where the window is and makes
+it absolute. <code>New</code> in a tag is an empty window; <code>apex new [LABEL]</code> is
+the same with stdin in it (acme's <code>cmd | New</code>); <code>apex open</code> opens files.</li>
+<span class="apex-line" data-line="1039"></span>
+<li>Over a WAN, mosh-style predictive echo is unnecessary for editing (the
+client leads) and only relevant for terminals; it can come later.</li>
+</ul>
+<span class="apex-line" data-line="1042"></span>
+<p><em>Tiling, as built (<code>apex-core/src/tiling.rs</code>).</em> Window and column
+placement is plan9port acme's, ported function for function from
+<code>cols.c</code>, <code>rows.c</code> and the geometry of <code>wind.c</code>: <code>coladd</code> (a new window
+steals the lower half of the last one, or lands at the pointer), <code>colclose</code>
+(the next window extends up, else the previous extends down), <code>colgrow</code>
+(button 1 a few lines from the neighbours, 2 as big as can be, 3 the
+whole column, leaving the others obscured until the column is "safe"
+again), <code>colresize</code>, <code>colsort</code>, <code>coldragwin</code> (click, shuffle, move to
+another column, flick right, resize against the window above), <code>rowadd</code>
+(40% of the last column), <code>rowresize</code>, <code>rowclose</code>, <code>rowdragcol</code>, and
+<code>makenewwindow</code>'s choice of where <code>New</code> and plumbed files go (the biggest
+empty space, else the biggest window; <code>activecol</code> first). The layout shard
+therefore stores pixel rectangles, like acme's <code>Dump</code>: each column's and
+window's rectangle, the body rectangle, tag lines, lines shown, and
+acme's <code>maxlines</code>. Every operation is computed by the leader against its
+copy and appended as one <code>Arrange</code> entry, so replicas take geometry, not
+recompute it; the client reacts to an OS window resize with <code>rowresize</code>.
+What acme reads off its frames the tiling asks through an <code>Info</code> trait: tag
+line counts and body lines measured in the client's last frame, or
+one-line tags and full bodies for a headless leader. Mouse warps are
+acme's too: into a new window's body near its box, onto <code>Del</code> of the
+window that took a closed one's place (or back to where the mouse was
+before the closed window was made), to the layout box after a grow or
+drag, and to the selection when an already open file is plumbed. macOS
+gives no mouse event for a warp, so the client remembers where it put the
+pointer for keyboard routing until the mouse really moves.</p>
+<span class="apex-line" data-line="1069"></span>
+<p><em>Fidelity audit against plan9port acme (2026-09-05).</em> Read side by side
+with <code>acme.c</code>, <code>text.c</code>, <code>exec.c</code>, <code>look.c</code>, <code>wind.c</code>, <code>cols.c</code>, <code>rows.c</code>
+and <code>scrl.c</code>. Matching now: the three buttons and their chords, including
+B1 while B2 is down passing the last selection as the command's argument;
+double-click selection of bracketed and quoted spans and lines
+(<code>textdoubleclick</code>/<code>textclickmatch</code>); <code>Del</code>/<code>Delete</code>/<code>Delcol</code>/<code>Get</code> through
+<code>winclean</code> (scratch windows such as <code>+Errors</code> and directories go at once;
+a dirty window warns "name modified" once and goes the second time; a
+small unnamed window never whines); the tag's words <code>Undo Redo Put Get</code>
+coming and going as acme's <code>winsettag1</code>; <code>Newcol</code> making an empty window;
+the last column being deletable, <code>New</code> making a column when there is none;
+<code>Look</code> searching the last-selected text (<code>seltext</code>), wrapping, and moving
+the mouse to the match; <code>Tab</code>, <code>Indent on|off</code> (autoindent), <code>ID</code>; Up and
+Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
+a third of the window and PageUp/PageDown two thirds; Home and End; the
+erase keys; and the pointers: plan9port's big arrow always, the box while
+a layout box is held. Also matching: the scrollbar scrolling
+continuously while a button is held, the pointer kept on the bar
+(<code>textscroll</code>: 200 ms, then every 80 ms, by the pointer's height in the
+bar); <code>^F</code>/Insert filename completion (<code>textcomplete</code>, with the file
+system on the server: a unique match completes with <code>/</code> or a space, a
+common extension is inserted, otherwise the candidates are listed in
+<code>+Errors</code>); B1 dragging past the top or bottom scrolling by the distance
+(<code>framescroll</code>); the mouse pulled up as a tag closes under it and pushed
+down as one expands over it (<code>winresize</code>); <code>Kill name</code> ending every
+running command whose first word is <code>name</code> (the server tracks the
+commands it starts); the top row naming each running command at its
+front while it runs, "<code>name: exit status</code>" in <code>+Errors</code> when one ends
+badly (<code>waitthread</code>, <code>runproc</code>'s naming: the first word without its
+directory, <code>|sort</code> for a pipe); <code>Zerox</code> refusing directories; newline ignored in
+column and top tags; <code>+Errors</code> named <code>dir/+Errors</code> after the directory of
+the window whose command produced the output, made in the last column
+(<code>errorwin1</code>), with no <code>Undo</code>/<code>Put</code> words in its tag. Decided against
+acme, by design: <code>Exit</code> detaches this window and the session lives on
+(acme refuses while windows are dirty; nothing is lost here); there is no
+<code>Dump</code>/<code>Load</code>, sessions are the only persistence; <code>Send</code> on a terminal
+types the snarf buffer plus a newline into the shell and on a text window
+appends it to the body; <code>Local</code>, <code>Incl</code> and <code>Abort</code> are not commands.</p>
+<span class="apex-line" data-line="1108"></span>
+<p>^H, ^U and ^W erase exactly as acme's <code>textbswidth</code>: ^W skips
+non-alphanumerics, then erases the alphanumeric run, never past the start
+of the line or the window's origin; with a selection, the selection is
+cut first and then the width is erased, as acme does.</p>
+<span class="apex-line" data-line="1113"></span>
+<p><em>As built (<code>apex-client/src/shell.rs</code>, <code>mac/</code>).</em> <code>mac/build-app.sh</code>
+makes <code>Apex.app</code>: <code>apex-ui</code> as the executable, the <code>apex</code> command beside
+it, and an icon of Glenda with big eyes (<code>mac/glenda.svg</code>, rasterised by
+headless Chrome). Launched with no arguments the app makes sure a daemon
+answers on the default socket — starting one through the bundled <code>apex</code>
+with the home directory as its working directory — and opens one window
+per session it had open last time (<code>~/Library/Application Support/apex/last-sessions</code>), else the first existing session, else a new
+<code>local</code>. The title bar is the app's own: the session name is a button
+that drops down the selector (also ⌘K), a list filtered by what you type,
+where a name that matches nothing becomes "Create session". Choosing
+re-points this window; ⌘N opens another window on the same session. The
+menu bar carries Quit, Hide, New Window, Sessions, Close Window and the
+Edit menu, whose items act on the text under the pointer, as acme's keys
+do. Not yet: remote sessions in the selector, an About window.</p>
+<hr />
+<span class="apex-line" data-line="1131"></span>
+<h2>12. Logs in memory; compaction</h2>
+<span class="apex-line" data-line="1133"></span>
+<p>Logs live in the server's memory; the server is a long-running daemon. No
+persistence in v1: terminals and tools could not be restored anyway, so we
+admit it rather than pretend. Snapshots are taken periodically (and on
+detach) by the node holding the state, and compaction truncates a log
+below its snapshot, so logs stay bounded. A server restart is a fresh
+world, as acme's is; <code>Dump</code>/<code>Load</code> of layouts and buffer contents can come
+later.</p>
+<span class="apex-line" data-line="1141"></span>
+<p><em>Measured:</em> the attach snapshot carries each buffer's undo and redo
+history, so a session that has absorbed 100k keystrokes ships a 770 KB
+snapshot for 115 KB of text. Undo should be bounded (acme keeps it all,
+but acme never ships it) or left out of the attach snapshot and paged on
+demand; either brings attach down to the cost of the text.</p>
+<hr />
+<span class="apex-line" data-line="1149"></span>
+<h2>13. Security</h2>
+<span class="apex-line" data-line="1151"></span>
+<p>Local access is the Unix socket's file permissions. Remote access is ssh;
+the server never listens on the network. Attachments are unforgeable
+server-issued ids; fencing prevents a stale attachment from writing. Tools run with
+the server's credentials, as acme's do.</p>
+<hr />
+<span class="apex-line" data-line="1158"></span>
+<h2>14. Milestones</h2>
+<ol>
+<span class="apex-line" data-line="1160"></span>
+<li><strong><code>apex-edit</code></strong> — the Edit language and libregexp port with the
+acceptance suite of §8a, including the <code>sam -d</code> differential harness.
+<em>Done.</em></li>
+<span class="apex-line" data-line="1163"></span>
+<li><strong><code>apex-core</code></strong> — buffers, views, undo, shards, entries, <code>apply</code>,
+snapshots, hashing, built-in commands, lowering of Edit change logs.
+Property tests: two instances, random entries, equal hashes. Criterion
+benches for apply, view adjustment, snapshot/hash, and replay. No UI: a
+headless driver replays recorded logs for profiling. <em>Done.</em></li>
+<span class="apex-line" data-line="1168"></span>
+<li><strong>Server + attach</strong> — registry and metalogs, sessions, attachments,
+leases with transfer-then-reclaim, fencing, the attach protocol over a
+Unix socket, detach/re-attach, terminal rows paged, <code>+Recovered</code>.
+<em>Done except:</em> transfer (reclaim only), resume by attachment id, row
+paging, <code>+Recovered</code>.</li>
+<span class="apex-line" data-line="1173"></span>
+<li><strong>Client</strong> — the gpui prototype re-layered as a pure renderer and input
+device over core state, first in-process, then over the socket. Zerox
+becomes two views on one buffer. Multiple sessions per client and the
+session selector. <em>Done except</em> the session selector.</li>
+<span class="apex-line" data-line="1177"></span>
+<li><strong>CLI + control protocol</strong> — <code>apex</code> subcommands, <code>events</code>, proposals,
+<code>win</code>/<code>Watch</code> ports, plumbing rules as commands. <em>Done except</em> <code>Watch</code>,
+plumbing rules, <code>detach</code>/<code>lease</code>/<code>log</code>, the init script.</li>
+<span class="apex-line" data-line="1180"></span>
+<li><strong>Files</strong> — watcher, stale/dirty flow, <code>Get</code> in the tag. <em>Done except</em>
+directory refresh and diff-based reload.</li>
+<span class="apex-line" data-line="1182"></span>
+<li><strong>Remote</strong> — <code>apex attach host/session</code> over ssh stdio; hash checks.
+<em>Done except</em> hash checks; exercised with the bridge run locally, not
+yet over a real ssh session.</li>
+<span class="apex-line" data-line="1185"></span>
+<li><strong>Tools</strong> — <code>apex lsp</code>, agent harness, tool leases.</li>
+</ol>
+<hr />
+<span class="apex-line" data-line="1189"></span>
+<h2>15. Measurements</h2>
+<span class="apex-line" data-line="1191"></span>
+<p>Release builds on an M-series laptop. Core (<code>apex-core/benches</code>): a
+keystroke applies in ~260 ns, an edit adjusting 100 views in 0.7 µs, a
+1 MB buffer hashes in 0.9 ms and snapshots round-trip in 0.3 ms, 20k
+entries replay in 2.2 ms. Edit (<code>apex-edit/benches</code>): <code>x/fox/ c/cat/</code> over
+1M runes in 3.2 ms.</p>
+<span class="apex-line" data-line="1197"></span>
+<p>Socket (<code>apex-bench</code>, daemon on a thread of the same process, one round
+trip = client → kernel → daemon → kernel → client):</p>
+<span class="apex-line" data-line="1200"></span><table><thead><tr><th>what</th><th>p50</th><th>p99</th></tr></thead><tbody>
+<tr><td>ping round trip</td><td>12–20 µs</td><td>18–42 µs</td></tr>
+<tr><td>one keystroke: local apply, flush, server ack</td><td>14 µs</td><td>20 µs</td></tr>
+<tr><td>100 000 keystrokes in one flush</td><td>1.8 M entries/s</td><td></td></tr>
+<tr><td>attach: connect, snapshot, decode; 120 KB text, 770 KB snapshot</td><td>4.2 ms</td><td></td></tr>
+<tr><td>attach; 1.2 M runes, 1.9 MB snapshot</td><td>6.2 ms</td><td></td></tr>
+<tr><td>attach; 11.5 M runes, 11.9 MB snapshot</td><td>32 ms</td><td></td></tr>
+<tr><td>terminal key → new rows on the client</td><td>180 µs</td><td>260–540 µs</td></tr>
+</tbody></table>
+<span class="apex-line" data-line="1210"></span>
+<p>Through <code>apex attach --stdio</code> run locally (the ssh path minus the
+network: two more processes and two pipes per direction): ping 26 µs,
+keystroke → ack 21 µs, throughput unchanged, attach +4.5 ms flat (the
+snapshot crosses two more pipes), terminal key → rows 195 µs.</p>
+<span class="apex-line" data-line="1215"></span>
+<p>The transport is nowhere near the budget of a frame; the attach cost is
+the snapshot's undo history (§12), and terminal latency is the pty and
+the parser, not the socket.</p>
+<hr />
+<span class="apex-line" data-line="1221"></span>
+<h2>16. Open questions and exploration</h2>
+<span class="apex-line" data-line="1223"></span>
+<h3>Exploration: tool-defined shards</h3>
+<span class="apex-line" data-line="1225"></span>
+<p>Not for v1, but worth keeping in view. Today the shard kinds are fixed
+(buffer, window, layout, term, metalog, registry) and tools reach the
+system through proposals, execs and metalog entries. The generalisation is
+to let a tool <strong>register its own shard kind</strong> with its own entry schema:
+the shard is created through the metalog like any other, leased to the
+tool (pinned to it while it lives), replicated to clients that subscribe,
+snapshotted, hashed and paged by the same machinery. A plumber would then
+be a shard whose entries are rules rather than a set of metalog entry
+types; an LSP tool would keep diagnostics in a shard the client renders
+in the gutter; an agent harness would keep its transcript in one. The
+appeal is that "extension" would mean "another shard", with fencing,
+provenance and re-attach for free. The cost is a schema-registration
+story, clients that must render entries they do not understand, and a
+harder question of what a client-led shard kind would even mean. Do it
+only if a second or third concrete need for it appears beyond plumbing.</p>
+<span class="apex-line" data-line="1241"></span>
+<h3>Open questions</h3>
+<ul>
+<span class="apex-line" data-line="1243"></span>
+<li>Granularity of <code>layout</code> leasing when a tool wants to open windows while the
+UI leads layout: proposals suffice, but a burst of <code>apex new</code> from a script
+is many round trips; batch in the CLI.</li>
+<span class="apex-line" data-line="1246"></span>
+<li>Whether <code>window</code> selections for terminals should be cell-based or
+offset-based over the paged rows.</li>
+<span class="apex-line" data-line="1248"></span>
+<li>Web windows (deferred): server-side screencast vs client-side Chrome
+with server-side URL state.</li>
+<span class="apex-line" data-line="1250"></span>
+<li>Persistence: whether to snapshot buffers and layouts to disk later, and
+how that interacts with the nothing-is-lost principle on a server crash.</li>
+<span class="apex-line" data-line="1252"></span>
+<li>Multiple UI attachments to one session with independent layouts
+(multi-player) — explicitly out of scope; the per-shard design leaves
+the door open.</li>
+<span class="apex-line" data-line="1255"></span>
+<li>Naming: keep acme's command vocabulary verbatim (<code>Newcol</code>, <code>Delcol</code>,
+<code>Zerox</code>, <code>Putall</code>) so muscle memory and existing scripts carry over.</li>
+</ul>
+</body></html>

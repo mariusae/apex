@@ -1026,8 +1026,9 @@ impl Node {
     }
 
     /// acme's `winsettag1`: the words before `|` in every window's tag —
-    /// `Del Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they apply —
-    /// brought up to date. The text after `|` is the user's.
+    /// `Del Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they apply, and
+    /// `Back Fwd Get` on a web window — brought up to date. The text
+    /// after `|` is the user's.
     pub fn update_tags(&mut self, log: &mut Log) -> Result<()> {
         let wins: Vec<WindowId> = self.state.windows.keys().copied().collect();
         for w in wins {
@@ -1051,6 +1052,10 @@ impl Node {
                 if isdir {
                     new.push_str(" Get");
                 }
+            }
+            if win.body == Body::Web {
+                // a page's history and reload (the client does them)
+                new.push_str(" Back Fwd Get");
             }
             new.push_str(" |");
             let old = self.state.buffer(tag)?.text.to_string();

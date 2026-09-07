@@ -617,6 +617,9 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
     assert_eq!(node.window_name(w), "https://example.com/");
     assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().contains(" Back Fwd Get "));
+    // and winsettag keeps them there
+    node.update_tags(&mut log).unwrap();
+    assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().starts_with("https://example.com/ Del Snarf Back Fwd Get |"));
     // selected in a text window: a file:// URL and a bare path are the host's files
     let t = node.new_window(&mut log, col, "/tmp/here/notes.txt", "see file:///tmp/a.html and also doc.html\n").unwrap();
     node.select(&mut log, ViewId::Body(t), 4, 22).unwrap();
