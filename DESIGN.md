@@ -884,9 +884,10 @@ this one (detach, attach).
   terminal whose program runs, or a text window a tool keeps so
   (`WindowOp::Live{by}`, the win tool's attachment; the state ends with
   the program, or with that attachment, so a crashed tool leaves nothing
-  stuck). A third state beside clean and dirty: the handle is dark magenta
-  (`0x990099`: unlike the dirty blue, the fenced red, the unsynced green
-  and the scrollbar's dark yellow beside it), `Del` does not ask (the text is a transcript, not a file), and
+  stuck). A third state beside clean and dirty: the handle is a raspberry
+  (`0xB24073`, dark magenta with a quarter of yellow: unlike the dirty
+  blue, the fenced red, the unsynced green and the scrollbar's dark
+  yellow beside it), `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`.
   The app offers `Snarfout` in terminals and win windows: the last
   command as `$ cmd` (the prompt normalised) and its output, the lines

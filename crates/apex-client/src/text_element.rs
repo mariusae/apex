@@ -29,10 +29,10 @@ pub const PALEBLUEGREEN: u32 = 0xEAFFFF; // tagcols[BACK]
 pub const PALEGREYGREEN: u32 = 0x9EEEEE; // tagcols[HIGH] DPalegreygreen
 pub const PURPLEBLUE: u32 = 0x8888CC; // tagcols[BORD] DPurpleblue; also colbutton
 pub const MEDBLUE: u32 = 0x000099; // modbutton fill, DMedblue
-/// A live window's handle: a process is behind it. Dark magenta: unlike
-/// the dirty blue, the fenced red, the unsynced green, and the
-/// scrollbar's dark yellow beside it.
-pub const LIVE: u32 = 0x990099;
+/// A live window's handle: a process is behind it. Dark magenta with a
+/// quarter of yellow in it (a raspberry): unlike the dirty blue, the
+/// fenced red, the unsynced green, and the scrollbar's dark yellow.
+pub const LIVE: u32 = 0xB24073;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
