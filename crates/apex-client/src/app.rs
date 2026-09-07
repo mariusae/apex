@@ -564,7 +564,14 @@ impl Acme {
     /// old attachment ends; its leases return to its daemon.
     pub fn reattach(&mut self, url: &SessionUrl, window: &mut Window) -> std::io::Result<()> {
         let wake = self.wake.clone().ok_or_else(|| std::io::Error::other("no wake"))?;
-        let (mut link, mut log, mut node) = Self::connect(url, wake)?;
+        let (link, log, node) = Self::connect(url, wake)?;
+        self.adopt(link, log, node, url, Vec::new(), window)
+    }
+
+    /// Take a fresh link (made by `connect`, on any thread) as this
+    /// window's: the second half of `reattach`, and what an attach made
+    /// in the background comes back to.
+    pub fn adopt(&mut self, mut link: Link, mut log: Log, mut node: Node, url: &SessionUrl, files: Vec<String>, window: &mut Window) -> std::io::Result<()> {
         Self::arm(&mut link);
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
@@ -594,8 +601,15 @@ impl Acme {
         self.live.clear();
         window.set_window_title(&Self::title(url));
         crate::shell::note_recent(url);
-        self.open_initial(col, Vec::new());
+        self.open_initial(col, files);
         Ok(())
+    }
+
+    /// `connect`, for a thread: a remote attach can take a while (the
+    /// binary uploaded when it changed, a daemon started there) and must
+    /// not hold the UI meanwhile.
+    pub fn connect_blocking(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+        Self::connect(url, wake)
     }
 
     /// Attach to this window's session again: a fresh link and snapshot,

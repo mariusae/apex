@@ -395,22 +395,39 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                 std::process::exit(1);
                             }
                         },
+                        Target::Url { url, files } if !url.is_local() => {
+                            // a session elsewhere: the window opens now and
+                            // says so; the attach (a binary to upload, a daemon
+                            // to start there) runs on a thread and comes back
+                            let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
+                            a.notice(&format!("{url}: attaching…\n"));
+                            shell::log_line(&format!("attaching to {url} in the background"));
+                            let (u, w) = (url.clone(), wake.clone());
+                            let connecting = cx.background_executor().spawn(async move { Acme::connect_blocking(&u, w) });
+                            cx.spawn_in(window, async move |this, cx| {
+                                let r = connecting.await;
+                                let _ = this.update_in(cx, |acme, window, cx| {
+                                    match r {
+                                        Ok((link, log, node)) => {
+                                            if let Err(e) = acme.adopt(link, log, node, &url, files, window) {
+                                                acme.notice(&Acme::connect_error(&url, &e));
+                                            } else {
+                                                shell::log_line(&format!("attached to {url}"));
+                                            }
+                                        }
+                                        Err(e) => {
+                                            shell::log_line(&format!("attach {url}: {e}"));
+                                            acme.notice(&Acme::connect_error(&url, &e));
+                                        }
+                                    }
+                                    cx.notify();
+                                });
+                            })
+                            .detach();
+                            a
+                        }
                         Target::Url { url, files } => match Acme::attach(cx, &url, files.clone(), wake.clone()) {
                             Ok(a) => a,
-                            Err(e) if !url.is_local() => {
-                                // a remembered remote session that cannot be
-                                // reached: fall back to the local default, and say so
-                                eprintln!("apex-ui: attach {url}: {e}");
-                                let fallback = SessionUrl::local(apex_server::providers::DEFAULT_SESSION);
-                                match Acme::attach(cx, &fallback, Vec::new(), wake.clone()) {
-                                    Ok(mut a) => {
-                                        let msg = Acme::connect_error(&url, &e);
-                                        a.notice(&msg);
-                                        a
-                                    }
-                                    Err(e) => offline(cx, &fallback, files, wake.clone(), &e),
-                                }
-                            }
                             Err(e) => offline(cx, &url, files, wake.clone(), &e),
                         },
                         Target::Chooser { url } => {

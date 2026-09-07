@@ -184,8 +184,16 @@ impl Link {
             out.send(&ClientMsg::NewSession { name: session.to_string(), profile })?;
         }
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach })?;
+        // a daemon that never answers must not hold a client forever
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         let (attachment, snapshot) = loop {
-            match rx.recv().map_err(|_| io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome"))? {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let m = match rx.recv_timeout(left) {
+                Ok(m) => m,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return Err(io::Error::new(io::ErrorKind::TimedOut, "no welcome from the daemon within a minute")),
+                Err(_) => return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "closed before welcome")),
+            };
+            match m {
                 ServerMsg::Build { protocol, id } => check_build(protocol, &id)?,
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
                 ServerMsg::Error { text } => return Err(io::Error::other(text)),

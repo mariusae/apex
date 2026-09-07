@@ -54,7 +54,7 @@ pub struct Log {
     next_attachment: u64,
     next_rule: u64,
     /// Set on a mirror: metalog entries come from the server, not from here.
-    hook: Option<Box<dyn MirrorHook>>,
+    hook: Option<Box<dyn MirrorHook + Send>>,
 }
 
 impl std::fmt::Debug for Log {
@@ -83,7 +83,7 @@ impl Log {
     /// shard the state knows starts at its applied sequence, and leases are
     /// as the metalog recorded them. `hook` forwards shard creation and
     /// deletion to the server.
-    pub fn mirror(state: &crate::state::State, hook: Box<dyn MirrorHook>) -> Log {
+    pub fn mirror(state: &crate::state::State, hook: Box<dyn MirrorHook + Send>) -> Log {
         let next_rule = state.meta.rules.keys().map(|r| r.0 + 1).max().unwrap_or(1);
         let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, next_rule, hook: Some(hook) };
         for (shard, seq) in &state.applied {
