@@ -234,9 +234,19 @@ pub fn save_open(cx: &mut App) {
 /// first existing local session; else one on a new `default`.
 pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<WindowBounds>)>> {
     let existing = list_sessions(socket)?;
+    // one window per session: a second one could only fence the first
+    let mut seen: Vec<SessionUrl> = Vec::new();
     let again: Vec<(SessionUrl, Option<WindowBounds>)> = remembered()
         .iter()
         .filter_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame.map(|b| if r.fullscreen { WindowBounds::Fullscreen(b) } else { WindowBounds::Windowed(b) }))))
+        .filter(|(u, _)| {
+            if seen.contains(u) {
+                false
+            } else {
+                seen.push(u.clone());
+                true
+            }
+        })
         .collect();
     if !again.is_empty() {
         return Ok(again);
@@ -636,18 +646,7 @@ impl Acme {
             }
             Row::Open(url) | Row::Create(url) => {
                 self.selector = None;
-                if self.chooser {
-                    // a new window: this session, whatever else shows it
-                    if let Err(e) = self.reattach(&url, window) {
-                        eprintln!("apex-ui: attach {url}: {e}");
-                        let msg = Acme::connect_error(&url, &e);
-                        self.notice(&msg);
-                    }
-                    cx.defer(|cx| save_open(cx));
-                    cx.notify();
-                    return;
-                }
-                if url == self.url {
+                if !self.chooser && url == self.url {
                     cx.notify();
                     return;
                 }
@@ -658,6 +657,10 @@ impl Acme {
                 });
                 if let Some(h) = elsewhere {
                     let _ = h.update(cx, |_, window, _| window.activate_window());
+                    if self.chooser {
+                        // the new window has no reason to be: that one shows it
+                        self.close_requested = true;
+                    }
                     cx.notify();
                     return;
                 }

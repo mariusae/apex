@@ -1125,6 +1125,9 @@ impl Acme {
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.selector.is_some() {
+            if self.chooser {
+                return; // a new window's picker stays until Escape or a choice
+            }
             // a click anywhere else dismisses the dropdown
             self.close_selector(cx);
             return;
