@@ -770,7 +770,12 @@ and typing run kept from the buffer's entry stream (our own inserts told
 apart by a queue of what we proposed), echo cancelled, ^C/DEL/^D as win
 reads them, raw mode when echo is off; `Win` in the top tag runs it as a
 command named Win. Unbound control keys are inserted as acme inserts
-them, which is what lets win see ^D. B2 on any text in its window (win's
+them, which is what lets win see ^D. The rules that make the window
+win's name it by name, so when the shell renames it (`awd` on cd) win
+removes and remakes them for the new name; Home in a live text window
+goes to where the other side's output ended, the prompt (the client
+keeps, per buffer, where the last edit by another attachment ended).
+B2 on any text in its window (win's
 'x'/'X' events, `sende`) types it to the shell, appended after the typing
 with a newline, dot after it: win holds a rule with the special verb
 `exec`, which takes every B2 command in the windows it applies to that
@@ -1003,6 +1008,10 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
+- *As built:* Enter repeats the leading whitespace of the line it ends,
+up to dot, in every body: acme's `-a`, always on. The title bar shows,
+left of the connection mark, the heartbeat's round trip and the log's
+(an entry flushed to its `Ack`).
 - *As built:* full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
   title bar, acme's area is the whole screen, and a window's full-screen
   state is remembered with its frame. shift-B3 looks backwards (the

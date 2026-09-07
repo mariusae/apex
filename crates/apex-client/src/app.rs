@@ -209,8 +209,10 @@ pub struct Acme {
     previews: Vec<(u64, String, Option<String>, u32)>,
     /// Remote files being previewed: subscribed, their copies kept current.
     live: std::collections::HashMap<String, Live>,
-    /// The heartbeat: when the last ping went out.
+    /// The heartbeat: when the last ping went out, and how long the last
+    /// one took to come back.
     last_ping: Option<std::time::Instant>,
+    ping_ms: Option<u64>,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -713,11 +715,30 @@ impl Acme {
             self.connected = true;
             changed = true;
         }
+        if answered {
+            if let (Some(sent), Some(pong)) = (self.last_ping, link.last_pong) {
+                if pong >= sent {
+                    self.ping_ms = Some(pong.duration_since(sent).as_millis() as u64);
+                }
+            }
+        }
         if answered || overdue {
             link.send(&ClientMsg::Ping { t: now.elapsed().as_millis() as u64 });
             self.last_ping = Some(now);
         }
         changed
+    }
+
+    /// What the titlebar shows of the link: the heartbeat's round trip
+    /// and the log's (an entry flushed to its Ack), in milliseconds.
+    pub fn latency(&self) -> Option<String> {
+        let Backend::Remote(link) = &self.backend else { return None };
+        if !self.connected {
+            return None;
+        }
+        let ping = self.ping_ms.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
+        let log = link.ack_ms.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
+        Some(format!("ping {ping}  ·  log {log}"))
     }
 
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
@@ -778,6 +799,7 @@ impl Acme {
             title_shown: String::new(),
             connected: true,
             last_ping: None,
+            ping_ms: None,
             term_sel: None,
             snarf_wanted: None,
             term_hl: None,
@@ -2410,7 +2432,18 @@ impl Acme {
                 "delete" => {
                     let _ = self.node.delete_forward(&mut self.log, v);
                 }
-                "enter" => self.type_text(v, "\n"),
+                "enter" => {
+                    // acme -a, always: the new line starts with the whitespace
+                    // the one before it starts with, up to dot
+                    let indent: String = match v {
+                        ViewId::Body(_) => {
+                            let start = t.line_start(t.line_of(q0.min(t.len())));
+                            t.slice(start, q0).chars().take_while(|c| *c == ' ' || *c == '\t').collect()
+                        }
+                        _ => String::new(),
+                    };
+                    self.type_text(v, &format!("\n{indent}"));
+                }
                 "tab" => self.type_text(v, "\t"),
                 "escape" => {
                     if let Some(s) = self.typed_start.remove(&v) {
@@ -2429,12 +2462,20 @@ impl Acme {
                     typed = false;
                 }
                 "home" => {
-                    // acme: if the insertion point is above the view, show it; else go to the top
-                    let org = self.node.state.buffer(self.node.view_buffer(v).unwrap_or(BufferId(0))).ok().and_then(|b| b.views.get(&v).map(|x| x.origin)).unwrap_or(0);
-                    if org > q1 {
+                    // in a win: the prompt, where the shell's output ended
+                    // (what Esc would mark from); elsewhere acme: if the
+                    // insertion point is above the view, show it; else the top
+                    if let Some(p) = self.output_point(v) {
+                        let p = p.min(t.len());
+                        let _ = self.node.select(&mut self.log, v, p, p);
                         self.want_visible.insert(v);
                     } else {
-                        let _ = self.node.select(&mut self.log, v, 0, 0);
+                        let org = self.node.state.buffer(self.node.view_buffer(v).unwrap_or(BufferId(0))).ok().and_then(|b| b.views.get(&v).map(|x| x.origin)).unwrap_or(0);
+                        if org > q1 {
+                            self.want_visible.insert(v);
+                        } else {
+                            let _ = self.node.select(&mut self.log, v, 0, 0);
+                        }
                     }
                     typed = false;
                 }
@@ -2458,6 +2499,20 @@ impl Acme {
         }
         let _ = typed;
         self.want_visible.insert(v);
+    }
+
+    /// In a live text window (a win's), where the program's output ended:
+    /// the prompt, which Home goes to.
+    fn output_point(&self, v: ViewId) -> Option<usize> {
+        let ViewId::Body(w) = v else { return None };
+        if !self.node.window_live(w) || !matches!(self.node.state.window(w).map(|x| x.body), Ok(Body::Text(_))) {
+            return None;
+        }
+        let b = self.node.view_buffer(v).ok()?;
+        match &self.backend {
+            Backend::Remote(link) => link.foreign_end.get(&b).copied(),
+            Backend::Local(_) => None,
+        }
     }
 
     fn type_text(&mut self, v: ViewId, s: &str) {

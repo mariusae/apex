@@ -753,6 +753,7 @@ impl Acme {
             )
             .child(button)
             .child(div().flex_1())
+            .when_some(self.latency(), |d, l| d.child(div().pr(px(10.)).text_size(px(11.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child(l)))
             // the link to the daemon, at the right: bright while it is up, faded when gone
             .child(div().pr(px(12.)).text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))
     }

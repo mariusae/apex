@@ -179,6 +179,31 @@ struct Win {
     /// Ranges to take out of the window once the entries at hand have
     /// landed (raw mode's keys, DEL): `before` runs ahead of the replica.
     to_remove: Vec<(usize, usize)>,
+    /// Our attachment's name (what the rules name), the window's name the
+    /// rules were made for, and the rules: the window is renamed by the
+    /// shell (`awd` on cd), and the rules must follow or B2 there falls
+    /// through to a command in +Errors.
+    name: String,
+    wname: String,
+    rules: Vec<RuleId>,
+}
+
+/// The rules that make this window win's: the menu's verbs, and every
+/// other B2 command, for the window named `wname`, answered by `name`.
+fn win_rules(wname: &str, name: &str) -> Vec<PlumbRule> {
+    ["Interrupt", "EOF", apex_core::plumb::EXEC]
+        .into_iter()
+        .map(|verb| PlumbRule {
+            verb: verb.into(),
+            text: None,
+            file: Some(format!("^{}$", regex_escape(wname))),
+            kind: Some(WinKind::File),
+            isfile: None,
+            isdir: None,
+            action: RuleAction::Tool(name.to_string()),
+            to: None,
+        })
+        .collect()
 }
 
 /// Run win: a window on the session, the shell (`cmd`, else
@@ -211,21 +236,12 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
     let shell = Shell::spawn(&argv, dir, &env, tx)?;
     // the verbs in the tools menu of this window, and every other B2
     // command here (win's 'x' event: typed to the shell)
-    for verb in ["Interrupt", "EOF", apex_core::plumb::EXEC] {
-        let rule = PlumbRule {
-            verb: verb.into(),
-            text: None,
-            file: Some(format!("^{}$", regex_escape(&wname))),
-            kind: Some(WinKind::File),
-            isfile: None,
-            isdir: None,
-            action: RuleAction::Tool(name.clone()),
-            to: None,
-        };
-        remote.rule_add(rule, 0, true, TIMEOUT)?;
+    let mut rules = Vec::new();
+    for rule in win_rules(&wname, &name) {
+        rules.push(remote.rule_add(rule, 0, true, TIMEOUT)?);
     }
     let me = remote.attachment();
-    let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new() };
+    let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new(), name, wname, rules };
     // live while the shell is: the handle says so, Del does not ask
     let _ = w.propose(Proposal::Live { window, by: Some(me) }, TIMEOUT);
     let r = w.main_loop();
@@ -308,6 +324,7 @@ impl Win {
                 }
                 return Ok(()); // the window was deleted: we are done
             }
+            self.follow_name();
             let plumbs: Vec<ToolPlumb> = std::mem::take(&mut self.remote.link.plumbs);
             for p in plumbs {
                 busy = true;
@@ -560,6 +577,29 @@ impl Win {
         let Ok(buf) = self.remote.node.state.buffer(self.buffer) else { return };
         let version = buf.version;
         let _ = self.propose(Proposal::ReplaceRange { dir: None, buffer: self.buffer, version, q0, q1, text: String::new() }, TIMEOUT);
+    }
+
+    /// The window was renamed (the shell's `awd`): the rules name the
+    /// window by name, so they are made again for the new one. The ids
+    /// of the new ones come back as `RuleAdded`, collected here too.
+    fn follow_name(&mut self) {
+        while let Some(id) = self.remote.link.rule_added.take() {
+            self.rules.push(id);
+        }
+        let now = self.remote.node.window_name(self.window);
+        if now.is_empty() || now == self.wname {
+            return;
+        }
+        if debug() {
+            eprintln!("win: renamed {} -> {now}: rules follow", self.wname);
+        }
+        for id in self.rules.drain(..) {
+            self.remote.link.send(&apex_server::proto::ClientMsg::RuleRm { id });
+        }
+        for rule in win_rules(&now, &self.name) {
+            self.remote.link.send(&apex_server::proto::ClientMsg::RuleAdd { rule, priority: 0, mine: true });
+        }
+        self.wname = now;
     }
 
     /// The menu's verbs, Interrupt and EOF, and any other B2 command in

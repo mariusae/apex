@@ -77,5 +77,13 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     assert!(until(&mut c, |n| text(n).matches("win-42\n").count() == 2), "output:\n{}", text(&c.node));
     let t = text(&c.node);
     assert!(t.rfind("win-42\n").unwrap() > t.find("again\n").unwrap(), "{t}");
+    // the window renamed (the shell's awd on cd): the rules follow it, so
+    // the menu's verbs, and B2 sending, are still there under the new name
+    let renamed = format!("{}/elsewhere/-sh", dir.display());
+    c.propose(Proposal::Rename { buffer: b, window: w, name: renamed.clone() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut c, |n| apex_core::plumb::verbs_for(&n.state.meta.rules, &renamed, WinKind::File) == vec!["Interrupt", "EOF"]), "rules did not follow the rename: {:?}", apex_core::plumb::verbs_for(&c.node.state.meta.rules, &renamed, WinKind::File));
+    assert!(apex_core::plumb::verbs_for(&c.node.state.meta.rules, &name, WinKind::File).is_empty(), "the old name keeps rules");
+    c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "echo win-$((6*7))".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut c, |n| text(n).matches("win-42\n").count() == 3), "output:\n{}", text(&c.node));
     let _ = std::fs::remove_dir_all(&dir);
 }

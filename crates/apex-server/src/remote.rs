@@ -83,6 +83,13 @@ pub struct Link {
     pub term_lines: Vec<(TermId, String)>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
+    /// Where the last edit by another attachment ended, per buffer: in a
+    /// win's window, the output point, where the prompt is.
+    pub foreign_end: HashMap<BufferId, usize>,
+    /// The last entry flushed on each shard and when, until its `Ack`.
+    pending_ack: HashMap<Shard, (Seq, std::time::Instant)>,
+    /// How long the last `Ack` took to come back, in milliseconds.
+    pub ack_ms: Option<u64>,
     next_id: u64,
     /// Closes the transport on drop, so the reader thread ends and the
     /// server sees the attachment go.
@@ -209,7 +216,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -253,7 +260,10 @@ impl Link {
             let new = log.since(shard, from);
             if !new.is_empty() {
                 let entries = new.to_vec();
-                self.sent.insert(shard, entries.last().unwrap().seq);
+                let last = entries.last().unwrap().seq;
+                self.sent.insert(shard, last);
+                // timed until acked, unless an earlier one still waits
+                self.pending_ack.entry(shard).or_insert((last, std::time::Instant::now()));
                 batch.push(ClientMsg::Append { shard, entries });
             }
         }
@@ -273,6 +283,15 @@ impl Link {
         match m {
             ServerMsg::Build { .. } => {} // checked before the welcome
             ServerMsg::Entries { shard, entries } => {
+                if let Shard::Buffer(b) = shard {
+                    for e in &entries {
+                        if e.attachment != self.attachment {
+                            if let Op::Buffer(BufferOp::Edit { q0, text, .. }) = &e.op {
+                                self.foreign_end.insert(b, q0 + text.chars().count());
+                            }
+                        }
+                    }
+                }
                 for e in entries {
                     if let Err(err) = log.append_entry(shard, e) {
                         eprintln!("remote: {shard}: {err}");
@@ -329,6 +348,12 @@ impl Link {
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
+                if let Some((want, at)) = self.pending_ack.get(&shard).copied() {
+                    if seq >= want {
+                        self.ack_ms = Some(at.elapsed().as_millis() as u64);
+                        self.pending_ack.remove(&shard);
+                    }
+                }
             }
             ServerMsg::ShardReady { .. } => {}
             ServerMsg::Welcome { .. } => {}
