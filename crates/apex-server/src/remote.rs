@@ -15,7 +15,7 @@ use std::thread;
 use apex_core::log::MirrorHook;
 use apex_core::*;
 
-use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, Script};
+use crate::proto::{FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script};
 use crate::{proposal, Proposal};
 
 /// A shared, buffered writer: the mirror hook and the owner both send.
@@ -70,8 +70,10 @@ pub struct Link {
     /// for the owner to carry out and answer with `Applied{id}`. Only a
     /// UI is asked; anything else refuses at once.
     pub client_asks: Vec<(u64, String, String)>,
-    /// Files read from the host, after a `ReadFile`.
-    pub files: Vec<(String, Result<Vec<u8>, String>)>,
+    /// Frames that arrived on the I/O plane, by stream, in order.
+    pub io: Vec<(u32, IoFrame)>,
+    /// The next stream id to open (odd; the server opens none).
+    next_stream: u32,
     /// The running commands, after a `Ps` or `Kill`.
     pub ps: Option<Vec<crate::Running>>,
     /// Terminal text read with `TermRead`.
@@ -195,11 +197,21 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), files: Vec::new(), ps: None, term_lines: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), next_stream: 1, ps: None, term_lines: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
         let _ = self.out.send(m);
+    }
+
+    /// Open a stream on the I/O plane with a request; its id, for the
+    /// frames that come back in `io`.
+    pub fn io_open(&mut self, method: &str, url: &str, headers: &[(&str, &str)]) -> u32 {
+        let stream = self.next_stream;
+        self.next_stream += 2;
+        let headers = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        self.send(&ClientMsg::Io { stream, frame: IoFrame::Request { method: method.to_string(), url: url.to_string(), headers } });
+        stream
     }
 
     /// Send a proposal to the leader; the answer arrives in `applied`
@@ -290,7 +302,7 @@ impl Link {
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
             ServerMsg::Plumb { id, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups, at, sel }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
-            ServerMsg::File { path, bytes } => self.files.push((path, bytes)),
+            ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),
             ServerMsg::Ps { procs } => self.ps = Some(procs),
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
             ServerMsg::Ack { shard, seq } => {
@@ -551,14 +563,90 @@ impl Remote {
         self.wait_for(timeout, |l| l.trace.take())
     }
 
-    /// The bytes of a file on the host.
+    /// The bytes of a file on the host: `GET file://path` on the I/O plane.
     pub fn read_file(&mut self, path: &str, timeout: std::time::Duration) -> Result<Vec<u8>, String> {
-        self.send(&ClientMsg::ReadFile { path: path.to_string() });
-        let want = path.to_string();
+        let stream = self.io_open("GET", &file_url(path), &[]);
+        let (status, body) = self.io_collect(stream, timeout)?;
+        io_result(status, body)
+    }
+
+    /// Open a stream on the I/O plane with a request; its id, for the
+    /// frames that come back in `link.io`.
+    pub fn io_open(&mut self, method: &str, url: &str, headers: &[(&str, &str)]) -> u32 {
+        let stream = self.link.next_stream;
+        self.link.next_stream += 2;
+        let headers = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        self.send(&ClientMsg::Io { stream, frame: IoFrame::Request { method: method.to_string(), url: url.to_string(), headers } });
+        stream
+    }
+
+    /// Send body bytes, then the end, on a stream we opened (a PUT).
+    pub fn io_send(&self, stream: u32, body: &[u8]) {
+        for chunk in body.chunks(256 * 1024) {
+            self.send(&ClientMsg::Io { stream, frame: IoFrame::Body(chunk.to_vec()) });
+        }
+    }
+
+    pub fn io_end(&self, stream: u32) {
+        self.send(&ClientMsg::Io { stream, frame: IoFrame::End });
+    }
+
+    /// The frames that arrived on `stream`, taken out of `link.io`.
+    pub fn io_take(&mut self, stream: u32) -> Vec<IoFrame> {
+        let mut out = Vec::new();
+        self.link.io.retain(|(s, f)| {
+            if *s == stream {
+                out.push(f.clone());
+                false
+            } else {
+                true
+            }
+        });
+        out
+    }
+
+    /// Wait for a stream's response head: the status.
+    pub fn io_response(&mut self, stream: u32, timeout: std::time::Duration) -> Result<u16, String> {
         self.wait_for(timeout, |l| {
-            let i = l.files.iter().position(|(p, _)| *p == want)?;
-            Some(l.files.remove(i).1)
-        })?
+            let i = l.io.iter().position(|(s, f)| *s == stream && matches!(f, IoFrame::Response { .. }))?;
+            match l.io.remove(i).1 {
+                IoFrame::Response { status, .. } => Some(status),
+                _ => None,
+            }
+        })
+    }
+
+    /// Wait for a whole answer on `stream`: the status and the body up to
+    /// its end.
+    pub fn io_collect(&mut self, stream: u32, timeout: std::time::Duration) -> Result<(u16, Vec<u8>), String> {
+        let status = self.io_response(stream, timeout)?;
+        let mut body = Vec::new();
+        self.wait_for(timeout, |l| {
+            let mut done = false;
+            l.io.retain(|(s, f)| {
+                if *s != stream || done {
+                    return true;
+                }
+                match f {
+                    IoFrame::Body(b) => body.extend_from_slice(b),
+                    IoFrame::End => done = true,
+                    IoFrame::Reset { .. } => done = true,
+                    _ => {}
+                }
+                false
+            });
+            done.then_some(())
+        })?;
+        Ok((status, body))
+    }
+
+    /// The next body on a watch stream, as a `FileFrame`, if one is in.
+    pub fn io_next_file(&mut self, stream: u32) -> Option<FileFrame> {
+        let i = self.link.io.iter().position(|(s, f)| *s == stream && matches!(f, IoFrame::Body(_)))?;
+        match self.link.io.remove(i).1 {
+            IoFrame::Body(b) => FileFrame::decode(&b),
+            _ => None,
+        }
     }
 
     /// The commands the server runs now.
@@ -585,19 +673,62 @@ impl Remote {
         self.wait_for(timeout, |l| l.ps.take())
     }
 
-    /// Subscribe to a file on the host: its bytes now, and after each
-    /// change (`link.files`) until `unwatch`.
-    pub fn watch(&mut self, path: &str, timeout: std::time::Duration) -> Result<Vec<u8>, String> {
-        self.send(&ClientMsg::Watch { path: path.to_string() });
-        let want = path.to_string();
-        self.wait_for(timeout, |l| {
-            let i = l.files.iter().position(|(p, _)| *p == want)?;
-            Some(l.files.remove(i).1)
-        })?
+    /// Subscribe to a file on the host: `GET file://path` with `Watch`.
+    /// The stream and the bytes now; after each change `io_next_file` on
+    /// the stream has the file again, until `unwatch`.
+    pub fn watch(&mut self, path: &str, timeout: std::time::Duration) -> Result<(u32, Vec<u8>), String> {
+        let stream = self.io_open("GET", &file_url(path), &[("Watch", "1")]);
+        let status = self.io_response(stream, timeout)?;
+        if status != 200 {
+            let (_, body) = self.io_collect_body(stream, timeout)?;
+            return Err(String::from_utf8_lossy(&body).to_string());
+        }
+        let first = self.wait_for(timeout, |l| {
+            let i = l.io.iter().position(|(s, f)| *s == stream && matches!(f, IoFrame::Body(_)))?;
+            match l.io.remove(i).1 {
+                IoFrame::Body(b) => FileFrame::decode(&b).map(|f| f.bytes),
+                _ => None,
+            }
+        })?;
+        Ok((stream, first))
     }
 
-    pub fn unwatch(&self, path: &str) {
-        self.send(&ClientMsg::Unwatch { path: path.to_string() });
+    /// The body of a stream whose response head was already taken.
+    fn io_collect_body(&mut self, stream: u32, timeout: std::time::Duration) -> Result<(u16, Vec<u8>), String> {
+        let mut body = Vec::new();
+        self.wait_for(timeout, |l| {
+            let mut done = false;
+            l.io.retain(|(s, f)| {
+                if *s != stream || done {
+                    return true;
+                }
+                match f {
+                    IoFrame::Body(b) => body.extend_from_slice(b),
+                    IoFrame::End | IoFrame::Reset { .. } => done = true,
+                    _ => {}
+                }
+                false
+            });
+            done.then_some(())
+        })?;
+        Ok((0, body))
+    }
+
+    /// End a watch stream.
+    pub fn unwatch(&self, stream: u32) {
+        self.io_end(stream);
+    }
+
+    /// The body of a stream whose response head was already taken.
+    pub fn io_collect_body_pub(&mut self, stream: u32, timeout: std::time::Duration) -> Result<(u16, Vec<u8>), String> {
+        self.io_collect_body(stream, timeout)
+    }
+
+    /// Did the server end (or reset) `stream`? The frame is consumed.
+    pub fn io_take_ended(&mut self, stream: u32) -> bool {
+        let before = self.link.io.len();
+        self.link.io.retain(|(s, f)| !(*s == stream && matches!(f, IoFrame::End | IoFrame::Reset { .. })));
+        self.link.io.len() != before
     }
 
     /// Attach with an explicit attach script (tests; a UI sends its
@@ -707,5 +838,27 @@ mod tests {
         assert_eq!(e.kind(), io::ErrorKind::Unsupported);
         assert!(e.to_string().contains("apex stop"), "{e}");
         assert!(e.to_string().contains(&format!("protocol {}", crate::proto::PROTOCOL)), "{e}");
+    }
+}
+
+/// `file://` for a path on the host, percent-encoding what a URL cannot
+/// carry bare.
+pub fn file_url(path: &str) -> String {
+    let mut out = String::from("file://");
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' | b'+' | b'@' | b':' | b',' | b'=' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// A GET's answer as a result: the body, or its message as the error.
+pub fn io_result(status: u16, body: Vec<u8>) -> Result<Vec<u8>, String> {
+    if status == 200 {
+        Ok(body)
+    } else {
+        Err(String::from_utf8_lossy(&body).to_string())
     }
 }

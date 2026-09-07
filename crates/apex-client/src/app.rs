@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use apex_core::node::Erase;
 use apex_core::tiling::{self, Info, SCROLLWID};
 use apex_core::*;
-use apex_server::proto::ClientMsg;
+use apex_server::proto::{ClientMsg, FileFrame, IoFrame};
 use apex_server::providers::SessionUrl;
 use apex_server::remote::{Link, Wake};
 use apex_server::{PlumbReq, PlumbStep, perform, Server, ServerEvent, TermKey};
@@ -204,8 +204,8 @@ pub struct Acme {
     /// Snarfouts waiting for a terminal's text: (ask id, terminal).
     snarfouts: Vec<(u64, TermId)>,
     /// Previews of remote files waiting for their first bytes: (ask id,
-    /// path, app).
-    previews: Vec<(u64, String, Option<String>)>,
+    /// path, app, the watch stream).
+    previews: Vec<(u64, String, Option<String>, u32)>,
     /// Remote files being previewed: subscribed, their copies kept current.
     live: std::collections::HashMap<String, Live>,
     /// The extensions Preview is offered for, as last derived.
@@ -415,7 +415,6 @@ impl Acme {
     fn answer_asks(&mut self) {
         let Backend::Remote(link) = &mut self.backend else { return };
         let asks = std::mem::take(&mut link.client_asks);
-        let files = std::mem::take(&mut link.files);
         let me = link.attachment;
         for (id, verb, args) in asks {
             match verb.as_str() {
@@ -437,8 +436,8 @@ impl Acme {
                     } else {
                         // the file is on the host: subscribe, and show the
                         // copy as it arrives and changes
-                        self.previews.push((id, args.clone(), app));
-                        self.send(ClientMsg::Watch { path: args });
+                        let stream = self.io_open("GET", &apex_server::remote::file_url(&args), &[("Watch", "1")]);
+                        self.previews.push((id, args.clone(), app, stream));
                     }
                 }
                 "snarfout" => match args.trim().parse::<u64>() {
@@ -462,28 +461,59 @@ impl Acme {
                 self.send(ClientMsg::Applied { id, result });
             }
         }
-        for (path, bytes) in files {
-            if let Some(i) = self.previews.iter().position(|(_, p, _)| *p == path) {
-                // the first bytes: the copy opens
-                let (id, _, app) = self.previews.remove(i);
-                let result = bytes.and_then(|b| {
-                    let copy = preview_copy(&self.url, &path, &b)?;
-                    let child = open_preview(app.as_deref(), &copy)?;
-                    self.live.insert(path.clone(), Live { copy, child });
-                    Ok(())
-                });
-                if result.is_err() {
-                    self.send(ClientMsg::Unwatch { path });
+        self.preview_frames();
+        self.end_stale_previews();
+    }
+
+    /// What the watch streams of previews brought: the first bytes open
+    /// the copy, later ones keep it current; a refusal answers the ask.
+    fn preview_frames(&mut self) {
+        let Backend::Remote(link) = &mut self.backend else { return };
+        let frames = std::mem::take(&mut link.io);
+        for (stream, frame) in frames {
+            if let Some(i) = self.previews.iter().position(|(_, _, _, s)| *s == stream) {
+                match frame {
+                    IoFrame::Response { status, .. } if status == 200 => {}
+                    IoFrame::Response { status, .. } => {
+                        let (id, path, _, _) = self.previews.remove(i);
+                        self.send(ClientMsg::Applied { id, result: Err(format!("{path}: {status}")) });
+                    }
+                    IoFrame::Body(b) => {
+                        let (id, path, app, stream) = self.previews.remove(i);
+                        let result = FileFrame::decode(&b).ok_or_else(|| "preview: a bad frame".to_string()).and_then(|f| {
+                            let copy = preview_copy(&self.url, &path, &f.bytes)?;
+                            let child = open_preview(app.as_deref(), &copy)?;
+                            self.live.insert(path.clone(), Live { copy, stream, child });
+                            Ok(())
+                        });
+                        if result.is_err() {
+                            self.send(ClientMsg::Io { stream, frame: IoFrame::End });
+                        }
+                        self.send(ClientMsg::Applied { id, result: result.map(|_| None) });
+                    }
+                    IoFrame::End | IoFrame::Reset { .. } => {
+                        let (id, path, _, _) = self.previews.remove(i);
+                        self.send(ClientMsg::Applied { id, result: Err(format!("{path}: the host ended the stream")) });
+                    }
+                    IoFrame::Request { .. } => {}
                 }
-                self.send(ClientMsg::Applied { id, result: result.map(|_| None) });
-            } else if let Some(live) = self.live.get(&path) {
+            } else if let Some(live) = self.live.values().find(|l| l.stream == stream) {
                 // a change: the copy follows, and the previewer sees it
-                if let Ok(b) = bytes {
-                    let _ = std::fs::write(&live.copy, b);
+                if let IoFrame::Body(b) = frame {
+                    if let Some(f) = FileFrame::decode(&b) {
+                        let _ = std::fs::write(&live.copy, f.bytes);
+                    }
                 }
             }
         }
-        self.end_stale_previews();
+    }
+
+    /// Open a stream on the I/O plane; its id.
+    fn io_open(&mut self, method: &str, url: &str, headers: &[(&str, &str)]) -> u32 {
+        match &mut self.backend {
+            Backend::Remote(link) => link.io_open(method, url, headers),
+            Backend::Local(_) => 0,
+        }
     }
 
     /// A live preview ends with its previewer (Quick Look's process),
@@ -499,8 +529,9 @@ impl Acme {
             }
         }
         for path in done {
-            self.live.remove(&path);
-            self.send(ClientMsg::Unwatch { path });
+            if let Some(live) = self.live.remove(&path) {
+                self.send(ClientMsg::Io { stream: live.stream, frame: IoFrame::End });
+            }
         }
     }
 
@@ -2426,6 +2457,8 @@ fn spawn_quiet(prog: &str, args: &[&str]) -> Result<std::process::Child, String>
 /// A remote file being previewed from a local copy.
 struct Live {
     copy: PathBuf,
+    /// The watch stream on the I/O plane, ended with the preview.
+    stream: u32,
     /// The previewer, when it is a process that lives as long as the
     /// preview (Quick Look); `open -a App` returns at once and is not.
     child: Option<std::process::Child>,

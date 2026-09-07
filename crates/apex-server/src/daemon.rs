@@ -10,7 +10,7 @@
 //! runs as the `SERVER` attachment), so tools can work on a headless
 //! session and a UI that attaches later takes it over.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufReader, BufWriter};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ use std::thread;
 
 use apex_core::*;
 
-use crate::proto::{read_frame, write_frame, ClientMsg, ServerMsg, Script};
+use crate::proto::{file_url_path, FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script};
 use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
 
 /// Start a daemon on `socket` from the `apex` binary at `exe`, detached
@@ -111,11 +111,19 @@ struct Conn {
     out: Sender<ServerMsg>,
     /// How far each shard has been forwarded to this connection.
     sent: HashMap<Shard, Seq>,
-    /// Files this connection subscribed to (`Watch`).
-    watched: BTreeSet<String>,
+    /// The I/O plane's open streams, by id: what each one is.
+    streams: HashMap<u32, IoStream>,
     /// Programs adopted at this connection's word (`Named`), forgotten
     /// when it goes.
     adopted: Vec<u32>,
+}
+
+/// An open stream on the I/O plane.
+enum IoStream {
+    /// `GET file://` with `Watch`: every change sends the file again.
+    Watch { path: PathBuf, version: u64 },
+    /// `PUT file://`: the body so far, written when the stream ends.
+    Put { path: PathBuf, body: Vec<u8> },
 }
 
 struct Session {
@@ -318,7 +326,7 @@ impl Daemon {
                 }
             }
         });
-        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), watched: BTreeSet::new(), adopted: Vec::new() });
+        self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), streams: HashMap::new(), adopted: Vec::new() });
     }
 
     fn send(&self, id: u64, m: ServerMsg) {
@@ -329,7 +337,7 @@ impl Daemon {
 
     fn gone(&mut self, id: u64) {
         if let Some(name) = self.conns.get(&id).and_then(|c| c.session).and_then(|sid| self.name_of(sid)) {
-            self.drop_watches(id, &name);
+            self.drop_streams(id, &name);
         }
         let Some(c) = self.conns.remove(&id) else { return };
         let (Some(sid), Some(a)) = (c.session, c.attachment) else { return };
@@ -400,7 +408,6 @@ impl Daemon {
         };
         let (a, e) = s.log.attach(kind, &name);
         let _ = s.view.state.apply(Shard::Meta, &e);
-        let mut fenced_old = None;
         if kind == AttachmentKind::Ui {
             // transfer else reclaim: single-player, so reclaim now
             for shard in s.log.shards().collect::<Vec<_>>() {
@@ -417,7 +424,8 @@ impl Daemon {
                     let _ = s.view.state.apply(Shard::Meta, &e);
                 }
             }
-            fenced_old = s.leader.replace(id).filter(|old| *old != id);
+            // the UI that led is fenced now; its streams stay its own
+            s.leader = Some(id);
         }
         let _ = s.view.catch_up(&s.log);
         let snapshot = s.view.state.to_snapshot();
@@ -430,10 +438,6 @@ impl Daemon {
             c.sent = marks;
         }
         self.send(id, ServerMsg::Welcome { attachment: a, snapshot });
-        if let Some(old) = fenced_old {
-            // the UI that led is fenced now: what it watched ends
-            self.drop_watches(old, &session);
-        }
         // the client's attach script runs now, as the attachment's own
         if let Some(script) = attach {
             let s = self.sessions.get_mut(&session).unwrap();
@@ -563,11 +567,6 @@ impl Daemon {
                 let e = s.log.set(owner, &key, &value);
                 let _ = s.view.state.apply(Shard::Meta, &e);
             }
-            ClientMsg::ReadFile { path } => {
-                let bytes = std::fs::read(&path).map_err(|e| e.to_string());
-                self.send(id, ServerMsg::File { path, bytes });
-                return;
-            }
             ClientMsg::Ps => {
                 let procs = s.server.processes();
                 self.send(id, ServerMsg::Ps { procs });
@@ -590,20 +589,8 @@ impl Daemon {
                 self.send(id, ServerMsg::Ps { procs });
                 return;
             }
-            ClientMsg::Watch { path } => {
-                s.server.subscribe(&s.view, Path::new(&path));
-                if let Some(c) = self.conns.get_mut(&id) {
-                    c.watched.insert(path.clone());
-                }
-                let bytes = std::fs::read(&path).map_err(|e| e.to_string());
-                self.send(id, ServerMsg::File { path, bytes });
-                return;
-            }
-            ClientMsg::Unwatch { path } => {
-                if let Some(c) = self.conns.get_mut(&id) {
-                    c.watched.remove(&path);
-                }
-                self.unwatch_unused(name, &path);
+            ClientMsg::Io { stream, frame } => {
+                self.io(id, name, stream, frame);
                 return;
             }
             ClientMsg::Complete { view, ctx, at, prefix } => {
@@ -647,36 +634,135 @@ impl Daemon {
         }
     }
 
-    /// A subscribed file changed: every connection of the session that
-    /// watches it gets the bytes.
+    // ---- the I/O plane (WEB.md §1) -------------------------------------
+
+    /// A frame from a client on one of its streams.
+    fn io(&mut self, id: u64, name: &str, stream: u32, frame: IoFrame) {
+        match frame {
+            IoFrame::Request { method, url, headers } => self.io_request(id, name, stream, &method, &url, &headers),
+            IoFrame::Body(bytes) => {
+                if let Some(IoStream::Put { body, .. }) = self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) {
+                    body.extend_from_slice(&bytes);
+                }
+            }
+            IoFrame::End => {
+                let Some(st) = self.conns.get_mut(&id).and_then(|c| c.streams.remove(&stream)) else { return };
+                match st {
+                    IoStream::Put { path, body } => {
+                        let (status, text) = match std::fs::write(&path, &body) {
+                            Ok(()) => (200, String::new()),
+                            Err(e) => (io_status(&e), format!("{}: {e}", path.display())),
+                        };
+                        self.io_finish(id, stream, status, text.into_bytes());
+                    }
+                    IoStream::Watch { path, .. } => self.unwatch_unused(name, &path),
+                }
+            }
+            IoFrame::Reset { .. } => {
+                if let Some(IoStream::Watch { path, .. }) = self.conns.get_mut(&id).and_then(|c| c.streams.remove(&stream)) {
+                    self.unwatch_unused(name, &path);
+                }
+            }
+            IoFrame::Response { .. } => {} // not a client's to send
+        }
+    }
+
+    /// A request opens a stream: what the server answers today is
+    /// `file://` (GET, GET with `Watch`, PUT).
+    fn io_request(&mut self, id: u64, name: &str, stream: u32, method: &str, url: &str, headers: &[(String, String)]) {
+        let Some(path) = file_url_path(url) else {
+            return self.io_finish(id, stream, 501, format!("{method} {url}: not something this server does").into_bytes());
+        };
+        let watch = headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("watch") && !v.is_empty() && v != "0");
+        match method {
+            "GET" if watch => {
+                let bytes = match std::fs::read(&path) {
+                    Ok(b) => b,
+                    Err(e) => return self.io_finish(id, stream, io_status(&e), format!("{}: {e}", path.display()).into_bytes()),
+                };
+                if let Some(s) = self.sessions.get_mut(name) {
+                    s.server.subscribe(&s.view, &path);
+                }
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.insert(stream, IoStream::Watch { path: path.clone(), version: 1 });
+                }
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status: 200, headers: vec![("Watch".into(), "1".into())] } });
+                let frame = FileFrame { version: 1, path: path.display().to_string(), bytes };
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::Body(frame.encode()) });
+            }
+            "GET" => match std::fs::read(&path) {
+                Ok(bytes) => {
+                    self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status: 200, headers: vec![("Content-Length".into(), bytes.len().to_string())] } });
+                    for chunk in bytes.chunks(256 * 1024) {
+                        self.send(id, ServerMsg::Io { stream, frame: IoFrame::Body(chunk.to_vec()) });
+                    }
+                    self.send(id, ServerMsg::Io { stream, frame: IoFrame::End });
+                }
+                Err(e) => self.io_finish(id, stream, io_status(&e), format!("{}: {e}", path.display()).into_bytes()),
+            },
+            "PUT" => {
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.insert(stream, IoStream::Put { path, body: Vec::new() });
+                }
+            }
+            _ => self.io_finish(id, stream, 405, format!("{method} {url}: GET (with Watch) or PUT").into_bytes()),
+        }
+    }
+
+    /// Answer a stream and end it: a status, a body, the end.
+    fn io_finish(&mut self, id: u64, stream: u32, status: u16, body: Vec<u8>) {
+        self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status, headers: Vec::new() } });
+        if !body.is_empty() {
+            self.send(id, ServerMsg::Io { stream, frame: IoFrame::Body(body) });
+        }
+        self.send(id, ServerMsg::Io { stream, frame: IoFrame::End });
+    }
+
+    /// A subscribed file changed: every watch stream on it, in every
+    /// connection of the session, carries the file again.
     fn file_changed(&mut self, sid: u64, path: &Path) {
-        let p = path.to_string_lossy().to_string();
-        let watchers: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid) && c.watched.contains(&p)).map(|(id, _)| *id).collect();
-        if watchers.is_empty() {
+        let mut targets: Vec<(u64, u32, u64)> = Vec::new();
+        for (id, c) in self.conns.iter_mut() {
+            if c.session != Some(sid) {
+                continue;
+            }
+            for (sn, st) in c.streams.iter_mut() {
+                if let IoStream::Watch { path: p, version } = st {
+                    if p == path {
+                        *version += 1;
+                        targets.push((*id, *sn, *version));
+                    }
+                }
+            }
+        }
+        if targets.is_empty() {
             return;
         }
-        let bytes = std::fs::read(path).map_err(|e| e.to_string());
-        for id in watchers {
-            self.send(id, ServerMsg::File { path: p.clone(), bytes: bytes.clone() });
+        let bytes = std::fs::read(path).unwrap_or_default();
+        for (id, stream, version) in targets {
+            let frame = FileFrame { version, path: path.display().to_string(), bytes: bytes.clone() };
+            self.send(id, ServerMsg::Io { stream, frame: IoFrame::Body(frame.encode()) });
         }
     }
 
-    /// Stop watching `path` for the session unless another connection
+    /// Stop watching `path` for the session unless a stream somewhere
     /// still wants it.
-    fn unwatch_unused(&mut self, name: &str, path: &str) {
+    fn unwatch_unused(&mut self, name: &str, path: &Path) {
         let Some(s) = self.sessions.get_mut(name) else { return };
         let sid = s.id;
-        let wanted = self.conns.values().any(|c| c.session == Some(sid) && c.watched.contains(path));
+        let wanted = self.conns.values().any(|c| c.session == Some(sid) && c.streams.values().any(|st| matches!(st, IoStream::Watch { path: p, .. } if p == path)));
         if !wanted {
-            s.server.unsubscribe(&s.view, Path::new(path));
+            s.server.unsubscribe(&s.view, path);
         }
     }
 
-    /// Drop every subscription of a connection (it is gone, or fenced).
-    fn drop_watches(&mut self, id: u64, name: &str) {
-        let paths: Vec<String> = self.conns.get_mut(&id).map(|c| std::mem::take(&mut c.watched).into_iter().collect()).unwrap_or_default();
-        for p in paths {
-            self.unwatch_unused(name, &p);
+    /// A connection went: its streams with it.
+    fn drop_streams(&mut self, id: u64, name: &str) {
+        let streams: Vec<IoStream> = self.conns.get_mut(&id).map(|c| std::mem::take(&mut c.streams).into_values().collect()).unwrap_or_default();
+        for st in streams {
+            if let IoStream::Watch { path, .. } = st {
+                self.unwatch_unused(name, &path);
+            }
         }
     }
 
@@ -844,5 +930,14 @@ fn editor_command() -> Option<String> {
         Some(link.display().to_string())
     } else {
         Some(two_words)
+    }
+}
+
+/// An HTTP status for a file error.
+fn io_status(e: &std::io::Error) -> u16 {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => 404,
+        std::io::ErrorKind::PermissionDenied => 403,
+        _ => 500,
     }
 }

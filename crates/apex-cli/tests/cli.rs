@@ -373,31 +373,55 @@ fn a_watched_file_streams_its_changes_until_unwatched() {
     std::fs::write(&path, "one\n").unwrap();
     let p = path.display().to_string();
     let mut c = Remote::connect_as(&sock, "main", "viewer", AttachmentKind::Tool).unwrap();
-    // the bytes now
-    assert_eq!(c.watch(&p, Duration::from_secs(5)).unwrap(), b"one\n");
-    // and again when the file changes
+    // the bytes now, version 1
+    let (stream, first) = c.watch(&p, Duration::from_secs(5)).unwrap();
+    assert_eq!(first, b"one\n");
+    // and again when the file changes: version 2
     std::thread::sleep(Duration::from_millis(300));
     std::fs::write(&path, "two\n").unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut got = None;
     while Instant::now() < deadline && got.is_none() {
         let _ = c.step(Duration::from_millis(100));
-        got = c.link.files.iter().position(|(q, b)| *q == p && b.as_deref() == Ok(b"two\n")).map(|i| c.link.files.remove(i));
+        got = c.io_next_file(stream).filter(|f| f.bytes == b"two\n");
     }
-    assert!(got.is_some(), "no update after the change");
-    // not after unwatch (settled: the change's own events all arrived)
-    c.unwatch(&p);
+    let f = got.expect("no update after the change");
+    assert_eq!(f.version, 2);
+    assert_eq!(f.path, p);
+    // not after the stream ends (settled: the change's own events all arrived)
+    c.unwatch(stream);
     let settle = Instant::now() + Duration::from_millis(500);
     while Instant::now() < settle {
         let _ = c.step(Duration::from_millis(50));
     }
-    c.link.files.clear();
+    c.link.io.clear();
     std::fs::write(&path, "three\n").unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(100));
     }
-    assert!(!c.link.files.iter().any(|(q, b)| *q == p && b.as_deref() == Ok(b"three\n")), "still streaming after unwatch");
+    assert!(c.io_next_file(stream).is_none(), "still streaming after the stream ended");
+    // the plane from the command line: GET, PUT, a missing file, a watch
+    let out = ok(&sock, &["io", "GET", &format!("file://{p}")]);
+    assert_eq!(out, "three\n");
+    let put = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "io", "PUT", &format!("file://{p}")]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    {
+        use std::io::Write;
+        put.stdin.as_ref().unwrap().write_all(b"four\n").unwrap();
+    }
+    let put = put.wait_with_output().unwrap();
+    assert!(put.status.success(), "{}", String::from_utf8_lossy(&put.stderr));
+    assert_eq!(std::fs::read(&path).unwrap(), b"four\n");
+    let (success, _, err) = apex(&sock, &["io", "GET", "file:///nowhere/at/all"]);
+    assert!(!success && err.contains("404"), "{err}");
+    let mut watcher = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "io", "-watch", "GET", &format!("file://{p}")]).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    std::fs::write(&path, "five\n").unwrap();
+    std::thread::sleep(Duration::from_millis(1500));
+    watcher.kill().unwrap();
+    let out = watcher.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.starts_with("four\n") && text.contains("five\n"), "{text:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

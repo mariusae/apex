@@ -474,7 +474,8 @@ client → server
                                           group (the shell the server started) takes the name in
                                           the top row, ps and Kill; a group the server did not
                                           start is adopted under pid until this connection goes
-  ReadFile{path} · Watch{path} · Unwatch{path}
+  Io{stream, frame}                       the I/O plane (WEB.md §1): Request opens a stream
+                                          the client numbers; Body, End, Reset
 
 server → client
   Build{protocol, id}                     first frame, frozen: refuse another protocol version
@@ -484,7 +485,7 @@ server → client
   PlumbTrace{lines}                       a dry run's report
   Plumb{id, ctx, verb, text, dir, groups, at?, sel?}
                                           a rule named this tool; answer PlumbAck within a second
-  File{path, bytes}                       ReadFile's answer, and every change while Watched
+  Io{stream, frame}                       Response{status, headers}, Body, End, Reset
   Ps{procs} · TermLines{term, text}
 
 proposals (tools and the server → the leader; applied by whoever leads)
@@ -669,13 +670,16 @@ the profile records the session's. Clients resolve a key through their
 own settings, then the session's. The UI keeps one `Preview` rule of its
 own per extension a `Preview.EXT` setting names an app for, so the verb
 is offered only where a direct setting exists; `Preview` alone is the
-fallback app, else Quick Look. The client drives file I/O: `ReadFile`
-is one-shot, `Watch` streams `File` on every change (the daemon adds the
-path to the watcher and fans changes out to subscribers) until
-`Unwatch`, the connection goes, or a UI is fenced; a remote preview is a
-subscribed local copy under a path mirroring the host's, ended with the
-previewer's process, the file's window, or the lead. Inline views later
-refresh the same way.
+fallback app, else Quick Look. The client drives file I/O on the I/O
+plane (WEB.md §1, built): `GET file://path` is one-shot, with a `Watch`
+header the stream stays open and every change brings a `Body` holding a
+`FileFrame{version, path, bytes}` (the daemon adds the path to the
+watcher and fans changes out to every watch stream) until the client
+ends the stream or its connection goes; `PUT file://path` writes. A
+stream belongs to its connection, so fencing changes nothing. A remote
+preview is a watch stream feeding a local copy under a path mirroring
+the host's, ended with the previewer's process, the file's window, or
+the lead. `apex io` is the plane from a shell; `apex cat` is `GET`.
 
 ## 8. Extensibility
 

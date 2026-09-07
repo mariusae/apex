@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -87,9 +87,6 @@ pub enum ClientMsg {
     /// A setting: the session's, or `attachment`'s (an attach script
     /// names the attaching client through `$apexattachment`).
     Set { key: String, value: String, attachment: Option<AttachmentId> },
-    /// The bytes of a file on the host, for a client that shows or
-    /// previews it: answered by `File`.
-    ReadFile { path: String },
     /// The commands the server is running (`Ps` answers), and ending them
     /// by name or pid (acme's Kill; `Ps` answers with what is left).
     Ps,
@@ -99,10 +96,74 @@ pub enum ClientMsg {
     /// and `Kill`; a program of no known group (started from the profile,
     /// say) is adopted under `pid` for as long as this connection lasts.
     Named { name: String, group: u32, pid: u32, cmd: String },
-    /// `ReadFile`, and again with every change to the file until
-    /// `Unwatch`, this connection goes, or (a UI) it is fenced.
-    Watch { path: String },
-    Unwatch { path: String },
+    /// The I/O plane (WEB.md §1): a stream this connection opened with
+    /// `IoFrame::Request`, then its body frames and end. Streams belong
+    /// to the connection and end with it.
+    Io { stream: u32, frame: IoFrame },
+}
+
+/// A frame on the I/O plane. HTTP-shaped: a `Request` opens a stream
+/// (the client picks the id), `Response` answers it, `Body` carries
+/// bytes either way, `End` finishes a side, `Reset` aborts. What the
+/// server answers: `GET file:///path` (the bytes; with a `Watch` header
+/// the stream stays open and every change brings a `Body` holding a
+/// `FileFrame`), `PUT file:///path` (the body written when it ends).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum IoFrame {
+    Request { method: String, url: String, headers: Vec<(String, String)> },
+    Response { status: u16, headers: Vec<(String, String)> },
+    Body(Vec<u8>),
+    End,
+    Reset { reason: String },
+}
+
+/// What each `Body` of a watched file carries: the file's contents as
+/// of `version` (1 for the first, then one per change).
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct FileFrame {
+    pub version: u64,
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
+impl FileFrame {
+    pub fn encode(&self) -> Vec<u8> {
+        postcard::to_stdvec(self).unwrap_or_default()
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<FileFrame> {
+        postcard::from_bytes(bytes).ok()
+    }
+}
+
+/// The path a `file://` URL names on this host, percent-decoded;
+/// `file:///p`, `file://localhost/p` and a bare absolute path all do.
+pub fn file_url_path(url: &str) -> Option<std::path::PathBuf> {
+    let rest = if let Some(r) = url.strip_prefix("file://") {
+        r.strip_prefix("localhost").unwrap_or(r)
+    } else if url.starts_with('/') {
+        url
+    } else {
+        return None;
+    };
+    if !rest.starts_with('/') {
+        return None;
+    }
+    let mut out = Vec::with_capacity(rest.len());
+    let b = rest.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&rest[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    Some(std::path::PathBuf::from(String::from_utf8_lossy(&out).to_string()))
 }
 
 /// A client's script, run on the host: its `~/.apex/profile` when it
@@ -148,9 +209,10 @@ pub enum ServerMsg {
     /// Answer with `PlumbAck{id}` within a second.
     Plumb { id: u64, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
     RuleAdded { id: RuleId },
-    File { path: String, bytes: Result<Vec<u8>, String> },
     Ps { procs: Vec<crate::Running> },
     TermLines { term: TermId, text: String },
+    /// The I/O plane: a frame on a stream this connection opened.
+    Io { stream: u32, frame: IoFrame },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
@@ -177,4 +239,22 @@ pub fn read_frame<R: Read, T: for<'de> Deserialize<'de>>(r: &mut R) -> io::Resul
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf)?;
     postcard::from_bytes(&buf).map(Some).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+#[cfg(test)]
+mod io_tests {
+    use super::*;
+
+    #[test]
+    fn file_urls_name_paths() {
+        assert_eq!(file_url_path("file:///a/b c.txt").unwrap(), std::path::PathBuf::from("/a/b c.txt"));
+        assert_eq!(file_url_path("file:///a/b%20c.txt").unwrap(), std::path::PathBuf::from("/a/b c.txt"));
+        assert_eq!(file_url_path("file://localhost/a").unwrap(), std::path::PathBuf::from("/a"));
+        assert_eq!(file_url_path("/plain").unwrap(), std::path::PathBuf::from("/plain"));
+        assert!(file_url_path("http://x/").is_none());
+        assert!(file_url_path("file://host/a").is_none());
+        assert!(file_url_path("relative").is_none());
+        let f = FileFrame { version: 3, path: "/p".into(), bytes: b"hi".to_vec() };
+        assert_eq!(FileFrame::decode(&f.encode()).unwrap(), f);
+    }
 }

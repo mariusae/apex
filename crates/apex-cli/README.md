@@ -79,9 +79,10 @@ setting names an app for (`apex set Preview.md Marked`); `Preview` alone is the
 fallback app when a rule of your own asks to preview something else, and
 without it the platform previews (Quick Look on macOS). A remote file is
 fetched into a local copy and the copy is kept current while the preview
-lives: the app subscribes to the file (`Watch`, `apex cat` is the
-one-shot form) until Quick Look exits, the file's window goes, or the
-app loses its lead.
+lives: the app watches the file on the session's I/O plane (`apex io
+-watch GET file://PATH` from a shell; `apex cat` is the one-shot form)
+until Quick Look exits, the file's window goes, or the app loses its
+lead.
 [examples/profile](../../examples/profile) is one that has zsh, bash and fish
 name their window after the directory on every `cd`, through their
 environment; rc does that on its own in an apex terminal (its rcmain

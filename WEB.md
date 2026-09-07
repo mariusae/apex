@@ -33,6 +33,14 @@ windows with `wry`, then `apex md` and `apex tool preview`.
 
 ## 1. The I/O plane
 
+*As built (stage 1):* `Io{stream, frame}` both ways, `IoFrame::{Request,
+Response, Body, End, Reset}`, `GET file://` (with `Watch`: `FileFrame`
+bodies, version 1 first), `PUT file://`; `ReadFile`/`Watch`/`Unwatch`/
+`File` and the per-connection watch sets are gone; `apex io` drives it
+from a shell; `Remote::{io_open, io_send, io_end, io_response,
+io_collect, io_next_file, read_file, watch, unwatch}` for programs.
+Not yet: `http(s)://`, `CONNECT` (stage 2).
+
 ### 1.1 Why a second plane
 
 `ReadFile`, `Watch` and `Unwatch` are already connection-scoped messages
