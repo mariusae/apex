@@ -899,7 +899,10 @@ session it runs in; commands run from tags get the same two.
 **Web windows** are out of v1. The prototype's headless-Chrome screencast
 is a server-side renderer and fits the model, but it is bandwidth-heavy
 over ssh, and the alternative (URL as server state, client-side rendering)
-breaks "all state on the server" for page state. Decide later.
+breaks "all state on the server" for page state. *Decided:* the URL is
+the state, rendering is the client's, and network and file I/O go
+through the server on an I/O plane beside the log; see WEB.md, which
+also makes Preview a live pipe through a converter.
 
 ---
 
