@@ -266,6 +266,14 @@ fn main() {
         }
         shell::save_open(cx);
         cx.activate(true);
+        // quitting from the Dock or by AppleScript does not run our Quit
+        // action: remember the windows before they close on the way out
+        cx.on_app_quit(|cx| {
+            shell::save_open(cx);
+            shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
+            gpui::Task::ready(())
+        })
+        .detach();
         cx.on_window_closed(|cx, _| {
             shell::save_open(cx);
             if cx.windows().is_empty() {
@@ -381,8 +389,9 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
                     acme.window_activated(active, window);
                 })
                 .detach();
-                // where the window is, remembered as it moves
-                cx.observe_window_bounds(window, |_, _, cx| shell::save_open(cx)).detach();
+                // where the window is, remembered as it moves: after this
+                // update, since save_open reads every window, this one too
+                cx.observe_window_bounds(window, |_, _, cx| cx.defer(|cx| shell::save_open(cx))).detach();
             });
             view
         },

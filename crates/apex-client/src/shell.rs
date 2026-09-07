@@ -191,15 +191,32 @@ pub fn save_open(cx: &mut App) {
         return;
     }
     let mut open = Vec::new();
+    let debug = std::env::var_os("APEX_DEBUG").is_some();
     for w in cx.windows() {
-        let Some(h) = w.downcast::<Acme>() else { continue };
-        let Ok(a) = h.read(cx) else { continue };
+        let Some(h) = w.downcast::<Acme>() else {
+            if debug {
+                eprintln!("apex-ui: save_open: a window that is not ours");
+            }
+            continue;
+        };
+        let Ok(a) = h.read(cx) else {
+            if debug {
+                eprintln!("apex-ui: save_open: cannot read a window");
+            }
+            continue;
+        };
         if a.socket.is_none() || a.url.provider == "via" {
+            if debug {
+                eprintln!("apex-ui: save_open: skipping {} (socket {:?})", a.url, a.socket);
+            }
             continue;
         }
         let url = a.url.to_string();
         let (frame, fullscreen) = h.update(cx, |_, window, _| (window.bounds(), window.is_fullscreen())).map(|(b, f)| (Some(b), f)).unwrap_or((None, false));
         open.push(Remembered { url, frame, fullscreen });
+    }
+    if debug {
+        eprintln!("apex-ui: save_open: {} window(s): {:?}", open.len(), open.iter().map(|r| r.url.clone()).collect::<Vec<_>>());
     }
     remember(&open);
 }
