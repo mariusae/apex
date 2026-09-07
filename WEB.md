@@ -223,6 +223,14 @@ through the tag's `Look` as a later refinement).
 
 ### 2.3 Network through the server
 
+*As built (stage 5):* `plane::IoPlane` is the link's I/O plane for
+threads (streams they open get their frames from the link's reader
+directly, through a sink registry); `plane::start_connect_proxy` is
+the localhost `CONNECT` proxy, one per web-hosting client link, each
+accepted connection a `CONNECT` stream on the plane; every view's data
+store is pointed at it (`mac-proxy`), so its traffic leaves from the
+host. With no link (an in-process server) the view is on its own.
+
 `WKWebView` cannot intercept `http` or `https` with a scheme handler;
 only custom schemes. It can, on macOS 14 and later, take a per-data-store
 proxy configuration. So:
@@ -242,6 +250,12 @@ fallback is the view's own network, documented as such. It is not the
 design.
 
 ### 2.4 `apexfile://`
+
+*As built (stage 5):* an asynchronous custom protocol per view: the
+path is fetched with `GET file://` on the plane (the disk, with no
+link), answered with a content type from the extension, and watched
+from then on (one watch stream per path per page, capped at 200,
+ended with the page); a change after the first frame reloads the page.
 
 A custom scheme handled by the client: `apexfile:///path` is
 `GET file:///path` on the plane. With it:

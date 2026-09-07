@@ -623,7 +623,7 @@ impl Acme {
         self.chooser = false;
         self.layouts.clear();
         self.term_layouts.clear();
-        self.webs = Webs::new();
+        self.webs = Webs::new(self.io_plane(), self.wake.clone());
         self.hl = None;
         self.mouse = Mouse::default();
         self.want_visible.clear();
@@ -802,7 +802,7 @@ impl Acme {
             focus: cx.focus_handle(),
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
-            webs: Webs::new(),
+            webs: Webs::new(None, None),
             hl: None,
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
@@ -1866,8 +1866,21 @@ impl Acme {
         if url.is_empty() {
             return;
         }
+        if self.webs.is_empty() && !self.webs.armed() {
+            // the first view: the plane and the proxy come from the link now
+            self.webs = Webs::new(self.io_plane(), self.wake.clone());
+        }
         let visible = !self.overlay_up();
         self.webs.place(w, &url, bounds, window, visible);
+    }
+
+    /// The session's I/O plane for the web views' threads, when a link
+    /// carries one.
+    fn io_plane(&self) -> Option<apex_server::plane::IoPlane> {
+        match &self.backend {
+            Backend::Remote(link) => Some(link.io_plane()),
+            Backend::Local(_) => None,
+        }
     }
 
     /// Is a gpui overlay up that a native view would hide?
@@ -1890,6 +1903,7 @@ impl Acme {
                     }
                 }
                 WebEvent::Title(_) => {}
+                WebEvent::Reload => self.webs.reload(w),
             }
         }
     }

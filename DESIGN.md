@@ -937,7 +937,11 @@ terminal's directory is), `Newweb URL` and `apex web open URL`
 (`Proposal::OpenWeb`), the client's `wry` view over the body, its
 navigations `WebNavigate` proposals that rename the window and push
 the place left onto the navigation stack; a `Goto` to a URL nobody
-shows opens a web window on it.
+shows opens a web window on it. The view's traffic goes through the
+host: a localhost `CONNECT` proxy per link whose tunnels are streams
+on the I/O plane; `apexfile:///path` is a host file fetched on the
+plane and watched, the page reloading when it changes (WEB.md §2.3,
+§2.4).
 
 ---
 

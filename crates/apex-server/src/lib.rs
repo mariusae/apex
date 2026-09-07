@@ -12,6 +12,7 @@
 pub const BUILD_ID: &str = env!("APEX_BUILD_ID");
 
 pub mod daemon;
+pub mod plane;
 pub mod proposal;
 pub mod proto;
 pub mod providers;

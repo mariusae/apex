@@ -70,10 +70,13 @@ pub struct Link {
     /// for the owner to carry out and answer with `Applied{id}`. Only a
     /// UI is asked; anything else refuses at once.
     pub client_asks: Vec<(u64, String, String)>,
-    /// Frames that arrived on the I/O plane, by stream, in order.
+    /// Frames that arrived on the I/O plane, by stream, in order (those
+    /// no thread waits for through `io_plane`).
     pub io: Vec<(u32, IoFrame)>,
-    /// The next stream id to open (odd; the server opens none).
-    next_stream: u32,
+    /// Stream ids (odd; the server opens none), shared with threads.
+    ids: crate::plane::IoIds,
+    /// Streams whose frames go to a thread rather than `io`.
+    sinks: crate::plane::IoSinks,
     /// The running commands, after a `Ps` or `Kill`.
     pub ps: Option<Vec<crate::Running>>,
     /// Terminal text read with `TermRead`.
@@ -175,7 +178,8 @@ impl Link {
     ) -> io::Result<(Link, Log, Node)> {
         let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
-        spawn_reader(reader, tx, wake);
+        let sinks = crate::plane::IoSinks::new();
+        spawn_reader(reader, tx, wake, sinks.clone());
         if let Some(profile) = create {
             out.send(&ClientMsg::NewSession { name: session.to_string(), profile })?;
         }
@@ -197,7 +201,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), next_stream: 1, ps: None, term_lines: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -212,11 +216,16 @@ impl Link {
     /// Open a stream on the I/O plane with a request; its id, for the
     /// frames that come back in `io`.
     pub fn io_open(&mut self, method: &str, url: &str, headers: &[(&str, &str)]) -> u32 {
-        let stream = self.next_stream;
-        self.next_stream += 2;
+        let stream = self.ids.next();
         let headers = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         self.send(&ClientMsg::Io { stream, frame: IoFrame::Request { method: method.to_string(), url: url.to_string(), headers } });
         stream
+    }
+
+    /// The plane for threads: streams they open get their frames from the
+    /// reader directly (WEB.md §2.3: the web view's proxy, `apexfile://`).
+    pub fn io_plane(&self) -> crate::plane::IoPlane {
+        crate::plane::IoPlane::new(self.out.clone(), self.ids.clone(), self.sinks.clone())
     }
 
     /// Send a proposal to the leader; the answer arrives in `applied`
@@ -578,11 +587,12 @@ impl Remote {
     /// Open a stream on the I/O plane with a request; its id, for the
     /// frames that come back in `link.io`.
     pub fn io_open(&mut self, method: &str, url: &str, headers: &[(&str, &str)]) -> u32 {
-        let stream = self.link.next_stream;
-        self.link.next_stream += 2;
-        let headers = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        self.send(&ClientMsg::Io { stream, frame: IoFrame::Request { method: method.to_string(), url: url.to_string(), headers } });
-        stream
+        self.link.io_open(method, url, headers)
+    }
+
+    /// The plane for threads (see `Link::io_plane`).
+    pub fn io_plane(&self) -> crate::plane::IoPlane {
+        self.link.io_plane()
     }
 
     /// Send body bytes, then the end, on a stream we opened (a PUT).
@@ -813,12 +823,18 @@ impl Remote {
     }
 }
 
-fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Option<Wake>) {
+fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Option<Wake>, sinks: crate::plane::IoSinks) {
     thread::spawn(move || {
         let mut r = BufReader::new(stream);
         loop {
             match read_frame::<_, ServerMsg>(&mut r) {
                 Ok(Some(m)) => {
+                    // a stream a thread waits on: straight to it
+                    if let ServerMsg::Io { stream, frame } = &m {
+                        if sinks.deliver(*stream, frame) {
+                            continue;
+                        }
+                    }
                     if tx.send(m).is_err() {
                         break;
                     }

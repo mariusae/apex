@@ -682,3 +682,81 @@ fn tunnels_and_fetches_go_through_the_host() {
     let out = nc.wait_with_output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout), "over the wire\n");
 }
+
+#[test]
+fn a_web_views_proxy_and_files_ride_the_plane() {
+    use std::io::{Read, Write};
+    let sock = daemon();
+    // an echo service to tunnel to
+    let echo = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let echo_port = echo.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for s in echo.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut s = s;
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = s.read(&mut buf) {
+                    if n == 0 || s.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    let c = Remote::connect_as(&sock, "main", "viewer", AttachmentKind::Tool).unwrap();
+    let plane = c.io_plane();
+    // the CONNECT proxy a web view is pointed at: a tunnel per connection,
+    // over the plane, through the host
+    let port = apex_server::plane::start_connect_proxy(plane.clone()).unwrap();
+    let mut p = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(p, "CONNECT 127.0.0.1:{echo_port} HTTP/1.1\r\nHost: 127.0.0.1:{echo_port}\r\n\r\n").unwrap();
+    let mut head = Vec::new();
+    let mut b = [0u8; 1];
+    while p.read(&mut b).unwrap() == 1 {
+        head.push(b[0]);
+        if head.ends_with(b"\r\n\r\n") {
+            break;
+        }
+    }
+    assert!(String::from_utf8_lossy(&head).starts_with("HTTP/1.1 200"), "{}", String::from_utf8_lossy(&head));
+    p.write_all(b"through the host").unwrap();
+    let mut got = vec![0u8; 16];
+    p.read_exact(&mut got).unwrap();
+    assert_eq!(&got, b"through the host");
+    drop(p);
+    // a tunnel to nowhere is a 502 at the proxy
+    let mut p = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(p, "CONNECT 127.0.0.1:1 HTTP/1.1\r\n\r\n").unwrap();
+    let mut head = String::new();
+    p.read_to_string(&mut head).unwrap();
+    assert!(head.starts_with("HTTP/1.1 502"), "{head}");
+    // apexfile: a file on the host fetched on the plane by a thread
+    let dir = std::env::temp_dir().join(format!("apex-cli-plane-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("page.html");
+    std::fs::write(&file, "<h1>hi</h1>").unwrap();
+    let (status, _, body) = plane.fetch("GET", &apex_server::remote::file_url(&file.display().to_string()), &[], None, Duration::from_secs(5)).unwrap();
+    assert_eq!((status, String::from_utf8_lossy(&body).to_string()), (200, "<h1>hi</h1>".to_string()));
+    let (status, _, _) = plane.fetch("GET", "file:///nowhere/at/all", &[], None, Duration::from_secs(5)).unwrap();
+    assert_eq!(status, 404);
+    assert_eq!(apex_server::plane::mime_for("/a/b.html"), "text/html; charset=utf-8");
+    assert_eq!(apex_server::plane::mime_for("/a/b.PNG"), "image/png");
+    // and a watch stream a thread reads: the file now, then the change
+    let (stream, rx) = plane.open("GET", &apex_server::remote::file_url(&file.display().to_string()), &[("Watch", "1")]);
+    assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), apex_server::proto::IoFrame::Response { status: 200, .. }));
+    assert!(matches!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), apex_server::proto::IoFrame::Body(_)));
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::write(&file, "<h1>changed</h1>").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut changed = false;
+    while !changed && Instant::now() < deadline {
+        if let Ok(apex_server::proto::IoFrame::Body(b)) = rx.recv_timeout(Duration::from_millis(200)) {
+            changed = apex_server::proto::FileFrame::decode(&b).is_some_and(|f| f.bytes == b"<h1>changed</h1>");
+        }
+    }
+    assert!(changed, "no frame after the change");
+    plane.end(stream);
+    plane.close(stream);
+    let _ = std::fs::remove_dir_all(&dir);
+    drop(c);
+}
