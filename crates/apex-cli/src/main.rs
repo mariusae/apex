@@ -220,8 +220,8 @@ from a tag (shell commands, Win, the profile and attach scripts, tools
 started from them), as the top row names them. One per line: the pid,
 the name (the first word, what Kill and apex kill go by), where it was
 started from (a window id, or top), when, its directory, and the whole
-command line. Terminals' shells are not commands and are not listed;
-their windows show them." },
+command line. Terminals' shells are listed too while they run, named
+after the shell (or the command Newterm was given)." },
     Cmd { name: "kill", usage: "apex kill NAME|PID...", short: "end running commands", flags: &[], run: kill, long: "\
 Kill ends every running command named NAME, or the one with pid PID, as
 Kill in the top row does: the command's process group is sent SIGTERM,

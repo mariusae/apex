@@ -60,6 +60,10 @@ pub enum Proposal {
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
+    /// Insert at an address, valid at `version`, leaving the selection
+    /// alone (what a tool writing output at a point wants; `ReplaceRange`
+    /// selects what it put, as a pipe's output is selected).
+    Insert { buffer: BufferId, version: Version, at: usize, text: String },
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -179,6 +183,15 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::ClientDo { verb, .. } => Err(CoreError::Missing(format!("no client here can {verb}"))),
+        Proposal::Insert { buffer, version, at, text } => {
+            let b = node.state.buffer(buffer)?;
+            if b.version != version {
+                return Err(CoreError::Missing("buffer changed meanwhile".into()));
+            }
+            let at = at.min(b.text.len());
+            node.insert_text(log, buffer, at, &text)?;
+            Ok(None)
+        }
         Proposal::Live { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;
             Ok(None)

@@ -426,4 +426,14 @@ fn ps_lists_running_commands_and_kill_ends_them() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!ok(&sock, &["ps"]).contains("\tsleep\t"));
+    // a terminal's shell is listed too, named after what runs in it
+    let t = ok(&sock, &["term", "new", "sleep", "60"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["ps"]).contains("\tsleep\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ps = ok(&sock, &["ps"]);
+    let line = ps.lines().find(|l| l.contains("\tsleep\t")).unwrap_or_else(|| panic!("{ps}"));
+    assert!(line.contains("-l -c 'sleep 60'"), "{line}");
+    let _ = t;
 }

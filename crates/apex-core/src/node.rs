@@ -523,6 +523,14 @@ impl Node {
     }
 
     /// The name shown in a window's tag: its body buffer's name.
+    /// Insert `text` at `q0` in a buffer without touching any view's dot
+    /// beyond the shift an insert makes (a tool writing at an address,
+    /// as win writes its shell's output).
+    pub fn insert_text(&mut self, log: &mut Log, buffer: BufferId, q0: usize, text: &str) -> Result<()> {
+        let group = self.new_group();
+        self.edit_op(log, buffer, q0, 0, text, group)
+    }
+
     /// acme's `wincommit` for a tag: the name typed into it becomes the
     /// buffer's name (a click in the tag, or a command from it, commits).
     /// A relative name stays relative here; `Put` makes it absolute.

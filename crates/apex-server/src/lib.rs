@@ -517,9 +517,19 @@ impl Server {
         }
     }
 
-    /// The commands running now: what the top row names and `Kill` ends.
+    /// The commands running now (what the top row names and `Kill` ends),
+    /// and the terminals' shells while they run.
     pub fn processes(&self) -> Vec<Running> {
-        self.running.lock().unwrap().clone()
+        let mut out = self.running.lock().unwrap().clone();
+        for (id, h) in &self.terms {
+            if h.exited {
+                continue;
+            }
+            let ctx = self.node.state.windows.values().find(|w| w.body == Body::Term(*id)).map(|w| ExecCtx::Window(w.id)).unwrap_or(ExecCtx::Top);
+            out.push(Running { pid: h.pid, name: h.name.clone(), cmd: h.cmd.clone(), dir: h.dir.display().to_string(), ctx, started: h.started });
+        }
+        out.sort_by_key(|r| r.started);
+        out
     }
 
     /// acme's xkill: end every running command whose name (or pid) is
@@ -533,6 +543,16 @@ impl Server {
                 // SAFETY: a plain signal to a group we made
                 unsafe {
                     libc::kill(-(r.pid as i32), libc::SIGTERM);
+                }
+                n += 1;
+            }
+        }
+        // a terminal's shell: hung up, as closing its window would
+        for h in self.terms.values() {
+            if !h.exited && (h.name == target || h.pid.to_string() == target) {
+                // SAFETY: a signal to the shell we started
+                unsafe {
+                    libc::kill(h.pid as i32, libc::SIGHUP);
                 }
                 n += 1;
             }

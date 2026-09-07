@@ -29,10 +29,10 @@ pub const PALEBLUEGREEN: u32 = 0xEAFFFF; // tagcols[BACK]
 pub const PALEGREYGREEN: u32 = 0x9EEEEE; // tagcols[HIGH] DPalegreygreen
 pub const PURPLEBLUE: u32 = 0x8888CC; // tagcols[BORD] DPurpleblue; also colbutton
 pub const MEDBLUE: u32 = 0x000099; // modbutton fill, DMedblue
-/// A live window's handle: a process is behind it. Dark yellow, the
-/// complement of the dirty handle's blue, in acme's own family (the
-/// scrollbar's DDarkyellow is 0x99994C).
-pub const LIVE: u32 = 0x999900;
+/// A live window's handle: a process is behind it. Dark magenta: unlike
+/// the dirty blue, the fenced red, the unsynced green, and the
+/// scrollbar's dark yellow beside it.
+pub const LIVE: u32 = 0x990099;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder

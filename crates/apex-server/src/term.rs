@@ -193,6 +193,12 @@ pub struct TermHost {
     /// The `-name` the window carries after its directory (the host, until
     /// a label brings its own).
     pub label: String,
+    /// The shell's process, for `ps` and `kill`: pid, its name (the
+    /// shell's, or the command's), the command line, when it started.
+    pub pid: u32,
+    pub name: String,
+    pub cmd: String,
+    pub started: u64,
 }
 
 impl TermHost {
@@ -226,6 +232,13 @@ impl TermHost {
         };
         let size = WindowSize { num_lines: rows, num_cols: cols, cell_width: 8, cell_height: 16 };
         let pty = tty::new(&options, size, id.0).map_err(|e| e.to_string())?;
+        let pid = pty.child().id();
+        let name = cmd.map(crate::command_name).filter(|n| !n.is_empty()).unwrap_or_else(|| shell.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+        let cmdline = match cmd {
+            Some(c) => format!("{} -l -c {}", shell.display(), crate::shell_quote(c)),
+            None => format!("{} -l", shell.display()),
+        };
+        let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let listener = Listener { id, tx: tx.clone() };
         let term = AlacTerm::new(Config::default(), &Size { cols, rows }, listener.clone());
         let term = Arc::new(FairMutex::new(term));
@@ -240,7 +253,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label })
+        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started })
     }
 
     pub fn write(&self, data: &[u8]) {

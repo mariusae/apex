@@ -528,8 +528,16 @@ impl Win {
             let p = self.p.min(buf.text.len());
             let version = buf.version;
             self.ours.push_back((p, text.clone()));
-            match self.propose(Proposal::ReplaceRange { dir: None, buffer: self.buffer, version, q0: p, q1: p, text: text.clone() }, TIMEOUT) {
-                Ok(_) => return,
+            // where dot is, before: at the point, it follows the output
+            let dot = buf.views.get(&ViewId::Body(self.window)).map(|v| (v.q0, v.q1));
+            match self.propose(Proposal::Insert { buffer: self.buffer, version, at: p, text: text.clone() }, TIMEOUT) {
+                Ok(_) => {
+                    if dot == Some((p, p)) {
+                        let n = text.chars().count();
+                        let _ = self.propose(Proposal::Select { view: ViewId::Body(self.window), q0: p + n, q1: p + n }, TIMEOUT);
+                    }
+                    return;
+                }
                 Err(_) => {
                     // the buffer moved on (typing, say): the entries in
                     // between went through `before` while we waited and
