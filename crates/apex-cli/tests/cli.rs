@@ -604,7 +604,8 @@ fn tunnels_and_fetches_go_through_the_host() {
                 let mut s = s;
                 let mut req = Vec::new();
                 let mut buf = [0u8; 1024];
-                // the head, then as much body as Content-Length says
+                // the head, then the body: as much as Content-Length says,
+                // or chunks to the last (ureq sends a body chunked)
                 loop {
                     let n = s.read(&mut buf).unwrap_or(0);
                     if n == 0 {
@@ -613,7 +614,14 @@ fn tunnels_and_fetches_go_through_the_host() {
                     req.extend_from_slice(&buf[..n]);
                     if let Some(i) = req.windows(4).position(|w| w == b"\r\n\r\n") {
                         let head = String::from_utf8_lossy(&req[..i]).to_string();
-                        let want: usize = head.lines().find_map(|l| l.strip_prefix("Content-Length: ")).and_then(|v| v.parse().ok()).unwrap_or(0);
+                        let chunked = head.lines().any(|l| l.to_ascii_lowercase() == "transfer-encoding: chunked");
+                        if chunked {
+                            if req.ends_with(b"0\r\n\r\n") {
+                                break;
+                            }
+                            continue;
+                        }
+                        let want: usize = head.lines().find_map(|l| l.strip_prefix("Content-Length: ").or_else(|| l.strip_prefix("content-length: "))).and_then(|v| v.parse().ok()).unwrap_or(0);
                         if req.len() - (i + 4) >= want {
                             break;
                         }
@@ -621,7 +629,25 @@ fn tunnels_and_fetches_go_through_the_host() {
                 }
                 let i = req.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or(req.len());
                 let head = String::from_utf8_lossy(&req[..i]).to_string();
-                let body = &req[(i + 4).min(req.len())..];
+                let raw = &req[(i + 4).min(req.len())..];
+                // chunks undone: size line, data, blank
+                let body: Vec<u8> = if head.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+                    let mut out = Vec::new();
+                    let mut rest = raw;
+                    while let Some(nl) = rest.windows(2).position(|w| w == b"\r\n") {
+                        let size = usize::from_str_radix(String::from_utf8_lossy(&rest[..nl]).trim(), 16).unwrap_or(0);
+                        if size == 0 {
+                            break;
+                        }
+                        let start = nl + 2;
+                        out.extend_from_slice(&rest[start..(start + size).min(rest.len())]);
+                        rest = &rest[(start + size + 2).min(rest.len())..];
+                    }
+                    out
+                } else {
+                    raw.to_vec()
+                };
+                let body = &body[..];
                 let line = head.lines().next().unwrap_or("").to_string();
                 let answer = format!("{line}|{}", String::from_utf8_lossy(body));
                 let (status, answer) = if line.starts_with("GET /missing") { ("404 Not Found", "gone".to_string()) } else { ("200 OK", answer) };
