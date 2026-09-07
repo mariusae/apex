@@ -20,7 +20,7 @@ use std::time::Duration;
 use gpui::{Bounds, Pixels, Window};
 
 use apex_core::WindowId;
-use apex_server::plane::{mime_for, start_connect_proxy, IoPlane};
+use apex_server::plane::{alias_loopback_url, mime_for, start_connect_proxy, unalias_url, IoPlane};
 use apex_server::proto::{file_url_path, FileFrame, IoFrame};
 use apex_server::remote::{file_url, Wake};
 
@@ -34,6 +34,9 @@ pub enum WebEvent {
     Reload,
     /// A link followed in a page rendered from a buffer: open it.
     Link(String),
+    /// A page went for the host's loopback by its bare name, which the
+    /// view would take for the client's: load it under the alias instead.
+    Reroute(String),
 }
 
 /// One window's view.
@@ -157,6 +160,14 @@ impl Webs {
                     }
                     return false;
                 }
+                if alias_loopback_url(&u) != u {
+                    // a bare loopback link: the host's, through the proxy
+                    let _ = tx1.send((w, WebEvent::Reroute(u)));
+                    if let Some(k) = &wake1 {
+                        k();
+                    }
+                    return false;
+                }
                 let _ = tx1.send((w, WebEvent::Navigated(apex_url(&u))));
                 if let Some(k) = &wake1 {
                     k();
@@ -216,6 +227,14 @@ impl Webs {
     pub fn navigated(&mut self, w: WindowId, url: &str) {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.url = url.to_string();
+        }
+    }
+
+    /// Load `url` in window `w`'s page (a loopback link, under the alias).
+    pub fn load(&mut self, w: WindowId, url: &str) {
+        if let Some(h) = self.hosts.get_mut(&w) {
+            h.url = url.to_string();
+            let _ = h.view.load_url(&webkit_url(url));
         }
     }
 
@@ -474,20 +493,22 @@ fn js_string(s: &str) -> String {
     out
 }
 
-/// WebKit dispatches a custom scheme only with a host in the URL: our
-/// `apexfile:///path` loads as `apexfile://localhost/path`.
+/// A URL as the view must see it: WebKit dispatches a custom scheme only
+/// with a host in the URL, so `apexfile:///path` loads as
+/// `apexfile://localhost/path`; and the host's loopback goes under the
+/// alias the proxy undoes, since a view never proxies a loopback name.
 fn webkit_url(url: &str) -> String {
     match url.strip_prefix("apexfile:///") {
         Some(rest) => format!("apexfile://localhost/{rest}"),
-        None => url.to_string(),
+        None => alias_loopback_url(url),
     }
 }
 
-/// The form the session names a host file by, back from WebKit's.
+/// The form the session names a page by, back from the view's.
 fn apex_url(url: &str) -> String {
     match url.strip_prefix("apexfile://localhost/") {
         Some(rest) => format!("apexfile:///{rest}"),
-        None => url.to_string(),
+        None => unalias_url(url),
     }
 }
 

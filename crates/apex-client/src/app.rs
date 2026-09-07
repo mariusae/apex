@@ -1900,6 +1900,13 @@ impl Acme {
                 WebEvent::Reload => self.webs.reload(w),
                 // a link followed in a page of ours: a web window on it
                 WebEvent::Link(url) => self.goto(Loc { name: url, pos: Pos::Keep }),
+                // the host's loopback, by its bare name: through the proxy
+                WebEvent::Reroute(url) => {
+                    self.webs.load(w, &url);
+                    if self.node.window_name(w) != url {
+                        perform(&mut self.node, &mut self.log, vec![Proposal::WebNavigate { window: w, url }]);
+                    }
+                }
             }
         }
     }

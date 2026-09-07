@@ -231,7 +231,14 @@ directly, through a sink registry); `plane::start_connect_proxy` is
 the localhost `CONNECT` proxy, one per web-hosting client link, each
 accepted connection a `CONNECT` stream on the plane; every view's data
 store is pointed at it (`mac-proxy`), so its traffic leaves from the
-host. With no link (an in-process server) the view is on its own.
+host. With no link (an in-process server) the view is on its own. A
+web view never sends a loopback connection through a proxy, so a page
+on the host's `127.0.0.1` or `localhost` is loaded under an alias the
+proxy undoes (`127-0-0-1.apex-host`, `localhost.apex-host`); the
+session sees the bare name, navigations are mapped back, and a link to
+a bare loopback name inside a page is rerouted the same way. Absolute
+loopback URLs in a page's own resources (images, scripts) still go to
+the client's loopback: a known gap.
 
 `WKWebView` cannot intercept `http` or `https` with a scheme handler;
 only custom schemes. It can, on macOS 14 and later, take a per-data-store

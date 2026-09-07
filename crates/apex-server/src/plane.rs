@@ -137,6 +137,58 @@ impl IoPlane {
     }
 }
 
+/// Loopback names in a page's URL (`127.0.0.1`, `localhost`) mean the
+/// host's loopback, not the client's, but a web view never sends a
+/// loopback connection through a proxy. So a view is given the host
+/// under an alias the proxy undoes: `127.0.0.1` becomes
+/// `127-0-0-1.apex-host`, `localhost` becomes `localhost.apex-host`.
+pub const HOST_ALIAS: &str = ".apex-host";
+
+/// The host part of a URL, and where it sits.
+fn url_host(url: &str) -> Option<(usize, usize)> {
+    let start = url.find("://")? + 3;
+    let rest = &url[start..];
+    let end = rest.find(|c| c == '/' || c == '?' || c == '#').unwrap_or(rest.len());
+    let auth = &rest[..end];
+    let host_start = auth.rfind('@').map(|i| i + 1).unwrap_or(0);
+    let host = &auth[host_start..];
+    let host_end = if host.starts_with('[') { host.find(']').map(|i| i + 1).unwrap_or(host.len()) } else { host.find(':').unwrap_or(host.len()) };
+    Some((start + host_start, start + host_start + host_end))
+}
+
+pub fn is_loopback_host(host: &str) -> bool {
+    host == "localhost" || host.starts_with("127.") || host == "[::1]" || host == "0.0.0.0"
+}
+
+/// A URL with a loopback host under the alias; anything else as it is.
+pub fn alias_loopback_url(url: &str) -> String {
+    let Some((a, b)) = url_host(url) else { return url.to_string() };
+    let host = &url[a..b];
+    if !is_loopback_host(host) || host.starts_with('[') {
+        return url.to_string();
+    }
+    format!("{}{}{}{}", &url[..a], host.replace('.', "-"), HOST_ALIAS, &url[b..])
+}
+
+/// The alias undone in a host name (`127-0-0-1.apex-host` → `127.0.0.1`).
+pub fn unalias_host(host: &str) -> String {
+    match host.strip_suffix(HOST_ALIAS) {
+        Some(h) if h == "localhost" => h.to_string(),
+        Some(h) => h.replace('-', "."),
+        None => host.to_string(),
+    }
+}
+
+/// The alias undone in a URL.
+pub fn unalias_url(url: &str) -> String {
+    let Some((a, b)) = url_host(url) else { return url.to_string() };
+    let host = &url[a..b];
+    if !host.ends_with(HOST_ALIAS) {
+        return url.to_string();
+    }
+    format!("{}{}{}", &url[..a], unalias_host(host), &url[b..])
+}
+
 /// A `CONNECT` proxy on localhost whose tunnels are `CONNECT` streams on
 /// the plane: point a web view at it and its traffic goes out through
 /// the host. The port; it serves until the plane's link closes.
@@ -170,6 +222,11 @@ fn proxy_one(plane: IoPlane, mut c: TcpStream) {
         let _ = c.write_all(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         return;
     }
+    // the host's loopback under its alias: the host itself connects there
+    let target = match target.rsplit_once(':') {
+        Some((h, port)) => format!("{}:{port}", unalias_host(h)),
+        None => target,
+    };
     let (stream, rx) = plane.open("CONNECT", &target, &[]);
     // the answer: up, or not
     match rx.recv_timeout(Duration::from_secs(30)) {
@@ -240,5 +297,23 @@ pub fn mime_for(path: &str) -> &'static str {
         "xml" => "application/xml",
         "md" | "txt" | "" => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loopback_hosts_travel_under_an_alias() {
+        assert_eq!(alias_loopback_url("http://127.0.0.1:2626/a?b#c"), "http://127-0-0-1.apex-host:2626/a?b#c");
+        assert_eq!(alias_loopback_url("http://localhost/"), "http://localhost.apex-host/");
+        assert_eq!(alias_loopback_url("https://example.com/"), "https://example.com/");
+        assert_eq!(alias_loopback_url("apexfile:///p"), "apexfile:///p");
+        assert_eq!(unalias_url("http://127-0-0-1.apex-host:2626/a"), "http://127.0.0.1:2626/a");
+        assert_eq!(unalias_url("http://localhost.apex-host:80/"), "http://localhost:80/");
+        assert_eq!(unalias_url("https://example.com/"), "https://example.com/");
+        assert_eq!(unalias_host("127-0-0-1.apex-host"), "127.0.0.1");
+        assert_eq!(unalias_host("example.com"), "example.com");
     }
 }

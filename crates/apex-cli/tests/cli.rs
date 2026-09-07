@@ -724,6 +724,22 @@ fn a_web_views_proxy_and_files_ride_the_plane() {
     p.read_exact(&mut got).unwrap();
     assert_eq!(&got, b"through the host");
     drop(p);
+    // the host's loopback under its alias, as a web view is made to ask
+    let mut p = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    write!(p, "CONNECT 127-0-0-1.apex-host:{echo_port} HTTP/1.1\r\n\r\n").unwrap();
+    let mut head = Vec::new();
+    while p.read(&mut b).unwrap() == 1 {
+        head.push(b[0]);
+        if head.ends_with(b"\r\n\r\n") {
+            break;
+        }
+    }
+    assert!(String::from_utf8_lossy(&head).starts_with("HTTP/1.1 200"), "{}", String::from_utf8_lossy(&head));
+    p.write_all(b"alias").unwrap();
+    let mut got = vec![0u8; 5];
+    p.read_exact(&mut got).unwrap();
+    assert_eq!(&got, b"alias");
+    drop(p);
     // a tunnel to nowhere is a 502 at the proxy
     let mut p = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     write!(p, "CONNECT 127.0.0.1:1 HTTP/1.1\r\n\r\n").unwrap();
