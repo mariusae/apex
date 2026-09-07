@@ -779,7 +779,9 @@ scrollback limit truncates; a selection does not outlive that.
 (`/-host` appended unless the label brings its own `-` component); OSC 7
 (`file://host/path`) moves the name's directory; an xterm title (OSC 0/2)
 is a label too. The name's directory becomes the terminal's, where B2/B3
-resolve relative names. A new terminal is `dir/-host` (win's naming). The
+resolve relative names. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
+that through the login shell instead of a shell, named `dir/-cmd`, as
+`win cmd` does. The
 shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,
 `apexsession` and `APEX_SOCKET` set, so `apex` inside it addresses the
 session it runs in; commands run from tags get the same two.

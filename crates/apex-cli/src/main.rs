@@ -18,7 +18,7 @@
 //! apex sel WIN [Q0 Q1]
 //! apex exec [WIN] COMMAND                              as if B2
 //! apex events [--shard S]                              entries as JSON lines, forever
-//! apex term new | term send TERM TEXT | term read TERM
+//! apex term new [CMD...] | term send TERM TEXT | term read TERM
 //! apex plumb [--dry-run] [--edit] TEXT                  B3 from here (--edit: plan 9's B)
 //! apex plumb rule add FLAGS | rm ID | ls               the rule table
 //! apex B FILE[:LINE] ...                               open in the session (plan 9's B)
@@ -423,8 +423,10 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
     };
     match args.first().map(|s| s.as_str()) {
         Some("new") => {
+            // `term new CMD...`: the terminal runs CMD instead of a shell
             let before: Vec<TermId> = c.node.state.terms.keys().copied().collect();
-            c.propose(Proposal::Exec { ctx: ExecCtx::Top, text: "Newterm".into() }, TIMEOUT)?;
+            let text = std::iter::once("Newterm").chain(args[1..].iter().map(String::as_str)).collect::<Vec<_>>().join(" ");
+            c.propose(Proposal::Exec { ctx: ExecCtx::Top, text }, TIMEOUT)?;
             wait(&mut c, |r| r.node.state.terms.keys().any(|t| !before.contains(t)))?;
             let t = c.node.state.terms.keys().find(|t| !before.contains(t)).unwrap();
             println!("{}", t.0);

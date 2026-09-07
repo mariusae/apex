@@ -257,17 +257,20 @@ impl Server {
     // ---- terminals ------------------------------------------------------------
 
     /// Start a shell in a new pinned terminal shard; propose its window.
-    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path) -> Result<Proposal, String> {
+    /// A terminal window in `col`: the user's shell, or `cmd` run by it
+    /// (acme's `win cmd`), named `dir/-host` or `dir/-cmd`.
+    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path, cmd: Option<&str>) -> Result<Proposal, String> {
         let id = TermId(self.next_term);
         self.next_term += 1;
-        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone(), &self.env)?;
+        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone(), &self.env, cmd)?;
         self.node.create_shard(log, Shard::Term(id)).map_err(|e| e.to_string())?;
         self.node
             .append(log, Shard::Term(id), Op::Term(TermOp::Create { cols: 80, rows: 24 }))
             .map_err(|e| e.to_string())?;
         self.terms.insert(id, host);
-        // win's name: the directory, then `-` and the host (`awd` keeps it so)
-        let name = format!("{}/-{}", dir.display().to_string().trim_end_matches('/'), term::sysname());
+        // win's name: the directory, then `-` and the host (`awd` keeps it
+        // so), or the command
+        let name = format!("{}/-{}", dir.display().to_string().trim_end_matches('/'), self.terms[&id].label);
         Ok(Proposal::TermWindow { col, name, term: id })
     }
 
@@ -571,7 +574,9 @@ impl Server {
                 }
             }
             "Newterm" => {
-                props.push(self.new_term(log, col, &dir)?);
+                // `Newterm cmd args`: the terminal runs that instead of a shell
+                let rest = text[cmd.len()..].trim();
+                props.push(self.new_term(log, col, &dir, if rest.is_empty() { None } else { Some(rest) })?);
             }
             "Kill" => {
                 // acme's xkill: every running command whose name is given

@@ -15,7 +15,7 @@ apex edit WIN PROGRAM                                the Edit language
 apex sel WIN [Q0 Q1]
 apex exec [WIN] COMMAND                              as if B2
 apex events [--shard S]                              entries as JSON lines, forever
-apex term new | term send TERM TEXT | term read TERM
+apex term new [CMD...] | term send TERM TEXT | term read TERM
 apex plumb [--dry-run] [--edit] TEXT
 apex plumb rule add FLAGS | rm ID | ls
 apex B FILE[:LINE] ...

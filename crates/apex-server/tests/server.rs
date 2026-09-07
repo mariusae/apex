@@ -395,3 +395,18 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn newterm_with_a_command_runs_it_instead_of_a_shell() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm printf 'ran %s\\n' here").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    assert!(node.window_name(w).ends_with("/-printf"), "{}", node.window_name(w));
+    let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    server.close_orphan_terms(&mut log, &node);
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("ran here")), "grid:\n{}", rows(&node));
+    // and it is done when the command is
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|t| t.exit.is_some())), "exit noticed");
+}

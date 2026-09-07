@@ -197,13 +197,20 @@ pub struct TermHost {
 
 impl TermHost {
     /// Start the user's shell as a login shell in `dir`, a truecolor
-    /// xterm with `extra` (the session, the socket) in its environment.
-    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)]) -> Result<TermHost, String> {
+    /// xterm with `extra` (the session, the socket) in its environment;
+    /// with `cmd`, the login shell runs that instead (acme's `win cmd`).
+    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>) -> Result<TermHost, String> {
         tty::setup_env();
         let shell = match std::env::var_os("SHELL") {
             Some(s) if !s.is_empty() => PathBuf::from(s),
             _ => PathBuf::from("/bin/sh"),
         };
+        let args = match cmd {
+            Some(c) => vec!["-l".to_string(), "-c".to_string(), c.to_string()],
+            None => vec!["-l".to_string()],
+        };
+        // win's name for the window: the command's, else the host's
+        let label = cmd.map(crate::command_name).filter(|n| !n.is_empty()).unwrap_or_else(sysname);
         let mut env = HashMap::new();
         env.insert("TERM".to_string(), "xterm-256color".to_string());
         env.insert("COLORTERM".to_string(), "truecolor".to_string());
@@ -212,7 +219,7 @@ impl TermHost {
             env.insert(k.clone(), v.clone());
         }
         let options = Options {
-            shell: Some(Shell::new(shell.to_string_lossy().to_string(), vec!["-l".to_string()])),
+            shell: Some(Shell::new(shell.to_string_lossy().to_string(), args)),
             working_directory: Some(dir.to_path_buf()),
             drain_on_exit: false,
             env,
@@ -233,7 +240,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label: sysname() })
+        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label })
     }
 
     pub fn write(&self, data: &[u8]) {
