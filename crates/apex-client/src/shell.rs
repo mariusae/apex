@@ -627,7 +627,7 @@ impl Acme {
             Row::Rename(to) => {
                 self.selector = None;
                 self.rename_session(&to, window);
-                save_open(cx);
+                cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }
             Row::Open(url) | Row::Create(url) => {
@@ -651,7 +651,7 @@ impl Acme {
                     let msg = Acme::connect_error(&url, &e);
                     self.notice(&msg);
                 }
-                save_open(cx);
+                cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }
         }

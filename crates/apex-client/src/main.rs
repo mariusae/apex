@@ -193,17 +193,21 @@ fn main() {
         cx.set_menus(shell::menus());
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
-            // the windows as they are now come back next time
-            shell::save_open(cx);
-            shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
-            // every link ends before we do: the bridges go with us, and
-            // the daemons see the attachments leave
-            for w in cx.windows() {
-                if let Some(h) = w.downcast::<Acme>() {
-                    let _ = h.update(cx, |acme, _, _| acme.close_link());
+            // the action arrives while the focused window is mid-update,
+            // where it cannot be read: everything here waits for that
+            cx.defer(|cx| {
+                // the windows as they are now come back next time
+                shell::save_open(cx);
+                shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
+                // every link ends before we do: the bridges go with us, and
+                // the daemons see the attachments leave
+                for w in cx.windows() {
+                    if let Some(h) = w.downcast::<Acme>() {
+                        let _ = h.update(cx, |acme, _, _| acme.close_link());
+                    }
                 }
-            }
-            cx.quit();
+                cx.quit();
+            });
         });
         cx.on_action(|_: &shell::HideApp, cx| cx.hide());
         cx.on_action(|_: &shell::About, _| eprintln!("apex: acme, remade — https://github.com/apex"));
@@ -228,7 +232,7 @@ fn main() {
                 .and_then(|h| h.read(cx).ok().map(|a| a.url.clone()))
                 .unwrap_or_else(|| SessionUrl::local(apex_server::providers::DEFAULT_SESSION));
             open_window(cx, Target::Url { url, files: Vec::new() }, None);
-            shell::save_open(cx);
+            cx.defer(|cx| shell::save_open(cx));
         });
 
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
