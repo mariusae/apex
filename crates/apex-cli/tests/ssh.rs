@@ -1,7 +1,7 @@
 //! Attaching over ssh, with `ssh` replaced by a script that runs the
 //! command on this machine under a scratch HOME: the install of our
 //! binary on the "host", the daemon started there, and frames bridged
-//! through `apex attach --stdio`.
+//! through `apex attach -stdio`.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -38,7 +38,7 @@ fn fake_host() -> (PathBuf, PathBuf, PathBuf) {
 /// Stop the daemon a test started on its scratch host (by its socket path,
 /// which is this test's alone).
 fn stop_host(socket: &PathBuf) {
-    let _ = std::process::Command::new("pkill").arg("-f").arg("--").arg(format!("--socket {} ", socket.display())).status();
+    let _ = std::process::Command::new("pkill").arg("-f").arg("--").arg(format!("-socket={} ", socket.display())).status();
     let _ = std::fs::remove_file(socket);
 }
 

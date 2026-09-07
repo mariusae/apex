@@ -138,31 +138,31 @@ impl PlumbRule {
     pub fn to_flags(&self) -> String {
         let mut out = Vec::new();
         if self.verb != "plumb" {
-            out.push(format!("--verb {}", word(&self.verb)));
+            out.push(format!("-verb={}", word(&self.verb)));
         }
         if let Some(t) = &self.text {
-            out.push(format!("--text {}", word(t)));
+            out.push(format!("-text={}", word(t)));
         }
         if let Some(f) = &self.file {
-            out.push(format!("--file {}", word(f)));
+            out.push(format!("-file={}", word(f)));
         }
         if let Some(k) = self.kind {
-            out.push(format!("--kind {}", k.name()));
+            out.push(format!("-kind={}", k.name()));
         }
         if let Some(t) = &self.isfile {
-            out.push(format!("--isfile {}", word(t)));
+            out.push(format!("-isfile={}", word(t)));
         }
         if let Some(t) = &self.isdir {
-            out.push(format!("--isdir {}", word(t)));
+            out.push(format!("-isdir={}", word(t)));
         }
         match &self.action {
-            crate::entry::RuleAction::Edit(t) => out.push(format!("--edit {}", word(t))),
-            crate::entry::RuleAction::Run(t) => out.push(format!("--run {}", word(t))),
-            crate::entry::RuleAction::Client { verb, args } => out.push(format!("--client-do {} {}", word(verb), word(args))),
-            crate::entry::RuleAction::Tool(t) => out.push(format!("--tool {}", word(t))),
+            crate::entry::RuleAction::Edit(t) => out.push(format!("-edit={}", word(t))),
+            crate::entry::RuleAction::Run(t) => out.push(format!("-run={}", word(t))),
+            crate::entry::RuleAction::Client { verb, args } => out.push(format!("-client={} -args={}", word(verb), word(args))),
+            crate::entry::RuleAction::Tool(t) => out.push(format!("-tool={}", word(t))),
         }
         if let Some(to) = self.to {
-            out.push(format!("--to {}", match to {
+            out.push(format!("-to={}", match to {
                 crate::entry::RunTo::Errors => "errors",
                 crate::entry::RunTo::Window => "window",
             }));

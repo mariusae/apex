@@ -3,29 +3,19 @@
 `apex`, the command. Scripts and tools never see the wire; they see this.
 
 ```
-apex [--socket P] [--session S] server               run the daemon (foreground)
-apex ls                                              list sessions
-apex new-session NAME
-apex rename-session [FROM] TO
-apex attach [host/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
-apex new FILE...                                     open files in the first column
-apex win list | win del WIN
-apex text read WIN [--addr ADDR]                     an Edit address, e.g. `3,5` or `/fn main/`
-apex edit WIN PROGRAM                                the Edit language
-apex sel WIN [Q0 Q1]
-apex exec [WIN] COMMAND                              as if B2
-apex events [--shard S]                              entries as JSON lines, forever
-apex term new [CMD...] | term send TERM TEXT | term read TERM
-apex plumb [--dry-run] [--edit] TEXT
-apex plumb rule add FLAGS | rm ID | ls
-apex B FILE[:LINE] ...
-apex label TEXT
-apex awd [LABEL]
-apex env [KEY=VALUE ...]
-apex set [KEY VALUE]
-apex cat PATH
-apex lsp
+apex help                                  the commands and the help topics
+apex help <command> | <topic>              what one does; apex <command> -h is the short form
+apex [-socket=PATH] [-session=NAME] [-ensure-server] <command> [arguments]
+
+server, ls, stop, new-session, rename-session, attach
+new, open, win, text, edit, sel, exec, events, term
+plumb, B, env, set, cat, lsp, label, awd, version
 ```
+
+Flags are Go's: `-flag=value`, or `-flag` for a boolean, before the
+arguments. The command's own documentation (`apex help new`, and the
+topics `sessions`, `scripts`, `rules`, `windows`) is the reference; what
+follows is the shape of things.
 
 `WIN` is a window id or a unique substring of a window's name. `APEX_SOCKET`
 and `APEX_SESSION` set the defaults (a shell in an apex terminal has
@@ -52,7 +42,7 @@ over ssh, or `provider:name` through an `apex-remote-<provider>` script on the
 PATH, see `providers/README.md`), installs (or updates) our `apex` for the
 destination's OS and architecture in `~/.apex/bin` there, then launches
 `apex-ui --remote dest --session session`; on the destination `apex attach
---stdio` starts the daemon if needed and copies bytes between its stdio
+-stdio` starts the daemon if needed and copies bytes between its stdio
 and the daemon's socket. The Mac app carries a `linux-amd64` build.
 
 `apex label TEXT` and `apex awd [LABEL]` are plan9port's `label` and
@@ -109,31 +99,32 @@ highest first, then by age; the first rule that matches and is taken
 ends the walk, and with none left the text is looked for in the window
 (acme's Look). A rule is one `apex plumb rule add` command:
 
-    --text RE        the plumbed text (a verb's arguments) must match RE, whole;
+    -text=RE         the plumbed text (a verb's arguments) must match RE, whole;
                      its groups bind $0..$9
-    --file RE        the window's name must match RE
-    --kind K         file | dir | term | errors
-    --isfile EXPR    EXPR, expanded, is a file (relative to the window's directory)
-    --isdir EXPR     ... a directory
-    --verb NAME      the command this rule answers; `plumb` (B3) unless given.
+    -file=RE         the window's name must match RE
+    -kind=K          file | dir | term | errors
+    -isfile=EXPR     EXPR, expanded, is a file (relative to the window's directory)
+    -isdir=EXPR      ... a directory
+    -verb=NAME       the command this rule answers; `plumb` (B3) unless given.
                      Any other verb is offered in the tools menu (B4, or
                      shift-click) of every window the rule applies to, and
                      runs there as B2 would; B2 on the word does the same.
-    --edit EXPR      open EXPR (`name` or `name:line`) in the session
-    --run CMD        run CMD on the host in the window's directory, the
+    -edit=EXPR       open EXPR (`name` or `name:line`) in the session
+    -run=CMD         run CMD on the host in the window's directory, the
                      selection on stdin, output to dir/+Errors
-    --client-do V A  ask the UI that asked to do V with A (`open` a URL, say);
+    -client=V -args=A
+                     ask the UI that asked to do V with A (`open` a URL, say);
                      a UI that cannot refuses, and the walk goes on
-    --tool NAME      ask the tool attached as NAME; it answers within a second
+    -tool=NAME       ask the tool attached as NAME; it answers within a second
                      or is taken to refuse (NACK), and the walk goes on
-    --priority N     default 0
-    --mine           owned by this attachment (gone when it detaches) rather
+    -priority=N      default 0
+    -mine            owned by this attachment (gone when it detaches) rather
                      than the session
 
 Templates expand `$0`..`$9`, `$file`, `$dir`, `$win`, `$line`, `$sel`.
 Rules from the CLI are the session's; a UI installs its own on attach
 (URLs go to the platform's `open`) and a tool installs those naming it.
-`apex plumb --dry-run TEXT` prints what each rule would do. `apex B` is
+`apex plumb -dry-run TEXT` prints what each rule would do. `apex B` is
 plan 9's: each argument goes to the rules that open in the session, else
 is opened as a path, from the current directory. The session starts with
 three rules at priority -100 that open `name` and `name:line` when they

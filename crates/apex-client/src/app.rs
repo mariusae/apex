@@ -382,7 +382,7 @@ impl Acme {
                 let result = bytes.and_then(|b| {
                     let copy = preview_copy(&self.url, &path, &b)?;
                     let child = open_preview(app.as_deref(), &copy)?;
-                    self.live.insert(path.clone(), Live { copy, app, child });
+                    self.live.insert(path.clone(), Live { copy, child });
                     Ok(())
                 });
                 if result.is_err() {
@@ -1679,7 +1679,7 @@ impl Acme {
         let menur = tiling::Rect::new(r.x0 + px_, r.y0 + py_, r.x1 + px_, r.y1 + py_);
         let textr = tiling::Rect::new(menur.x1 - menu::MARGIN - maxwid, menur.y0 + menu::MARGIN, menur.x1 - menu::MARGIN, menur.y0 + menu::MARGIN + nitemdrawn * ih);
         let scrollr = if scrolling { tiling::Rect::new(menur.x0 + menu::BORDER, menur.y0 + menu::BORDER, menur.x0 + menu::BORDER + menu::SCROLLWID, menur.y1 - menu::BORDER) } else { tiling::Rect::new(0, 0, 0, 0) };
-        let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih, maxwid };
+        let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih };
         // moveto: the pointer onto the item, so a click alone repeats it
         let ir = m.item_rect(lasti);
         let center = point(px(((ir.x0 + ir.x1) / 2) as f32), px(((ir.y0 + ir.y1) / 2) as f32 + TITLEBAR_HEIGHT));
@@ -2190,7 +2190,6 @@ fn spawn_quiet(prog: &str, args: &[&str]) -> Result<std::process::Child, String>
 /// A remote file being previewed from a local copy.
 struct Live {
     copy: PathBuf,
-    app: Option<String>,
     /// The previewer, when it is a process that lives as long as the
     /// preview (Quick Look); `open -a App` returns at once and is not.
     child: Option<std::process::Child>,

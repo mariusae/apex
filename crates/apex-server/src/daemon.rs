@@ -33,7 +33,7 @@ pub fn spawn_server(exe: &Path, socket: &Path, session: &str) -> io::Result<()> 
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     let mut cmd = std::process::Command::new(exe);
-    cmd.args(["--socket", &socket.to_string_lossy(), "--session", session, "server"])
+    cmd.args([&format!("-socket={}", socket.to_string_lossy()), &format!("-session={session}"), "server"])
         .current_dir(&home)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

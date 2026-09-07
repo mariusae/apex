@@ -11,7 +11,7 @@
 //! in the tools menu of source windows. Diagnostics go to `root/+lsp`.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -86,7 +86,6 @@ pub fn root_of(path: &Path, lang: &Language) -> PathBuf {
 
 /// One language server process.
 struct Server {
-    key: (String, PathBuf),
     child: Child,
     stdin: Arc<Mutex<Box<dyn Write + Send>>>,
     next_id: u64,
@@ -126,7 +125,7 @@ impl Server {
             }
             let _ = tx.send(Event::LspGone(k));
         });
-        Ok(Server { key, child, stdin: Arc::new(Mutex::new(stdin)), next_id: 1, initialized: false, queued: Vec::new(), open: HashMap::new(), diagnostics: BTreeMap::new() })
+        Ok(Server { child, stdin: Arc::new(Mutex::new(stdin)), next_id: 1, initialized: false, queued: Vec::new(), open: HashMap::new(), diagnostics: BTreeMap::new() })
     }
 
     fn send(&self, v: &Value) {

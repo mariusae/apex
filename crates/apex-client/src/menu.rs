@@ -37,7 +37,6 @@ pub struct Menu {
     pub lasti: i32,
     /// Item height: the font's height plus `VSPACING`.
     pub ih: i32,
-    pub maxwid: i32,
 }
 
 impl Menu {

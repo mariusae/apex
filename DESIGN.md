@@ -379,7 +379,7 @@ resolved by the leader at exec time from the command table.
 
 One schema (protobuf), one framing (length-prefixed messages), two
 "services" on it. Transport is a Unix socket locally. Remotely,
-`apex attach host` runs `ssh host apex attach --stdio` and speaks the same
+`apex attach host` runs `ssh host apex attach -stdio` and speaks the same
 frames over the pipe — no socket forwarding, no daemon beyond sshd. gRPC is
 not the transport (HTTP/2 over stdio is awkward and the attach path must be
 the fastest thing in the system); it can be a later gateway.
@@ -531,8 +531,9 @@ the attach protocol, plus `NewSession` and `ListSessions`. A session with
 no UI attached is led by the daemon itself, so scripts work headless and
 a UI that attaches later takes over what they did. `apex attach` starts
 the daemon if the socket does not answer. Implemented: `server ls
-new-session attach [--stdio] new win text edit sel exec events term
-plumb`; `WIN` is an id or a unique substring of a window's name. Not yet:
+new-session attach [-stdio] new open win text edit sel exec events term
+plumb B env set cat lsp label awd version`; flags are Go's (`-flag=value`)
+and `apex help` documents everything, `apex help <topic>` included; `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.
 
 Every session is a URL: `local:///name` on this machine's daemon
@@ -570,7 +571,7 @@ pick the `apex` we carry for that OS and architecture (the Mac app
 bundles `linux-amd64`, cross-compiled statically against musl with Zig
 as the linker, and its own `darwin-arm64`), compare its sha256 with
 `~/.apex/bin/apex` there, upload it over ssh's stdin if it differs, and
-run `~/.apex/bin/apex --session S attach --stdio`, which starts the
+run `~/.apex/bin/apex -session=S attach -stdio`, which starts the
 daemon on the host if it must and copies bytes between its stdio and
 the daemon's socket. The bridge knows nothing of frames; the UI speaks
 them to the child's stdin/stdout exactly as to a socket. A remote

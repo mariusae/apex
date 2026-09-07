@@ -1,38 +1,13 @@
 //! `apex`: the command. Scripts and tools never see the wire; they see
 //! this. Every subcommand attaches to a session as a tool (a follower with
 //! its own replica), reads from the replica, and proposes to the leader.
+//! `apex help` lists the commands; `apex help <command>` explains one.
 //!
-//! ```text
-//! apex [--socket P] [--session S] server               run the daemon (foreground)
-//! apex ls                                              list sessions
-//! apex stop                                            stop the daemon (its sessions end)
-//! apex new-session NAME
-//! apex rename-session [FROM] TO
-//! apex attach [DEST/]SESSION [--stdio] [FILE...]       a UI; --stdio bridges the socket to stdin/stdout
-//!                                                      DEST/SESSION: on a destination (user@host, provider:name)
-//!                                                      through its provider, installing apex there first
-//! apex new FILE...                                     open files in the first column
-//! apex win list | win del WIN
-//! apex text read WIN [--addr ADDR]
-//! apex edit WIN PROGRAM
-//! apex sel WIN [Q0 Q1]
-//! apex exec [WIN] COMMAND                              as if B2
-//! apex events [--shard S]                              entries as JSON lines, forever
-//! apex term new [CMD...] | term send TERM TEXT | term read TERM
-//! apex plumb [--dry-run] [--edit] TEXT                  B3 from here (--edit: plan 9's B)
-//! apex plumb rule add FLAGS | rm ID | ls               the rule table
-//! apex B FILE[:LINE] ...                               open in the session (plan 9's B)
-//! apex env [KEY=VALUE ...]                              set the session's environment (none: show it)
-//! apex set [KEY VALUE]                                  a setting, the session's or (from an attach script) the client's
-//! apex cat PATH                                         the bytes of a file on the host
-//! apex lsp                                             language servers, as a tool (run it from the profile)
-//! apex label TEXT                                       name this terminal's window (plan9port's label)
-//! apex awd [LABEL]                                      name it pwd/-LABEL (plan9port's awd)
-//! ```
-//!
-//! `WIN` is a window id or a unique substring of a window's name.
+//! Flags are Go's: `-flag=value`, or `-flag` for a boolean, before the
+//! arguments; `--` ends them.
 
-use std::io::{Read, Write};
+use std::collections::HashMap;
+use std::io::{IsTerminal, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,80 +21,468 @@ use apex_server::Proposal;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-fn main() {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let mut socket = std::env::var("APEX_SOCKET").map(PathBuf::from).unwrap_or_else(|_| default_socket());
-    // in a terminal apex runs, `apexsession` names the session it is in
-    let mut session = std::env::var("apexsession").or_else(|_| std::env::var("APEX_SESSION")).unwrap_or_else(|_| "default".into());
-    let mut ensure = false;
-    loop {
-        if args.len() >= 2 && (args[0] == "--socket" || args[0] == "--session") {
-            let v = args.remove(1);
-            match args.remove(0).as_str() {
-                "--socket" => socket = PathBuf::from(v),
-                _ => session = v,
-            }
-        } else if args.first().is_some_and(|a| a == "--ensure-server") {
-            // start the daemon first if it is not running (what a remote
-            // `apex ls` wants)
-            args.remove(0);
-            ensure = true;
-        } else {
+type R = Result<(), String>;
+
+// ---- flags, Go style ---------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+struct Flag {
+    name: &'static str,
+    /// `-flag` alone; otherwise `-flag=value`.
+    boolean: bool,
+    help: &'static str,
+}
+
+const fn flag(name: &'static str, help: &'static str) -> Flag {
+    Flag { name, boolean: false, help }
+}
+const fn switch(name: &'static str, help: &'static str) -> Flag {
+    Flag { name, boolean: true, help }
+}
+
+/// Parsed flags, and the arguments after them.
+struct Parsed {
+    flags: HashMap<&'static str, String>,
+    args: Vec<String>,
+}
+
+impl Parsed {
+    fn get(&self, name: &str) -> Option<&str> {
+        self.flags.get(name).map(String::as_str)
+    }
+    fn is(&self, name: &str) -> bool {
+        self.flags.contains_key(name)
+    }
+}
+
+/// Flags come before the arguments; the first argument that is not a
+/// flag ends them, as does `--`. `-h` and `-help` are the usage.
+fn parse(defs: &[Flag], args: &[String]) -> Result<Parsed, String> {
+    let mut flags = HashMap::new();
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--" {
+            i += 1;
             break;
         }
-    }
-    if ensure {
-        if let Err(e) = ensure_server(&socket, &session) {
-            eprintln!("apex: {e}");
-            std::process::exit(1);
+        if !a.starts_with('-') || a == "-" {
+            break;
         }
-    }
-    let Some(cmd) = args.first().cloned() else { usage() };
-    let rest = &args[1..];
-    let r = match cmd.as_str() {
-        "server" => server(&socket, &session),
-        "ls" => ls(&socket, &session),
-        "new-session" => new_session(&socket, &session, rest),
-        "rename-session" => rename_session(&socket, &session, rest),
-        "attach" => attach(&socket, &session, rest),
-        "new" => new(&socket, &session, rest),
-        "win" => win(&socket, &session, rest),
-        "text" => text(&socket, &session, rest),
-        "edit" => edit(&socket, &session, rest),
-        "sel" => sel(&socket, &session, rest),
-        "exec" => exec(&socket, &session, rest),
-        "events" => events(&socket, &session, rest),
-        "term" => term(&socket, &session, rest),
-        "plumb" => plumb(&socket, &session, rest),
-        "B" => b(&socket, &session, rest),
-        "label" => label(&rest.join(" ")),
-        "env" => env_cmd(&socket, &session, rest),
-        "set" => set(&socket, &session, rest),
-        "cat" => cat(&socket, &session, rest),
-        "stop" => apex_server::remote::stop(&socket).map_err(|e| format!("{}: {e}", socket.display())),
-        "lsp" => apex_lsp::run(&socket, &session),
-        "version" => {
-            println!("apex build {}", apex_server::BUILD_ID);
-            Ok(())
+        let body = a.trim_start_matches('-');
+        let (name, value) = match body.split_once('=') {
+            Some((n, v)) => (n, Some(v.to_string())),
+            None => (body, None),
+        };
+        if name == "h" || name == "help" {
+            return Err("help".into());
         }
-        "awd" => awd(rest),
-        _ => usage(),
+        let Some(def) = defs.iter().find(|d| d.name == name) else {
+            return Err(format!("flag provided but not defined: -{name}"));
+        };
+        let value = match (def.boolean, value) {
+            (true, None) => "true".to_string(),
+            (true, Some(v)) if v == "true" || v == "false" => v,
+            (true, Some(v)) => return Err(format!("invalid boolean value {v:?} for -{name}")),
+            (false, Some(v)) => v,
+            (false, None) => return Err(format!("flag needs an argument: -{name}=VALUE")),
+        };
+        if value != "false" {
+            flags.insert(def.name, value);
+        }
+        i += 1;
+    }
+    Ok(Parsed { flags, args: args[i..].to_vec() })
+}
+
+// ---- the commands and their documentation --------------------------------------------
+
+struct Cmd {
+    name: &'static str,
+    usage: &'static str,
+    short: &'static str,
+    flags: &'static [Flag],
+    long: &'static str,
+    run: fn(&Ctx, &Parsed) -> R,
+}
+
+struct Ctx {
+    socket: PathBuf,
+    session: String,
+}
+
+const GLOBAL: &[Flag] = &[
+    flag("socket", "the daemon's socket (default $APEX_SOCKET, else $TMPDIR/apex-$USER/main.sock)"),
+    flag("session", "the session to work on (default $apexsession, $APEX_SESSION, else default)"),
+    switch("ensure-server", "start the daemon first if none answers on the socket"),
+];
+
+const RULE_FLAGS: &[Flag] = &[
+    flag("verb", "the command the rule answers: plumb (B3, the default) or a word for the tools menu"),
+    flag("text", "the plumbed text (a verb's arguments) must match this regexp, whole; groups bind $0..$9"),
+    flag("file", "the window's name must match this regexp"),
+    flag("kind", "the window must be: file, dir, term or errors"),
+    flag("isfile", "this (expanded, relative to the window's directory) must be a file"),
+    flag("isdir", "... a directory"),
+    flag("edit", "open this (name or name:line) in the session"),
+    flag("run", "run this command on the host, in the window's directory, the selection on stdin"),
+    flag("client", "ask the UI to do this verb (open, preview); it may refuse"),
+    flag("args", "the argument for -client"),
+    flag("tool", "ask the tool attached under this name; it may refuse"),
+    flag("to", "where a -run command's output goes: errors (default) or window"),
+    flag("priority", "higher rules are tried first (default 0)"),
+    switch("mine", "owned by this attachment, gone when it detaches, rather than by the session"),
+];
+
+const COMMANDS: &[Cmd] = &[
+    Cmd { name: "server", usage: "apex [-socket=PATH] [-session=NAME] server", short: "run the daemon in the foreground", flags: &[], run: server, long: "\
+Server runs the daemon on the socket, in the foreground, with one session
+(the -session flag; default) to begin with. The daemon holds every
+session's state; clients attach to it over the socket, or from other
+machines through ssh (see apex help sessions). It ignores SIGHUP.
+
+Attach and new-session start a daemon themselves when none answers, so
+server is for running one by hand, under a supervisor, say." },
+    Cmd { name: "ls", usage: "apex ls", short: "list the daemon's sessions", flags: &[], run: ls, long: "\
+Ls prints the name of every session on the daemon, one per line." },
+    Cmd { name: "stop", usage: "apex stop", short: "stop the daemon, its sessions with it", flags: &[], run: stop, long: "\
+Stop asks the daemon to exit. Every session ends with it: unsaved text
+is lost, terminals are closed. Use it to let a daemon of an old build go
+before attaching with a new one (see apex help sessions)." },
+    Cmd { name: "new-session", usage: "apex new-session NAME", short: "make a session", flags: &[], run: new_session, long: "\
+New-session makes a session called NAME on the daemon, starting a daemon
+if none answers. Making a session that exists is fine: it is there.
+
+A new session runs its profile: ~/.apex/profile on the daemon's host,
+then the creator's (see apex help scripts)." },
+    Cmd { name: "rename-session", usage: "apex rename-session [FROM] TO", short: "rename a session", flags: &[], run: rename_session, long: "\
+Rename-session gives the session FROM (the current session when omitted)
+the name TO. Everything attached stays attached; session names are
+labels, and clients follow the rename." },
+    Cmd { name: "attach", usage: "apex attach [-stdio] [[DEST/]SESSION | URL] [FILE...]", short: "open the app on a session, here or on a host", flags: &[switch("stdio", "bridge the daemon's socket to stdin and stdout (what ssh runs on a host)")], run: attach, long: "\
+Attach opens the app (apex-ui) on a session: the current one, SESSION on
+this machine's daemon, or DEST/SESSION on a destination reached through
+its provider (user@host over ssh, or provider:name; see apex help
+sessions), where apex is installed first. A session URL names both. FILEs
+are opened in the session.
+
+With -stdio, attach instead copies bytes between the daemon's socket and
+its own stdin and stdout, starting the daemon if none answers. That is
+what runs on a host: `ssh host apex -session=NAME attach -stdio` is the
+whole remote story." },
+    Cmd { name: "new", usage: "apex new [LABEL]", short: "a new window, with stdin in it", flags: &[], run: new, long: "\
+New makes a new, empty window in the session and prints its id. When
+stdin is not a terminal, its content goes into the window:
+
+	./somecommand | apex new
+
+A LABEL names the window (relative to the current directory when it is
+not absolute); it can be edited in the tag later, and Put writes the
+window to the name in its tag. See apex help windows." },
+    Cmd { name: "open", usage: "apex open FILE...", short: "open files", flags: &[], run: open, long: "\
+Open opens each FILE (relative to the current directory) in the first
+column, as B2 on `New FILE` would, and prints the id and name of each
+window. A file already open gets no second window." },
+    Cmd { name: "win", usage: "apex win list | apex win del WIN", short: "list windows, delete one", flags: &[], run: win, long: "\
+Win list prints every window: its id, a * when it holds unsaved text, and
+its name, column by column. Win del WIN deletes a window as Del would: a
+dirty window is warned once, and deleted the second time. WIN is a window
+id or a unique substring of a name (see apex help windows)." },
+    Cmd { name: "text", usage: "apex text read [-addr=ADDR] WIN", short: "read a window's text", flags: &[flag("addr", "print only this address (sam syntax: 3,5 or /re/)")], run: text, long: "\
+Text read prints the body of window WIN. With -addr, only the text the
+address selects, in the Edit language's address syntax: a line range
+(2,5), a regexp (/func main/), or anything Edit takes." },
+    Cmd { name: "edit", usage: "apex edit WIN PROGRAM", short: "run an Edit program on a window", flags: &[], run: edit, long: "\
+Edit runs PROGRAM, in acme's Edit language (sam's commands), on the body
+of window WIN, as `Edit PROGRAM` in its tag would:
+
+	apex edit main.go ',x/foo/ c/bar/'" },
+    Cmd { name: "sel", usage: "apex sel WIN [Q0 Q1]", short: "read or set a window's selection", flags: &[], run: sel, long: "\
+Sel prints the selection of window WIN as two character offsets, or with
+Q0 and Q1 sets it." },
+    Cmd { name: "exec", usage: "apex exec [WIN] COMMAND", short: "run a command as B2 would", flags: &[], run: exec, long: "\
+Exec runs COMMAND as B2 on it would: in the context of window WIN, or of
+the top row when no window is given. Built-ins (Put, Del, Look, ...),
+rule verbs and shell commands alike:
+
+	apex exec main.go Put
+	apex exec 'Newterm'" },
+    Cmd { name: "events", usage: "apex events [-shard=S]", short: "stream the session's entries", flags: &[flag("shard", "only shards whose name starts with S (buffer, window, layout, term, meta)")], run: events, long: "\
+Events prints every entry appended to the session, as it happens, one
+JSON object per line: the shard, its sequence number, the attachment that
+appended it, and the operation. It runs until the connection ends. This
+is acme's event file, generalised: a tool that wants to follow edits,
+selections, or windows reads this." },
+    Cmd { name: "term", usage: "apex term new [CMD...] | apex term send TERM TEXT | apex term read TERM", short: "terminals", flags: &[], run: term, long: "\
+Term new makes a terminal window running the user's shell, or CMD
+through it (as Newterm does), and prints the terminal's id. Term send
+types TEXT into terminal TERM; a final newline is the Enter key. Term
+read prints the terminal's screen." },
+    Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path")], run: plumb, long: "\
+Plumb sends TEXT through the session's plumbing rules from the current
+directory, as B3 on it would: the first rule that matches and is taken
+acts, and with none left the text is looked for in the window (Look).
+With -dry-run, plumb prints what each rule would do instead. With -edit
+only rules that open in the session are tried, and failing those TEXT is
+opened as a path; that is what B does.
+
+Plumb rule ls prints the table in the order it is tried: the rule's id,
+its owner, its priority, and the flags that make it. Plumb rule rm ID
+removes one. Plumb rule add installs one, owned by the session (or by
+this attachment with -mine, gone when it detaches):
+
+	apex plumb rule add -text='https?://\\S+' -client=open -args='$0'
+	apex plumb rule add -verb=Preview -file='\\.md$' -run='glow $file'
+	apex plumb rule add -file='\\.go$' -text='\\w+' -tool=lsp -priority=10
+
+See apex help rules for the predicates, the actions, and the templates." },
+    Cmd { name: "B", usage: "apex B FILE[:LINE]...", short: "open files in the session (plan 9's B)", flags: &[], run: b, long: "\
+B opens each FILE in the session from the current directory, at LINE when
+given, through the plumbing rules that open in the session (see apex
+help rules), else as a path. It is plan 9's B: a shell in an apex terminal
+has it as a function." },
+    Cmd { name: "env", usage: "apex env [KEY=VALUE...]", short: "the session's environment", flags: &[], run: env_cmd, long: "\
+Env sets variables in the session's environment: what every terminal and
+command started from then on gets, beyond the daemon's own. With no
+arguments it prints the environment. Exports in a profile die with it;
+this is how a profile sets the environment (see apex help scripts)." },
+    Cmd { name: "set", usage: "apex set [KEY VALUE]", short: "a setting", flags: &[], run: set, long: "\
+Set records a setting in the session: the session's own, or the attaching
+client's when run from its attach script (see apex help scripts), gone
+when that client detaches. A client reads its own settings first, then
+the session's. With no arguments, set prints every setting with its
+owner. Settings in use:
+
+	Preview.EXT APP   the app that previews files with that extension
+	Preview APP       the app for previews no other setting names
+	lsp.LANG CMD      the language server for LANG (apex help lsp)" },
+    Cmd { name: "cat", usage: "apex cat PATH", short: "the bytes of a file on the host", flags: &[], run: cat, long: "\
+Cat prints the file PATH as it is on the session's host, whatever machine
+the command runs on." },
+    Cmd { name: "lsp", usage: "apex lsp", short: "language servers, as a tool", flags: &[], run: lsp, long: "\
+Lsp attaches to the session as the tool named lsp and runs language
+servers for the files open in it, one per workspace root: gopls,
+rust-analyzer, pyright, typescript-language-server and clangd unless a
+setting lsp.LANG names another command. Documents are opened as buffers
+appear and every edit is fed incrementally. Diagnostics go to root/+lsp,
+one plumbable file:line:col: message per line.
+
+Its rules, gone when it exits: B3 on an identifier in a source file goes
+to the definition (with none, the walk goes on to the path rules and
+Look), and the tools menu of a source window offers Def Refs Type Hov Sig
+Fmt Rn. Definitions open and select; references, hover and signatures go
+to +Errors; Fmt replaces the text with the server's formatting; Rn NAME
+renames.
+
+Start it from the host's profile: apex lsp & (see apex help scripts).
+APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr." },
+    Cmd { name: "label", usage: "apex label TEXT", short: "name this terminal's window", flags: &[], run: label_cmd, long: "\
+Label names the window of the terminal it runs in, through the escape
+sequence acme's win reads (plan9port's label). A name whose last
+component does not start with - gets /-HOST appended." },
+    Cmd { name: "awd", usage: "apex awd [LABEL]", short: "name this terminal's window after its directory", flags: &[], run: awd, long: "\
+Awd labels the terminal's window PWD/-LABEL (the host's name unless
+given), as plan9port's awd does, so the window is named after where the
+shell is. rc does this on every cd in an apex terminal; for zsh, bash and
+fish see examples/profile." },
+    Cmd { name: "version", usage: "apex version", short: "print the build id", flags: &[], run: version, long: "\
+Version prints this build's id, a hash of the sources it was built from.
+A daemon says its own on every connection; a client of another build
+refuses to go on and says so." },
+];
+
+/// Help topics beyond the commands.
+const TOPICS: &[(&str, &str, &str)] = &[
+    ("sessions", "sessions, daemons and their URLs", "\
+A daemon holds sessions; a session is a set of windows, buffers and
+terminals on one machine, with its state kept by the daemon so that
+clients can attach and detach without losing anything. Every session is a
+URL: local:///NAME on this machine's daemon, ssh://user@host/NAME on a
+host reached over ssh, PROVIDER://ARG/NAME through a provider. The
+default session is called default.
+
+A provider is a command apex-remote-PROVIDER on the PATH that runs a
+command on a destination: apex-remote-PROVIDER DEST COMMAND. ssh is built
+in. Attaching through a provider installs this build's apex and rc on the
+destination (in ~/.apex/bin), starts a daemon there if none answers, and
+bridges frames through `apex attach -stdio` run there.
+
+A daemon says its build id first on every connection. A client of another
+build stops there and says what to do: when the daemon's sessions can be
+let go, apex stop on its machine, then attach again."),
+    ("scripts", "the profile and attach scripts", "\
+Two scripts, like a shell's profile and rc. When a session is made, one rc
+on its host sources ~/.apex/profile there, then the creator's
+~/.apex/profile (shipped along; skipped when it is the same file). It runs
+like any command, named profile in the top row with its output in
++Errors, with apexsession, APEX_SOCKET and apexclient set, so apex in it
+configures the session: apex open, apex exec Newcol, apex env, apex set,
+apex plumb rule add, apex lsp &.
+
+Every time a client attaches, its ~/.apex/attach runs on the host the
+same way, with apexattachment naming the attaching client, so apex set
+there records that client's own settings (apex help set). See
+examples/profile for one that has shells name their windows on cd."),
+    ("rules", "plumbing rules", "\
+B3 (and apex plumb) walks the session's rule table in priority order,
+highest first, then by age; the first rule that matches and is taken ends
+the walk, and with none left the text is looked for in the window (Look).
+A rule's verb is the command it answers: plumb is B3; any other verb is
+offered in the tools menu (B4, or shift-click) of every window the rule
+applies to, and B2 on the word does the same.
+
+Predicates (all given must hold):
+	-text=RE      the plumbed text (a verb's arguments) matches RE, whole;
+	              its groups bind $0..$9
+	-file=RE      the window's name matches RE
+	-kind=K       file, dir, term or errors
+	-isfile=EXPR  EXPR, expanded, is a file (relative to the window's directory)
+	-isdir=EXPR   ... a directory
+Actions (exactly one):
+	-edit=EXPR    open EXPR (name, or name:line) in the session
+	-run=CMD      run CMD on the host in the window's directory, the
+	              selection on stdin, output to dir/+Errors
+	-client=VERB -args=ARGS
+	              ask the UI that asked to do VERB with ARGS (open a URL,
+	              say); a UI that cannot refuses, and the walk goes on
+	-tool=NAME    ask the tool attached as NAME; it answers within a second
+	              or is taken to refuse (NACK), and the walk goes on
+Templates expand $0..$9, $file, $dir, $win, $line and $sel.
+
+Rules from the command line are the session's. A UI installs its own on
+attach (URLs go to the platform's open; Preview where a Preview.EXT
+setting names an app), a tool those naming it; both go when their owner
+does. The session starts with three rules at priority -100 that open name
+and name:line when they exist, as B3 always did. apex plumb -dry-run TEXT
+prints what each rule would do."),
+    ("windows", "naming windows", "\
+Commands take a window as WIN: its id (apex win list), or a unique
+substring of its name. A window's name is the first word of its tag; a
+file's window is named by its path, a directory's ends in /, a terminal's
+is dir/-host (or dir/-cmd), command output goes to dir/+Errors.
+
+The name in a tag can be edited: type a new one and Put writes the window
+there, the buffer taking the name; ^F completes file names in the tag.
+That is how an empty window from New (or apex new, with stdin in it)
+becomes a file."),
+];
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let global = match parse(GLOBAL, &args) {
+        Ok(p) => p,
+        Err(e) if e == "help" => overview(),
+        Err(e) => die(&e),
     };
-    if let Err(e) = r {
-        eprintln!("apex {cmd}: {e}");
+    let socket = global.get("socket").map(PathBuf::from).or_else(|| std::env::var("APEX_SOCKET").ok().map(PathBuf::from)).unwrap_or_else(default_socket);
+    // in a terminal apex runs, `apexsession` names the session it is in
+    let session = global
+        .get("session")
+        .map(String::from)
+        .or_else(|| std::env::var("apexsession").ok())
+        .or_else(|| std::env::var("APEX_SESSION").ok())
+        .unwrap_or_else(|| "default".into());
+    let ctx = Ctx { socket, session };
+    if global.is("ensure-server") {
+        if let Err(e) = ensure_server(&ctx.socket, &ctx.session) {
+            die(&e);
+        }
+    }
+    let Some(name) = global.args.first().cloned() else { overview() };
+    if name == "help" {
+        help(global.args.get(1).map(String::as_str));
+    }
+    let Some(cmd) = COMMANDS.iter().find(|c| c.name == name) else {
+        eprintln!("apex {name}: unknown command\nRun 'apex help' for usage.");
+        std::process::exit(2);
+    };
+    let parsed = match parse(cmd.flags, &global.args[1..]) {
+        Ok(p) => p,
+        Err(e) if e == "help" => {
+            usage(cmd);
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("apex {name}: {e}");
+            usage(cmd);
+            std::process::exit(2);
+        }
+    };
+    if let Err(e) = (cmd.run)(&ctx, &parsed) {
+        if e == "usage" {
+            usage(cmd);
+            std::process::exit(2);
+        }
+        eprintln!("apex {name}: {e}");
         std::process::exit(1);
     }
 }
 
-fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|B|label|awd|env|set|cat|lsp|stop|version ...");
+fn die(msg: &str) -> ! {
+    eprintln!("apex: {msg}\nRun 'apex help' for usage.");
     std::process::exit(2);
 }
 
-type R = Result<(), String>;
+/// `apex CMD -h`: the usage, briefly, and where the rest is.
+fn usage(cmd: &Cmd) {
+    eprintln!("usage: {}", cmd.usage);
+    for f in cmd.flags {
+        eprintln!("\t-{}{}\n\t\t{}", f.name, if f.boolean { "" } else { "=VALUE" }, f.help);
+    }
+    eprintln!("Run 'apex help {}' for details.", cmd.name);
+}
 
-fn tool(socket: &Path, session: &str) -> Result<Remote, String> {
-    Remote::connect_as(socket, session, "apex-cli", AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))
+/// `apex help`, `apex`: the commands and the topics.
+fn overview() -> ! {
+    println!("Apex is acme, remade: a text editor and shell, remote and scriptable.\n");
+    println!("Usage:\n\n\tapex [-socket=PATH] [-session=NAME] [-ensure-server] <command> [arguments]\n");
+    println!("The commands are:\n");
+    for c in COMMANDS {
+        println!("\t{:<16}{}", c.name, c.short);
+    }
+    println!("\nUse \"apex help <command>\" for more information about a command.\n");
+    println!("Additional help topics:\n");
+    for (t, s, _) in TOPICS {
+        println!("\t{:<16}{}", t, s);
+    }
+    println!("\nUse \"apex help <topic>\" for more information about that topic.\n");
+    println!("The flags apply to every command:\n");
+    for f in GLOBAL {
+        println!("\t-{}{}\n\t\t{}", f.name, if f.boolean { "" } else { "=VALUE" }, f.help);
+    }
+    std::process::exit(0);
+}
+
+/// `apex help CMD|TOPIC`.
+fn help(what: Option<&str>) -> ! {
+    let Some(what) = what else { overview() };
+    if let Some(c) = COMMANDS.iter().find(|c| c.name == what) {
+        println!("usage: {}\n", c.usage);
+        if !c.flags.is_empty() {
+            for f in c.flags {
+                println!("\t-{}{}\n\t\t{}", f.name, if f.boolean { "" } else { "=VALUE" }, f.help);
+            }
+            println!();
+        }
+        println!("{}", c.long);
+        if c.name == "plumb" {
+            println!("\nThe flags of plumb rule add:\n");
+            for f in RULE_FLAGS {
+                println!("\t-{}{}\n\t\t{}", f.name, if f.boolean { "" } else { "=VALUE" }, f.help);
+            }
+        }
+        std::process::exit(0);
+    }
+    if let Some((_, _, text)) = TOPICS.iter().find(|(t, _, _)| *t == what) {
+        println!("{text}");
+        std::process::exit(0);
+    }
+    eprintln!("apex help {what}: unknown help topic. Run 'apex help'.");
+    std::process::exit(2);
+}
+
+fn tool(ctx: &Ctx) -> Result<Remote, String> {
+    Remote::connect_as(&ctx.socket, &ctx.session, "apex-cli", AttachmentKind::Tool).map_err(|e| format!("{}: {e}", ctx.socket.display()))
 }
 
 /// Pump until `done` or the timeout.
@@ -143,12 +506,12 @@ fn wait(r: &mut Remote, mut done: impl FnMut(&Remote) -> bool) -> Result<(), Str
 
 // ---- server, sessions -----------------------------------------------------------
 
-fn server(socket: &Path, session: &str) -> R {
-    if let Some(d) = socket.parent() {
+fn server(ctx: &Ctx, _: &Parsed) -> R {
+    if let Some(d) = ctx.socket.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    eprintln!("apex server: session {session} on {}", socket.display());
-    Daemon::run(socket, session).map_err(|e| e.to_string())
+    eprintln!("apex server: session {} on {}", ctx.session, ctx.socket.display());
+    Daemon::run(&ctx.socket, &ctx.session).map_err(|e| e.to_string())
 }
 
 /// Start a daemon in the background if the socket does not answer.
@@ -160,57 +523,67 @@ fn ensure_server(socket: &Path, session: &str) -> R {
     apex_server::daemon::spawn_server(&exe, socket, session).map_err(|e| format!("start server: {e}"))
 }
 
-// these three talk to the daemon without attaching to any session
-
-fn ls(socket: &Path, _session: &str) -> R {
-    for s in apex_server::remote::list_sessions(socket).map_err(|e| format!("{}: {e}", socket.display()))? {
+fn ls(ctx: &Ctx, _: &Parsed) -> R {
+    for s in apex_server::remote::list_sessions(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))? {
         println!("{s}");
     }
     Ok(())
 }
 
-fn rename_session(socket: &Path, session: &str, args: &[String]) -> R {
-    let (from, to) = match args {
-        [a, b] => (a.clone(), b.clone()),
-        [b] => (session.to_string(), b.clone()),
-        _ => return Err("rename-session [FROM] TO".into()),
-    };
-    apex_server::remote::rename_session(socket, &from, &to).map_err(|e| e.to_string())
+fn stop(ctx: &Ctx, _: &Parsed) -> R {
+    apex_server::remote::stop(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))
 }
 
-fn new_session(socket: &Path, session: &str, args: &[String]) -> R {
-    let name = args.first().ok_or("new-session NAME")?;
-    ensure_server(socket, session)?;
-    apex_server::remote::new_session(socket, name, apex_server::remote::local_profile()).map_err(|e| e.to_string())
+fn version(_: &Ctx, _: &Parsed) -> R {
+    println!("apex build {}", apex_server::BUILD_ID);
+    Ok(())
+}
+
+fn lsp(ctx: &Ctx, _: &Parsed) -> R {
+    apex_lsp::run(&ctx.socket, &ctx.session)
+}
+
+fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
+    let (from, to) = match p.args.as_slice() {
+        [a, b] => (a.clone(), b.clone()),
+        [b] => (ctx.session.clone(), b.clone()),
+        _ => return Err("usage".into()),
+    };
+    apex_server::remote::rename_session(&ctx.socket, &from, &to).map_err(|e| e.to_string())
+}
+
+fn new_session(ctx: &Ctx, p: &Parsed) -> R {
+    let [name] = p.args.as_slice() else { return Err("usage".into()) };
+    ensure_server(&ctx.socket, &ctx.session)?;
+    apex_server::remote::new_session(&ctx.socket, name, apex_server::remote::local_profile()).map_err(|e| e.to_string())
 }
 
 // ---- attach -----------------------------------------------------------------------
 
-fn attach(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut args = args.to_vec();
-    let stdio = args.iter().position(|a| a == "--stdio").map(|i| args.remove(i)).is_some();
-    let target = if args.first().is_some_and(|a| !Path::new(a).exists()) { args.remove(0) } else { session.to_string() };
+fn attach(ctx: &Ctx, p: &Parsed) -> R {
+    let mut args = p.args.clone();
+    let target = if args.first().is_some_and(|a| !Path::new(a).exists()) { args.remove(0) } else { ctx.session.clone() };
     // a URL names the destination and the session in one
     let target = match apex_server::providers::SessionUrl::parse(&target) {
         Some(u) if u.is_local() => u.session,
         Some(u) => format!("{}/{}", u.dest().unwrap_or_default(), u.session),
         None => target,
     };
-    if stdio {
+    if p.is("stdio") {
         // the bridge on a host: the daemon there may need starting
-        ensure_server(socket, &session)?;
-        return bridge(socket);
+        ensure_server(&ctx.socket, &ctx.session)?;
+        return bridge(&ctx.socket);
     }
     let ui = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("apex-ui");
     let status = match apex_server::providers::split_spec(&target) {
         Some((host, sess)) => {
-            // remote: the UI talks to `ssh host apex attach --stdio`,
+            // remote: the UI talks to `ssh host apex attach -stdio`,
             // after our apex is put on the host
             Command::new(&ui).arg("--remote").arg(host).arg("--session").arg(sess).args(&args).status()
         }
         None => {
-            ensure_server(socket, &target)?;
-            Command::new(&ui).arg("--attach").arg(socket).arg("--session").arg(&target).args(&args).status()
+            ensure_server(&ctx.socket, &target)?;
+            Command::new(&ui).arg("--attach").arg(&ctx.socket).arg("--session").arg(&target).args(&args).status()
         }
     }
     .map_err(|e| format!("{}: {e}", ui.display()))?;
@@ -272,69 +645,96 @@ fn body_text(c: &Remote, w: WindowId) -> Result<String, String> {
     Ok(c.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string())
 }
 
-fn new(socket: &Path, session: &str, args: &[String]) -> R {
-    if args.is_empty() {
-        return Err("new FILE...".into());
+/// `apex new [LABEL]`: a new window, always; stdin's content in it when
+/// stdin is not a terminal; LABEL as its name.
+fn new(ctx: &Ctx, p: &Parsed) -> R {
+    let label = match p.args.as_slice() {
+        [] => None,
+        [l] => Some(l.clone()),
+        _ => return Err("usage".into()),
+    };
+    let mut c = tool(ctx)?;
+    let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
+    c.propose(Proposal::Exec { ctx: ExecCtx::Top, text: "New".into() }, TIMEOUT)?;
+    wait(&mut c, |r| r.node.state.windows.keys().any(|w| !before.contains(w)))?;
+    let w = c.node.state.windows.keys().copied().find(|w| !before.contains(w)).ok_or("no window appeared")?;
+    let b = c.node.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
+    if !std::io::stdin().is_terminal() {
+        let mut text = String::new();
+        std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+        if !text.is_empty() {
+            let version = c.node.state.buffer(b).map_err(|e| e.to_string())?.version;
+            c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 0, q1: 0, text }, TIMEOUT)?;
+        }
     }
-    let mut c = tool(socket, session)?;
+    if let Some(l) = label {
+        let name = if l.starts_with('/') { l } else { std::env::current_dir().map_err(|e| e.to_string())?.join(l).display().to_string() };
+        c.propose(Proposal::Rename { buffer: b, window: w, name }, TIMEOUT)?;
+    }
+    println!("{}", w.0);
+    Ok(())
+}
+
+/// `apex open FILE...`: open files in the first column.
+fn open(ctx: &Ctx, p: &Parsed) -> R {
+    if p.args.is_empty() {
+        return Err("usage".into());
+    }
+    let mut c = tool(ctx)?;
     let col = c.node.state.layout.cols.first().ok_or("no column")?.id;
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let before = c.node.state.windows.len();
-    for f in args {
-        let p = cwd.join(f);
-        c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: p.to_string_lossy().to_string() });
+    for f in &p.args {
+        let path = cwd.join(f);
+        c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: path.to_string_lossy().to_string() });
     }
     // opening an already-open file adds no window; wait for what is new
-    let want = args.len();
+    let want = p.args.len();
     let _ = wait(&mut c, |r| r.node.state.windows.len() >= before + want);
-    for f in args {
-        let p = cwd.join(f).to_string_lossy().to_string();
-        if let Ok(w) = find_window(&c, &p) {
+    for f in &p.args {
+        let path = cwd.join(f).to_string_lossy().to_string();
+        if let Ok(w) = find_window(&c, &path) {
             println!("{}\t{}", w.0, c.node.window_name(w));
         }
     }
     Ok(())
 }
 
-fn win(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    match args.first().map(|s| s.as_str()) {
+fn win(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    match p.args.first().map(|s| s.as_str()) {
         Some("list") | None => {
             for col in &c.node.state.layout.cols {
                 for slot in &col.wins {
                     let w = slot.window;
                     let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                    let mut name = c.node.window_name(w);
-                    if name.is_empty() {
-                        // a terminal: its tag names it
-                        let tag = c.node.state.window(w).ok().map(|x| x.tag);
-                        name = tag.and_then(|b| c.node.state.buffer(b).ok()).map(|b| b.text.to_string().split(' ').next().unwrap_or("").to_string()).unwrap_or_default();
-                    }
-                    println!("{}\t{}{}", w.0, if dirty { "*" } else { " " }, name);
+                    println!("{}\t{}{}", w.0, if dirty { "*" } else { " " }, c.node.window_name(w));
                 }
             }
             Ok(())
         }
         Some("del") => {
-            let w = find_window(&c, args.get(1).ok_or("win del WIN")?)?;
+            let w = find_window(&c, p.args.get(1).ok_or("usage")?)?;
             c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, TIMEOUT)?;
             Ok(())
         }
-        _ => Err("win list|del WIN".into()),
+        _ => Err("usage".into()),
     }
 }
 
-fn text(socket: &Path, session: &str, args: &[String]) -> R {
-    let c = tool(socket, session)?;
-    match args.first().map(|s| s.as_str()) {
-        Some("read") => {
-            let w = find_window(&c, args.get(1).ok_or("text read WIN [--addr A]")?)?;
+fn text(ctx: &Ctx, p: &Parsed) -> R {
+    // the flags follow `read`, as the usage says
+    let (Some(read), rest) = (p.args.first(), &p.args[p.args.len().min(1)..]) else { return Err("usage".into()) };
+    if read != "read" {
+        return Err("usage".into());
+    }
+    let f = parse(&[flag("addr", "")], rest).map_err(|e| if e == "help" { "usage".to_string() } else { e })?;
+    let c = tool(ctx)?;
+    match f.args.as_slice() {
+        [spec] => {
+            let w = find_window(&c, spec)?;
             let text = body_text(&c, w)?;
-            let addr = match (args.get(2).map(|s| s.as_str()), args.get(3)) {
-                (Some("--addr"), Some(a)) => Some(a.clone()),
-                _ => None,
-            };
-            let out = match addr {
+            let out = match f.get("addr") {
                 None => text,
                 Some(a) => {
                     let t = Text::new(&text);
@@ -348,54 +748,53 @@ fn text(socket: &Path, session: &str, args: &[String]) -> R {
             let _ = std::io::stdout().flush();
             Ok(())
         }
-        _ => Err("text read WIN [--addr A]".into()),
+        _ => Err("usage".into()),
     }
 }
 
-fn edit(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    let w = find_window(&c, args.first().ok_or("edit WIN PROGRAM")?)?;
-    let program = args.get(1).ok_or("edit WIN PROGRAM")?.clone();
-    c.propose(Proposal::Edit { window: w, program }, TIMEOUT)?;
+fn edit(ctx: &Ctx, p: &Parsed) -> R {
+    let [spec, program] = p.args.as_slice() else { return Err("usage".into()) };
+    let mut c = tool(ctx)?;
+    let w = find_window(&c, spec)?;
+    c.propose(Proposal::Edit { window: w, program: program.clone() }, TIMEOUT)?;
     Ok(())
 }
 
-fn sel(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    let w = find_window(&c, args.first().ok_or("sel WIN [Q0 Q1]")?)?;
+fn sel(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    let spec = p.args.first().ok_or("usage")?;
+    let w = find_window(&c, spec)?;
     let v = ViewId::Body(w);
-    match (args.get(1), args.get(2)) {
+    match (p.args.get(1), p.args.get(2)) {
         (Some(q0), Some(q1)) => {
             let q0 = q0.parse().map_err(|_| "Q0 must be a number")?;
             let q1 = q1.parse().map_err(|_| "Q1 must be a number")?;
             c.propose(Proposal::Select { view: v, q0, q1 }, TIMEOUT)?;
             Ok(())
         }
-        _ => {
+        (None, None) => {
             let (q0, q1) = c.node.selection(v).map_err(|e| e.to_string())?;
             println!("{q0} {q1}");
             Ok(())
         }
+        _ => Err("usage".into()),
     }
 }
 
-fn exec(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    let (ctx, text) = match args {
+fn exec(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    let (ectx, text) = match p.args.as_slice() {
         [cmd] => (ExecCtx::Top, cmd.clone()),
         [w, cmd] => (ExecCtx::Window(find_window(&c, w)?), cmd.clone()),
-        _ => return Err("exec [WIN] COMMAND".into()),
+        _ => return Err("usage".into()),
     };
-    c.propose(Proposal::Exec { ctx, text }, TIMEOUT)?;
+    c.propose(Proposal::Exec { ctx: ectx, text }, TIMEOUT)?;
     Ok(())
 }
 
-fn events(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    let only: Option<String> = match args {
-        [flag, s] if flag == "--shard" => Some(s.clone()),
-        _ => None,
-    };
+fn events(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    let only = p.get("shard").map(String::from);
     let mut out = std::io::stdout().lock();
     loop {
         let m = match c.link.rx.recv() {
@@ -417,8 +816,8 @@ fn events(socket: &Path, session: &str, args: &[String]) -> R {
     }
 }
 
-fn term(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
+fn term(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
     let find_term = |c: &Remote, spec: &str| -> Result<TermId, String> {
         let n: u64 = spec.parse().map_err(|_| "TERM must be a number")?;
         if c.node.state.terms.contains_key(&TermId(n)) {
@@ -427,11 +826,11 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
             Err(format!("no terminal {n}"))
         }
     };
-    match args.first().map(|s| s.as_str()) {
+    match p.args.first().map(|s| s.as_str()) {
         Some("new") => {
             // `term new CMD...`: the terminal runs CMD instead of a shell
             let before: Vec<TermId> = c.node.state.terms.keys().copied().collect();
-            let text = std::iter::once("Newterm").chain(args[1..].iter().map(String::as_str)).collect::<Vec<_>>().join(" ");
+            let text = std::iter::once("Newterm").chain(p.args[1..].iter().map(String::as_str)).collect::<Vec<_>>().join(" ");
             c.propose(Proposal::Exec { ctx: ExecCtx::Top, text }, TIMEOUT)?;
             wait(&mut c, |r| r.node.state.terms.keys().any(|t| !before.contains(t)))?;
             let t = c.node.state.terms.keys().find(|t| !before.contains(t)).unwrap();
@@ -439,10 +838,10 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
             Ok(())
         }
         Some("send") => {
-            let t = find_term(&c, args.get(1).ok_or("term send TERM TEXT")?)?;
+            let t = find_term(&c, p.args.get(1).ok_or("usage")?)?;
             // the text is pasted; a final newline is the Enter key, since
             // shells take a pasted newline literally (bracketed paste)
-            let mut text = args[2..].join(" ");
+            let mut text = p.args[2..].join(" ");
             let enter = text.ends_with('\r') || text.ends_with('\n');
             if enter {
                 text.pop();
@@ -458,7 +857,7 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
             Ok(())
         }
         Some("read") => {
-            let t = find_term(&c, args.get(1).ok_or("term read TERM")?)?;
+            let t = find_term(&c, p.args.get(1).ok_or("usage")?)?;
             let term = &c.node.state.terms[&t];
             for row in &term.grid {
                 let line: String = row.iter().map(|c| c.ch).collect();
@@ -466,30 +865,21 @@ fn term(socket: &Path, session: &str, args: &[String]) -> R {
             }
             Ok(())
         }
-        _ => Err("term new|send TERM TEXT|read TERM".into()),
+        _ => Err("usage".into()),
     }
 }
 
-fn plumb(socket: &Path, session: &str, args: &[String]) -> R {
-    if args.first().is_some_and(|a| a == "rule") {
-        return rule(socket, session, &args[1..]);
+fn plumb(ctx: &Ctx, p: &Parsed) -> R {
+    if p.args.first().is_some_and(|a| a == "rule") {
+        return rule(ctx, &p.args[1..]);
     }
-    let mut dry = false;
-    let mut edit_only = false;
-    let mut words = Vec::new();
-    for a in args {
-        match a.as_str() {
-            "--dry-run" => dry = true,
-            "--edit" => edit_only = true,
-            _ => words.push(a.clone()),
-        }
-    }
-    let text = words.join(" ");
+    let text = p.args.join(" ");
     if text.is_empty() {
-        return Err("plumb: nothing to plumb".into());
+        return Err("usage".into());
     }
+    let (dry, edit_only) = (p.is("dry-run"), p.is("edit"));
     let dir = std::env::current_dir().ok().map(|d| d.display().to_string());
-    let mut c = tool(socket, session)?;
+    let mut c = tool(ctx)?;
     if dry {
         for line in c.plumb_dry(ExecCtx::Top, &text, dir, edit_only, TIMEOUT)? {
             println!("{line}");
@@ -503,13 +893,13 @@ fn plumb(socket: &Path, session: &str, args: &[String]) -> R {
 }
 
 /// plan 9's `B`: each argument to the edit port, from this directory.
-fn b(socket: &Path, session: &str, args: &[String]) -> R {
-    if args.is_empty() {
-        return Err("usage: B FILE[:LINE] ...".into());
+fn b(ctx: &Ctx, p: &Parsed) -> R {
+    if p.args.is_empty() {
+        return Err("usage".into());
     }
     let dir = std::env::current_dir().ok().map(|d| d.display().to_string());
-    let mut c = tool(socket, session)?;
-    for a in args {
+    let mut c = tool(ctx)?;
+    for a in &p.args {
         let before = c.node.state.windows.len();
         c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false, at: None, sel: None });
         let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
@@ -518,11 +908,22 @@ fn b(socket: &Path, session: &str, args: &[String]) -> R {
 }
 
 /// `apex plumb rule add|rm|ls`: the session's rule table.
-fn rule(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
+fn rule(ctx: &Ctx, args: &[String]) -> R {
+    let mut c = tool(ctx)?;
     match args.first().map(|s| s.as_str()) {
         Some("add") => {
-            let (rule, priority, mine) = parse_rule(&args[1..])?;
+            let f = match parse(RULE_FLAGS, &args[1..]) {
+                Ok(f) => f,
+                Err(e) if e == "help" => {
+                    eprintln!("usage: apex plumb rule add FLAGS\nRun 'apex help rules' for the flags.");
+                    std::process::exit(0);
+                }
+                Err(e) => return Err(format!("rule add: {e}")),
+            };
+            if !f.args.is_empty() {
+                return Err(format!("rule add: unexpected argument {:?}", f.args[0]));
+            }
+            let (rule, priority, mine) = rule_of(&f)?;
             let id = c.rule_add(rule, priority, mine, TIMEOUT)?;
             println!("{id}");
             Ok(())
@@ -543,67 +944,61 @@ fn rule(socket: &Path, session: &str, args: &[String]) -> R {
             }
             Ok(())
         }
-        Some(other) => Err(format!("plumb rule: {other}: add, rm or ls")),
+        Some(_) => Err("usage".into()),
     }
 }
 
 /// The flags of `apex plumb rule add`, as a rule.
-fn parse_rule(args: &[String]) -> Result<(PlumbRule, i32, bool), String> {
-    let mut r = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool(String::new()), to: None };
-    let mut action: Option<RuleAction> = None;
-    let mut priority = 0;
-    let mut mine = false;
-    let mut i = 0;
-    let value = |i: &mut usize, flag: &str| -> Result<String, String> {
-        *i += 1;
-        args.get(*i).cloned().ok_or_else(|| format!("{flag} needs a value"))
-    };
-    while i < args.len() {
-        let flag = args[i].as_str();
-        match flag {
-            "--verb" => r.verb = value(&mut i, flag)?,
-            "--text" => r.text = Some(value(&mut i, flag)?),
-            "--file" => r.file = Some(value(&mut i, flag)?),
-            "--kind" => {
-                let k = value(&mut i, flag)?;
-                r.kind = Some(WinKind::parse(&k).ok_or_else(|| format!("--kind {k}: file, dir, term or errors"))?);
-            }
-            "--isfile" => r.isfile = Some(value(&mut i, flag)?),
-            "--isdir" => r.isdir = Some(value(&mut i, flag)?),
-            "--edit" => action = Some(RuleAction::Edit(value(&mut i, flag)?)),
-            "--run" => action = Some(RuleAction::Run(value(&mut i, flag)?)),
-            "--tool" => action = Some(RuleAction::Tool(value(&mut i, flag)?)),
-            "--client-do" => {
-                let verb = value(&mut i, flag)?;
-                let a = value(&mut i, flag)?;
-                action = Some(RuleAction::Client { verb, args: a });
-            }
-            "--to" => {
-                let t = value(&mut i, flag)?;
-                r.to = Some(match t.as_str() {
-                    "errors" => RunTo::Errors,
-                    "window" => RunTo::Window,
-                    _ => return Err(format!("--to {t}: errors or window")),
-                });
-            }
-            "--priority" => {
-                let v = value(&mut i, flag)?;
-                priority = v.parse().map_err(|_| format!("--priority {v}: not a number"))?;
-            }
-            "--mine" => mine = true,
-            _ => return Err(format!("rule add: {flag}: unknown flag")),
-        }
-        i += 1;
+fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
+    let mut actions = Vec::new();
+    if let Some(v) = f.get("edit") {
+        actions.push(RuleAction::Edit(v.to_string()));
     }
-    r.action = action.ok_or("rule add: one of --edit, --run, --client-do or --tool")?;
+    if let Some(v) = f.get("run") {
+        actions.push(RuleAction::Run(v.to_string()));
+    }
+    if let Some(v) = f.get("tool") {
+        actions.push(RuleAction::Tool(v.to_string()));
+    }
+    if let Some(v) = f.get("client") {
+        actions.push(RuleAction::Client { verb: v.to_string(), args: f.get("args").unwrap_or("").to_string() });
+    }
+    let action = match actions.len() {
+        1 => actions.remove(0),
+        0 => return Err("rule add: one of -edit, -run, -client or -tool".into()),
+        _ => return Err("rule add: only one of -edit, -run, -client and -tool".into()),
+    };
+    let kind = match f.get("kind") {
+        Some(k) => Some(WinKind::parse(k).ok_or_else(|| format!("-kind={k}: file, dir, term or errors"))?),
+        None => None,
+    };
+    let to = match f.get("to") {
+        Some("errors") => Some(RunTo::Errors),
+        Some("window") => Some(RunTo::Window),
+        Some(t) => return Err(format!("-to={t}: errors or window")),
+        None => None,
+    };
+    let priority = match f.get("priority") {
+        Some(v) => v.parse().map_err(|_| format!("-priority={v}: not a number"))?,
+        None => 0,
+    };
+    let r = PlumbRule {
+        verb: f.get("verb").unwrap_or("plumb").to_string(),
+        text: f.get("text").map(String::from),
+        file: f.get("file").map(String::from),
+        kind,
+        isfile: f.get("isfile").map(String::from),
+        isdir: f.get("isdir").map(String::from),
+        action,
+        to,
+    };
     r.check()?;
-    Ok((r, priority, mine))
+    Ok((r, priority, f.is("mine")))
 }
 
 /// plan9port's `label`: name the window this terminal shows, through the
 /// sequence acme's win reads (`ESC ] ; text BEL`).
 fn label(text: &str) -> R {
-    use std::io::Write;
     let seq = format!("\x1b];{text}\x07");
     match std::fs::OpenOptions::new().write(true).open("/dev/tty") {
         Ok(mut f) => f.write_all(seq.as_bytes()).map_err(|e| e.to_string())?,
@@ -615,25 +1010,33 @@ fn label(text: &str) -> R {
     Ok(())
 }
 
+fn label_cmd(_: &Ctx, p: &Parsed) -> R {
+    if p.args.is_empty() {
+        return Err("usage".into());
+    }
+    label(&p.args.join(" "))
+}
+
 /// plan9port's `awd [label]`: name the window `pwd/-label`, the label
 /// being the host unless given.
-fn awd(args: &[String]) -> R {
-    let sys = match args {
+fn awd(_: &Ctx, p: &Parsed) -> R {
+    let sys = match p.args.as_slice() {
         [] => apex_server::term::sysname(),
-        [s] if !s.starts_with('-') => s.clone(),
-        _ => return Err("usage: awd [label]".into()),
+        [s] => s.clone(),
+        _ => return Err("usage".into()),
     };
-    let p = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
-    label(&format!("{p}{}-{sys}", if p.ends_with('/') { "" } else { "/" }))
+    let dir = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
+    label(&format!("{dir}{}-{sys}", if dir.ends_with('/') { "" } else { "/" }))
 }
 
 /// The session's environment: what its terminals and commands get beyond
 /// the daemon's own. `KEY=VALUE` sets; nothing prints it.
-fn env_cmd(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    let set: Vec<(String, String)> = args
+fn env_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    let set: Vec<(String, String)> = p
+        .args
         .iter()
-        .map(|a| a.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).ok_or_else(|| format!("env: {a}: not KEY=VALUE")))
+        .map(|a| a.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).ok_or_else(|| format!("{a}: not KEY=VALUE")))
         .collect::<Result<_, _>>()?;
     let show = set.is_empty();
     let vars = c.env(set, TIMEOUT)?;
@@ -648,9 +1051,9 @@ fn env_cmd(socket: &Path, session: &str, args: &[String]) -> R {
 /// `apex set KEY VALUE`: a setting of the session's, or of the attaching
 /// client's when run from its attach script (`$apexattachment`). `apex
 /// set` alone lists them all.
-fn set(socket: &Path, session: &str, args: &[String]) -> R {
-    let mut c = tool(socket, session)?;
-    match args {
+fn set(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    match p.args.as_slice() {
         [] => {
             let meta = &c.node.state.meta;
             for (owner, map) in &meta.settings {
@@ -667,15 +1070,14 @@ fn set(socket: &Path, session: &str, args: &[String]) -> R {
             let _ = c.step(Duration::from_millis(50));
             Ok(())
         }
-        _ => Err("usage: apex set [KEY VALUE]".into()),
+        _ => Err("usage".into()),
     }
 }
 
 /// The bytes of a file on the session's host, to stdout.
-fn cat(socket: &Path, session: &str, args: &[String]) -> R {
-    use std::io::Write;
-    let [path] = args else { return Err("usage: apex cat PATH".into()) };
-    let mut c = tool(socket, session)?;
+fn cat(ctx: &Ctx, p: &Parsed) -> R {
+    let [path] = p.args.as_slice() else { return Err("usage".into()) };
+    let mut c = tool(ctx)?;
     let bytes = c.read_file(path, TIMEOUT)?;
     std::io::stdout().write_all(&bytes).map_err(|e| e.to_string())?;
     Ok(())

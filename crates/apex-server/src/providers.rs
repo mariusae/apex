@@ -18,7 +18,7 @@
 //! (`user@host`). The destination needs nothing but the provider's
 //! access: we carry an `apex` for its OS and architecture, put it in
 //! `~/.apex/bin` there (or update it when ours differs), let it start
-//! the daemon, and bridge frames through `apex attach --stdio`.
+//! the daemon, and bridge frames through `apex attach -stdio`.
 //!
 //! `APEX_PROVIDER_<NAME>` (and `APEX_SSH` for ssh) name the program to
 //! use instead; tests point them at a script that runs the commands
@@ -229,19 +229,19 @@ pub fn deploy(host: &str) -> io::Result<(String, bool)> {
 }
 
 /// The command whose stdin and stdout carry the frames: `apex attach
-/// --stdio` on the destination, which starts the daemon there if it
+/// -stdio` on the destination, which starts the daemon there if it
 /// must. Run it through a local shell.
 pub fn attach_command(spec: &str, session: &str) -> io::Result<String> {
     let dest = Dest::parse(spec);
     // the remote command is one single-quoted word so `$HOME` is the
     // destination's, not ours
     let session: String = session.chars().filter(|c| c.is_ascii_alphanumeric() || "-_.".contains(*c)).collect();
-    Ok(format!("{} {} '{REMOTE_BIN} --session {session} attach --stdio'", shell_quote(&dest.program()?), shell_quote(&dest.name)))
+    Ok(format!("{} {} '{REMOTE_BIN} -session={session} attach -stdio'", shell_quote(&dest.program()?), shell_quote(&dest.name)))
 }
 
 /// The sessions on the destination's daemon (started if it is not running).
 pub fn list_sessions(host: &str) -> io::Result<Vec<String>> {
-    let out = run(host, &format!("{REMOTE_BIN} --ensure-server ls"), None)?;
+    let out = run(host, &format!("{REMOTE_BIN} -ensure-server ls"), None)?;
     Ok(out.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect())
 }
 

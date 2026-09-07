@@ -30,7 +30,7 @@ fn daemon_with(host_profile: Option<PathBuf>) -> PathBuf {
 
 fn apex(sock: &PathBuf, args: &[&str]) -> (bool, String, String) {
     // the test daemon's session is "main"; a later --session in `args` wins
-    let out = Command::new(env!("CARGO_BIN_EXE_apex")).arg("--socket").arg(sock).args(["--session", "main"]).args(args).output().unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).arg("-session=main").args(args).output().unwrap();
     (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
 }
 
@@ -54,12 +54,12 @@ fn scripts_drive_a_headless_session() {
     let p = path.to_string_lossy().to_string();
 
     // open, list, read
-    let listed = ok(&sock, &["new", &p]);
+    let listed = ok(&sock, &["open", &p]);
     assert!(listed.contains(&p), "{listed}");
     let wins = ok(&sock, &["win", "list"]);
     assert!(wins.contains("notes.txt"), "{wins}");
     assert_eq!(ok(&sock, &["text", "read", "notes.txt"]), "pear\napple\nfig\n");
-    assert_eq!(ok(&sock, &["text", "read", "notes.txt", "--addr", "2"]), "apple\n");
+    assert_eq!(ok(&sock, &["text", "read", "-addr=2", "notes.txt"]), "apple\n");
 
     // the Edit language, then Put through exec
     ok(&sock, &["edit", "notes.txt", ",x/fig/ c/kiwi/"]);
@@ -105,7 +105,7 @@ fn scripts_drive_a_headless_session() {
     assert!(grid.contains("cli-42"), "grid:\n{grid}");
 
     // the other session is untouched
-    let (_, wins, _) = apex(&sock, &["--session", "side", "win", "list"]);
+    let (_, wins, _) = apex(&sock, &["-session=side", "win", "list"]);
     assert_eq!(wins, "");
 
     // delete the window: acme warns once while it is dirty, then goes
@@ -125,9 +125,8 @@ fn attach_stdio_bridges_the_socket() {
     // the same path `apex attach host/session` takes, with the bridge run
     // locally instead of through ssh
     let mut child = Command::new(env!("CARGO_BIN_EXE_apex"))
-        .arg("--socket")
-        .arg(&sock)
-        .args(["attach", "--stdio"])
+        .arg(format!("-socket={}", sock.display()))
+        .args(["attach", "-stdio"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
@@ -161,7 +160,7 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     std::fs::write(dir.join("client.txt"), "client\n").unwrap();
     // the host's file: apex finds the session through its environment
     let host_profile = dir.join("profile");
-    std::fs::write(&host_profile, format!("{apex} new {}/host.txt\n{apex} env FROM=host ORDER=$apexsession\n", dir.display())).unwrap();
+    std::fs::write(&host_profile, format!("{apex} open {}/host.txt\n{apex} env FROM=host ORDER=$apexsession\n", dir.display())).unwrap();
     let sock = daemon_with(Some(host_profile.clone()));
     // the daemon's own session ran the host file (its creator's is the same file)
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -170,19 +169,19 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     }
     // what went wrong, if it did: every +Errors window
     let errors = |sock: &PathBuf, session: &str| -> String {
-        ok(sock, &["--session", session, "win", "list"])
+        ok(sock, &[&format!("-session={session}"), "win", "list"])
             .lines()
             .filter(|l| l.ends_with("+Errors"))
             .map(|l| l.split('\t').nth(1).unwrap_or("").trim_start_matches('*').to_string())
-            .map(|w| format!("{w}:\n{}", ok(sock, &["--session", session, "text", "read", &w])))
+            .map(|w| format!("{w}:\n{}", ok(sock, &[&format!("-session={session}"), "text", "read", &w])))
             .collect()
     };
     assert!(ok(&sock, &["win", "list"]).contains("host.txt"), "{}\n{}", ok(&sock, &["win", "list"]), errors(&sock, "main"));
     assert!(ok(&sock, &["env"]).contains("FROM=host\n"), "{}", ok(&sock, &["env"]));
     // a session made from elsewhere: the host's file, then the creator's script
-    let profile = apex_server::proto::Script { client: "tester".into(), text: format!("{apex} new {}/client.txt\n{apex} env FROM=client\n", dir.display()) };
+    let profile = apex_server::proto::Script { client: "tester".into(), text: format!("{apex} open {}/client.txt\n{apex} env FROM=client\n", dir.display()) };
     apex_server::remote::new_session(&sock, "s2", Some(profile)).unwrap();
-    let list = |sock: &PathBuf| ok(sock, &["--session", "s2", "win", "list"]);
+    let list = |sock: &PathBuf| ok(sock, &["-session=s2", "win", "list"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     while !(list(&sock).contains("host.txt") && list(&sock).contains("client.txt")) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
@@ -191,23 +190,23 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     let id = |name: &str| l.lines().find(|x| x.ends_with(name)).and_then(|x| x.split('\t').next()).and_then(|n| n.parse::<u64>().ok()).unwrap_or_else(|| panic!("{name} in {l}"));
     assert!(id("host.txt") < id("client.txt"), "host first:\n{l}");
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !ok(&sock, &["--session", "s2", "env"]).contains("FROM=client") && Instant::now() < deadline {
+    while !ok(&sock, &["-session=s2", "env"]).contains("FROM=client") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
-    let env = ok(&sock, &["--session", "s2", "env"]);
+    let env = ok(&sock, &["-session=s2", "env"]);
     assert!(env.contains("FROM=client\n"), "{env}");
     assert!(env.contains("ORDER=s2\n"), "{env}");
     assert!(env.contains("apexclient=tester\n"), "{env}");
     // the init's name left the top row when it was done
-    assert!(!ok(&sock, &["--session", "s2", "text", "read", "+Errors"]).contains("exit"), "init exited cleanly");
+    assert!(!ok(&sock, &["-session=s2", "text", "read", "+Errors"]).contains("exit"), "init exited cleanly");
     // a terminal made now sees the environment
-    let t = ok(&sock, &["--session", "s2", "term", "new"]);
+    let t = ok(&sock, &["-session=s2", "term", "new"]);
     let t = t.trim().to_string();
-    ok(&sock, &["--session", "s2", "term", "send", &t, "echo v=$FROM\r"]);
+    ok(&sock, &["-session=s2", "term", "send", &t, "echo v=$FROM\r"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut grid = String::new();
     while Instant::now() < deadline {
-        grid = ok(&sock, &["--session", "s2", "term", "read", &t]);
+        grid = ok(&sock, &["-session=s2", "term", "read", &t]);
         if grid.contains("v=client") {
             break;
         }
@@ -226,17 +225,17 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     let md = dir.join("readme.md").display().to_string();
     // the defaults are there, owned by the session
     let ls = ok(&sock, &["plumb", "rule", "ls"]);
-    assert!(ls.contains("session\tp-100\t--text"), "{ls}");
+    assert!(ls.contains("session\tp-100\t-text"), "{ls}");
     // a rule of ours, and its id
-    let id = ok(&sock, &["plumb", "rule", "add", "--verb", "Preview", "--file", r"\.md$", "--run", "echo preview $file"]);
+    let id = ok(&sock, &["plumb", "rule", "add", "-verb=Preview", r"-file=\.md$", "-run=echo preview $file"]);
     assert!(id.trim().starts_with('r'), "{id}");
     let ls = ok(&sock, &["plumb", "rule", "ls"]);
-    assert!(ls.contains("--verb Preview --file '\\.md$' --run 'echo preview $file'"), "{ls}");
+    assert!(ls.contains("-verb=Preview -file='\\.md$' -run='echo preview $file'"), "{ls}");
     // what B3 would do with a path: the default rule opens it
-    let trace = ok(&sock, &["plumb", "--dry-run", &md]);
+    let trace = ok(&sock, &["plumb", "-dry-run", &md]);
     assert!(trace.contains("would open"), "{trace}");
     // and with a word that is nothing: a Look
-    let trace = ok(&sock, &["plumb", "--dry-run", "nothing-here"]);
+    let trace = ok(&sock, &["plumb", "-dry-run", "nothing-here"]);
     assert!(trace.trim_end().ends_with("no rule: Look"), "{trace}");
     // a tool that refuses: the walk goes on to the next rule
     let tool_sock = sock.clone();
@@ -258,11 +257,11 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
         refused
     });
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
+    while !ok(&sock, &["plumb", "rule", "ls"]).contains("-tool=t") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
     let ls = ok(&sock, &["plumb", "rule", "ls"]);
-    assert!(ls.contains("\tt(a") && ls.contains("p10\t--tool t"), "{ls}");
+    assert!(ls.contains("\tt(a") && ls.contains("p10\t-tool=t"), "{ls}");
     ok(&sock, &["B", &md]);
     let deadline = Instant::now() + Duration::from_secs(5);
     while !ok(&sock, &["win", "list"]).contains("readme.md") && Instant::now() < deadline {
@@ -293,7 +292,7 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
         refused
     });
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
+    while !ok(&sock, &["plumb", "rule", "ls"]).contains("-tool=t") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
     ok(&sock, &["plumb", &other]);
@@ -305,10 +304,10 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     assert_eq!(tool.join().unwrap(), 1, "the tool was asked once");
     // the tool is gone: so is its rule
     let deadline = Instant::now() + Duration::from_secs(5);
-    while ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t") && Instant::now() < deadline {
+    while ok(&sock, &["plumb", "rule", "ls"]).contains("-tool=t") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
-    assert!(!ok(&sock, &["plumb", "rule", "ls"]).contains("--tool t"));
+    assert!(!ok(&sock, &["plumb", "rule", "ls"]).contains("-tool=t"));
     // Preview shows in the .md window's tag, and B2 runs it
     let (_, wins, _) = apex(&sock, &["win", "list"]);
     let w = wins.lines().find(|l| l.ends_with("readme.md")).and_then(|l| l.split('\t').next()).unwrap().to_string();
@@ -357,7 +356,7 @@ fn an_attach_script_sets_the_clients_own_settings_and_cat_reads_files() {
     }
     assert!(!ok(&sock, &["set"]).contains("Marked"));
     // cat: the bytes of a file on the host
-    let out = Command::new(bin).arg("--socket").arg(&sock).args(["--session", "main", "cat"]).arg(dir.join("bytes.bin")).output().unwrap();
+    let out = Command::new(bin).arg(format!("-socket={}", sock.display())).args(["-session=main", "cat"]).arg(dir.join("bytes.bin")).output().unwrap();
     assert!(out.status.success());
     assert_eq!(out.stdout, b"\x00\x01hello\xff");
     let (success, _, err) = apex(&sock, &["cat", "/nowhere/at/all"]);
