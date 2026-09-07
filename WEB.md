@@ -3,9 +3,10 @@
 A design for three things that belong together: an I/O plane multiplexed
 over the session socket, web windows rendered on the client, and `Preview`
 as a live pipe through a converter. It resolves the "decide later" in
-DESIGN.md §10. Nothing here is built yet; where this document and
-DESIGN.md disagree, this one is the intent for web windows and file I/O,
-and DESIGN.md's *as built* notes describe what runs today.
+DESIGN.md §10. All eight stages are built; each section carries an *as
+built* note with what runs and where it deviates. Where this document
+and DESIGN.md disagree, this one is the intent for web windows and file
+I/O, and DESIGN.md's *as built* notes describe what runs today.
 
 Decisions taken in discussion, restated so they are not relitigated:
 
@@ -26,8 +27,9 @@ Decisions taken in discussion, restated so they are not relitigated:
   buffer-without-history.
 - The preview follows dot: scroll sync is in scope, as a second pass.
 
-Order of work: the I/O plane (porting today's `Watch` onto it), then web
-windows with `wry`, then `apex md` and `apex tool preview`.
+Order of work, done in this order: the I/O plane (porting today's
+`Watch` onto it), then web windows with `wry`, then `apex md` and
+`apex tool preview`.
 
 ---
 
