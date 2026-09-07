@@ -231,12 +231,22 @@ fn main() {
         cx.on_action(move |_: &shell::NewWindow, cx| {
             // the first window goes to the local default; another one asks
             // which session, in the picker, before attaching anywhere
-            let active = cx.active_window().and_then(|w| w.downcast::<Acme>()).and_then(|h| h.read(cx).ok().map(|a| a.url.clone()));
-            match active {
-                None => {
+            // "any window at all" decides, not the active one: during action
+            // dispatch there may be no active window to ask
+            let ours: Vec<gpui::WindowHandle<Acme>> = cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()).collect();
+            let current = cx
+                .active_window()
+                .and_then(|w| w.downcast::<Acme>())
+                .into_iter()
+                .chain(ours.iter().copied())
+                .find_map(|h| h.read(cx).ok().map(|a| a.url.clone()));
+            shell::log_line(&format!("new window: {} open, current {:?}", ours.len(), current.as_ref().map(|u| u.to_string())));
+            match current {
+                None if ours.is_empty() => {
                     open_window(cx, Target::Url { url: SessionUrl::local(apex_server::providers::DEFAULT_SESSION), files: Vec::new() }, None);
                 }
-                Some(url) => {
+                current => {
+                    let url = current.unwrap_or_else(|| SessionUrl::local(apex_server::providers::DEFAULT_SESSION));
                     if let Some(h) = open_window(cx, Target::Chooser { url }, None) {
                         let _ = h.update(cx, |acme, _, cx| acme.open_selector(cx));
                     }
