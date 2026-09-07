@@ -1035,7 +1035,8 @@ impl Server {
             return self.plumb_finish(id, vec![prop]);
         }
         if verb == "plumb" {
-            return self.plumb_finish(id, vec![Proposal::Look { ctx, text }]);
+            let reverse = self.plumbs.get(&id).is_some_and(|p| p.req.reverse);
+            return self.plumb_finish(id, vec![Proposal::Look { ctx, text, reverse }]);
         }
         let mut props = vec![Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{verb}: no rule takes it here\n") }];
         if let Some(exec) = exec {
@@ -1069,7 +1070,7 @@ impl Server {
             ExecCtx::Window(w) => view.view_buffer(ViewId::Body(w)).ok().and_then(|b| view.selection(ViewId::Body(w)).ok().map(|(q0, q1)| Span { buffer: b, q0, q1 })),
             _ => None,
         };
-        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None })
+        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None, reverse: false })
     }
 }
 
@@ -1104,6 +1105,8 @@ pub struct PlumbReq {
     /// The word within `text`: acme's `expand` tries the file-name
     /// expansion first and, should nothing take it, the word.
     pub alt: Option<(String, Span)>,
+    /// shift-B3: the Look at the end runs backwards.
+    pub reverse: bool,
 }
 
 /// One step of a plumb walk, for the host to carry out.

@@ -68,7 +68,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert!(until(&mut c, |n| lsp(n).contains("len=33")), "synced: {}", lsp(&c.node));
     // B3 on an identifier: the definition the server names is selected
     let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w).ends_with("main.go")).unwrap();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false });
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((18, 19))), "selection: {:?}", c.node.selection(ViewId::Body(w)));
     // Hov: the hover text lands in +Errors
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Hov".into() }, Duration::from_secs(5)).unwrap();

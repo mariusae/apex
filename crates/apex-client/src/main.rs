@@ -20,7 +20,7 @@ mod text_element;
 mod warp;
 
 use gpui::{
-    black, div, prelude::*, px, size, App, Bounds, Context, MouseButton, Pixels, TitlebarOptions, Window,
+    black, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
     WindowBounds, WindowOptions,
 };
 
@@ -78,6 +78,7 @@ impl Render for Acme {
                 cx.notify();
             }))
             .on_action(cx.listener(|_, _: &shell::CloseWindow, window, _| window.remove_window()))
+            .on_action(cx.listener(|_, _: &shell::ToggleFullScreen, window, _| window.toggle_fullscreen()))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
@@ -94,8 +95,10 @@ impl Render for Acme {
             .on_mouse_up_out(MouseButton::Navigate(gpui::NavigationDirection::Back), cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_modifiers_changed(cx.listener(Self::modifiers_changed))
-            .on_scroll_wheel(cx.listener(Self::scroll_wheel))
-            .child(self.titlebar(cx));
+            .on_scroll_wheel(cx.listener(Self::scroll_wheel));
+        // full screen: acme's area is the whole screen, no title bar
+        self.fullscreen = window.is_fullscreen();
+        let root = if self.fullscreen { root } else { root.child(self.titlebar(cx)) };
 
         // acme's tiling placed everything; draw each piece where it says
         let l = self.node.state.layout.clone();
@@ -229,7 +232,7 @@ fn main() {
         });
 
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
-        let targets: Vec<(Target, Option<Bounds<Pixels>>)> = if local {
+        let targets: Vec<(Target, Option<WindowBounds>)> = if local {
             vec![(Target::Local(files.clone()), None)]
         } else if let Some(cmd) = via.clone() {
             vec![(Target::Via { cmd, session: default(), files: files.clone() }, None)]
@@ -273,13 +276,13 @@ fn main() {
     });
 }
 
-fn open_window(cx: &mut App, target: Target, frame: Option<Bounds<Pixels>>) {
+fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
     let n = cx.windows().len() as f32;
     let bounds = frame.unwrap_or_else(|| {
         let mut b = Bounds::centered(None, size(px(1100.), px(760.)), cx);
         b.origin.x += px(24. * n);
         b.origin.y += px(24. * n);
-        b
+        WindowBounds::Windowed(b)
     });
     let title = match &target {
         Target::Local(_) => "apex".to_string(),
@@ -288,7 +291,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<Bounds<Pixels>>) {
     };
     let opened = cx.open_window(
         WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_bounds: Some(bounds),
             titlebar: Some(TitlebarOptions {
                 title: Some(title.into()),
                 appears_transparent: true,

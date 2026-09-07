@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 
 use gpui::{
-    actions, anchored, deferred, div, point, prelude::*, px, rgb, size, App, Bounds, Context, KeyBinding, Menu, MenuItem, MouseButton, Pixels,
+    actions, anchored, deferred, div, point, prelude::*, px, rgb, size, App, Bounds, Context, KeyBinding, Menu, MenuItem, MouseButton, Pixels, WindowBounds,
     Window,
 };
 
@@ -18,7 +18,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Reconnect, Put, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Reconnect, ToggleFullScreen, Put, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -51,6 +51,8 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("New Window", NewWindow),
                 MenuItem::action("Sessions…", Sessions),
                 MenuItem::action("Reconnect", Reconnect),
+                MenuItem::separator(),
+                MenuItem::action("Enter Full Screen", ToggleFullScreen),
                 MenuItem::separator(),
                 MenuItem::action("Put", Put),
                 MenuItem::action("Del", Del),
@@ -86,6 +88,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-w", CloseWindow, None),
         KeyBinding::new("cmd-k", Sessions, None),
         KeyBinding::new("cmd-r", Reconnect, None),
+        KeyBinding::new("cmd-ctrl-f", ToggleFullScreen, None),
         KeyBinding::new("cmd-z", Undo, None),
         KeyBinding::new("cmd-shift-z", Redo, None),
         KeyBinding::new("cmd-x", Cut, None),
@@ -138,6 +141,7 @@ fn state_file() -> PathBuf {
 pub struct Remembered {
     pub url: String,
     pub frame: Option<Bounds<Pixels>>,
+    pub fullscreen: bool,
 }
 
 /// The windows open when the app last ran: one line each, the session's
@@ -151,12 +155,14 @@ pub fn remembered() -> Vec<Remembered> {
                 .map(|l| {
                     let mut f = l.split('\t');
                     let url = f.next().unwrap_or("").to_string();
-                    let nums: Vec<f32> = f.filter_map(|x| x.parse().ok()).collect();
+                    let rest: Vec<&str> = f.collect();
+                    let nums: Vec<f32> = rest.iter().take(4).filter_map(|x| x.parse().ok()).collect();
                     let frame = match nums.as_slice() {
                         [x, y, w, h] if *w > 0. && *h > 0. => Some(Bounds { origin: point(px(*x), px(*y)), size: size(px(*w), px(*h)) }),
                         _ => None,
                     };
-                    Remembered { url, frame }
+                    let fullscreen = rest.get(4).is_some_and(|f| *f == "full");
+                    Remembered { url, frame, fullscreen }
                 })
                 .collect()
         })
@@ -171,7 +177,7 @@ pub fn remember(windows: &[Remembered]) {
     let text: String = windows
         .iter()
         .map(|r| match r.frame {
-            Some(b) => format!("{}\t{}\t{}\t{}\t{}\n", r.url, f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height)),
+            Some(b) => format!("{}\t{}\t{}\t{}\t{}{}\n", r.url, f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height), if r.fullscreen { "\tfull" } else { "" }),
             None => format!("{}\n", r.url),
         })
         .collect();
@@ -192,8 +198,8 @@ pub fn save_open(cx: &mut App) {
             continue;
         }
         let url = a.url.to_string();
-        let frame = h.update(cx, |_, window, _| window.bounds()).ok();
-        open.push(Remembered { url, frame });
+        let (frame, fullscreen) = h.update(cx, |_, window, _| (window.bounds(), window.is_fullscreen())).map(|(b, f)| (Some(b), f)).unwrap_or((None, false));
+        open.push(Remembered { url, frame, fullscreen });
     }
     remember(&open);
 }
@@ -202,11 +208,11 @@ pub fn save_open(cx: &mut App) {
 /// session and at its frame (local sessions only if they still exist;
 /// remote ones are tried); else one on the first existing local session;
 /// else one on a new `default`.
-pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<Bounds<Pixels>>)>> {
+pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<WindowBounds>)>> {
     let existing = list_sessions(socket)?;
-    let again: Vec<(SessionUrl, Option<Bounds<Pixels>>)> = remembered()
+    let again: Vec<(SessionUrl, Option<WindowBounds>)> = remembered()
         .iter()
-        .filter_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame)))
+        .filter_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame.map(|b| if r.fullscreen { WindowBounds::Fullscreen(b) } else { WindowBounds::Windowed(b) }))))
         .filter(|(u, _)| !u.is_local() || existing.contains(&u.session))
         .collect();
     if !again.is_empty() {
@@ -492,6 +498,12 @@ pub fn note_recent(url: &SessionUrl) {
     write_recent(&list);
 }
 
+/// Take a session off the recent list (the ×  in the picker).
+pub fn forget_recent(url: &SessionUrl) {
+    let list: Vec<SessionUrl> = recent().into_iter().filter(|u| u != url).collect();
+    write_recent(&list);
+}
+
 pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
     let list: Vec<SessionUrl> = recent().into_iter().map(|u| if u == *old { new.clone() } else { u }).collect();
     write_recent(&list);
@@ -745,6 +757,31 @@ impl Acme {
                     if is_current {
                         d = d.child(div().text_color(rgb(0x000099)).child("✓"));
                     }
+                    // a recent session can be forgotten: the × at the right
+                    if matches!(row, Row::Open(_)) && sel.recent.contains(u) {
+                        let forget = u.clone();
+                        d = d.child(div().flex_1()).child(
+                            div()
+                                .id(("forget", i))
+                                .px(px(6.))
+                                .rounded(px(4.))
+                                .text_color(rgb(0x888888))
+                                .hover(|s| s.bg(rgb(0xcfcfcf)).text_color(rgb(0x111111)))
+                                .child("×")
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        forget_recent(&forget);
+                                        if let Some(s) = this.selector.as_mut() {
+                                            s.recent.retain(|r| *r != forget);
+                                            s.settle();
+                                        }
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                ),
+                        );
+                    }
                     d.on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, window, cx| {
@@ -799,6 +836,6 @@ impl Acme {
             .overflow_hidden()
             .child(field)
             .child(list);
-        Some(deferred(anchored().position(point(px(72.), px(TITLEBAR_HEIGHT - 2.))).child(panel)).with_priority(1))
+        Some(deferred(anchored().position(point(px(72.), px(self.top() - 2.))).child(panel)).with_priority(1))
     }
 }

@@ -960,7 +960,7 @@ fn plumb(ctx: &Ctx, p: &Parsed) -> R {
         return Ok(());
     }
     let before = c.node.state.windows.len();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None, alt: None });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None, alt: None, reverse: false });
     let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     Ok(())
 }
@@ -974,7 +974,7 @@ fn b(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     for a in &p.args {
         let before = c.node.state.windows.len();
-        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false, at: None, sel: None, alt: None });
+        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false });
         let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     }
     Ok(())

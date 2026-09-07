@@ -82,6 +82,8 @@ struct Mouse {
     autoscroll: Option<(ViewId, i64)>,
     /// B1 held in a terminal: the selection follows the pointer.
     term_drag: Option<WindowId>,
+    /// B3 went down with shift: the Look runs backwards.
+    b3_reverse: bool,
     /// B2 or B3 held in a terminal (acme's `textselect23`): the window,
     /// the button, the cell pressed and its position.
     term_sweep: Option<(WindowId, MouseButton, (usize, usize), (usize, u64))>,
@@ -182,6 +184,8 @@ pub struct Acme {
     snarf_wanted: Option<String>,
     /// A B2/B3 sweep in a terminal, shown in the button's colour.
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
+    /// The window is full screen: no title bar, acme's area from the top.
+    pub fullscreen: bool,
     /// The tools menu while B4 is held.
     pub menu: Option<menu::Menu>,
     /// What the menu ran last: it opens on that item.
@@ -665,6 +669,7 @@ impl Acme {
             term_sel: None,
             snarf_wanted: None,
             term_hl: None,
+            fullscreen: false,
             menu: None,
             menu_last: None,
             previews: Vec::new(),
@@ -750,7 +755,8 @@ impl Acme {
         let font = font_for(false).line_height;
         let fonti = f32::from(font) as i32;
         let l = &self.node.state.layout;
-        let row = |x: i32, y: i32| point(px(x as f32), px(y as f32 + TITLEBAR_HEIGHT));
+        let top = self.top();
+        let row = |x: i32, y: i32| point(px(x as f32), px(y as f32 + top));
         let target = match p {
             Pending::Restore(at) => Some(at),
             Pending::Warp(Warp::NewWindow(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
@@ -823,7 +829,7 @@ impl Acme {
         }
         self.node.tiling = Box::new(ClientInfo { font, prop: font, mono, tags, bodies });
         // the OS window
-        let r = tiling::Rect::new(0, 0, f32::from(viewport.width) as i32, (f32::from(viewport.height) - TITLEBAR_HEIGHT) as i32);
+        let r = tiling::Rect::new(0, 0, f32::from(viewport.width) as i32, (f32::from(viewport.height) - self.top()) as i32);
         if r.dx() > 0 && r.dy() > 0 && r != self.node.state.layout.r {
             let _ = self.node.resize_layout(&mut self.log, r);
         }
@@ -850,7 +856,7 @@ impl Acme {
             // acme's winresize: pull the mouse up as a tag closes under it,
             // push it down as a tag expands over it
             if let (Some(b), Some(a)) = (before, after) {
-                let m = Self::row_pt(self.last_mouse);
+                let m = self.row_pt(self.last_mouse);
                 let in_tag = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.r.y0 <= y && y < s.tag_y1(font);
                 let in_body = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.body.y0 <= y && y < s.body.y1;
                 let mut to = None;
@@ -860,7 +866,7 @@ impl Acme {
                     to = Some(a.tag_y1(font) + 3);
                 }
                 if let Some(y) = to {
-                    let at = point(self.last_mouse.x, px(y as f32 + TITLEBAR_HEIGHT));
+                    let at = point(self.last_mouse.x, px(y as f32 + self.top()));
                     self.pending = Some(Pending::Restore(at));
                     self.warp_wait = false;
                 }
@@ -877,8 +883,18 @@ impl Acme {
         }
     }
 
-    fn row_pt(p: Point<Pixels>) -> (i32, i32) {
-        (f32::from(p.x) as i32, (f32::from(p.y) - TITLEBAR_HEIGHT) as i32)
+    /// Where acme's area starts: below the title bar, or at the top when
+    /// the window is full screen.
+    pub fn top(&self) -> f32 {
+        if self.fullscreen {
+            0.
+        } else {
+            TITLEBAR_HEIGHT
+        }
+    }
+
+    fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
+        (f32::from(p.x) as i32, (f32::from(p.y) - self.top()) as i32)
     }
 
     /// An event from the in-process server.
@@ -1193,6 +1209,7 @@ impl Acme {
                     match region {
                         Region::Text(off) => {
                             self.mouse.b3 = Some(Drag { view: v, anchor: off });
+                            self.mouse.b3_reverse = e.modifiers.shift;
                             self.hl = None;
                         }
                         Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Right, e.position, window, cx),
@@ -1334,7 +1351,7 @@ impl Acme {
                     MouseButton::Middle => 2,
                     _ => 3,
                 };
-                let (op, p) = (Self::row_pt(start), Self::row_pt(e.position));
+                let (op, p) = (self.row_pt(start), self.row_pt(e.position));
                 let r = match bt {
                     BoxTarget::Win(w) => self.node.drag_window(&mut self.log, w, but, op, p),
                     BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, op, p),
@@ -1410,7 +1427,8 @@ impl Acme {
                             }
                             _ => None,
                         };
-                        self.look_at(self.ctx_of(d.view), &text, at, sel, alt);
+                        let reverse = self.mouse.b3_reverse;
+                        self.look_at(self.ctx_of(d.view), &text, at, sel, alt, reverse);
                     }
                 }
             }
@@ -1684,7 +1702,7 @@ impl Acme {
         } else {
             (false, nitem, maxwid, 0, lasthit)
         };
-        let (mx, my) = Self::row_pt(at);
+        let (mx, my) = self.row_pt(at);
         // r = insetrect(Rect(0,0,wid,n*ih), -Margin), moved so item lasti is centred on the pointer
         let mut r = tiling::Rect::new(-menu::MARGIN, -menu::MARGIN, wid + menu::MARGIN, nitemdrawn * ih + menu::MARGIN);
         let (dx, dy) = (mx - wid / 2, my - (lasti * ih + fh / 2));
@@ -1709,7 +1727,7 @@ impl Acme {
         let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih };
         // moveto: the pointer onto the item, so a click alone repeats it
         let ir = m.item_rect(lasti);
-        let center = point(px(((ir.x0 + ir.x1) / 2) as f32), px(((ir.y0 + ir.y1) / 2) as f32 + TITLEBAR_HEIGHT));
+        let center = point(px(((ir.x0 + ir.x1) / 2) as f32), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
         crate::warp::move_to(window, center);
         self.pointer = Some(center);
         self.last_mouse = center;
@@ -1719,8 +1737,8 @@ impl Acme {
     /// The pointer moved with the menu's button held: highlight what is
     /// under it, none outside; on the scroll bar, scroll.
     fn menu_track(&mut self, pos: Point<Pixels>) {
+        let (x, y) = self.row_pt(pos);
         let Some(m) = self.menu.as_mut() else { return };
-        let (x, y) = Self::row_pt(pos);
         let i = m.sel(x, y);
         if i >= 0 {
             m.lasti = i;
@@ -2188,25 +2206,25 @@ impl Acme {
     }
 
     pub fn look(&mut self, ctx: ExecCtx, text: &str) {
-        self.look_at(ctx, text, None, None, None);
+        self.look_at(ctx, text, None, None, None, false);
     }
 
     /// B3: plumb `text` from `ctx`, saying where it came from when it
     /// came from a buffer (`at`: the pointer; `sel`: what was taken;
     /// `alt`: the word within it, tried when nothing takes the text).
-    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>) {
+    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>, reverse: bool) {
         let text = text.trim();
         if text.is_empty() {
             return;
         }
         match &mut self.backend {
             Backend::Local(server) => {
-                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at, sel, alt };
+                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at, sel, alt, reverse };
                 if let Some(w) = plumb_local(server, &mut self.node, &mut self.log, req) {
                     self.show(w);
                 }
             }
-            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel, alt }),
+            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel, alt, reverse }),
         }
         self.after();
     }

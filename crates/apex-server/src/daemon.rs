@@ -512,8 +512,8 @@ impl Daemon {
                     Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });
             }
-            ClientMsg::Plumb { ctx, text, dir, edit_only, dry, at, sel, alt } => {
-                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: "plumb".into(), edit_only, dry, exec: None, at, sel, alt };
+            ClientMsg::Plumb { ctx, text, dir, edit_only, dry, at, sel, alt, reverse } => {
+                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: "plumb".into(), edit_only, dry, exec: None, at, sel, alt, reverse };
                 let (pid, step) = s.server.plumb_start(&s.view, req);
                 self.drive(name, pid, step, id);
                 return;

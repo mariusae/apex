@@ -863,6 +863,12 @@ this one (detach, attach).
   protocol support.
 - Fonts, geometry and colours are client-side. Colours follow plan9port
   exactly (`README.md`, Colours).
+- *As built:* full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
+  title bar, acme's area is the whole screen, and a window's full-screen
+  state is remembered with its frame. shift-B3 looks backwards (the
+  mariusae/plan9port acme's `look3(..., reverse)`: `search` with reverse,
+  the last occurrence ending before dot, wrapping). The picker's recent
+  sessions carry a × that forgets them.
 - *As built:* a window is **live** when a process is behind it: a
   terminal whose program runs, or a text window a tool keeps so
   (`WindowOp::Live{by}`, the win tool's attachment; the state ends with

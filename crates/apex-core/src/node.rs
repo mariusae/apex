@@ -882,18 +882,37 @@ impl Node {
     /// acme's `search`, in the text `view`: forward from its selection's
     /// end, wrapping around; the match becomes the selection.
     pub fn look(&mut self, log: &mut Log, view: ViewId, needle: &str) -> Result<bool> {
+        self.look_dir(log, view, needle, false)
+    }
+
+    /// `look`, backwards when `reverse`: the last occurrence ending at or
+    /// before the selection's start, wrapping from the end (acme's
+    /// `search` with reverse, shift-B3).
+    pub fn look_dir(&mut self, log: &mut Log, view: ViewId, needle: &str, reverse: bool) -> Result<bool> {
         let b = self.view_buffer(view)?;
         let buf = self.state.buffer(b)?;
-        let (_, from) = self.selection(view)?;
+        let (q0, q1) = self.selection(view)?;
         let n: Vec<char> = needle.chars().collect();
         if n.is_empty() {
             return Ok(false);
         }
         let text: Vec<char> = buf.text.to_string().chars().collect();
+        if n.len() > text.len() {
+            return Ok(false);
+        }
         let find = |start: usize, end: usize| -> Option<usize> {
             (start..end.saturating_sub(n.len() - 1)).find(|&i| text[i..i + n.len()] == n[..])
         };
-        let hit = find(from, text.len()).or_else(|| find(0, from + n.len() - 1));
+        let rfind = |start: usize, end: usize| -> Option<usize> {
+            // matches starting in [start, end - n) with the match ending at most at end
+            (start..end.saturating_sub(n.len() - 1)).rev().find(|&i| text[i..i + n.len()] == n[..])
+        };
+        let hit = if reverse {
+            rfind(0, q0).or_else(|| rfind(q0, text.len()))
+        } else {
+            let from = q1;
+            find(from, text.len()).or_else(|| find(0, from + n.len() - 1))
+        };
         match hit {
             Some(i) => {
                 self.select(log, view, i, i + n.len())?;

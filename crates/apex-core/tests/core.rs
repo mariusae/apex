@@ -463,3 +463,31 @@ fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
     let errs = node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default();
     assert!(errs.contains("is a directory; Zerox illegal"), "{errs}");
 }
+
+#[test]
+fn look_runs_backwards_for_shift_b3() {
+    let mut log = Log::new();
+    let (a, _) = log.attach(AttachmentKind::Ui, "t");
+    let mut node = Node::new(a);
+    node.catch_up(&log).unwrap();
+    let col = node.init_session(&mut log).unwrap();
+    let body = node.create_buffer(&mut log, "/x", "ab ab ab", None).unwrap();
+    let w = node.open_window(&mut log, col, body).unwrap();
+    let v = ViewId::Body(w);
+    // from the end, backwards: the last, then the middle, then the first, then around
+    node.select(&mut log, v, 8, 8).unwrap();
+    assert!(node.look_dir(&mut log, v, "ab", true).unwrap());
+    assert_eq!(node.selection(v).unwrap(), (6, 8));
+    assert!(node.look_dir(&mut log, v, "ab", true).unwrap());
+    assert_eq!(node.selection(v).unwrap(), (3, 5));
+    assert!(node.look_dir(&mut log, v, "ab", true).unwrap());
+    assert_eq!(node.selection(v).unwrap(), (0, 2));
+    assert!(node.look_dir(&mut log, v, "ab", true).unwrap());
+    assert_eq!(node.selection(v).unwrap(), (6, 8));
+    // forwards, from the start
+    node.select(&mut log, v, 0, 0).unwrap();
+    assert!(node.look(&mut log, v, "ab").unwrap());
+    assert_eq!(node.selection(v).unwrap(), (0, 2));
+    assert!(node.look(&mut log, v, "ab").unwrap());
+    assert_eq!(node.selection(v).unwrap(), (3, 5));
+}

@@ -43,8 +43,9 @@ pub enum Proposal {
     /// A terminal's shell labelled its window (acme's win): the tag's
     /// first word changes.
     TermName { window: WindowId, name: String },
-    /// B3 did not name a file: search the body instead.
-    Look { ctx: ExecCtx, text: String },
+    /// B3 did not name a file: search the body instead; backwards for
+    /// shift-B3.
+    Look { ctx: ExecCtx, text: String, reverse: bool },
     /// A plumbing rule asks the UI to do something (`open` a URL, say).
     /// Only a UI can; a headless leader refuses, and the server tries the
     /// next rule.
@@ -196,7 +197,7 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;
             Ok(None)
         }
-        Proposal::Look { ctx, text } => {
+        Proposal::Look { ctx, text, reverse } => {
             // acme's look3: the search runs in seltext, the text last
             // selected with B1, not necessarily where B3 was clicked
             let view = node
@@ -208,7 +209,7 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                     ExecCtx::Top => Some(ViewId::Top),
                 });
             if let Some(v) = view {
-                if node.view_buffer(v).is_ok() && node.look(log, v, &text)? {
+                if node.view_buffer(v).is_ok() && node.look_dir(log, v, &text, reverse)? {
                     if let Some(w) = v.window() {
                         node.reveal(log, w)?; // textshow grows a window with no lines
                     }
