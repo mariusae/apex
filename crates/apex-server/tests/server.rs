@@ -411,3 +411,34 @@ fn newterm_with_a_command_runs_it_instead_of_a_shell() {
     // and it is done when the command is
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|t| t.exit.is_some())), "exit noticed");
 }
+
+#[test]
+fn a_name_typed_into_the_tag_is_where_put_writes() {
+    let (mut log, mut node, _col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-tagname-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    server.cwd = dir.clone();
+    // an empty window, some text, a name typed into its tag
+    node.exec(&mut log, ExecCtx::Top, "New").unwrap();
+    let w = node.state.windows.keys().copied().max().expect("window");
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    node.set_content(&mut log, b, "hello\n").unwrap();
+    let tag = node.state.window(w).unwrap().tag;
+    let old = node.state.buffer(tag).unwrap().text.to_string();
+    node.set_content(&mut log, tag, &format!("notes.txt{old}")).unwrap();
+    // winsettag leaves the typed name alone
+    node.update_tags(&mut log).unwrap();
+    assert!(node.state.buffer(tag).unwrap().text.to_string().starts_with("notes.txt "), "{}", node.state.buffer(tag).unwrap().text.to_string());
+    assert_eq!(node.window_name(w), "");
+    // a click in the tag commits it
+    node.commit_tag(&mut log, w).unwrap();
+    assert_eq!(node.window_name(w), "notes.txt");
+    // Put writes it where the window is, and the name becomes absolute
+    node.exec(&mut log, ExecCtx::Window(w), "Put").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let path = dir.join("notes.txt");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello\n");
+    assert_eq!(node.window_name(w), path.display().to_string());
+    assert!(!node.state.buffer(b).unwrap().dirty());
+    let _ = std::fs::remove_dir_all(&dir);
+}

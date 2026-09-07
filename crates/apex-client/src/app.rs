@@ -1119,6 +1119,10 @@ impl Acme {
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
         let Some((target, region)) = self.locate(e.position) else { return };
+        // a click in a tag commits the name typed there (acme's wincommit)
+        if let Target::View(ViewId::Tag(w)) = target {
+            let _ = self.node.commit_tag(&mut self.log, w);
+        }
         // a layout box: acme's coldragwin/rowdragcol wait for the release
         if let (Target::View(v), Region::LayoutBox) = (target, region) {
             if self.mouse.b1.is_none() {
@@ -2116,6 +2120,9 @@ impl Acme {
     }
 
     pub fn execute(&mut self, ctx: ExecCtx, text: &str, cx: &mut Context<Self>) {
+        if let ExecCtx::Window(w) = ctx {
+            let _ = self.node.commit_tag(&mut self.log, w);
+        }
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
         if word == "Snarf" {
             if let ExecCtx::Window(w) = ctx {

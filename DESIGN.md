@@ -851,6 +851,15 @@ this one (detach, attach).
   protocol support.
 - Fonts, geometry and colours are client-side. Colours follow plan9port
   exactly (`README.md`, Colours).
+- *As built:* the app remembers every window with its session URL and
+  its frame (`last-sessions`, one line each), saved on every move or
+  resize and on Quit, and opens them all again at launch, each on its
+  session and where it was. The name in a tag is editable, as acme's is:
+  `winsettag` leaves a typed first word alone, a click in the tag or a
+  command from the window commits it (`wincommit`: the buffer takes the
+  name), and `Put` resolves a relative name where the window is and makes
+  it absolute. `New` in a tag is an empty window; `apex new [LABEL]` is
+  the same with stdin in it (acme's `cmd | New`); `apex open` opens files.
 - Over a WAN, mosh-style predictive echo is unnecessary for editing (the
   client leads) and only relevant for terminals; it can come later.
 

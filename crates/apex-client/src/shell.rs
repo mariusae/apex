@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 
 use gpui::{
-    actions, anchored, deferred, div, point, prelude::*, px, rgb, App, Context, KeyBinding, Menu, MenuItem, MouseButton,
+    actions, anchored, deferred, div, point, prelude::*, px, rgb, size, App, Bounds, Context, KeyBinding, Menu, MenuItem, MouseButton, Pixels,
     Window,
 };
 
@@ -133,61 +133,101 @@ fn state_file() -> PathBuf {
     PathBuf::from(home).join("Library/Application Support/apex/last-sessions")
 }
 
-/// Sessions that had windows when the app last ran.
-pub fn remembered() -> Vec<String> {
+/// A window as remembered: its session, and where it was on screen.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Remembered {
+    pub url: String,
+    pub frame: Option<Bounds<Pixels>>,
+}
+
+/// The windows open when the app last ran: one line each, the session's
+/// URL and (tab-separated) the frame's x, y, width, height.
+pub fn remembered() -> Vec<Remembered> {
     std::fs::read_to_string(state_file())
-        .map(|s| s.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect())
+        .map(|s| {
+            s.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(|l| {
+                    let mut f = l.split('\t');
+                    let url = f.next().unwrap_or("").to_string();
+                    let nums: Vec<f32> = f.filter_map(|x| x.parse().ok()).collect();
+                    let frame = match nums.as_slice() {
+                        [x, y, w, h] if *w > 0. && *h > 0. => Some(Bounds { origin: point(px(*x), px(*y)), size: size(px(*w), px(*h)) }),
+                        _ => None,
+                    };
+                    Remembered { url, frame }
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-pub fn remember(sessions: &[String]) {
+pub fn remember(windows: &[Remembered]) {
     let p = state_file();
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let _ = std::fs::write(p, sessions.join("\n") + "\n");
+    let text: String = windows
+        .iter()
+        .map(|r| match r.frame {
+            Some(b) => format!("{}\t{}\t{}\t{}\t{}\n", r.url, f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height)),
+            None => format!("{}\n", r.url),
+        })
+        .collect();
+    let _ = std::fs::write(p, text);
 }
 
-/// Record the sessions of every open window, unless the app is quitting
-/// (then the list as it was is what we want back next time).
-pub fn save_open(cx: &App) {
+/// The sessions the remembered windows were on (each once).
+pub fn remembered_sessions() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for r in remembered() {
+        if !out.contains(&r.url) {
+            out.push(r.url);
+        }
+    }
+    out
+}
+
+/// Record every open window, its session and its frame, unless the app
+/// is quitting (then what was recorded is what we want back next time).
+pub fn save_open(cx: &mut App) {
     if QUITTING.load(Ordering::Relaxed) {
         return;
     }
     let mut open = Vec::new();
     for w in cx.windows() {
-        if let Some(h) = w.downcast::<Acme>() {
-            if let Ok(a) = h.read(cx) {
-                if a.socket.is_some() && a.url.provider != "via" {
-                    let spec = a.url.to_string();
-                    if !open.contains(&spec) {
-                        open.push(spec);
-                    }
-                }
-            }
+        let Some(h) = w.downcast::<Acme>() else { continue };
+        let Ok(a) = h.read(cx) else { continue };
+        if a.socket.is_none() || a.url.provider == "via" {
+            continue;
         }
+        let url = a.url.to_string();
+        let frame = h.update(cx, |_, window, _| window.bounds()).ok();
+        open.push(Remembered { url, frame });
     }
     remember(&open);
 }
 
-/// The sessions to open at launch: the remembered ones (local ones only
-/// if they still exist; remote ones are tried); else the first existing
-/// local one; else a new `default`.
-pub fn plan(socket: &Path) -> std::io::Result<Vec<SessionUrl>> {
+/// The windows to open at launch: the remembered ones, each on its
+/// session and at its frame (local sessions only if they still exist;
+/// remote ones are tried); else one on the first existing local session;
+/// else one on a new `default`.
+pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<Bounds<Pixels>>)>> {
     let existing = list_sessions(socket)?;
-    let again: Vec<SessionUrl> = remembered()
+    let again: Vec<(SessionUrl, Option<Bounds<Pixels>>)> = remembered()
         .iter()
-        .filter_map(|s| SessionUrl::parse(s))
-        .filter(|u| !u.is_local() || existing.contains(&u.session))
+        .filter_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame)))
+        .filter(|(u, _)| !u.is_local() || existing.contains(&u.session))
         .collect();
     if !again.is_empty() {
         return Ok(again);
     }
     if let Some(first) = existing.first() {
-        return Ok(vec![SessionUrl::local(first)]);
+        return Ok(vec![(SessionUrl::local(first), None)]);
     }
     new_session(socket, apex_server::providers::DEFAULT_SESSION, apex_server::remote::local_profile())?;
-    Ok(vec![SessionUrl::local(apex_server::providers::DEFAULT_SESSION)])
+    Ok(vec![(SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None)])
 }
 
 /// Make sure a daemon answers on `socket`: start one with the `apex`
@@ -466,7 +506,12 @@ pub fn note_recent(url: &SessionUrl) {
 pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
     let list: Vec<SessionUrl> = recent().into_iter().map(|u| if u == *old { new.clone() } else { u }).collect();
     write_recent(&list);
-    let last: Vec<String> = remembered().into_iter().map(|s| if s == old.to_string() { new.to_string() } else { s }).collect();
+    let last: Vec<Remembered> = remembered().into_iter().map(|mut r| {
+        if r.url == old.to_string() {
+            r.url = new.to_string();
+        }
+        r
+    }).collect();
     remember(&last);
 }
 

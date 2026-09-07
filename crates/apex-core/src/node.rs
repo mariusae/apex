@@ -523,6 +523,19 @@ impl Node {
     }
 
     /// The name shown in a window's tag: its body buffer's name.
+    /// acme's `wincommit` for a tag: the name typed into it becomes the
+    /// buffer's name (a click in the tag, or a command from it, commits).
+    /// A relative name stays relative here; `Put` makes it absolute.
+    pub fn commit_tag(&mut self, log: &mut Log, window: WindowId) -> Result<()> {
+        let w = self.state.window(window)?;
+        let Some(b) = w.body_buffer() else { return Ok(()) };
+        let typed = self.state.buffer(w.tag)?.text.to_string().split(' ').next().unwrap_or("").to_string();
+        if typed != self.state.buffer(b)?.name {
+            self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Rename { name: typed }))?;
+        }
+        Ok(())
+    }
+
     /// What kind of window this is, for plumbing rules.
     pub fn window_kind(&self, window: WindowId) -> WinKind {
         let Ok(w) = self.state.window(window) else { return WinKind::File };
@@ -946,6 +959,12 @@ impl Node {
             }
             new.push_str(" |");
             let old = self.state.buffer(tag)?.text.to_string();
+            // a name typed into the tag stays until it is committed (acme's
+            // wincommit): only what follows the first word is ours
+            let typed = old.split(' ').next().unwrap_or("").to_string();
+            if typed != name && win.body_buffer().is_some() {
+                new = format!("{typed}{}", &new[name.len()..]);
+            }
             let k = old.chars().position(|c| c == '|').map(|i| i + 1).unwrap_or(old.chars().count());
             let head: String = old.chars().take(k).collect();
             if head != new {

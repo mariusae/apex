@@ -231,13 +231,17 @@ impl Server {
         let buf = view.state.buffer(b).map_err(|e| e.to_string())?;
         let (buf_name, text, version) = (buf.name.clone(), buf.text.to_string(), buf.version);
         let dir = self.dir_of(view, ExecCtx::Window(w));
+        // a name typed into the tag may be relative: it is resolved where
+        // the window is, and the buffer takes the absolute name
         let name = match arg {
             Some(a) => resolve(&dir, a).to_string_lossy().to_string(),
-            None => buf_name,
+            None if !buf_name.is_empty() && !buf_name.starts_with('/') && !buf_name.starts_with('+') => resolve(&dir, &buf_name).to_string_lossy().to_string(),
+            None => buf_name.clone(),
         };
         if name.is_empty() || name.starts_with('+') || name.ends_with('/') {
             return Err("Put: no file name".into());
         }
+        let renamed = name != buf_name;
         if buf.stale && arg.is_none() && self.put_warned.insert(b) {
             return Err(format!("{name}: modified since last read"));
         }
@@ -246,7 +250,7 @@ impl Server {
         let hash = Text::new(&text).content_hash();
         self.watches.written.insert(PathBuf::from(&name), hash.clone());
         let mut out = Vec::new();
-        if arg.is_some() {
+        if renamed {
             out.push(Proposal::Rename { buffer: b, window: w, name });
         }
         out.push(Proposal::Clean { buffer: b, version, hash });

@@ -20,7 +20,7 @@ mod text_element;
 mod warp;
 
 use gpui::{
-    black, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
+    black, div, prelude::*, px, size, App, Bounds, Context, MouseButton, Pixels, TitlebarOptions, Window,
     WindowBounds, WindowOptions,
 };
 
@@ -190,6 +190,8 @@ fn main() {
         cx.set_menus(shell::menus());
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
+            // the windows as they are now come back next time
+            shell::save_open(cx);
             shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
             // every link ends before we do: the bridges go with us, and
             // the daemons see the attachments leave
@@ -222,18 +224,18 @@ fn main() {
                 .and_then(|w| w.downcast::<Acme>())
                 .and_then(|h| h.read(cx).ok().map(|a| a.url.clone()))
                 .unwrap_or_else(|| SessionUrl::local(apex_server::providers::DEFAULT_SESSION));
-            open_window(cx, Target::Url { url, files: Vec::new() });
+            open_window(cx, Target::Url { url, files: Vec::new() }, None);
             shell::save_open(cx);
         });
 
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
-        let targets: Vec<Target> = if local {
-            vec![Target::Local(files.clone())]
+        let targets: Vec<(Target, Option<Bounds<Pixels>>)> = if local {
+            vec![(Target::Local(files.clone()), None)]
         } else if let Some(cmd) = via.clone() {
-            vec![Target::Via { cmd, session: default(), files: files.clone() }]
+            vec![(Target::Via { cmd, session: default(), files: files.clone() }, None)]
         } else if let Some(u) = url.clone() {
             match SessionUrl::parse(&u) {
-                Some(url) => vec![Target::Url { url, files: files.clone() }],
+                Some(url) => vec![(Target::Url { url, files: files.clone() }, None)],
                 None => {
                     eprintln!("apex-ui: bad session URL {u:?}");
                     std::process::exit(2);
@@ -241,23 +243,23 @@ fn main() {
             }
         } else if let Some(dest) = remote.clone() {
             let d = apex_server::providers::Dest::parse(&dest);
-            vec![Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default() }, files: files.clone() }]
+            vec![(Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default() }, files: files.clone() }, None)]
         } else {
             if let Err(e) = shell::ensure_daemon(&socket) {
                 eprintln!("apex-ui: {e}");
                 std::process::exit(1);
             }
             let urls = match &session {
-                Some(s) => vec![SessionUrl::local(s)],
+                Some(s) => vec![(SessionUrl::local(s), None)],
                 None => shell::plan(&socket).unwrap_or_else(|e| {
                     eprintln!("apex-ui: {e}");
                     std::process::exit(1);
                 }),
             };
-            urls.into_iter().map(|url| Target::Url { url, files: files.clone() }).collect()
+            urls.into_iter().map(|(url, frame)| (Target::Url { url, files: files.clone() }, frame)).collect()
         };
-        for t in targets {
-            open_window(cx, t);
+        for (t, frame) in targets {
+            open_window(cx, t, frame);
         }
         shell::save_open(cx);
         cx.activate(true);
@@ -271,11 +273,14 @@ fn main() {
     });
 }
 
-fn open_window(cx: &mut App, target: Target) {
+fn open_window(cx: &mut App, target: Target, frame: Option<Bounds<Pixels>>) {
     let n = cx.windows().len() as f32;
-    let mut bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
-    bounds.origin.x += px(24. * n);
-    bounds.origin.y += px(24. * n);
+    let bounds = frame.unwrap_or_else(|| {
+        let mut b = Bounds::centered(None, size(px(1100.), px(760.)), cx);
+        b.origin.x += px(24. * n);
+        b.origin.y += px(24. * n);
+        b
+    });
     let title = match &target {
         Target::Local(_) => "apex".to_string(),
         Target::Url { url, .. } => Acme::title(url),
@@ -373,6 +378,8 @@ fn open_window(cx: &mut App, target: Target) {
                     acme.window_activated(active, window);
                 })
                 .detach();
+                // where the window is, remembered as it moves
+                cx.observe_window_bounds(window, |_, _, cx| shell::save_open(cx)).detach();
             });
             view
         },
