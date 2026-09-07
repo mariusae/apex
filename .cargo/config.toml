@@ -7,4 +7,4 @@ rustflags = ["-C", "link-self-contained=no"]
 
 [env]
 CC_x86_64-unknown-linux-musl = { value = "mac/zig-cc", relative = true }
-AR_x86_64-unknown-linux-musl = "ar"
+AR_x86_64-unknown-linux-musl = { value = "mac/zig-ar", relative = true }

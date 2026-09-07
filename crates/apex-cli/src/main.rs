@@ -296,10 +296,14 @@ and the exit status is 1 then. What the host answers today:
 	PUT file://PATH    stdin written to the file
 	GET -watch         the file now and again on every change, each
 	                   version's contents to stdout, until interrupted
+	GET http://URL     fetched by the host, on its network (any method;
+	                   stdin is the body when it is not a terminal)
+	CONNECT HOST:PORT  a byte tunnel to there from the host: stdin goes
+	                   in, what comes back goes to stdout (nc)
 
 The plane is HTTP-shaped: a request opens a numbered stream, the answer
-is a status and a body, and a watch is a stream that does not end. The
-same frames will carry http(s):// fetches and CONNECT tunnels." },
+is a status and a body, and a watch or a tunnel is a stream that does
+not end on its own." },
     Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
@@ -1214,10 +1218,55 @@ fn io_cmd(ctx: &Ctx, p: &Parsed) -> R {
     let watch = p.get("watch").is_some();
     let headers: Vec<(&str, &str)> = if watch { vec![("Watch", "1")] } else { Vec::new() };
     let stream = c.io_open(method, url, &headers);
-    if method == "PUT" {
+    if method == "CONNECT" {
+        // nc: stdin in, the far end out, until either side is done
+        let status = c.io_response(stream, TIMEOUT)?;
+        if status != 200 {
+            let (_, body) = c.io_collect_body_pub(stream, TIMEOUT)?;
+            std::io::stderr().write_all(&body).map_err(|e| e.to_string())?;
+            return Err(format!("{status}"));
+        }
+        let out = c.outbound();
+        std::thread::spawn(move || {
+            let mut buf = vec![0u8; 64 * 1024];
+            let mut stdin = std::io::stdin().lock();
+            loop {
+                match stdin.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if out.send(&ClientMsg::Io { stream, frame: apex_server::proto::IoFrame::Body(buf[..n].to_vec()) }).is_err() {
+                            return;
+                        }
+                    }
+                }
+            }
+            let _ = out.send(&ClientMsg::Io { stream, frame: apex_server::proto::IoFrame::End });
+        });
+        loop {
+            for f in c.io_take(stream) {
+                match f {
+                    apex_server::proto::IoFrame::Body(b) => {
+                        std::io::stdout().write_all(&b).map_err(|e| e.to_string())?;
+                        std::io::stdout().flush().map_err(|e| e.to_string())?;
+                    }
+                    apex_server::proto::IoFrame::End => return Ok(()),
+                    apex_server::proto::IoFrame::Reset { reason } => return Err(reason),
+                    _ => {}
+                }
+            }
+            match c.step(Duration::from_millis(100)) {
+                Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(_) => return Err("connection closed".into()),
+            }
+        }
+    }
+    let has_body = method == "PUT" || (!matches!(method.as_str(), "GET" | "HEAD" | "DELETE" | "OPTIONS") && !std::io::stdin().is_terminal());
+    if has_body {
         let mut body = Vec::new();
         std::io::stdin().read_to_end(&mut body).map_err(|e| e.to_string())?;
         c.io_send(stream, &body);
+        c.io_end(stream);
+    } else if url.starts_with("http") {
         c.io_end(stream);
     }
     let status = c.io_response(stream, TIMEOUT)?;

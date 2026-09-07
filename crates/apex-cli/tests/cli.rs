@@ -574,3 +574,111 @@ fn newterm_shell_is_a_setting() {
     assert!(ps.contains("/bin/sh -l"), "{ps}");
     let _ = t;
 }
+
+#[test]
+fn tunnels_and_fetches_go_through_the_host() {
+    use apex_server::proto::IoFrame;
+    use std::io::{Read, Write};
+    let sock = daemon();
+    // an echo service and a one-shot HTTP server, both on this machine
+    let echo = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let echo_port = echo.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for s in echo.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut s = s;
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = s.read(&mut buf) {
+                    if n == 0 || s.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    let http = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let http_port = http.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for s in http.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut s = s;
+                let mut req = Vec::new();
+                let mut buf = [0u8; 1024];
+                // the head, then as much body as Content-Length says
+                loop {
+                    let n = s.read(&mut buf).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    req.extend_from_slice(&buf[..n]);
+                    if let Some(i) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&req[..i]).to_string();
+                        let want: usize = head.lines().find_map(|l| l.strip_prefix("Content-Length: ")).and_then(|v| v.parse().ok()).unwrap_or(0);
+                        if req.len() - (i + 4) >= want {
+                            break;
+                        }
+                    }
+                }
+                let i = req.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or(req.len());
+                let head = String::from_utf8_lossy(&req[..i]).to_string();
+                let body = &req[(i + 4).min(req.len())..];
+                let line = head.lines().next().unwrap_or("").to_string();
+                let answer = format!("{line}|{}", String::from_utf8_lossy(body));
+                let (status, answer) = if line.starts_with("GET /missing") { ("404 Not Found", "gone".to_string()) } else { ("200 OK", answer) };
+                let _ = write!(s, "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nX-Served: yes\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+            });
+        }
+    });
+    let mut c = Remote::connect_as(&sock, "main", "netter", AttachmentKind::Tool).unwrap();
+    // CONNECT: bytes go in, the echo comes back, the far end's close ends it
+    let t = c.io_open("CONNECT", &format!("127.0.0.1:{echo_port}"), &[]);
+    assert_eq!(c.io_response(t, Duration::from_secs(5)).unwrap(), 200);
+    c.io_send(t, b"ping");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut got = Vec::new();
+    while got != b"ping" && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(50));
+        for f in c.io_take(t) {
+            if let IoFrame::Body(b) = f {
+                got.extend_from_slice(&b);
+            }
+        }
+    }
+    assert_eq!(got, b"ping");
+    c.io_end(t);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut ended = false;
+    while !ended && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(50));
+        ended = c.io_take_ended(t);
+    }
+    assert!(ended, "the tunnel did not end after both sides closed");
+    // a tunnel nobody listens on is refused with a 502
+    let t = c.io_open("CONNECT", "127.0.0.1:1", &[]);
+    let (status, body) = c.io_collect(t, Duration::from_secs(10)).unwrap();
+    assert_eq!(status, 502, "{}", String::from_utf8_lossy(&body));
+    // GET http://: fetched by the host, headers and body streamed back
+    let g = c.io_open("GET", &format!("http://127.0.0.1:{http_port}/hello?x=1"), &[]);
+    let (status, body) = c.io_collect(g, Duration::from_secs(5)).unwrap();
+    assert_eq!(status, 200);
+    assert_eq!(String::from_utf8_lossy(&body), "GET /hello?x=1 HTTP/1.1|");
+    // a body goes with a POST once the client ends its side; statuses pass through
+    let p = c.io_open("POST", &format!("http://127.0.0.1:{http_port}/in"), &[("Content-Type", "text/plain")]);
+    c.io_send(p, b"payload");
+    c.io_end(p);
+    let (status, body) = c.io_collect(p, Duration::from_secs(5)).unwrap();
+    assert_eq!(status, 200);
+    assert_eq!(String::from_utf8_lossy(&body), "POST /in HTTP/1.1|payload");
+    let m = c.io_open("GET", &format!("http://127.0.0.1:{http_port}/missing"), &[]);
+    let (status, body) = c.io_collect(m, Duration::from_secs(5)).unwrap();
+    assert_eq!((status, String::from_utf8_lossy(&body).to_string()), (404, "gone".to_string()));
+    // and from the command line
+    let out = ok(&sock, &["io", "GET", &format!("http://127.0.0.1:{http_port}/cli")]);
+    assert_eq!(out, "GET /cli HTTP/1.1|");
+    let mut nc = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "io", "CONNECT", &format!("127.0.0.1:{echo_port}")]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    nc.stdin.take().unwrap().write_all(b"over the wire\n").unwrap();
+    std::thread::sleep(Duration::from_millis(800));
+    nc.kill().unwrap();
+    let out = nc.wait_with_output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "over the wire\n");
+}

@@ -101,6 +101,19 @@ enum Event {
     Server(u64, ServerEvent),
     /// A tool asked to plumb has not answered in time.
     PlumbTimeout(u64),
+    /// From a stream's thread on the I/O plane (a tunnel, a fetch).
+    Io(u64, u32, IoUp),
+}
+
+/// What a stream's thread reports to the daemon.
+enum IoUp {
+    /// A tunnel's connection is up: the daemon's handle for writing.
+    Connected(std::net::TcpStream),
+    /// A fetch's response head.
+    Head { status: u16, headers: Vec<(String, String)> },
+    Data(Vec<u8>),
+    End,
+    Fail(String),
 }
 
 struct Conn {
@@ -124,6 +137,12 @@ enum IoStream {
     Watch { path: PathBuf, version: u64 },
     /// `PUT file://`: the body so far, written when the stream ends.
     Put { path: PathBuf, body: Vec<u8> },
+    /// `CONNECT host:port`: a byte tunnel; the socket once connected,
+    /// what the client sent before that, whether the 200 went out.
+    Tunnel { sock: Option<std::net::TcpStream>, pending: Vec<u8>, headed: bool },
+    /// `http(s)://`: the request, its body gathered until `End`, then
+    /// fetched on a thread; `headed` once the response head went out.
+    Fetch { method: String, url: String, headers: Vec<(String, String)>, body: Vec<u8>, started: bool, headed: bool },
 }
 
 struct Session {
@@ -211,6 +230,7 @@ impl Daemon {
                 }
                 Event::Msg(id, m) => d.handle(id, m),
                 Event::Gone(id) => d.gone(id),
+                Event::Io(id, stream, up) => d.io_up(id, stream, up),
                 Event::Server(sid, ev) => {
                     if let Some(name) = d.name_of(sid) {
                         let s = d.sessions.get_mut(&name).unwrap();
@@ -640,13 +660,36 @@ impl Daemon {
     fn io(&mut self, id: u64, name: &str, stream: u32, frame: IoFrame) {
         match frame {
             IoFrame::Request { method, url, headers } => self.io_request(id, name, stream, &method, &url, &headers),
-            IoFrame::Body(bytes) => {
-                if let Some(IoStream::Put { body, .. }) = self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) {
-                    body.extend_from_slice(&bytes);
+            IoFrame::Body(bytes) => match self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) {
+                Some(IoStream::Put { body, .. }) | Some(IoStream::Fetch { body, .. }) => body.extend_from_slice(&bytes),
+                Some(IoStream::Tunnel { sock: Some(sock), .. }) => {
+                    use std::io::Write;
+                    let _ = sock.write_all(&bytes);
                 }
-            }
+                Some(IoStream::Tunnel { sock: None, pending, .. }) => pending.extend_from_slice(&bytes),
+                _ => {}
+            },
             IoFrame::End => {
-                let Some(st) = self.conns.get_mut(&id).and_then(|c| c.streams.remove(&stream)) else { return };
+                let Some(c) = self.conns.get_mut(&id) else { return };
+                // a tunnel stays until the far end closes too; a fetch with
+                // a body starts now
+                match c.streams.get_mut(&stream) {
+                    Some(IoStream::Tunnel { sock, .. }) => {
+                        if let Some(s) = sock {
+                            let _ = s.shutdown(std::net::Shutdown::Write);
+                        }
+                        return;
+                    }
+                    Some(IoStream::Fetch { started, .. }) => {
+                        if !*started {
+                            *started = true;
+                            self.io_fetch(id, stream);
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+                let Some(st) = c.streams.remove(&stream) else { return };
                 match st {
                     IoStream::Put { path, body } => {
                         let (status, text) = match std::fs::write(&path, &body) {
@@ -656,20 +699,33 @@ impl Daemon {
                         self.io_finish(id, stream, status, text.into_bytes());
                     }
                     IoStream::Watch { path, .. } => self.unwatch_unused(name, &path),
+                    IoStream::Tunnel { .. } | IoStream::Fetch { .. } => {}
                 }
             }
             IoFrame::Reset { .. } => {
-                if let Some(IoStream::Watch { path, .. }) = self.conns.get_mut(&id).and_then(|c| c.streams.remove(&stream)) {
-                    self.unwatch_unused(name, &path);
-                }
+                let Some(st) = self.conns.get_mut(&id).and_then(|c| c.streams.remove(&stream)) else { return };
+                self.io_drop(name, st);
             }
             IoFrame::Response { .. } => {} // not a client's to send
         }
     }
 
-    /// A request opens a stream: what the server answers today is
-    /// `file://` (GET, GET with `Watch`, PUT).
+    /// A request opens a stream: `file://` (GET, GET with `Watch`, PUT),
+    /// `CONNECT host:port` (a tunnel), `http(s)://` (fetched by the host).
     fn io_request(&mut self, id: u64, name: &str, stream: u32, method: &str, url: &str, headers: &[(String, String)]) {
+        if method == "CONNECT" {
+            return self.io_connect(id, stream, url);
+        }
+        if url.starts_with("http://") || url.starts_with("https://") {
+            let bodyless = matches!(method, "GET" | "HEAD" | "DELETE" | "OPTIONS");
+            if let Some(c) = self.conns.get_mut(&id) {
+                c.streams.insert(stream, IoStream::Fetch { method: method.to_string(), url: url.to_string(), headers: headers.to_vec(), body: Vec::new(), started: bodyless, headed: false });
+            }
+            if bodyless {
+                self.io_fetch(id, stream);
+            }
+            return;
+        }
         let Some(path) = file_url_path(url) else {
             return self.io_finish(id, stream, 501, format!("{method} {url}: not something this server does").into_bytes());
         };
@@ -706,6 +762,157 @@ impl Daemon {
                 }
             }
             _ => self.io_finish(id, stream, 405, format!("{method} {url}: GET (with Watch) or PUT").into_bytes()),
+        }
+    }
+
+    /// `CONNECT host:port`: a thread connects and reads; the daemon
+    /// writes what the client sends through the socket it is handed.
+    fn io_connect(&mut self, id: u64, stream: u32, target: &str) {
+        let target = target.trim_start_matches("tcp://").to_string();
+        if let Some(c) = self.conns.get_mut(&id) {
+            c.streams.insert(stream, IoStream::Tunnel { sock: None, pending: Vec::new(), headed: false });
+        }
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            use std::io::Read;
+            use std::net::ToSocketAddrs;
+            let connect = || -> Result<std::net::TcpStream, String> {
+                let addrs: Vec<_> = target.to_socket_addrs().map_err(|e| format!("{target}: {e}"))?.collect();
+                let mut last = format!("{target}: no address");
+                for a in addrs {
+                    match std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_secs(15)) {
+                        Ok(s) => return Ok(s),
+                        Err(e) => last = format!("{target}: {e}"),
+                    }
+                }
+                Err(last)
+            };
+            let mut sock = match connect() {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = tx.send(Event::Io(id, stream, IoUp::Fail(e)));
+                    return;
+                }
+            };
+            let Ok(ours) = sock.try_clone() else {
+                let _ = tx.send(Event::Io(id, stream, IoUp::Fail(format!("{target}: cannot share the socket"))));
+                return;
+            };
+            if tx.send(Event::Io(id, stream, IoUp::Connected(ours))).is_err() {
+                return;
+            }
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                match sock.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if tx.send(Event::Io(id, stream, IoUp::Data(buf[..n].to_vec()))).is_err() {
+                            return;
+                        }
+                    }
+                }
+            }
+            let _ = tx.send(Event::Io(id, stream, IoUp::End));
+        });
+    }
+
+    /// An `http(s)://` request, complete: a thread fetches it with the
+    /// host's network and streams the response back.
+    fn io_fetch(&mut self, id: u64, stream: u32) {
+        let Some(IoStream::Fetch { method, url, headers, body, .. }) = self.conns.get(&id).and_then(|c| c.streams.get(&stream)) else { return };
+        let (method, url, headers, body) = (method.clone(), url.clone(), headers.clone(), body.clone());
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let r = (|| -> Result<(), String> {
+                use std::io::Read;
+                let agent: ureq::Agent = ureq::Agent::config_builder().http_status_as_error(false).build().into();
+                let mut b = ureq::http::Request::builder().method(method.as_str()).uri(&url);
+                for (k, v) in &headers {
+                    if !k.eq_ignore_ascii_case("host") && !k.eq_ignore_ascii_case("content-length") {
+                        b = b.header(k.as_str(), v.as_str());
+                    }
+                }
+                let req = b.body(body).map_err(|e| format!("{url}: {e}"))?;
+                let mut resp = agent.run(req).map_err(|e| format!("{url}: {e}"))?;
+                let status = resp.status().as_u16();
+                let hs: Vec<(String, String)> = resp.headers().iter().map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string())).collect();
+                if tx.send(Event::Io(id, stream, IoUp::Head { status, headers: hs })).is_err() {
+                    return Ok(());
+                }
+                let mut r = resp.body_mut().as_reader();
+                let mut buf = vec![0u8; 64 * 1024];
+                loop {
+                    match r.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if tx.send(Event::Io(id, stream, IoUp::Data(buf[..n].to_vec()))).is_err() {
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => return Err(format!("{url}: {e}")),
+                    }
+                }
+                Ok(())
+            })();
+            let _ = tx.send(Event::Io(id, stream, match r {
+                Ok(()) => IoUp::End,
+                Err(e) => IoUp::Fail(e),
+            }));
+        });
+    }
+
+    /// What a stream's thread reports, forwarded on the plane while the
+    /// stream is still open.
+    fn io_up(&mut self, id: u64, stream: u32, up: IoUp) {
+        let Some(st) = self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) else { return };
+        match up {
+            IoUp::Connected(mut s) => {
+                if let IoStream::Tunnel { sock, pending, headed } = st {
+                    use std::io::Write;
+                    let _ = s.write_all(pending);
+                    pending.clear();
+                    *sock = Some(s);
+                    if !*headed {
+                        *headed = true;
+                        self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status: 200, headers: Vec::new() } });
+                    }
+                }
+            }
+            IoUp::Head { status, headers } => {
+                if let IoStream::Fetch { headed, .. } = st {
+                    *headed = true;
+                }
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::Response { status, headers } });
+            }
+            IoUp::Data(bytes) => self.send(id, ServerMsg::Io { stream, frame: IoFrame::Body(bytes) }),
+            IoUp::End => {
+                self.send(id, ServerMsg::Io { stream, frame: IoFrame::End });
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.remove(&stream);
+                }
+            }
+            IoUp::Fail(reason) => {
+                let headed = matches!(st, IoStream::Tunnel { headed: true, .. } | IoStream::Fetch { headed: true, .. });
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.remove(&stream);
+                }
+                if headed {
+                    self.send(id, ServerMsg::Io { stream, frame: IoFrame::Reset { reason } });
+                } else {
+                    self.io_finish(id, stream, 502, reason.into_bytes());
+                }
+            }
+        }
+    }
+
+    /// A stream is over from our side: what it held goes.
+    fn io_drop(&mut self, name: &str, st: IoStream) {
+        match st {
+            IoStream::Watch { path, .. } => self.unwatch_unused(name, &path),
+            IoStream::Tunnel { sock: Some(s), .. } => {
+                let _ = s.shutdown(std::net::Shutdown::Both);
+            }
+            _ => {}
         }
     }
 
@@ -760,9 +967,7 @@ impl Daemon {
     fn drop_streams(&mut self, id: u64, name: &str) {
         let streams: Vec<IoStream> = self.conns.get_mut(&id).map(|c| std::mem::take(&mut c.streams).into_values().collect()).unwrap_or_default();
         for st in streams {
-            if let IoStream::Watch { path, .. } = st {
-                self.unwatch_unused(name, &path);
-            }
+            self.io_drop(name, st);
         }
     }
 

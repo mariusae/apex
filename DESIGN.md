@@ -679,7 +679,9 @@ ends the stream or its connection goes; `PUT file://path` writes. A
 stream belongs to its connection, so fencing changes nothing. A remote
 preview is a watch stream feeding a local copy under a path mirroring
 the host's, ended with the previewer's process, the file's window, or
-the lead. `apex io` is the plane from a shell; `apex cat` is `GET`.
+the lead. `CONNECT host:port` tunnels bytes to the host's network and
+`http(s)://` is fetched by the host (stage 2, built). `apex io` is the
+plane from a shell; `apex cat` is `GET`.
 
 ## 8. Extensibility
 

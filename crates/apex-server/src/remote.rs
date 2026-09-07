@@ -204,6 +204,11 @@ impl Link {
         let _ = self.out.send(m);
     }
 
+    /// The outbound side, for a thread of the owner's that sends too.
+    pub fn outbound(&self) -> Outbound {
+        self.out.clone()
+    }
+
     /// Open a stream on the I/O plane with a request; its id, for the
     /// frames that come back in `io`.
     pub fn io_open(&mut self, method: &str, url: &str, headers: &[(&str, &str)]) -> u32 {
@@ -717,6 +722,11 @@ impl Remote {
     /// End a watch stream.
     pub fn unwatch(&self, stream: u32) {
         self.io_end(stream);
+    }
+
+    /// The outbound side, for a thread that sends too.
+    pub fn outbound(&self) -> Outbound {
+        self.link.outbound()
     }
 
     /// The body of a stream whose response head was already taken.

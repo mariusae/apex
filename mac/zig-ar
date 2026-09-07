@@ -1,0 +1,5 @@
+#!/bin/sh
+# Archiver for cross-compiling to x86_64-linux-musl, via Zig: macOS's ar
+# writes a BSD "random library" whose symbol table lld cannot use, so a
+# C library built for the target (ring's) looks empty to the link.
+exec "$HOME/.local/zig-aarch64-macos-0.16.0/zig" ar "$@"

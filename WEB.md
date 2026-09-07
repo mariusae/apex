@@ -39,7 +39,13 @@ bodies, version 1 first), `PUT file://`; `ReadFile`/`Watch`/`Unwatch`/
 `File` and the per-connection watch sets are gone; `apex io` drives it
 from a shell; `Remote::{io_open, io_send, io_end, io_response,
 io_collect, io_next_file, read_file, watch, unwatch}` for programs.
-Not yet: `http(s)://`, `CONNECT` (stage 2).
+*Stage 2:* `CONNECT host:port` (a thread per tunnel connects and reads;
+the daemon writes; the client's `End` half-closes, the far end's close
+ends the stream; a refused connection is a 502) and `http(s)://` (any
+method, the body gathered until `End`, fetched with `ureq` on a thread,
+status, headers and body streamed back; statuses pass through, a
+failure before the head is a 502, after it a `Reset`). `apex io
+CONNECT HOST:PORT` is nc over the plane.
 
 ### 1.1 Why a second plane
 
