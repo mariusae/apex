@@ -74,6 +74,8 @@ pub struct Link {
     pub files: Vec<(String, Result<Vec<u8>, String>)>,
     /// The running commands, after a `Ps` or `Kill`.
     pub ps: Option<Vec<crate::Running>>,
+    /// Terminal text read with `TermRead`.
+    pub term_lines: Vec<(TermId, String)>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
     next_id: u64,
@@ -193,7 +195,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), files: Vec::new(), ps: None, last_pong: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), files: Vec::new(), ps: None, term_lines: Vec::new(), last_pong: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -290,6 +292,7 @@ impl Link {
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::File { path, bytes } => self.files.push((path, bytes)),
             ServerMsg::Ps { procs } => self.ps = Some(procs),
+            ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
             }

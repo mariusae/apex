@@ -877,6 +877,11 @@ this one (detach, attach).
   (`0x990099`: unlike the dirty blue, the fenced red, the unsynced green
   and the scrollbar's dark yellow beside it), `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`.
+  The app offers `Snarfout` in terminals and win windows: the last
+  command's output, the lines between the last two prompts
+  (`transcript::last_output`: the last line is the prompt, earlier
+  prompts begin like it and carry its marker), read from the host for a
+  terminal (`TermRead`), into the snarf buffer and clipboard.
 - *As built:* the app remembers every window with its session URL and
   its frame (`last-sessions`, one line each), saved on every move or
   resize and on Quit, and opens them all again at launch, each on its

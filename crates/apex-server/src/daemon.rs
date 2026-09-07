@@ -492,6 +492,11 @@ impl Daemon {
                     props.push(p);
                 }
             }
+            ClientMsg::TermRead { term, from, to } => {
+                let text = s.server.term(term).map(|h| h.text((0, from), (h.cols, to))).unwrap_or_default();
+                self.send(id, ServerMsg::TermLines { term, text });
+                return;
+            }
             ClientMsg::TermResize { term, cols, rows } => s.server.term_resize(&mut s.log, term, cols, rows),
             ClientMsg::TermScroll { term, delta } => s.server.term_scroll(&mut s.log, term, delta as isize),
             ClientMsg::Env { set } => {

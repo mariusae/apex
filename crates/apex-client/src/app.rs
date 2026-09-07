@@ -193,6 +193,8 @@ pub struct Acme {
     pub menu: Option<menu::Menu>,
     /// What the menu ran last: it opens on that item.
     menu_last: Option<String>,
+    /// Snarfouts waiting for a terminal's text: (ask id, terminal).
+    snarfouts: Vec<(u64, TermId)>,
     /// Previews of remote files waiting for their first bytes: (ask id,
     /// path, app).
     previews: Vec<(u64, String, Option<String>)>,
@@ -310,6 +312,53 @@ impl Acme {
             to: None,
         };
         link.send(&ClientMsg::RuleAdd { rule: urls, priority: -10, mine: true });
+        // Snarfout in terminals and win windows: the last command's output
+        for (kind, file) in [(WinKind::Term, None), (WinKind::File, Some(r"/-[^/]+$".to_string()))] {
+            let rule = PlumbRule {
+                verb: "Snarfout".into(),
+                text: None,
+                file,
+                kind: Some(kind),
+                isfile: None,
+                isdir: None,
+                action: RuleAction::Client { verb: "snarfout".into(), args: "$win".into() },
+                to: None,
+            };
+            link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
+        }
+    }
+
+    /// `Snarfout`: the last command's output in a terminal (its text read
+    /// from the host, scrollback and all) or a win window (its buffer),
+    /// found by the transcript heuristic, into the snarf buffer and the
+    /// clipboard.
+    fn snarfout(&mut self, id: u64, w: WindowId) {
+        match self.node.state.window(w).map(|x| x.body) {
+            Ok(Body::Term(t)) => {
+                let Some(term) = self.node.state.terms.get(&t) else {
+                    self.send(ClientMsg::Applied { id, result: Err("no such terminal".into()) });
+                    return;
+                };
+                let to = term.top + term.rows as u64;
+                self.snarfouts.push((id, t));
+                self.send(ClientMsg::TermRead { term: t, from: 0, to });
+            }
+            Ok(_) => {
+                let text = self.view_text(ViewId::Body(w));
+                let result = self.snarf_output(&text);
+                self.send(ClientMsg::Applied { id, result });
+            }
+            Err(e) => self.send(ClientMsg::Applied { id, result: Err(e.to_string()) }),
+        }
+    }
+
+    fn snarf_output(&mut self, transcript: &str) -> Result<Option<WindowId>, String> {
+        let Some(out) = apex_core::transcript::last_output(transcript) else { return Err("Snarfout: no earlier prompt to tell the output by".into()) };
+        // into the snarf buffer, and the clipboard once it lands
+        self.snarf_wanted = Some(self.node.state.layout.snarf.clone());
+        let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: out }));
+        self.sync();
+        Ok(None)
     }
 
     /// Preview is offered where a setting names an app for the file's
@@ -384,9 +433,25 @@ impl Acme {
                         self.send(ClientMsg::Watch { path: args });
                     }
                 }
+                "snarfout" => match args.trim().parse::<u64>() {
+                    Ok(n) => self.snarfout(id, WindowId(n)),
+                    Err(_) => self.send(ClientMsg::Applied { id, result: Err(format!("snarfout: {args}: not a window")) }),
+                },
                 other => {
                     self.send(ClientMsg::Applied { id, result: Err(format!("apex-ui cannot {other}")) });
                 }
+            }
+        }
+        // terminals' text read for Snarfout
+        let lines: Vec<(TermId, String)> = match &mut self.backend {
+            Backend::Remote(link) => std::mem::take(&mut link.term_lines),
+            _ => Vec::new(),
+        };
+        for (t, text) in lines {
+            if let Some(i) = self.snarfouts.iter().position(|(_, st)| *st == t) {
+                let (id, _) = self.snarfouts.remove(i);
+                let result = self.snarf_output(&text);
+                self.send(ClientMsg::Applied { id, result });
             }
         }
         for (path, bytes) in files {
@@ -679,6 +744,7 @@ impl Acme {
             chooser: false,
             menu: None,
             menu_last: None,
+            snarfouts: Vec::new(),
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
             preview_wanted: std::collections::BTreeSet::new(),

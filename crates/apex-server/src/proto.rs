@@ -34,6 +34,10 @@ pub enum ClientMsg {
     /// Snarf the text between two `(column, history line)` positions of a
     /// terminal (the end exclusive); the answer is a `Snarf` proposal.
     TermText { term: TermId, p0: (u16, u64), p1: (u16, u64) },
+    /// The text of history lines `[from, to)` of a terminal, scrollback
+    /// included, answered by `TermLines` (what a client reads to find the
+    /// last command's output).
+    TermRead { term: TermId, from: u64, to: u64 },
     /// Open a file (relative to the window's directory) in a column.
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
     /// B3, or `apex plumb`: the rule table decides. `dir` stands in for
@@ -124,6 +128,7 @@ pub enum ServerMsg {
     RuleAdded { id: RuleId },
     File { path: String, bytes: Result<Vec<u8>, String> },
     Ps { procs: Vec<crate::Running> },
+    TermLines { term: TermId, text: String },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

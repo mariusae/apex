@@ -16,6 +16,7 @@ pub mod plumb;
 pub mod state;
 pub mod text;
 pub mod tiling;
+pub mod transcript;
 
 pub use entry::*;
 pub use ids::*;
