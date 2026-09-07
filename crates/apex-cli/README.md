@@ -24,6 +24,7 @@ apex awd [LABEL]
 apex env [KEY=VALUE ...]
 apex set [KEY VALUE]
 apex cat PATH
+apex lsp
 ```
 
 `WIN` is a window id or a unique substring of a window's name. `APEX_SOCKET`
@@ -137,3 +138,22 @@ plan 9's: each argument goes to the rules that open in the session, else
 is opened as a path, from the current directory. The session starts with
 three rules at priority -100 that open `name` and `name:line` when they
 exist, as B3 always did.
+
+## Language servers
+
+`apex lsp` is a tool like any other, started from the host's profile
+(`apex lsp &`) or a terminal; it attaches as `lsp`, and nothing in the
+daemon knows it. It runs one language server per workspace root for the
+files open in the session (`lsp.LANG` names the command: `apex set
+lsp.go gopls`; gopls, rust-analyzer, pyright, typescript-language-server
+and clangd are the defaults), opens and closes documents as buffers come
+and go, and feeds every edit incrementally, read off the entry stream.
+Diagnostics go to `root/+lsp`, one plumbable `file:line:col: message`
+per line, replaced as they change. Its rules, gone when it is: B3 on an
+identifier in a source file goes to the definition (no definition, and
+the walk goes on to the path rules and Look), and the tools menu of a
+source window offers `Def Refs Type Hov Sig Fmt Rn`: definition and type
+definition open and select, references, hover and signatures go to
+`+Errors`, `Fmt` replaces the text with the server's formatting, `Rn
+name` renames through the session for open buffers and on disk for the
+rest. `APEX_LSP_DEBUG=1` traces the JSON-RPC.

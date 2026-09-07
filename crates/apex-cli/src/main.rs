@@ -25,6 +25,7 @@
 //! apex env [KEY=VALUE ...]                              set the session's environment (none: show it)
 //! apex set [KEY VALUE]                                  a setting, the session's or (from an attach script) the client's
 //! apex cat PATH                                         the bytes of a file on the host
+//! apex lsp                                             language servers, as a tool (run it from the profile)
 //! apex label TEXT                                       name this terminal's window (plan9port's label)
 //! apex awd [LABEL]                                      name it pwd/-LABEL (plan9port's awd)
 //! ```
@@ -96,6 +97,7 @@ fn main() {
         "set" => set(&socket, &session, rest),
         "cat" => cat(&socket, &session, rest),
         "stop" => apex_server::remote::stop(&socket).map_err(|e| format!("{}: {e}", socket.display())),
+        "lsp" => apex_lsp::run(&socket, &session),
         "version" => {
             println!("apex build {}", apex_server::BUILD_ID);
             Ok(())
@@ -110,7 +112,7 @@ fn main() {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|B|label|awd|env|set|cat|stop|version ...");
+    eprintln!("usage: apex [--socket P] [--session S] server|ls|new-session|attach|new|win|text|edit|sel|exec|events|term|plumb|B|label|awd|env|set|cat|lsp|stop|version ...");
     std::process::exit(2);
 }
 

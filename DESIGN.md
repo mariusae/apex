@@ -670,6 +670,18 @@ holds no platform knowledge. `apex B` is plan 9's `B`, and rc's rcmain
 defines `B` in apex terminals. The one-line rule form was chosen over
 plan 9's rules file: each rule prints as the flags that made it.
 
+*As built (`apex lsp`, crate `apex-lsp`):* unprivileged, as intended: a
+tool attachment named `lsp` that keeps a replica, reads `Entries` before
+applying them to turn `BufferOp::Edit` into incremental `didChange`
+(positions computed against the text as it still is), proposes
+`Select`/`ReplaceRange`/`Errors`/`NewWindow`+`SetContent` for what
+servers answer, and installs rules owned by its attachment: B3 on an
+identifier at priority 10, the verbs `Def Refs Type Hov Sig Fmt Rn` in
+the tools menu. Servers from settings (`lsp.LANG`), one per workspace
+root found by markers; diagnostics in `root/+lsp`. Not yet: completion,
+format on Put (needs rules ahead of builtins), semantic predicates for
+rules ("in a comment").
+
 Typed client libraries (Rust, Go) are generated from the schema for programs
 that want more than the CLI.
 

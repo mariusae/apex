@@ -1,0 +1,10 @@
+[package]
+name = "apex-lsp"
+version.workspace = true
+edition.workspace = true
+description = "apex lsp: language servers as an apex tool, through the public API only"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }
+serde_json = "1"

@@ -602,6 +602,9 @@ impl Daemon {
             Some(leader) => self.send(leader, ServerMsg::Propose { id: pid, proposal: p }),
             None => {
                 let result = proposal::apply(&mut s.view, &mut s.log, p).map_err(|e| e.to_string());
+                // what it did reaches everyone before the answer does, so a
+                // tool's replica has the window its proposal made
+                self.after(name, Vec::new());
                 self.answered(pid, result);
             }
         }

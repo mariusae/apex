@@ -200,6 +200,7 @@ version = "0.1.0"
 dependencies = [
  "apex-core",
  "apex-edit",
+ "apex-lsp",
  "apex-server",
  "serde_json",
 ]
@@ -240,6 +241,15 @@ dependencies = [
  "criterion",
  "proptest",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "apex-lsp"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "serde_json",
 ]
 
 [[package]]
