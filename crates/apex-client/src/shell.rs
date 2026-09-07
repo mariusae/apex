@@ -205,7 +205,7 @@ pub fn save_open(cx: &mut App) {
             }
             continue;
         };
-        if a.socket.is_none() || a.url.provider == "via" {
+        if a.socket.is_none() || a.url.provider == "via" || a.chooser {
             if debug {
                 eprintln!("apex-ui: save_open: skipping {} (socket {:?})", a.url, a.socket);
             }
@@ -570,6 +570,10 @@ impl Acme {
 
     pub fn close_selector(&mut self, cx: &mut Context<Self>) {
         self.selector = None;
+        if self.chooser {
+            // a new window that never got a session: nothing to show
+            self.close_requested = true;
+        }
         cx.notify();
     }
 
@@ -632,6 +636,17 @@ impl Acme {
             }
             Row::Open(url) | Row::Create(url) => {
                 self.selector = None;
+                if self.chooser {
+                    // a new window: this session, whatever else shows it
+                    if let Err(e) = self.reattach(&url, window) {
+                        eprintln!("apex-ui: attach {url}: {e}");
+                        let msg = Acme::connect_error(&url, &e);
+                        self.notice(&msg);
+                    }
+                    cx.defer(|cx| save_open(cx));
+                    cx.notify();
+                    return;
+                }
                 if url == self.url {
                     cx.notify();
                     return;

@@ -186,6 +186,9 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
+    /// A new window with the picker open and nothing attached yet: it
+    /// closes if the picker is dismissed, and is not remembered.
+    pub chooser: bool,
     /// The tools menu while B4 is held.
     pub menu: Option<menu::Menu>,
     /// What the menu ran last: it opens on that item.
@@ -510,6 +513,7 @@ impl Acme {
         self.url = url.clone();
         // a window that started offline is one to remember now
         self.socket = Some(apex_server::daemon::default_socket());
+        self.chooser = false;
         self.layouts.clear();
         self.term_layouts.clear();
         self.hl = None;
@@ -672,6 +676,7 @@ impl Acme {
             snarf_wanted: None,
             term_hl: None,
             fullscreen: false,
+            chooser: false,
             menu: None,
             menu_last: None,
             previews: Vec::new(),

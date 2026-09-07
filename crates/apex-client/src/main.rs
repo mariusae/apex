@@ -149,6 +149,10 @@ enum Target {
     Url { url: SessionUrl, files: Vec<String> },
     /// Through an arbitrary command's stdin/stdout.
     Via { cmd: String, session: String, files: Vec<String> },
+    /// A window with the session picker open, attached to nothing yet:
+    /// what a new window is until a session is chosen (`url` is the one
+    /// the picker calls current, the active window's).
+    Chooser { url: SessionUrl },
 }
 
 fn main() {
@@ -225,13 +229,19 @@ fn main() {
             }
         });
         cx.on_action(move |_: &shell::NewWindow, cx| {
-            // another window on the active window's session
-            let url = cx
-                .active_window()
-                .and_then(|w| w.downcast::<Acme>())
-                .and_then(|h| h.read(cx).ok().map(|a| a.url.clone()))
-                .unwrap_or_else(|| SessionUrl::local(apex_server::providers::DEFAULT_SESSION));
-            open_window(cx, Target::Url { url, files: Vec::new() }, None);
+            // the first window goes to the local default; another one asks
+            // which session, in the picker, before attaching anywhere
+            let active = cx.active_window().and_then(|w| w.downcast::<Acme>()).and_then(|h| h.read(cx).ok().map(|a| a.url.clone()));
+            match active {
+                None => {
+                    open_window(cx, Target::Url { url: SessionUrl::local(apex_server::providers::DEFAULT_SESSION), files: Vec::new() }, None);
+                }
+                Some(url) => {
+                    if let Some(h) = open_window(cx, Target::Chooser { url }, None) {
+                        let _ = h.update(cx, |acme, _, cx| acme.open_selector(cx));
+                    }
+                }
+            }
             cx.defer(|cx| shell::save_open(cx));
         });
 
@@ -288,7 +298,7 @@ fn main() {
     });
 }
 
-fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
+fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Option<gpui::WindowHandle<Acme>> {
     let n = cx.windows().len() as f32;
     let bounds = frame.unwrap_or_else(|| {
         let mut b = Bounds::centered(None, size(px(1100.), px(760.)), cx);
@@ -300,6 +310,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
         Target::Local(_) => "apex".to_string(),
         Target::Url { url, .. } => Acme::title(url),
         Target::Via { cmd, session, .. } => format!("{session} via {} — apex", cmd.split_whitespace().nth(1).unwrap_or(cmd)),
+        Target::Chooser { .. } => "choose a session — apex".to_string(),
     };
     let opened = cx.open_window(
         WindowOptions {
@@ -330,7 +341,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
                     .detach();
                     acme
                 }
-                Target::Url { .. } | Target::Via { .. } => {
+                Target::Url { .. } | Target::Via { .. } | Target::Chooser { .. } => {
                     // the reader thread pokes this channel; the task polls
                     // the link on the UI thread
                     let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
@@ -363,6 +374,11 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
                             }
                             Err(e) => offline(cx, &url, files, wake.clone(), &e),
                         },
+                        Target::Chooser { url } => {
+                            let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
+                            a.chooser = true;
+                            a
+                        }
                         Target::Local(_) => unreachable!(),
                     };
                     cx.spawn(async move |this, cx| {
@@ -400,8 +416,12 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
             view
         },
     );
-    if let Err(e) = opened {
-        eprintln!("apex-ui: open window: {e}");
+    match opened {
+        Ok(h) => Some(h),
+        Err(e) => {
+            eprintln!("apex-ui: open window: {e}");
+            None
+        }
     }
 }
 
@@ -410,6 +430,15 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) {
 /// error, pointed at `url` so Reconnect (⌘R) tries again.
 fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, wake: apex_server::remote::Wake, e: &std::io::Error) -> Acme {
     eprintln!("apex-ui: attach {url}: {e}");
+    let mut acme = offline_window(cx, url, files, wake);
+    let msg = Acme::connect_error(url, e);
+    acme.notice(&msg);
+    acme
+}
+
+/// An in-process window pointed at `url` but attached to nothing, that a
+/// Reconnect or the picker attaches later.
+fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, wake: apex_server::remote::Wake) -> Acme {
     let (mut acme, mut rx) = Acme::new(cx, files);
     cx.spawn(async move |this, cx| {
         use futures::StreamExt;
@@ -430,8 +459,6 @@ fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, w
     acme.connected = false;
     // remembered like any window, on the session it is meant for
     acme.socket = Some(apex_server::daemon::default_socket());
-    let msg = Acme::connect_error(url, e);
-    acme.notice(&msg);
     acme
 }
 
