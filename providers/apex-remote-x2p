@@ -1,0 +1,33 @@
+#!/bin/sh
+# Apex provider backed by x2exec.
+#
+# apex calls a provider as:
+#
+#     apex-remote-<provider> DESTINATION COMMAND
+#
+# where COMMAND is one shell command line. x2exec takes an argv vector, so this
+# runs the command through a remote login bash to pick up /etc/profile.d setup.
+
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: apex-remote-x2p HOST COMMAND" >&2
+    exit 64
+fi
+
+dest=$1
+remote_cmd=$2
+
+x2exec=${APEX_X2EXEC:-}
+if [ -z "$x2exec" ]; then
+    if command -v x2exec >/dev/null 2>&1; then
+        x2exec=$(command -v x2exec)
+    elif [ -x "$HOME/go/bin/x2exec" ]; then
+        x2exec=$HOME/go/bin/x2exec
+    else
+        echo "apex-remote-x2p: x2exec not found" >&2
+        exit 127
+    fi
+fi
+
+exec "$x2exec" "$dest" -- /bin/bash -l -c "$remote_cmd"
