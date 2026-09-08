@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A language server for the tests: enough JSON-RPC to check that apex lsp
 opens and syncs documents, reads diagnostics, and acts on answers."""
-import json, sys
+import json, sys, time
 
 docs = {}
 
@@ -37,6 +37,8 @@ while True:
     method = m.get("method")
     id_ = m.get("id")
     if method == "initialize":
+        if "--delay-initialize" in sys.argv:
+            time.sleep(2)
         send({"jsonrpc": "2.0", "id": id_, "result": {"capabilities": {"textDocumentSync": 2, "definitionProvider": True,
               "hoverProvider": True, "documentFormattingProvider": True, "referencesProvider": True}}})
     elif method == "textDocument/didOpen":

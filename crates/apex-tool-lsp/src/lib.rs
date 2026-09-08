@@ -628,6 +628,11 @@ impl Tool {
             self.remote.plumb_ack(p.id, false);
             return;
         };
+        // A rule can become visible just before the main loop's first document
+        // sync. Catch that small startup window rather than declining the verb.
+        if !self.docs.contains_key(&span.buffer) {
+            self.sync_docs();
+        }
         let Some((key, uri)) = self.docs.get(&span.buffer).cloned() else {
             self.remote.plumb_ack(p.id, false);
             return;
@@ -659,14 +664,16 @@ impl Tool {
                 return;
             }
         };
-        let Some(s) = self.servers.get_mut(&key) else {
+        let Some(initialized) = self.servers.get(&key).map(|s| s.initialized) else {
             self.remote.plumb_ack(p.id, false);
             return;
         };
-        if !s.initialized {
-            self.remote.plumb_ack(p.id, false);
+        if !initialized {
+            self.remote.plumb_ack(p.id, true);
+            self.errors(Some(&p.dir), &format!("{}: language server is still initializing\n", p.verb));
             return;
         }
+        let s = self.servers.get_mut(&key).unwrap();
         let id = s.request(method, params);
         self.waiting.insert((key, id), Waiting::Plumb { plumb: p.id, verb: p.verb, buffer: span.buffer, ctx: p.ctx, dir: p.dir });
     }

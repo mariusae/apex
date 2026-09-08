@@ -48,7 +48,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     let fake = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fake-lsp.py");
     // a tool (the test) sets the server and opens the file
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
-    c.send(&ClientMsg::Set { key: "lsp.go".into(), value: format!("python3 {}", fake.display()), attachment: None });
+    c.send(&ClientMsg::Set { key: "lsp.go".into(), value: format!("python3 {} --delay-initialize", fake.display()), attachment: None });
     let col = c.node.state.layout.cols[0].id;
     c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: main.display().to_string() });
     assert!(until(&mut c, |n| text_of(n, "main.go").is_some()), "file opened");
@@ -57,17 +57,23 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     std::thread::spawn(move || {
         let _ = apex_tool_lsp::run(&s2, "main");
     });
-    // its rules arrive, and the diagnostics window with the opened text's length
+    // Its rules arrive before the deliberately delayed initialize response.
     assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Fmt")), "rules installed");
+    let (b, _) = c.node.state.buffers.values().find(|b| b.name.ends_with("main.go")).map(|b| (b.id, b.version)).unwrap();
+    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w).ends_with("main.go")).unwrap();
+    c.propose(Proposal::Select { view: ViewId::Body(w), q0: 18, q1: 19 }, Duration::from_secs(5)).unwrap();
+    c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Def".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut c, |n| text_of(n, "+Errors").unwrap_or_default().contains("Def: language server is still initializing")), "initializing error: {:?}", text_of(&c.node, "+Errors"));
+    // The diagnostics window then contains the opened text's length.
     let lsp = |n: &Node| text_of(n, "+lsp").unwrap_or_default();
     assert!(until(&mut c, |n| lsp(n).contains("len=25 first=package")), "diagnostics: {}", lsp(&c.node));
     assert!(lsp(&c.node).contains("main.go:1:1: warning:"), "{}", lsp(&c.node));
     // an edit syncs incrementally: the server sees the new length
-    let (b, version) = c.node.state.buffers.values().find(|b| b.name.ends_with("main.go")).map(|b| (b.id, b.version)).unwrap();
+    let version = c.node.state.buffer(b).unwrap().version;
     c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 25, q1: 25, text: "// more\n".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| lsp(n).contains("len=33")), "synced: {}", lsp(&c.node));
-    // B3 on an identifier: the definition the server names is selected
-    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w).ends_with("main.go")).unwrap();
+    // Once initialized, B3 on an identifier goes to the definition.
+    c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false });
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((18, 19))), "selection: {:?}", c.node.selection(ViewId::Body(w)));
     // Hov: the hover text lands in +Errors
