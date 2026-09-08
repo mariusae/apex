@@ -3,6 +3,7 @@
 //! its actions, the title bar with the session button, and the session
 //! selector that drops down from it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -408,131 +409,121 @@ pub struct Selector {
     pub filter: String,
     /// Index into `rows()`; only pickable rows are ever landed on.
     pub cursor: usize,
-    pub recent: Vec<SessionUrl>,
-    pub local: Vec<SessionUrl>,
-    /// The destination of a remote window, and its sessions.
-    pub remote: Option<(String, Vec<SessionUrl>)>,
+    /// The hosts remembered, local first: what the picker is organised by.
+    pub hosts: Vec<Host>,
+    /// Each host's sessions, as they come in (asked for in the background:
+    /// a host that is down must not hold the picker).
+    pub sessions: HashMap<Host, Loading>,
     pub current: SessionUrl,
     /// Typing a new name for this window's session.
     pub renaming: bool,
-    /// The connect form: a provider, a host, a label.
+    /// Typing the name of a new session on this host.
+    pub naming: Option<Host>,
+    /// The new-host form: a provider, a host.
     pub connect: Option<Connect>,
+    /// Which opening of the picker this is: answers for an older one are
+    /// dropped.
+    pub epoch: u64,
     /// When the caret last became visible: it blinks, and a keystroke
     /// makes it show at once.
     pub caret_since: std::time::Instant,
 }
 
-/// The caret's period.
+/// A place sessions live: this machine's daemon (`local`), or a
+/// destination through a provider.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Host {
+    pub provider: String,
+    pub arg: String,
+}
+
+impl Host {
+    pub fn local() -> Host {
+        Host { provider: "local".into(), arg: String::new() }
+    }
+
+    pub fn of(u: &SessionUrl) -> Host {
+        Host { provider: u.provider.clone(), arg: if u.is_local() { String::new() } else { u.arg.clone() } }
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.provider == "local"
+    }
+
+    pub fn url(&self, session: &str) -> SessionUrl {
+        SessionUrl { provider: self.provider.clone(), arg: self.arg.clone(), session: session.to_string() }
+    }
+
+    /// How the host reads: `local`, or the host with the provider in
+    /// parentheses.
+    pub fn parts(&self) -> (String, String) {
+        if self.is_local() { ("local".into(), String::new()) } else { (self.arg.clone(), format!("({})", self.provider)) }
+    }
+
+    /// The destination `providers.rs` works with.
+    pub fn dest(&self) -> String {
+        self.url("default").dest().unwrap_or_default()
+    }
+}
+
+/// A host's sessions: asked for, here, or not to be had.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Loading {
+    Pending,
+    Ready(Vec<String>),
+    Failed(String),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Row {
-    Header(String),
+    /// A host's section: its name, and the host, to forget it by.
+    Header(Host),
     Divider,
+    /// A session on a host.
     Open(SessionUrl),
+    /// "+ new session" under a host: type its name next.
+    NewSession(Host),
+    /// Still asking, or could not.
+    Note(String),
+    /// A session named to be made: on a host after `NewSession`, or as
+    /// a URL typed into the search.
     Create(SessionUrl),
+    /// "+ new host…": the form next.
+    NewHost,
     /// "Rename this session…": type the new name next.
     RenameThis,
     Rename(String),
-    /// "Connect to a session…": the form next.
-    Connect,
 }
 
-/// The connect form's fields.
+/// The new-host form's fields.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Field {
     Provider,
     Host,
-    Label,
 }
 
-/// Connecting to a session: a provider chosen from what is available
-/// (`local`, `ssh`, every `apex-remote-NAME` on the PATH), the host it
-/// takes (none for local), and the session's label.
+/// A new host: a provider chosen from what is available (`local`, `ssh`,
+/// every `apex-remote-NAME` on the PATH), and the host it takes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Connect {
     pub providers: Vec<String>,
     pub provider: usize,
     pub host: String,
-    pub label: String,
     pub field: Field,
-    /// Hosts connected to before, per provider, latest first.
-    pub known: Vec<(String, String)>,
-    /// The suggested host picked with ↑↓, when one is.
-    pub picked: Option<usize>,
 }
 
 impl Connect {
     pub fn new() -> Connect {
-        Connect { providers: apex_server::providers::available(), provider: 0, host: String::new(), label: String::new(), field: Field::Provider, known: known_hosts(), picked: None }
-    }
-
-    /// The hosts to offer for what is typed: those of the provider that
-    /// contain it, the latest first.
-    pub fn suggestions(&self) -> Vec<String> {
-        let typed = self.host.trim().to_lowercase();
-        let p = self.provider();
-        self.known.iter().filter(|(pr, h)| pr == p && h.to_lowercase().contains(&typed) && h.trim() != typed).map(|(_, h)| h.clone()).take(6).collect()
-    }
-
-    /// The host as the form has it: the suggestion picked, else the text.
-    pub fn host_chosen(&self) -> String {
-        let s = self.suggestions();
-        match self.picked.and_then(|i| s.get(i)) {
-            Some(h) => h.clone(),
-            None => self.host.trim().to_string(),
-        }
-    }
-
-    /// ↑ in the host field: up the suggestions, then off them, then up.
-    fn up(&mut self) {
-        match self.picked {
-            Some(0) | None => {
-                self.picked = None;
-                self.next_field(-1);
-            }
-            Some(i) => self.picked = Some(i - 1),
-        }
-    }
-
-    /// ↓ in the host field: onto and down the suggestions, else on.
-    fn down(&mut self) {
-        let n = self.suggestions().len();
-        match self.picked {
-            None if n > 0 => self.picked = Some(0),
-            Some(i) if i + 1 < n => self.picked = Some(i + 1),
-            _ => {
-                self.accept_pick();
-                self.next_field(1);
-            }
-        }
-    }
-
-    /// The picked suggestion becomes the host.
-    fn accept_pick(&mut self) {
-        if self.picked.is_some() {
-            self.host = self.host_chosen();
-            self.picked = None;
-        }
+        let providers: Vec<String> = apex_server::providers::available().into_iter().filter(|p| p != "local").collect();
+        Connect { providers, provider: 0, host: String::new(), field: Field::Provider }
     }
 
     pub fn provider(&self) -> &str {
-        self.providers.get(self.provider).map(String::as_str).unwrap_or("local")
-    }
-
-    pub fn is_local(&self) -> bool {
-        self.provider() == "local"
-    }
-
-    /// The fields in order, the host left out for local.
-    fn fields(&self) -> Vec<Field> {
-        if self.is_local() { vec![Field::Provider, Field::Label] } else { vec![Field::Provider, Field::Host, Field::Label] }
+        self.providers.get(self.provider).map(String::as_str).unwrap_or("ssh")
     }
 
     pub fn next_field(&mut self, delta: i32) {
-        let fields = self.fields();
-        let i = fields.iter().position(|f| *f == self.field).unwrap_or(0) as i32 + delta;
-        let i = i.clamp(0, fields.len() as i32 - 1) as usize;
-        self.field = fields[i];
+        self.field = if delta < 0 { Field::Provider } else { Field::Host };
     }
 
     pub fn next_provider(&mut self, delta: i32) {
@@ -540,26 +531,15 @@ impl Connect {
         if n > 0 {
             self.provider = ((self.provider as i32 + delta).rem_euclid(n)) as usize;
         }
-        if self.is_local() && self.field == Field::Host {
-            self.field = Field::Label;
-        }
     }
 
-    /// The session the form names, once it names one.
-    pub fn url(&self) -> Option<SessionUrl> {
-        let label = self.label.trim();
-        let session = if label.is_empty() { apex_server::providers::DEFAULT_SESSION } else { label };
-        if session.contains('/') {
+    /// The host the form names, once it names one.
+    pub fn host(&self) -> Option<Host> {
+        let host = self.host.trim();
+        if host.is_empty() || host.contains('/') {
             return None;
         }
-        if self.is_local() {
-            return Some(SessionUrl::local(session));
-        }
-        let host = self.host_chosen();
-        if host.is_empty() {
-            return None;
-        }
-        Some(SessionUrl { provider: self.provider().to_string(), arg: host, session: session.to_string() })
+        Some(Host { provider: self.provider().to_string(), arg: host.to_string() })
     }
 }
 
@@ -569,34 +549,49 @@ fn hosts_file() -> PathBuf {
     state_file().with_file_name("known-hosts")
 }
 
-/// The hosts connected to, per provider, latest first: the file, then
-/// what the recent sessions carry.
-pub fn known_hosts() -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = std::fs::read_to_string(hosts_file())
-        .map(|s| s.lines().filter_map(|l| l.split_once('\t').map(|(p, h)| (p.to_string(), h.to_string()))).collect())
+/// The hosts the picker shows: local, then those connected to, latest
+/// first (the file, then what the recent sessions carry).
+pub fn known_hosts() -> Vec<Host> {
+    let mut out = vec![Host::local()];
+    let listed: Vec<Host> = std::fs::read_to_string(hosts_file())
+        .map(|s| s.lines().filter_map(|l| l.split_once('\t').map(|(p, h)| Host { provider: p.to_string(), arg: h.to_string() })).collect())
         .unwrap_or_default();
-    for u in recent() {
-        if !u.is_local() && !out.iter().any(|(p, h)| *p == u.provider && *h == u.arg) {
-            out.push((u.provider.clone(), u.arg.clone()));
+    for h in listed.into_iter().chain(recent().iter().map(Host::of)) {
+        if !h.is_local() && !out.contains(&h) {
+            out.push(h);
         }
     }
     out
 }
 
-/// A host connected to: remembered first among its provider's.
-pub fn note_host(url: &SessionUrl) {
-    if url.is_local() || url.arg.is_empty() {
-        return;
-    }
-    let mut list = known_hosts();
-    list.retain(|(p, h)| !(*p == url.provider && *h == url.arg));
-    list.insert(0, (url.provider.clone(), url.arg.clone()));
+fn write_hosts(list: &[Host]) {
     let p = hosts_file();
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let text: String = list.iter().take(50).map(|(p, h)| format!("{p}\t{h}\n")).collect();
+    let text: String = list.iter().filter(|h| !h.is_local()).take(50).map(|h| format!("{}\t{}\n", h.provider, h.arg)).collect();
     let _ = std::fs::write(p, text);
+}
+
+/// A host connected to: remembered first.
+pub fn note_host(url: &SessionUrl) {
+    let h = Host::of(url);
+    if h.is_local() {
+        return;
+    }
+    let mut list = known_hosts();
+    list.retain(|x| *x != h);
+    list.insert(1, h);
+    write_hosts(&list);
+}
+
+/// A host forgotten (the × on its section): its sessions leave the
+/// recent list too, so it does not come back from there.
+pub fn forget_host(h: &Host) {
+    let list: Vec<Host> = known_hosts().into_iter().filter(|x| x != h).collect();
+    write_hosts(&list);
+    let keep: Vec<SessionUrl> = recent().into_iter().filter(|u| Host::of(u) != *h).collect();
+    write_recent(&keep);
 }
 
 /// How a session reads in the picker: its label first, then the host,
@@ -607,7 +602,7 @@ pub fn session_parts(u: &SessionUrl) -> (String, String, String) {
 
 impl Row {
     pub fn pickable(&self) -> bool {
-        !matches!(self, Row::Header(_) | Row::Divider)
+        !matches!(self, Row::Header(_) | Row::Divider | Row::Note(_))
     }
 }
 
@@ -624,28 +619,38 @@ impl Selector {
         if self.renaming {
             return if f.is_empty() || f.contains('/') { Vec::new() } else { vec![Row::Rename(f.to_string())] };
         }
+        if let Some(h) = &self.naming {
+            return if f.is_empty() || f.contains('/') { Vec::new() } else { vec![Row::Create(h.url(f))] };
+        }
+        let fl = f.to_lowercase();
         let mut rows = Vec::new();
         let mut seen: Vec<SessionUrl> = Vec::new();
-        let fl = f.to_lowercase();
-        let matches = |u: &SessionUrl| fl.is_empty() || u.to_string().to_lowercase().contains(&fl);
-        let section = |rows: &mut Vec<Row>, seen: &mut Vec<SessionUrl>, title: String, urls: &[SessionUrl]| {
-            let fresh: Vec<&SessionUrl> = urls.iter().filter(|u| matches(u) && !seen.contains(u)).collect();
-            if fresh.is_empty() {
-                return;
+        for h in &self.hosts {
+            let (name, prov) = h.parts();
+            let host_matches = fl.is_empty() || format!("{name} {prov}").to_lowercase().contains(&fl);
+            let mut section = Vec::new();
+            match self.sessions.get(h) {
+                Some(Loading::Ready(names)) => {
+                    for n in names {
+                        let u = h.url(n.as_str());
+                        if (host_matches || u.to_string().to_lowercase().contains(&fl)) && !seen.contains(&u) {
+                            seen.push(u.clone());
+                            section.push(Row::Open(u));
+                        }
+                    }
+                }
+                Some(Loading::Failed(e)) if host_matches => section.push(Row::Note(format!("unreachable: {e}"))),
+                Some(Loading::Failed(_)) => {}
+                _ if host_matches => section.push(Row::Note("asking…".into())),
+                _ => {}
             }
-            if fl.is_empty() {
-                rows.push(Row::Header(title));
+            if host_matches && !matches!(self.sessions.get(h), Some(Loading::Failed(_))) {
+                section.push(Row::NewSession(h.clone()));
             }
-            for u in fresh {
-                seen.push(u.clone());
-                rows.push(Row::Open(u.clone()));
+            if !section.is_empty() {
+                rows.push(Row::Header(h.clone()));
+                rows.extend(section);
             }
-        };
-        section(&mut rows, &mut seen, "This Window".into(), std::slice::from_ref(&self.current));
-        section(&mut rows, &mut seen, "Recent".into(), &self.recent);
-        section(&mut rows, &mut seen, "This Machine".into(), &self.local);
-        if let Some((dest, urls)) = &self.remote {
-            section(&mut rows, &mut seen, dest.clone(), urls);
         }
         let mut actions = Vec::new();
         if !f.is_empty() {
@@ -655,7 +660,7 @@ impl Selector {
                 }
             }
         } else {
-            actions.push(Row::Connect);
+            actions.push(Row::NewHost);
             actions.push(Row::RenameThis);
         }
         if !actions.is_empty() {
@@ -691,6 +696,16 @@ impl Selector {
         let rows = self.rows();
         self.cursor = self.pickable_from(&rows, self.cursor.min(rows.len().saturating_sub(1))).or_else(|| self.pickable_from(&rows, 0)).unwrap_or(0);
     }
+
+    /// Put the cursor on this window's session, when it is listed.
+    pub fn land_on_current(&mut self) {
+        let rows = self.rows();
+        if let Some(i) = rows.iter().position(|r| matches!(r, Row::Open(u) if *u == self.current)) {
+            self.cursor = i;
+        } else {
+            self.settle();
+        }
+    }
 }
 
 // ---- recent sessions ----------------------------------------------------------------
@@ -720,12 +735,6 @@ pub fn note_recent(url: &SessionUrl) {
     write_recent(&list);
 }
 
-/// Take a session off the recent list (the ×  in the picker).
-pub fn forget_recent(url: &SessionUrl) {
-    let list: Vec<SessionUrl> = recent().into_iter().filter(|u| u != url).collect();
-    write_recent(&list);
-}
-
 pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
     let list: Vec<SessionUrl> = recent().into_iter().map(|u| if u == *old { new.clone() } else { u }).collect();
     write_recent(&list);
@@ -741,14 +750,24 @@ pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
 impl Acme {
     pub fn open_selector(&mut self, cx: &mut Context<Self>) {
         let Some(socket) = self.socket.clone() else { return };
-        let local: Vec<SessionUrl> = list_sessions(&socket).unwrap_or_default().iter().map(|s| SessionUrl::local(s)).collect();
-        let remote = self.url.dest().map(|dest| {
-            let urls = apex_server::providers::list_sessions(&dest).unwrap_or_default().iter().map(|s| self.url.with_session(s)).collect();
-            (dest, urls)
-        });
-        let mut sel = Selector { filter: String::new(), cursor: 0, recent: recent(), local, remote, current: self.url.clone(), renaming: false, connect: None, caret_since: std::time::Instant::now() };
+        static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let epoch = EPOCH.fetch_add(1, Ordering::Relaxed);
+        let mut hosts = known_hosts();
+        let here = Host::of(&self.url);
+        if !hosts.contains(&here) {
+            hosts.push(here);
+        }
+        let mut sel = Selector { filter: String::new(), cursor: 0, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        for h in &hosts {
+            sel.sessions.insert(h.clone(), Loading::Pending);
+        }
         sel.settle();
         self.selector = Some(sel);
+        // every host's sessions, asked for in the background: a host that
+        // is down, or slow, holds nothing up
+        for h in hosts {
+            self.ask_host(h, socket.clone(), epoch, cx);
+        }
         // blink the caret while the selector is open
         cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(BLINK).await;
@@ -767,6 +786,42 @@ impl Acme {
         cx.notify();
     }
 
+    /// Ask a host for its sessions, off the UI thread; the answer lands
+    /// in the picker of the same opening.
+    fn ask_host(&mut self, h: Host, socket: PathBuf, epoch: u64, cx: &mut Context<Self>) {
+        let host = h.clone();
+        let asking = cx.background_executor().spawn(async move {
+            if host.is_local() {
+                list_sessions(&socket).map_err(|e| e.to_string())
+            } else {
+                apex_server::providers::list_sessions(&host.dest()).map_err(|e| e.to_string())
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let r = asking.await;
+            let _ = cx.update(|cx| {
+                let _ = this.update(cx, |acme, cx| {
+                    if let Some(sel) = acme.selector.as_mut() {
+                        if sel.epoch == epoch {
+                            let was_on_current = sel.rows().get(sel.cursor).is_some_and(|r| matches!(r, Row::Open(u) if *u == sel.current));
+                            sel.sessions.insert(h, match r {
+                                Ok(names) => Loading::Ready(names),
+                                Err(e) => Loading::Failed(e),
+                            });
+                            if was_on_current || sel.filter.is_empty() {
+                                sel.land_on_current();
+                            } else {
+                                sel.settle();
+                            }
+                            cx.notify();
+                        }
+                    }
+                });
+            });
+        })
+        .detach();
+    }
+
     pub fn close_selector(&mut self, cx: &mut Context<Self>) {
         self.selector = None;
         if self.chooser {
@@ -781,56 +836,36 @@ impl Acme {
         let Some(sel) = self.selector.as_mut() else { return false };
         sel.caret_since = std::time::Instant::now();
         if let Some(form) = sel.connect.as_mut() {
-            // the connect form: up and down between fields, left and right
-            // (or space) through the providers, enter connects, esc backs out
+            // the new-host form: ↑↓ between the two fields, ←→ (or a
+            // letter) through the providers, enter adds the host, esc backs out
             match key {
                 "escape" => {
                     sel.connect = None;
                     sel.settle();
                 }
                 "enter" => {
-                    if let Some(url) = form.url() {
-                        self.choose(Row::Create(url), window, cx);
+                    if let Some(h) = form.host() {
+                        self.add_host(h, cx);
                         return true;
                     }
                 }
-                "up" if form.field == Field::Host => form.up(),
-                "down" if form.field == Field::Host => form.down(),
                 "up" => form.next_field(-1),
-                "tab" if form.field == Field::Host => {
-                    form.accept_pick();
-                    form.next_field(1);
-                }
                 "down" | "tab" => form.next_field(1),
                 "left" if form.field == Field::Provider => form.next_provider(-1),
-                "right" if form.field == Field::Provider => form.next_provider(1),
-                "space" if form.field == Field::Provider => form.next_provider(1),
-                "backspace" => match form.field {
-                    Field::Host => {
-                        form.picked = None;
+                "right" | "space" if form.field == Field::Provider => form.next_provider(1),
+                "backspace" => {
+                    if form.field == Field::Host {
                         form.host.pop();
                     }
-                    Field::Label => {
-                        form.label.pop();
-                    }
-                    Field::Provider => {}
-                },
+                }
                 _ => {
                     if let Some(c) = ch.filter(|c| !c.chars().any(char::is_control)) {
                         match form.field {
-                            Field::Host => {
-                                form.picked = None;
-                                form.host.push_str(c);
-                            }
-                            Field::Label => form.label.push_str(c),
+                            Field::Host => form.host.push_str(c),
                             Field::Provider => {
-                                // a letter picks the provider starting with it
                                 let lc = c.to_lowercase();
                                 if let Some(i) = form.providers.iter().position(|p| p.to_lowercase().starts_with(&lc)) {
                                     form.provider = i;
-                                    if form.is_local() && form.field == Field::Host {
-                                        form.field = Field::Label;
-                                    }
                                 }
                             }
                         }
@@ -841,7 +876,18 @@ impl Acme {
             return true;
         }
         match key {
-            "escape" => self.close_selector(cx),
+            "escape" => {
+                if sel.naming.is_some() || sel.renaming {
+                    // back to the list
+                    sel.naming = None;
+                    sel.renaming = false;
+                    sel.filter.clear();
+                    sel.land_on_current();
+                    cx.notify();
+                } else {
+                    self.close_selector(cx);
+                }
+            }
             "enter" => {
                 let rows = sel.rows();
                 if let Some(row) = rows.get(sel.cursor).filter(|r| r.pickable()).cloned() {
@@ -876,13 +922,44 @@ impl Acme {
         true
     }
 
+    /// A host added from the form: remembered, listed, its sessions asked
+    /// for, the cursor on it.
+    fn add_host(&mut self, h: Host, cx: &mut Context<Self>) {
+        let Some(socket) = self.socket.clone() else { return };
+        note_host(&h.url("default"));
+        let epoch = match self.selector.as_mut() {
+            Some(sel) => {
+                sel.connect = None;
+                if !sel.hosts.contains(&h) {
+                    sel.hosts.push(h.clone());
+                }
+                sel.sessions.insert(h.clone(), Loading::Pending);
+                let rows = sel.rows();
+                sel.cursor = rows.iter().position(|r| matches!(r, Row::NewSession(x) if *x == h)).unwrap_or(0);
+                sel.settle();
+                sel.epoch
+            }
+            None => return,
+        };
+        self.ask_host(h, socket, epoch, cx);
+        cx.notify();
+    }
+
     pub fn choose(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         match row {
-            Row::Header(_) | Row::Divider => {}
-            Row::Connect => {
+            Row::Header(_) | Row::Divider | Row::Note(_) => {}
+            Row::NewHost => {
                 if let Some(sel) = self.selector.as_mut() {
                     sel.connect = Some(Connect::new());
                     sel.filter.clear();
+                }
+                cx.notify();
+            }
+            Row::NewSession(h) => {
+                if let Some(sel) = self.selector.as_mut() {
+                    sel.naming = Some(h);
+                    sel.filter.clear();
+                    sel.cursor = 0;
                 }
                 cx.notify();
             }
@@ -928,9 +1005,8 @@ impl Acme {
         }
     }
 
-    /// The connect form: the providers as a row of pills (the chosen one
-    /// marked), then the host and the label as fields; the active one
-    /// carries the caret.
+    /// The new-host form: the providers as a row of pills (the chosen one
+    /// marked), then the host field with the caret.
     fn connect_form(&self, form: &Connect, caret_on: bool, cx: &mut Context<Self>) -> gpui::AnyElement {
         let row = |label: &str, active: bool| {
             div()
@@ -956,7 +1032,6 @@ impl Acme {
                 .when(active, |d| d.child(caret(caret_on)))
                 .when(value.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child(hint.to_string())))
         };
-        // the providers: pills, the chosen one filled; a click picks one
         let mut pills = div().flex().flex_row().items_center().gap(px(6.));
         for (i, p) in form.providers.iter().enumerate() {
             let chosen = i == form.provider;
@@ -977,10 +1052,7 @@ impl Acme {
                         cx.listener(move |this, _, _, cx| {
                             if let Some(f) = this.selector.as_mut().and_then(|s| s.connect.as_mut()) {
                                 f.provider = i;
-                                f.field = Field::Provider;
-                                if f.is_local() && f.field == Field::Host {
-                                    f.field = Field::Label;
-                                }
+                                f.field = Field::Host;
                             }
                             cx.stop_propagation();
                             cx.notify();
@@ -988,48 +1060,12 @@ impl Acme {
                     ),
             );
         }
-        let mut el = div().flex().flex_col().py(px(6.)).child(row("Provider", form.field == Field::Provider).child(pills));
-        if !form.is_local() {
-            let shown = if form.picked.is_some() { form.host_chosen() } else { form.host.clone() };
-            el = el.child(row("Host", form.field == Field::Host).child(field(&shown, "user@host, a box name…", form.field == Field::Host && form.picked.is_none())));
-            // hosts known for this provider that fit what is typed: ↑↓ picks
-            if form.field == Field::Host {
-                let mut list = div().flex().flex_col().pl(px(106.)).pb(px(4.));
-                for (i, h) in form.suggestions().into_iter().enumerate() {
-                    let on = form.picked == Some(i);
-                    let host = h.clone();
-                    list = list.child(
-                        div()
-                            .id(("host", i))
-                            .px(px(8.))
-                            .py(px(3.))
-                            .rounded(px(4.))
-                            .text_size(px(13.))
-                            .font_family(UI_FONT)
-                            .when(on, |d| d.bg(rgb(0x9eeeee)))
-                            .when(!on, |d| d.text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe4e4e4))))
-                            .cursor_pointer()
-                            .child(h)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
-                                    if let Some(f) = this.selector.as_mut().and_then(|s| s.connect.as_mut()) {
-                                        f.host = host.clone();
-                                        f.picked = None;
-                                        f.field = Field::Label;
-                                    }
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            ),
-                    );
-                }
-                el = el.child(list);
-            }
-        }
-        el = el.child(row("Label", form.field == Field::Label).child(field(&form.label, "default", form.field == Field::Label)));
-        let ready = form.url().is_some();
-        let hint = if ready { "enter connects  ·  ↑↓ fields and hosts  ·  ←→ providers  ·  esc back" } else { "a host is needed  ·  ↑↓ fields and hosts  ·  ←→ providers  ·  esc back" };
+        let mut el = div().flex().flex_col().py(px(6.));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child("New host"));
+        el = el.child(row("Provider", form.field == Field::Provider).child(pills));
+        el = el.child(row("Host", form.field == Field::Host).child(field(&form.host, "user@host, a box name…", form.field == Field::Host)));
+        let ready = form.host().is_some();
+        let hint = if ready { "enter adds it and asks for its sessions  ·  ←→ providers  ·  esc back" } else { "type the host  ·  ←→ providers  ·  esc back" };
         el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(hint));
         el.into_any_element()
     }
@@ -1108,7 +1144,14 @@ impl Acme {
     pub fn selector_panel(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let sel = self.selector.as_ref()?;
         let rows = sel.rows();
-        let hint = if sel.renaming { "New name for this session…" } else { "Search sessions, or type a name or URL to create one…" };
+        let hint = if sel.renaming {
+            "New name for this session…".to_string()
+        } else if let Some(h) = &sel.naming {
+            let (name, prov) = h.parts();
+            format!("Name for the new session on {name} {prov}…")
+        } else {
+            "Search sessions and hosts, or type a URL to create one…".to_string()
+        };
         // the field: the text typed and a caret, or the hint after a caret
         let caret = div().w(px(1.5)).h(px(16.)).flex_none().when(sel.caret_visible(), |d| d.bg(rgb(0x000099)));
         let field = div()
@@ -1126,47 +1169,32 @@ impl Acme {
             .child(caret)
             .when(sel.filter.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child(hint)));
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
+        let row_style = |d: gpui::Stateful<gpui::Div>, picked: bool| {
+            d.flex()
+                .flex_row()
+                .items_center()
+                .gap(px(8.))
+                .px(px(10.))
+                .py(px(6.))
+                .rounded(px(6.))
+                .text_size(px(14.))
+                .font_family(UI_FONT)
+                .cursor_pointer()
+                .when(picked, |d| d.bg(rgb(0x9eeeee)))
+                .when(!picked, |d| d.hover(|s| s.bg(rgb(0xe4e4e4))))
+        };
         for (i, row) in rows.iter().enumerate() {
             let picked = i == sel.cursor && row.pickable();
             let el = match row {
-                Row::Header(t) => div().px(px(10.)).pt(px(8.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child(t.clone()).into_any_element(),
-                Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(0xdddddd)).into_any_element(),
-                Row::Open(u) | Row::Create(u) => {
-                    let is_current = matches!(row, Row::Open(u) if *u == self.url);
-                    let create = matches!(row, Row::Create(_));
-                    let (label, host, provider) = session_parts(u);
-                    let mut text = div().flex().flex_row().items_baseline().gap(px(8.));
-                    if create {
-                        text = text.child(div().child("Create"));
+                Row::Header(h) => {
+                    // the host: its name, the provider dimmed, and a × to forget it
+                    let (name, prov) = h.parts();
+                    let mut d = div().flex().flex_row().items_baseline().gap(px(8.)).px(px(10.)).pt(px(8.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child(div().text_color(rgb(0x333333)).child(name));
+                    if !prov.is_empty() {
+                        d = d.child(div().child(prov));
                     }
-                    text = text.child(div().child(label));
-                    if !host.is_empty() {
-                        text = text.child(div().text_color(rgb(0x8a8a8a)).child(host));
-                    }
-                    let text = text.child(div().text_color(rgb(0x8a8a8a)).text_size(px(12.)).child(provider));
-                    let r = row.clone();
-                    let mut d = div()
-                        .id(("row", i))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(8.))
-                        .px(px(10.))
-                        .py(px(6.))
-                        .rounded(px(6.))
-                        .text_size(px(14.))
-                        .font_family(UI_FONT)
-                        .text_color(if create { rgb(0x000099) } else { rgb(0x111111) })
-                        .cursor_pointer()
-                        .when(picked, |d| d.bg(rgb(0x9eeeee)))
-                        .when(!picked, |d| d.hover(|s| s.bg(rgb(0xe4e4e4))))
-                        .child(text);
-                    if is_current {
-                        d = d.child(div().text_color(rgb(0x000099)).child("✓"));
-                    }
-                    // a recent session can be forgotten: the × at the right
-                    if matches!(row, Row::Open(_)) && sel.recent.contains(u) {
-                        let forget = u.clone();
+                    if !h.is_local() {
+                        let forget = h.clone();
                         d = d.child(div().flex_1()).child(
                             div()
                                 .id(("forget", i))
@@ -1178,9 +1206,10 @@ impl Acme {
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, _, _, cx| {
-                                        forget_recent(&forget);
+                                        forget_host(&forget);
                                         if let Some(s) = this.selector.as_mut() {
-                                            s.recent.retain(|r| *r != forget);
+                                            s.hosts.retain(|x| *x != forget);
+                                            s.sessions.remove(&forget);
                                             s.settle();
                                         }
                                         cx.stop_propagation();
@@ -1188,6 +1217,31 @@ impl Acme {
                                     }),
                                 ),
                         );
+                    }
+                    d.into_any_element()
+                }
+                Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(0xdddddd)).into_any_element(),
+                Row::Note(t) => div().px(px(22.)).py(px(4.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(t.clone()).into_any_element(),
+                Row::Open(u) | Row::Create(u) => {
+                    let is_current = matches!(row, Row::Open(u) if *u == self.url);
+                    let create = matches!(row, Row::Create(_));
+                    let (label, host, provider) = session_parts(u);
+                    let mut text = div().flex().flex_row().items_baseline().gap(px(8.));
+                    if create {
+                        text = text.child(div().text_color(rgb(0x000099)).child("Create"));
+                    }
+                    text = text.child(div().child(label));
+                    if create {
+                        // where it will be, since the section does not say
+                        if !host.is_empty() {
+                            text = text.child(div().text_color(rgb(0x8a8a8a)).child(host));
+                        }
+                        text = text.child(div().text_color(rgb(0x8a8a8a)).text_size(px(12.)).child(provider));
+                    }
+                    let r = row.clone();
+                    let mut d = row_style(div().id(("row", i)), picked).pl(px(22.)).text_color(rgb(0x111111)).child(text);
+                    if is_current {
+                        d = d.child(div().text_color(rgb(0x000099)).child("✓"));
                     }
                     d.on_mouse_down(
                         MouseButton::Left,
@@ -1198,24 +1252,17 @@ impl Acme {
                     )
                     .into_any_element()
                 }
-                Row::RenameThis | Row::Rename(_) | Row::Connect => {
-                    let text = match row {
-                        Row::Rename(n) => format!("Rename to “{n}”"),
-                        Row::Connect => "Connect to a Session…".to_string(),
-                        _ => "Rename This Session…".to_string(),
+                Row::NewSession(_) | Row::NewHost | Row::RenameThis | Row::Rename(_) => {
+                    let (text, indent) = match row {
+                        Row::NewSession(_) => ("+ new session".to_string(), 22.),
+                        Row::NewHost => ("+ new host…".to_string(), 10.),
+                        Row::Rename(n) => (format!("Rename to “{n}”"), 10.),
+                        _ => ("Rename This Session…".to_string(), 10.),
                     };
                     let r = row.clone();
-                    div()
-                        .id(("row", i))
-                        .px(px(10.))
-                        .py(px(6.))
-                        .rounded(px(6.))
-                        .text_size(px(14.))
-                        .font_family(UI_FONT)
-                        .text_color(rgb(0x111111))
-                        .cursor_pointer()
-                        .when(picked, |d| d.bg(rgb(0x9eeeee)))
-                        .when(!picked, |d| d.hover(|s| s.bg(rgb(0xe4e4e4))))
+                    row_style(div().id(("row", i)), picked)
+                        .pl(px(indent))
+                        .text_color(rgb(0x000099))
                         .child(text)
                         .on_mouse_down(
                             MouseButton::Left,
@@ -1230,10 +1277,12 @@ impl Acme {
             list = list.child(el);
         }
         if rows.is_empty() && sel.connect.is_none() {
-            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(if sel.renaming { "Type a name" } else { "No sessions" }));
+            let what = if sel.renaming || sel.naming.is_some() { "Type a name" } else { "Nothing matches" };
+            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(what));
         }
         let mut panel = div()
             .w(px(620.))
+            .max_h(px(560.))
             .bg(rgb(0xf4f4f4))
             .border_1()
             .border_color(rgb(0xc8c8c8))
@@ -1251,50 +1300,62 @@ impl Acme {
 }
 
 #[cfg(test)]
-mod connect_tests {
+mod picker_tests {
     use super::*;
 
+    fn picker() -> Selector {
+        let local = Host::local();
+        let box_ = Host { provider: "sprite".into(), arg: "devvm".into() };
+        let down = Host { provider: "ssh".into(), arg: "gone".into() };
+        let mut sessions = HashMap::new();
+        sessions.insert(local.clone(), Loading::Ready(vec!["default".into(), "notes".into()]));
+        sessions.insert(box_.clone(), Loading::Pending);
+        sessions.insert(down.clone(), Loading::Failed("no route".into()));
+        Selector { filter: String::new(), cursor: 0, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
+    }
+
     #[test]
-    fn the_form_names_a_session_once_it_can() {
-        let mut f = Connect { providers: vec!["local".into(), "ssh".into(), "sprite".into()], provider: 0, host: String::new(), label: String::new(), field: Field::Provider, known: vec![("ssh".into(), "me@box".into()), ("ssh".into(), "me@other".into()), ("sprite".into(), "apex-test".into())], picked: None };
-        // local needs no host; an empty label is the default session
-        assert_eq!(f.url().unwrap().to_string(), "local:///default");
-        f.label = "notes".into();
-        assert_eq!(f.url().unwrap().to_string(), "local:///notes");
-        assert_eq!(f.fields(), vec![Field::Provider, Field::Label]);
-        // elsewhere: a host is needed
-        f.next_provider(1);
-        assert_eq!(f.provider(), "ssh");
-        assert!(f.url().is_none());
+    fn hosts_head_their_sessions_and_offer_a_new_one() {
+        let sel = picker();
+        let rows = sel.rows();
+        let shape: Vec<String> = rows
+            .iter()
+            .map(|r| match r {
+                Row::Header(h) => format!("[{}]", h.parts().0),
+                Row::Open(u) => u.session.clone(),
+                Row::NewSession(_) => "+session".into(),
+                Row::Note(t) => format!("note:{}", t.split(':').next().unwrap()),
+                Row::Divider => "-".into(),
+                Row::NewHost => "+host".into(),
+                Row::RenameThis => "rename".into(),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "note:asking…", "+session", "[gone]", "note:unreachable", "-", "+host", "rename"]);
+        // the cursor lands on this window's session
+        let mut sel = picker();
+        sel.land_on_current();
+        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "notes"));
+        // a filter narrows to sessions and hosts that carry it; a URL typed creates
+        let mut sel = picker();
+        sel.filter = "dev".into();
+        let rows = sel.rows();
+        assert!(matches!(rows[0], Row::Header(ref h) if h.arg == "devvm"), "{rows:?}");
+        assert!(!rows.iter().any(|r| matches!(r, Row::Open(u) if u.is_local())));
+        sel.filter = "ssh://new@host/x".into();
+        assert!(sel.rows().iter().any(|r| matches!(r, Row::Create(u) if u.arg == "new@host" && u.session == "x")));
+        // naming a new session on a host
+        sel.filter = "scratch".into();
+        sel.naming = Some(Host { provider: "sprite".into(), arg: "devvm".into() });
+        assert_eq!(sel.rows(), vec![Row::Create(SessionUrl::parse("sprite://devvm/scratch").unwrap())]);
+        // the new-host form
+        let mut f = Connect { providers: vec!["ssh".into(), "sprite".into()], provider: 0, host: String::new(), field: Field::Provider };
+        assert!(f.host().is_none());
         f.host = "me@box".into();
-        assert_eq!(f.url().unwrap().to_string(), "ssh://me@box/notes");
-        assert_eq!(f.fields(), vec![Field::Provider, Field::Host, Field::Label]);
-        // back to local from the host field: the field moves on
-        f.field = Field::Host;
-        f.next_provider(-1);
-        assert_eq!(f.field, Field::Label);
-        f.label = "a/b".into();
-        assert!(f.url().is_none(), "a slash is no label");
-        let (label, host, provider) = session_parts(&SessionUrl::parse("sprite://apex-test/default").unwrap());
-        assert_eq!((label.as_str(), host.as_str(), provider.as_str()), ("default", "apex-test", "(sprite)"));
-        // known hosts of the provider suggest themselves for what is typed;
-        // ↓ picks through them, and the pick is the host
-        f.label = "notes".into();
+        assert_eq!(f.host().unwrap(), Host { provider: "ssh".into(), arg: "me@box".into() });
         f.next_provider(1);
-        f.field = Field::Host;
-        f.host = "me".into();
-        assert_eq!(f.suggestions(), vec!["me@box".to_string(), "me@other".to_string()]);
-        f.down();
-        assert_eq!(f.picked, Some(0));
-        assert_eq!(f.url().unwrap().to_string(), "ssh://me@box/notes");
-        f.down();
-        assert_eq!(f.url().unwrap().to_string(), "ssh://me@other/notes");
-        f.down(); // past the last: the pick is taken and the field moves on
-        assert_eq!((f.host.as_str(), f.field, f.picked), ("me@other", Field::Label, None));
-        f.field = Field::Host;
-        f.host = "zzz".into();
-        assert!(f.suggestions().is_empty());
-        f.up();
-        assert_eq!(f.field, Field::Provider);
+        assert_eq!(f.host().unwrap().provider, "sprite");
+        assert_eq!(Host::of(&SessionUrl::parse("sprite://devvm/x").unwrap()).parts(), ("devvm".to_string(), "(sprite)".to_string()));
+        assert_eq!(Host::local().parts(), ("local".to_string(), String::new()));
     }
 }

@@ -1008,16 +1008,19 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
-- *As built, the picker:* ⌘K's rows read label first, then the host
-dimmed, then the provider in parentheses. "Connect to a Session…"
-opens a form: the providers as pills to choose from (`local`, `ssh`,
-and every `apex-remote-NAME` on the PATH, ←→ or a letter picks one),
-the host (not for local), the label (the default session when empty);
-enter connects, esc backs out. Hosts connected to are remembered per
-provider (`known-hosts` beside the other state files, seeded from the
-recent sessions) and offered under the host field as what is typed
-narrows them, ↑↓ picking one, tab or ↓ past the last taking it. A URL
-typed into the search still creates directly.
+- *As built, the picker:* ⌘K remembers hosts, not sessions
+(`known-hosts` beside the other state files, seeded from the recent
+sessions; `local` always first). It is a section per host, the host's
+name with its provider in parentheses dimmed and a × to forget it,
+holding the host's sessions and "+ new session", which asks for a
+name and creates it there. Each host's sessions are asked for in the
+background when the picker opens (a section says "asking…", then lists
+them, or says why not), so a host that is down holds nothing up; an
+answer for an earlier opening is dropped. "+ new host…" opens a form:
+the providers as pills (`ssh` and every `apex-remote-NAME` on the
+PATH; ←→ or a letter picks one) and the host; enter remembers it and
+asks for its sessions. The search narrows sessions and hosts, and a
+URL typed in still creates directly.
 - *As built, parked sessions:* switching a window to another session
 (⌘K) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
 session is parked, still attached and still leading, in an app-wide
