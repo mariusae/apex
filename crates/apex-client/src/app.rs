@@ -927,9 +927,9 @@ impl Acme {
         if !self.connected {
             return None;
         }
-        let ping = self.ping_ms.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
-        let log = link.ack_ms.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
-        Some(format!("ping {ping}  ·  log {log}"))
+        let ping = self.ping_ms.map(|m| format!("{m}ms")).unwrap_or_else(|| "—".into());
+        let log = link.ack_ms.map(|m| format!("{m}ms")).unwrap_or_else(|| "—".into());
+        Some(format!("{ping}/{log}"))
     }
 
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {

@@ -1035,7 +1035,7 @@ session elsewhere attaches in the background like a launch does.
 - *As built:* Enter repeats the leading whitespace of the line it ends,
 up to dot, in every body: acme's `-a`, always on. The title bar shows,
 left of the connection mark, the heartbeat's round trip and the log's
-(an entry flushed to its `Ack`).
+(an entry flushed to its `Ack`), as `1ms/2ms`.
 - *As built:* full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
   title bar, acme's area is the whole screen, and a window's full-screen
   state is remembered with its frame. shift-B3 looks backwards (the
