@@ -1743,7 +1743,9 @@ impl Acme {
                 }
             }
         }
-        if let Some(d) = self.mouse.b1 {
+        // acme: a chord ends the sweep; the cut's insertion point (or the
+        // paste's selection) stays, whatever the pointer does before release
+        if let Some(d) = self.mouse.b1.filter(|_| !self.mouse.chorded) {
             if let Some(l) = self.layouts.get(&d.view) {
                 let off = l.offset_at(pos);
                 let above = pos.y < l.bounds.top();
@@ -2065,7 +2067,7 @@ impl Acme {
     /// past the edge, and extend the selection to the text at the edge.
     fn autoscroll_step(&mut self) -> bool {
         let Some((v, dir)) = self.mouse.autoscroll else { return false };
-        let Some(d) = self.mouse.b1 else { return false };
+        let Some(d) = self.mouse.b1.filter(|_| !self.mouse.chorded) else { return false };
         let Some(l) = self.layouts.get(&v) else { return false };
         let (top, bottom, lh) = (l.bounds.top(), l.bounds.bottom(), l.line_height);
         let pos = self.last_mouse;
