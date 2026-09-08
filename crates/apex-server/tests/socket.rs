@@ -347,3 +347,49 @@ fn b3_expands_as_acme_does_where_the_files_are() {
     assert!(wait(&mut ui, |r| r.node.selection(ViewId::Body(w)).ok() == Some((29, 34))), "looked: {:?}", ui.node.selection(ViewId::Body(w)));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A directory window lists the directory anew when it changes, as a
+/// clean file follows the disk; edited, it goes stale instead (the
+/// orange handle, Get in the tag), and Get lists it again.
+#[test]
+fn directory_windows_refresh_or_go_stale() {
+    let sock = daemon();
+    let mut c = Remote::connect(&sock, "main", "ui").unwrap();
+    let col = c.node.state.layout.cols[0].id;
+    let dir = std::env::temp_dir().join(format!("apex-dirwatch-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+    c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: dir.to_string_lossy().to_string() });
+    assert!(wait(&mut c, |r| r.node.state.windows.len() == 1));
+    let w = *c.node.state.windows.keys().next().unwrap();
+    let b = c.node.view_buffer(ViewId::Body(w)).unwrap();
+    assert_eq!(body(&c, w), "a.txt\n");
+    std::thread::sleep(Duration::from_millis(300));
+    // clean: a new entry appears on its own (the watch takes the OS a
+    // moment to start, so the change is made again until it is seen)
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while body(&c, w) != "a.txt\nb.txt\n" && Instant::now() < deadline {
+        std::fs::write(dir.join("b.txt"), "b\n").unwrap();
+        let until = Instant::now() + Duration::from_millis(700);
+        while body(&c, w) != "a.txt\nb.txt\n" && Instant::now() < until {
+            let _ = c.step(Duration::from_millis(50));
+        }
+    }
+    assert_eq!(body(&c, w), "a.txt\nb.txt\n");
+    assert!(!c.node.state.buffer(b).unwrap().dirty());
+    // dirty: the listing stays, flagged stale
+    let v = ViewId::Body(w);
+    c.node.select(&mut c.log, v, 0, 0).unwrap();
+    c.node.insert(&mut c.log, v, "note ").unwrap();
+    c.flush();
+    std::fs::write(dir.join("c.txt"), "c\n").unwrap();
+    assert!(wait(&mut c, |r| r.node.state.buffer(b).unwrap().stale));
+    assert_eq!(body(&c, w), "note a.txt\nb.txt\n");
+    // Get: listed anew, clean again
+    c.node.exec(&mut c.log, ExecCtx::Window(w), "Get").unwrap();
+    c.flush();
+    assert!(wait(&mut c, |r| body(r, w) == "a.txt\nb.txt\nc.txt\n"), "{}", body(&c, w));
+    assert!(!c.node.state.buffer(b).unwrap().stale && !c.node.state.buffer(b).unwrap().dirty());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -43,6 +43,10 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
 /// quarter of yellow in it (a raspberry): unlike the dirty blue, the
 /// fenced red, the unsynced green, and the scrollbar's dark yellow.
 pub const LIVE: u32 = 0xB24073;
+/// A stale window's handle: dirty, and the disk has moved on underneath
+/// (`Get` in the tag would drop the edits). Orange, between the dirty
+/// blue and the scrollbar's yellow in hue, like neither.
+pub const STALE: u32 = 0xD97B29;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
@@ -277,6 +281,8 @@ pub struct Source {
     pub kind: Kind,
     pub mono: bool,
     pub dirty: bool,
+    /// Dirty, and the file (or directory) changed on disk since.
+    pub stale: bool,
     /// A process is behind the window (a terminal's, a win's): neither
     /// clean nor dirty.
     pub live: bool,
@@ -313,6 +319,7 @@ pub struct Prepaint {
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
     dirty: bool,
+    stale: bool,
     live: bool,
     pulse: Option<f32>,
     unsynced: bool,
@@ -555,6 +562,7 @@ impl Element for TextElement {
                 sel: src.sel,
                 hl: src.hl,
                 dirty: src.dirty,
+                stale: src.stale,
                 live: src.live,
                 pulse: src.pulse,
                 unsynced: src.unsynced,
@@ -607,6 +615,8 @@ impl Element for TextElement {
                         rgb(mix(LIVE, 0xFFFFEA, t * 0.85))
                     } else if pp.live {
                         rgb(LIVE)
+                    } else if pp.stale {
+                        rgb(STALE)
                     } else if pp.dirty {
                         rgb(MEDBLUE)
                     } else {

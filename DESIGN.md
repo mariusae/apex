@@ -922,8 +922,13 @@ lowers a `SetContent` whose version has moved on into `Stale` instead,
 so typing is never overwritten by a reload; `Get` sends an unversioned
 `SetContent`. A dirty buffer gets `Stale{hash}`; `Put` on a stale buffer
 refuses once with "modified since last read" and writes on the second.
-Diffing rather than replacing, directory refresh, and delete/rename
-flags are not done.
+Directory windows are watched too (the directory itself, for its
+entries): a change under it lists the directory anew when the window
+is clean, and flags it stale when edited, the same flow. A stale
+window has its own handle colour, orange (`STALE`, between the dirty
+blue and the scrollbar's yellow in hue): dirty, and the disk has moved
+on underneath, so `Get` would drop the edits. Diffing rather than
+replacing and delete/rename flags are not done.
 
 ---
 

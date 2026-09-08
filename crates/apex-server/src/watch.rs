@@ -39,9 +39,10 @@ impl Watches {
         Watches { watcher, dirs: BTreeSet::new(), canonical: HashMap::new(), written: HashMap::new() }
     }
 
-    /// Watch exactly the parent directories of `files`.
-    pub fn sync<'a>(&mut self, files: impl Iterator<Item = &'a Path>) {
-        let want: BTreeSet<PathBuf> = files.filter_map(|f| f.parent().map(Path::to_path_buf)).filter(|d| d.is_dir()).collect();
+    /// Watch exactly the parent directories of `files`, and `dirs`
+    /// themselves (directory windows list their entries).
+    pub fn sync<'a>(&mut self, files: impl Iterator<Item = &'a Path>, dirs: impl Iterator<Item = &'a Path>) {
+        let want: BTreeSet<PathBuf> = files.filter_map(|f| f.parent().map(Path::to_path_buf)).chain(dirs.map(Path::to_path_buf)).filter(|d| d.is_dir()).collect();
         let Some(w) = self.watcher.as_mut() else { return };
         for d in self.dirs.difference(&want) {
             let _ = w.unwatch(d);

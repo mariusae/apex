@@ -513,20 +513,49 @@ impl Server {
             .map(|b| PathBuf::from(&b.name))
             .collect();
         files.extend(self.subscribed.iter().cloned());
-        self.watches.sync(files.iter().map(|p| p.as_path()));
+        // directory windows: the directory itself, for its entries
+        let dirs: Vec<PathBuf> = view.state.buffers.values().filter(|b| b.name.ends_with('/') && b.name.starts_with('/')).map(|b| PathBuf::from(b.name.trim_end_matches('/'))).filter(|p| !p.as_os_str().is_empty()).collect();
+        self.watches.sync(files.iter().map(|p| p.as_path()), dirs.iter().map(|p| p.as_path()));
     }
 
     /// A watched path changed. A clean buffer follows the disk; a dirty one
-    /// is flagged stale so `Get` appears in its tag (§9).
+    /// is flagged stale so `Get` appears in its tag (§9). A window on the
+    /// path's directory lists it anew the same way.
     fn file_changed(&mut self, view: &Node, path: &Path) -> Vec<Proposal> {
         let path = &self.watches.as_named(path);
+        let mut props = self.path_changed(view, path);
+        if let Some(parent) = path.parent() {
+            let mut d = parent.to_string_lossy().to_string();
+            if !d.ends_with('/') {
+                d.push('/');
+            }
+            if let Some(buf) = view.state.buffers.values().find(|b| b.name == d) {
+                if let Ok((_, listing)) = self.read_path(parent) {
+                    props.extend(self.content_changed(buf, listing));
+                }
+            }
+        }
+        props
+    }
+
+    fn path_changed(&mut self, view: &Node, path: &Path) -> Vec<Proposal> {
         let name = path.to_string_lossy().to_string();
         let Some(buf) = view.state.buffers.values().find(|b| b.name == name) else { return Vec::new() };
         let Ok(bytes) = std::fs::read(path) else { return Vec::new() };
         let text = String::from_utf8_lossy(&bytes).to_string();
         let hash = Text::new(&text).content_hash();
-        if self.watches.written.get(path) == Some(&hash) || buf.disk_hash.as_deref() == Some(hash.as_str()) {
-            return Vec::new(); // our own write, or nothing new
+        if self.watches.written.get(path) == Some(&hash) {
+            return Vec::new(); // our own write
+        }
+        self.content_changed(buf, text)
+    }
+
+    /// What the disk now says a buffer's content is: nothing new, a
+    /// reload for a clean buffer, or the stale flag for a dirty one.
+    fn content_changed(&self, buf: &apex_core::buffer::Buffer, text: String) -> Vec<Proposal> {
+        let hash = Text::new(&text).content_hash();
+        if buf.disk_hash.as_deref() == Some(hash.as_str()) || (!buf.dirty() && buf.text.content_hash() == hash) {
+            return Vec::new(); // nothing new
         }
         if buf.dirty() {
             if buf.stale {

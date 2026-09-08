@@ -1440,10 +1440,12 @@ impl Acme {
         let b = self.node.view_buffer(view).ok()?;
         let buf = self.node.state.buffer(b).ok()?;
         let v = buf.view(view);
-        let (mono, dirty, live, pulse) = match view {
+        let (mono, dirty, stale, live, pulse) = match view {
             ViewId::Body(w) | ViewId::Tag(w) => {
                 let win = self.node.state.window(w).ok()?;
-                let dirty = win.body_buffer().and_then(|b| self.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
+                let body = win.body_buffer().and_then(|b| self.node.state.buffer(b).ok());
+                let dirty = body.is_some_and(|b| b.dirty());
+                let stale = body.is_some_and(|b| b.stale && b.dirty());
                 // a page is live as a terminal is; while it loads, its
                 // handle breathes between live and pale
                 let web = win.body == Body::Web;
@@ -1454,15 +1456,16 @@ impl Acme {
                 } else {
                     None
                 };
-                (win.mono, dirty, web || self.node.window_live(w), pulse)
+                (win.mono, dirty, stale, web || self.node.window_live(w), pulse)
             }
-            _ => (false, false, false, None),
+            _ => (false, false, false, false, None),
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         Some(Source {
             kind: Kind::of(view),
             mono,
             dirty,
+            stale,
             live,
             pulse,
             unsynced: false,
