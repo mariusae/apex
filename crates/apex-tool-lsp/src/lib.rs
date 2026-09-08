@@ -3,7 +3,8 @@
 //! entry stream to feed servers incrementally, proposes what they answer,
 //! and installs plumbing rules that name it. Servers come from settings
 //! (`lsp.go gopls`), with defaults for the usual languages; one runs per
-//! workspace root.
+//! workspace root. `lsp.root` or `lsp.LANG.root` can name a marker that
+//! overrides the built-in workspace-root discovery.
 //!
 //! What it offers, through rules owned by its attachment: B3 on an
 //! identifier in a source file goes to its definition (NACK when there
@@ -48,9 +49,9 @@ pub struct Language {
 pub const LANGUAGES: &[Language] = &[
     Language { id: "go", exts: &["go"], default_server: "gopls", roots: &["go.work", "go.mod"] },
     Language { id: "rust", exts: &["rs"], default_server: "rust-analyzer", roots: &["Cargo.toml"] },
-    Language { id: "python", exts: &["py"], default_server: "pyright-langserver --stdio", roots: &["pyproject.toml", "setup.py", "requirements.txt"] },
+    Language { id: "python", exts: &["py", "pyi"], default_server: "pyright-langserver --stdio", roots: &["pyproject.toml", "setup.py", "requirements.txt"] },
     Language { id: "typescript", exts: &["ts", "tsx", "js", "jsx"], default_server: "typescript-language-server --stdio", roots: &["package.json"] },
-    Language { id: "c", exts: &["c", "h", "cc", "cpp", "hpp"], default_server: "clangd", roots: &["compile_commands.json", "Makefile"] },
+    Language { id: "c", exts: &["c", "h", "cc", "cpp", "cxx", "hh", "hpp", "hxx"], default_server: "clangd", roots: &["compile_commands.json", "Makefile"] },
 ];
 
 pub fn language_of(path: &str) -> Option<&'static Language> {
@@ -62,7 +63,26 @@ pub fn language_of(path: &str) -> Option<&'static Language> {
 /// from it with one of the language's markers, else `.git`, else the
 /// file's directory.
 pub fn root_of(path: &Path, lang: &Language) -> PathBuf {
+    root_of_with_marker(path, lang, None)
+}
+
+/// As [`root_of`], except that a configured marker takes precedence over
+/// language markers. This is useful for monorepos whose language servers need
+/// the repository root even when nested packages have their own manifests.
+fn root_of_with_marker(path: &Path, lang: &Language, marker: Option<&str>) -> PathBuf {
     let dir = path.parent().unwrap_or(path);
+    if let Some(marker) = marker.filter(|m| !m.is_empty()) {
+        let mut d = dir;
+        loop {
+            if d.join(marker).exists() {
+                return d.to_path_buf();
+            }
+            match d.parent() {
+                Some(p) => d = p,
+                None => break,
+            }
+        }
+    }
     let mut d = dir;
     let mut nearest: Option<PathBuf> = None;
     loop {
@@ -90,6 +110,34 @@ pub fn root_of(path: &Path, lang: &Language) -> PathBuf {
         match d.parent() {
             Some(p) => d = p,
             None => return dir.to_path_buf(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod root_tests {
+    use super::*;
+
+    #[test]
+    fn configured_marker_overrides_nested_language_marker() {
+        let root = std::env::temp_dir().join(format!("apex-lsp-marker-{}", std::process::id()));
+        let package = root.join("nested/package");
+        std::fs::create_dir_all(root.join(".hg")).unwrap();
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        std::fs::write(package.join("Cargo.toml"), "[package]\nname = \"nested\"\n").unwrap();
+        let file = package.join("src/lib.rs");
+
+        let rust = LANGUAGES.iter().find(|lang| lang.id == "rust").unwrap();
+        assert_eq!(root_of(&file, rust), package);
+        assert_eq!(root_of_with_marker(&file, rust, Some(".hg")), root);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recognizes_fblsp_file_extensions() {
+        for (file, want) in [("types.pyi", "python"), ("impl.cxx", "c"), ("api.hh", "c"), ("more.hxx", "c")] {
+            assert_eq!(language_of(file).map(|lang| lang.id), Some(want), "{file}");
         }
     }
 }
@@ -402,7 +450,8 @@ impl Tool {
             }
             let Some(lang) = language_of(name) else { continue };
             let path = PathBuf::from(name);
-            let root = root_of(&path, lang);
+            let root_marker = self.setting(&format!("lsp.{}.root", lang.id)).or_else(|| self.setting("lsp.root"));
+            let root = root_of_with_marker(&path, lang, root_marker.as_deref());
             let key = (lang.id.to_string(), root.clone());
             if self.failed.contains(&key) {
                 continue;

@@ -11,7 +11,8 @@
 #   zsh   $ZDOTDIR points at a directory whose .zshenv installs the hook
 #         and then hands over to the user's own files
 #   bash  $PROMPT_COMMAND (a startup file that sets its own loses this)
-#   fish  a vendor_conf.d snippet, found through $XDG_DATA_DIRS
+#   fish  a vendor_conf.d snippet, found through $XDG_DATA_DIRS; its title
+#         uses $PWD verbatim instead of fish's prompt-style abbreviation
 #
 # It runs with $apexsession, $APEX_SOCKET and $apexclient set, so `apex`
 # here acts on the session being made; `apex env` sets what its terminals
@@ -53,8 +54,11 @@ apex env PROMPT_COMMAND='[[ $PWD != "$__apex_pwd" ]] && __apex_pwd=$PWD && comma
 
 # fish: a snippet fish loads from every data directory
 {
-	echo '# apex: name the window after the directory (acme''s win)'
+	echo '# apex: name the window after the full directory (acme''s win)'
 	echo 'if status is-interactive'
+	echo '	function fish_title'
+	echo '		echo -- $PWD'
+	echo '	end'
 	echo '	function __apex_awd --on-variable PWD'
 	echo '		command apex awd'
 	echo '	end'

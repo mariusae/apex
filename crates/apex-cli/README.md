@@ -64,7 +64,8 @@ titles the window `LABEL` (the host by default), so the window reads
 In rc, `fn cd { builtin cd $1 && apex awd }` keeps the window's name (and
 so where relative names resolve) on the shell's directory; shells that
 report their directory with OSC 7 (`ESC ] 7 ; file://host/path BEL`) or
-set an xterm title get the same treatment.
+set an xterm title get the same treatment. The example profile overrides
+fish's prompt-abbreviated title with the full `$PWD`.
 
 ## Profile and attach
 
@@ -181,6 +182,11 @@ files open in the session (`lsp.LANG` names the command: `apex set
 lsp.go gopls`; gopls, rust-analyzer, pyright, typescript-language-server
 and clangd are the defaults), opens and closes documents as buffers come
 and go, and feeds every edit incrementally, read off the entry stream.
+The nearest language marker determines the workspace root by default.
+`lsp.root` names an overriding marker for every language, and
+`lsp.LANG.root` overrides it for one language; for example, `apex set
+lsp.root .hg` makes a Mercurial monorepo one workspace even when it contains
+nested package manifests.
 Diagnostics go to `root/+lsp`, one plumbable `file:line:col: message`
 per line, replaced as they change. Its rules, gone when it is: B3 on an
 identifier in a source file goes to the definition (no definition, and

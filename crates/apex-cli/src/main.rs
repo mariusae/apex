@@ -306,6 +306,8 @@ owner. Settings in use:
 	                  an empty value turns one off
 	Preview APP       the app a rule's own -client=preview falls back to
 	lsp.LANG CMD      the language server for LANG (apex help tool)
+	lsp.root MARKER   an overriding workspace-root marker for every language;
+	lsp.LANG.root MARKER overrides it for one language
 	Newterm.shell SH  the shell Newterm runs (a path, or a name on the
 	                  daemon's PATH); the daemon's $SHELL otherwise" },
     Cmd { name: "cat", usage: "apex cat PATH", short: "the bytes of a file on the host", flags: &[], run: cat, long: "\
@@ -366,7 +368,9 @@ the user's shell.
 apex tool lsp attaches as the tool named lsp and runs language
 servers for the files open in it, one per workspace root: gopls,
 rust-analyzer, pyright, typescript-language-server and clangd unless a
-setting lsp.LANG names another command. Documents are opened as buffers
+setting lsp.LANG names another command. The optional lsp.root setting names
+a workspace marker that takes precedence over the built-in language markers;
+lsp.LANG.root overrides it for one language. Documents are opened as buffers
 appear and every edit is fed incrementally. Diagnostics go to root/+lsp,
 one plumbable file:line:col: message per line.
 
