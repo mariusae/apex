@@ -88,7 +88,8 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert_eq!(verbs, want);
     // Def recorded where we came from: Back returns there
     c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false });
+    // (the f moved by one with the formatting; the server reads the text there)
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 19, q1: 19 }), sel: Some(Span { buffer: b, q0: 19, q1: 20 }), alt: None, reverse: false });
     // (the formatted text's line 1 is empty: the server's column clamps to its start)
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((13, 13))), "def again: {:?}", c.node.selection(ViewId::Body(w)));
     assert!(until(&mut c, |n| !n.state.layout.nav_back.is_empty()), "stack");

@@ -1883,26 +1883,17 @@ impl Acme {
             }
             MouseButton::Right => {
                 if let Some(d) = self.mouse.b3.take() {
-                    let found = self.take_range_at(d, HlKind::Look);
+                    // what was swept or selected under the pointer, else a
+                    // click: the server expands from the pointer as acme's
+                    // look3 does, where the files are (`sel` says which)
+                    let explicit = self.explicit_range_at(d);
+                    let found = explicit.clone().or_else(|| self.take_range_at(d, HlKind::Look));
                     self.hl = None;
                     if let Some((text, (lo, hi))) = found {
-                        // where the button went down, and what it took;
-                        // acme's expand: the file-name expansion first, then,
-                        // should nothing take it, the word (isalnum)
                         let b = self.node.view_buffer(d.view).ok();
                         let at = b.map(|b| Span { buffer: b, q0: d.anchor, q1: d.anchor });
-                        let sel = b.map(|b| Span { buffer: b, q0: lo, q1: hi });
-                        let alt = match (b, self.text_of(d.view)) {
-                            (Some(b), Some(t)) => {
-                                let (a, z) = expand(&t, d.anchor, is_alnum);
-                                if a < z && (a, z) != (lo, hi) && lo <= a && z <= hi {
-                                    Some((t.slice(a, z), Span { buffer: b, q0: a, q1: z }))
-                                } else {
-                                    None
-                                }
-                            }
-                            _ => None,
-                        };
+                        let sel = b.filter(|_| explicit.is_some()).map(|b| Span { buffer: b, q0: lo, q1: hi });
+                        let alt = None;
                         let reverse = self.mouse.b3_reverse;
                         let ctx = self.ctx_of(d.view);
                         if reverse && self.back_offered(d.view.window()) {
@@ -1941,7 +1932,9 @@ impl Acme {
     }
 
     /// `take_range`, with where the text came from.
-    fn take_range_at(&mut self, d: Drag, kind: HlKind) -> Option<(String, (usize, usize))> {
+    /// What a button took on purpose: the sweep, or the selection the
+    /// pointer is in. None for a plain click.
+    fn explicit_range_at(&self, d: Drag) -> Option<(String, (usize, usize))> {
         let t = self.text_of(d.view)?;
         if let Some((hv, lo, hi, _)) = self.hl {
             if hv == d.view && lo < hi {
@@ -1952,6 +1945,14 @@ impl Acme {
         if q0 < q1 && q0 <= d.anchor && d.anchor <= q1 {
             return Some((t.slice(q0, q1), (q0, q1)));
         }
+        None
+    }
+
+    fn take_range_at(&mut self, d: Drag, kind: HlKind) -> Option<(String, (usize, usize))> {
+        if let Some(r) = self.explicit_range_at(d) {
+            return Some(r);
+        }
+        let t = self.text_of(d.view)?;
         let pred: fn(char) -> bool = match kind {
             HlKind::Exec => is_exec_char,
             HlKind::Look => is_file_char,

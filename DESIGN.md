@@ -763,10 +763,23 @@ released on an item it runs as B2 would, released outside nothing runs;
 more than 25 items scroll. Verbs are not written into tags. B2 on a
 verb's word walks the rules with it, ahead of the shell. A `Plumb`
 carries where it came from: `at`, the pointer or dot as a `Span`, and
-`sel`, what was expanded or swept, either or both; and `alt`, the word
-(acme's `isalnum` expansion) within the file-name expansion (`isfilec`:
-alnum and `.-+/:@`), which the walk tries when nothing takes the longer
-text, before Look, as acme's `expand` does (`expandfile`, then the word). Actions: `Edit` (open in the session), `Run` (a host command,
+`sel`, what was swept or the selection the pointer was in; a click
+sends `at` alone. The expansion is acme's, one for one (`look.c`'s
+`expand`/`expandfile`, `apex_core::expand`), and runs on the server,
+where the files are, at the start of the walk: from the pointer, the
+text runs over `isfilec` characters to the first colon on the right (a
+scheme's `http:`/`https:` colon excepted), back over file, address and
+regexp characters, then over address characters after the colon; when
+the name before the colon is a window's name or a file relative to the
+window's directory (an empty name, `:12`, is the window's own), that is
+what B3 took, with the address text up to white space (`123:1` gives
+line 123, the rest ignored as acme's `address` stops there; `#12` a
+character); a `http://` or `https://` run is taken whole; otherwise the
+word (acme's `isalnum`). A sweep or selection is taken as it is, still
+read for a name and address. The rules see that text; when none takes
+it, a file opens at its address (acme's `look3` after plumbing) and
+anything else is looked for. `alt` is no longer sent. Left out:
+`<name>` as an include file. Actions: `Edit` (open in the session), `Run` (a host command,
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
 the UI, which may refuse; a headless leader always does), `Tool(name)`
 (`ServerMsg::Plumb` to the attachment of that name, `PlumbAck` within a

@@ -9,6 +9,7 @@
 
 pub mod buffer;
 pub mod entry;
+pub mod expand;
 pub mod ids;
 pub mod log;
 pub mod node;

@@ -946,7 +946,7 @@ impl Server {
             to: None,
         };
         let defaults = [
-            r(r"(\S+?):(\d+)[.,;:)]*", Some("$1"), None, "$1:$2"),
+            r(r"(\S+?):(\d+)(:\d+)?[.,;:)]*", Some("$1"), None, "$1:$2"),
             r(r"(\S+?)[.,;:)]*", Some("$1"), None, "$1"),
             r(r"(\S+?)[.,;:)]*", None, Some("$1"), "$1"),
         ];
@@ -1013,6 +1013,37 @@ impl Server {
             Some(w) => (view.window_name(w), view.window_kind(w)),
             None => (String::new(), WinKind::File),
         };
+        // acme's expand, here where the files are: from the pointer (a
+        // click), or over what was swept or selected, the text B3 takes
+        // and whether it names a file; the rules see that text
+        let mut req = req;
+        let mut file = None;
+        let mut trace = Vec::new();
+        let mut nothing = false;
+        if let Some(at) = req.at.filter(|_| req.verb == "plumb") {
+            if let Ok(buf) = view.state.buffer(at.buffer) {
+                let (q0, q1) = req.sel.map(|s| (s.q0, s.q1)).unwrap_or((at.q0, at.q0));
+                let is_file = |n: &str| n.is_empty() || view.state.windows.keys().any(|w| view.window_name(*w) == n) || resolve(&dir, n).exists();
+                match apex_core::expand::expand(&buf.text, q0, q1, &is_file) {
+                    Some(e) => {
+                        req.text = buf.text.slice(e.q0, e.q1);
+                        req.sel = Some(Span { buffer: at.buffer, q0: e.q0, q1: e.q1 });
+                        req.alt = None;
+                        if let Some((fname, addr)) = e.file {
+                            let target = if fname.is_empty() { name.clone() } else { resolve(&dir, &fname).display().to_string() };
+                            trace.push(format!("expanded to {:?}: the file {target} at {addr:?}", req.text));
+                            file = Some((target, addr));
+                        } else {
+                            trace.push(format!("expanded to {:?}", req.text));
+                        }
+                    }
+                    None => {
+                        trace.push("nothing to expand at the pointer".into());
+                        nothing = true;
+                    }
+                }
+            }
+        }
         let sel = view.seltext.and_then(|v| view.selected_text(v).ok()).unwrap_or_default();
         let base = Bindings {
             groups: Vec::new(),
@@ -1023,7 +1054,11 @@ impl Server {
             sel,
         };
         let remaining: Vec<(RuleId, apex_core::state::Rule)> = apex_core::plumb::ordered(&view.state.meta.rules).into_iter().map(|(i, r)| (i, r.clone())).collect();
-        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, trace: Vec::new() });
+        if nothing {
+            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace });
+            return (id, if self.plumbs[&id].req.dry { self.plumb_trace(id) } else { self.plumb_finish(id, Vec::new()) });
+        }
+        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace });
         let step = self.plumb_advance(view, id);
         (id, step)
     }
@@ -1187,7 +1222,13 @@ impl Server {
             return self.plumb_finish(id, vec![prop]);
         }
         if verb == "plumb" {
-            let reverse = self.plumbs.get(&id).is_some_and(|p| p.req.reverse);
+            let p = &self.plumbs[&id];
+            let reverse = p.req.reverse;
+            if let Some((target, addr)) = p.file.clone() {
+                // acme's look3: a file name opens the file at its address
+                let pos = address_pos(&addr);
+                return self.plumb_finish(id, vec![Proposal::Goto { loc: Loc { name: target, pos } }]);
+            }
             return self.plumb_finish(id, vec![Proposal::Look { ctx, text, reverse }]);
         }
         let mut props = vec![Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{verb}: no rule takes it here\n") }];
@@ -1240,6 +1281,19 @@ impl Server {
 }
 
 /// `name:line` split, when the tail is a number.
+/// The position an address after a file name's colon means, of the
+/// forms the session can go to: a line (`12`), a character (`#12`);
+/// anything else (a regexp, `$`) leaves the selection alone, and what
+/// follows a line number (`12:3`, a column) is ignored, as acme's
+/// `address` stops there.
+fn address_pos(addr: &str) -> Pos {
+    let digits = |s: &str| s.chars().take_while(|c| c.is_ascii_digit()).collect::<String>();
+    if let Some(rest) = addr.strip_prefix('#') {
+        return digits(rest).parse().map(|n| Pos::Chars(n, n)).unwrap_or(Pos::Keep);
+    }
+    digits(addr).parse().map(Pos::Line).unwrap_or(Pos::Keep)
+}
+
 fn split_line(target: &str) -> (String, Option<usize>) {
     match target.rsplit_once(':') {
         Some((p, l)) if !p.is_empty() && !l.is_empty() && l.chars().all(|c| c.is_ascii_digit()) => (p.to_string(), l.parse().ok()),
@@ -1294,6 +1348,9 @@ struct Plumb {
     name: String,
     kind: WinKind,
     base: Bindings,
+    /// The expansion named a file (resolved) with this address text:
+    /// opened when no rule takes the text (acme's look3 after plumbing).
+    file: Option<(String, String)>,
     remaining: Vec<(RuleId, apex_core::state::Rule)>,
     trace: Vec<String>,
 }
