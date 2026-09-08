@@ -801,7 +801,13 @@ removes and remakes them for the new name; Home in a live text window
 goes to where the other side's output ended, the prompt (the client
 keeps, per buffer, where the last edit by another attachment ended,
 counting the `Insert` and `ReplaceRange` proposals it applies as the
-lead, which is how win's output arrives).
+lead, which is how win's output arrives). The window follows that
+output by acme's rule (`xfidwrite`'s `shouldscroll`): when the point
+the text went in at was on screen, the end of it is shown, three
+quarters of the window down as for a window with an event reader;
+scrolled away from it, the window stays where it is. Win's `Select`
+after its output moves dot only; a `Select` proposal names no window,
+so it neither scrolls to nor focuses it.
 B2 on any text in its window (win's
 'x'/'X' events, `sende`) types it to the shell, appended after the typing
 with a newline, dot after it: win holds a rule with the special verb

@@ -53,6 +53,9 @@ pub struct Link {
     pub acked: HashMap<Shard, Seq>,
     /// Windows made by proposals since the last `take_made`.
     made: Vec<WindowId>,
+    /// Text a program put into a buffer through a proposal since the last
+    /// `take_outputs`: `(buffer, at, end)`, for acme's scrolling rule.
+    outputs: Vec<(BufferId, usize, usize)>,
     /// Answers to this tool's proposals, by its ids.
     pub applied: HashMap<u64, Result<Option<WindowId>, String>>,
     /// The last session listing received.
@@ -218,7 +221,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -318,10 +321,14 @@ impl Link {
                 // applied here as the lead: where it ended is the prompt
                 match &proposal {
                     Proposal::Insert { buffer, at, text, .. } => {
-                        self.foreign_end.insert(*buffer, at + text.chars().count());
+                        let end = at + text.chars().count();
+                        self.foreign_end.insert(*buffer, end);
+                        self.outputs.push((*buffer, *at, end));
                     }
                     Proposal::ReplaceRange { buffer, q0, text, .. } if !text.is_empty() => {
-                        self.foreign_end.insert(*buffer, q0 + text.chars().count());
+                        let end = q0 + text.chars().count();
+                        self.foreign_end.insert(*buffer, end);
+                        self.outputs.push((*buffer, *q0, end));
                     }
                     _ => {}
                 }
@@ -399,6 +406,11 @@ impl Link {
     /// Windows opened or looked in by proposals since the last call.
     pub fn take_made(&mut self) -> Vec<WindowId> {
         std::mem::take(&mut self.made)
+    }
+
+    /// What programs wrote into buffers since the last call.
+    pub fn take_outputs(&mut self) -> Vec<(BufferId, usize, usize)> {
+        std::mem::take(&mut self.outputs)
     }
 
     /// Drain everything queued from the server without blocking.

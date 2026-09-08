@@ -292,9 +292,10 @@ pub struct Source {
     pub origin: usize,
     pub hl: Option<(usize, usize, HlKind)>,
     pub want_visible: bool,
-    /// Bring this position on screen, a quarter of the window down when
-    /// it is not (acme's `textshow` for new `+Errors` text).
-    pub show_at: Option<usize>,
+    /// Bring this position on screen when it is not: acme's `textshow`,
+    /// the position `quarters` quarters of the window down (one for new
+    /// `+Errors` text, three for a program's output into a win).
+    pub show_at: Option<(usize, usize)>,
 }
 
 pub struct TextElement {
@@ -516,11 +517,11 @@ impl Element for TextElement {
                         n += 1;
                     }
                     let last_full = if y <= height { n } else { n.saturating_sub(1) };
-                    if let Some(q) = src.show_at {
-                        // textshow: the start of the new text, maxlines/4 from the top
+                    if let Some((q, quarters)) = src.show_at {
+                        // textshow: the position quarters*maxlines/4 from the top
                         let cl = text.line_of(q.min(text_len));
                         if cl < first || cl >= last_full {
-                            first = cl.saturating_sub(fit / 4);
+                            first = cl.saturating_sub(fit * quarters / 4);
                             continue;
                         }
                         break;

@@ -195,7 +195,7 @@ pub struct Acme {
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
-    show_at: HashMap<ViewId, usize>,
+    show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
     pending_goto: Option<Loc>,
     /// ⌘P, when open.
@@ -1074,7 +1074,7 @@ impl Acme {
         let _ = self.node.update_tags(&mut self.log);
         self.track_closed();
         for (v, q) in self.node.take_shows() {
-            self.show_at.insert(v, q);
+            self.show_at.insert(v, (q, 1));
         }
         for loc in self.node.take_gotos() {
             self.goto(loc);
@@ -1332,8 +1332,22 @@ impl Acme {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
         self.connected = alive;
-        for w in link.take_made() {
+        let made = link.take_made();
+        let outputs = link.take_outputs();
+        for w in made {
             self.show(w);
+        }
+        // acme's rule for a program's output (xfidwrite's shouldscroll):
+        // a window follows it when the point it went in at was on screen,
+        // shown three quarters down as for a win; scrolled away, it stays
+        for (b, at, end) in outputs {
+            let views: Vec<ViewId> = self.node.state.windows.iter().filter(|(_, x)| x.body_buffer() == Some(b)).map(|(w, _)| ViewId::Body(*w)).collect();
+            for v in views {
+                let on_screen = self.layouts.get(&v).and_then(|l| Some((l.lines.first()?.start, l.lines.last()?.end))).is_some_and(|(s, e)| s <= at && at <= e);
+                if on_screen {
+                    self.show_at.insert(v, (end, 3));
+                }
+            }
         }
         if let Some(name) = ended {
             // the session was ended under us: the window says so, offline

@@ -164,7 +164,8 @@ fn a_tool_works_on_a_headless_session_and_a_ui_takes_over() {
     let id = tool.link.propose(Proposal::Select { view: v, q0: 0, q1: 1 });
     assert!(wait(&mut ui, |r| r.node.selection(v).ok() == Some((0, 1))));
     assert!(wait(&mut tool, |r| r.link.applied.contains_key(&id)));
-    assert_eq!(tool.link.applied.remove(&id).unwrap(), Ok(Some(w)));
+    // a Select names no window: moving dot is not a look into it
+    assert_eq!(tool.link.applied.remove(&id).unwrap(), Ok(None));
     assert!(wait(&mut tool, |r| r.node.selection(v).ok() == Some((0, 1))));
     // the UI goes away: leases return to the daemon, which leads again
     drop(ui);

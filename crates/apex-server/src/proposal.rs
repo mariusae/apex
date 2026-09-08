@@ -290,8 +290,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(Some(window))
         }
         Proposal::Select { view, q0, q1 } => {
+            // a program moving dot (win's, after its output) is not a
+            // look into the window: no scrolling to it, no focus
             node.select(log, view, q0, q1)?;
-            Ok(view.window())
+            Ok(None)
         }
     }
 }
