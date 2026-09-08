@@ -466,12 +466,21 @@ impl Host {
     }
 }
 
-/// A host's sessions: asked for, here, or not to be had.
+/// A host's sessions: as last seen while the host is asked (they are
+/// mostly the same), here, or not to be had (the last seen still shown).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Loading {
-    Pending,
+    Seeded(Vec<String>),
     Ready(Vec<String>),
-    Failed(String),
+    Failed(Vec<String>, String),
+}
+
+impl Loading {
+    pub fn names(&self) -> &[String] {
+        match self {
+            Loading::Seeded(n) | Loading::Ready(n) | Loading::Failed(n, _) => n,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -585,6 +594,45 @@ pub fn note_host(url: &SessionUrl) {
     write_hosts(&list);
 }
 
+fn sessions_file() -> PathBuf {
+    state_file().with_file_name("known-sessions")
+}
+
+/// The sessions each host had when last asked (the file), plus what the
+/// recent sessions say: what the picker shows before a host answers.
+pub fn known_sessions() -> HashMap<Host, Vec<String>> {
+    let mut out: HashMap<Host, Vec<String>> = HashMap::new();
+    if let Ok(text) = std::fs::read_to_string(sessions_file()) {
+        for line in text.lines() {
+            let mut it = line.splitn(3, '\t');
+            if let (Some(p), Some(h), Some(names)) = (it.next(), it.next(), it.next()) {
+                let host = Host { provider: p.to_string(), arg: h.to_string() };
+                out.insert(host, names.split(',').filter(|n| !n.is_empty()).map(String::from).collect());
+            }
+        }
+    }
+    for u in recent() {
+        let e = out.entry(Host::of(&u)).or_default();
+        if !e.contains(&u.session) {
+            e.push(u.session.clone());
+        }
+    }
+    out
+}
+
+/// A host answered: its sessions are what the picker shows for it next time.
+pub fn note_sessions(h: &Host, names: &[String]) {
+    let mut all = known_sessions();
+    all.insert(h.clone(), names.to_vec());
+    let p = sessions_file();
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let mut lines: Vec<String> = all.iter().map(|(h, n)| format!("{}\t{}\t{}", h.provider, h.arg, n.join(","))).collect();
+    lines.sort();
+    let _ = std::fs::write(p, lines.join("\n") + "\n");
+}
+
 /// A host forgotten (the × on its section): its sessions leave the
 /// recent list too, so it does not come back from there.
 pub fn forget_host(h: &Host) {
@@ -629,23 +677,23 @@ impl Selector {
             let (name, prov) = h.parts();
             let host_matches = fl.is_empty() || format!("{name} {prov}").to_lowercase().contains(&fl);
             let mut section = Vec::new();
-            match self.sessions.get(h) {
-                Some(Loading::Ready(names)) => {
-                    for n in names {
-                        let u = h.url(n.as_str());
-                        if (host_matches || u.to_string().to_lowercase().contains(&fl)) && !seen.contains(&u) {
-                            seen.push(u.clone());
-                            section.push(Row::Open(u));
-                        }
-                    }
+            let loading = self.sessions.get(h);
+            for n in loading.map(|l| l.names()).unwrap_or(&[]) {
+                let u = h.url(n.as_str());
+                if (host_matches || u.to_string().to_lowercase().contains(&fl)) && !seen.contains(&u) {
+                    seen.push(u.clone());
+                    section.push(Row::Open(u));
                 }
-                Some(Loading::Failed(e)) if host_matches => section.push(Row::Note(format!("unreachable: {e}"))),
-                Some(Loading::Failed(_)) => {}
-                _ if host_matches => section.push(Row::Note("asking…".into())),
-                _ => {}
             }
-            if host_matches && !matches!(self.sessions.get(h), Some(Loading::Failed(_))) {
-                section.push(Row::NewSession(h.clone()));
+            if host_matches {
+                match loading {
+                    Some(Loading::Failed(_, e)) => section.push(Row::Note(format!("unreachable: {e}"))),
+                    Some(Loading::Ready(_)) => {}
+                    _ => section.push(Row::Note("asking…".into())),
+                }
+                if !matches!(loading, Some(Loading::Failed(..))) {
+                    section.push(Row::NewSession(h.clone()));
+                }
             }
             if !section.is_empty() {
                 rows.push(Row::Header(h.clone()));
@@ -758,10 +806,16 @@ impl Acme {
             hosts.push(here);
         }
         let mut sel = Selector { filter: String::new(), cursor: 0, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        // what each host had last time, shown at once; the answers update it
+        let mut known = known_sessions();
         for h in &hosts {
-            sel.sessions.insert(h.clone(), Loading::Pending);
+            let mut names = known.remove(h).unwrap_or_default();
+            if *h == Host::of(&self.url) && !names.contains(&self.url.session) {
+                names.push(self.url.session.clone());
+            }
+            sel.sessions.insert(h.clone(), Loading::Seeded(names));
         }
-        sel.settle();
+        sel.land_on_current();
         self.selector = Some(sel);
         // every host's sessions, asked for in the background: a host that
         // is down, or slow, holds nothing up
@@ -804,9 +858,13 @@ impl Acme {
                     if let Some(sel) = acme.selector.as_mut() {
                         if sel.epoch == epoch {
                             let was_on_current = sel.rows().get(sel.cursor).is_some_and(|r| matches!(r, Row::Open(u) if *u == sel.current));
-                            sel.sessions.insert(h, match r {
-                                Ok(names) => Loading::Ready(names),
-                                Err(e) => Loading::Failed(e),
+                            let before = sel.sessions.get(&h).map(|l| l.names().to_vec()).unwrap_or_default();
+                            sel.sessions.insert(h.clone(), match r {
+                                Ok(names) => {
+                                    note_sessions(&h, &names);
+                                    Loading::Ready(names)
+                                }
+                                Err(e) => Loading::Failed(before, e),
                             });
                             if was_on_current || sel.filter.is_empty() {
                                 sel.land_on_current();
@@ -933,7 +991,7 @@ impl Acme {
                 if !sel.hosts.contains(&h) {
                     sel.hosts.push(h.clone());
                 }
-                sel.sessions.insert(h.clone(), Loading::Pending);
+                sel.sessions.insert(h.clone(), Loading::Seeded(Vec::new()));
                 let rows = sel.rows();
                 sel.cursor = rows.iter().position(|r| matches!(r, Row::NewSession(x) if *x == h)).unwrap_or(0);
                 sel.settle();
@@ -1210,6 +1268,8 @@ impl Acme {
                                         if let Some(s) = this.selector.as_mut() {
                                             s.hosts.retain(|x| *x != forget);
                                             s.sessions.remove(&forget);
+                                            let mut all = known_sessions();
+                                            all.remove(&forget);
                                             s.settle();
                                         }
                                         cx.stop_propagation();
@@ -1309,8 +1369,8 @@ mod picker_tests {
         let down = Host { provider: "ssh".into(), arg: "gone".into() };
         let mut sessions = HashMap::new();
         sessions.insert(local.clone(), Loading::Ready(vec!["default".into(), "notes".into()]));
-        sessions.insert(box_.clone(), Loading::Pending);
-        sessions.insert(down.clone(), Loading::Failed("no route".into()));
+        sessions.insert(box_.clone(), Loading::Seeded(vec!["work".into()]));
+        sessions.insert(down.clone(), Loading::Failed(vec!["old".into()], "no route".into()));
         Selector { filter: String::new(), cursor: 0, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
     }
 
@@ -1331,7 +1391,9 @@ mod picker_tests {
                 other => format!("{other:?}"),
             })
             .collect();
-        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "note:asking…", "+session", "[gone]", "note:unreachable", "-", "+host", "rename"]);
+        // a host still asked shows what it had last time, then "asking…";
+        // one that could not be reached keeps what it had, and says so
+        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "work", "note:asking…", "+session", "[gone]", "old", "note:unreachable", "-", "+host", "rename"]);
         // the cursor lands on this window's session
         let mut sel = picker();
         sel.land_on_current();

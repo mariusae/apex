@@ -1013,10 +1013,13 @@ this one (detach, attach).
 sessions; `local` always first). It is a section per host, the host's
 name with its provider in parentheses dimmed and a × to forget it,
 holding the host's sessions and "+ new session", which asks for a
-name and creates it there. Each host's sessions are asked for in the
-background when the picker opens (a section says "asking…", then lists
-them, or says why not), so a host that is down holds nothing up; an
-answer for an earlier opening is dropped. "+ new host…" opens a form:
+name and creates it there. A section opens with the sessions the host
+had when last asked (`known-sessions` beside the other state files,
+plus what the recent sessions say: they are mostly the same), and each
+host is asked again in the background (the section says "asking…"
+meanwhile, then shows the answer, or keeps what it had and says why
+the host could not be reached), so a host that is down holds nothing
+up; an answer for an earlier opening is dropped. "+ new host…" opens a form:
 the providers as pills (`ssh` and every `apex-remote-NAME` on the
 PATH; ←→ or a letter picks one) and the host; enter remembers it and
 asks for its sessions. The search narrows sessions and hosts, and a
