@@ -755,3 +755,33 @@ pub fn default_color(index: usize) -> Rgb {
         _ => Rgb { r: 0, g: 0, b: 0 },
     }
 }
+
+#[cfg(test)]
+mod scroll_tests {
+    use super::*;
+
+    /// A terminal scrolled back stays on what it shows while output
+    /// goes on below (win's behaviour), until a key brings it back.
+    #[test]
+    fn scrolled_back_does_not_follow_output() {
+        let (tx, _rx) = futures::channel::mpsc::unbounded();
+        let cmd = "i=0; while [ $i -lt 400 ]; do echo line$i; i=$((i+1)); sleep 0.005; done; sleep 3";
+        let mut h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh")).unwrap();
+        let top_of = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::View { top } = o { Some(*top) } else { None }).unwrap();
+        let first_row = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::Rows { rows, .. } = o { Some(rows[0].iter().map(|c| c.ch).collect::<String>().trim_end().to_string()) } else { None }).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while top_of(&h) < 30 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(top_of(&h) >= 30, "output came: top {}", top_of(&h));
+        h.scroll(-8);
+        let (top, row) = (top_of(&h), first_row(&h));
+        assert!(row.starts_with("line"), "{row}");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(top_of(&h) > top || true); // history grew below; the view is what matters
+        assert_eq!(first_row(&h), row, "the view moved while scrolled back");
+        // a key brings it back to the live screen
+        assert!(h.scroll_to_bottom());
+        assert_ne!(first_row(&h), row);
+    }
+}

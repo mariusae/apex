@@ -70,13 +70,26 @@ pub fn double_click(t: &Text, q: usize) -> (usize, usize) {
         }
     }
     // try filling out word to right, then to left
-    while q1 < n && t.char_at(q1).is_alphanumeric() {
+    while q1 < n && acme_isalnum(t.char_at(q1)) {
         q1 += 1;
     }
-    while q0 > 0 && t.char_at(q0 - 1).is_alphanumeric() {
+    while q0 > 0 && acme_isalnum(t.char_at(q0 - 1)) {
         q0 -= 1;
     }
     (q0, q1)
+}
+
+/// acme's `isalnum` (text.c): "hard to get absolutely right"; what is
+/// not a control, a space, ASCII punctuation (`_` is not), or in the
+/// Latin-1 control range is taken for part of a word.
+pub fn acme_isalnum(c: char) -> bool {
+    if c <= ' ' {
+        return false;
+    }
+    if ('\u{7f}'..='\u{a0}').contains(&c) {
+        return false;
+    }
+    !"!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".contains(c)
 }
 
 /// acme's `textclickmatch`.
@@ -415,7 +428,7 @@ impl Node {
     /// A window whose body is a terminal (the term shard exists already).
     pub fn open_term_window(&mut self, log: &mut Log, col: ColumnId, name: &str, term: TermId) -> Result<WindowId> {
         let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf | Look "), None)?;
+        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf Send | Look "), None)?;
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Term(term) }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
@@ -1061,6 +1074,10 @@ impl Node {
                 // a page's history and reload (the client does them)
                 new.push_str(" Back Fwd Get");
             }
+            if matches!(win.body, Body::Term(_)) {
+                // win's Send: the selection, else the snarf buffer, to the shell
+                new.push_str(" Send");
+            }
             new.push_str(" |");
             let old = self.state.buffer(tag)?.text.to_string();
             // a name typed into the tag stays until it is committed (acme's
@@ -1546,4 +1563,22 @@ pub fn web_url(target: &str, dir: &str) -> String {
     }
     let dir = dir.trim_end_matches('/');
     format!("apexfile://{dir}/{target}")
+}
+
+#[cfg(test)]
+mod click_tests {
+    use super::*;
+
+    #[test]
+    fn double_click_takes_acmes_words() {
+        let t = Text::new("foo_bar() x→y  ab\n");
+        // an underscore is part of a word, as in acme; the parens are not
+        assert_eq!(double_click(&t, 1), (0, 7));
+        assert_eq!(double_click(&t, 5), (0, 7));
+        // a rune above Latin-1 is a word character too
+        assert_eq!(double_click(&t, 11), (10, 13));
+        // brackets: inside them, the whole
+        assert_eq!(double_click(&t, 8), (8, 8));
+        assert!(!acme_isalnum(' ') && !acme_isalnum('(') && acme_isalnum('_') && acme_isalnum('é'));
+    }
 }

@@ -799,7 +799,9 @@ them, which is what lets win see ^D. The rules that make the window
 win's name it by name, so when the shell renames it (`awd` on cd) win
 removes and remakes them for the new name; Home in a live text window
 goes to where the other side's output ended, the prompt (the client
-keeps, per buffer, where the last edit by another attachment ended).
+keeps, per buffer, where the last edit by another attachment ended,
+counting the `Insert` and `ReplaceRange` proposals it applies as the
+lead, which is how win's output arrives).
 B2 on any text in its window (win's
 'x'/'X' events, `sende`) types it to the shell, appended after the typing
 with a newline, dot after it: win holds a rule with the special verb
@@ -956,7 +958,12 @@ and bash bind for words), opt-backspace `ESC DEL`, and other modified
 keys in xterm's `CSI 1;m` form (opt-up is `ESC [1;3A`). OSC 8
 hyperlinks travel in the term shard (`Cell::link` into
 `TermOp::Links`), draw underlined, and B3 on one plumbs the link
-rather than its text. The wheel over a terminal goes to the program
+rather than its text. A terminal's tag has `Send`, win's: the text
+swept with B1, else the snarf buffer, typed into the shell with a
+newline (the client sends a visible selection itself; the server sends
+the snarf buffer). A terminal scrolled back stays on what it shows
+while output goes on below, as win does, until a key or paste brings
+it back to the live screen. The wheel over a terminal goes to the program
 when it asked for the mouse (DECSET 1000/1002/1003: wheel buttons 64
 and 65 at the cell, SGR or X10 form) or runs on the alternate screen
 with alternate scroll (DECSET 1007, xterm's default: up and down
@@ -1152,7 +1159,10 @@ the last column being deletable, `New` making a column when there is none;
 the mouse to the match; `Tab`, `Indent on|off` (autoindent), `ID`; Up and
 Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
 a third of the window and PageUp/PageDown two thirds; Home and End; the
-erase keys; and the pointers: plan9port's big arrow always, the box while
+erase keys; double-click expansion with acme's `isalnum` (`_` and any
+rune above Latin-1 are word characters, ASCII punctuation is not); the
+wheel's fractions of a line carried over so a trackpad's small deltas
+add up; and the pointers: plan9port's big arrow always, the box while
 a layout box is held. Also matching: the scrollbar scrolling
 continuously while a button is held, the pointer kept on the bar
 (`textscroll`: 200 ms, then every 80 ms, by the pointer's height in the

@@ -76,6 +76,9 @@ struct Mouse {
     chorded: bool,
     /// B1 was pressed while B2 was down: the command gets an argument.
     chord_arg: bool,
+    /// The wheel's fraction of a line not yet scrolled, per target: a
+    /// trackpad's small deltas add up instead of being dropped.
+    wheel_rest: Option<(Target, f32)>,
     /// acme's `coldragwin`/`rowdragcol`: the box, the button, where it was pressed.
     box_drag: Option<(BoxTarget, MouseButton, Point<Pixels>)>,
     /// acme's `textscroll`: a scrollbar button held, and the pointer's height.
@@ -144,7 +147,7 @@ enum Region {
     TermScrollbar,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
     View(ViewId),
     Term(WindowId, TermId),
@@ -2415,7 +2418,13 @@ impl Acme {
             ScrollDelta::Lines(p) => p.y,
             ScrollDelta::Pixels(p) => p.y / lh,
         };
-        let n = (-lines).round() as i64;
+        let rest = match self.mouse.wheel_rest {
+            Some((t, r)) if t == target => r,
+            _ => 0.,
+        };
+        let total = -f32::from(lines) + rest;
+        let n = total.round() as i64;
+        self.mouse.wheel_rest = Some((target, total - n as f32));
         if n == 0 {
             return;
         }
@@ -2820,6 +2829,27 @@ impl Acme {
             let force = text.split_whitespace().any(|w| w == "-f");
             self.end_session(force, cx);
             return;
+        }
+        // Send in a terminal, as win's: the selection (swept with B1),
+        // typed into the shell with a newline; without one, the server
+        // sends the snarf buffer
+        if word == "Send" {
+            if let ExecCtx::Window(w) = ctx {
+                if let (Some(t), Some((sw, a, b))) = (self.term_of(w), self.term_sel) {
+                    if sw == w && a != b {
+                        if let Some(mut text) = self.term_grid_text(w, a, b) {
+                            let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: text.clone() }));
+                            cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                            if !text.ends_with('\n') {
+                                text.push('\n');
+                            }
+                            self.term_paste(t, text);
+                            self.after();
+                            return;
+                        }
+                    }
+                }
+            }
         }
         // a page's own history and reload: Back, Fwd, Get in a web window
         if let ExecCtx::Window(w) = ctx {

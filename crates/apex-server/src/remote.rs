@@ -314,6 +314,17 @@ impl Link {
                 }
             }
             ServerMsg::Propose { id, proposal } => {
+                // a program's output into a text window (win's Insert),
+                // applied here as the lead: where it ended is the prompt
+                match &proposal {
+                    Proposal::Insert { buffer, at, text, .. } => {
+                        self.foreign_end.insert(*buffer, at + text.chars().count());
+                    }
+                    Proposal::ReplaceRange { buffer, q0, text, .. } if !text.is_empty() => {
+                        self.foreign_end.insert(*buffer, q0 + text.chars().count());
+                    }
+                    _ => {}
+                }
                 let result = match proposal {
                     // a rule asks this client for something only it can
                     // do: the owner answers when it has done it
