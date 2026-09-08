@@ -9,6 +9,9 @@ members = ["crates/apex-edit", "crates/apex-core", "crates/apex-server", "crates
 edition = "2021"
 version = "0.1.0"
 
+[patch.crates-io]
+pathfinder_simd = { path = "third_party/pathfinder_simd" }
+
 [profile.dev]
 opt-level = 1
 

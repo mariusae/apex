@@ -21,3 +21,7 @@ objc = "0.2"
 # web windows: a native web view as a child of the gpui window (WEB.md §2)
 wry = { version = "0.56", features = ["mac-proxy"] }
 raw-window-handle = "0.6"
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+# Avoid pathfinder_simd's broken nightly-only aarch64 SIMD backend.
+pathfinder_simd = { version = "0.5.6", features = ["pf-no-simd"] }
