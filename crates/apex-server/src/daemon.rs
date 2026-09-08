@@ -590,6 +590,11 @@ impl Daemon {
                 let vars = s.server.env.clone();
                 self.send(id, ServerMsg::Env { vars });
             }
+            ClientMsg::EnvImport { vars } => {
+                s.server.import_env(vars);
+                let vars = s.server.env.clone();
+                self.send(id, ServerMsg::Env { vars });
+            }
             ClientMsg::OpenFile { col, ctx, name: file } => {
                 let dir = s.server.dir_of(&s.view, ctx);
                 let from = match ctx {

@@ -847,8 +847,17 @@ impl Remote {
     /// Set session variables (none: just ask) and block for the
     /// environment that results.
     pub fn env(&mut self, set: Vec<(String, String)>, timeout: std::time::Duration) -> Result<Vec<(String, String)>, String> {
+        self.env_msg(ClientMsg::Env { set }, timeout)
+    }
+
+    /// `EnvImport`: this environment's changes become the session's.
+    pub fn env_import(&mut self, vars: Vec<(String, String)>, timeout: std::time::Duration) -> Result<Vec<(String, String)>, String> {
+        self.env_msg(ClientMsg::EnvImport { vars }, timeout)
+    }
+
+    fn env_msg(&mut self, m: ClientMsg, timeout: std::time::Duration) -> Result<Vec<(String, String)>, String> {
         self.link.env = None;
-        self.send(&ClientMsg::Env { set });
+        self.send(&m);
         let deadline = std::time::Instant::now() + timeout;
         loop {
             if let Some(v) = self.link.env.take() {

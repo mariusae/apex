@@ -287,11 +287,16 @@ until the file's window is deleted, and exits. Terminals and commands
 have EDITOR set to apex-editor, a link to the apex binary beside it that
 does the same (one word, since zsh and rc do not split $EDITOR into
 words), unless the profile says otherwise." },
-    Cmd { name: "env", usage: "apex env [KEY=VALUE...]", short: "the session's environment", flags: &[], run: env_cmd, long: "\
+    Cmd { name: "env", usage: "apex env [-import] [KEY=VALUE...]", short: "the session's environment", flags: &[switch("import", "this environment's changes become the session's")], run: env_cmd, long: "\
 Env sets variables in the session's environment: what every terminal and
 command started from then on gets, beyond the daemon's own. With no
-arguments it prints the environment. Exports in a profile die with it;
-this is how a profile sets the environment (see apex help scripts)." },
+arguments it prints the environment.
+
+With -import, what env's own environment has changed, against what the
+session gives a command, is applied to the session's: variables set or
+changed are set there, and variables dropped are unset. The profile's
+exit hook runs this, so the profile's environment at its end is the
+session's, rc functions included (see apex help scripts)." },
     Cmd { name: "set", usage: "apex set [KEY VALUE]", short: "a setting", flags: &[], run: set, long: "\
 Set records a setting in the session: the session's own, or the attaching
 client's when run from its attach script (see apex help scripts), gone
@@ -428,8 +433,13 @@ on its host sources ~/.apex/profile there, then the creator's
 ~/.apex/profile (shipped along; skipped when it is the same file). It runs
 like any command, named profile in the top row with its output in
 +Errors, with apexsession, APEX_SOCKET and apexclient set, so apex in it
-configures the session: apex open, apex exec Newcol, apex env, apex set,
-apex plumb rule add, apex tool lsp &.
+configures the session: apex open, apex exec Newcol, apex set, apex
+plumb rule add, apex tool lsp &. The profile's environment at its end
+is the session's: variables it sets or changes (x=y, path=($home/bin
+$path)) and functions it defines (fn g { ... }, exported as rc does)
+are what every terminal and command gets from then on, and what it
+unsets is gone. An exit hook (rc's sigexit) sends it back through apex
+env -import, so a profile that defines its own sigexit forgoes this.
 
 Every time a client attaches, its ~/.apex/attach runs on the host the
 same way, with apexattachment naming the attaching client, so apex set
@@ -1302,8 +1312,16 @@ fn env_cmd(ctx: &Ctx, p: &Parsed) -> R {
         .iter()
         .map(|a| a.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).ok_or_else(|| format!("{a}: not KEY=VALUE")))
         .collect::<Result<_, _>>()?;
-    let show = set.is_empty();
-    let vars = c.env(set, TIMEOUT)?;
+    let show = set.is_empty() && !p.is("import");
+    let vars = if p.is("import") {
+        if !set.is_empty() {
+            return Err("-import takes no arguments".into());
+        }
+        let own = std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).collect();
+        c.env_import(own, TIMEOUT)?
+    } else {
+        c.env(set, TIMEOUT)?
+    };
     if show {
         for (k, v) in vars {
             println!("{k}={v}");

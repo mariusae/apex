@@ -469,7 +469,7 @@ client → server
   RuleAdd{rule, priority, mine} · RuleRm{id}
   Complete{view, ctx, at, prefix}         ^F
   Propose{id, proposal} · Applied{id, result}
-  Env{set} · Set{key, value, attachment?} · Ps · Kill{targets}
+  Env{set} · EnvImport{vars} · Set{key, value, attachment?} · Ps · Kill{targets}
   EndSession{name, force}                 the session ended: killed, everyone cut off (Ended)
   Named{name, group, pid, cmd}            what a program is called: the entry of its process
                                           group (the shell the server started) takes the name in
@@ -674,10 +674,21 @@ command named `profile` with output in `+Errors`, and `apexsession`,
 beside the binary the CLI knows by name as `apex editor` (editinacme:
 the file plumbed to edit, exit when its window goes; one word, since
 zsh and rc do not split `$EDITOR` into words). The host part comes first so it can
-define what the creator's part uses. `apex env KEY=VALUE`
-(`ClientMsg::Env`) sets the session environment the server gives
-terminals and commands from then on; the creator's script runs on the
-host, never on the client, so no `apex` call crosses the link. A client's
+define what the creator's part uses. The profile's environment at its
+end is the session's: the server prefixes the script with an exit hook
+(rc's `fn sigexit`, sh's `trap ... EXIT`) that runs `apex env -import`,
+which sends the shell's whole environment (`ClientMsg::EnvImport`);
+against the environment the profile was given, variables set or changed
+are set in the session's and dropped ones unset, the shell's own
+bookkeeping (`pid`, `status`, `path`, `PWD`...) ignored. rc exports
+lists (`\x01`-joined) and functions (`fn#name`) as variables, so a
+profile's `fn g {...}` works in every terminal and B2 command. The rc is
+run in its own process, not embedded: rust-rc forks for pipelines and
+`&` with the interpreter running on in the child, no fit for the
+threaded daemon. `apex env KEY=VALUE` (`ClientMsg::Env`) still sets
+the session environment from anywhere at any time; the creator's script
+runs on the host, never on the client, so no `apex` call crosses the
+link. A client's
 `~/.apex/attach` runs the same way on every attach (`Hello` carries it),
 with `apexattachment` set, so `apex set` there records the attachment's
 own settings (`MetaOp::Set{owner}`, dropped on detach); `apex set` from

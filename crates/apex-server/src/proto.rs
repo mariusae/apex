@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 5;
+pub const PROTOCOL: u32 = 6;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -86,6 +86,11 @@ pub enum ClientMsg {
     /// Set variables in the session's environment (what terminals and
     /// commands get); the answer is the whole environment.
     Env { set: Vec<(String, String)> },
+    /// A script's environment at its end (`apex env -import` from the
+    /// profile's exit hook): what it changed, against the environment
+    /// the server gave it, is applied to the session's; the answer is
+    /// the whole environment.
+    EnvImport { vars: Vec<(String, String)> },
     /// The daemon exits, its sessions with it (to run a newer build).
     Stop,
     /// A setting: the session's, or `attachment`'s (an attach script

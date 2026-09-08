@@ -95,6 +95,9 @@ pub struct Server {
     /// own: the session (`apexsession`) and the socket, so `apex` in a
     /// terminal works on the session it is in.
     pub env: Vec<(String, String)>,
+    /// The environment the profile was given, in full: what its own has
+    /// changed by its end is applied to the session's (`import_env`).
+    profile_base: Option<Vec<(String, String)>>,
     /// Execs already performed, so a scan does not repeat them.
     performed: BTreeSet<(ExecCtx, Seq)>,
     pub cwd: PathBuf,
@@ -153,6 +156,7 @@ impl Server {
             tx,
             term_tx,
             env: Vec::new(),
+            profile_base: None,
             performed: BTreeSet::new(),
             cwd,
             next_term: 1,
@@ -829,7 +833,39 @@ impl Server {
         }
         let dir = self.cwd.clone();
         let env = self.command_env(view, ExecCtx::Top);
+        // the profile's environment at its end is the session's: an exit
+        // hook (rc's sigexit, sh's trap) sends it back, and what it
+        // changed against what it was given here is applied
+        self.profile_base = Some(child_env(&env));
+        let import = format!("{} env -import", shell_quote(&apex_command()));
+        let hook = if Path::new(&command_shell()).file_name().map(|n| n == "rc").unwrap_or(false) {
+            format!("fn sigexit {{ {import} }}\n")
+        } else {
+            format!("trap {} EXIT\n", shell_quote(&import))
+        };
+        let script = format!("{hook}{script}");
         self.spawn_shell_as("profile".into(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
+    }
+
+    /// A script's environment at its end (`EnvImport`): what differs from
+    /// the environment the profile was given is set in the session's, and
+    /// what it dropped is unset; the shell's own bookkeeping is ignored.
+    /// From anywhere but the profile, the base is what a command gets now.
+    pub fn import_env(&mut self, vars: Vec<(String, String)>) {
+        let base = self.profile_base.take().unwrap_or_else(|| child_env(&self.env));
+        for (k, v) in &vars {
+            if SHELL_OWN.contains(&k.as_str()) {
+                continue;
+            }
+            if base.iter().find(|(b, _)| b == k).map(|(_, bv)| bv) != Some(v) {
+                self.set_env(k, v);
+            }
+        }
+        for (k, _) in &base {
+            if !vars.iter().any(|(n, _)| n == k) {
+                self.env.retain(|(n, _)| n != k);
+            }
+        }
     }
 
     /// A client's attach script (`~/.apex/attach` where it runs), run on
@@ -1347,6 +1383,23 @@ pub fn command_shell() -> String {
     "sh".into()
 }
 
+/// The variables a shell keeps for itself, no part of what a profile
+/// means to set: rc's, then sh's.
+const SHELL_OWN: &[&str] = &["0", "*", "cflag", "pid", "status", "bqstatus", "apid", "ifs", "prompt", "home", "path", "rcname", "PLAN9", "_", "PWD", "OLDPWD", "SHLVL"];
+
+/// The whole environment a command started with `env` gets: this
+/// process's, less what `runproc` clears, with `env` on top.
+fn child_env(env: &[(String, String)]) -> Vec<(String, String)> {
+    let mut all: Vec<(String, String)> = std::env::vars_os().map(|(k, v)| (k.to_string_lossy().into_owned(), v.to_string_lossy().into_owned())).filter(|(k, _)| !["acmeaddr", "winid", "%", "samfile"].contains(&k.as_str())).collect();
+    for (k, v) in env {
+        match all.iter_mut().find(|(n, _)| n == k) {
+            Some(e) => e.1 = v.clone(),
+            None => all.push((k.clone(), v.clone())),
+        }
+    }
+    all
+}
+
 /// What acme's `runproc` puts in a command's environment: `winid`, and
 /// for a window on a file, `%` and `samfile` naming it.
 impl Server {
@@ -1520,6 +1573,26 @@ pub fn self_exe() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe = undeleted(&exe);
     if exe.exists() { Some(exe) } else { None }
+}
+
+/// The `apex` binary, for scripts the server writes: this executable
+/// when it is apex, else (a test binary in a dev tree) the `apex` beside
+/// it or one directory up, else `apex` on the path.
+pub fn apex_command() -> String {
+    if let Some(exe) = self_exe() {
+        if exe.file_name().map(|n| n == "apex").unwrap_or(false) {
+            return exe.display().to_string();
+        }
+        if let Some(dir) = exe.parent() {
+            for d in [dir.to_path_buf(), dir.parent().map(|p| p.to_path_buf()).unwrap_or_default()] {
+                let p = d.join("apex");
+                if p.is_file() {
+                    return p.display().to_string();
+                }
+            }
+        }
+    }
+    "apex".into()
 }
 
 /// `path (deleted)` → `path`, as Linux reports a replaced executable.

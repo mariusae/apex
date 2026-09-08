@@ -980,3 +980,34 @@ fn a_script_is_over_when_it_exits_and_what_it_left_behind_is_its_own() {
     assert!(!ok(&sock, &["ps"]).contains("\tlsp\t"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_profiles_environment_at_its_end_is_the_sessions() {
+    let dir = std::env::temp_dir().join(format!("apex-penv-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let host_profile = dir.join("profile");
+    // variables, a list, a function, and an unset; then exit, which the hook survives
+    std::fs::write(&host_profile, "FOO=bar\nx=(a b)\nfn g { echo hi $* }\nEDITOR=()\nexit\n").unwrap();
+    let sock = daemon_with(Some(host_profile));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ok(&sock, &["env"]).contains("FOO=bar\n") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let env = ok(&sock, &["env"]);
+    assert!(env.contains("FOO=bar\n"), "{env}");
+    assert!(env.contains("x=a\u{1}b\n"), "{env}");
+    assert!(env.contains("fn#g={echo hi $*}\n"), "{env}");
+    assert!(!env.contains("EDITOR="), "{env}");
+    // the shell's own bookkeeping is not the session's
+    assert!(!env.contains("\npid=") && !env.contains("\nstatus="), "{env}");
+    assert!(env.contains("apexsession=main\n"), "{env}");
+    // a command started now has the function
+    ok(&sock, &["exec", "g there"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !apex(&sock, &["text", "read", "+Errors"]).1.contains("hi there") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let errors = apex(&sock, &["text", "read", "+Errors"]).1;
+    assert!(errors.contains("hi there\n"), "{errors}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
