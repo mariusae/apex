@@ -186,6 +186,12 @@ pub fn ordered(rules: &BTreeMap<RuleId, Rule>) -> Vec<(RuleId, &Rule)> {
 /// line types it to the shell. Not a word in the menu.
 pub const EXEC: &str = "exec";
 
+pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind) -> bool {
+    rules
+        .values()
+        .any(|r| r.rule.verb == verb && r.rule.applies_to(name, kind))
+}
+
 pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (_, r) in ordered(rules) {

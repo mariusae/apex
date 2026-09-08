@@ -100,6 +100,126 @@ fn files_put_and_get() {
 }
 
 #[test]
+fn get_rule_overrides_filesystem_get_and_stays_scoped() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-get-rule-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("f.txt");
+    std::fs::write(&path, "disk\n").unwrap();
+    let w_file = open(&server, &mut log, &mut node, col, &dir, "f.txt");
+    let smartlog = format!("{}/+smartlog", dir.display());
+    let w_live = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
+    let rule = PlumbRule {
+        verb: "Get".into(),
+        text: None,
+        file: Some(r"\+smartlog$".into()),
+        kind: Some(WinKind::File),
+        isfile: None,
+        isdir: None,
+        action: RuleAction::Tool("smartlog".into()),
+        to: None,
+    };
+    let (_, e) = log.install_rule(SERVER, 0, rule);
+    node.state.apply(Shard::Meta, &e).unwrap();
+
+    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_live), node.window_kind(w_live)), vec!["Get"]);
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_file), node.window_kind(w_file)).is_empty());
+
+    node.exec(&mut log, ExecCtx::Window(w_live), "Get").unwrap();
+    assert_eq!(poll(&mut server, &mut log, &mut node), 0);
+    assert!(errors_text(&node).is_empty(), "{}", errors_text(&node));
+    let starts = server.take_plumb_starts();
+    assert_eq!(starts.len(), 1, "{starts:?}");
+    assert_eq!(starts[0].verb, "Get");
+    let (id, step) = server.plumb_start(&node, starts.into_iter().next().unwrap());
+    assert!(matches!(step, apex_server::PlumbStep::AskTool { ref tool, ref verb, .. } if tool == "smartlog" && verb == "Get"), "{step:?}");
+    let props = match server.plumb_next(&node, id, Ok(())) {
+        apex_server::PlumbStep::Done(props) => props,
+        other => panic!("{other:?}"),
+    };
+    perform(&mut node, &mut log, props);
+    assert_eq!(exec_status(&node, w_live), ExecStatus::Done);
+    assert_eq!(body_text(&node, w_live), "generated\n");
+
+    std::fs::write(&path, "reloaded\n").unwrap();
+    node.exec(&mut log, ExecCtx::Window(w_file), "Get").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert_eq!(body_text(&node, w_file), "reloaded\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dirty_get_rule_reaches_the_tool_on_first_invocation() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-get-dirty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let smartlog = format!("{}/+smartlog", dir.display());
+    let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
+    let rule = PlumbRule {
+        verb: "Get".into(),
+        text: None,
+        file: Some(r"\+smartlog$".into()),
+        kind: Some(WinKind::File),
+        isfile: None,
+        isdir: None,
+        action: RuleAction::Tool("smartlog".into()),
+        to: None,
+    };
+    let (_, e) = log.install_rule(SERVER, 0, rule);
+    node.state.apply(Shard::Meta, &e).unwrap();
+    let v = ViewId::Body(w);
+    let b = node.view_buffer(v).unwrap();
+    node.select(&mut log, v, 0, 0).unwrap();
+    node.insert(&mut log, v, "dirty ").unwrap();
+    assert!(node.state.buffer(b).unwrap().dirty());
+
+    assert!(matches!(node.exec(&mut log, ExecCtx::Window(w), "Get").unwrap(), Executed::Deferred(_)));
+    assert_eq!(poll(&mut server, &mut log, &mut node), 0);
+    assert!(errors_text(&node).is_empty(), "{}", errors_text(&node));
+    let starts = server.take_plumb_starts();
+    assert_eq!(starts.len(), 1, "{starts:?}");
+    assert_eq!(starts[0].verb, "Get");
+    assert!(node.state.buffer(b).unwrap().dirty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn timed_out_get_rule_fails_without_reloading_generated_content() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-get-timeout-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let smartlog = format!("{}/+smartlog", dir.display());
+    let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
+    let rule = PlumbRule {
+        verb: "Get".into(),
+        text: None,
+        file: Some(r"\+smartlog$".into()),
+        kind: Some(WinKind::File),
+        isfile: None,
+        isdir: None,
+        action: RuleAction::Tool("smartlog".into()),
+        to: None,
+    };
+    let (_, e) = log.install_rule(SERVER, 0, rule);
+    node.state.apply(Shard::Meta, &e).unwrap();
+
+    node.exec(&mut log, ExecCtx::Window(w), "Get").unwrap();
+    assert_eq!(poll(&mut server, &mut log, &mut node), 0);
+    let req = server.take_plumb_starts().into_iter().next().expect("Get plumb start");
+    let (id, step) = server.plumb_start(&node, req);
+    assert!(matches!(step, apex_server::PlumbStep::AskTool { .. }), "{step:?}");
+    let props = match server.plumb_next(&node, id, Err("timed out".into())) {
+        apex_server::PlumbStep::Done(props) => props,
+        other => panic!("{other:?}"),
+    };
+    perform(&mut node, &mut log, props);
+    assert_eq!(body_text(&node, w), "generated\n");
+    assert!(errors_text(&node).contains("Get: no rule takes it here"), "{}", errors_text(&node));
+    assert_eq!(exec_status(&node, w), ExecStatus::Failed("Get: no rule".into()));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn shell_commands_and_pipes() {
     let (mut log, mut node, col, mut server, mut rx) = session();
     let w = node.new_window(&mut log, col, "scratch", "b\na\nc\n").unwrap();

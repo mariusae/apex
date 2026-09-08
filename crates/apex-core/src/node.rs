@@ -1286,11 +1286,16 @@ impl Node {
         }
     }
 
+    fn get_uses_rule(&self, ctx: ExecCtx) -> bool {
+        let ExecCtx::Window(w) = ctx else { return false };
+        crate::plumb::offers_verb(&self.state.meta.rules, "Get", &self.window_name(w), self.window_kind(w))
+    }
+
     /// Execute `text` as B2 would from `ctx`. Built-ins run here; anything
     /// else is recorded for the server.
     pub fn exec(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<Executed> {
         // acme's get: a dirty window is asked once before reloading
-        if text.trim() == "Get" {
+        if text.trim() == "Get" && !self.get_uses_rule(ctx) {
             if let ExecCtx::Window(w) = ctx {
                 let len = self.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.state.buffer(b).ok()).map(|b| b.text.len()).unwrap_or(0);
                 if len > 0 && !self.window_name(w).ends_with('/') && !self.winclean(log, w, true)? {

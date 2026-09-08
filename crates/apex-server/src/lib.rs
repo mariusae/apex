@@ -716,6 +716,10 @@ impl Server {
             }
             "Get" => {
                 let w = win.ok_or("Get needs a window")?;
+                if let Some(req) = self.get_rule_request(view, ctx, seq, text) {
+                    self.plumb_starts.push(req);
+                    return Ok(None);
+                }
                 props.push(self.get(view, w)?);
             }
             "New" => {
@@ -1208,12 +1212,12 @@ impl Server {
             ExecCtx::Window(w) => (view.window_name(w), view.window_kind(w)),
             _ => (String::new(), WinKind::File),
         };
-        let offered = view.state.meta.rules.values().any(|r| r.rule.verb == verb && r.rule.applies_to(&name, kind));
+        let offered = apex_core::plumb::offers_verb(&view.state.meta.rules, verb, &name, kind);
         // no rule offers the word: a rule for every command here (win's
         // exec) takes the whole line
         let (verb, rest) = if offered {
             (verb, text[verb.len()..].trim().to_string())
-        } else if view.state.meta.rules.values().any(|r| r.rule.verb == apex_core::plumb::EXEC && r.rule.applies_to(&name, kind)) {
+        } else if apex_core::plumb::offers_verb(&view.state.meta.rules, apex_core::plumb::EXEC, &name, kind) {
             (apex_core::plumb::EXEC, text.trim().to_string())
         } else {
             return None;
@@ -1224,6 +1228,14 @@ impl Server {
             _ => None,
         };
         Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None, reverse: false })
+    }
+
+    fn get_rule_request(&self, view: &Node, ctx: ExecCtx, seq: Seq, text: &str) -> Option<PlumbReq> {
+        let ExecCtx::Window(w) = ctx else { return None };
+        if !apex_core::plumb::offers_verb(&view.state.meta.rules, "Get", &view.window_name(w), view.window_kind(w)) {
+            return None;
+        }
+        self.verb_request(view, ctx, seq, text)
     }
 }
 
