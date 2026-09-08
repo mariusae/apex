@@ -310,31 +310,31 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     // the shell's environment: the session, and a truecolor xterm
     type_(&mut server, &mut log, "echo s=$apexsession c=$COLORTERM t=$TERM\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("s=main c=truecolor t=xterm-256color")), "grid:\n{}", rows(&node));
-    // plan9port's label sequence names the window, and moves its directory
+    // the rule: {osc7 path}/-{title}. A label (plan9port's) alone is a
+    // title, and with no directory ever reported the name is just -title
     let base = std::env::temp_dir().join(format!("apex-label-{}", std::process::id()));
     let (a, b) = (base.join("a"), base.join("b"));
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
-    type_(&mut server, &mut log, &format!("printf '\\033];{}/-x\\007'\r", a.display()));
+    type_(&mut server, &mut log, "printf '\\033];x\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == "-x"), "name: {}", name(&node));
+    // OSC 7 reports the directory: the path, the title after it; B2/B3 resolve there
+    type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", a.display()));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", a.display())), "name: {}", name(&node));
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), a);
     // winsettag keeps the name (a terminal's name is its tag's first word)
     node.update_tags(&mut log).unwrap();
-    assert_eq!(name(&node), format!("{}/-x", a.display()));
     assert_eq!(node.window_name(w), format!("{}/-x", a.display()));
-    // OSC 7, the working-directory report, keeps the label's name
+    // another directory: the path follows, the title stays
     type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", b.display()));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", b.display())), "name: {}", name(&node));
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), b);
-    // an xterm title is a label too
+    // an xterm title is a title; once OSC 7 has spoken, nothing else is the path
     type_(&mut server, &mut log, "printf '\\033]2;hello\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == "hello/-x"), "name: {}", name(&node));
-    // a ~ in a title or label (zsh's %~) is the home directory
-    let home = std::env::var("HOME").unwrap();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-hello", b.display())), "name: {}", name(&node));
     type_(&mut server, &mut log, "printf '\\033]2;~/src\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{home}/src/-x")), "name: {}", name(&node));
-    type_(&mut server, &mut log, "printf '\\033];~/-y\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{home}/-y")), "name: {}", name(&node));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-~/src", b.display())), "name: {}", name(&node));
+    assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), b);
     // the labels never reached the screen
     assert!(!rows(&node).contains("\u{1b}"));
     // the shell's exit is still noticed
@@ -664,4 +664,14 @@ fn a_terminal_publishes_only_what_changed() {
     }).sum();
     let height = node.state.terms.get(&t).unwrap().rows as usize;
     assert!(rows_published > 0 && rows_published < height * 3, "{rows_published} rows for a few lines of change (height {height})");
+}
+
+#[test]
+fn a_terminals_name_is_the_reported_directory_and_the_title() {
+    use apex_server::term::compose_name;
+    let d = std::path::Path::new("/here");
+    assert_eq!(compose_name(None, None, d, "host"), "/here/-host");
+    assert_eq!(compose_name(None, Some("my title here"), d, "host"), "-my title here");
+    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar/")), Some("my title here"), d, "host"), "/foo/bar/-my title here");
+    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), None, d, "host"), "/foo/bar/-host");
 }

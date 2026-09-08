@@ -415,12 +415,12 @@ impl Server {
             }
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
-                // a new name for the window, from a label (acme's win)
-                let mut name: Option<String> = None;
+                let was = h.window_name();
                 match ev {
                     TermEvent::Alac(ev) => match ev {
                         Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange | Event::ResetTitle | Event::Bell => {}
-                        Event::Title(t) => name = Some(term::labelled(&term::expand_tilde(&t), &h.label)),
+                        // an xterm title is the window's title
+                        Event::Title(t) => h.title = Some(t),
                         Event::PtyWrite(s) => h.write(s.as_bytes()),
                         Event::ColorRequest(i, fmt) => h.write(fmt(term::default_color(i)).as_bytes()),
                         Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
@@ -430,27 +430,22 @@ impl Server {
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 0 }));
                         }
                     },
-                    TermEvent::Name(t) => name = Some(term::labelled(&term::expand_tilde(&t), &h.label)),
+                    // plan9port's label is the title too
+                    TermEvent::Name(t) => h.title = Some(t),
+                    // OSC 7: the directory, for the name and for B2/B3 there
                     TermEvent::Cwd(s) => {
                         if let Some(p) = term::cwd_path(&s) {
-                            name = Some(format!("{}/-{}", p.display().to_string().trim_end_matches('/'), h.label));
+                            if p.is_dir() {
+                                h.dir = p.clone();
+                            }
+                            h.cwd = Some(p);
                         }
                     }
                 }
-                if let Some(name) = name {
-                    // the label's `-name` stays for later directory reports;
-                    // its directory is where the shell now is
-                    if let Some((dir, last)) = name.rsplit_once('/') {
-                        if let Some(l) = last.strip_prefix('-') {
-                            h.label = l.to_string();
-                        }
-                        let dir = if dir.is_empty() { "/" } else { dir };
-                        if Path::new(dir).is_dir() {
-                            h.dir = PathBuf::from(dir);
-                        }
-                    }
+                let now = h.window_name();
+                if now != was {
                     if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                        props.push(Proposal::TermName { window: w, name });
+                        props.push(Proposal::TermName { window: w, name: now });
                     }
                 }
                 self.publish_term(log, id);

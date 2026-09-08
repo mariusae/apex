@@ -13,7 +13,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
@@ -186,6 +186,12 @@ struct Win {
     name: String,
     wname: String,
     rules: Vec<RuleId>,
+    /// What the shell reported (OSC 7, a title), the name made of them
+    /// by the terminals' rule; where it started, and its label, before.
+    cwd: Option<PathBuf>,
+    title: Option<String>,
+    initial_dir: PathBuf,
+    label: String,
 }
 
 /// The rules that make this window win's: the menu's verbs, and every
@@ -219,6 +225,7 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
         None => apex_server::term::sysname(),
     };
     let wname = format!("{}/-{label}", dir.display().to_string().trim_end_matches('/'));
+    let label = label.to_string();
     let col = remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
     let window = match remote.propose(Proposal::NewWindow { col, name: wname.clone() }, TIMEOUT)? {
         Some(w) => w,
@@ -241,7 +248,7 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
         rules.push(remote.rule_add(rule, 0, true, TIMEOUT)?);
     }
     let me = remote.attachment();
-    let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new(), name, wname, rules };
+    let mut w = Win { remote, window, buffer, shell, p: 0, typing: String::new(), breaks: 0, echo: VecDeque::new(), ours: VecDeque::new(), carry: Vec::new(), rx, cook: false, to_remove: Vec::new(), name, wname, rules, cwd: None, title: None, initial_dir: dir.to_path_buf(), label };
     // live while the shell is: the handle says so, Del does not ask
     let _ = w.propose(Proposal::Live { window, by: Some(me) }, TIMEOUT);
     let r = w.main_loop();
@@ -501,10 +508,21 @@ impl Win {
             eprintln!("win: output {:?} echo={:?}", String::from_utf8_lossy(&bytes), String::from_utf8_lossy(&self.echo.iter().copied().collect::<Vec<u8>>()));
         }
         let (bytes, labels) = scan(&mut self.carry, &bytes);
-        for l in labels {
-            if let Label::Name(t) = l {
-                let name = apex_server::term::labelled(&apex_server::term::expand_tilde(&t), &apex_server::term::sysname());
-                let _ = self.propose(Proposal::Rename { buffer: self.buffer, window: self.window, name }, TIMEOUT);
+        if !labels.is_empty() {
+            let was = self.window_name();
+            for l in labels {
+                match l {
+                    Label::Name(t) => self.title = Some(t),
+                    Label::Cwd(s) => {
+                        if let Some(p) = apex_server::term::cwd_path(&s) {
+                            self.cwd = Some(p);
+                        }
+                    }
+                }
+            }
+            let now = self.window_name();
+            if now != was {
+                let _ = self.propose(Proposal::Rename { buffer: self.buffer, window: self.window, name: now }, TIMEOUT);
             }
         }
         let bytes = self.echocancel(&bytes);
@@ -514,6 +532,11 @@ impl Win {
         }
         let text = String::from_utf8_lossy(&bytes).to_string();
         self.insert_output(text);
+    }
+
+    /// The window's name under the terminals' rule: `{osc7}/-{title}`.
+    fn window_name(&self) -> String {
+        apex_server::term::compose_name(self.cwd.as_deref(), self.title.as_deref(), &self.initial_dir, &self.label)
     }
 
     /// win's `echocancel`: what the pty echoes of what we sent is not

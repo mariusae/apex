@@ -52,12 +52,19 @@ pub fn sysname() -> String {
 
 /// win's `label`: the window's name for a label, with `/-name` added when
 /// the label does not end in a `-` component of its own.
-pub fn labelled(text: &str, name: &str) -> String {
-    let last = text.rsplit('/').next().unwrap_or("");
-    if text.contains('/') && last.starts_with('-') {
-        return text.to_string();
+/// The rule for a terminal's window name: `{osc7 path}/-{title}`. Once
+/// OSC 7 has reported a directory, that is the path and nothing else
+/// ever is; the title (an xterm title, plan9port's label) follows a
+/// `-`. With a title but no directory reported, `-title`. Before either,
+/// where the shell started and the host: `dir/-host`, win's naming.
+pub fn compose_name(cwd: Option<&Path>, title: Option<&str>, initial_dir: &Path, initial_label: &str) -> String {
+    let dir = |d: &Path| d.display().to_string().trim_end_matches('/').to_string();
+    match (cwd, title) {
+        (Some(c), Some(t)) => format!("{}/-{t}", dir(c)),
+        (Some(c), None) => format!("{}/-{initial_label}", dir(c)),
+        (None, Some(t)) => format!("-{t}"),
+        (None, None) => format!("{}/-{initial_label}", dir(initial_dir)),
     }
-    format!("{text}{}-{name}", if text.ends_with('/') { "" } else { "/" })
 }
 
 /// A leading `~` or `~/` (a shell's short form of the home directory, as
@@ -202,6 +209,13 @@ pub struct TermHost {
     /// What was last published: the viewport's top, its links, its rows,
     /// its cursor; the next publish carries only what differs.
     last: Option<Published>,
+    /// What the shell reported: its directory (OSC 7) and its title (an
+    /// xterm title, plan9port's label), the window's name being made of
+    /// them (`compose_name`).
+    pub cwd: Option<PathBuf>,
+    pub title: Option<String>,
+    /// Where the shell started: the name's directory until OSC 7 says.
+    pub initial_dir: PathBuf,
 }
 
 struct Published {
@@ -212,6 +226,11 @@ struct Published {
 }
 
 impl TermHost {
+    /// The window's name under the rule, from what the shell reported.
+    pub fn window_name(&self) -> String {
+        compose_name(self.cwd.as_deref(), self.title.as_deref(), &self.initial_dir, &self.label)
+    }
+
     /// Start the user's shell (`shell` when the session names one, the
     /// `Newterm.shell` setting; else $SHELL) as a login shell in `dir`, a
     /// truecolor xterm with `extra` (the session, the socket) in its
@@ -268,7 +287,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None })
+        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf() })
     }
 
     pub fn write(&self, data: &[u8]) {

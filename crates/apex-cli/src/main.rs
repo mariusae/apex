@@ -381,15 +381,18 @@ where it left from, and Back returns there, Fwd undoes a Back.
 
 Start it from the host's profile: apex tool lsp & (see apex help scripts).
 APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr." },
-    Cmd { name: "label", usage: "apex label TEXT", short: "name this terminal's window", flags: &[], run: label_cmd, long: "\
-Label names the window of the terminal it runs in, through the escape
-sequence acme's win reads (plan9port's label). A name whose last
-component does not start with - gets /-HOST appended." },
+    Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\
+Label gives the window of the terminal it runs in the title TEXT,
+through the escape sequence acme's win reads (plan9port's label). A
+terminal's window is named DIR/-TITLE, DIR being the directory the shell
+last reported (OSC 7; apex awd reports it) and TITLE its title (a label,
+or an xterm title); with no directory ever reported the name is -TITLE,
+and before either it is where the shell started and the host." },
     Cmd { name: "awd", usage: "apex awd [LABEL]", short: "name this terminal's window after its directory", flags: &[], run: awd, long: "\
-Awd labels the terminal's window PWD/-LABEL (the host's name unless
-given), as plan9port's awd does, so the window is named after where the
-shell is. rc does this on every cd in an apex terminal; for zsh, bash and
-fish see examples/profile." },
+Awd reports the terminal's working directory (OSC 7) and titles the
+window LABEL (the host's name unless given), so the window is named
+PWD/-LABEL, as plan9port's awd names it. rc does this on every cd in an
+apex terminal; for zsh, bash and fish see examples/profile." },
     Cmd { name: "version", usage: "apex version", short: "print the build id", flags: &[], run: version, long: "\
 Version prints this build's id, a hash of the sources it was built from.
 A daemon says its own on every connection; a client of another build
@@ -1250,7 +1253,11 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
 /// plan9port's `label`: name the window this terminal shows, through the
 /// sequence acme's win reads (`ESC ] ; text BEL`).
 fn label(text: &str) -> R {
-    let seq = format!("\x1b];{text}\x07");
+    to_terminal(&format!("\x1b];{text}\x07"))
+}
+
+/// Write an escape sequence to the terminal this runs in.
+fn to_terminal(seq: &str) -> R {
     match std::fs::OpenOptions::new().write(true).open("/dev/tty") {
         Ok(mut f) => f.write_all(seq.as_bytes()).map_err(|e| e.to_string())?,
         Err(_) => {
@@ -1268,8 +1275,9 @@ fn label_cmd(_: &Ctx, p: &Parsed) -> R {
     label(&p.args.join(" "))
 }
 
-/// plan9port's `awd [label]`: name the window `pwd/-label`, the label
-/// being the host unless given.
+/// plan9port's `awd [label]`: the window named `pwd/-label`, the label
+/// being the host unless given. Under the terminals' rule that is the
+/// directory reported (OSC 7) and the label as the title.
 fn awd(_: &Ctx, p: &Parsed) -> R {
     let sys = match p.args.as_slice() {
         [] => apex_server::term::sysname(),
@@ -1277,7 +1285,8 @@ fn awd(_: &Ctx, p: &Parsed) -> R {
         _ => return Err("usage".into()),
     };
     let dir = std::env::current_dir().map_err(|e| e.to_string())?.display().to_string();
-    label(&format!("{dir}{}-{sys}", if dir.ends_with('/') { "" } else { "/" }))
+    let host = apex_server::term::sysname();
+    to_terminal(&format!("\x1b]7;file://{host}{dir}\x07\x1b];{sys}\x07"))
 }
 
 /// The session's environment: what its terminals and commands get beyond

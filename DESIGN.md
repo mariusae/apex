@@ -918,12 +918,16 @@ numbered from the oldest line kept, so a selection drifts once the
 scrollback limit truncates; a selection does not outlive that.
 
 *As built, labels and environment:* the pty loop is alacritty's with
-`win`'s label scan in front of the parser: `ESC ] ; text BEL` (plan9port's
-`label`/`awd`, or `apex label`/`apex awd`) names the window as win does
-(`/-host` appended unless the label brings its own `-` component); OSC 7
-(`file://host/path`) moves the name's directory; an xterm title (OSC 0/2)
-is a label too. The name's directory becomes the terminal's, where B2/B3
-resolve relative names. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
+`win`'s label scan in front of the parser. A terminal's name follows one
+rule, `{osc7 path}/-{title}` (`term::compose_name`): OSC 7
+(`file://host/path`) is the path, and once it has reported, nothing else
+ever is; the title is an xterm title (OSC 0/2) or plan9port's
+`ESC ] ; text BEL` label (`apex label`); with a title but no directory
+reported the name is `-title`. `apex awd [LABEL]` reports the directory
+and titles the window `LABEL` (the host), so it reads `pwd/-host` as
+plan9port's awd names it. The reported directory is the terminal's,
+where B2/B3 resolve relative names. The win tool names its window by the
+same rule. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
 that through the login shell instead of a shell, named `dir/-cmd`, as
 `win cmd` does. The
 shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,

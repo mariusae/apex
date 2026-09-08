@@ -53,9 +53,14 @@ destination's OS and architecture in `~/.apex/bin` there, then launches
 -stdio` starts the daemon if needed and copies bytes between its stdio
 and the daemon's socket. The Mac app carries a `linux-amd64` build.
 
-`apex label TEXT` and `apex awd [LABEL]` are plan9port's `label` and
-`awd`: they write `ESC ] ; text BEL` to the terminal, and apex names the
-terminal's window after it, `awd` as `pwd/-LABEL` (the host by default).
+A terminal's window is named `DIR/-TITLE`: `DIR` is the directory the
+shell last reported with OSC 7, `TITLE` its title (an xterm title, or
+plan9port's `ESC ] ; text BEL` label); once OSC 7 has spoken nothing
+else is ever the path, with no directory reported the name is `-TITLE`,
+and before either it is where the shell started and the host. `apex
+label TEXT` sets the title; `apex awd [LABEL]` reports the directory and
+titles the window `LABEL` (the host by default), so the window reads
+`pwd/-host` as plan9port's `awd` names it.
 In rc, `fn cd { builtin cd $1 && apex awd }` keeps the window's name (and
 so where relative names resolve) on the shell's directory; shells that
 report their directory with OSC 7 (`ESC ] 7 ; file://host/path BEL`) or
