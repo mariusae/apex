@@ -335,6 +335,20 @@ impl SessionUrl {
         self.provider == "local"
     }
 
+    /// How a session is spoken of: its label, with the host in
+    /// parentheses; the default session is just its host. `notes
+    /// (blah.host.com)`, `blah.host.com`, `notes`, `local`.
+    pub fn describe(&self) -> String {
+        let host = if self.is_local() { "local".to_string() } else { self.arg.clone() };
+        if self.session == DEFAULT_SESSION {
+            host
+        } else if self.is_local() {
+            self.session.clone()
+        } else {
+            format!("{} ({host})", self.session)
+        }
+    }
+
     /// The destination for `providers.rs`'s functions (`None` for local).
     pub fn dest(&self) -> Option<String> {
         if self.is_local() {
@@ -379,5 +393,19 @@ mod available_tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(&got[..2], &["local".to_string(), "ssh".to_string()]);
         assert!(got.contains(&"zed".to_string()), "{got:?}");
+    }
+}
+
+#[cfg(test)]
+mod describe_tests {
+    use super::SessionUrl;
+
+    #[test]
+    fn a_session_is_its_label_and_host() {
+        assert_eq!(SessionUrl::parse("ssh://blah.host.com/testingsomething").unwrap().describe(), "testingsomething (blah.host.com)");
+        assert_eq!(SessionUrl::parse("ssh://blah.host.com/default").unwrap().describe(), "blah.host.com");
+        assert_eq!(SessionUrl::parse("sprite://apex-test/notes").unwrap().describe(), "notes (apex-test)");
+        assert_eq!(SessionUrl::local("notes").describe(), "notes");
+        assert_eq!(SessionUrl::local("default").describe(), "local");
     }
 }

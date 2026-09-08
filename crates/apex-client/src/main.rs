@@ -409,7 +409,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                             // says so; the attach (a binary to upload, a daemon
                             // to start there) runs on a thread and comes back
                             let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
-                            a.notice(&format!("{url}: attaching…\n"));
+                            a.notice(&format!("{}: attaching…\n", url.describe()));
                             shell::log_line(&format!("attaching to {url} in the background"));
                             let (u, w) = (url.clone(), wake.clone());
                             let connecting = cx.background_executor().spawn(async move { Acme::connect_blocking(&u, w) });

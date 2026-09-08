@@ -466,7 +466,7 @@ impl Acme {
         self.url = url.clone();
         self.session = url.session.clone();
         window.set_window_title(&Self::title(url));
-        self.notice(&format!("{url}: attaching…\n"));
+        self.notice(&format!("{}: attaching…\n", url.describe()));
         crate::shell::log_line(&format!("attaching to {url} in the background"));
         let (u, w) = (url.clone(), wake);
         let connecting = cx.background_executor().spawn(async move { Acme::connect_targeted(&u, w) });
@@ -861,7 +861,7 @@ impl Acme {
         }
         let url = self.url.clone();
         match self.reattach(&url, window) {
-            Ok(()) => self.notice(&format!("{url}: reconnected\n")),
+            Ok(()) => self.notice(&format!("{}: reconnected\n", url.describe())),
             Err(e) => {
                 self.connected = false;
                 let msg = Self::connect_error(&url, &e);
@@ -874,9 +874,9 @@ impl Acme {
     /// error, and for a daemon of another build, how to get going again.
     pub fn connect_error(url: &SessionUrl, e: &std::io::Error) -> String {
         if e.kind() == std::io::ErrorKind::Unsupported {
-            format!("{url}: {e}: Reconnect (⌘⇧R)\n")
+            format!("{}: {e}: Reconnect (⌘⇧R)\n", url.describe())
         } else {
-            format!("{url}: {e}\n")
+            format!("{}: {e}\n", url.describe())
         }
     }
 
@@ -895,7 +895,7 @@ impl Acme {
     }
 
     pub fn title(url: &SessionUrl) -> String {
-        format!("{url} — apex")
+        format!("{} — apex", url.describe())
     }
 
     /// The window's title, with the connection and fenced states.
