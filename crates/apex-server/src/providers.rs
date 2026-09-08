@@ -178,7 +178,7 @@ pub fn bundled_binary(target: &str) -> Option<PathBuf> {
 /// cross-build's target directory, or — for this machine's own kind —
 /// beside us.
 pub fn bundled(target: &str, name: &str) -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
+    let exe = crate::self_exe()?;
     let dir = exe.parent()?.to_path_buf();
     let mut candidates = Vec::new();
     if let Ok(d) = std::env::var("APEX_REMOTE_BINARIES") {

@@ -726,7 +726,7 @@ impl Server {
                 // acme's win: the tool, run as a command named Win (so Kill
                 // Win ends it), with $acmeshell or the command given
                 let rest = text[cmd.len()..].trim();
-                let apex = std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_else(|_| "apex".into());
+                let apex = self_exe().map(|e| e.display().to_string()).unwrap_or_else(|| "apex".into());
                 let command = format!("{} tool win {rest}", shell_quote(&apex));
                 let env = self.command_env(view, ctx);
                 self.spawn_shell_as("Win".into(), ctx, Some(seq), command, dir, None, ShellMode::Errors { dir: errdir }, env);
@@ -926,7 +926,7 @@ impl Server {
         if installed.iter().map(|(_, e)| e.clone()).collect::<BTreeSet<_>>() == wanted {
             return;
         }
-        let apex = std::env::current_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|_| "apex".into());
+        let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
         for ext in &wanted {
             if installed.iter().any(|(_, e)| e == ext) {
                 continue;
@@ -1310,7 +1310,7 @@ pub fn command_shell() -> String {
         }
     }
     let mut candidates = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = self_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join("rc"));
             // a dev tree: target/rc-host/bin/rc beside target/release or target/debug/deps
@@ -1471,3 +1471,31 @@ impl Drop for Server {
 
 /// The `+Errors` name, re-exported for clients.
 pub const ERRORS_NAME: &str = ERRORS;
+
+/// This program's binary, as a path to run it by. On Linux, once the
+/// file has been replaced under a running daemon (a newer apex uploaded
+/// over it), `current_exe` reports the old one as `apex (deleted)`; the
+/// path without the suffix is the new binary, and the one to run.
+pub fn self_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe = undeleted(&exe);
+    if exe.exists() { Some(exe) } else { None }
+}
+
+/// `path (deleted)` → `path`, as Linux reports a replaced executable.
+pub fn undeleted(exe: &Path) -> PathBuf {
+    let s = exe.to_string_lossy();
+    match s.strip_suffix(" (deleted)") {
+        Some(p) => PathBuf::from(p),
+        None => exe.to_path_buf(),
+    }
+}
+
+#[cfg(test)]
+mod exe_tests {
+    #[test]
+    fn a_replaced_binary_is_still_itself() {
+        assert_eq!(super::undeleted(std::path::Path::new("/home/me/.apex/bin/apex (deleted)")), std::path::PathBuf::from("/home/me/.apex/bin/apex"));
+        assert_eq!(super::undeleted(std::path::Path::new("/usr/local/bin/apex")), std::path::PathBuf::from("/usr/local/bin/apex"));
+    }
+}

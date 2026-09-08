@@ -82,7 +82,7 @@ pub fn put_apex_on_path() {
     if let Ok(home) = std::env::var("HOME") {
         dirs.push(std::path::Path::new(&home).join(".apex/bin"));
     }
-    if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+    if let Some(d) = crate::self_exe().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
         dirs.push(d);
     }
     let mut path = std::env::var("PATH").unwrap_or_default();
@@ -1192,7 +1192,7 @@ fn daemon_log(socket: &Path) -> Option<std::fs::File> {
 /// directory allows. Failing that, `PATH/apex editor`, which still
 /// works under `sh -c`.
 fn editor_command() -> Option<String> {
-    let exe = std::env::current_exe().ok()?;
+    let exe = crate::self_exe()?;
     let two_words = format!("{} editor", exe.display());
     if exe.file_name().and_then(|n| n.to_str()) != Some("apex") {
         return Some(two_words); // a test binary: leave its directory alone
