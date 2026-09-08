@@ -608,8 +608,12 @@ forces), which then closes the window. A program says what it is
 called with
 `Named`, so `apex tool lsp` is `lsp` in the top row, not `apex`: the
 server renames the entry of the announcer's process group (the exit
-reports the new name too), or adopts an announcer it did not start (from
-the profile, say) for as long as its connection lasts, ending it by pid.
+reports the new name too), or adopts an announcer it did not start for
+as long as its connection lasts, ending it by pid. What a script
+(`profile`, `attach`) leaves in the background, `apex tool lsp &`, is
+adopted the same way, its own entry; and a command is over when it
+exits, not when its pipes close, so the script is gone from `ps` and the
+top row while the tool it started lives on.
 `apex tool win` and `apex tool lsp` announce themselves once, after
 attaching. `WIN` is an id or a unique substring of a window's name. Not yet:
 `detach lease lsp log`, the init script.

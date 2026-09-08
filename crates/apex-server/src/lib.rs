@@ -76,6 +76,10 @@ pub struct Running {
     /// ended by its pid rather than a group, gone with its connection.
     #[serde(default)]
     pub adopted: bool,
+    /// A script of the session's (`profile`, `attach`): what it starts in
+    /// the background and that announces itself is adopted as its own.
+    #[serde(default)]
+    pub script: bool,
 }
 
 /// The server. `node` is its replica as the `SERVER` attachment: it leads
@@ -541,7 +545,7 @@ impl Server {
                 continue;
             }
             let ctx = self.node.state.windows.values().find(|w| w.body == Body::Term(*id)).map(|w| ExecCtx::Window(w.id)).unwrap_or(ExecCtx::Top);
-            out.push(Running { pid: h.pid, name: h.name.clone(), cmd: h.cmd.clone(), dir: h.dir.display().to_string(), ctx, started: h.started, adopted: false });
+            out.push(Running { pid: h.pid, name: h.name.clone(), cmd: h.cmd.clone(), dir: h.dir.display().to_string(), ctx, started: h.started, adopted: false, script: false });
         }
         out.sort_by_key(|r| r.started);
         out
@@ -554,20 +558,23 @@ impl Server {
     pub fn name_process(&mut self, name: &str, group: u32, pid: u32, cmd: &str) -> Option<u32> {
         let mut running = self.running.lock().unwrap();
         if let Some(r) = running.iter_mut().find(|r| r.pid == group) {
-            // a name the server gave on purpose (Win, attach) stays; the
-            // default one, the command's first word (apex), gives way
-            if r.name != name && r.name == command_name(&r.cmd) {
-                self.started.push(Proposal::CommandExit { name: r.name.clone() });
-                self.started.push(Proposal::CommandStart { name: name.to_string() });
-                r.name = name.to_string();
+            // a name the server gave on purpose (Win) stays; the default
+            // one, the command's first word (apex), gives way; and what a
+            // script started in the background is its own (adopted below)
+            if !r.script {
+                if r.name != name && r.name == command_name(&r.cmd) {
+                    self.started.push(Proposal::CommandExit { name: r.name.clone() });
+                    self.started.push(Proposal::CommandStart { name: name.to_string() });
+                    r.name = name.to_string();
+                }
+                return None;
             }
-            return None;
         }
         if running.iter().any(|r| r.pid == pid) {
             return None;
         }
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        running.push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: String::new(), ctx: ExecCtx::Top, started, adopted: true });
+        running.push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: String::new(), ctx: ExecCtx::Top, started, adopted: true, script: false });
         self.started.push(Proposal::CommandStart { name: name.to_string() });
         Some(pid)
     }
@@ -1432,23 +1439,56 @@ pub fn shell_in_named(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Op
     let pid = child.id();
     if let Some(r) = &running {
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        r.lock().unwrap().push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: dir.display().to_string(), ctx, started, adopted: false });
+        let script = matches!(name, "profile" | "attach");
+        r.lock().unwrap().push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: dir.display().to_string(), ctx, started, adopted: false, script });
     }
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         std::thread::spawn(move || {
             let _ = stdin.write_all(input.as_bytes());
         });
     }
-    let out = match child.wait_with_output() {
-        Ok(o) => {
+    // the output is read on threads and the command waited for: a command
+    // is over when it exits, not when its pipes close (a program it left
+    // in the background, `apex tool lsp &` in a profile, holds those)
+    let (stdout_buf, stderr_buf) = (std::sync::Arc::new(std::sync::Mutex::new(Vec::new())), std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for (pipe, buf) in [(child.stdout.take().map(|p| Box::new(p) as Box<dyn std::io::Read + Send>), stdout_buf.clone()), (child.stderr.take().map(|p| Box::new(p) as Box<dyn std::io::Read + Send>), stderr_buf.clone())] {
+        let done = done.clone();
+        match pipe {
+            Some(mut p) => {
+                std::thread::spawn(move || {
+                    let mut chunk = [0u8; 8192];
+                    loop {
+                        match p.read(&mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => buf.lock().unwrap().extend_from_slice(&chunk[..n]),
+                        }
+                    }
+                    done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+            None => {
+                done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }
+    let out = match child.wait() {
+        Ok(status) => {
+            // a moment for the last of the output to be read
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(300);
+            while done.load(std::sync::atomic::Ordering::Relaxed) < 2 && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
             use std::os::unix::process::ExitStatusExt;
-            let exit = match (o.status.code(), o.status.signal()) {
+            let exit = match (status.code(), status.signal()) {
                 (Some(0), _) => String::new(),
                 (Some(n), _) => n.to_string(),
                 (None, Some(sig)) => format!("signal {sig}"),
                 _ => "?".to_string(),
             };
-            (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string(), exit)
+            let o = String::from_utf8_lossy(&stdout_buf.lock().unwrap()).to_string();
+            let e = String::from_utf8_lossy(&stderr_buf.lock().unwrap()).to_string();
+            (o, e, exit)
         }
         Err(e) => (String::new(), format!("{cmd}: {e}\n"), String::new()),
     };

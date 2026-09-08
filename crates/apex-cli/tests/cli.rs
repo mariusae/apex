@@ -949,3 +949,34 @@ fn a_mirror_holds_what_is_outstanding_not_the_history() {
     assert!(c.log.len() < 50, "{} entries kept", c.log.len());
     assert!(peak < 2000, "the mirror grew to {peak} entries while the terminal spewed");
 }
+
+#[test]
+fn a_script_is_over_when_it_exits_and_what_it_left_behind_is_its_own() {
+    // a profile that starts the lsp tool in the background: the tool
+    // holds the profile's pipes, but the profile is over when its shell
+    // exits, and the tool is listed as lsp in its own right
+    let apex = env!("CARGO_BIN_EXE_apex");
+    let dir = std::env::temp_dir().join(format!("apex-script-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let host_profile = dir.join("profile");
+    std::fs::write(&host_profile, format!("{apex} tool lsp &\n")).unwrap();
+    let sock = daemon_with(Some(host_profile));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ok(&sock, &["ps"]).contains("\tlsp\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["ps"]).contains("\tprofile\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let ps = ok(&sock, &["ps"]);
+    assert!(ps.contains("\tlsp\t") && !ps.contains("\tprofile\t") && !ps.contains("\tapex\t"), "{ps}");
+    // and it can be ended by that name
+    ok(&sock, &["kill", "lsp"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ok(&sock, &["ps"]).contains("\tlsp\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ok(&sock, &["ps"]).contains("\tlsp\t"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
