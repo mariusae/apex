@@ -980,6 +980,53 @@ impl Acme {
         true
     }
 
+    /// End a session from the picker: on this machine's daemon, or on the
+    /// host through `apex end-session` there; off the UI thread, the
+    /// host asked again after, a refusal shown in its section.
+    fn end_session_from_picker(&mut self, url: SessionUrl, cx: &mut Context<Self>) {
+        let Some(socket) = self.socket.clone() else { return };
+        let Some(epoch) = self.selector.as_ref().map(|s| s.epoch) else { return };
+        let host = Host::of(&url);
+        let u = url.clone();
+        let ending = cx.background_executor().spawn(async move {
+            if u.is_local() {
+                apex_server::remote::end_session(&socket, &u.session, false).map_err(|e| e.to_string())
+            } else {
+                let dest = u.dest().unwrap_or_default();
+                apex_server::providers::run(&dest, &format!("{} end-session {}", apex_server::providers::REMOTE_BIN, u.session), None).map(|_| ()).map_err(|e| e.to_string())
+            }
+        });
+        let socket = self.socket.clone().unwrap_or_default();
+        cx.spawn(async move |this, cx| {
+            let r = ending.await;
+            let _ = cx.update(|cx| {
+                let _ = this.update(cx, |acme, cx| {
+                    let Some(sel) = acme.selector.as_mut() else { return };
+                    if sel.epoch != epoch {
+                        return;
+                    }
+                    match r {
+                        Ok(()) => {
+                            // gone from what the host had; the host is asked again
+                            if let Some(l) = sel.sessions.get_mut(&host) {
+                                let names: Vec<String> = l.names().iter().filter(|n| **n != url.session).cloned().collect();
+                                *l = Loading::Seeded(names);
+                            }
+                            sel.settle();
+                            acme.ask_host(host, socket, epoch, cx);
+                        }
+                        Err(e) => {
+                            sel.sessions.insert(host.clone(), Loading::Failed(sel.sessions.get(&host).map(|l| l.names().to_vec()).unwrap_or_default(), e));
+                            sel.settle();
+                        }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
     /// A host added from the form: remembered, listed, its sessions asked
     /// for, the cursor on it.
     fn add_host(&mut self, h: Host, cx: &mut Context<Self>) {
@@ -1302,6 +1349,27 @@ impl Acme {
                     let mut d = row_style(div().id(("row", i)), picked).pl(px(22.)).text_color(rgb(0x111111)).child(text);
                     if is_current {
                         d = d.child(div().text_color(rgb(0x000099)).child("✓"));
+                    }
+                    // a session is ended from here: "end" at the right
+                    if !create {
+                        let end = u.clone();
+                        d = d.child(div().flex_1()).child(
+                            div()
+                                .id(("end", i))
+                                .px(px(6.))
+                                .rounded(px(4.))
+                                .text_size(px(12.))
+                                .text_color(rgb(0x888888))
+                                .hover(|s| s.bg(rgb(0xf0c0c0)).text_color(rgb(0x111111)))
+                                .child("end")
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.end_session_from_picker(end.clone(), cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        );
                     }
                     d.on_mouse_down(
                         MouseButton::Left,

@@ -880,3 +880,50 @@ fn preview_is_a_live_pipe_through_a_converter() {
     assert!(flat.contains(r#"data-line="5"></span><table>"#), "{out}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_session_can_be_ended() {
+    let sock = daemon();
+    ok(&sock, &["new-session", "side"]);
+    // something running in it, a tool attached to it, and an unsaved window
+    ok(&sock, &["-session=side", "exec", "sleep 30"]);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["-session=side", "ps"]).contains("\tsleep\t") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut tool = Remote::connect_as(&sock, "side", "watcher", AttachmentKind::Tool).unwrap();
+    let dir = std::env::temp_dir().join(format!("apex-cli-end-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("draft.txt");
+    std::fs::write(&file, "x\n").unwrap();
+    ok(&sock, &["-session=side", "open", &file.display().to_string()]);
+    ok(&sock, &["-session=side", "edit", &file.display().to_string(), ",x/x/c/y/"]);
+    // unsaved: refused, and still there
+    let (success, _, err) = apex(&sock, &["end-session", "side"]);
+    assert!(!success && err.contains("unsaved"), "{err}");
+    assert_eq!(ok(&sock, &["ls"]), "main\nside\n");
+    // forced: gone, the tool told and cut off, the command killed
+    ok(&sock, &["end-session", "-f", "side"]);
+    assert_eq!(ok(&sock, &["ls"]), "main\n");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut ended = None;
+    let mut closed = false;
+    while Instant::now() < deadline && !(ended.is_some() && closed) {
+        match tool.step(Duration::from_millis(50)) {
+            Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(_) => closed = true,
+        }
+        if ended.is_none() {
+            ended = tool.link.ended.clone();
+        }
+    }
+    assert_eq!(ended.as_deref(), Some("side"));
+    assert!(closed, "the tool's link should have closed");
+    let (success, _, err) = apex(&sock, &["-session=side", "ps"]);
+    assert!(!success, "{err}");
+    // the sleep is gone with its session (its group was signalled)
+    std::thread::sleep(Duration::from_millis(300));
+    let alive = std::process::Command::new("pgrep").args(["-f", "sleep 30"]).output().map(|o| String::from_utf8_lossy(&o.stdout).lines().count()).unwrap_or(0);
+    let _ = alive; // other tests may run sleeps of their own: not asserted
+    let _ = std::fs::remove_dir_all(&dir);
+}

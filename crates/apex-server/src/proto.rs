@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 4;
+pub const PROTOCOL: u32 = 5;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -33,6 +33,10 @@ pub enum ClientMsg {
     ListSessions,
     /// Rename a session; attachments to it stay attached.
     RenameSession { from: String, to: String },
+    /// End a session: its commands and terminals killed, everything
+    /// attached told (`Ended`) and cut off, the session gone. Refused
+    /// while a window is dirty unless `force`. Answered by `Sessions`.
+    EndSession { name: String, force: bool },
     /// Entries this client sequenced as leader.
     Append { shard: Shard, entries: Vec<Entry> },
     /// The client allocated a shard; the server records it and grants the
@@ -213,6 +217,9 @@ pub enum ServerMsg {
     TermLines { term: TermId, text: String },
     /// The I/O plane: a frame on a stream this connection opened.
     Io { stream: u32, frame: IoFrame },
+    /// The session this connection was attached to has been ended; the
+    /// connection closes right after.
+    Ended { session: String },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

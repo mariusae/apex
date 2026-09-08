@@ -155,6 +155,13 @@ if none answers. Making a session that exists is fine: it is there.
 
 A new session runs its profile: ~/.apex/profile on the daemon's host,
 then the creator's (see apex help scripts)." },
+    Cmd { name: "end-session", usage: "apex end-session [-f] [NAME]", short: "end a session", flags: &[switch("f", "end it even with unsaved windows")], run: end_session, long: "\
+End-session ends the session NAME (the current one when omitted): its
+commands and terminals are killed, everything attached to it is told
+and cut off (a window on it goes offline, saying so), and the session
+is gone from the daemon, which keeps running for the others. It is
+refused while any of its windows has unsaved changes, unless -f. The
+picker's end on a session row does the same." },
     Cmd { name: "rename-session", usage: "apex rename-session [FROM] TO", short: "rename a session", flags: &[], run: rename_session, long: "\
 Rename-session gives the session FROM (the current session when omitted)
 the name TO. Everything attached stays attached; session names are
@@ -754,6 +761,15 @@ fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
         _ => return Err("usage".into()),
     };
     apex_server::remote::rename_session(&ctx.socket, &from, &to).map_err(|e| e.to_string())
+}
+
+fn end_session(ctx: &Ctx, p: &Parsed) -> R {
+    let name = match p.args.as_slice() {
+        [] => ctx.session.clone(),
+        [n] => n.clone(),
+        _ => return Err("usage".into()),
+    };
+    apex_server::remote::end_session(&ctx.socket, &name, p.get("f").is_some()).map_err(|e| e.to_string())
 }
 
 fn new_session(ctx: &Ctx, p: &Parsed) -> R {

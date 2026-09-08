@@ -312,6 +312,33 @@ impl Daemon {
         Ok(())
     }
 
+    /// End a session: refused while any of its windows is dirty unless
+    /// forced; else its commands and terminals are killed, everything
+    /// attached is told and cut off, and the session is dropped.
+    fn end_session(&mut self, name: &str, force: bool) -> Result<(), String> {
+        let s = self.sessions.get(name).ok_or_else(|| format!("no session {name}"))?;
+        if !force {
+            let dirty = s.view.state.buffers.values().filter(|b| b.name.starts_with('/') && !b.name.ends_with('/') && b.dirty()).count();
+            if dirty > 0 {
+                return Err(format!("session {name}: {dirty} unsaved window(s); Put them, or end it with -f"));
+            }
+        }
+        let sid = s.id;
+        let members: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid)).map(|(id, _)| *id).collect();
+        for id in members {
+            self.send(id, ServerMsg::Ended { session: name.to_string() });
+            self.gone(id); // its streams and attachment go; dropping the sender closes it
+        }
+        let s = self.sessions.remove(name).ok_or_else(|| format!("no session {name}"))?;
+        for r in s.server.processes() {
+            s.server.kill(&r.pid.to_string());
+        }
+        // the server's drop ends its terminals
+        drop(s);
+        eprintln!("apexd: session {name} ended");
+        Ok(())
+    }
+
     fn accept(&mut self, id: u64, s: UnixStream) {
         let (out, orx) = channel::<ServerMsg>();
         // the first word: which apex this is
@@ -356,6 +383,13 @@ impl Daemon {
                 if std::io::Write::flush(&mut w).is_err() {
                     break;
                 }
+            }
+            // the connection is over (its sender dropped: gone, or its
+            // session ended): what was queued went, and the socket closes
+            // so the other side sees the end rather than waiting on it
+            let _ = std::io::Write::flush(&mut w);
+            if let Ok(s) = w.into_inner() {
+                let _ = s.shutdown(std::net::Shutdown::Both);
             }
         });
         self.conns.insert(id, Conn { session: None, attachment: None, kind: AttachmentKind::Tool, out, sent: HashMap::new(), streams: HashMap::new(), adopted: Vec::new() });
@@ -418,6 +452,10 @@ impl Daemon {
                 self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
             }
             ClientMsg::RenameSession { from, to } => match self.rename_session(&from, &to) {
+                Ok(()) => self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() }),
+                Err(text) => self.send(id, ServerMsg::Error { text }),
+            },
+            ClientMsg::EndSession { name, force } => match self.end_session(&name, force) {
                 Ok(()) => self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() }),
                 Err(text) => self.send(id, ServerMsg::Error { text }),
             },
@@ -642,7 +680,7 @@ impl Daemon {
                     self.answered(pid, result);
                 }
             }
-            ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::RenameSession { .. } | ClientMsg::Ping { .. } | ClientMsg::Stop => {}
+            ClientMsg::Hello { .. } | ClientMsg::NewSession { .. } | ClientMsg::ListSessions | ClientMsg::RenameSession { .. } | ClientMsg::EndSession { .. } | ClientMsg::Ping { .. } | ClientMsg::Stop => {}
         }
         self.after(name, props);
         if verbs {

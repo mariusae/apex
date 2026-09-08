@@ -83,6 +83,8 @@ pub struct Link {
     pub term_lines: Vec<(TermId, String)>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
+    /// The session was ended under us (`Ended`): the link closes next.
+    pub ended: Option<String>,
     /// Where the last edit by another attachment ended, per buffer: in a
     /// win's window, the output point, where the prompt is.
     pub foreign_end: HashMap<BufferId, usize>,
@@ -216,7 +218,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -361,6 +363,7 @@ impl Link {
             ServerMsg::Pong { .. } => {
                 self.last_pong = Some(std::time::Instant::now());
             }
+            ServerMsg::Ended { session } => self.ended = Some(session),
         }
         true
     }
@@ -516,6 +519,23 @@ pub fn new_session(path: &Path, name: &str, profile: Option<Script>) -> io::Resu
 pub fn rename_session(path: &Path, from: &str, to: &str) -> io::Result<()> {
     let mut s = UnixStream::connect(path)?;
     write_frame(&mut s, &ClientMsg::RenameSession { from: from.to_string(), to: to.to_string() })?;
+    let mut r = BufReader::new(s);
+    loop {
+        match read_frame::<_, ServerMsg>(&mut r)? {
+            Some(ServerMsg::Sessions { .. }) => return Ok(()),
+            Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
+            Some(ServerMsg::Build { protocol, id }) => check_build(protocol, &id)?,
+            Some(_) => {}
+            None => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no answer")),
+        }
+    }
+}
+
+/// End the session `name` on the daemon at `path`: refused while a
+/// window there is dirty unless `force`.
+pub fn end_session(path: &Path, name: &str, force: bool) -> io::Result<()> {
+    let mut s = UnixStream::connect(path)?;
+    write_frame(&mut s, &ClientMsg::EndSession { name: name.to_string(), force })?;
     let mut r = BufReader::new(s);
     loop {
         match read_frame::<_, ServerMsg>(&mut r)? {

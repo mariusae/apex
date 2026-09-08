@@ -470,6 +470,7 @@ client → server
   Complete{view, ctx, at, prefix}         ^F
   Propose{id, proposal} · Applied{id, result}
   Env{set} · Set{key, value, attachment?} · Ps · Kill{targets}
+  EndSession{name, force}                 the session ended: killed, everyone cut off (Ended)
   Named{name, group, pid, cmd}            what a program is called: the entry of its process
                                           group (the shell the server started) takes the name in
                                           the top row, ps and Kill; a group the server did not
@@ -486,6 +487,7 @@ server → client
   Plumb{id, ctx, verb, text, dir, groups, at?, sel?}
                                           a rule named this tool; answer PlumbAck within a second
   Io{stream, frame}                       Response{status, headers}, Body, End, Reset
+  Ended{session}                          the session this connection was on is gone
   Ps{procs} · TermLines{term, text}
 
 proposals (tools and the server → the leader; applied by whoever leads)
@@ -595,7 +597,13 @@ plumb B env set cat lsp label awd version`; flags are Go's (`-flag=value`)
 and `apex help` documents everything, `apex help <topic>` included;
 `apex ps` and `apex kill` see and end what the server runs (the
 `Running` list behind the top row's names: pid, name, origin, start
-time, directory, command line). A program says what it is called with
+time, directory, command line). `apex end-session [-f] [NAME]` ends a
+session: refused while a window there is unsaved unless forced; else
+its commands and terminals are killed, everything attached gets
+`Ended` and is cut off (a window on it goes offline saying so, a
+parked one is dropped), and the daemon goes on for the others; the
+picker's `end` on a session row does the same, on the host through
+`apex end-session` there. A program says what it is called with
 `Named`, so `apex tool lsp` is `lsp` in the top row, not `apex`: the
 server renames the entry of the announcer's process group (the exit
 reports the new name too), or adopts an announcer it did not start (from

@@ -25,7 +25,9 @@ is plan9port's editinacme, `apex editor`: the file opens in the session
 and the command returns when its window is deleted); `apex attach`
 starts a daemon if the
 socket does not answer. A daemon started that way writes what it has
-to say to `apexd.log` beside its socket. In the app, switching a window
+to say to `apexd.log` beside its socket. `apex end-session [-f] [NAME]`
+ends one session (refused with unsaved windows unless forced); the
+picker's `end` on a session does the same. In the app, switching a window
 to another session (⌘K) or closing it keeps the old session attached,
 parked, so coming back to it is instant; quitting lets them all go.
 

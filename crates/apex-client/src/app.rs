@@ -1285,12 +1285,18 @@ impl Acme {
     pub fn poll_remote(&mut self) -> bool {
         let Backend::Remote(link) = &mut self.backend else { return true };
         let alive = link.poll(&mut self.node, &mut self.log);
+        let ended = link.ended.take();
         if self.connected && !alive {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
         self.connected = alive;
         for w in link.take_made() {
             self.show(w);
+        }
+        if let Some(name) = ended {
+            // the session was ended under us: the window says so, offline
+            self.connected = false;
+            self.notice(&format!("session {name} ended\n"));
         }
         self.answer_asks();
         // what the proposals just applied left to do: places to go (a
