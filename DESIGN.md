@@ -1190,6 +1190,19 @@ below its snapshot, so logs stay bounded. A server restart is a fresh
 world, as acme's is; `Dump`/`Load` of layouts and buffer contents can come
 later.
 
+*As built:* the daemon compacts every shard's log after each round of
+shipping, below what every connection has been sent and both its
+replicas have applied, and a mirror compacts each shard as it applies
+entries (a led shard once the server has acked them too), so a log
+holds what is outstanding, not the session's history. A terminal
+publishes only what changed since it last did (the rows that differ,
+the top, the links, the cursor), nothing on a wakeup that changed
+nothing, and the file watcher forwards writes, creations, removals and
+renames, never opens or reads (on Linux every open of a watched file is
+an event, the server's own reads included, which fed a loop). A daemon
+and a win tool that had grown to gigabytes on a spewing terminal and a
+watched file were what showed the need.
+
 *Measured:* the attach snapshot carries each buffer's undo and redo
 history, so a session that has absorbed 100k keystrokes ships a 770 KB
 snapshot for 115 KB of text. Undo should be bounded (acme keeps it all,

@@ -199,6 +199,16 @@ pub struct TermHost {
     pub name: String,
     pub cmd: String,
     pub started: u64,
+    /// What was last published: the viewport's top, its links, its rows,
+    /// its cursor; the next publish carries only what differs.
+    last: Option<Published>,
+}
+
+struct Published {
+    top: u64,
+    links: Vec<String>,
+    rows: Vec<Vec<Cell>>,
+    cursor: (u16, u16, bool),
 }
 
 impl TermHost {
@@ -258,7 +268,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started })
+        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None })
     }
 
     pub fn write(&self, data: &[u8]) {
@@ -531,6 +541,59 @@ mod key_tests {
 }
 
 impl TermHost {
+
+    /// The viewport's changes since the last publish as term-shard ops:
+    /// the top when it moved, the links when they differ, runs of rows
+    /// that differ (all of them the first time, or after a resize), the
+    /// cursor when it moved. Nothing when nothing changed.
+    pub fn changed_ops(&mut self) -> Vec<TermOp> {
+        let all = self.snapshot_ops();
+        let (mut top, mut links, mut rows, mut cursor) = (0u64, Vec::new(), Vec::new(), (0u16, 0u16, true));
+        for op in all {
+            match op {
+                TermOp::View { top: t } => top = t,
+                TermOp::Links { links: l } => links = l,
+                TermOp::Rows { rows: r, .. } => rows = r,
+                TermOp::Cursor { col, row, visible } => cursor = (col, row, visible),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        match &self.last {
+            Some(p) if p.rows.len() == rows.len() && p.rows.iter().zip(rows.iter()).all(|(a, b)| a.len() == b.len()) => {
+                if p.top != top {
+                    out.push(TermOp::View { top });
+                }
+                if p.links != links {
+                    out.push(TermOp::Links { links: links.clone() });
+                }
+                // runs of rows that differ
+                let mut i = 0;
+                while i < rows.len() {
+                    if p.rows[i] == rows[i] {
+                        i += 1;
+                        continue;
+                    }
+                    let start = i;
+                    while i < rows.len() && p.rows[i] != rows[i] {
+                        i += 1;
+                    }
+                    out.push(TermOp::Rows { first: start as u16, rows: rows[start..i].to_vec() });
+                }
+                if p.cursor != cursor {
+                    out.push(TermOp::Cursor { col: cursor.0, row: cursor.1, visible: cursor.2 });
+                }
+            }
+            _ => {
+                out.push(TermOp::View { top });
+                out.push(TermOp::Links { links: links.clone() });
+                out.push(TermOp::Rows { first: 0, rows: rows.clone() });
+                out.push(TermOp::Cursor { col: cursor.0, row: cursor.1, visible: cursor.2 });
+            }
+        }
+        self.last = Some(Published { top, links, rows, cursor });
+        out
+    }
 
     /// The viewport as term-shard ops: all rows, then the cursor.
     pub fn snapshot_ops(&self) -> Vec<TermOp> {

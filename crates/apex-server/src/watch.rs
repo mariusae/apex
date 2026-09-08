@@ -24,6 +24,12 @@ impl Watches {
     pub fn new(on_change: impl Fn(PathBuf) + Send + 'static) -> Watches {
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(ev) = res {
+                // reads are not changes: on Linux every open of a watched
+                // file is an event, our own reads included, and forwarding
+                // those fed a loop that read the file again
+                if !is_change(&ev.kind) {
+                    return;
+                }
                 for p in ev.paths {
                     on_change(p);
                 }
@@ -47,6 +53,37 @@ impl Watches {
         self.dirs = want;
     }
 
+    }
+
+/// An event that may have changed a file's contents or existence: a
+/// write, a creation, a removal, a rename; not an open or a read.
+pub fn is_change(kind: &notify::EventKind) -> bool {
+    use notify::EventKind::*;
+    match kind {
+        Access(_) | Other => false,
+        Any | Create(_) | Modify(_) | Remove(_) => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_change;
+    use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind};
+    use notify::EventKind;
+
+    #[test]
+    fn reads_are_not_changes() {
+        assert!(!is_change(&EventKind::Access(AccessKind::Open(AccessMode::Read))));
+        assert!(!is_change(&EventKind::Access(AccessKind::Close(AccessMode::Read))));
+        assert!(!is_change(&EventKind::Other));
+        assert!(is_change(&EventKind::Modify(ModifyKind::Any)));
+        assert!(is_change(&EventKind::Create(CreateKind::File)));
+        assert!(is_change(&EventKind::Remove(RemoveKind::File)));
+        assert!(is_change(&EventKind::Any));
+    }
+}
+
+impl Watches {
     /// The path of an event, as the buffers name it.
     pub fn as_named(&self, p: &Path) -> PathBuf {
         if let (Some(parent), Some(file)) = (p.parent(), p.file_name()) {

@@ -927,3 +927,25 @@ fn a_session_can_be_ended() {
     let _ = alive; // other tests may run sleeps of their own: not asserted
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_mirror_holds_what_is_outstanding_not_the_history() {
+    let sock = daemon();
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let t = ok(&sock, &["term", "new"]);
+    let term = TermId(t.trim().parse().unwrap());
+    // a terminal spewing: thousands of lines of output
+    ok(&sock, &["term", "send", t.trim(), "seq 1 20000; echo spew-done\n"]);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut peak = 0;
+    let mut done = false;
+    while Instant::now() < deadline && !done {
+        let _ = c.step(Duration::from_millis(20));
+        peak = peak.max(c.log.len());
+        done = c.node.state.terms.get(&term).is_some_and(|t| t.grid.iter().any(|r| r.iter().map(|c| c.ch).collect::<String>().contains("spew-done")));
+    }
+    assert!(done, "the output never arrived");
+    // the mirror applied everything and kept next to nothing
+    assert!(c.log.len() < 50, "{} entries kept", c.log.len());
+    assert!(peak < 2000, "the mirror grew to {peak} entries while the terminal spewed");
+}

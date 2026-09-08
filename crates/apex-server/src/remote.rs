@@ -307,6 +307,7 @@ impl Link {
                 // shipping mark past it so we never echo a follower's entries
                 let last = log.last_seq(shard);
                 let leads = self.leads(log, shard);
+                self.compact_mirror(node, log, shard);
                 let mark = self.sent.entry(shard).or_insert(0);
                 if *mark < last && !leads {
                     *mark = last;
@@ -350,6 +351,7 @@ impl Link {
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
+                self.compact_mirror(node, log, shard);
                 if let Some((want, at)) = self.pending_ack.get(&shard).copied() {
                     if seq >= want {
                         self.ack_ms = Some(at.elapsed().as_millis() as u64);
@@ -366,6 +368,17 @@ impl Link {
             ServerMsg::Ended { session } => self.ended = Some(session),
         }
         true
+    }
+
+    /// Forget the mirror's entries that are behind us: applied here, and
+    /// (for a shard we lead) shipped and acked by the server. A mirror
+    /// holds what is outstanding, not the session's whole history.
+    fn compact_mirror(&mut self, node: &Node, log: &mut Log, shard: Shard) {
+        let mut low = node.state.applied(shard);
+        if self.leads(log, shard) {
+            low = low.min(self.sent.get(&shard).copied().unwrap_or(0)).min(self.acked.get(&shard).copied().unwrap_or(0));
+        }
+        log.compact(shard, low);
     }
 
     fn leads(&self, log: &Log, shard: Shard) -> bool {

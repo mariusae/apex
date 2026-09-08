@@ -1154,7 +1154,19 @@ impl Daemon {
                 }
             }
         }
+        // entries everyone has (every connection shipped past them, both
+        // replicas past them) are forgotten: a log grows with what is
+        // outstanding, not with time
         let s = self.sessions.get_mut(name).unwrap();
+        for &shard in &shards {
+            let mut low = s.log.last_seq(shard);
+            low = low.min(s.view.state.applied(shard)).min(s.server.node.state.applied(shard));
+            for id in self.conns.iter().filter(|(_, c)| c.session == Some(sid)).map(|(id, _)| *id) {
+                let sent = self.conns.get(&id).and_then(|c| c.sent.get(&shard).copied()).unwrap_or(0);
+                low = low.min(sent);
+            }
+            s.log.compact(shard, low);
+        }
         if let Some(leader) = s.leader {
             for p in props {
                 self.send(leader, ServerMsg::Propose { id: 0, proposal: p });

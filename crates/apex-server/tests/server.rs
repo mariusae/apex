@@ -639,3 +639,29 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     assert!(matches!(r, apex_core::node::Executed::Failed(_, ref why) if why.contains("Web needs a URL")), "{r:?}");
     assert!(apex_core::node::TOP_TAG.contains(" Web "));
 }
+
+#[test]
+fn a_terminal_publishes_only_what_changed() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains('$') || grid_text(n).contains('%')));
+    // the prompt is up: publishing again, nothing having changed, adds nothing
+    let before = log.last_seq(Shard::Term(t));
+    server.publish_term(&mut log, t);
+    server.publish_term(&mut log, t);
+    assert_eq!(log.last_seq(Shard::Term(t)), before);
+    // a line typed: the rows that changed go, not the whole grid
+    for c in "echo diffed-rows\r".chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("diffed-rows\n") || grid_text(n).matches("diffed-rows").count() >= 2));
+    let rows_published: usize = log.since(Shard::Term(t), before).iter().map(|e| match &e.op {
+        apex_core::Op::Term(apex_core::TermOp::Rows { rows, .. }) => rows.len(),
+        _ => 0,
+    }).sum();
+    let height = node.state.terms.get(&t).unwrap().rows as usize;
+    assert!(rows_published > 0 && rows_published < height * 3, "{rows_published} rows for a few lines of change (height {height})");
+}

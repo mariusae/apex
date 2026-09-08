@@ -111,7 +111,7 @@ pub struct Server {
     /// Files clients subscribed to (`Watch`), beyond the buffers' own.
     subscribed: BTreeSet<PathBuf>,
     /// Subscribed files that changed, for the host to report.
-    changed: Vec<PathBuf>,
+    changed: BTreeSet<PathBuf>,
 }
 
 impl Server {
@@ -161,7 +161,7 @@ impl Server {
             next_plumb: 1,
             plumb_starts: Vec::new(),
             subscribed: BTreeSet::new(),
-            changed: Vec::new(),
+            changed: BTreeSet::new(),
         };
         (server, rx)
     }
@@ -302,10 +302,13 @@ impl Server {
         Ok(Proposal::TermWindow { col, name, term: id })
     }
 
-    /// Publish a terminal's current grid to its shard.
+    /// Publish what changed in a terminal's grid since it was last
+    /// published: nothing when nothing did (a pty wakes often), the rows
+    /// that differ otherwise, so the term shard grows with the output,
+    /// not with the wakeups.
     pub fn publish_term(&mut self, log: &mut Log, id: TermId) {
-        let Some(h) = self.terms.get(&id) else { return };
-        let ops = h.snapshot_ops();
+        let Some(h) = self.terms.get_mut(&id) else { return };
+        let ops = h.changed_ops();
         for op in ops {
             let _ = self.node.append(log, Shard::Term(id), Op::Term(op));
         }
@@ -406,7 +409,7 @@ impl Server {
             ServerEvent::File(path) => {
                 let named = self.watches.as_named(&path);
                 if self.subscribed.contains(&named) {
-                    self.changed.push(named);
+                    self.changed.insert(named);
                 }
                 props.extend(self.file_changed(view, &path));
             }
@@ -495,7 +498,7 @@ impl Server {
 
     /// Subscribed files that changed since the last call.
     pub fn take_changed(&mut self) -> Vec<PathBuf> {
-        std::mem::take(&mut self.changed)
+        std::mem::take(&mut self.changed).into_iter().collect()
     }
 
     pub fn sync_watches(&mut self, view: &Node) {
