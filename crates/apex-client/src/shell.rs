@@ -691,9 +691,7 @@ impl Selector {
                     Some(Loading::Ready(_)) => {}
                     _ => section.push(Row::Note("asking…".into())),
                 }
-                if !matches!(loading, Some(Loading::Failed(..))) {
-                    section.push(Row::NewSession(h.clone()));
-                }
+                section.push(Row::NewSession(h.clone()));
             }
             if !section.is_empty() {
                 rows.push(Row::Header(h.clone()));
@@ -846,9 +844,17 @@ impl Acme {
         let host = h.clone();
         let asking = cx.background_executor().spawn(async move {
             if host.is_local() {
-                list_sessions(&socket).map_err(|e| e.to_string())
-            } else {
-                apex_server::providers::list_sessions(&host.dest()).map_err(|e| e.to_string())
+                return list_sessions(&socket).map_err(|e| e.to_string());
+            }
+            // a host that has no apex yet (just added) gets ours first, as
+            // attaching would, and is asked again
+            let dest = host.dest();
+            match apex_server::providers::list_sessions(&dest) {
+                Ok(names) => Ok(names),
+                Err(first) => match apex_server::providers::deploy(&dest) {
+                    Ok(_) => apex_server::providers::list_sessions(&dest).map_err(|e| e.to_string()),
+                    Err(_) => Err(first.to_string()),
+                },
             }
         });
         cx.spawn(async move |this, cx| {
@@ -1461,7 +1467,7 @@ mod picker_tests {
             .collect();
         // a host still asked shows what it had last time, then "asking…";
         // one that could not be reached keeps what it had, and says so
-        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "work", "note:asking…", "+session", "[gone]", "old", "note:unreachable", "-", "+host", "rename"]);
+        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "work", "note:asking…", "+session", "[gone]", "old", "note:unreachable", "+session", "-", "+host", "rename"]);
         // the cursor lands on this window's session
         let mut sel = picker();
         sel.land_on_current();

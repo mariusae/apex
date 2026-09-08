@@ -1030,8 +1030,11 @@ the host could not be reached), so a host that is down holds nothing
 up; an answer for an earlier opening is dropped. "+ new host…" opens a form:
 the providers as pills (`ssh` and every `apex-remote-NAME` on the
 PATH; ←→ or a letter picks one) and the host; enter remembers it and
-asks for its sessions. The search narrows sessions and hosts, and a
-URL typed in still creates directly.
+asks for its sessions; a host without apex yet gets ours first, as
+attaching would, and is asked again. "+ new session" is offered on
+every host, reachable or not (attaching tries again and says what is
+wrong). The search narrows sessions and hosts, and a URL typed in
+still creates directly.
 - *As built, parked sessions:* switching a window to another session
 (⌘K) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
 session is parked, still attached and still leading, in an app-wide
