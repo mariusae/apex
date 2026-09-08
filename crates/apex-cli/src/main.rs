@@ -161,7 +161,8 @@ commands and terminals are killed, everything attached to it is told
 and cut off (a window on it goes offline, saying so), and the session
 is gone from the daemon, which keeps running for the others. It is
 refused while any of its windows has unsaved changes, unless -f. The
-picker's end on a session row does the same." },
+picker's end on a session row does the same, and so does End in the
+top row of a window (End -f forces), which then closes the window." },
     Cmd { name: "rename-session", usage: "apex rename-session [FROM] TO", short: "rename a session", flags: &[], run: rename_session, long: "\
 Rename-session gives the session FROM (the current session when omitted)
 the name TO. Everything attached stays attached; session names are

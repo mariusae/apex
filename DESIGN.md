@@ -603,7 +603,9 @@ its commands and terminals are killed, everything attached gets
 `Ended` and is cut off (a window on it goes offline saying so, a
 parked one is dropped), and the daemon goes on for the others; the
 picker's `end` on a session row does the same, on the host through
-`apex end-session` there. A program says what it is called with
+`apex end-session` there, and so does `End` in the top row (`End -f`
+forces), which then closes the window. A program says what it is
+called with
 `Named`, so `apex tool lsp` is `lsp` in the top row, not `apex`: the
 server renames the entry of the announcer's process group (the exit
 reports the new name too), or adopts an announcer it did not start (from

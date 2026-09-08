@@ -377,6 +377,45 @@ impl Acme {
         })
     }
 
+    /// `End`: end this window's session on its host, off the UI thread,
+    /// then close the window; a refusal (unsaved windows) is reported.
+    fn end_session(&mut self, force: bool, cx: &mut Context<Self>) {
+        let Backend::Remote(_) = &self.backend else {
+            self.notice("End: an in-process session has no daemon to end\n");
+            return;
+        };
+        let url = self.url.clone();
+        let socket = apex_server::daemon::default_socket();
+        let ending = cx.background_executor().spawn(async move {
+            if url.is_local() {
+                apex_server::remote::end_session(&socket, &url.session, force).map_err(|e| e.to_string())
+            } else {
+                let dest = url.dest().unwrap_or_default();
+                let f = if force { " -f" } else { "" };
+                apex_server::providers::run(&dest, &format!("{} end-session{f} {}", apex_server::providers::REMOTE_BIN, url.session), None).map(|_| ()).map_err(|e| e.to_string())
+            }
+        });
+        let url = self.url.clone();
+        cx.spawn(async move |this, cx| {
+            let r = ending.await;
+            let _ = cx.update(|cx| {
+                let _ = this.update(cx, |acme, cx| {
+                    match r {
+                        Ok(()) if acme.url == url => {
+                            crate::shell::log_line(&format!("ended {url}: closing the window"));
+                            acme.connected = false; // nothing to park
+                            acme.close_now(cx);
+                        }
+                        Ok(()) => {}
+                        Err(e) => acme.notice(&format!("End: {e}\n")),
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
     /// Park this window's session in the pool (the window is closing).
     pub fn park_into_pool(&mut self, cx: &mut gpui::App) {
         if let Some(p) = self.park() {
@@ -2774,6 +2813,12 @@ impl Acme {
             let _ = self.node.commit_tag(&mut self.log, w);
         }
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
+        // End: the session ended (as apex end-session does), the window closed
+        if word == "End" {
+            let force = text.split_whitespace().any(|w| w == "-f");
+            self.end_session(force, cx);
+            return;
+        }
         // a page's own history and reload: Back, Fwd, Get in a web window
         if let ExecCtx::Window(w) = ctx {
             if self.node.state.window(w).map(|x| x.body) == Ok(Body::Web) {
