@@ -1013,8 +1013,11 @@ dimmed, then the provider in parentheses. "Connect to a Session…"
 opens a form: the providers as pills to choose from (`local`, `ssh`,
 and every `apex-remote-NAME` on the PATH, ←→ or a letter picks one),
 the host (not for local), the label (the default session when empty);
-enter connects, esc backs out. A URL typed into the search still
-creates directly.
+enter connects, esc backs out. Hosts connected to are remembered per
+provider (`known-hosts` beside the other state files, seeded from the
+recent sessions) and offered under the host field as what is typed
+narrows them, ↑↓ picking one, tab or ↓ past the last taking it. A URL
+typed into the search still creates directly.
 - *As built, parked sessions:* switching a window to another session
 (⌘K) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
 session is parked, still attached and still leading, in an app-wide
