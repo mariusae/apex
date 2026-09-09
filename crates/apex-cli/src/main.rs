@@ -121,6 +121,7 @@ const RULE_FLAGS: &[Flag] = &[
     flag("verb", "the command the rule answers: plumb (B3, the default) or a word for the tools menu"),
     flag("text", "the plumbed text (a verb's arguments) must match this regexp, whole; groups bind $0..$9"),
     flag("file", "the window's name must match this regexp"),
+    flag("win", "the rule is for the window with this id alone (ids are never reused)"),
     flag("kind", "the window must be: file, dir, term or errors"),
     flag("isfile", "this (expanded, relative to the window's directory) must be a file"),
     flag("isdir", "... a directory"),
@@ -468,6 +469,8 @@ Predicates (all given must hold):
 	-text=RE      the plumbed text (a verb's arguments) matches RE, whole;
 	              its groups bind $0..$9
 	-file=RE      the window's name matches RE
+	-win=ID       the window is the one with this id, whatever its name
+	              (ids are never reused: a tool's rules for its own window)
 	-kind=K       file, dir, term, errors or web
 	-isfile=EXPR  EXPR, expanded, is a file (relative to the window's directory)
 	-isdir=EXPR   ... a directory
@@ -1262,6 +1265,10 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
         verb: f.get("verb").unwrap_or("plumb").to_string(),
         text: f.get("text").map(String::from),
         file: f.get("file").map(String::from),
+        win: match f.get("win") {
+            Some(v) => Some(WindowId(v.parse().map_err(|_| format!("-win={v}: not a window id"))?)),
+            None => None,
+        },
         kind,
         isfile: f.get("isfile").map(String::from),
         isdir: f.get("isdir").map(String::from),

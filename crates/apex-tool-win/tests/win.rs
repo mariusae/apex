@@ -69,20 +69,22 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     assert!(c.node.window_live(w));
     assert!(c.node.state.buffer(b).unwrap().dirty());
     // the tools menu offers Interrupt and EOF here (exec is no word)
-    let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &name, WinKind::File);
+    let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &name, WinKind::File, Some(w));
     assert_eq!(verbs, vec!["Interrupt", "EOF"]);
+    // they are the window's, not its name's: another window of that name has none
+    assert!(apex_core::plumb::verbs_for(&c.node.state.meta.rules, &name, WinKind::File, None).is_empty());
     // B2 over an old command line types it to the shell again, at the end
     assert!(until(&mut c, |n| text(n).ends_with("$ ")), "prompt:\n{}", text(&c.node));
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "echo win-$((6*7))".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).matches("win-42\n").count() == 2), "output:\n{}", text(&c.node));
     let t = text(&c.node);
     assert!(t.rfind("win-42\n").unwrap() > t.find("again\n").unwrap(), "{t}");
-    // the window renamed (the shell's awd on cd): the rules follow it, so
-    // the menu's verbs, and B2 sending, are still there under the new name
+    // the window renamed (the shell's awd on cd): the rules are the
+    // window's, so the menu's verbs, and B2 sending, are there as before
     let renamed = format!("{}/elsewhere/-sh", dir.display());
     c.propose(Proposal::Rename { buffer: b, window: w, name: renamed.clone() }, Duration::from_secs(5)).unwrap();
-    assert!(until(&mut c, |n| apex_core::plumb::verbs_for(&n.state.meta.rules, &renamed, WinKind::File) == vec!["Interrupt", "EOF"]), "rules did not follow the rename: {:?}", apex_core::plumb::verbs_for(&c.node.state.meta.rules, &renamed, WinKind::File));
-    assert!(apex_core::plumb::verbs_for(&c.node.state.meta.rules, &name, WinKind::File).is_empty(), "the old name keeps rules");
+    assert!(until(&mut c, |n| n.window_name(w) == renamed));
+    assert_eq!(apex_core::plumb::verbs_for(&c.node.state.meta.rules, &renamed, WinKind::File, Some(w)), vec!["Interrupt", "EOF"]);
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "echo win-$((6*7))".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).matches("win-42\n").count() == 3), "output:\n{}", text(&c.node));
     let _ = std::fs::remove_dir_all(&dir);

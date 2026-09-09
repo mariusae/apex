@@ -813,8 +813,9 @@ apart by a queue of what we proposed), echo cancelled, ^C/DEL/^D as win
 reads them, raw mode when echo is off; `Win` in the top tag runs it as a
 command named Win. Unbound control keys are inserted as acme inserts
 them, which is what lets win see ^D. The rules that make the window
-win's name it by name, so when the shell renames it (`awd` on cd) win
-removes and remakes them for the new name; Home and End are acme's
+win's are the window's own (`-win=ID`, an id never reused), so the
+shell renaming it (`awd` on cd) changes nothing and two wins never
+overlap; Home and End are acme's
 `Khome`/`Kend` with `iq1`, the last insertion point (where typing or
 erasing last left the cursor, moved along by output before it): Home
 brings its line to the top when it has scrolled off above (a win's

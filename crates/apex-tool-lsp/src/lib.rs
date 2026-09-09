@@ -343,7 +343,7 @@ impl Tool {
         let file = format!(r"\.({})$", l.exts.join("|"));
         let mut ids = Vec::new();
         for v in VERBS {
-            let rule = PlumbRule { verb: v.to_string(), text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), to: None };
+            let rule = PlumbRule { verb: v.to_string(), text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
             ids.push(self.remote.rule_add(rule, 0, true, TIMEOUT)?);
         }
         self.rules.insert(lang.to_string(), ids);
@@ -401,7 +401,7 @@ impl Tool {
     /// language's server, once it is ready (`install_verbs`).
     fn install_rules(&mut self) -> Result<(), String> {
         for v in NAV_VERBS {
-            let r = PlumbRule { verb: v.into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), to: None };
+            let r = PlumbRule { verb: v.into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
             // a priority below the verbs', so the menu lists them after
             self.remote.rule_add(r, -1, true, TIMEOUT)?;
         }

@@ -957,7 +957,7 @@ impl Server {
             isfile: isfile.map(String::from),
             isdir: isdir.map(String::from),
             action: RuleAction::Edit(edit.into()),
-            to: None,
+            win: None, to: None,
         };
         let defaults = [
             r(r"(\S+?):(\d+)(:\d+)?[.,;:)]*", Some("$1"), None, "$1:$2"),
@@ -1000,7 +1000,7 @@ impl Server {
                 isfile: None,
                 isdir: None,
                 action: RuleAction::Run(format!("{apex} tool preview $file")),
-                to: None,
+                win: None, to: None,
             };
             let (_, e) = log.install_rule(SERVER, -10, rule);
             let _ = self.node.state.apply(Shard::Meta, &e);
@@ -1128,7 +1128,11 @@ impl Server {
             }
             let owner = if rule.attachment == SERVER { "session".to_string() } else { view.state.meta.attachments.get(&rule.attachment).map(|a| a.name.clone()).unwrap_or_else(|| rule.attachment.to_string()) };
             let who = format!("{rid} ({owner}, p{})", rule.priority);
-            if !r.applies_to(&p.name, p.kind) {
+            let pw = match p.req.ctx {
+                ExecCtx::Window(w) => Some(w),
+                _ => None,
+            };
+            if !r.applies_to(&p.name, p.kind, pw) {
                 p.trace.push(format!("{who}: not this window"));
                 continue;
             }
@@ -1267,12 +1271,16 @@ impl Server {
             ExecCtx::Window(w) => (view.window_name(w), view.window_kind(w)),
             _ => (String::new(), WinKind::File),
         };
-        let offered = apex_core::plumb::offers_verb(&view.state.meta.rules, verb, &name, kind);
+        let cw = match ctx {
+            ExecCtx::Window(w) => Some(w),
+            _ => None,
+        };
+        let offered = apex_core::plumb::offers_verb(&view.state.meta.rules, verb, &name, kind, cw);
         // no rule offers the word: a rule for every command here (win's
         // exec) takes the whole line
         let (verb, rest) = if offered {
             (verb, text[verb.len()..].trim().to_string())
-        } else if apex_core::plumb::offers_verb(&view.state.meta.rules, apex_core::plumb::EXEC, &name, kind) {
+        } else if apex_core::plumb::offers_verb(&view.state.meta.rules, apex_core::plumb::EXEC, &name, kind, cw) {
             (apex_core::plumb::EXEC, text.trim().to_string())
         } else {
             return None;
@@ -1287,7 +1295,7 @@ impl Server {
 
     fn get_rule_request(&self, view: &Node, ctx: ExecCtx, seq: Seq, text: &str) -> Option<PlumbReq> {
         let ExecCtx::Window(w) = ctx else { return None };
-        if !apex_core::plumb::offers_verb(&view.state.meta.rules, "Get", &view.window_name(w), view.window_kind(w)) {
+        if !apex_core::plumb::offers_verb(&view.state.meta.rules, "Get", &view.window_name(w), view.window_kind(w), Some(w)) {
             return None;
         }
         self.verb_request(view, ctx, seq, text)

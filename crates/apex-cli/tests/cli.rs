@@ -237,7 +237,7 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     let tool_sock = sock.clone();
     let tool = std::thread::spawn(move || {
         let mut c = Remote::connect_as(&tool_sock, "main", "t", AttachmentKind::Tool).unwrap();
-        let rule = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), to: None };
+        let rule = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), win: None, to: None };
         c.rule_add(rule, 10, true, Duration::from_secs(5)).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut refused = 0;
@@ -272,7 +272,7 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     let other = dir.join("other.md").display().to_string();
     let tool = std::thread::spawn(move || {
         let mut c = Remote::connect_as(&tool_sock, "main", "t", AttachmentKind::Tool).unwrap();
-        let rule = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), to: None };
+        let rule = PlumbRule { verb: "plumb".into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), win: None, to: None };
         c.rule_add(rule, 10, true, Duration::from_secs(5)).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut refused = 0;

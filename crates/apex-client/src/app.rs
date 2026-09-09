@@ -560,7 +560,7 @@ impl Acme {
             isfile: None,
             isdir: None,
             action: RuleAction::Client { verb: "open".into(), args: "$0".into() },
-            to: None,
+            win: None, to: None,
         };
         link.send(&ClientMsg::RuleAdd { rule: urls, priority: -10, mine: true });
         // Snarfout in terminals and win windows: the last command's output
@@ -573,7 +573,7 @@ impl Acme {
                 isfile: None,
                 isdir: None,
                 action: RuleAction::Client { verb: "snarfout".into(), args: "$win".into() },
-                to: None,
+                win: None, to: None,
             };
             link.send(&ClientMsg::RuleAdd { rule, priority: -10, mine: true });
         }
@@ -2349,7 +2349,7 @@ impl Acme {
     /// item under the pointer on release runs as B2 would, none if it is
     /// released outside.
     fn menu_open(&mut self, w: WindowId, at: Point<Pixels>, window: &mut Window) {
-        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w));
+        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w), Some(w));
         if items.is_empty() {
             return;
         }

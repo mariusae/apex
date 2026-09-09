@@ -117,13 +117,13 @@ fn get_rule_overrides_filesystem_get_and_stays_scoped() {
         isfile: None,
         isdir: None,
         action: RuleAction::Tool("smartlog".into()),
-        to: None,
+        win: None, to: None,
     };
     let (_, e) = log.install_rule(SERVER, 0, rule);
     node.state.apply(Shard::Meta, &e).unwrap();
 
-    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_live), node.window_kind(w_live)), vec!["Get"]);
-    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_file), node.window_kind(w_file)).is_empty());
+    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_live), node.window_kind(w_live), Some(w_live)), vec!["Get"]);
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_file), node.window_kind(w_file), Some(w_file)).is_empty());
 
     node.exec(&mut log, ExecCtx::Window(w_live), "Get").unwrap();
     assert_eq!(poll(&mut server, &mut log, &mut node), 0);
@@ -163,7 +163,7 @@ fn dirty_get_rule_reaches_the_tool_on_first_invocation() {
         isfile: None,
         isdir: None,
         action: RuleAction::Tool("smartlog".into()),
-        to: None,
+        win: None, to: None,
     };
     let (_, e) = log.install_rule(SERVER, 0, rule);
     node.state.apply(Shard::Meta, &e).unwrap();
@@ -198,7 +198,7 @@ fn timed_out_get_rule_fails_without_reloading_generated_content() {
         isfile: None,
         isdir: None,
         action: RuleAction::Tool("smartlog".into()),
-        to: None,
+        win: None, to: None,
     };
     let (_, e) = log.install_rule(SERVER, 0, rule);
     node.state.apply(Shard::Meta, &e).unwrap();
@@ -481,14 +481,14 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
         isfile: None,
         isdir: None,
         action: RuleAction::Run("echo previewing $file".into()),
-        to: None,
+        win: None, to: None,
     };
     let (_, e) = log.install_rule(SERVER, 0, rule);
     node.state.apply(Shard::Meta, &e).unwrap();
     let p = server.open_file(col, None, &dir, "notes.md", None).unwrap();
     let w = perform(&mut node, &mut log, vec![p]).expect("window");
     // the verb is offered in the window's tools menu (B4), not its tag
-    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_name(w), n.window_kind(w));
+    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_name(w), n.window_kind(w), Some(w));
     assert_eq!(verbs(&node, w), vec!["Preview"]);
     node.update_tags(&mut log).unwrap();
     let tag = node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string();

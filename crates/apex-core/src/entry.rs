@@ -217,6 +217,11 @@ pub struct PlumbRule {
     pub file: Option<String>,
     /// The window must be of this kind.
     pub kind: Option<WinKind>,
+    /// The rule is for this one window (ids are never reused, so it can
+    /// never come to mean another): a tool's own window, whatever its
+    /// name becomes.
+    #[serde(default)]
+    pub win: Option<WindowId>,
     /// This (expanded, relative to the window's directory) must be a file.
     pub isfile: Option<String>,
     /// This must be a directory.

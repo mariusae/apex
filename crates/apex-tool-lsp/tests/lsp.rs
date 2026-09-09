@@ -83,7 +83,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Fmt".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text_of(n, "main.go").as_deref() == Some("package main\n\nfunc f() {}\n")), "formatted: {:?}", text_of(&c.node, "main.go"));
     // what the verbs menu would offer this window: the lsp's, and the stack's
-    let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w));
+    let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w), Some(w));
     let want: Vec<String> = apex_tool_lsp::VERBS.iter().chain(apex_tool_lsp::NAV_VERBS.iter()).map(|s| s.to_string()).collect();
     assert_eq!(verbs, want);
     // Def recorded where we came from: Back returns there

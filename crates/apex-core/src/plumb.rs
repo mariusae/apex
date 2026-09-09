@@ -3,6 +3,7 @@
 //! walks it in priority order for a plumb or a verb, and the leader reads
 //! it for the verbs a window's tag shows.
 
+use crate::ids::WindowId;
 use std::collections::BTreeMap;
 
 use crate::entry::{PlumbRule, WinKind};
@@ -78,7 +79,12 @@ fn whole(re: &str) -> Option<regex::Regex> {
 impl PlumbRule {
     /// Does this rule apply to a window of this name and kind (the parts
     /// of the predicate that do not need the text)?
-    pub fn applies_to(&self, name: &str, kind: WinKind) -> bool {
+    pub fn applies_to(&self, name: &str, kind: WinKind, w: Option<WindowId>) -> bool {
+        if let Some(id) = self.win {
+            if w != Some(id) {
+                return false;
+            }
+        }
         if let Some(k) = self.kind {
             if k != kind {
                 return false;
@@ -149,6 +155,9 @@ impl PlumbRule {
         if let Some(k) = self.kind {
             out.push(format!("-kind={}", k.name()));
         }
+        if let Some(w) = self.win {
+            out.push(format!("-win={}", w.0));
+        }
         if let Some(t) = &self.isfile {
             out.push(format!("-isfile={}", word(t)));
         }
@@ -186,16 +195,16 @@ pub fn ordered(rules: &BTreeMap<RuleId, Rule>) -> Vec<(RuleId, &Rule)> {
 /// line types it to the shell. Not a word in the menu.
 pub const EXEC: &str = "exec";
 
-pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind) -> bool {
+pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: Option<WindowId>) -> bool {
     rules
         .values()
-        .any(|r| r.rule.verb == verb && r.rule.applies_to(name, kind))
+        .any(|r| r.rule.verb == verb && r.rule.applies_to(name, kind, w))
 }
 
-pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind) -> Vec<String> {
+pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind, w: Option<WindowId>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (_, r) in ordered(rules) {
-        if r.rule.verb != "plumb" && r.rule.verb != EXEC && r.rule.applies_to(name, kind) && !out.contains(&r.rule.verb) {
+        if r.rule.verb != "plumb" && r.rule.verb != EXEC && r.rule.applies_to(name, kind, w) && !out.contains(&r.rule.verb) {
             out.push(r.rule.verb.clone());
         }
     }
@@ -213,7 +222,7 @@ mod tests {
     use crate::entry::RuleAction;
 
     fn rule(text: Option<&str>, file: Option<&str>) -> PlumbRule {
-        PlumbRule { verb: "plumb".into(), text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), to: None }
+        PlumbRule { verb: "plumb".into(), text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
     }
 
     #[test]
@@ -234,9 +243,9 @@ mod tests {
     #[test]
     fn windows_are_matched_by_name_and_kind() {
         let mut r = rule(None, Some(r"\.md$"));
-        assert!(r.applies_to("/a/notes.md", WinKind::File));
-        assert!(!r.applies_to("/a/notes.txt", WinKind::File));
+        assert!(r.applies_to("/a/notes.md", WinKind::File, None));
+        assert!(!r.applies_to("/a/notes.txt", WinKind::File, None));
         r.kind = Some(WinKind::Dir);
-        assert!(!r.applies_to("/a/notes.md", WinKind::File));
+        assert!(!r.applies_to("/a/notes.md", WinKind::File, None));
     }
 }

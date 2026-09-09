@@ -1305,7 +1305,7 @@ impl Node {
 
     fn get_uses_rule(&self, ctx: ExecCtx) -> bool {
         let ExecCtx::Window(w) = ctx else { return false };
-        crate::plumb::offers_verb(&self.state.meta.rules, "Get", &self.window_name(w), self.window_kind(w))
+        crate::plumb::offers_verb(&self.state.meta.rules, "Get", &self.window_name(w), self.window_kind(w), Some(w))
     }
 
     /// Execute `text` as B2 would from `ctx`. Built-ins run here; anything
