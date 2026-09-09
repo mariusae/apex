@@ -268,11 +268,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "apex-tool-bridge"
+name = "apex-tool"
 version = "0.1.0"
 dependencies = [
  "apex-core",
  "apex-server",
+]
+
+[[package]]
+name = "apex-tool-bridge"
+version = "0.1.0"
+dependencies = [
+ "apex-tool",
  "serde_json",
 ]
 

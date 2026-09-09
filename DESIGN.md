@@ -791,9 +791,19 @@ anything else is looked for. `alt` is no longer sent. Left out:
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
 the UI, which may refuse; a headless leader always does), `Tool(name)`
 (`ServerMsg::Plumb` to the attachment of that name, `PlumbAck` within a
-second or taken as NACK). *As built, tools in other languages:* `apex
-tool bridge NAME` attaches as the tool NAME and speaks JSON, one object
-a line, on stdin and stdout (`apex-tool-bridge`): commands in
+second or taken as NACK). *As built, the tool API:* `apex-tool` is the
+Rust API for tools, a curated surface on `Remote` with nothing of the
+wire or the replicated state showing through: `Tool::attach(name)`,
+`next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
+session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
+`new_window open read replace append select selection rename set_live
+delete exec exec_in errors watch unwatch set setting`. Depending on
+`apex-server` directly is the internals, not the API; the bundled
+tools (win, lsp, preview) predate the crate and move onto it over
+time. *Tools in other languages:* `apex tool bridge NAME` attaches as
+the tool NAME and speaks JSON, one object a line, on stdin and stdout
+(`apex-tool-bridge`, a client of `apex-tool`, its commands and events
+the crate's methods and events one for one): commands in
 (`windows new open read write select rename live delete exec errors
 rule unrule ack watch unwatch set setting`), each answered in order by
 id; events out (`hello`, `plumb` with the rule that matched, `edit`

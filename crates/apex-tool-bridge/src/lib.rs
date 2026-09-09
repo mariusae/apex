@@ -2,7 +2,9 @@
 //! it. The bridge attaches as the tool named NAME and speaks JSON, one
 //! object per line, on its standard input and output; a program that
 //! starts it gets windows, rules and plumbs without the wire protocol
-//! or the replicated state behind them.
+//! or the replicated state behind them. It is a client of `apex-tool`,
+//! and its commands and events are that crate's methods and events one
+//! for one.
 //!
 //! **Commands** come in on stdin as `{"id": N, "cmd": "...", ...}` and
 //! are answered, in order, with `{"id": N, "ok": true, ...}` or
@@ -24,14 +26,13 @@
 //!
 //! **Events** go out as `{"event": "...", ...}`: `hello {attachment,
 //! session}` first; `plumb {plumb, rule, verb, text, dir, window?,
-//! groups, at?, sel?}` when a rule of ours matched (`rule` says which) (`at` and `sel` are `{q0,
-//! q1}` in the window's body); `edit {window, q0, nd, text}` for a
-//! watched window, edits by others only; `renamed {window, name}` and
-//! `deleted {window}` for windows we made, opened or watched; `bye`
-//! when the session or the link ends, after which the bridge exits.
-//! Offsets count characters, as apex does throughout.
+//! groups, at?, sel?}` when a rule of ours matched (`rule` says which;
+//! `at` and `sel` are `{q0, q1}` in the window's body); `edit {window,
+//! q0, nd, text}` for a watched window, edits by others only; `renamed
+//! {window, name}` and `deleted {window}` for windows we made, opened
+//! or watched; `bye` when the session or the link ends, after which the
+//! bridge exits. Offsets count characters, as apex does throughout.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::sync::mpsc::{channel, Receiver};
@@ -39,30 +40,14 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use apex_core::*;
-use apex_server::proto::{ClientMsg, ServerMsg};
-use apex_server::remote::{Remote, ToolPlumb};
-use apex_server::Proposal;
-
-const TIMEOUT: Duration = Duration::from_secs(10);
-
-struct Bridge {
-    remote: Remote,
-    /// Windows whose body edits (by others) are reported.
-    watched: BTreeSet<WindowId>,
-    /// Windows we made, opened or watch, with their names as last seen:
-    /// renames and deletions are reported for these.
-    ours: BTreeMap<WindowId, String>,
-    out: std::io::Stdout,
-}
+use apex_tool::{Event, Plumb, Rule, RuleId, Tool, WinKind, WindowId, END};
 
 /// Run the bridge for the session at `socket`, as the tool `name`,
 /// until stdin closes or the link ends.
 pub fn run(socket: &Path, session: &str, name: &str) -> Result<(), String> {
-    let remote = Remote::connect_as(socket, session, name, AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
-    remote.announce(name);
-    let mut b = Bridge { remote, watched: BTreeSet::new(), ours: BTreeMap::new(), out: std::io::stdout() };
-    b.emit(json!({ "event": "hello", "attachment": b.remote.attachment().0, "session": session, "tool": name }));
+    let tool = Tool::attach_to(socket, session, name).map_err(|e| e.to_string())?;
+    let mut b = Bridge { tool, out: std::io::stdout() };
+    b.emit(json!({ "event": "hello", "session": session, "tool": name }));
     // stdin on a thread: a line at a time, ended by EOF
     let (tx, rx) = channel::<Option<String>>();
     std::thread::spawn(move || {
@@ -84,6 +69,11 @@ pub fn run(socket: &Path, session: &str, name: &str) -> Result<(), String> {
     r
 }
 
+struct Bridge {
+    tool: Tool,
+    out: std::io::Stdout,
+}
+
 impl Bridge {
     fn emit(&mut self, v: Value) {
         let mut o = self.out.lock();
@@ -91,106 +81,15 @@ impl Bridge {
         let _ = o.flush();
     }
 
-    /// One message from the link, seen for edits first; false when the
-    /// link ended.
-    fn step(&mut self, timeout: Duration) -> bool {
-        match self.remote.link.rx.recv_timeout(timeout) {
-            Ok(m) => {
-                self.before(&m);
-                let alive = self.remote.handle(m);
-                self.after();
-                alive
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => true,
-            Err(_) => false,
-        }
-    }
-
-    /// Propose and wait for the answer, every message on the way seen
-    /// here (Remote::propose would apply them behind our back).
-    fn propose(&mut self, p: Proposal) -> Result<Option<WindowId>, String> {
-        let id = self.remote.link.propose(p);
-        let deadline = std::time::Instant::now() + TIMEOUT;
-        loop {
-            if let Some(r) = self.remote.link.applied.remove(&id) {
-                return r;
-            }
-            let left = deadline.saturating_duration_since(std::time::Instant::now());
-            if left.is_zero() {
-                return Err("timed out waiting for the leader".into());
-            }
-            if !self.step(left.min(Duration::from_millis(50))) {
-                return Err("connection closed".into());
-            }
-        }
-    }
-
-    /// Edits by others to a watched window's body, before they land in
-    /// the replica (so `q0` is against the text as the tool last saw it).
-    fn before(&mut self, m: &ServerMsg) {
-        let ServerMsg::Entries { shard, entries } = m else { return };
-        let Shard::Buffer(b) = shard else { return };
-        let me = self.remote.attachment();
-        let Some(w) = self.watched.iter().copied().find(|w| self.remote.node.state.window(*w).ok().and_then(|x| x.body_buffer()) == Some(*b)) else { return };
-        let mut events = Vec::new();
-        for e in entries {
-            if e.attachment == me {
-                continue;
-            }
-            if let Op::Buffer(BufferOp::Edit { q0, nd, text, .. }) = &e.op {
-                events.push(json!({ "event": "edit", "window": w.0, "q0": q0, "nd": nd, "text": text }));
-            }
-        }
-        for ev in events {
-            self.emit(ev);
-        }
-    }
-
-    /// After messages: our windows renamed or gone.
-    fn after(&mut self) {
-        let mut events = Vec::new();
-        let mut gone = Vec::new();
-        for (w, name) in self.ours.iter_mut() {
-            match self.remote.node.state.window(*w) {
-                Ok(_) => {
-                    let now = self.remote.node.window_name(*w);
-                    if now != *name {
-                        *name = now.clone();
-                        events.push(json!({ "event": "renamed", "window": w.0, "name": now }));
-                    }
-                }
-                Err(_) => gone.push(*w),
-            }
-        }
-        for w in gone {
-            self.ours.remove(&w);
-            self.watched.remove(&w);
-            events.push(json!({ "event": "deleted", "window": w.0 }));
-        }
-        for ev in events {
-            self.emit(ev);
-        }
-    }
-
     fn main_loop(&mut self, rx: &Receiver<Option<String>>) -> Result<(), String> {
         loop {
-            // the link, without blocking
+            // what happened, without waiting
             loop {
-                match self.remote.link.rx.try_recv() {
-                    Ok(m) => {
-                        self.before(&m);
-                        if !self.remote.handle(m) {
-                            return Ok(());
-                        }
-                        self.after();
-                    }
-                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                    Err(_) => return Ok(()),
+                match self.tool.next_event(Some(Duration::ZERO)) {
+                    Ok(Some(ev)) => self.event(ev),
+                    Ok(None) => break,
+                    Err(e) => return Err(e.to_string()),
                 }
-            }
-            let plumbs: Vec<ToolPlumb> = std::mem::take(&mut self.remote.link.plumbs);
-            for p in plumbs {
-                self.on_plumb(p);
             }
             // a command, or a moment
             match rx.recv_timeout(Duration::from_millis(20)) {
@@ -211,28 +110,14 @@ impl Bridge {
         }
     }
 
-    /// A rule of ours matched: the tool decides, and acks.
-    fn on_plumb(&mut self, p: ToolPlumb) {
-        let window = match p.ctx {
-            ExecCtx::Window(w) => Some(w.0),
-            _ => None,
+    fn event(&mut self, ev: Event) {
+        let v = match ev {
+            Event::Plumb(p) => plumb_json(&p),
+            Event::Edit(e) => json!({ "event": "edit", "window": e.window.0, "q0": e.q0, "nd": e.nd, "text": e.text }),
+            Event::Renamed { window, name } => json!({ "event": "renamed", "window": window.0, "name": name }),
+            Event::Deleted { window } => json!({ "event": "deleted", "window": window.0 }),
         };
-        let span = |s: Option<Span>| s.map(|s| json!({ "q0": s.q0, "q1": s.q1 }));
-        self.emit(json!({
-            "event": "plumb", "plumb": p.id, "rule": p.rule.0, "verb": p.verb, "text": p.text, "dir": p.dir, "window": window,
-            "groups": p.groups, "at": span(p.at), "sel": span(p.sel),
-        }));
-    }
-
-    fn window_of(&self, v: &Value) -> Result<WindowId, String> {
-        let id = v["window"].as_u64().ok_or("window: a window id")?;
-        let w = WindowId(id);
-        self.remote.node.state.window(w).map_err(|_| format!("no window {id}"))?;
-        Ok(w)
-    }
-
-    fn body_of(&self, w: WindowId) -> Result<BufferId, String> {
-        self.remote.node.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or_else(|| "not a text window".into())
+        self.emit(v);
     }
 
     fn command(&mut self, v: &Value) -> Value {
@@ -251,180 +136,120 @@ impl Bridge {
     }
 
     fn run_command(&mut self, cmd: &str, v: &Value) -> Result<Value, String> {
-        let node = &self.remote.node;
+        let window = |v: &Value| -> Result<WindowId, String> { v["window"].as_u64().map(WindowId).ok_or_else(|| "window: a window id".into()) };
+        let e = |e: apex_tool::Error| e.to_string();
         match cmd {
             "windows" => {
-                let mut list: Vec<Value> = node
-                    .state
-                    .windows
-                    .keys()
-                    .copied()
-                    .map(|w| json!({ "id": w.0, "name": node.window_name(w), "kind": node.window_kind(w).name(), "live": node.window_live(w) }))
-                    .collect();
-                list.sort_by_key(|w| w["id"].as_u64());
+                let list: Vec<Value> = self.tool.windows().into_iter().map(|w| json!({ "id": w.id.0, "name": w.name, "kind": w.kind.name(), "live": w.live })).collect();
                 Ok(json!({ "windows": list }))
             }
             "new" => {
-                let name = v["name"].as_str().ok_or("name")?.to_string();
-                let col = node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-                let w = self.propose(Proposal::NewWindow { col, name: name.clone() })?.ok_or("no window made")?;
-                self.remember(w);
-                Ok(json!({ "window": w.0 }))
+                let name = v["name"].as_str().ok_or("name")?;
+                Ok(json!({ "window": self.tool.new_window(name).map_err(e)?.0 }))
             }
             "open" => {
-                let name = v["name"].as_str().ok_or("name")?.to_string();
-                let pos = match v["line"].as_u64() {
-                    Some(l) => Pos::Line(l as usize),
-                    None => Pos::Keep,
-                };
-                self.propose(Proposal::Goto { loc: Loc { name: name.clone(), pos } })?;
-                // the file may be on its way: wait for its window
-                let deadline = std::time::Instant::now() + TIMEOUT;
-                loop {
-                    if let Some(w) = self.remote.node.state.windows.keys().copied().find(|w| self.remote.node.window_name(*w) == name) {
-                        self.remember(w);
-                        return Ok(json!({ "window": w.0 }));
-                    }
-                    if std::time::Instant::now() > deadline {
-                        return Err(format!("{name}: not opened"));
-                    }
-                    if !self.step(Duration::from_millis(50)) {
-                        return Err("connection closed".into());
-                    }
-                }
+                let name = v["name"].as_str().ok_or("name")?;
+                let line = v["line"].as_u64().map(|l| l as usize);
+                Ok(json!({ "window": self.tool.open(name, line).map_err(e)?.0 }))
             }
-            "read" => {
-                let w = self.window_of(v)?;
-                let b = self.body_of(w)?;
-                let text = node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string();
-                Ok(json!({ "text": text }))
-            }
+            "read" => Ok(json!({ "text": self.tool.read(window(v)?).map_err(e)? })),
             "selection" => {
-                let w = self.window_of(v)?;
-                let (q0, q1) = node.selection(ViewId::Body(w)).map_err(|e| e.to_string())?;
-                Ok(json!({ "q0": q0, "q1": q1 }))
+                let r = self.tool.selection(window(v)?).map_err(e)?;
+                Ok(json!({ "q0": r.q0, "q1": r.q1 }))
             }
             "write" => {
-                let w = self.window_of(v)?;
-                let b = self.body_of(w)?;
-                let text = v["text"].as_str().unwrap_or("").to_string();
-                let buf = node.state.buffer(b).map_err(|e| e.to_string())?;
-                let (len, version) = (buf.text.len(), buf.version);
                 let at = |x: &Value| -> usize {
                     match x.as_i64() {
-                        Some(n) if n >= 0 => (n as usize).min(len),
-                        _ => len,
+                        Some(n) if n >= 0 => n as usize,
+                        _ => END,
                     }
                 };
-                let (q0, q1) = (at(&v["q0"]), at(&v["q1"]));
-                if q1 < q0 {
-                    return Err("q1 before q0".into());
-                }
-                self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0, q1, text })?;
+                self.tool.replace(window(v)?, at(&v["q0"]), at(&v["q1"]), v["text"].as_str().unwrap_or("")).map_err(e)?;
                 Ok(json!({}))
             }
             "select" => {
-                let w = self.window_of(v)?;
                 let (q0, q1) = (v["q0"].as_u64().ok_or("q0")? as usize, v["q1"].as_u64().ok_or("q1")? as usize);
-                self.propose(Proposal::Select { view: ViewId::Body(w), q0, q1 })?;
+                self.tool.select(window(v)?, q0, q1).map_err(e)?;
                 Ok(json!({}))
             }
             "rename" => {
-                let w = self.window_of(v)?;
-                let b = self.body_of(w)?;
-                let name = v["name"].as_str().ok_or("name")?.to_string();
-                self.propose(Proposal::Rename { buffer: b, window: w, name: name.clone() })?;
-                self.ours.entry(w).and_modify(|n| *n = name);
+                self.tool.rename(window(v)?, v["name"].as_str().ok_or("name")?).map_err(e)?;
                 Ok(json!({}))
             }
             "live" => {
-                let w = self.window_of(v)?;
-                let by = v["on"].as_bool().unwrap_or(true).then_some(self.remote.attachment());
-                self.propose(Proposal::Live { window: w, by })?;
+                self.tool.set_live(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
             }
             "delete" => {
-                let w = self.window_of(v)?;
-                self.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() })?;
+                self.tool.delete(window(v)?).map_err(e)?;
                 Ok(json!({}))
             }
             "exec" => {
-                let text = v["text"].as_str().ok_or("text")?.to_string();
-                let ctx = match v["window"].as_u64() {
-                    Some(_) => ExecCtx::Window(self.window_of(v)?),
-                    None => ExecCtx::Top,
-                };
-                self.propose(Proposal::Exec { ctx, text })?;
+                let text = v["text"].as_str().ok_or("text")?;
+                let w = if v["window"].is_null() { None } else { Some(window(v)?) };
+                self.tool.exec_in(w, text).map_err(e)?;
                 Ok(json!({}))
             }
             "errors" => {
-                let text = v["text"].as_str().ok_or("text")?.to_string();
-                let dir = v["dir"].as_str().map(String::from);
-                self.propose(Proposal::Errors { dir, text })?;
+                self.tool.errors(v["dir"].as_str(), v["text"].as_str().ok_or("text")?).map_err(e)?;
                 Ok(json!({}))
             }
             "rule" => {
-                let kind = match v["kind"].as_str() {
-                    Some(k) => Some(WinKind::parse(k).ok_or_else(|| format!("kind {k}: file, dir, term, errors or web"))?),
-                    None => None,
+                let mut r = match v["verb"].as_str() {
+                    Some(verb) => Rule::verb(verb),
+                    None => Rule::plumb(),
                 };
-                let me = node.state.meta.attachments.get(&self.remote.attachment()).map(|a| a.name.clone()).ok_or("not attached")?;
-                let rule = PlumbRule {
-                    verb: v["verb"].as_str().unwrap_or("plumb").to_string(),
-                    text: v["text"].as_str().map(String::from),
-                    file: v["file"].as_str().map(String::from),
-                    kind,
-                    win: v["window"].as_u64().map(WindowId),
-                    isfile: None,
-                    isdir: None,
-                    action: RuleAction::Tool(me),
-                    to: None,
-                };
-                rule.check()?;
-                let priority = v["priority"].as_i64().unwrap_or(0) as i32;
-                let id = self.remote.rule_add(rule, priority, true, TIMEOUT)?;
-                Ok(json!({ "rule": id.0 }))
+                if let Some(t) = v["text"].as_str() {
+                    r = r.text(t);
+                }
+                if let Some(f) = v["file"].as_str() {
+                    r = r.file(f);
+                }
+                if let Some(k) = v["kind"].as_str() {
+                    r = r.kind(WinKind::parse(k).ok_or_else(|| format!("kind {k}: file, dir, term, errors or web"))?);
+                }
+                if let Some(w) = v["window"].as_u64() {
+                    r = r.window(WindowId(w));
+                }
+                if let Some(p) = v["priority"].as_i64() {
+                    r = r.priority(p as i32);
+                }
+                Ok(json!({ "rule": self.tool.offer(r).map_err(e)?.0 }))
             }
             "unrule" => {
-                let id = v["rule"].as_u64().ok_or("rule")?;
-                self.remote.send(&ClientMsg::RuleRm { id: RuleId(id) });
+                self.tool.withdraw(RuleId(v["rule"].as_u64().ok_or("rule")?));
                 Ok(json!({}))
             }
             "ack" => {
-                let plumb = v["plumb"].as_u64().ok_or("plumb")?;
-                self.remote.plumb_ack(plumb, v["ok"].as_bool().unwrap_or(true));
+                // the plumb by id alone: enough to answer it
+                let id = v["plumb"].as_u64().ok_or("plumb")?;
+                let p = Plumb { id, rule: RuleId(0), verb: String::new(), text: String::new(), dir: String::new(), window: None, groups: Vec::new(), at: None, sel: None };
+                self.tool.answer(&p, v["ok"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
             }
             "watch" => {
-                let w = self.window_of(v)?;
-                self.body_of(w)?;
-                self.watched.insert(w);
-                self.remember(w);
+                self.tool.watch(window(v)?).map_err(e)?;
                 Ok(json!({}))
             }
             "unwatch" => {
-                let w = WindowId(v["window"].as_u64().ok_or("window")?);
-                self.watched.remove(&w);
+                self.tool.unwatch(window(v)?);
                 Ok(json!({}))
             }
             "set" => {
-                let key = v["key"].as_str().ok_or("key")?.to_string();
-                let value = v["value"].as_str().unwrap_or("").to_string();
-                self.remote.send(&ClientMsg::Set { key, value, attachment: None });
+                self.tool.set(v["key"].as_str().ok_or("key")?, v["value"].as_str().unwrap_or(""));
                 Ok(json!({}))
             }
-            "setting" => {
-                let key = v["key"].as_str().ok_or("key")?;
-                let value = node.state.meta.setting(self.remote.attachment(), key).map(String::from);
-                Ok(json!({ "value": value }))
-            }
+            "setting" => Ok(json!({ "value": self.tool.setting(v["key"].as_str().ok_or("key")?) })),
             "" => Err("cmd: which command".into()),
             other => Err(format!("{other}: no such command")),
         }
     }
+}
 
-    fn remember(&mut self, w: WindowId) {
-        let name = self.remote.node.window_name(w);
-        self.ours.insert(w, name);
-    }
+fn plumb_json(p: &Plumb) -> Value {
+    let range = |r: Option<apex_tool::Range>| r.map(|r| json!({ "q0": r.q0, "q1": r.q1 }));
+    json!({
+        "event": "plumb", "plumb": p.id, "rule": p.rule.0, "verb": p.verb, "text": p.text, "dir": p.dir,
+        "window": p.window.map(|w| w.0), "groups": p.groups, "at": range(p.at), "sel": range(p.sel),
+    })
 }

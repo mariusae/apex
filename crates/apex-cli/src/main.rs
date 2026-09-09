@@ -392,7 +392,8 @@ be written in any language without the wire protocol: commands in
 errors, rule, unrule, ack, watch, set) answered in order, events out
 (hello, plumb when a rule of the tool's matched, edit for a watched
 window, renamed, deleted, bye). The Go package under go/ is a client
-of it; its source lists every command and event.
+of it; its source lists every command and event. A tool in Rust uses
+the apex-tool crate, which the bridge is built on, in-process.
 
 Its rules, gone when it exits: cmd-B3 on an identifier in a source file
 goes to the definition (B3 itself stays acme's look; on a laptop, where

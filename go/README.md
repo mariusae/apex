@@ -50,5 +50,8 @@ What a tool can do:
 `examples/upper` is a whole tool: `Upper` in every file window,
 upper-casing the selection. Run it from a terminal in a session.
 
+A tool in Rust uses the `apex-tool` crate in-process instead; this
+package and the bridge are built on the same surface.
+
 The integration test runs against a session: set `APEX_SOCKET` (and
 `APEX_BIN` if apex is not on the path) and `go test ./...`.

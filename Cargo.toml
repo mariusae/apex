@@ -4,6 +4,7 @@ members = ["crates/apex-edit", "crates/apex-core", "crates/apex-server", "crates
     "crates/apex-tool-win",
     "crates/apex-tool-lsp",
     "crates/apex-tool-preview",
+    "crates/apex-tool",
     "crates/apex-tool-bridge"]
 
 [workspace.package]
