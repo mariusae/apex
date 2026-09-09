@@ -454,7 +454,7 @@ length):*
 ```
 client → server
   Hello{session, name, kind, attach?}     attach; a UI ships its ~/.apex/attach
-  NewSession{name, profile?}              make a session (idempotent), the creator's profile shipped
+  NewSession{name, profile?}              make a session (idempotent), the creator's ~/.apex/session shipped
   ListSessions · RenameSession{from, to} · Stop · Ping{t}
   Append{shard, entries}                  entries this client sequenced as leader
   CreateShard{shard} · DeleteShard{shard}
@@ -667,9 +667,17 @@ scratch HOME.
 
 ---
 
-*As built, profile and attach:* a new session runs one `rc` on its host
-that sources the host's `~/.apex/profile`, then the creator's (shipped
-in `NewSession` as `Script{client, text}`, skipped when identical), as a
+*As built, profile, session and attach:* three scripts, named by what
+they configure. The host's `~/.apex/profile` is the session's setup on
+the daemon's machine; the client's `~/.apex/session` is what it wants
+any session it creates to have (shipped in `NewSession` as
+`Script{client, text}`, for hosts with no profile of their own); the
+client's `~/.apex/attach` is its own per attachment. On one machine all
+three live in the same `~/.apex` and each runs once in its role, so
+the local case is the remote one, not a special case of it (there is
+no longer any comparing of texts to skip a file run twice). A new
+session runs one `rc` on its host that sources the host's profile,
+then the creator's session script, as a
 command named `profile` with output in `+Errors`, and `apexsession`,
 `APEX_SOCKET`, `apexclient` set, and `EDITOR` to `apex-editor`, a link
 beside the binary the CLI knows by name as `apex editor` (editinacme:

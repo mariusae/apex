@@ -764,7 +764,7 @@ impl Acme {
                     "apex",
                     AttachmentKind::Ui,
                     Some(wake),
-                    apex_server::remote::local_profile(),
+                    apex_server::remote::local_session(),
                 )
             }
             Some(dest) => {
@@ -778,7 +778,7 @@ impl Acme {
     /// Attach through a command's stdin and stdout.
     pub fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         let (stdin, stdout, closer) = apex_server::remote::bridge_child(cmd)?;
-        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake), apex_server::remote::local_profile())
+        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake), apex_server::remote::local_session())
     }
 
     /// Attach through an arbitrary command (`--via`).

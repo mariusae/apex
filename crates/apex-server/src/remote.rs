@@ -523,9 +523,10 @@ pub fn local_script(name: &str) -> Option<Script> {
     Some(Script { client: crate::term::sysname(), text })
 }
 
-/// `~/.apex/profile`: run once, on the host, when a session is made from here.
-pub fn local_profile() -> Option<Script> {
-    local_script("profile")
+/// `~/.apex/session`: this client's session provisioning, run once on
+/// the host after its own profile when a session is made from here.
+pub fn local_session() -> Option<Script> {
+    local_script("session")
 }
 
 /// `~/.apex/attach`: run on the host every time this machine attaches.
@@ -533,8 +534,8 @@ pub fn local_attach() -> Option<Script> {
     local_script("attach")
 }
 
-/// Create a session on a daemon, with its creator's init; fine if it
-/// already exists.
+/// Create a session on a daemon, with its creator's session script;
+/// fine if it already exists.
 pub fn new_session(path: &Path, name: &str, profile: Option<Script>) -> io::Result<()> {
     let mut s = UnixStream::connect(path)?;
     write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string(), profile })?;

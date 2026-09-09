@@ -1,6 +1,7 @@
 #!/usr/bin/env rc
-# An init for apex sessions: copy it to ~/.apex/init on the host, or on
-# the machine you attach from (it is sourced there after the host's).
+# A profile for apex sessions: copy it to ~/.apex/profile on the host
+# (the session's setup there), or to ~/.apex/session on the machine you
+# create sessions from (shipped to the host and run after its profile).
 #
 # It makes the shells in this session's terminals name their window after
 # the directory, as acme's win does, whenever it changes (`apex awd`). rc

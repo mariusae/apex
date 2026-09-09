@@ -177,10 +177,9 @@ pub fn file_url_path(url: &str) -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(String::from_utf8_lossy(&out).to_string()))
 }
 
-/// A client's script, run on the host: its `~/.apex/profile` when it
-/// makes a session (after the host's own, unless it is the same file),
-/// its `~/.apex/attach` whenever it attaches; and its name, for
-/// `$apexclient`.
+/// A client's script, run on the host: its `~/.apex/session` when it
+/// makes a session (after the host's own profile), its `~/.apex/attach`
+/// whenever it attaches; and its name, for `$apexclient`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Script {
     pub client: String,

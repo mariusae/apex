@@ -213,9 +213,9 @@ impl Daemon {
             });
         }
         let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, rx, tx };
-        // the daemon's own session is made from this host: its file is
-        // both the host's and the creator's, so it runs once
-        d.new_session(session, None);
+        // the daemon's own session is made from this machine: the host's
+        // profile, then this machine's session script as its creator's
+        d.new_session(session, crate::remote::local_session());
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
             match ev {
