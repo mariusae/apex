@@ -10,7 +10,11 @@ use apex_core::{Cell, TermId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
-use crate::text_element::{font_for, rgb, FontSpec, BUT2COL, BUT3COL, MARGIN, PALEYELLOW, SCROLLWID, YELLOWGREEN};
+use crate::text_element::{font_for, mix, rgb, FontSpec, BUT2COL, BUT3COL, MARGIN, PALEYELLOW, SCROLLWID, YELLOWGREEN};
+
+/// How far the cursor's cell is tinted from its background towards
+/// black: enough to find, not enough to shout.
+const CURSOR_TINT: f32 = 0.18;
 
 pub struct TermLayout {
     pub bounds: Bounds<Pixels>,
@@ -104,7 +108,6 @@ impl Element for TermElement {
             acme.term_resize(term, cols, rows_n);
             let t = acme.node.state.terms.get(&term)?;
             let fg_default = gpui::black();
-            let bg_default = rgb(PALEYELLOW);
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
             // the selection, if it is in this terminal: acme's yellow
             let order = |a: (usize, u64), b: (usize, u64)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
@@ -140,8 +143,10 @@ impl Element for TermElement {
                     let mut bgc = if bg == 0 { None } else { Some(color(bg)) };
                     if let Some((cx_, cy)) = cursor {
                         if cx_ as usize == x && cy as usize == y {
-                            bgc = Some(fgc);
-                            fgc = bg_default;
+                            // the cursor: the cell's background tinted
+                            // down a little, the text as it is, not inverted
+                            let under = if bg == 0 { PALEYELLOW } else { bg & 0xff_ffff };
+                            bgc = Some(rgb(mix(under, 0x000000, CURSOR_TINT)));
                         }
                     }
                     if let Some((b, f)) = highlight(x, y) {
