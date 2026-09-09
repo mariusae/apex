@@ -1085,7 +1085,14 @@ this one (detach, attach).
   it is on wherever that row moves to (`Selector::keeping`); untouched,
   it lands on this window's session once that is listed. ⌘⇧K switches
   to the session parked most recently, and ⌘, opens (or makes) the
-  host's `~/.apex/profile`. ⌘K remembers hosts, not sessions
+  host's `~/.apex/profile`. ⌃Tab, held, is the session switcher
+  (`switcher.rs`), an application switcher's: a strip of every session
+  this client knows, most recent first (this one, the parked ones by
+  when they were parked, the ones attached to lately, then all the
+  rest known), the mark one step on per ⌃Tab (⌃⇧Tab back) and the
+  session under it switched to when control is let go; ⎋ leaves
+  things as they are. (⌘Tab is the system's; no app can take it.)
+  ⌘K remembers hosts, not sessions
 (`known-hosts` beside the other state files, seeded from the recent
 sessions; `local` always first). It is a section per host, the host's
 name with its provider in parentheses dimmed and a × to forget it,

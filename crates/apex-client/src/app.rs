@@ -178,6 +178,8 @@ pub struct Acme {
     /// session is parked.
     pub wake_target: Option<WakeTarget>,
     pub selector: Option<Selector>,
+    /// ctrl-tab held: the session switcher.
+    pub switcher: Option<crate::switcher::Switcher>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
     /// `Exit`: the next frame closes this window.
@@ -1042,6 +1044,7 @@ impl Acme {
             wake: None,
             wake_target: None,
             selector: None,
+            switcher: None,
             tag_need: HashMap::new(),
             close_requested: false,
             pending: None,
@@ -1949,9 +1952,14 @@ impl Acme {
     }
 
     /// plan9port chords: while B1 is held, option cuts and command pastes.
-    pub fn modifiers_changed(&mut self, e: &ModifiersChangedEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn modifiers_changed(&mut self, e: &ModifiersChangedEvent, window: &mut Window, cx: &mut Context<Self>) {
         let prev = self.mouse.mods;
         self.mouse.mods = e.modifiers;
+        // control let go with the switcher up: the session under the mark
+        if self.switcher.is_some() && !e.modifiers.control {
+            self.switcher_commit(window, cx);
+            return;
+        }
         let Some(d) = self.mouse.b1 else { return };
         if e.modifiers.alt && !prev.alt {
             self.mouse.chorded = true;
@@ -2509,6 +2517,20 @@ impl Acme {
 
     /// Keys go to the text under the pointer, as in acme.
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // ctrl-tab: the session switcher, stepped while control is held
+        {
+            let ks = &e.keystroke;
+            if ks.modifiers.control && ks.key == "tab" {
+                self.switcher_step(ks.modifiers.shift, cx);
+                return;
+            }
+            if self.switcher.is_some() {
+                if ks.key == "escape" {
+                    self.close_switcher(cx);
+                }
+                return;
+            }
+        }
         if self.finder.is_some() {
             let ks = &e.keystroke;
             self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);

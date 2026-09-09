@@ -113,7 +113,15 @@ impl Pool {
 
     /// The session parked most recently: the one to switch back to.
     pub fn most_recent(cx: &App) -> Option<SessionUrl> {
-        cx.try_global::<Pool>()?.parked.values().max_by_key(|p| p.parked_at).map(|p| p.url.clone())
+        Pool::by_recency(cx).into_iter().next()
+    }
+
+    /// The parked sessions, the most recently parked first.
+    pub fn by_recency(cx: &App) -> Vec<SessionUrl> {
+        let Some(pool) = cx.try_global::<Pool>() else { return Vec::new() };
+        let mut v: Vec<(Instant, SessionUrl)> = pool.parked.values().map(|p| (p.parked_at, p.url.clone())).collect();
+        v.sort_by(|a, b| b.0.cmp(&a.0));
+        v.into_iter().map(|(_, u)| u).collect()
     }
 
     /// Take a parked session to show it.

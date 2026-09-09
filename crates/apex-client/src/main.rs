@@ -17,6 +17,7 @@ mod field;
 mod finder;
 mod menu;
 mod shell;
+mod switcher;
 mod term_element;
 mod pool;
 mod text_element;
@@ -173,7 +174,11 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        match self.finder_panel(cx) {
+        let root = match self.finder_panel(cx) {
+            Some(panel) => root.child(panel),
+            None => root,
+        };
+        match self.switcher_panel(cx) {
             Some(panel) => root.child(panel).into_any_element(),
             None => root.into_any_element(),
         }
