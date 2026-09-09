@@ -1,7 +1,6 @@
 #!/usr/bin/env rc
 # A profile for apex sessions: copy it to ~/.apex/profile on the host
-# (the session's setup there), or to ~/.apex/session on the machine you
-# create sessions from (shipped to the host and run after its profile).
+# running the daemon; it is sourced there when a session is made.
 #
 # It makes the shells in this session's terminals name their window after
 # the directory, as acme's win does, whenever it changes (`apex awd`). rc
@@ -15,7 +14,7 @@
 #   fish  a vendor_conf.d snippet, found through $XDG_DATA_DIRS; its title
 #         uses $PWD verbatim instead of fish's prompt-style abbreviation
 #
-# It runs with $apexsession, $APEX_SOCKET and $apexclient set, so `apex`
+# It runs with $apexsession and $APEX_SOCKET set, so `apex`
 # here acts on the session being made; and its environment at its end,
 # variables and functions, is what the session's terminals and commands
 # get (an unset variable, x=(), is gone from theirs too).

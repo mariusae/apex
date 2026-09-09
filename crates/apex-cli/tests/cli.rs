@@ -178,25 +178,21 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     };
     assert!(ok(&sock, &["win", "list"]).contains("host.txt"), "{}\n{}", ok(&sock, &["win", "list"]), errors(&sock, "main"));
     assert!(ok(&sock, &["env"]).contains("FROM=host\n"), "{}", ok(&sock, &["env"]));
-    // a session made from elsewhere: the host's file, then the creator's script
-    let profile = apex_server::proto::Script { client: "tester".into(), text: format!("{apex} open {}/client.txt\n{apex} env FROM=client\n", dir.display()) };
-    apex_server::remote::new_session(&sock, "s2", Some(profile)).unwrap();
+    // a session made from elsewhere runs the host's file too
+    apex_server::remote::new_session(&sock, "s2").unwrap();
     let list = |sock: &PathBuf| ok(sock, &["-session=s2", "win", "list"]);
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !(list(&sock).contains("host.txt") && list(&sock).contains("client.txt")) && Instant::now() < deadline {
+    while !list(&sock).contains("host.txt") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
-    let l = list(&sock);
-    let id = |name: &str| l.lines().find(|x| x.ends_with(name)).and_then(|x| x.split('\t').next()).and_then(|n| n.parse::<u64>().ok()).unwrap_or_else(|| panic!("{name} in {l}"));
-    assert!(id("host.txt") < id("client.txt"), "host first:\n{l}");
+    assert!(list(&sock).contains("host.txt"), "{}", list(&sock));
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !ok(&sock, &["-session=s2", "env"]).contains("FROM=client") && Instant::now() < deadline {
+    while !ok(&sock, &["-session=s2", "env"]).contains("ORDER=s2") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
     let env = ok(&sock, &["-session=s2", "env"]);
-    assert!(env.contains("FROM=client\n"), "{env}");
+    assert!(env.contains("FROM=host\n"), "{env}");
     assert!(env.contains("ORDER=s2\n"), "{env}");
-    assert!(env.contains("apexclient=tester\n"), "{env}");
     // the init's name left the top row when it was done
     assert!(!ok(&sock, &["-session=s2", "text", "read", "+Errors"]).contains("exit"), "init exited cleanly");
     // a terminal made now sees the environment
@@ -207,12 +203,12 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     let mut grid = String::new();
     while Instant::now() < deadline {
         grid = ok(&sock, &["-session=s2", "term", "read", &t]);
-        if grid.contains("v=client") {
+        if grid.contains("v=host") {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert!(grid.contains("v=client"), "grid:\n{grid}");
+    assert!(grid.contains("v=host"), "grid:\n{grid}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

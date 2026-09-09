@@ -153,8 +153,8 @@ before attaching with a new one (see apex help sessions)." },
 New-session makes a session called NAME on the daemon, starting a daemon
 if none answers. Making a session that exists is fine: it is there.
 
-A new session runs its profile: ~/.apex/profile on the daemon's host,
-then the creator's ~/.apex/session (see apex help scripts)." },
+A new session runs its profile, ~/.apex/profile on the daemon's host
+(see apex help scripts)." },
     Cmd { name: "end-session", usage: "apex end-session [-f] [NAME]", short: "end a session", flags: &[switch("f", "end it even with unsaved windows")], run: end_session, long: "\
 End-session ends the session NAME (the current one when omitted): its
 commands and terminals are killed, everything attached to it is told
@@ -428,17 +428,14 @@ bridges frames through `apex attach -stdio` run there.
 A daemon says its build id first on every connection. A client of another
 build stops there and says what to do: when the daemon's sessions can be
 let go, apex stop on its machine, then attach again."),
-    ("scripts", "the profile, session and attach scripts", "\
-Three scripts, named by what they configure. The host's ~/.apex/profile
+    ("scripts", "the profile and attach scripts", "\
+Two scripts, named by what they configure. The host's ~/.apex/profile
 is the session's setup on the machine running the daemon; the client's
-~/.apex/session is what it wants any session it creates to have (shipped
-to the host when this machine makes the session, for hosts with no
-profile of their own); the client's ~/.apex/attach is its own per
-attachment. On one machine all three live in the same ~/.apex, each run
-once in its role. When a session is made, one rc on its host sources the
-host's profile, then the creator's session script. It runs
+~/.apex/attach is its own per attachment, the UI's tweaks. On one
+machine both live in the same ~/.apex, each run once in its role. When
+a session is made, one rc on its host sources the host's profile. It runs
 like any command, named profile in the top row with its output in
-+Errors, with apexsession, APEX_SOCKET and apexclient set, so apex in it
++Errors, with apexsession and APEX_SOCKET set, so apex in it
 configures the session: apex open, apex exec Newcol, apex set, apex
 plumb rule add, apex tool lsp &. The profile's environment at its end
 is the session's: variables it sets or changes (x=y, path=($home/bin
@@ -799,7 +796,7 @@ fn end_session(ctx: &Ctx, p: &Parsed) -> R {
 fn new_session(ctx: &Ctx, p: &Parsed) -> R {
     let [name] = p.args.as_slice() else { return Err("usage".into()) };
     ensure_server(&ctx.socket, &ctx.session)?;
-    apex_server::remote::new_session(&ctx.socket, name, apex_server::remote::local_session()).map_err(|e| e.to_string())
+    apex_server::remote::new_session(&ctx.socket, name).map_err(|e| e.to_string())
 }
 
 // ---- attach -----------------------------------------------------------------------

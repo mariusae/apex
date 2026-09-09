@@ -844,28 +844,11 @@ impl Server {
     }
 
     /// A new session's setup: the host's file (`host_profile`, normally
-    /// `~/.apex/profile`) sourced, then the creator's session script
-    /// (its `~/.apex/session`); one shell reading both, run like any
-    /// command, named `profile` in the top row, its output in `+Errors`.
-    pub fn run_profile(&mut self, view: &Node, host_profile: Option<&Path>, init: Option<&proto::Script>) {
-        let host_text = host_profile.and_then(|p| std::fs::read_to_string(p).ok());
-        let mut script = String::new();
-        if let (Some(p), Some(_)) = (host_profile, &host_text) {
-            script.push_str(&format!(". {}\n", shell_quote(&p.display().to_string())));
-        }
-        // then the creator's session script: its own file, so both run
-        // as themselves when the creator is this machine
-        if let Some(i) = init {
-            if !i.text.trim().is_empty() {
-                script.push_str(&i.text);
-                if !script.ends_with('\n') {
-                    script.push('\n');
-                }
-            }
-        }
-        if script.is_empty() {
-            return;
-        }
+    /// `~/.apex/profile`) sourced by one shell, run like any command,
+    /// named `profile` in the top row, its output in `+Errors`.
+    pub fn run_profile(&mut self, view: &Node, host_profile: Option<&Path>) {
+        let Some(p) = host_profile.filter(|p| p.is_file()) else { return };
+        let script = format!(". {}\n", shell_quote(&p.display().to_string()));
         let dir = self.cwd.clone();
         let env = self.command_env(view, ExecCtx::Top);
         // the profile's environment at its end is the session's: an exit

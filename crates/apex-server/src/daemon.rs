@@ -213,9 +213,7 @@ impl Daemon {
             });
         }
         let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, rx, tx };
-        // the daemon's own session is made from this machine: the host's
-        // profile, then this machine's session script as its creator's
-        d.new_session(session, crate::remote::local_session());
+        d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
             match ev {
@@ -250,7 +248,7 @@ impl Daemon {
         Ok(())
     }
 
-    fn new_session(&mut self, name: &str, profile: Option<Script>) -> bool {
+    fn new_session(&mut self, name: &str) -> bool {
         if self.sessions.contains_key(name) {
             return false;
         }
@@ -261,9 +259,6 @@ impl Daemon {
         // $EDITOR opens in the session and returns when the window goes
         if let Some(editor) = editor_command() {
             server.env.push(("EDITOR".into(), editor));
-        }
-        if let Some(i) = &profile {
-            server.env.push(("apexclient".into(), i.client.clone()));
         }
         let sid = self.next_session;
         self.next_session += 1;
@@ -290,7 +285,7 @@ impl Daemon {
         self.sessions.insert(name.to_string(), Session { id: sid, log, server, view, leader: None });
         // its init runs now, as a command of the session
         let s = self.sessions.get_mut(name).unwrap();
-        s.server.run_profile(&s.view, self.host_profile.as_deref(), profile.as_ref());
+        s.server.run_profile(&s.view, self.host_profile.as_deref());
         self.after(name, Vec::new());
         true
     }
@@ -439,12 +434,12 @@ impl Daemon {
     fn handle(&mut self, id: u64, m: ClientMsg) {
         match m {
             ClientMsg::Hello { session, name, kind, attach } => self.hello(id, session, name, kind, attach),
-            ClientMsg::NewSession { name, profile } => {
+            ClientMsg::NewSession { name } => {
                 // making a session that exists is fine: it is there
                 if name.is_empty() || name.contains('/') {
                     self.send(id, ServerMsg::Error { text: format!("bad session name {name:?}") });
                 } else {
-                    self.new_session(&name, profile);
+                    self.new_session(&name);
                     self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
                 }
             }

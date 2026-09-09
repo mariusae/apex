@@ -454,7 +454,7 @@ length):*
 ```
 client → server
   Hello{session, name, kind, attach?}     attach; a UI ships its ~/.apex/attach
-  NewSession{name, profile?}              make a session (idempotent), the creator's ~/.apex/session shipped
+  NewSession{name}                        make a session (idempotent); its host's profile runs
   ListSessions · RenameSession{from, to} · Stop · Ping{t}
   Append{shard, entries}                  entries this client sequenced as leader
   CreateShard{shard} · DeleteShard{shard}
@@ -667,23 +667,20 @@ scratch HOME.
 
 ---
 
-*As built, profile, session and attach:* three scripts, named by what
-they configure. The host's `~/.apex/profile` is the session's setup on
-the daemon's machine; the client's `~/.apex/session` is what it wants
-any session it creates to have (shipped in `NewSession` as
-`Script{client, text}`, for hosts with no profile of their own); the
-client's `~/.apex/attach` is its own per attachment. On one machine all
-three live in the same `~/.apex` and each runs once in its role, so
-the local case is the remote one, not a special case of it (there is
-no longer any comparing of texts to skip a file run twice). A new
-session runs one `rc` on its host that sources the host's profile,
-then the creator's session script, as a
+*As built, profile and attach:* two scripts, named by what they
+configure. The host's `~/.apex/profile` is the session's setup on the
+daemon's machine; the client's `~/.apex/attach` is its own per
+attachment, the UI's tweaks. On one machine both live in the same
+`~/.apex` and each runs once in its role. (A third, the creator's
+`~/.apex/session` shipped in `NewSession` to provision hosts with no
+profile of their own, was built and then dropped, for now: a host
+configures itself.) A new session runs one `rc` on its host that
+sources the host's profile, as a
 command named `profile` with output in `+Errors`, and `apexsession`,
-`APEX_SOCKET`, `apexclient` set, and `EDITOR` to `apex-editor`, a link
+`APEX_SOCKET` set, and `EDITOR` to `apex-editor`, a link
 beside the binary the CLI knows by name as `apex editor` (editinacme:
 the file plumbed to edit, exit when its window goes; one word, since
-zsh and rc do not split `$EDITOR` into words). The host part comes first so it can
-define what the creator's part uses. The profile's environment at its
+zsh and rc do not split `$EDITOR` into words). The profile's environment at its
 end is the session's: the server prefixes the script with an exit hook
 (rc's `fn sigexit`, sh's `trap ... EXIT`) that runs `apex env -import`,
 which sends the shell's whole environment (`ClientMsg::EnvImport`);
@@ -695,9 +692,7 @@ profile's `fn g {...}` works in every terminal and B2 command. The rc is
 run in its own process, not embedded: rust-rc forks for pipelines and
 `&` with the interpreter running on in the child, no fit for the
 threaded daemon. `apex env KEY=VALUE` (`ClientMsg::Env`) still sets
-the session environment from anywhere at any time; the creator's script
-runs on the host, never on the client, so no `apex` call crosses the
-link. A client's
+the session environment from anywhere at any time. A client's
 `~/.apex/attach` runs the same way on every attach (`Hello` carries it),
 with `apexattachment` set, so `apex set` there records the attachment's
 own settings (`MetaOp::Set{owner}`, dropped on detach); `apex set` from

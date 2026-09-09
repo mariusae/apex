@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 7;
+pub const PROTOCOL: u32 = 8;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -29,7 +29,7 @@ pub enum ClientMsg {
     Hello { session: String, name: String, kind: AttachmentKind, attach: Option<Script> },
     /// Make a session (fine if it exists), with what its creator brings
     /// for its init.
-    NewSession { name: String, profile: Option<Script> },
+    NewSession { name: String },
     ListSessions,
     /// Rename a session; attachments to it stay attached.
     RenameSession { from: String, to: String },
@@ -177,9 +177,8 @@ pub fn file_url_path(url: &str) -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(String::from_utf8_lossy(&out).to_string()))
 }
 
-/// A client's script, run on the host: its `~/.apex/session` when it
-/// makes a session (after the host's own profile), its `~/.apex/attach`
-/// whenever it attaches; and its name, for `$apexclient`.
+/// A client's script, run on the host: its `~/.apex/attach` whenever it
+/// attaches; and its name, for `$apexclient`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Script {
     pub client: String,

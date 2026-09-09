@@ -181,7 +181,7 @@ fn sessions_are_listed_and_made() {
     let mut c = Remote::connect_as(&sock, "main", "t", AttachmentKind::Tool).unwrap();
     c.send(&ClientMsg::ListSessions);
     assert!(wait(&mut c, |r| r.link.sessions.as_deref() == Some(&["main".to_string()][..])));
-    c.send(&ClientMsg::NewSession { name: "two".into(), profile: None });
+    c.send(&ClientMsg::NewSession { name: "two".into() });
     assert!(wait(&mut c, |r| r.link.sessions.as_ref().map(|s| s.len()) == Some(2)));
     let mut two = Remote::connect(&sock, "two", "ui").unwrap();
     let col = two.node.state.layout.cols[0].id;

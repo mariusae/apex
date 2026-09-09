@@ -155,10 +155,9 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
-        profile: Option<Script>,
     ) -> io::Result<(Link, Log, Node)> {
         let attach = if kind == AttachmentKind::Ui { local_attach() } else { None };
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, Some(profile), attach)
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, true, attach)
     }
 
     /// Attach over any byte stream pair: a child's stdout and stdin, say,
@@ -173,7 +172,7 @@ impl Link {
         wake: Option<Wake>,
     ) -> io::Result<(Link, Log, Node)> {
         let attach = if kind == AttachmentKind::Ui { local_attach() } else { None };
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, None, attach)
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, false, attach)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -185,15 +184,15 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
-        create: Option<Option<Script>>,
+        create: bool,
         attach: Option<Script>,
     ) -> io::Result<(Link, Log, Node)> {
         let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
         let sinks = crate::plane::IoSinks::new();
         spawn_reader(reader, tx, wake, sinks.clone());
-        if let Some(profile) = create {
-            out.send(&ClientMsg::NewSession { name: session.to_string(), profile })?;
+        if create {
+            out.send(&ClientMsg::NewSession { name: session.to_string() })?;
         }
         out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach })?;
         // a daemon that never answers must not hold a client forever
@@ -523,22 +522,15 @@ pub fn local_script(name: &str) -> Option<Script> {
     Some(Script { client: crate::term::sysname(), text })
 }
 
-/// `~/.apex/session`: this client's session provisioning, run once on
-/// the host after its own profile when a session is made from here.
-pub fn local_session() -> Option<Script> {
-    local_script("session")
-}
-
 /// `~/.apex/attach`: run on the host every time this machine attaches.
 pub fn local_attach() -> Option<Script> {
     local_script("attach")
 }
 
-/// Create a session on a daemon, with its creator's session script;
-/// fine if it already exists.
-pub fn new_session(path: &Path, name: &str, profile: Option<Script>) -> io::Result<()> {
+/// Create a session on a daemon; fine if it already exists.
+pub fn new_session(path: &Path, name: &str) -> io::Result<()> {
     let mut s = UnixStream::connect(path)?;
-    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string(), profile })?;
+    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string() })?;
     let mut r = BufReader::new(s);
     loop {
         match read_frame::<_, ServerMsg>(&mut r)? {
@@ -857,7 +849,7 @@ impl Remote {
             name,
             kind,
             None,
-            None,
+            false,
             attach,
         )?;
         Ok(Remote { log, node, link })
