@@ -1100,8 +1100,9 @@ this one (detach, attach).
   directories, terminals, win, +Errors, marked ● or ▶) and the files
   closed lately (○, "closed": the last fifty per session, each once,
   kept in `recent-files` on this machine, noticed as windows go), ranked
-  as Zed ranks: nothing typed, open windows in layout order then closed
-  files by recency; a query, a fuzzy score in the spirit of Zed's
+  as Zed ranks: nothing typed, the open windows alone, in layout order
+  (the closed files are there to be found by name, not scrolled
+  through); a query, a fuzzy score in the spirit of Zed's
   matcher (file name best, then after `/` and at word starts, runs of
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window

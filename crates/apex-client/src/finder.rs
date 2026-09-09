@@ -51,11 +51,13 @@ impl Finder {
         (self.caret_since.elapsed().as_millis() / BLINK.as_millis()) % 2 == 0
     }
 
-    /// What the list shows for the query, ranked.
+    /// What the list shows for the query, ranked. With nothing typed,
+    /// the open windows alone: the files closed lately are there to be
+    /// found by name, not to be scrolled through.
     pub fn picks(&self) -> Vec<Pick> {
         let q = self.filter.trim();
         if q.is_empty() {
-            self.entries.iter().cloned().map(Pick::Entry).collect()
+            self.entries.iter().filter(|e| e.window.is_some()).cloned().map(Pick::Entry).collect()
         } else {
             let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| score(q, &e.name).map(|s| (s, i, e))).collect();
             // best first; open before closed; then the order we had
