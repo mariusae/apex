@@ -37,7 +37,9 @@ What a tool can do:
   state. Offsets count characters, not bytes.
 - `t.Offer(rule, handler)`: a verb in the tools menu of the windows the
   rule matches (or B3 on text it matches, with `Verb` empty), answered
-  by the handler, which returns whether it took it. `t.Withdraw(id)`.
+  by the handler, which returns whether it took it. A verb acts on the
+  window's dot, `p.At`; B3 also brings what it took, `p.Sel`;
+  `p.Range()` picks the one to act on. `t.Withdraw(id)`.
 - `w.Watch(fn)`: edits by others to the window's body, as win follows
   typing; `t.OnRename`, `t.OnDelete`: the windows the tool made or
   watches.

@@ -454,9 +454,23 @@ type Plumb struct {
 	Window *Window
 	// The Text regexp's groups, $0 first.
 	Groups []string
-	// Where the pointer or dot was, and what was taken, in the
-	// window's body; nil when not known.
+	// At is where it happened in the window's body: for a verb, the
+	// window's dot (the selection, or the insertion point); for B3, the
+	// pointer. Sel is what B3 took, the text swept or expanded; nil for
+	// a verb. Range picks the one to act on.
 	At, Sel *Span
+}
+
+// Range is the text a handler should act on: what B3 took when there
+// is such a thing, else the window's dot; ok is false when there is
+// neither, or it is empty.
+func (p Plumb) Range() (q0, q1 int, ok bool) {
+	for _, s := range []*Span{p.Sel, p.At} {
+		if s != nil && s.Q1 > s.Q0 {
+			return s.Q0, s.Q1, true
+		}
+	}
+	return 0, 0, false
 }
 
 // A Span is a range of characters in a window's body.

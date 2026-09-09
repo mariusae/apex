@@ -19,7 +19,9 @@ func main() {
 	}
 	defer t.Close()
 	_, err = t.Offer(apex.Rule{Verb: "Upper", Kind: "file"}, func(p apex.Plumb) bool {
-		if p.Window == nil || p.Sel == nil || p.Sel.Q0 == p.Sel.Q1 {
+		// the selection: from the menu that is the window's dot
+		q0, q1, ok := p.Range()
+		if p.Window == nil || !ok {
 			return false
 		}
 		text, err := p.Window.Read()
@@ -27,11 +29,11 @@ func main() {
 			return false
 		}
 		r := []rune(text)
-		if p.Sel.Q1 > len(r) {
+		if q1 > len(r) {
 			return false
 		}
-		up := strings.ToUpper(string(r[p.Sel.Q0:p.Sel.Q1]))
-		return p.Window.Replace(p.Sel.Q0, p.Sel.Q1, up) == nil
+		up := strings.ToUpper(string(r[q0:q1]))
+		return p.Window.Replace(q0, q1, up) == nil
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -31,9 +31,9 @@ func TestAgainstASession(t *testing.T) {
 	if err != nil || text != "one\n" {
 		t.Fatalf("read: %q, %v", text, err)
 	}
-	got := make(chan string, 1)
+	got := make(chan Plumb, 1)
 	if _, err := tool.Offer(Rule{Verb: "Shout", Window: w}, func(p Plumb) bool {
-		got <- p.Text
+		got <- p
 		return true
 	}); err != nil {
 		t.Fatal(err)
@@ -41,13 +41,20 @@ func TestAgainstASession(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go tool.Serve(ctx)
+	// a verb acts on the window's dot: set, then the verb run there
+	if err := w.Select(0, 3); err != nil {
+		t.Fatal(err)
+	}
 	if err := w.Exec("Shout loud"); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case s := <-got:
-		if strings.TrimSpace(s) != "loud" {
-			t.Fatalf("got %q", s)
+	case p := <-got:
+		if strings.TrimSpace(p.Text) != "loud" {
+			t.Fatalf("got %q", p.Text)
+		}
+		if q0, q1, ok := p.Range(); !ok || q0 != 0 || q1 != 3 {
+			t.Fatalf("range: %d %d %v (at %v, sel %v)", q0, q1, ok, p.At, p.Sel)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the verb never arrived")
