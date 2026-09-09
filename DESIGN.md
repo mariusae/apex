@@ -798,9 +798,10 @@ wire or the replicated state showing through: `Tool::attach(name)`,
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window open read replace append select selection rename set_live
 delete exec exec_in errors watch unwatch set setting`. Depending on
-`apex-server` directly is the internals, not the API; the bundled
-tools (win, lsp, preview) predate the crate and move onto it over
-time. *Tools in other languages:* `apex tool bridge NAME` attaches as
+`apex-server` directly is the internals, not the API. The bundled
+tools (win, lsp, preview) stay on the internals on purpose: they ship
+with the daemon and are rebuilt with it, so the lockstep costs them
+nothing, and win in particular needs what the crate hides. *Tools in other languages:* `apex tool bridge NAME` attaches as
 the tool NAME and speaks JSON, one object a line, on stdin and stdout
 (`apex-tool-bridge`, a client of `apex-tool`, its commands and events
 the crate's methods and events one for one): commands in
