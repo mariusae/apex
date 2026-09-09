@@ -1353,10 +1353,16 @@ impl Acme {
                         *p += end - at;
                     }
                 }
-                // shown through the last line's newline: text appended at
-                // the end of a window showing its end is on screen
-                let on_screen = self.layouts.get(&v).and_then(|l| Some((l.lines.first()?.start, l.lines.last().map(|x| x.end + x.has_newline as usize)?))).is_some_and(|(s, e)| s <= at && at <= e);
-                if on_screen {
+                // on screen: from the origin, within the lines the window
+                // holds, judged on the text as it is now (the last paint's
+                // layout predates the newline just typed, and the chunk of
+                // output before this one); or brought on screen by that
+                // earlier chunk's show, still pending
+                let origin = self.node.view_buffer(v).ok().and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.view(v).origin).unwrap_or(0);
+                let fits = self.layouts.get(&v).map(|l| (f32::from(l.bounds.size.height) / f32::from(l.line_height)).floor().max(1.) as usize).unwrap_or(0);
+                let in_window = self.text_of(v).is_some_and(|t| at >= origin && t.line_of(at.min(t.len())) < t.line_of(origin) + fits);
+                let pending = self.show_at.get(&v).is_some_and(|(q, _)| at <= *q);
+                if in_window || pending {
                     self.show_at.insert(v, (end, 3));
                 }
             }
