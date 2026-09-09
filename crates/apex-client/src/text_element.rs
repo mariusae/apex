@@ -44,9 +44,10 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
 /// fenced red, the unsynced green, and the scrollbar's dark yellow.
 pub const LIVE: u32 = 0xB24073;
 /// A stale window's handle: dirty, and the disk has moved on underneath
-/// (`Get` in the tag would drop the edits). Orange, between the dirty
-/// blue and the scrollbar's yellow in hue, like neither.
-pub const STALE: u32 = 0xD97B29;
+/// (`Get` in the tag would drop the edits). Dark cyan: a cool colour
+/// like the dirty blue, unlike the scrollbar's olive, the live
+/// raspberry and the unsynced pale green.
+pub const STALE: u32 = 0x008B8B;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder

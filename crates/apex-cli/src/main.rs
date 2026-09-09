@@ -353,7 +353,7 @@ source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
 names another." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp | apex tool preview FILE", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview FILE", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -377,7 +377,12 @@ setting lsp.LANG names another command. The optional lsp.root setting names
 a workspace marker that takes precedence over the built-in language markers;
 lsp.LANG.root overrides it for one language. Documents are opened as buffers
 appear and every edit is fed incrementally. Diagnostics go to root/+lsp,
-one plumbable file:line:col: message per line.
+one plumbable file:line:col: message per line. What matters goes to
+stderr as it happens: a server starting, its indexing beginning and
+ending, when it is ready, and when it exits; with -v every request,
+answer, progress report and diagnostic too (APEX_LSP_DEBUG=1 dumps the
+messages themselves). A language's verbs appear in its windows only
+once a server of it is ready, so their appearing says so.
 
 Its rules, gone when it exits: cmd-B3 on an identifier in a source file
 goes to the definition (B3 itself stays acme's look; on a laptop, where
@@ -709,7 +714,7 @@ fn version(_: &Ctx, _: &Parsed) -> R {
 
 fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
     match p.args.first().map(String::as_str) {
-        Some("lsp") => apex_tool_lsp::run(&ctx.socket, &ctx.session),
+        Some("lsp") => apex_tool_lsp::run(&ctx.socket, &ctx.session, p.args[1..].iter().any(|a| a == "-v")),
         Some("win") => {
             let dir = std::env::current_dir().map_err(|e| e.to_string())?;
             apex_tool_win::run(&ctx.socket, &ctx.session, &dir, &p.args[1..])

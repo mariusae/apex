@@ -55,15 +55,15 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     // the tool
     let s2 = sock.clone();
     std::thread::spawn(move || {
-        let _ = apex_tool_lsp::run(&s2, "main");
+        let _ = apex_tool_lsp::run(&s2, "main", false);
     });
-    // Its rules arrive before the deliberately delayed initialize response.
-    assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Fmt")), "rules installed");
+    // Back and Fwd are there from the start; the verbs only once the
+    // (deliberately delayed) initialize has been answered
+    assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Back")), "nav rules installed");
+    assert!(!c.node.state.meta.rules.values().any(|r| r.rule.verb == "Fmt"), "verbs before ready");
+    assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Fmt")), "verbs installed once ready");
     let (b, _) = c.node.state.buffers.values().find(|b| b.name.ends_with("main.go")).map(|b| (b.id, b.version)).unwrap();
     let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w).ends_with("main.go")).unwrap();
-    c.propose(Proposal::Select { view: ViewId::Body(w), q0: 18, q1: 19 }, Duration::from_secs(5)).unwrap();
-    c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Def".into() }, Duration::from_secs(5)).unwrap();
-    assert!(until(&mut c, |n| text_of(n, "+Errors").unwrap_or_default().contains("Def: language server is still initializing")), "initializing error: {:?}", text_of(&c.node, "+Errors"));
     // The diagnostics window then contains the opened text's length.
     let lsp = |n: &Node| text_of(n, "+lsp").unwrap_or_default();
     assert!(until(&mut c, |n| lsp(n).contains("len=25 first=package")), "diagnostics: {}", lsp(&c.node));

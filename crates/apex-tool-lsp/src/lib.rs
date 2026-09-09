@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 
 use apex_core::text::Text;
 use apex_core::*;
-use apex_server::proto::ServerMsg;
+use apex_server::proto::{ClientMsg, ServerMsg};
 use apex_server::remote::{Remote, ToolPlumb};
 use apex_server::Proposal;
 
@@ -291,6 +291,11 @@ enum Waiting {
 
 pub struct Tool {
     remote: Remote,
+    /// `-v`: every request, answer and progress report on stderr.
+    verbose: bool,
+    /// The verb rules installed per language, once a server of it is
+    /// ready; gone with its last server.
+    rules: HashMap<String, Vec<RuleId>>,
     servers: HashMap<(String, PathBuf), Server>,
     /// Open buffers this tool told a server about: buffer → (server key, uri).
     docs: HashMap<BufferId, ((String, PathBuf), String)>,
@@ -301,18 +306,60 @@ pub struct Tool {
     failed: Vec<(String, PathBuf)>,
 }
 
-/// Run the tool on the session at `socket`, until the link ends.
-pub fn run(socket: &Path, session: &str) -> Result<(), String> {
+/// Run the tool on the session at `socket`, until the link ends;
+/// `verbose` says what goes on between it and the servers on stderr.
+pub fn run(socket: &Path, session: &str, verbose: bool) -> Result<(), String> {
     let remote = Remote::connect_as(socket, session, "lsp", AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
     // `apex tool lsp` is called lsp, not apex, in the top row and ps
     remote.announce("lsp");
     let (tx, rx) = channel();
-    let mut t = Tool { remote, servers: HashMap::new(), docs: HashMap::new(), waiting: HashMap::new(), tx, rx, failed: Vec::new() };
+    let mut t = Tool { remote, verbose: verbose || debug(), rules: HashMap::new(), servers: HashMap::new(), docs: HashMap::new(), waiting: HashMap::new(), tx, rx, failed: Vec::new() };
+    t.log(&format!("attached to session {session}; servers start as files of known languages open"));
     t.install_rules()?;
     t.main_loop()
 }
 
 impl Tool {
+    /// What matters on stderr: servers starting, indexing, ready, gone.
+    fn log(&self, msg: &str) {
+        eprintln!("apex lsp: {msg}");
+    }
+
+    /// With -v: requests, answers, progress, diagnostics.
+    fn vlog(&self, msg: &str) {
+        if self.verbose {
+            eprintln!("apex lsp: {msg}");
+        }
+    }
+
+    /// A server of `lang` is ready: its verbs are offered in that
+    /// language's windows from now on (until its last server goes), so
+    /// their appearing is the sign the server can be used.
+    fn install_verbs(&mut self, lang: &str) -> Result<(), String> {
+        if self.rules.contains_key(lang) {
+            return Ok(());
+        }
+        let Some(l) = LANGUAGES.iter().find(|l| l.id == lang) else { return Ok(()) };
+        let file = format!(r"\.({})$", l.exts.join("|"));
+        let mut ids = Vec::new();
+        for v in VERBS {
+            let rule = PlumbRule { verb: v.to_string(), text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), to: None };
+            ids.push(self.remote.rule_add(rule, 0, true, TIMEOUT)?);
+        }
+        self.rules.insert(lang.to_string(), ids);
+        Ok(())
+    }
+
+    fn remove_verbs(&mut self, lang: &str) {
+        if self.servers.keys().any(|(l, _)| l == lang) {
+            return; // another server of the language is still up
+        }
+        if let Some(ids) = self.rules.remove(lang) {
+            for id in ids {
+                self.remote.send(&ClientMsg::RuleRm { id });
+            }
+        }
+    }
 
     /// One message, through `before` first; false when the link ended.
     fn step(&mut self, timeout: Duration) -> bool {
@@ -348,27 +395,15 @@ impl Tool {
         self.remote.node.state.meta.setting(self.remote.attachment(), key).map(String::from)
     }
 
-    /// The rules that name us: the verbs in source windows (cmd-B3 is
-    /// `Def` at the pointer; B3 itself stays acme's look).
+    /// The rules that name us from the start: Back and Fwd, the
+    /// session's stack, which need no server. The verbs (cmd-B3 is `Def`
+    /// at the pointer; B3 itself stays acme's look) come with each
+    /// language's server, once it is ready (`install_verbs`).
     fn install_rules(&mut self) -> Result<(), String> {
-        let exts: Vec<&str> = LANGUAGES.iter().flat_map(|l| l.exts.iter().copied()).collect();
-        let file = format!(r"\.({})$", exts.join("|"));
-        let rule = |verb: &str, text: Option<&str>| PlumbRule {
-            verb: verb.into(),
-            text: text.map(String::from),
-            file: Some(file.clone()),
-            kind: Some(WinKind::File),
-            isfile: None,
-            isdir: None,
-            action: RuleAction::Tool("lsp".into()),
-            to: None,
-        };
-        for v in VERBS {
-            self.remote.rule_add(rule(v, None), 0, true, TIMEOUT)?;
-        }
         for v in NAV_VERBS {
             let r = PlumbRule { verb: v.into(), text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), to: None };
-            self.remote.rule_add(r, 0, true, TIMEOUT)?;
+            // a priority below the verbs', so the menu lists them after
+            self.remote.rule_add(r, -1, true, TIMEOUT)?;
         }
         Ok(())
     }
@@ -394,10 +429,12 @@ impl Tool {
                 match ev {
                     Event::Lsp(key, v) => self.on_lsp(key, v),
                     Event::LspGone(key) => {
-                        // it died: say so, and do not start it again
+                        // it died: say so, its verbs go, and it is not started again
                         self.servers.remove(&key);
                         self.docs.retain(|_, (k, _)| *k != key);
                         self.failed.push(key.clone());
+                        self.remove_verbs(&key.0);
+                        self.log(&format!("the {} server for {} exited (APEX_LSP_DEBUG=1 shows its stderr)", key.0, key.1.display()));
                         let msg = format!("lsp: the {} server for {} exited (APEX_LSP_DEBUG=1 shows why)\n", key.0, key.1.display());
                         self.errors(Some(&key.1.display().to_string()), &msg);
                     }
@@ -458,6 +495,7 @@ impl Tool {
             }
             if !self.servers.contains_key(&key) {
                 let cmd = self.setting(&format!("lsp.{}", lang.id)).unwrap_or_else(|| lang.default_server.to_string());
+                self.log(&format!("starting {cmd} for {} in {}", lang.id, root.display()));
                 match Server::spawn(key.clone(), &cmd, self.tx.clone()) {
                     Ok(mut s) => {
                         let id = s.request(
@@ -479,9 +517,7 @@ impl Tool {
                         self.servers.insert(key.clone(), s);
                     }
                     Err(e) => {
-                        if debug() {
-                            eprintln!("apex lsp: start {cmd}: {e}");
-                        }
+                        self.log(&format!("start {cmd}: {e}"));
                         self.failed.push(key.clone());
                         self.errors(Some(&root.display().to_string()), &format!("lsp: {}: {e}\n", lang.id));
                         continue;
@@ -530,22 +566,53 @@ impl Tool {
             let Some(w) = self.waiting.remove(&(key.clone(), id)) else { return };
             match w {
                 Waiting::Initialize => {
+                    let mut queued = 0;
                     if let Some(s) = self.servers.get_mut(&key) {
                         s.initialized = true;
                         s.notify("initialized", json!({}));
-                        for (m, p) in std::mem::take(&mut s.queued) {
+                        let q = std::mem::take(&mut s.queued);
+                        queued = q.len();
+                        for (m, p) in q {
                             s.notify(&m, p);
                         }
+                    }
+                    let name = v["result"]["serverInfo"]["name"].as_str().unwrap_or(&key.0).to_string();
+                    let version = v["result"]["serverInfo"]["version"].as_str().map(|s| format!(" {s}")).unwrap_or_default();
+                    self.log(&format!("{name}{version} ready for {} ({queued} queued notification{} sent); its verbs are offered now", key.1.display(), if queued == 1 { "" } else { "s" }));
+                    if let Err(e) = self.install_verbs(&key.0.clone()) {
+                        self.log(&format!("rules for {}: {e}", key.0));
                     }
                 }
                 Waiting::Plumb { plumb, verb, buffer, ctx, dir } => {
                     let ok = self.answer(&key, &verb, buffer, ctx, &dir, &v);
+                    self.vlog(&format!("{verb}: {}", if ok { "answered" } else { "nothing" }));
                     self.remote.plumb_ack(plumb, ok);
                 }
             }
             return;
         }
         match v.get("method").and_then(|m| m.as_str()) {
+            Some("$/progress") => {
+                // indexing and the like: begin and end always, the
+                // reports in between with -v
+                let val = &v["params"]["value"];
+                let title = val["title"].as_str().unwrap_or("").to_string();
+                let message = val["message"].as_str().map(|m| format!(": {m}")).unwrap_or_default();
+                let pct = val["percentage"].as_u64().map(|p| format!(" {p}%")).unwrap_or_default();
+                match val["kind"].as_str() {
+                    Some("begin") => self.log(&format!("{}: {title}{message}", key.0)),
+                    Some("end") => self.log(&format!("{}: {title} done{message}", key.0)),
+                    _ => self.vlog(&format!("{}: {title}{pct}{message}", key.0)),
+                }
+            }
+            Some("window/showMessage") => {
+                let m = v["params"]["message"].as_str().unwrap_or("");
+                self.log(&format!("{}: {m}", key.0));
+            }
+            Some("window/logMessage") => {
+                let m = v["params"]["message"].as_str().unwrap_or("");
+                self.vlog(&format!("{}: {m}", key.0));
+            }
             Some("textDocument/publishDiagnostics") => {
                 let uri = v["params"]["uri"].as_str().unwrap_or("").to_string();
                 let path = path_of_uri(&uri).map(|p| p.display().to_string()).unwrap_or(uri);
@@ -566,6 +633,7 @@ impl Tool {
                             .collect()
                     })
                     .unwrap_or_default();
+                self.vlog(&format!("{}: {} diagnostic{} for {path}", key.0, lines.len(), if lines.len() == 1 { "" } else { "s" }));
                 if let Some(s) = self.servers.get_mut(&key) {
                     if lines.is_empty() {
                         s.diagnostics.remove(&path);
@@ -675,6 +743,7 @@ impl Tool {
         }
         let s = self.servers.get_mut(&key).unwrap();
         let id = s.request(method, params);
+        self.vlog(&format!("{}: {method} for {}", key.0, p.verb));
         self.waiting.insert((key, id), Waiting::Plumb { plumb: p.id, verb: p.verb, buffer: span.buffer, ctx: p.ctx, dir: p.dir });
     }
 
