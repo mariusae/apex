@@ -933,8 +933,9 @@ refuses once with "modified since last read" and writes on the second.
 Directory windows are watched too (the directory itself, for its
 entries): a change under it lists the directory anew when the window
 is clean, and flags it stale when edited, the same flow. A stale
-window has its own handle colour, dark cyan (`STALE`, a cool colour
-like the dirty blue, unlike the scrollbar's olive): dirty, and the disk has moved
+window has its own handle: not a colour of its own, which some eyes
+cannot tell from the others, but the dirty blue square drawn hollow, a
+ring with the background through the middle: dirty, and the disk has moved
 on underneath, so `Get` would drop the edits. Diffing rather than
 replacing and delete/rename flags are not done.
 
