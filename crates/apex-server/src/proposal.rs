@@ -31,8 +31,10 @@ pub enum Proposal {
     Clean { buffer: BufferId, version: Version, hash: String },
     /// `Put newname`: rename the buffer and its window's tag.
     Rename { buffer: BufferId, window: WindowId, name: String },
-    /// Pipe output replacing a range, valid at `version`.
-    ReplaceRange { dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
+    /// A range replaced, valid at `version`: pipe output (`select`, as
+    /// acme's `|` leaves the output selected), or a tool's write, which
+    /// leaves dot alone as a write to acme's `data` file does.
+    ReplaceRange { select: bool, dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
     /// Text for `dir/+Errors` (acme's errorwin), or plain `+Errors`.
     Errors { dir: Option<String>, text: String },
     /// Filename completion (acme's ^F): insert `text` at `at` in `view`,
@@ -149,13 +151,16 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.set_content(log, tag, &format!("{name} {rest}"))?;
             Ok(None)
         }
-        Proposal::ReplaceRange { dir, buffer, version, q0, q1, text } => {
+        Proposal::ReplaceRange { select, dir, buffer, version, q0, q1, text } => {
             let ok = node.state.buffer(buffer).map(|b| b.version == version).unwrap_or(false);
             if ok {
                 let view = node.state.buffer(buffer)?.views.keys().next().copied();
-                if let Some(v) = view {
-                    node.select(log, v, q0, q1)?;
-                    node.replace_selection(log, v, &text)?;
+                match (select, view) {
+                    (true, Some(v)) => {
+                        node.select(log, v, q0, q1)?;
+                        node.replace_selection(log, v, &text)?;
+                    }
+                    _ => node.replace_text(log, buffer, q0, q1.saturating_sub(q0), &text)?,
                 }
             } else {
                 node.errors(log, dir.as_deref(), &format!("pipe output not applied: buffer changed meanwhile\n{text}"))?;

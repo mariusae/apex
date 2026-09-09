@@ -70,7 +70,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert!(lsp(&c.node).contains("main.go:1:1: warning:"), "{}", lsp(&c.node));
     // an edit syncs incrementally: the server sees the new length
     let version = c.node.state.buffer(b).unwrap().version;
-    c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 25, q1: 25, text: "// more\n".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 25, q1: 25, text: "// more\n".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| lsp(n).contains("len=33")), "synced: {}", lsp(&c.node));
     // Once initialized, cmd-B3 (the Def verb at the pointer) goes to the definition.
     c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();

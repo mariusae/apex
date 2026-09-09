@@ -495,7 +495,10 @@ server → client
 proposals (tools and the server → the leader; applied by whoever leads)
   OpenWindow{col, from?, name, text, hash, select_line?} · NewWindow{col, name} · TermWindow{col, name, term}
   SetContent{buffer, version?, text, hash} · Clean · Rename{buffer, window, name} · Stale
-  ReplaceRange{dir?, buffer, version, q0, q1, text}   pipe output: selected, as acme's
+  ReplaceRange{select, dir?, buffer, version, q0, q1, text}
+                                                       select: pipe output, left selected as acme's |
+                                                       does; else a tool's write, dot left alone as a
+                                                       write to acme's data file leaves it
   Insert{buffer, version, at, text}                    at a point, the selection left alone (win)
   Errors{dir?, text} · Complete{view, at, text} · Snarf{text} · TermName{window, name}
   CommandStart{name} · CommandExit{name} · Status{ctx, exec, status}

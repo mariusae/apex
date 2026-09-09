@@ -53,7 +53,7 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     let _ = until(&mut c, |n| !text(n).is_empty());
     let end = c.node.state.buffer(b).unwrap().text.len();
     let version = c.node.state.buffer(b).unwrap().version;
-    c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: end, q1: end, text: "echo win-$((6*7))\n".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: end, q1: end, text: "echo win-$((6*7))\n".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).contains("win-42\n")), "output:\n{}", text(&c.node));
     // the typed line is still there, once, and the output follows it
     let t = text(&c.node);
@@ -63,7 +63,7 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     assert!(until(&mut c, |n| text(n).ends_with("$ ")), "prompt:\n{}", text(&c.node));
     let end = c.node.state.buffer(b).unwrap().text.len();
     let version = c.node.state.buffer(b).unwrap().version;
-    c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: end, q1: end, text: "echo again\n".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: end, q1: end, text: "echo again\n".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).ends_with("again\n") || text(n).contains("\nagain\n")), "output:\n{}", text(&c.node));
     // live while the shell runs: neither clean nor dirty, though edited
     assert!(c.node.window_live(w));

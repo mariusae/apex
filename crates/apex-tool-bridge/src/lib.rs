@@ -320,7 +320,7 @@ impl Bridge {
                 if q1 < q0 {
                     return Err("q1 before q0".into());
                 }
-                self.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0, q1, text })?;
+                self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0, q1, text })?;
                 Ok(json!({}))
             }
             "select" => {

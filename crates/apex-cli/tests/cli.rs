@@ -839,7 +839,7 @@ fn preview_is_a_live_pipe_through_a_converter() {
     // an edit to the source: the page follows, unsaved
     let b = c.node.state.window(src).unwrap().body_buffer().unwrap();
     let version = c.node.state.buffer(b).unwrap().version;
-    c.propose(apex_server::Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 3, q1: 3, text: " two".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 3, q1: 3, text: " two".into() }, Duration::from_secs(5)).unwrap();
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline && text_of(&c, page) != "<p>ONE two</p>\n" {
         let _ = c.step(Duration::from_millis(50));
@@ -1071,7 +1071,7 @@ fn the_bridge_speaks_json_for_tools() {
     let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
     let b = other.node.state.window(WindowId(w)).unwrap().body_buffer().unwrap();
     let version = other.node.state.buffer(b).unwrap().version;
-    other.propose(apex_server::Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 6, q1: 6, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
+    other.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 6, q1: 6, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
     let ev = next(&mut out);
     assert_eq!(ev["event"], "edit", "{ev}");
     assert_eq!(ev["window"], w);

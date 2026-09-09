@@ -582,7 +582,7 @@ impl Win {
     fn remove(&mut self, q0: usize, q1: usize) {
         let Ok(buf) = self.remote.node.state.buffer(self.buffer) else { return };
         let version = buf.version;
-        let _ = self.propose(Proposal::ReplaceRange { dir: None, buffer: self.buffer, version, q0, q1, text: String::new() }, TIMEOUT);
+        let _ = self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: self.buffer, version, q0, q1, text: String::new() }, TIMEOUT);
     }
 
     /// The menu's verbs, Interrupt and EOF, and any other B2 command in

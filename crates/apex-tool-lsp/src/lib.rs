@@ -811,7 +811,7 @@ impl Tool {
                 }
                 let len = buf.text.len();
                 let version = buf.version;
-                self.propose(Proposal::ReplaceRange { dir: Some(dir.to_string()), buffer, version, q0: 0, q1: len, text: new }, TIMEOUT).is_ok()
+                self.propose(Proposal::ReplaceRange { select: false, dir: Some(dir.to_string()), buffer, version, q0: 0, q1: len, text: new }, TIMEOUT).is_ok()
             }
             "Rn" => {
                 // the workspace edit: open buffers through the session, the
@@ -840,7 +840,7 @@ impl Tool {
                     match open {
                         Some((b, version, text, len)) => {
                             let new = pos::apply_edits(&text, &edits);
-                            let _ = self.propose(Proposal::ReplaceRange { dir: Some(dir.to_string()), buffer: b, version, q0: 0, q1: len, text: new }, TIMEOUT);
+                            let _ = self.propose(Proposal::ReplaceRange { select: false, dir: Some(dir.to_string()), buffer: b, version, q0: 0, q1: len, text: new }, TIMEOUT);
                         }
                         None => {
                             if let Ok(s) = std::fs::read_to_string(&path) {

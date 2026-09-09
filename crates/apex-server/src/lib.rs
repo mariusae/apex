@@ -473,7 +473,7 @@ impl Server {
                         }
                     }
                     ShellMode::Replace { dir, buffer, version, q0, q1 } => {
-                        props.push(Proposal::ReplaceRange { dir, buffer, version, q0, q1, text: out });
+                        props.push(Proposal::ReplaceRange { select: true, dir, buffer, version, q0, q1, text: out });
                     }
                 }
                 if !err.is_empty() {

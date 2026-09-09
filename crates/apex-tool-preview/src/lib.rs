@@ -210,13 +210,13 @@ impl Tool {
         let middle: String = new[prefix..new.len() - suffix].iter().collect();
         for _ in 0..5 {
             let Some((version, whole)) = self.remote.node.state.buffer(page_buf).ok().map(|b| (b.version, b.text.len())) else { return Ok(()) };
-            if self.propose(Proposal::ReplaceRange { dir: None, buffer: page_buf, version, q0, q1, text: middle.clone() }, TIMEOUT).is_ok() {
+            if self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: page_buf, version, q0, q1, text: middle.clone() }, TIMEOUT).is_ok() {
                 self.rendered = html;
                 return Ok(());
             }
             // the page moved under us (someone edited it): the whole thing then
             let Some(version) = self.remote.node.state.buffer(page_buf).ok().map(|b| b.version) else { return Ok(()) };
-            if self.propose(Proposal::ReplaceRange { dir: None, buffer: page_buf, version, q0: 0, q1: whole, text: html.clone() }, TIMEOUT).is_ok() {
+            if self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: page_buf, version, q0: 0, q1: whole, text: html.clone() }, TIMEOUT).is_ok() {
                 self.rendered = html;
                 return Ok(());
             }

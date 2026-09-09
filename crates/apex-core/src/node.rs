@@ -602,6 +602,15 @@ impl Node {
         self.edit_op(log, buffer, q0, 0, text, group)
     }
 
+    /// Replace `nd` characters at `q0` with `text`, as a write to acme's
+    /// `data` file does: the edit alone, every view's dot left where the
+    /// edit leaves it, nothing selected.
+    pub fn replace_text(&mut self, log: &mut Log, buffer: BufferId, q0: usize, nd: usize, text: &str) -> Result<()> {
+        self.end_typing();
+        let group = self.new_group();
+        self.edit_op(log, buffer, q0, nd, text, group)
+    }
+
     /// acme's `wincommit` for a tag: the name typed into it becomes the
     /// buffer's name (a click in the tag, or a command from it, commits).
     /// A relative name stays relative here; `Put` makes it absolute.

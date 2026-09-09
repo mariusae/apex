@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 10;
+pub const PROTOCOL: u32 = 11;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {

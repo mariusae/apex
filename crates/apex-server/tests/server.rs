@@ -721,7 +721,7 @@ fn html_windows_are_text_shown_as_a_page() {
     assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "<h1>hi</h1>");
     // its text is edited as any buffer's: the page follows the version
     let version = node.state.buffer(b).unwrap().version;
-    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 4, q1: 6, text: "yo".into() }]);
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 4, q1: 6, text: "yo".into() }]);
     assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "<h1>yo</h1>");
     assert!(node.state.buffer(b).unwrap().version > version);
     // and it is placed in the column like any window, with body room

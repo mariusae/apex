@@ -932,7 +932,7 @@ fn new(ctx: &Ctx, p: &Parsed) -> R {
         std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
         if !text.is_empty() {
             let version = c.node.state.buffer(b).map_err(|e| e.to_string())?.version;
-            c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 0, q1: 0, text }, TIMEOUT)?;
+            c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: 0, text }, TIMEOUT)?;
         }
     }
     if let Some(l) = label {
