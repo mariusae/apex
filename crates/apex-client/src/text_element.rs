@@ -44,10 +44,11 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
 /// fenced red, the unsynced green, and the scrollbar's dark yellow.
 pub const LIVE: u32 = 0xB24073;
 /// A stale window's handle: dirty, and the disk has moved on underneath
-/// (`Get` in the tag would drop the edits). Not a colour of its own —
-/// colours alone are lost on some eyes — but the dirty blue drawn
-/// hollow: a ring, with the background showing through the middle.
-pub const STALE_HOLE: f32 = 3.;
+/// (`Get` in the tag would drop the edits). A medium blue: the dirty
+/// blue's family, well lighter than it, and — simulated for
+/// deuteranopia — far from the live raspberry, the unsynced green and
+/// the scrollbar's olive, where a dark cyan and an orange had not been.
+pub const STALE: u32 = 0x5F8FDF;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
@@ -616,18 +617,14 @@ impl Element for TextElement {
                         rgb(mix(LIVE, 0xFFFFEA, t * 0.85))
                     } else if pp.live {
                         rgb(LIVE)
+                    } else if pp.stale {
+                        rgb(STALE)
                     } else if pp.dirty {
                         rgb(MEDBLUE)
                     } else {
                         pal.bg
                     };
                     window.paint_quad(fill(inner, fillc));
-                    if pp.stale && !pp.live && !pp.unsynced {
-                        // stale: the dirty square hollowed out, a shape, not a hue
-                        let h = px(STALE_HOLE);
-                        let hole = Bounds::new(point(inner.left() + h, inner.top() + h), size(inner.size.width - h * 2., inner.size.height - h * 2.));
-                        window.paint_quad(fill(hole, pal.bg));
-                    }
                     window.paint_quad(fill(
                         Bounds::new(point(bounds.left(), bounds.bottom() - px(1.)), size(bounds.size.width, px(1.))),
                         pal.border,
