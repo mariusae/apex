@@ -453,6 +453,17 @@ impl Acme {
     /// once; local, it is attached now; elsewhere, the window says it is
     /// attaching and the attach comes back from a thread. What this
     /// window showed is parked first.
+    /// cmd-shift-k: back to the session parked most recently.
+    pub fn previous_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match Pool::most_recent(cx) {
+            Some(url) => {
+                self.switch_to(&url, window, cx);
+                cx.notify();
+            }
+            None => self.notice("no previous session\n"),
+        }
+    }
+
     pub fn switch_to(&mut self, url: &SessionUrl, window: &mut Window, cx: &mut Context<Self>) {
         let wake = self.wake.clone();
         if let Some(p) = self.park() {
@@ -2556,9 +2567,12 @@ impl Acme {
     /// A menu item that is an acme command: `Put`, `Del`, `New`, `Edit ,`
     /// run in the window under the pointer, as B2 there would.
     pub fn menu_command(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selector.is_some() || self.finder.is_some() {
+            return; // an overlay has the keyboard
+        }
         let ctx = match self.window_at_pointer(window) {
             Some(w) => ExecCtx::Window(w),
-            None if text == "New" || text == "Back" || text == "Fwd" => ExecCtx::Top,
+            None if text == "New" || text.starts_with("New ") || text == "Back" || text == "Fwd" => ExecCtx::Top,
             None => return,
         };
         self.execute(ctx, text, cx);
@@ -2582,6 +2596,16 @@ impl Acme {
     /// before any key event) does: acme's rule, the text under the
     /// pointer, else the last selected text.
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // an overlay (the session picker, the finder) has the keyboard:
+        // paste goes into its field, the rest is not for the text below
+        if self.selector.is_some() || self.finder.is_some() {
+            if what == "paste" {
+                if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
+                    self.overlay_paste(&text, cx);
+                }
+            }
+            return;
+        }
         let target = match self.locate(self.pointer(window)) {
             Some((t, _)) => t,
             None => match self.node.seltext {

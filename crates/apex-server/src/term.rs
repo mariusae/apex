@@ -54,15 +54,16 @@ pub fn sysname() -> String {
 /// the label does not end in a `-` component of its own.
 /// The rule for a terminal's window name: `{osc7 path}/-{title}`. Once
 /// OSC 7 has reported a directory, that is the path and nothing else
-/// ever is; the title (an xterm title, plan9port's label) follows a
-/// `-`. With a title but no directory reported, `-title`. Before either,
-/// where the shell started and the host: `dir/-host`, win's naming.
+/// ever is; until then the path is where the terminal started (a shell
+/// reports the same directory soon after, a program like `Newterm
+/// claude` never does); the title (an xterm title, plan9port's label)
+/// follows a `-`. Before either, `dir/-host`, win's naming.
 pub fn compose_name(cwd: Option<&Path>, title: Option<&str>, initial_dir: &Path, initial_label: &str) -> String {
     let dir = |d: &Path| d.display().to_string().trim_end_matches('/').to_string();
     match (cwd, title) {
         (Some(c), Some(t)) => format!("{}/-{t}", dir(c)),
         (Some(c), None) => format!("{}/-{initial_label}", dir(c)),
-        (None, Some(t)) => format!("-{t}"),
+        (None, Some(t)) => format!("{}/-{t}", dir(initial_dir)),
         (None, None) => format!("{}/-{initial_label}", dir(initial_dir)),
     }
 }
@@ -783,5 +784,21 @@ mod scroll_tests {
         // a key brings it back to the live screen
         assert!(h.scroll_to_bottom());
         assert_ne!(first_row(&h), row);
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn the_directory_is_where_the_terminal_started_until_osc7_says() {
+        let d = Path::new("/w/here");
+        assert_eq!(compose_name(None, None, d, "host"), "/w/here/-host");
+        // a title (Newterm claude, an xterm title) keeps the start directory
+        assert_eq!(compose_name(None, Some("claude"), d, "host"), "/w/here/-claude");
+        // OSC 7 reported: that path, and nothing else ever
+        assert_eq!(compose_name(Some(Path::new("/else/")), Some("t"), d, "host"), "/else/-t");
+        assert_eq!(compose_name(Some(Path::new("/else")), None, d, "host"), "/else/-host");
     }
 }

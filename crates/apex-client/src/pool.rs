@@ -111,6 +111,11 @@ impl Pool {
         crate::shell::log_line(&format!("parked {key}"));
     }
 
+    /// The session parked most recently: the one to switch back to.
+    pub fn most_recent(cx: &App) -> Option<SessionUrl> {
+        cx.try_global::<Pool>()?.parked.values().max_by_key(|p| p.parked_at).map(|p| p.url.clone())
+    }
+
     /// Take a parked session to show it.
     pub fn take(cx: &mut App, url: &SessionUrl) -> Option<Parked> {
         let p = cx.try_global::<Pool>()?.parked.contains_key(&url.to_string()).then(|| cx.global_mut::<Pool>().parked.remove(&url.to_string()))?;

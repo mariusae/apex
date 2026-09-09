@@ -19,7 +19,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, PreviousSession, Profile, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -93,6 +93,8 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-w", Del, None),
         KeyBinding::new("cmd-shift-w", CloseWindow, None),
         KeyBinding::new("cmd-k", Sessions, None),
+        KeyBinding::new("cmd-shift-k", PreviousSession, None),
+        KeyBinding::new("cmd-,", Profile, None),
         KeyBinding::new("cmd-r", Get, None),
         KeyBinding::new("cmd-shift-r", Reconnect, None),
         KeyBinding::new("cmd-p", Goto, None),
@@ -409,6 +411,9 @@ pub struct Selector {
     pub filter: String,
     /// Index into `rows()`; only pickable rows are ever landed on.
     pub cursor: usize,
+    /// The user has moved the cursor or typed: it stays on its row as the
+    /// hosts answer, rather than landing on this window's session.
+    pub moved: bool,
     /// The hosts remembered, local first: what the picker is organised by.
     pub hosts: Vec<Host>,
     /// Each host's sessions, as they come in (asked for in the background:
@@ -723,7 +728,20 @@ impl Selector {
         (from..rows.len()).find(|&i| rows[i].pickable())
     }
 
+    /// Change the list and keep the cursor on the row it was on, wherever
+    /// that row is now (a host answering fills its section in above).
+    pub fn keeping(&mut self, change: impl FnOnce(&mut Selector)) {
+        let under = self.rows().get(self.cursor).cloned();
+        change(self);
+        let rows = self.rows();
+        match under.and_then(|u| rows.iter().position(|r| *r == u)) {
+            Some(i) => self.cursor = i,
+            None => self.settle(),
+        }
+    }
+
     pub fn move_cursor(&mut self, delta: i32) {
+        self.moved = true;
         let rows = self.rows();
         let mut i = self.cursor as i32;
         loop {
@@ -803,7 +821,7 @@ impl Acme {
         if !hosts.contains(&here) {
             hosts.push(here);
         }
-        let mut sel = Selector { filter: String::new(), cursor: 0, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        let mut sel = Selector { filter: String::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
         // what each host had last time, shown at once; the answers update it
         let mut known = known_sessions();
         for h in &hosts {
@@ -863,19 +881,21 @@ impl Acme {
                 let _ = this.update(cx, |acme, cx| {
                     if let Some(sel) = acme.selector.as_mut() {
                         if sel.epoch == epoch {
-                            let was_on_current = sel.rows().get(sel.cursor).is_some_and(|r| matches!(r, Row::Open(u) if *u == sel.current));
                             let before = sel.sessions.get(&h).map(|l| l.names().to_vec()).unwrap_or_default();
-                            sel.sessions.insert(h.clone(), match r {
+                            let loaded = match r {
                                 Ok(names) => {
                                     note_sessions(&h, &names);
                                     Loading::Ready(names)
                                 }
                                 Err(e) => Loading::Failed(before, e),
+                            };
+                            // the cursor stays on its row; untouched, it
+                            // lands on this window's session once listed
+                            sel.keeping(|sel| {
+                                sel.sessions.insert(h.clone(), loaded);
                             });
-                            if was_on_current || sel.filter.is_empty() {
+                            if !sel.moved {
                                 sel.land_on_current();
-                            } else {
-                                sel.settle();
                             }
                             cx.notify();
                         }
@@ -884,6 +904,36 @@ impl Acme {
             });
         })
         .detach();
+    }
+
+    /// cmd-v with an overlay up: the text (its first line) typed into the
+    /// field that has the keyboard.
+    pub fn overlay_paste(&mut self, text: &str, cx: &mut Context<Self>) {
+        let line = text.lines().next().unwrap_or("").trim().to_string();
+        if line.is_empty() {
+            return;
+        }
+        if let Some(sel) = self.selector.as_mut() {
+            sel.caret_since = std::time::Instant::now();
+            match sel.connect.as_mut() {
+                Some(form) => {
+                    if form.field == Field::Host {
+                        form.host.push_str(&line);
+                    }
+                }
+                None => {
+                    sel.filter.push_str(&line);
+                    sel.moved = true;
+                    sel.cursor = 0;
+                    sel.settle();
+                }
+            }
+        } else if let Some(f) = self.finder.as_mut() {
+            f.caret_since = std::time::Instant::now();
+            f.filter.push_str(&line);
+            f.cursor = 0;
+        }
+        cx.notify();
     }
 
     pub fn close_selector(&mut self, cx: &mut Context<Self>) {
@@ -968,6 +1018,7 @@ impl Acme {
             }
             "backspace" => {
                 sel.filter.pop();
+                sel.moved = true;
                 sel.cursor = 0;
                 sel.settle();
                 cx.notify();
@@ -976,6 +1027,7 @@ impl Acme {
                 if let Some(c) = ch {
                     if !c.chars().any(char::is_control) {
                         sel.filter.push_str(c);
+                        sel.moved = true;
                         sel.cursor = 0;
                         sel.settle();
                         cx.notify();
@@ -1014,16 +1066,19 @@ impl Acme {
                     match r {
                         Ok(()) => {
                             // gone from what the host had; the host is asked again
-                            if let Some(l) = sel.sessions.get_mut(&host) {
-                                let names: Vec<String> = l.names().iter().filter(|n| **n != url.session).cloned().collect();
-                                *l = Loading::Seeded(names);
-                            }
-                            sel.settle();
+                            sel.keeping(|sel| {
+                                if let Some(l) = sel.sessions.get_mut(&host) {
+                                    let names: Vec<String> = l.names().iter().filter(|n| **n != url.session).cloned().collect();
+                                    *l = Loading::Seeded(names);
+                                }
+                            });
                             acme.ask_host(host, socket, epoch, cx);
                         }
                         Err(e) => {
-                            sel.sessions.insert(host.clone(), Loading::Failed(sel.sessions.get(&host).map(|l| l.names().to_vec()).unwrap_or_default(), e));
-                            sel.settle();
+                            let names = sel.sessions.get(&host).map(|l| l.names().to_vec()).unwrap_or_default();
+                            sel.keeping(|sel| {
+                                sel.sessions.insert(host.clone(), Loading::Failed(names, e));
+                            });
                         }
                     }
                     cx.notify();
@@ -1445,7 +1500,7 @@ mod picker_tests {
         sessions.insert(local.clone(), Loading::Ready(vec!["default".into(), "notes".into()]));
         sessions.insert(box_.clone(), Loading::Seeded(vec!["work".into()]));
         sessions.insert(down.clone(), Loading::Failed(vec!["old".into()], "no route".into()));
-        Selector { filter: String::new(), cursor: 0, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
+        Selector { filter: String::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
     }
 
     #[test]
@@ -1480,6 +1535,21 @@ mod picker_tests {
         assert!(!rows.iter().any(|r| matches!(r, Row::Open(u) if u.is_local())));
         sel.filter = "ssh://new@host/x".into();
         assert!(sel.rows().iter().any(|r| matches!(r, Row::Create(u) if u.arg == "new@host" && u.session == "x")));
+        // a host answering fills its section in above the cursor: the
+        // cursor keeps its row (the first devvm session grows to three)
+        let mut sel = picker();
+        sel.cursor = sel.rows().iter().position(|r| matches!(r, Row::Open(u) if u.session == "old")).unwrap();
+        sel.moved = true;
+        let devvm = Host { provider: "sprite".into(), arg: "devvm".into() };
+        sel.keeping(|s| {
+            s.sessions.insert(devvm.clone(), Loading::Ready(vec!["a".into(), "b".into(), "work".into()]));
+        });
+        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "old"), "{:?}", sel.rows()[sel.cursor]);
+        // its row gone, the cursor settles on the next pickable one
+        sel.keeping(|s| {
+            s.sessions.insert(Host { provider: "ssh".into(), arg: "gone".into() }, Loading::Ready(vec![]));
+        });
+        assert!(sel.rows()[sel.cursor].pickable());
         // naming a new session on a host
         sel.filter = "scratch".into();
         sel.naming = Some(Host { provider: "sprite".into(), arg: "devvm".into() });

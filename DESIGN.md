@@ -1076,7 +1076,13 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
-- *As built, the picker:* ⌘K remembers hosts, not sessions
+- *As built, the picker:* while it (or the finder, ⌘P) is up it has
+  the keyboard: ⌘V pastes into its field, the other edit and window
+  keys do nothing below it. As hosts answer, the cursor keeps the row
+  it is on wherever that row moves to (`Selector::keeping`); untouched,
+  it lands on this window's session once that is listed. ⌘⇧K switches
+  to the session parked most recently, and ⌘, opens (or makes) the
+  host's `~/.apex/profile`. ⌘K remembers hosts, not sessions
 (`known-hosts` beside the other state files, seeded from the recent
 sessions; `local` always first). It is a section per host, the host's
 name with its provider in parentheses dimmed and a × to forget it,

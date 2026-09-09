@@ -79,6 +79,9 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
+            .on_action(cx.listener(|this, _: &shell::PreviousSession, window, cx| this.previous_session(window, cx)))
+            // the host's profile, the session's setup: opened, or made
+            .on_action(cx.listener(|this, _: &shell::Profile, window, cx| this.menu_command("New ~/.apex/profile", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
