@@ -810,11 +810,15 @@ reads them, raw mode when echo is off; `Win` in the top tag runs it as a
 command named Win. Unbound control keys are inserted as acme inserts
 them, which is what lets win see ^D. The rules that make the window
 win's name it by name, so when the shell renames it (`awd` on cd) win
-removes and remakes them for the new name; Home in a live text window
-goes to where the other side's output ended, the prompt (the client
-keeps, per buffer, where the last edit by another attachment ended,
-counting the `Insert` and `ReplaceRange` proposals it applies as the
-lead, which is how win's output arrives). The window follows that
+removes and remakes them for the new name; Home and End are acme's
+`Khome`/`Kend` with `iq1`, the last insertion point (where typing or
+erasing last left the cursor, moved along by output before it): Home
+brings its line to the top when it has scrolled off above (a win's
+output ran past the prompt typed at), else shows the top; End brings
+it back when it is below, else shows the end; neither moves the
+selection. The client keeps, per buffer, where the last `Insert` or
+`ReplaceRange` proposal it applied as the lead ended, which is how
+win's output arrives. The window follows that
 output by acme's rule (`xfidwrite`'s `shouldscroll`): when the point
 the text went in at was on screen, the end of it is shown, three
 quarters of the window down as for a window with an event reader;

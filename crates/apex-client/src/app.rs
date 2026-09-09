@@ -237,6 +237,9 @@ pub struct Acme {
     mouse: Mouse,
     want_visible: HashSet<ViewId>,
     typed_start: HashMap<ViewId, usize>,
+    /// acme's `iq1`: where the last typing in each view ended, shifted
+    /// by a program's output before it; Home and End go back to it.
+    iq1: HashMap<ViewId, usize>,
 }
 
 /// acme's `isalnum` (text.c): anything but space, controls and ASCII
@@ -1060,6 +1063,7 @@ impl Acme {
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
             typed_start: HashMap::new(),
+            iq1: HashMap::new(),
         }
     }
 
@@ -1343,7 +1347,15 @@ impl Acme {
         for (b, at, end) in outputs {
             let views: Vec<ViewId> = self.node.state.windows.iter().filter(|(_, x)| x.body_buffer() == Some(b)).map(|(w, _)| ViewId::Body(*w)).collect();
             for v in views {
-                let on_screen = self.layouts.get(&v).and_then(|l| Some((l.lines.first()?.start, l.lines.last()?.end))).is_some_and(|(s, e)| s <= at && at <= e);
+                // output before the insertion point moves it along
+                if let Some(p) = self.iq1.get_mut(&v) {
+                    if at < *p {
+                        *p += end - at;
+                    }
+                }
+                // shown through the last line's newline: text appended at
+                // the end of a window showing its end is on screen
+                let on_screen = self.layouts.get(&v).and_then(|l| Some((l.lines.first()?.start, l.lines.last().map(|x| x.end + x.has_newline as usize)?))).is_some_and(|(s, e)| s <= at && at <= e);
                 if on_screen {
                     self.show_at.insert(v, (end, 3));
                 }
@@ -2733,34 +2745,32 @@ impl Acme {
                     typed = false;
                 }
                 "home" => {
-                    // in a win: the prompt, where the shell's output ended
-                    // (what Esc would mark from); elsewhere acme: if the
-                    // insertion point is above the view, show it; else the top
-                    if let Some(p) = self.output_point(v) {
-                        let p = p.min(t.len());
-                        let _ = self.node.select(&mut self.log, v, p, p);
-                        self.want_visible.insert(v);
+                    // acme's Khome: the last insertion point scrolled off
+                    // above (a win's output ran past the prompt typed at)
+                    // comes back with its line at the top; else the top of
+                    // the text. The selection stays where it is.
+                    let iq1 = self.iq1.get(&v).copied().unwrap_or(0).min(t.len());
+                    let org = self.node.state.buffer(self.node.view_buffer(v).unwrap_or(BufferId(0))).ok().and_then(|b| b.views.get(&v).map(|x| x.origin)).unwrap_or(0);
+                    if org > iq1 {
+                        self.set_origin(v, t.line_start(t.line_of(iq1.saturating_sub(1))));
                     } else {
-                        let org = self.node.state.buffer(self.node.view_buffer(v).unwrap_or(BufferId(0))).ok().and_then(|b| b.views.get(&v).map(|x| x.origin)).unwrap_or(0);
-                        if org > q1 {
-                            self.want_visible.insert(v);
-                        } else {
-                            let _ = self.node.select(&mut self.log, v, 0, 0);
-                        }
+                        self.set_origin(v, 0);
                     }
-                    typed = false;
+                    return;
                 }
                 "end" => {
-                    // acme: if the insertion point is below the view, show it; else go to the end
-                    let shown = self.layouts.get(&v).map(|l| l.first_line + l.lines.len()).unwrap_or(0);
-                    let below = t.line_of(q1.min(t.len())) >= shown && shown > 0;
-                    if below {
-                        self.want_visible.insert(v);
+                    // acme's Kend: the last insertion point scrolled off
+                    // below comes back with its line at the top; else the
+                    // end of the text is shown. The selection stays.
+                    let iq1 = self.iq1.get(&v).copied().unwrap_or(0).min(t.len());
+                    let shown_end = self.layouts.get(&v).and_then(|l| l.lines.last()).map(|l| l.end + l.has_newline as usize);
+                    if shown_end.is_some_and(|e| iq1 > e) {
+                        self.set_origin(v, t.line_start(t.line_of(iq1.saturating_sub(1))));
                     } else {
-                        let n = t.len();
-                        let _ = self.node.select(&mut self.log, v, n, n);
+                        let quarters = if v.window().is_some_and(|w| self.node.window_live(w)) { 3 } else { 1 };
+                        self.show_at.insert(v, (t.len(), quarters));
                     }
-                    typed = false;
+                    return;
                 }
                 _ => match &ks.key_char {
                     Some(s) if !s.is_empty() => self.type_text(v, s),
@@ -2768,22 +2778,14 @@ impl Acme {
                 },
             }
         }
-        let _ = typed;
+        // typing and erasing leave the insertion point (acme's texttype
+        // sets iq1 after each); moving about does not
+        if typed || ks.key == "backspace" {
+            if let Ok((q0, _)) = self.node.selection(v) {
+                self.iq1.insert(v, q0);
+            }
+        }
         self.want_visible.insert(v);
-    }
-
-    /// In a live text window (a win's), where the program's output ended:
-    /// the prompt, which Home goes to.
-    fn output_point(&self, v: ViewId) -> Option<usize> {
-        let ViewId::Body(w) = v else { return None };
-        if !self.node.window_live(w) || !matches!(self.node.state.window(w).map(|x| x.body), Ok(Body::Text(_))) {
-            return None;
-        }
-        let b = self.node.view_buffer(v).ok()?;
-        match &self.backend {
-            Backend::Remote(link) => link.foreign_end.get(&b).copied(),
-            Backend::Local(_) => None,
-        }
     }
 
     fn type_text(&mut self, v: ViewId, s: &str) {
