@@ -1086,8 +1086,9 @@ this one (detach, attach).
   it lands on this window's session once that is listed. ⌘⇧K switches
   to the session parked most recently, and ⌘, opens (or makes) the
   host's `~/.apex/profile`. ⌃Tab, held, is the session switcher
-  (`switcher.rs`), an application switcher's: a strip of every session
-  this client knows, most recent first (this one, the parked ones by
+  (`switcher.rs`), an application switcher's: a list of every session
+  this client knows, the label first and the host after it dimmed
+  (none for a local session), most recent first (this one, the parked ones by
   when they were parked, the ones attached to lately, then all the
   rest known), the mark one step on per ⌃Tab (⌃⇧Tab back) and the
   session under it switched to when control is let go; ⎋ leaves

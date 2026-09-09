@@ -70,26 +70,33 @@ impl Acme {
         cx.notify();
     }
 
-    /// The switcher, when up: the sessions in a row (wrapping), the one
+    /// The switcher, when up: the sessions in a list, the label first
+    /// and the host after it dimmed (none for a local session), the one
     /// under the mark filled.
     pub fn switcher_panel(&self, _cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let s = self.switcher.as_ref()?;
-        let mut strip = div().flex().flex_row().flex_wrap().gap(px(6.)).p(px(10.));
+        let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         for (i, u) in s.entries.iter().enumerate() {
             let on = i == s.index;
-            strip = strip.child(
-                div()
-                    .px(px(12.))
-                    .py(px(7.))
-                    .rounded(px(7.))
-                    .text_size(px(14.))
-                    .font_family(UI_FONT)
-                    .when(on, |d| d.bg(rgb(0x000099)).text_color(rgb(0xffffff)))
-                    .when(!on, |d| d.text_color(rgb(0x111111)))
-                    .child(u.describe()),
-            );
+            let (fg, dim) = if on { (rgb(0xffffff), rgb(0xd0d0f0)) } else { (rgb(0x111111), rgb(0x8a8a8a)) };
+            let mut row = div()
+                .flex()
+                .flex_row()
+                .items_baseline()
+                .gap(px(8.))
+                .px(px(10.))
+                .py(px(6.))
+                .rounded(px(6.))
+                .text_size(px(14.))
+                .font_family(UI_FONT)
+                .when(on, |d| d.bg(rgb(0x000099)))
+                .child(div().text_color(fg).child(u.session.clone()));
+            if !u.is_local() {
+                row = row.child(div().text_size(px(12.)).text_color(dim).child(u.arg.clone()));
+            }
+            list = list.child(row);
         }
-        let panel = div().w(px(620.)).bg(rgb(0xf4f4f4)).border_1().border_color(rgb(0xc8c8c8)).rounded(px(10.)).shadow_lg().child(strip);
+        let panel = div().w(px(360.)).max_h(px(560.)).bg(rgb(0xf4f4f4)).border_1().border_color(rgb(0xc8c8c8)).rounded(px(10.)).shadow_lg().overflow_hidden().child(list);
         Some(deferred(anchored().position(point(px(72.), px(self.top() + 40.))).child(panel)).with_priority(2))
     }
 }
