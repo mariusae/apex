@@ -1007,3 +1007,87 @@ fn the_profiles_environment_at_its_end_is_the_sessions() {
     assert!(errors.contains("hi there\n"), "{errors}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `apex tool bridge NAME`: a tool in any language, over JSON lines. A
+/// window made and written, a verb offered and answered, a watched
+/// window's edits by others reported, a deletion seen.
+#[test]
+fn the_bridge_speaks_json_for_tools() {
+    use std::io::{BufRead, BufReader, Write};
+    fn next(out: &mut BufReader<std::process::ChildStdout>) -> serde_json::Value {
+        let mut line = String::new();
+        out.read_line(&mut line).unwrap();
+        serde_json::from_str(&line).unwrap_or_else(|e| panic!("{e}: {line:?}"))
+    }
+    fn call(stdin: &mut std::process::ChildStdin, out: &mut BufReader<std::process::ChildStdout>, cmd: serde_json::Value) -> serde_json::Value {
+        writeln!(stdin, "{cmd}").unwrap();
+        let v = next(out);
+        assert!(v.get("id").is_some(), "unexpected event while waiting: {v}");
+        v
+    }
+    let sock = daemon();
+    let mut bridge = Command::new(env!("CARGO_BIN_EXE_apex"))
+        .arg(format!("-socket={}", sock.display()))
+        .args(["-session=main", "tool", "bridge", "t"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = bridge.stdin.take().unwrap();
+    let mut out = BufReader::new(bridge.stdout.take().unwrap());
+    let hello = next(&mut out);
+    assert_eq!(hello["event"], "hello", "{hello}");
+    assert_eq!(hello["tool"], "t");
+    // a command is answered with its id; a bad one says what is wrong
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 1, "cmd": "nothing" }));
+    assert_eq!(r["ok"], false, "{r}");
+    assert!(r["error"].as_str().unwrap().contains("no such command"));
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 2, "cmd": "new", "name": "/tmp/bridge-notes" }));
+    assert_eq!(r["ok"], true, "{r}");
+    let w = r["window"].as_u64().unwrap();
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 3, "cmd": "write", "window": w, "q0": -1, "q1": -1, "text": "hello\n" }));
+    assert_eq!(r["ok"], true, "{r}");
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 4, "cmd": "read", "window": w }));
+    assert_eq!(r["text"], "hello\n", "{r}");
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 5, "cmd": "windows" }));
+    assert!(r["windows"].as_array().unwrap().iter().any(|x| x["id"] == w && x["name"] == "/tmp/bridge-notes"), "{r}");
+    // a verb offered in that window: B2 on it comes back as a plumb event
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 6, "cmd": "rule", "verb": "Shout", "window": w }));
+    assert_eq!(r["ok"], true, "{r}");
+    let rule = r["rule"].as_u64().unwrap();
+    assert!(ok(&sock, &["plumb", "rule", "ls"]).contains(&format!("-verb=Shout -win={w} -tool=t")), "{}", ok(&sock, &["plumb", "rule", "ls"]));
+    ok(&sock, &["exec", &w.to_string(), "Shout loud"]);
+    let ev = next(&mut out);
+    assert_eq!(ev["event"], "plumb", "{ev}");
+    assert_eq!(ev["rule"], rule);
+    assert_eq!(ev["verb"], "Shout");
+    assert_eq!(ev["text"], "loud");
+    assert_eq!(ev["window"], w);
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 7, "cmd": "ack", "plumb": ev["plumb"], "ok": true }));
+    assert_eq!(r["ok"], true);
+    // watched: an edit by someone else is reported, ours is not
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 8, "cmd": "watch", "window": w }));
+    assert_eq!(r["ok"], true);
+    let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
+    let b = other.node.state.window(WindowId(w)).unwrap().body_buffer().unwrap();
+    let version = other.node.state.buffer(b).unwrap().version;
+    other.propose(apex_server::Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 6, q1: 6, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
+    let ev = next(&mut out);
+    assert_eq!(ev["event"], "edit", "{ev}");
+    assert_eq!(ev["window"], w);
+    assert_eq!(ev["text"], "typed\n");
+    assert_eq!(ev["q0"], 6);
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 9, "cmd": "read", "window": w }));
+    assert_eq!(r["text"], "hello\ntyped\n");
+    // deleted (live, so Del does not ask): seen
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 10, "cmd": "live", "window": w, "on": true }));
+    assert_eq!(r["ok"], true, "{r}");
+    ok(&sock, &["win", "del", &w.to_string()]);
+    let ev = next(&mut out);
+    assert_eq!(ev["event"], "deleted", "{ev}");
+    assert_eq!(ev["window"], w);
+    drop(stdin);
+    let ev = next(&mut out);
+    assert_eq!(ev["event"], "bye", "{ev}");
+    assert!(bridge.wait().unwrap().success());
+}

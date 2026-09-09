@@ -1208,7 +1208,7 @@ impl Server {
                     }
                     p.trace.push(format!("{who}: asked {name}"));
                     let (verb, text, at, sel) = (p.req.verb.clone(), p.req.text.clone(), p.req.at, p.req.sel);
-                    return PlumbStep::AskTool { tool: name.clone(), ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel };
+                    return PlumbStep::AskTool { tool: name.clone(), rule: rid, ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel };
                 }
             }
         }
@@ -1359,7 +1359,7 @@ pub enum PlumbStep {
     Ask(Proposal),
     /// Ask this tool; `plumb_next` with its answer, or refusal after a
     /// second of silence.
-    AskTool { tool: String, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    AskTool { tool: String, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
     /// A dry run's report.
     Trace(Vec<String>),
 }

@@ -201,6 +201,7 @@ dependencies = [
  "apex-core",
  "apex-edit",
  "apex-server",
+ "apex-tool-bridge",
  "apex-tool-lsp",
  "apex-tool-preview",
  "apex-tool-win",
@@ -264,6 +265,15 @@ dependencies = [
  "serde",
  "sha2",
  "ureq",
+]
+
+[[package]]
+name = "apex-tool-bridge"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "serde_json",
 ]
 
 [[package]]

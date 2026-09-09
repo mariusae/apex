@@ -1057,7 +1057,7 @@ impl Daemon {
                 self.pending.insert(pid, Pending::Plumb { session: sid, plumb, asker });
                 self.propose(name, pid, proposal);
             }
-            PlumbStep::AskTool { tool, ctx, verb, text, dir, groups, at, sel } => {
+            PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel } => {
                 // the tool attached under that name, in this session
                 let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
                 match found {
@@ -1065,7 +1065,7 @@ impl Daemon {
                         let tid = self.next_tool_plumb;
                         self.next_tool_plumb += 1;
                         self.tool_plumbs.insert(tid, (sid, plumb, asker));
-                        self.send(cid, ServerMsg::Plumb { id: tid, ctx, verb, text, dir, groups, at, sel });
+                        self.send(cid, ServerMsg::Plumb { id: tid, rule, ctx, verb, text, dir, groups, at, sel });
                         // a second, then it is taken as refused
                         let tx = self.tx.clone();
                         thread::spawn(move || {

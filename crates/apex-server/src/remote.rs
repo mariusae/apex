@@ -361,7 +361,7 @@ impl Link {
                 self.env = Some(vars);
             }
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
-            ServerMsg::Plumb { id, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, ctx, verb, text, dir, groups, at, sel }),
+            ServerMsg::Plumb { id, rule, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),
             ServerMsg::Ps { procs } => self.ps = Some(procs),
@@ -476,6 +476,8 @@ pub fn bridge_child(cmd: &str) -> io::Result<(std::process::ChildStdin, std::pro
 #[derive(Clone, Debug)]
 pub struct ToolPlumb {
     pub id: u64,
+    /// The rule of ours that matched.
+    pub rule: RuleId,
     pub ctx: ExecCtx,
     pub verb: String,
     pub text: String,

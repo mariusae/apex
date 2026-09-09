@@ -14,6 +14,7 @@ apex-server = { path = "../apex-server" }
 apex-tool-win = { path = "../apex-tool-win" }
 apex-tool-lsp = { path = "../apex-tool-lsp" }
 apex-tool-preview = { path = "../apex-tool-preview" }
+apex-tool-bridge = { path = "../apex-tool-bridge" }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 apex-edit = { path = "../apex-edit" }
 serde_json = "1"

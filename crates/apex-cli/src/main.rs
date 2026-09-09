@@ -354,7 +354,7 @@ source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
 names another." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview FILE", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview FILE | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -384,6 +384,15 @@ ending, when it is ready, and when it exits; with -v every request,
 answer, progress report and diagnostic too (APEX_LSP_DEBUG=1 dumps the
 messages themselves). A language's verbs appear in its windows only
 once a server of it is ready, so their appearing says so.
+
+apex tool bridge NAME attaches as the tool named NAME and speaks JSON,
+one object per line, on its standard input and output, so a tool can
+be written in any language without the wire protocol: commands in
+(windows, new, open, read, write, select, rename, live, delete, exec,
+errors, rule, unrule, ack, watch, set) answered in order, events out
+(hello, plumb when a rule of the tool's matched, edit for a watched
+window, renamed, deleted, bye). The Go package under go/ is a client
+of it; its source lists every command and event.
 
 Its rules, gone when it exits: cmd-B3 on an identifier in a source file
 goes to the definition (B3 itself stays acme's look; on a laptop, where
@@ -718,6 +727,10 @@ fn version(_: &Ctx, _: &Parsed) -> R {
 fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
     match p.args.first().map(String::as_str) {
         Some("lsp") => apex_tool_lsp::run(&ctx.socket, &ctx.session, p.args[1..].iter().any(|a| a == "-v")),
+        Some("bridge") => {
+            let name = p.args.get(1).ok_or("apex tool bridge NAME")?;
+            apex_tool_bridge::run(&ctx.socket, &ctx.session, name)
+        }
         Some("win") => {
             let dir = std::env::current_dir().map_err(|e| e.to_string())?;
             apex_tool_win::run(&ctx.socket, &ctx.session, &dir, &p.args[1..])

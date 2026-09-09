@@ -3,7 +3,8 @@ resolver = "2"
 members = ["crates/apex-edit", "crates/apex-core", "crates/apex-server", "crates/apex-client", "crates/apex-cli",
     "crates/apex-tool-win",
     "crates/apex-tool-lsp",
-    "crates/apex-tool-preview"]
+    "crates/apex-tool-preview",
+    "crates/apex-tool-bridge"]
 
 [workspace.package]
 edition = "2021"

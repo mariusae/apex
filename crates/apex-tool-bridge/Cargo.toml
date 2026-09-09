@@ -1,0 +1,10 @@
+[package]
+name = "apex-tool-bridge"
+version.workspace = true
+edition.workspace = true
+description = "apex tool bridge: a tool attachment driven over JSON lines on stdin and stdout, for tools in any language"
+
+[dependencies]
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }
+serde_json = "1"

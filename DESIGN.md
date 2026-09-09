@@ -466,7 +466,8 @@ client → server
                                           B3 / apex plumb / B; at: the pointer, sel: what was taken,
                                           reverse: shift-B3; verb: a rule's verb at the pointer
                                           instead of plumb (cmd-B3 is Def)
-  PlumbAck{id, ok}                        a tool's answer to a Plumb it was handed
+  PlumbAck{id, ok}                        a tool's answer to a Plumb it was handed (the Plumb names
+                                          the rule that matched, so a tool with several can tell)
   RuleAdd{rule, priority, mine} · RuleRm{id}
   Complete{view, ctx, at, prefix}         ^F
   Propose{id, proposal} · Applied{id, result}
@@ -787,7 +788,18 @@ anything else is looked for. `alt` is no longer sent. Left out:
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
 the UI, which may refuse; a headless leader always does), `Tool(name)`
 (`ServerMsg::Plumb` to the attachment of that name, `PlumbAck` within a
-second or taken as NACK). The daemon drives a walk across those answers
+second or taken as NACK). *As built, tools in other languages:* `apex
+tool bridge NAME` attaches as the tool NAME and speaks JSON, one object
+a line, on stdin and stdout (`apex-tool-bridge`): commands in
+(`windows new open read write select rename live delete exec errors
+rule unrule ack watch unwatch set setting`), each answered in order by
+id; events out (`hello`, `plumb` with the rule that matched, `edit`
+for a watched window's body by others, `renamed`, `deleted`, `bye`).
+The bridge is one `Remote` with the win-style `before` hook for edits;
+nothing of the wire protocol or the replicated state shows through.
+The Go package under `go/` (`github.com/mariusae/apex/go/apex`) is a
+client of it: `Attach`, `Window` methods, `Offer(rule, handler)`,
+`Watch`, `Serve`. The daemon drives a walk across those answers
 (`Server::plumb_start`/`plumb_next`); an in-process client walks
 synchronously. The trace of a walk is what `apex plumb --dry-run` prints;
 recording it in the exec entry is still to do. Clients say what they can
