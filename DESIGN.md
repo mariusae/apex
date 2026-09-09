@@ -462,9 +462,10 @@ client → server
   TermText{term, p0, p1}                  snarf a terminal range (answer: a Snarf proposal)
   TermRead{term, from, to}                a terminal's lines, scrollback included → TermLines
   OpenFile{col, ctx, name}                the server reads the file and proposes OpenWindow
-  Plumb{ctx, text, dir?, edit_only, dry, at?, sel?, alt?, reverse}
+  Plumb{ctx, text, dir?, edit_only, dry, at?, sel?, alt?, reverse, verb?}
                                           B3 / apex plumb / B; at: the pointer, sel: what was taken,
-                                          alt: the word within, reverse: shift-B3
+                                          reverse: shift-B3; verb: a rule's verb at the pointer
+                                          instead of plumb (cmd-B3 is Def)
   PlumbAck{id, ok}                        a tool's answer to a Plumb it was handed
   RuleAdd{rule, priority, mine} · RuleRm{id}
   Complete{view, ctx, at, prefix}         ^F
@@ -1111,13 +1112,15 @@ left of the connection mark, the heartbeat's round trip and the log's
 (an entry flushed to its `Ack`), as `1ms/2ms`.
 - *As built:* full screen (⌘⌃F, View ▸ Enter Full Screen) hides the
   title bar, acme's area is the whole screen, and a window's full-screen
-  state is remembered with its frame. shift-B3 looks backwards (the
-  mariusae/plan9port acme's `look3(..., reverse)`: `search` with reverse,
-  the last occurrence ending before dot, wrapping) — unless there is
-  somewhere to go back to (the navigation stack is not empty) and a rule
-  offers `Back` in the window (the lsp tool's): then shift-B3 is Back,
-  the mirror of the B3 that went there, exactly what ⌘[ issues. The picker's recent
-  sessions carry a × that forgets them.
+  state is remembered with its frame. B3 is acme's look and shift-B3
+  looks backwards (the mariusae/plan9port acme's `look3(..., reverse)`:
+  `search` with reverse, the last occurrence ending before dot,
+  wrapping), always: no rule changes what B3 does with an identifier.
+  The lsp's `Def` is ⌘-B3 (`Plumb{verb: Def}` at the pointer, walked as
+  a verb: the lsp's rule takes it in a source window, elsewhere "no rule
+  takes it here") and `Back` is ⇧⌘-B3, exactly what ⌘[ issues. On a
+  laptop, where ⌘-click is B3, ⌃⌘-click is ⌘-B3 and ⇧⌃⌘-click is ⇧⌘-B3.
+  The picker's recent sessions carry a × that forgets them.
 - *As built:* a window is **live** when a process is behind it: a
   terminal whose program runs, or a text window a tool keeps so
   (`WindowOp::Live{by}`, the win tool's attachment; the state ends with

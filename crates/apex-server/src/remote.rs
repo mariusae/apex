@@ -662,7 +662,7 @@ impl Remote {
     /// What a plumb would do, rule by rule.
     pub fn plumb_dry(&mut self, ctx: ExecCtx, text: &str, dir: Option<String>, edit_only: bool, timeout: std::time::Duration) -> Result<Vec<String>, String> {
         self.link.trace = None;
-        self.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir, edit_only, dry: true, at: None, sel: None, alt: None, reverse: false });
+        self.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir, edit_only, dry: true, at: None, sel: None, alt: None, reverse: false, verb: None });
         self.wait_for(timeout, |l| l.trace.take())
     }
 

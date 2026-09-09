@@ -338,12 +338,12 @@ fn b3_expands_as_acme_does_where_the_files_are() {
     // a click on "sub", on "f.txt", on "2": the file, at line 2
     for q in [5, 10, 14] {
         ui.propose(apex_server::Proposal::Select { view: ViewId::Body(f), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
-        ui.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "x".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: q, q1: q }), sel: None, alt: None, reverse: false });
+        ui.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "x".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: q, q1: q }), sel: None, alt: None, reverse: false, verb: None });
         assert!(wait(&mut ui, |r| r.node.selection(ViewId::Body(f)).ok().map(|s| s.0) == Some(3)), "at {q}: line 2, selection {:?}", ui.node.selection(ViewId::Body(f)));
     }
     // a word naming no file is looked for: the next "words" is selected
     ui.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
-    ui.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "x".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 30, q1: 30 }), sel: None, alt: None, reverse: false });
+    ui.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "x".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 30, q1: 30 }), sel: None, alt: None, reverse: false, verb: None });
     assert!(wait(&mut ui, |r| r.node.selection(ViewId::Body(w)).ok() == Some((29, 34))), "looked: {:?}", ui.node.selection(ViewId::Body(w)));
     let _ = std::fs::remove_dir_all(&dir);
 }

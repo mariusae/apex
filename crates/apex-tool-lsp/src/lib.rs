@@ -6,10 +6,11 @@
 //! workspace root. `lsp.root` or `lsp.LANG.root` can name a marker that
 //! overrides the built-in workspace-root discovery.
 //!
-//! What it offers, through rules owned by its attachment: B3 on an
-//! identifier in a source file goes to its definition (NACK when there
-//! is none, so the walk goes on); the verbs `Def Refs Type Hov Sig Fmt Rn`
-//! in the tools menu of source windows. Diagnostics go to `root/+lsp`.
+//! What it offers, through rules owned by its attachment: the verbs
+//! `Def Refs Type Hov Sig Fmt Rn` in the tools menu of source windows
+//! (cmd-B3 on an identifier is `Def` at the pointer; B3 itself stays
+//! acme's look), and `Back`/`Fwd` everywhere. Diagnostics go to
+//! `root/+lsp`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, Write};
@@ -347,8 +348,8 @@ impl Tool {
         self.remote.node.state.meta.setting(self.remote.attachment(), key).map(String::from)
     }
 
-    /// The rules that name us: the verbs in source windows, and B3 on an
-    /// identifier there, ahead of the path rules.
+    /// The rules that name us: the verbs in source windows (cmd-B3 is
+    /// `Def` at the pointer; B3 itself stays acme's look).
     fn install_rules(&mut self) -> Result<(), String> {
         let exts: Vec<&str> = LANGUAGES.iter().flat_map(|l| l.exts.iter().copied()).collect();
         let file = format!(r"\.({})$", exts.join("|"));
@@ -362,7 +363,6 @@ impl Tool {
             action: RuleAction::Tool("lsp".into()),
             to: None,
         };
-        self.remote.rule_add(rule("plumb", Some(r"[A-Za-z_][A-Za-z0-9_]*")), 10, true, TIMEOUT)?;
         for v in VERBS {
             self.remote.rule_add(rule(v, None), 0, true, TIMEOUT)?;
         }
@@ -612,7 +612,7 @@ impl Tool {
         let _ = self.propose(Proposal::SetContent { buffer, version: None, text, hash }, TIMEOUT);
     }
 
-    /// A rule named us: B3 on an identifier, or a verb from the menu.
+    /// A rule named us: a verb from the menu, or cmd-B3 (`Def`).
     fn on_plumb(&mut self, p: ToolPlumb) {
         if p.verb == "Back" || p.verb == "Fwd" {
             // the session's stack: pop it, and the leader lands there

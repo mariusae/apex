@@ -72,9 +72,9 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     let version = c.node.state.buffer(b).unwrap().version;
     c.propose(Proposal::ReplaceRange { dir: None, buffer: b, version, q0: 25, q1: 25, text: "// more\n".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| lsp(n).contains("len=33")), "synced: {}", lsp(&c.node));
-    // Once initialized, B3 on an identifier goes to the definition.
+    // Once initialized, cmd-B3 (the Def verb at the pointer) goes to the definition.
     c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false, verb: Some("Def".into()) });
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((18, 19))), "selection: {:?}", c.node.selection(ViewId::Body(w)));
     // Hov: the hover text lands in +Errors
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Hov".into() }, Duration::from_secs(5)).unwrap();
@@ -89,7 +89,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     // Def recorded where we came from: Back returns there
     c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
     // (the f moved by one with the formatting; the server reads the text there)
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 19, q1: 19 }), sel: Some(Span { buffer: b, q0: 19, q1: 20 }), alt: None, reverse: false });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 19, q1: 19 }), sel: Some(Span { buffer: b, q0: 19, q1: 20 }), alt: None, reverse: false, verb: Some("Def".into()) });
     // (the formatted text's line 1 is empty: the server's column clamps to its start)
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((13, 13))), "def again: {:?}", c.node.selection(ViewId::Body(w)));
     assert!(until(&mut c, |n| !n.state.layout.nav_back.is_empty()), "stack");

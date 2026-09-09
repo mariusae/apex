@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 6;
+pub const PROTOCOL: u32 = 7;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -67,7 +67,9 @@ pub enum ClientMsg {
     /// expanded or swept, when the plumb came from a buffer.
     /// `alt` is the word within `text` (acme's isalnum expansion), tried
     /// when no rule takes `text` (the file-name expansion).
-    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>, reverse: bool },
+    /// B3 (`verb` None: plumb), or a rule's verb at the pointer (cmd-B3
+    /// is `Def`), walked with `at` and `sel` as B3's would be.
+    Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>, reverse: bool, verb: Option<String> },
     /// A tool's answer to a `Plumb` it was handed: did it take it?
     PlumbAck { id: u64, ok: bool },
     /// Install a plumbing rule: owned by this attachment when `mine`

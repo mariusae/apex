@@ -379,14 +379,15 @@ lsp.LANG.root overrides it for one language. Documents are opened as buffers
 appear and every edit is fed incrementally. Diagnostics go to root/+lsp,
 one plumbable file:line:col: message per line.
 
-Its rules, gone when it exits: B3 on an identifier in a source file goes
-to the definition (with none, the walk goes on to the path rules and
-Look), and the tools menu of a source window offers Def Refs Type Hov Sig
-Fmt Rn. Definitions open and select; references, hover and signatures go
+Its rules, gone when it exits: cmd-B3 on an identifier in a source file
+goes to the definition (B3 itself stays acme's look; on a laptop, where
+cmd-click is B3, ctrl-cmd-click is cmd-B3), and the tools menu of a
+source window offers Def Refs Type Hov Sig Fmt Rn. Definitions open and select; references, hover and signatures go
 to +Errors; Fmt replaces the text with the server's formatting; Rn NAME
 renames. Back and Fwd, offered everywhere, walk the session's navigation
 stack: every jump (Def, B3 on file:line, apex B, the app's cmd-p) records
-where it left from, and Back returns there, Fwd undoes a Back.
+where it left from, and Back returns there, Fwd undoes a Back; cmd-[ and
+shift-cmd-B3 are Back, cmd-] is Fwd.
 
 Start it from the host's profile: apex tool lsp & (see apex help scripts).
 APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr." },
@@ -1132,7 +1133,7 @@ fn plumb(ctx: &Ctx, p: &Parsed) -> R {
         return Ok(());
     }
     let before = c.node.state.windows.len();
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None, alt: None, reverse: false });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
     let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     Ok(())
 }
@@ -1146,7 +1147,7 @@ fn b(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     for a in &p.args {
         let before = c.node.state.windows.len();
-        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false });
+        c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: a.clone(), dir: dir.clone(), edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
         let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
     }
     Ok(())
@@ -1161,7 +1162,7 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
     let mut c = tool(ctx)?;
     eprintln!("editor: editing {file}");
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false });
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
     let open = |r: &Remote| r.node.state.windows.keys().any(|w| r.node.window_name(*w) == file);
     wait(&mut c, |r| open(r)).map_err(|_| format!("{file}: not opened"))?;
     loop {

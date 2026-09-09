@@ -89,6 +89,8 @@ struct Mouse {
     term_drag: Option<WindowId>,
     /// B3 went down with shift: the Look runs backwards.
     b3_reverse: bool,
+    /// B3 with command held: `Def` at the pointer (with shift, `Back`).
+    b3_cmd: bool,
     /// B2 or B3 held in a terminal (acme's `textselect23`): the window,
     /// the button, the cell pressed and its position.
     term_sweep: Option<(WindowId, MouseButton, (usize, usize), (usize, u64))>,
@@ -1704,6 +1706,7 @@ impl Acme {
                         Region::Text(off) => {
                             self.mouse.b3 = Some(Drag { view: v, anchor: off });
                             self.mouse.b3_reverse = e.modifiers.shift;
+                            self.mouse.b3_cmd = Self::b3_cmd(e);
                             self.hl = None;
                         }
                         Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Right, e.position, window, cx),
@@ -1917,12 +1920,15 @@ impl Acme {
                         let alt = None;
                         let reverse = self.mouse.b3_reverse;
                         let ctx = self.ctx_of(d.view);
-                        if reverse && self.back_offered(d.view.window()) {
-                            // shift-B3 in a stack: B3 went somewhere, this
-                            // comes back (the Back verb, as cmd-[ issues it)
+                        if self.mouse.b3_cmd && reverse {
+                            // shift-cmd-B3: Back, as cmd-[ issues it
                             self.execute(ctx, "Back", cx);
+                        } else if self.mouse.b3_cmd {
+                            // cmd-B3: Def at the pointer (the lsp's rule)
+                            self.look_at(ctx, &text, at, sel, alt, false, Some("Def"));
                         } else {
-                            self.look_at(ctx, &text, at, sel, alt, reverse);
+                            // B3 looks; shift-B3 looks backwards
+                            self.look_at(ctx, &text, at, sel, alt, reverse, None);
                         }
                     }
                 }
@@ -2300,11 +2306,21 @@ impl Acme {
         if e.modifiers.alt {
             MouseButton::Middle
         } else if e.modifiers.platform {
-            MouseButton::Right
+            MouseButton::Right // control as well: cmd-B3
         } else if e.modifiers.shift {
             MouseButton::Navigate(gpui::NavigationDirection::Back)
         } else {
             MouseButton::Left
+        }
+    }
+
+    /// Command held on B3 (a real one), or control on the click that
+    /// stands in for it (cmd-click), so cmd-B3 can be typed on a laptop.
+    fn b3_cmd(e: &MouseDownEvent) -> bool {
+        if e.button == MouseButton::Left {
+            e.modifiers.platform && e.modifiers.control
+        } else {
+            e.modifiers.platform
         }
     }
 
@@ -2926,40 +2942,26 @@ impl Acme {
         self.after();
     }
 
-    /// Is there somewhere to go back to, and a rule here that takes the
-    /// Back verb (the lsp tool's)? Then shift-B3 is Back, not a reverse
-    /// look.
-    fn back_offered(&self, w: Option<WindowId>) -> bool {
-        if self.node.state.layout.nav_back.is_empty() {
-            return false;
-        }
-        let (name, kind) = match w {
-            Some(w) => (self.node.window_name(w), self.node.window_kind(w)),
-            None => (String::new(), WinKind::File),
-        };
-        apex_core::plumb::verbs_for(&self.node.state.meta.rules, &name, kind).iter().any(|v| v == "Back")
-    }
-
     pub fn look(&mut self, ctx: ExecCtx, text: &str) {
-        self.look_at(ctx, text, None, None, None, false);
+        self.look_at(ctx, text, None, None, None, false, None);
     }
 
     /// B3: plumb `text` from `ctx`, saying where it came from when it
     /// came from a buffer (`at`: the pointer; `sel`: what was taken;
     /// `alt`: the word within it, tried when nothing takes the text).
-    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>, reverse: bool) {
+    pub fn look_at(&mut self, ctx: ExecCtx, text: &str, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>, reverse: bool, verb: Option<&str>) {
         let text = text.trim();
         if text.is_empty() {
             return;
         }
         match &mut self.backend {
             Backend::Local(server) => {
-                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at, sel, alt, reverse };
+                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: verb.unwrap_or("plumb").into(), edit_only: false, dry: false, exec: None, at, sel, alt, reverse };
                 if let Some(w) = plumb_local(server, &mut self.node, &mut self.log, req) {
                     self.show(w);
                 }
             }
-            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel, alt, reverse }),
+            Backend::Remote(link) => link.send(&ClientMsg::Plumb { ctx, text: text.to_string(), dir: None, edit_only: false, dry: false, at, sel, alt, reverse, verb: verb.map(String::from) }),
         }
         self.after();
     }
