@@ -2511,12 +2511,12 @@ impl Acme {
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.finder.is_some() {
             let ks = &e.keystroke;
-            self.finder_key(&ks.key, ks.key_char.as_deref(), cx);
+            self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
             return;
         }
         if self.selector.is_some() {
             let ks = &e.keystroke;
-            self.selector_key(&ks.key, ks.key_char.as_deref(), window, cx);
+            self.selector_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
             return;
         }
         let target = match self.locate(self.pointer(window)) {
@@ -2568,7 +2568,11 @@ impl Acme {
     /// run in the window under the pointer, as B2 there would.
     pub fn menu_command(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.selector.is_some() || self.finder.is_some() {
-            return; // an overlay has the keyboard
+            // an overlay has the keyboard: select all is its field's
+            if text == "Edit ," {
+                self.overlay_edit("select-all", cx);
+            }
+            return;
         }
         let ctx = match self.window_at_pointer(window) {
             Some(w) => ExecCtx::Window(w),
@@ -2597,13 +2601,9 @@ impl Acme {
     /// pointer, else the last selected text.
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
         // an overlay (the session picker, the finder) has the keyboard:
-        // paste goes into its field, the rest is not for the text below
+        // the Edit menu works on its field, not on the text below
         if self.selector.is_some() || self.finder.is_some() {
-            if what == "paste" {
-                if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
-                    self.overlay_paste(&text, cx);
-                }
-            }
+            self.overlay_edit(what, cx);
             return;
         }
         let target = match self.locate(self.pointer(window)) {

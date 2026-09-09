@@ -39,7 +39,7 @@ pub enum Pick {
 }
 
 pub struct Finder {
-    pub filter: String,
+    pub filter: crate::field::LineEdit,
     pub cursor: usize,
     /// Open windows in layout order, then closed files by recency.
     entries: Vec<Entry>,
@@ -201,7 +201,7 @@ impl Acme {
     pub fn open_finder(&mut self, cx: &mut Context<Self>) {
         self.selector = None;
         let entries = self.finder_entries();
-        self.finder = Some(Finder { filter: String::new(), cursor: 0, entries, caret_since: std::time::Instant::now() });
+        self.finder = Some(Finder { filter: crate::field::LineEdit::new(), cursor: 0, entries, caret_since: std::time::Instant::now() });
         cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(BLINK).await;
             let open = cx
@@ -229,7 +229,7 @@ impl Acme {
     }
 
     /// Keys while the finder is open.
-    pub fn finder_key(&mut self, key: &str, ch: Option<&str>, cx: &mut Context<Self>) {
+    pub fn finder_key(&mut self, key: &str, ch: Option<&str>, mods: &gpui::Modifiers, cx: &mut Context<Self>) {
         let Some(f) = self.finder.as_mut() else { return };
         f.caret_since = std::time::Instant::now();
         match key {
@@ -248,20 +248,14 @@ impl Acme {
                 f.move_cursor(1);
                 cx.notify();
             }
-            "backspace" => {
-                f.filter.pop();
-                f.cursor = 0;
-                cx.notify();
-            }
-            _ => {
-                if let Some(c) = ch {
-                    if !c.chars().any(char::is_control) {
-                        f.filter.push_str(c);
-                        f.cursor = 0;
-                        cx.notify();
-                    }
+            _ => match f.filter.key(key, ch, mods) {
+                crate::field::Edited::Changed => {
+                    f.cursor = 0;
+                    cx.notify();
                 }
-            }
+                crate::field::Edited::Moved => cx.notify(),
+                crate::field::Edited::No => {}
+            },
         }
     }
 
@@ -294,21 +288,7 @@ impl Acme {
     pub fn finder_panel(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let f = self.finder.as_ref()?;
         let picks = f.picks();
-        let caret = div().w(px(1.5)).h(px(16.)).flex_none().when(f.caret_visible(), |d| d.bg(rgb(0x000099)));
-        let field = div()
-            .px(px(14.))
-            .py(px(10.))
-            .border_b_1()
-            .border_color(rgb(0xdddddd))
-            .text_size(px(14.))
-            .font_family(UI_FONT)
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(1.))
-            .when(!f.filter.is_empty(), |d| d.child(div().text_color(rgb(0x111111)).child(f.filter.clone())))
-            .child(caret)
-            .when(f.filter.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child("Go to a window, or a file closed lately…")));
+        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(0xdddddd)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&f.filter, f.caret_visible(), "Go to a window, or a file closed lately…", true));
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;

@@ -431,13 +431,13 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     type_(&mut server, &mut log, "echo s=$apexsession c=$COLORTERM t=$TERM\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("s=main c=truecolor t=xterm-256color")), "grid:\n{}", rows(&node));
     // the rule: {osc7 path}/-{title}. A label (plan9port's) alone is a
-    // title, and with no directory ever reported the name is just -title
+    // title, after the directory the terminal started in until one is reported
     let base = std::env::temp_dir().join(format!("apex-label-{}", std::process::id()));
     let (a, b) = (base.join("a"), base.join("b"));
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
     type_(&mut server, &mut log, "printf '\\033];x\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == "-x"), "name: {}", name(&node));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n).ends_with("/-x") && !name(n).starts_with('-')), "name: {}", name(&node));
     // OSC 7 reports the directory: the path, the title after it; B2/B3 resolve there
     type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", a.display()));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", a.display())), "name: {}", name(&node));
@@ -791,7 +791,8 @@ fn a_terminals_name_is_the_reported_directory_and_the_title() {
     use apex_server::term::compose_name;
     let d = std::path::Path::new("/here");
     assert_eq!(compose_name(None, None, d, "host"), "/here/-host");
-    assert_eq!(compose_name(None, Some("my title here"), d, "host"), "-my title here");
+    // a title before any directory is reported: where the terminal started, then the title
+    assert_eq!(compose_name(None, Some("my title here"), d, "host"), "/here/-my title here");
     assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar/")), Some("my title here"), d, "host"), "/foo/bar/-my title here");
     assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), None, d, "host"), "/foo/bar/-host");
 }

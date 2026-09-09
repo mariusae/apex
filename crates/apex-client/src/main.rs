@@ -13,6 +13,7 @@
 
 mod app;
 mod cursor;
+mod field;
 mod finder;
 mod menu;
 mod shell;

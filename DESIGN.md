@@ -1077,7 +1077,10 @@ this one (detach, attach).
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
 - *As built, the picker:* while it (or the finder, ⌘P) is up it has
-  the keyboard: ⌘V pastes into its field, the other edit and window
+  the keyboard. Its field is a one-line editor (`field.rs`) with a
+  cursor and a selection and the keys a Mac field answers: arrows with
+  shift, option and command, delete back and forward, ^A ^E ^B ^F ^D
+  ^H ^U ^W ^K, and the Edit menu's ⌘A ⌘X ⌘C ⌘V ⌘Z on it; the window
   keys do nothing below it. As hosts answer, the cursor keeps the row
   it is on wherever that row moves to (`Selector::keeping`); untouched,
   it lands on this window's session once that is listed. ⌘⇧K switches

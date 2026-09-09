@@ -408,7 +408,7 @@ mod tests {
 /// divider. Every session is a URL: `local:///name`,
 /// `ssh://user@host/name`, `sprite://box/name`.
 pub struct Selector {
-    pub filter: String,
+    pub filter: crate::field::LineEdit,
     /// Index into `rows()`; only pickable rows are ever landed on.
     pub cursor: usize,
     /// The user has moved the cursor or typed: it stays on its row as the
@@ -522,14 +522,14 @@ pub enum Field {
 pub struct Connect {
     pub providers: Vec<String>,
     pub provider: usize,
-    pub host: String,
+    pub host: crate::field::LineEdit,
     pub field: Field,
 }
 
 impl Connect {
     pub fn new() -> Connect {
         let providers: Vec<String> = apex_server::providers::available().into_iter().filter(|p| p != "local").collect();
-        Connect { providers, provider: 0, host: String::new(), field: Field::Provider }
+        Connect { providers, provider: 0, host: crate::field::LineEdit::new(), field: Field::Provider }
     }
 
     pub fn provider(&self) -> &str {
@@ -821,7 +821,7 @@ impl Acme {
         if !hosts.contains(&here) {
             hosts.push(here);
         }
-        let mut sel = Selector { filter: String::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        let mut sel = Selector { filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
         // what each host had last time, shown at once; the answers update it
         let mut known = known_sessions();
         for h in &hosts {
@@ -906,34 +906,74 @@ impl Acme {
         .detach();
     }
 
-    /// cmd-v with an overlay up: the text (its first line) typed into the
-    /// field that has the keyboard.
-    pub fn overlay_paste(&mut self, text: &str, cx: &mut Context<Self>) {
-        let line = text.lines().next().unwrap_or("").trim().to_string();
-        if line.is_empty() {
-            return;
-        }
+    /// The field that has the keyboard while an overlay is up: the
+    /// new-host form's host, the picker's search, the finder's.
+    fn overlay_field(&mut self) -> Option<&mut crate::field::LineEdit> {
         if let Some(sel) = self.selector.as_mut() {
             sel.caret_since = std::time::Instant::now();
-            match sel.connect.as_mut() {
-                Some(form) => {
-                    if form.field == Field::Host {
-                        form.host.push_str(&line);
-                    }
-                }
-                None => {
-                    sel.filter.push_str(&line);
-                    sel.moved = true;
-                    sel.cursor = 0;
-                    sel.settle();
-                }
+            return match sel.connect.as_mut() {
+                Some(form) => (form.field == Field::Host).then_some(&mut form.host),
+                None => Some(&mut sel.filter),
+            };
+        }
+        if let Some(f) = self.finder.as_mut() {
+            f.caret_since = std::time::Instant::now();
+            return Some(&mut f.filter);
+        }
+        None
+    }
+
+    /// The overlay's field changed: the list is filtered anew from the top.
+    fn overlay_changed(&mut self, cx: &mut Context<Self>) {
+        if let Some(sel) = self.selector.as_mut() {
+            if sel.connect.is_none() {
+                sel.moved = true;
+                sel.cursor = 0;
+                sel.settle();
             }
         } else if let Some(f) = self.finder.as_mut() {
-            f.caret_since = std::time::Instant::now();
-            f.filter.push_str(&line);
             f.cursor = 0;
         }
         cx.notify();
+    }
+
+    /// The Edit menu (its keys) with an overlay up: cut, copy, paste
+    /// (the text's first line), select all and undo on its field.
+    pub fn overlay_edit(&mut self, what: &str, cx: &mut Context<Self>) {
+        let clip = cx.read_from_clipboard().and_then(|c| c.text());
+        let Some(field) = self.overlay_field() else { return };
+        let mut copied = None;
+        let changed = match what {
+            "paste" => match clip.as_deref().and_then(|t| t.lines().next()).map(str::trim).filter(|l| !l.is_empty()) {
+                Some(line) => {
+                    field.insert(line);
+                    true
+                }
+                None => false,
+            },
+            "select-all" => {
+                field.select_all();
+                false
+            }
+            "copy" => {
+                copied = field.selected();
+                false
+            }
+            "cut" => {
+                copied = field.cut();
+                copied.is_some()
+            }
+            "undo" => field.undo(),
+            _ => false,
+        };
+        if let Some(text) = copied {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        }
+        if changed {
+            self.overlay_changed(cx);
+        } else {
+            cx.notify();
+        }
     }
 
     pub fn close_selector(&mut self, cx: &mut Context<Self>) {
@@ -946,7 +986,7 @@ impl Acme {
     }
 
     /// Keys while the selector is open. Returns true if it took the key.
-    pub fn selector_key(&mut self, key: &str, ch: Option<&str>, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub fn selector_key(&mut self, key: &str, ch: Option<&str>, mods: &gpui::Modifiers, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(sel) = self.selector.as_mut() else { return false };
         sel.caret_since = std::time::Instant::now();
         if let Some(form) = sel.connect.as_mut() {
@@ -967,24 +1007,19 @@ impl Acme {
                 "down" | "tab" => form.next_field(1),
                 "left" if form.field == Field::Provider => form.next_provider(-1),
                 "right" | "space" if form.field == Field::Provider => form.next_provider(1),
-                "backspace" => {
-                    if form.field == Field::Host {
-                        form.host.pop();
+                _ => match form.field {
+                    Field::Host => {
+                        form.host.key(key, ch, mods);
                     }
-                }
-                _ => {
-                    if let Some(c) = ch.filter(|c| !c.chars().any(char::is_control)) {
-                        match form.field {
-                            Field::Host => form.host.push_str(c),
-                            Field::Provider => {
-                                let lc = c.to_lowercase();
-                                if let Some(i) = form.providers.iter().position(|p| p.to_lowercase().starts_with(&lc)) {
-                                    form.provider = i;
-                                }
+                    Field::Provider => {
+                        if let Some(c) = ch.filter(|c| !c.chars().any(char::is_control)) {
+                            let lc = c.to_lowercase();
+                            if let Some(i) = form.providers.iter().position(|p| p.to_lowercase().starts_with(&lc)) {
+                                form.provider = i;
                             }
                         }
                     }
-                }
+                },
             }
             cx.notify();
             return true;
@@ -1016,24 +1051,11 @@ impl Acme {
                 sel.move_cursor(1);
                 cx.notify();
             }
-            "backspace" => {
-                sel.filter.pop();
-                sel.moved = true;
-                sel.cursor = 0;
-                sel.settle();
-                cx.notify();
-            }
-            _ => {
-                if let Some(c) = ch {
-                    if !c.chars().any(char::is_control) {
-                        sel.filter.push_str(c);
-                        sel.moved = true;
-                        sel.cursor = 0;
-                        sel.settle();
-                        cx.notify();
-                    }
-                }
-            }
+            _ => match sel.filter.key(key, ch, mods) {
+                crate::field::Edited::Changed => self.overlay_changed(cx),
+                crate::field::Edited::Moved => cx.notify(),
+                crate::field::Edited::No => {}
+            },
         }
         true
     }
@@ -1187,17 +1209,7 @@ impl Acme {
                 .when(active, |d| d.bg(rgb(0xeaffff)))
                 .child(div().w(px(80.)).text_color(rgb(0x6f6f6f)).text_size(px(12.)).child(label.to_string()))
         };
-        let caret = |on: bool| div().w(px(1.5)).h(px(16.)).flex_none().when(on, |d| d.bg(rgb(0x000099)));
-        let field = |value: &str, hint: &str, active: bool| {
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(1.))
-                .when(!value.is_empty(), |d| d.child(div().text_color(rgb(0x111111)).child(value.to_string())))
-                .when(active, |d| d.child(caret(caret_on)))
-                .when(value.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child(hint.to_string())))
-        };
+        let field = |value: &crate::field::LineEdit, hint: &str, active: bool| crate::field::field_view(value, caret_on, hint, active);
         let mut pills = div().flex().flex_row().items_center().gap(px(6.));
         for (i, p) in form.providers.iter().enumerate() {
             let chosen = i == form.provider;
@@ -1318,22 +1330,8 @@ impl Acme {
         } else {
             "Search sessions and hosts, or type a URL to create one…".to_string()
         };
-        // the field: the text typed and a caret, or the hint after a caret
-        let caret = div().w(px(1.5)).h(px(16.)).flex_none().when(sel.caret_visible(), |d| d.bg(rgb(0x000099)));
-        let field = div()
-            .px(px(14.))
-            .py(px(10.))
-            .border_b_1()
-            .border_color(rgb(0xdddddd))
-            .text_size(px(14.))
-            .font_family(UI_FONT)
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(1.))
-            .when(!sel.filter.is_empty(), |d| d.child(div().text_color(rgb(0x111111)).child(sel.filter.clone())))
-            .child(caret)
-            .when(sel.filter.is_empty(), |d| d.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child(hint)));
+        // the field: the text typed, its selection and caret, or the hint
+        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(0xdddddd)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&sel.filter, sel.caret_visible(), &hint, true));
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         let row_style = |d: gpui::Stateful<gpui::Div>, picked: bool| {
             d.flex()
@@ -1500,7 +1498,7 @@ mod picker_tests {
         sessions.insert(local.clone(), Loading::Ready(vec!["default".into(), "notes".into()]));
         sessions.insert(box_.clone(), Loading::Seeded(vec!["work".into()]));
         sessions.insert(down.clone(), Loading::Failed(vec!["old".into()], "no route".into()));
-        Selector { filter: String::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
+        Selector { filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
     }
 
     #[test]
@@ -1555,7 +1553,7 @@ mod picker_tests {
         sel.naming = Some(Host { provider: "sprite".into(), arg: "devvm".into() });
         assert_eq!(sel.rows(), vec![Row::Create(SessionUrl::parse("sprite://devvm/scratch").unwrap())]);
         // the new-host form
-        let mut f = Connect { providers: vec!["ssh".into(), "sprite".into()], provider: 0, host: String::new(), field: Field::Provider };
+        let mut f = Connect { providers: vec!["ssh".into(), "sprite".into()], provider: 0, host: crate::field::LineEdit::new(), field: Field::Provider };
         assert!(f.host().is_none());
         f.host = "me@box".into();
         assert_eq!(f.host().unwrap(), Host { provider: "ssh".into(), arg: "me@box".into() });
