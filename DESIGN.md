@@ -933,10 +933,11 @@ refuses once with "modified since last read" and writes on the second.
 Directory windows are watched too (the directory itself, for its
 entries): a change under it lists the directory anew when the window
 is clean, and flags it stale when edited, the same flow. A stale
-window has its own handle colour, a medium blue (`STALE`): the dirty
-blue's family, well lighter, and chosen by simulating deuteranopia to
-sit far from the live raspberry, the unsynced green and the scrollbar's
-olive (a dark cyan and an orange had not): dirty, and the disk has moved
+window has its own handle colour, gold (`STALE`), a caution in one of
+acme's yellows, chosen by simulating deuteranopia to stand clear of
+every other handle colour and the tag's border (a dark cyan fell on
+the live raspberry, an orange on the scrollbar's olive, a medium blue
+on the border's purple-blue): dirty, and the disk has moved
 on underneath, so `Get` would drop the edits. Diffing rather than
 replacing and delete/rename flags are not done.
 

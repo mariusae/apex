@@ -44,11 +44,12 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
 /// fenced red, the unsynced green, and the scrollbar's dark yellow.
 pub const LIVE: u32 = 0xB24073;
 /// A stale window's handle: dirty, and the disk has moved on underneath
-/// (`Get` in the tag would drop the edits). A medium blue: the dirty
-/// blue's family, well lighter than it, and — simulated for
-/// deuteranopia — far from the live raspberry, the unsynced green and
-/// the scrollbar's olive, where a dark cyan and an orange had not been.
-pub const STALE: u32 = 0x5F8FDF;
+/// (`Get` in the tag would drop the edits). Gold, a caution and one of
+/// acme's yellows; simulated for deuteranopia it stands well clear of
+/// every other handle colour and of the tag's border, where a dark
+/// cyan (the live raspberry), an orange (the scrollbar's olive) and a
+/// medium blue (the border's purple-blue) had each fallen on one.
+pub const STALE: u32 = 0xFFD700;
 pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
 pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
