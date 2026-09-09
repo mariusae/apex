@@ -72,13 +72,13 @@ impl Acme {
 
     /// The switcher, when up: the sessions in a list, the label first
     /// and the host after it dimmed (none for a local session), the one
-    /// under the mark filled.
+    /// under the mark tinted as the picker's rows are, not inverted.
     pub fn switcher_panel(&self, _cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let s = self.switcher.as_ref()?;
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         for (i, u) in s.entries.iter().enumerate() {
             let on = i == s.index;
-            let (fg, dim) = if on { (rgb(0xffffff), rgb(0xd0d0f0)) } else { (rgb(0x111111), rgb(0x8a8a8a)) };
+            let (fg, dim) = (rgb(0x111111), rgb(0x8a8a8a));
             let mut row = div()
                 .flex()
                 .flex_row()
@@ -89,7 +89,7 @@ impl Acme {
                 .rounded(px(6.))
                 .text_size(px(14.))
                 .font_family(UI_FONT)
-                .when(on, |d| d.bg(rgb(0x000099)))
+                .when(on, |d| d.bg(rgb(0x9eeeee)))
                 .child(div().text_color(fg).child(u.session.clone()));
             if !u.is_local() {
                 row = row.child(div().text_size(px(12.)).text_color(dim).child(u.arg.clone()));
