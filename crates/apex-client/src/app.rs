@@ -1923,12 +1923,19 @@ impl Acme {
                     slots.push((u.clone(), left, left + b.size.width));
                     left += b.size.width + gap;
                 }
-                // where it is now among them, then past each neighbour it covers
+                // where it is now among them, then past each neighbour it
+                // has come to occupy: rightwards once its left edge is past
+                // the neighbour's left edge, leftwards once its right edge
+                // is past the neighbour's right; a narrower tab, which can
+                // sit wholly inside a neighbour, goes by its centre there
+                // (the two tests exclude each other, so the walk ends and
+                // a swap cannot undo itself as the pointer moves on)
+                let c = gl + width / 2.;
                 let mut k = all.iter().position(|(u, _)| *u == url).unwrap_or(slots.len());
-                loop {
-                    if k < slots.len() && gr >= slots[k].2 {
+                for _ in 0..=slots.len() {
+                    if k < slots.len() && gl >= slots[k].1 && c >= (slots[k].1 + slots[k].2) / 2. {
                         k += 1;
-                    } else if k > 0 && gl <= slots[k - 1].1 {
+                    } else if k > 0 && gr <= slots[k - 1].2 && c < (slots[k - 1].1 + slots[k - 1].2) / 2. {
                         k -= 1;
                     } else {
                         break;
