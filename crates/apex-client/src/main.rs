@@ -160,14 +160,14 @@ impl Render for Acme {
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
                         Body::Web | Body::Html(_) => {
                             // the native view goes where this canvas lands;
-                            // over it the pointer is the system's, not acme's
-                            // (the innermost hitbox's style wins), so the page
-                            // shows its own hands and beams
+                            // over it the pointer is the page's own (a style
+                            // whose cursor sets nothing, the innermost hitbox's
+                            // style winning), so links get the hand
                             webs_shown.insert(w);
                             let me2 = me.clone();
                             div()
                                 .size_full()
-                                .cursor(gpui::CursorStyle::Arrow)
+                                .cursor(cursor::NATIVE_CURSOR)
                                 .child(
                                     canvas(
                                         move |bounds, window, cx| {

@@ -14,6 +14,7 @@
 
 use std::sync::Once;
 
+use objc::declare::ClassDecl;
 use objc::runtime::{Class, Imp, Method, Object, Sel};
 use objc::{class, msg_send, sel, sel_impl};
 
@@ -176,6 +177,7 @@ unsafe fn make(c: &Cursor, c2: &Cursor2) -> Id {
 static INSTALL: Once = Once::new();
 static mut ARROW: Id = std::ptr::null_mut();
 static mut BOXC: Id = std::ptr::null_mut();
+static mut NATIVE: Id = std::ptr::null_mut();
 
 extern "C" fn arrow_cursor(_cls: &Class, _sel: Sel) -> Id {
     unsafe { ARROW }
@@ -183,20 +185,46 @@ extern "C" fn arrow_cursor(_cls: &Class, _sel: Sel) -> Id {
 extern "C" fn box_cursor(_cls: &Class, _sel: Sel) -> Id {
     unsafe { BOXC }
 }
+extern "C" fn native_cursor(_cls: &Class, _sel: Sel) -> Id {
+    unsafe { NATIVE }
+}
+/// `-[ApexNoCursor set]`: nothing. gpui puts the hovered style's cursor
+/// in a cursor rect over its whole view; over a page that rect must not
+/// speak, so the page's own tracking areas (a hand over a link, a beam
+/// over text) decide.
+extern "C" fn set_nothing(_this: &Object, _sel: Sel) {}
 
 /// The style the acme area asks for: the big arrow.
 pub const BIG_ARROW: gpui::CursorStyle = gpui::CursorStyle::DragLink;
 /// The style while a layout box is held: the box.
 pub const BOX_CURSOR: gpui::CursorStyle = gpui::CursorStyle::DragCopy;
+/// The style over a web or preview body: a cursor that sets nothing,
+/// leaving the pointer to the page.
+pub const NATIVE_CURSOR: gpui::CursorStyle = gpui::CursorStyle::ContextualMenu;
 
 /// Put the two cursors behind their styles, for the life of the process.
 pub fn install() {
     INSTALL.call_once(|| unsafe {
         ARROW = make(&BIGARROW, &BIGARROW2);
         BOXC = make(&BOX, &BOX2);
+        // a cursor that does nothing when set, for the pages
+        NATIVE = {
+            let mut decl = ClassDecl::new("ApexNoCursor", class!(NSCursor)).expect("a fresh class name");
+            decl.add_method(sel!(set), set_nothing as extern "C" fn(&Object, Sel));
+            let no_cls = decl.register();
+            let image: Id = msg_send![class!(NSImage), alloc];
+            let image: Id = msg_send![image, initWithSize: NSSize { width: 1., height: 1. }];
+            let c: Id = msg_send![no_cls, alloc];
+            msg_send![c, initWithImage: image hotSpot: NSPoint { x: 0., y: 0. }]
+        };
         let cls: *const Class = class!(NSCursor);
         let arrow_m = class_getClassMethod(cls, sel!(dragLinkCursor));
         let cross_m = class_getClassMethod(cls, sel!(dragCopyCursor));
+        let native_m = class_getClassMethod(cls, sel!(contextualMenuCursor));
+        if !native_m.is_null() {
+            let imp: Imp = std::mem::transmute(native_cursor as extern "C" fn(&Class, Sel) -> Id);
+            method_setImplementation(native_m, imp);
+        }
         if !arrow_m.is_null() {
             let imp: Imp = std::mem::transmute(arrow_cursor as extern "C" fn(&Class, Sel) -> Id);
             method_setImplementation(arrow_m, imp);
