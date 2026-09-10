@@ -292,25 +292,75 @@ pub const DEFAULT_SESSION: &str = "default";
 /// the pseudo-provider that takes no argument), `ssh://user@host/name`,
 /// `sprite://box/name`. The scheme is the provider, the authority its
 /// argument, the path the session.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct SessionUrl {
     pub provider: String,
     pub arg: String,
+    /// The label, for people; what a hand types.
     pub session: String,
+    /// The identity, once known (attached, or listed): what the session
+    /// is known by, whatever its label becomes. Written as `#id` after
+    /// the URL.
+    pub id: Option<String>,
+}
+
+/// Two URLs name the same session when they name the same host and
+/// the same identity — or, while either identity is unknown, the same
+/// label.
+impl PartialEq for SessionUrl {
+    fn eq(&self, o: &SessionUrl) -> bool {
+        if self.provider != o.provider || self.arg != o.arg {
+            return false;
+        }
+        match (&self.id, &o.id) {
+            (Some(a), Some(b)) => a == b,
+            _ => self.session == o.session,
+        }
+    }
+}
+
+impl Eq for SessionUrl {}
+
+impl std::hash::Hash for SessionUrl {
+    fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
+        self.provider.hash(h);
+        self.arg.hash(h);
+    }
 }
 
 impl SessionUrl {
     pub fn local(session: &str) -> SessionUrl {
-        SessionUrl { provider: "local".into(), arg: String::new(), session: session.to_string() }
+        SessionUrl { provider: "local".into(), arg: String::new(), session: session.to_string(), id: None }
+    }
+
+    /// The URL with its identity known.
+    pub fn with_id(mut self, id: &str) -> SessionUrl {
+        self.id = if id.is_empty() { None } else { Some(id.to_string()) };
+        self
+    }
+
+    /// What names the session to its daemon: the identity when known,
+    /// else the label.
+    pub fn session_ref(&self) -> &str {
+        self.id.as_deref().unwrap_or(&self.session)
     }
 
     /// A URL, or what older files and hands write: a bare name is a local
-    /// session, `dest/name` a destination through its provider.
+    /// session, `dest/name` a destination through its provider; `#id`
+    /// after any of them is the identity.
     pub fn parse(s: &str) -> Option<SessionUrl> {
         let s = s.trim();
+        let (s, id) = match s.rsplit_once('#') {
+            Some((u, id)) if !id.is_empty() => (u, Some(id.to_string())),
+            _ => (s, None),
+        };
         if s.is_empty() {
             return None;
         }
+        Some(SessionUrl::parse_bare(s)?.with_id(id.as_deref().unwrap_or("")))
+    }
+
+    fn parse_bare(s: &str) -> Option<SessionUrl> {
         if let Some((scheme, rest)) = s.split_once("://") {
             if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
                 return None;
@@ -323,18 +373,18 @@ impl SessionUrl {
             if session.contains('/') {
                 return None;
             }
-            return Some(SessionUrl { provider: scheme.to_string(), arg: if scheme == "local" { String::new() } else { arg.to_string() }, session: session.to_string() });
+            return Some(SessionUrl { provider: scheme.to_string(), arg: if scheme == "local" { String::new() } else { arg.to_string() }, session: session.to_string(), id: None });
         }
         match split_spec(s) {
             Some((dest, session)) => {
                 let d = Dest::parse(dest);
-                Some(SessionUrl { provider: d.provider, arg: d.name, session: session.to_string() })
+                Some(SessionUrl { provider: d.provider, arg: d.name, session: session.to_string(), id: None })
             }
             // a bare destination (`user@host`, `sprite:box`) is its default
             // session; anything else is a local session's name
             None if s.contains('@') || s.contains(':') => {
                 let d = Dest::parse(s);
-                Some(SessionUrl { provider: d.provider, arg: d.name, session: DEFAULT_SESSION.to_string() })
+                Some(SessionUrl { provider: d.provider, arg: d.name, session: DEFAULT_SESSION.to_string(), id: None })
             }
             None => Some(SessionUrl::local(s)),
         }
@@ -367,6 +417,7 @@ impl SessionUrl {
         }
     }
 
+    /// The same session under a new label.
     pub fn with_session(&self, session: &str) -> SessionUrl {
         SessionUrl { session: session.to_string(), ..self.clone() }
     }
@@ -374,7 +425,11 @@ impl SessionUrl {
 
 impl std::fmt::Display for SessionUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}://{}/{}", self.provider, self.arg, self.session)
+        write!(f, "{}://{}/{}", self.provider, self.arg, self.session)?;
+        if let Some(id) = &self.id {
+            write!(f, "#{id}")?;
+        }
+        Ok(())
     }
 }
 
@@ -416,5 +471,28 @@ mod describe_tests {
         assert_eq!(SessionUrl::parse("sprite://apex-test/notes").unwrap().describe(), "notes (apex-test)");
         assert_eq!(SessionUrl::local("notes").describe(), "notes");
         assert_eq!(SessionUrl::local("default").describe(), "local");
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn a_session_url_carries_its_identity_and_is_equal_by_it() {
+        let u = SessionUrl::parse("ssh://me@box/notes#0b8c2f4e-1111-4222-8333-444455556666").unwrap();
+        assert_eq!((u.provider.as_str(), u.arg.as_str(), u.session.as_str()), ("ssh", "me@box", "notes"));
+        assert_eq!(u.id.as_deref(), Some("0b8c2f4e-1111-4222-8333-444455556666"));
+        assert_eq!(u.session_ref(), "0b8c2f4e-1111-4222-8333-444455556666");
+        assert_eq!(u.to_string(), "ssh://me@box/notes#0b8c2f4e-1111-4222-8333-444455556666");
+        // the same identity under another label is the same session;
+        // another identity under the same label is not; without an
+        // identity on either side the label decides
+        assert_eq!(u, u.with_session("renamed"));
+        assert_ne!(u, SessionUrl::parse("ssh://me@box/notes#other").unwrap());
+        assert_eq!(u, SessionUrl::parse("ssh://me@box/notes").unwrap());
+        assert_ne!(u, SessionUrl::parse("ssh://me@box/else").unwrap());
+        assert_eq!(SessionUrl::parse("notes").unwrap().session_ref(), "notes");
+        assert_eq!(SessionUrl::local("x").with_id("").id, None);
     }
 }

@@ -319,6 +319,7 @@ impl Acme {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };
+        let url = &identified(url, &node);
         let mut acme = Self::over(cx, log, node, Backend::Remote(link), &url.session);
         acme.socket = Some(apex_server::daemon::default_socket());
         acme.url = url.clone();
@@ -398,11 +399,11 @@ impl Acme {
         let socket = apex_server::daemon::default_socket();
         let ending = cx.background_executor().spawn(async move {
             if url.is_local() {
-                apex_server::remote::end_session(&socket, &url.session, force).map_err(|e| e.to_string())
+                apex_server::remote::end_session(&socket, url.session_ref(), force).map_err(|e| e.to_string())
             } else {
                 let dest = url.dest().unwrap_or_default();
                 let f = if force { " -f" } else { "" };
-                apex_server::providers::run(&dest, &format!("{} end-session{f} {}", apex_server::providers::REMOTE_BIN, url.session), None).map(|_| ()).map_err(|e| e.to_string())
+                apex_server::providers::run(&dest, &format!("{} end-session{f} {}", apex_server::providers::REMOTE_BIN, url.session_ref()), None).map(|_| ()).map_err(|e| e.to_string())
             }
         });
         let url = self.url.clone();
@@ -773,7 +774,7 @@ impl Acme {
                     Some(Box::new(move || {
                         let _ = closer.shutdown(std::net::Shutdown::Both);
                     })),
-                    &url.session,
+                    url.session_ref(),
                     "apex",
                     AttachmentKind::Ui,
                     Some(wake),
@@ -781,8 +782,8 @@ impl Acme {
             }
             Some(dest) => {
                 apex_server::providers::deploy(&dest)?;
-                let cmd = apex_server::providers::attach_command(&dest, &url.session)?;
-                Self::connect_via(&cmd, &url.session, wake)
+                let cmd = apex_server::providers::attach_command(&dest, url.session_ref())?;
+                Self::connect_via(&cmd, url.session_ref(), wake)
             }
         }
     }
@@ -803,7 +804,7 @@ impl Acme {
         };
         let mut acme = Self::over(cx, log, node, Backend::Remote(link), session);
         acme.socket = Some(apex_server::daemon::default_socket());
-        acme.url = SessionUrl { provider: "via".into(), arg: cmd.split_whitespace().nth(1).unwrap_or("?").to_string(), session: session.to_string() };
+        acme.url = SessionUrl { provider: "via".into(), arg: cmd.split_whitespace().nth(1).unwrap_or("?").to_string(), session: session.to_string(), id: None };
         acme.wake = Some(wake);
         acme.open_initial(col, files);
         Ok(acme)
@@ -834,6 +835,7 @@ impl Acme {
         self.last_ping = None;
         self.log = log;
         self.node = node;
+        let url = &identified(url, &self.node);
         self.session = url.session.clone();
         self.url = url.clone();
         // a window that started offline is one to remember now
@@ -902,11 +904,11 @@ impl Acme {
 
     /// Rename this window's session on its daemon.
     pub fn rename_session(&mut self, to: &str, window: &mut Window) {
-        let from = self.session.clone();
-        if to.is_empty() || to == from {
+        let from = self.url.session_ref().to_string();
+        if to.is_empty() || to == self.session {
             return;
         }
-        self.send(ClientMsg::RenameSession { from: from.clone(), to: to.to_string() });
+        self.send(ClientMsg::RenameSession { from, to: to.to_string() });
         let old = self.url.clone();
         self.session = to.to_string();
         self.url = self.url.with_session(to);
@@ -1351,6 +1353,13 @@ impl Acme {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
         self.connected = alive;
+        // the label follows a rename made anywhere (the metalog says)
+        let (id, label) = (self.node.state.meta.id.clone(), self.node.state.meta.label.clone());
+        if !id.is_empty() && self.url.id.as_deref() == Some(id.as_str()) && !label.is_empty() && self.url.session != label {
+            self.url.session = label.clone();
+            self.session = label;
+            crate::shell::note_recent(&self.url);
+        }
         let made = link.take_made();
         let outputs = link.take_outputs();
         for w in made {
@@ -3089,4 +3098,18 @@ fn term_key(ks: &Keystroke) -> TermKey {
         control: ks.modifiers.control,
         alt: ks.modifiers.alt,
     }
+}
+
+/// The URL with what the session's metalog says it is: its identity,
+/// and its label as it is now.
+fn identified(url: &SessionUrl, node: &Node) -> SessionUrl {
+    let (id, label) = (&node.state.meta.id, &node.state.meta.label);
+    if id.is_empty() {
+        return url.clone();
+    }
+    let mut u = url.clone().with_id(id);
+    if !label.is_empty() {
+        u.session = label.clone();
+    }
+    u
 }

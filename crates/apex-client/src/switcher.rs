@@ -32,7 +32,7 @@ impl Acme {
         for u in crate::shell::recent() {
             add(u);
         }
-        let mut known: Vec<SessionUrl> = crate::shell::known_sessions().into_iter().flat_map(|(h, names)| names.into_iter().map(move |n| h.url(&n))).collect();
+        let mut known: Vec<SessionUrl> = crate::shell::known_sessions().into_iter().flat_map(|(h, names)| names.into_iter().map(move |s| h.url_of(&s))).collect();
         known.sort_by_key(|u| u.to_string());
         for u in known {
             add(u);

@@ -317,7 +317,7 @@ fn main() {
             }
         } else if let Some(dest) = remote.clone() {
             let d = apex_server::providers::Dest::parse(&dest);
-            vec![(Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default() }, files: files.clone() }, None)]
+            vec![(Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default(), id: None }, files: files.clone() }, None)]
         } else {
             if let Err(e) = shell::ensure_daemon(&socket) {
                 eprintln!("apex-ui: {e}");

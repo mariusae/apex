@@ -93,9 +93,14 @@ impl Pool {
         p.target.set(pool.wake.clone());
         let key = p.url.to_string();
         let pool = cx.global_mut::<Pool>();
-        if let Some(mut old) = pool.parked.insert(key.clone(), p) {
-            old.link.close(); // the same session parked twice: the older leaves
+        // the same session parked twice (whatever its label was): the older leaves
+        let same: Vec<String> = pool.parked.iter().filter(|(_, x)| x.url == p.url).map(|(k, _)| k.clone()).collect();
+        for k in same {
+            if let Some(mut old) = pool.parked.remove(&k) {
+                old.link.close();
+            }
         }
+        pool.parked.insert(key.clone(), p);
         while pool.parked.len() > CAP {
             let oldest = pool.parked.iter().min_by_key(|(_, p)| p.parked_at).map(|(k, _)| k.clone());
             match oldest {
@@ -126,7 +131,8 @@ impl Pool {
 
     /// Take a parked session to show it.
     pub fn take(cx: &mut App, url: &SessionUrl) -> Option<Parked> {
-        let p = cx.try_global::<Pool>()?.parked.contains_key(&url.to_string()).then(|| cx.global_mut::<Pool>().parked.remove(&url.to_string()))?;
+        let key = cx.try_global::<Pool>()?.parked.iter().find(|(_, p)| p.url == *url).map(|(k, _)| k.clone())?;
+        let p = cx.global_mut::<Pool>().parked.remove(&key);
         if p.is_some() {
             crate::shell::log_line(&format!("unparked {url}"));
         }

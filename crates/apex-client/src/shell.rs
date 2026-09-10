@@ -15,6 +15,7 @@ use gpui::{
 };
 
 use apex_server::providers::SessionUrl;
+use apex_server::proto::SessionInfo;
 use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
@@ -269,7 +270,7 @@ pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<WindowBoun
         return Ok(again);
     }
     if let Some(first) = existing.first() {
-        return Ok(vec![(SessionUrl::local(&first.label), None)]);
+        return Ok(vec![(SessionUrl::local(&first.label).with_id(&first.id), None)]);
     }
     new_session(socket, apex_server::providers::DEFAULT_SESSION)?;
     Ok(vec![(SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None)])
@@ -455,8 +456,13 @@ impl Host {
         self.provider == "local"
     }
 
+    /// The URL of one of this host's sessions, identity and all.
+    pub fn url_of(&self, s: &SessionInfo) -> SessionUrl {
+        self.url(&s.label).with_id(&s.id)
+    }
+
     pub fn url(&self, session: &str) -> SessionUrl {
-        SessionUrl { provider: self.provider.clone(), arg: self.arg.clone(), session: session.to_string() }
+        SessionUrl { provider: self.provider.clone(), arg: self.arg.clone(), session: session.to_string(), id: None }
     }
 
     /// How the host reads: `local`, or the host with the provider in
@@ -475,13 +481,13 @@ impl Host {
 /// mostly the same), here, or not to be had (the last seen still shown).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Loading {
-    Seeded(Vec<String>),
-    Ready(Vec<String>),
-    Failed(Vec<String>, String),
+    Seeded(Vec<SessionInfo>),
+    Ready(Vec<SessionInfo>),
+    Failed(Vec<SessionInfo>, String),
 }
 
 impl Loading {
-    pub fn names(&self) -> &[String] {
+    pub fn sessions(&self) -> &[SessionInfo] {
         match self {
             Loading::Seeded(n) | Loading::Ready(n) | Loading::Failed(n, _) => n,
         }
@@ -603,37 +609,39 @@ fn sessions_file() -> PathBuf {
     state_file().with_file_name("known-sessions")
 }
 
-/// The sessions each host had when last asked (the file), plus what the
-/// recent sessions say: what the picker shows before a host answers.
-pub fn known_sessions() -> HashMap<Host, Vec<String>> {
-    let mut out: HashMap<Host, Vec<String>> = HashMap::new();
+/// The sessions each host had when last asked (the file, a line per
+/// session: provider, host, id, label), plus what the recent sessions
+/// say: what the picker shows before a host answers.
+pub fn known_sessions() -> HashMap<Host, Vec<SessionInfo>> {
+    let mut out: HashMap<Host, Vec<SessionInfo>> = HashMap::new();
     if let Ok(text) = std::fs::read_to_string(sessions_file()) {
         for line in text.lines() {
-            let mut it = line.splitn(3, '\t');
-            if let (Some(p), Some(h), Some(names)) = (it.next(), it.next(), it.next()) {
+            let f: Vec<&str> = line.split('\t').collect();
+            if let [p, h, id, label] = f.as_slice() {
                 let host = Host { provider: p.to_string(), arg: h.to_string() };
-                out.insert(host, names.split(',').filter(|n| !n.is_empty()).map(String::from).collect());
+                out.entry(host).or_default().push(SessionInfo { id: id.to_string(), label: label.to_string() });
             }
         }
     }
     for u in recent() {
-        let e = out.entry(Host::of(&u)).or_default();
-        if !e.contains(&u.session) {
-            e.push(u.session.clone());
+        let h = Host::of(&u);
+        let e = out.entry(h.clone()).or_default();
+        if !e.iter().any(|s| h.url_of(s) == u) {
+            e.push(SessionInfo { id: u.id.clone().unwrap_or_default(), label: u.session.clone() });
         }
     }
     out
 }
 
 /// A host answered: its sessions are what the picker shows for it next time.
-pub fn note_sessions(h: &Host, names: &[String]) {
+pub fn note_sessions(h: &Host, sessions: &[SessionInfo]) {
     let mut all = known_sessions();
-    all.insert(h.clone(), names.to_vec());
+    all.insert(h.clone(), sessions.to_vec());
     let p = sessions_file();
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
-    let mut lines: Vec<String> = all.iter().map(|(h, n)| format!("{}\t{}\t{}", h.provider, h.arg, n.join(","))).collect();
+    let mut lines: Vec<String> = all.iter().flat_map(|(h, v)| v.iter().map(move |s| format!("{}\t{}\t{}\t{}", h.provider, h.arg, s.id, s.label))).collect();
     lines.sort();
     let _ = std::fs::write(p, lines.join("\n") + "\n");
 }
@@ -683,8 +691,8 @@ impl Selector {
             let host_matches = fl.is_empty() || format!("{name} {prov}").to_lowercase().contains(&fl);
             let mut section = Vec::new();
             let loading = self.sessions.get(h);
-            for n in loading.map(|l| l.names()).unwrap_or(&[]) {
-                let u = h.url(n.as_str());
+            for n in loading.map(|l| l.sessions()).unwrap_or(&[]) {
+                let u = h.url_of(n);
                 if (host_matches || u.to_string().to_lowercase().contains(&fl)) && !seen.contains(&u) {
                     seen.push(u.clone());
                     section.push(Row::Open(u));
@@ -803,7 +811,7 @@ pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
     let list: Vec<SessionUrl> = recent().into_iter().map(|u| if u == *old { new.clone() } else { u }).collect();
     write_recent(&list);
     let last: Vec<Remembered> = remembered().into_iter().map(|mut r| {
-        if r.url == old.to_string() {
+        if SessionUrl::parse(&r.url).is_some_and(|u| u == *old) {
             r.url = new.to_string();
         }
         r
@@ -826,8 +834,8 @@ impl Acme {
         let mut known = known_sessions();
         for h in &hosts {
             let mut names = known.remove(h).unwrap_or_default();
-            if *h == Host::of(&self.url) && !names.contains(&self.url.session) {
-                names.push(self.url.session.clone());
+            if *h == Host::of(&self.url) && !names.iter().any(|s| h.url_of(s) == self.url) {
+                names.push(SessionInfo { id: self.url.id.clone().unwrap_or_default(), label: self.url.session.clone() });
             }
             sel.sessions.insert(h.clone(), Loading::Seeded(names));
         }
@@ -861,19 +869,16 @@ impl Acme {
     fn ask_host(&mut self, h: Host, socket: PathBuf, epoch: u64, cx: &mut Context<Self>) {
         let host = h.clone();
         let asking = cx.background_executor().spawn(async move {
-            // (labels, for now: the picker is keyed by them until it is
-            // keyed by identity)
-            let labels = |v: Vec<apex_server::proto::SessionInfo>| v.into_iter().map(|s| s.label).collect::<Vec<String>>();
             if host.is_local() {
-                return list_sessions(&socket).map(labels).map_err(|e| e.to_string());
+                return list_sessions(&socket).map_err(|e| e.to_string());
             }
             // a host that has no apex yet (just added) gets ours first, as
             // attaching would, and is asked again
             let dest = host.dest();
             match apex_server::providers::list_sessions(&dest) {
-                Ok(names) => Ok(labels(names)),
+                Ok(names) => Ok(names),
                 Err(first) => match apex_server::providers::deploy(&dest) {
-                    Ok(_) => apex_server::providers::list_sessions(&dest).map(labels).map_err(|e| e.to_string()),
+                    Ok(_) => apex_server::providers::list_sessions(&dest).map_err(|e| e.to_string()),
                     Err(_) => Err(first.to_string()),
                 },
             }
@@ -884,7 +889,7 @@ impl Acme {
                 let _ = this.update(cx, |acme, cx| {
                     if let Some(sel) = acme.selector.as_mut() {
                         if sel.epoch == epoch {
-                            let before = sel.sessions.get(&h).map(|l| l.names().to_vec()).unwrap_or_default();
+                            let before = sel.sessions.get(&h).map(|l| l.sessions().to_vec()).unwrap_or_default();
                             let loaded = match r {
                                 Ok(names) => {
                                     note_sessions(&h, &names);
@@ -1073,10 +1078,10 @@ impl Acme {
         let u = url.clone();
         let ending = cx.background_executor().spawn(async move {
             if u.is_local() {
-                apex_server::remote::end_session(&socket, &u.session, false).map_err(|e| e.to_string())
+                apex_server::remote::end_session(&socket, u.session_ref(), false).map_err(|e| e.to_string())
             } else {
                 let dest = u.dest().unwrap_or_default();
-                apex_server::providers::run(&dest, &format!("{} end-session {}", apex_server::providers::REMOTE_BIN, u.session), None).map(|_| ()).map_err(|e| e.to_string())
+                apex_server::providers::run(&dest, &format!("{} end-session {}", apex_server::providers::REMOTE_BIN, u.session_ref()), None).map(|_| ()).map_err(|e| e.to_string())
             }
         });
         let socket = self.socket.clone().unwrap_or_default();
@@ -1093,14 +1098,14 @@ impl Acme {
                             // gone from what the host had; the host is asked again
                             sel.keeping(|sel| {
                                 if let Some(l) = sel.sessions.get_mut(&host) {
-                                    let names: Vec<String> = l.names().iter().filter(|n| **n != url.session).cloned().collect();
+                                    let names: Vec<SessionInfo> = l.sessions().iter().filter(|s| host.url_of(s) != url).cloned().collect();
                                     *l = Loading::Seeded(names);
                                 }
                             });
                             acme.ask_host(host, socket, epoch, cx);
                         }
                         Err(e) => {
-                            let names = sel.sessions.get(&host).map(|l| l.names().to_vec()).unwrap_or_default();
+                            let names = sel.sessions.get(&host).map(|l| l.sessions().to_vec()).unwrap_or_default();
                             sel.keeping(|sel| {
                                 sel.sessions.insert(host.clone(), Loading::Failed(names, e));
                             });
@@ -1497,10 +1502,11 @@ mod picker_tests {
         let local = Host::local();
         let box_ = Host { provider: "sprite".into(), arg: "devvm".into() };
         let down = Host { provider: "ssh".into(), arg: "gone".into() };
+        let si = |l: &str| SessionInfo { id: format!("id-{l}"), label: l.to_string() };
         let mut sessions = HashMap::new();
-        sessions.insert(local.clone(), Loading::Ready(vec!["default".into(), "notes".into()]));
-        sessions.insert(box_.clone(), Loading::Seeded(vec!["work".into()]));
-        sessions.insert(down.clone(), Loading::Failed(vec!["old".into()], "no route".into()));
+        sessions.insert(local.clone(), Loading::Ready(vec![si("default"), si("notes")]));
+        sessions.insert(box_.clone(), Loading::Seeded(vec![si("work")]));
+        sessions.insert(down.clone(), Loading::Failed(vec![si("old")], "no route".into()));
         Selector { filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
     }
 
@@ -1543,7 +1549,8 @@ mod picker_tests {
         sel.moved = true;
         let devvm = Host { provider: "sprite".into(), arg: "devvm".into() };
         sel.keeping(|s| {
-            s.sessions.insert(devvm.clone(), Loading::Ready(vec!["a".into(), "b".into(), "work".into()]));
+            let si = |l: &str| SessionInfo { id: format!("id-{l}"), label: l.to_string() };
+            s.sessions.insert(devvm.clone(), Loading::Ready(vec![si("a"), si("b"), si("work")]));
         });
         assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "old"), "{:?}", sel.rows()[sel.cursor]);
         // its row gone, the cursor settles on the next pickable one
