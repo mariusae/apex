@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 15;
+pub const PROTOCOL: u32 = 16;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -47,6 +47,8 @@ pub enum ClientMsg {
     TermKey { term: TermId, key: TermKey },
     TermPaste { term: TermId, text: String },
     TermResize { term: TermId, cols: u16, rows: u16 },
+    /// The terminal's scrollback dropped (`Clear`); the screen stays.
+    TermClear { term: TermId },
     /// The wheel over a terminal, `delta` lines (positive: down), `at`
     /// the cell under the pointer when it was the wheel (the program
     /// may be reporting the mouse), none from the scrollbar.

@@ -252,12 +252,17 @@ Kill ends every running command named NAME, or the one with pid PID, as
 Kill in the top row does: the command's process group is sent SIGTERM,
 so what a shell started goes with it. The commands left running are
 listed afterwards, as ps lists them." },
-    Cmd { name: "term", usage: "apex term new [CMD...] | apex term send TERM TEXT | apex term read TERM", short: "terminals", flags: &[], run: term, long: "\
+    Cmd { name: "term", usage: "apex term new [CMD...] | apex term send TERM TEXT | apex term read TERM | apex term clear TERM", short: "terminals", flags: &[], run: term, long: "\
 Term new makes a terminal window running the user's shell (the
 Newterm.shell setting, else the daemon's $SHELL), or CMD through it (as
 Newterm does), and prints the terminal's id. Term send
 types TEXT into terminal TERM; a final newline is the Enter key. Term
-read prints the terminal's screen." },
+read prints the terminal's screen. Term clear drops the terminal's
+scrollback, keeping the screen (Clear in a terminal's tools menu). TERM
+is a terminal's id, or its window's id or name.
+
+A terminal keeps Newterm.scrollback lines of history (apex set
+Newterm.scrollback N in the profile), 10000 by default." },
     Cmd { name: "web", usage: "apex web open URL | apex web [-name NAME] <HTML", short: "web windows", flags: &[flag("name", "the window's name (default DIR/+web)")], run: web, long: "\
 Web open makes a web window on URL in the session, as Newweb URL in a
 tag does, and prints the window's id. The page is rendered by the
@@ -1176,12 +1181,17 @@ fn events(ctx: &Ctx, p: &Parsed) -> R {
 
 fn term(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
+    // a terminal's id, or its window (by id or name)
     let find_term = |c: &Remote, spec: &str| -> Result<TermId, String> {
-        let n: u64 = spec.parse().map_err(|_| "TERM must be a number")?;
-        if c.node.state.terms.contains_key(&TermId(n)) {
-            Ok(TermId(n))
-        } else {
-            Err(format!("no terminal {n}"))
+        if let Ok(n) = spec.parse::<u64>() {
+            if c.node.state.terms.contains_key(&TermId(n)) {
+                return Ok(TermId(n));
+            }
+        }
+        let w = find_window(c, spec).map_err(|_| format!("no terminal {spec}"))?;
+        match c.node.state.window(w).map(|x| x.body) {
+            Ok(Body::Term(t)) => Ok(t),
+            _ => Err(format!("{spec}: not a terminal")),
         }
     };
     match p.args.first().map(|s| s.as_str()) {
@@ -1221,6 +1231,12 @@ fn term(ctx: &Ctx, p: &Parsed) -> R {
                 let line: String = row.iter().map(|c| c.ch).collect();
                 println!("{}", line.trim_end());
             }
+            Ok(())
+        }
+        Some("clear") => {
+            let t = find_term(&c, p.args.get(1).ok_or("usage")?)?;
+            c.send(&ClientMsg::TermClear { term: t });
+            let _ = c.step(Duration::from_millis(50));
             Ok(())
         }
         _ => Err("usage".into()),

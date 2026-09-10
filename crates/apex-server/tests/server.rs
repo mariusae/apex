@@ -837,3 +837,75 @@ fn b3_in_a_terminal_that_no_rule_takes_looks_nowhere_else() {
     perform(&mut node, &mut log, props);
     assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (7, 17));
 }
+
+#[test]
+fn a_resize_keeps_the_scrollback_position() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().next().copied().expect("terminal");
+    let key = |server: &mut Server, log: &mut Log, c: char| {
+        server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    };
+    for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
+        key(&mut server, &mut log, c);
+    }
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).iter().any(|r| r == "line-100")), "grid:\n{}", rows(&node).join("\n"));
+    server.term_scroll(&mut log, t, -30);
+    node.catch_up(&log).unwrap();
+    let top = node.state.terms[&t].top;
+    let first = rows(&node)[0].clone();
+    assert!(first.starts_with("line-"), "{first}");
+    // wider: the same lines stay in view
+    server.term_resize(&mut log, t, 100, 24);
+    std::thread::sleep(Duration::from_millis(300));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
+    assert_eq!(node.state.terms[&t].top, top, "top after a width change; first row {:?}", rows(&node)[0]);
+    assert_eq!(rows(&node)[0], first);
+    // taller by four: at most four more lines, from above, come into view
+    server.term_resize(&mut log, t, 100, 28);
+    std::thread::sleep(Duration::from_millis(300));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
+    let top2 = node.state.terms[&t].top;
+    assert!(top2 <= top && top - top2 <= 4, "top {top} -> {top2}; first row {:?}", rows(&node)[0]);
+    let first2 = rows(&node)[0].clone();
+    // shorter by twelve: the first line in view stays the first
+    server.term_resize(&mut log, t, 100, 16);
+    std::thread::sleep(Duration::from_millis(300));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
+    assert_eq!(rows(&node)[0], first2, "after shrinking: top {} -> {}", top2, node.state.terms[&t].top);
+    // narrower again, while scrolled back: still the same first line
+    server.term_resize(&mut log, t, 60, 16);
+    std::thread::sleep(Duration::from_millis(300));
+    let deadline = Instant::now() + Duration::from_secs(1);
+    pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
+    assert_eq!(rows(&node)[0], first2, "after narrowing: top {}", node.state.terms[&t].top);
+}
+
+#[test]
+fn clear_drops_a_terminals_scrollback_and_keeps_its_screen() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    server.install_default_rules(&mut log);
+    node.catch_up(&log).unwrap();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().next().copied().expect("terminal");
+    let w = node.state.windows.values().find(|x| x.body == Body::Term(t)).map(|x| x.id).expect("its window");
+    // the verb is offered in a terminal, by the server's rule
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w), node.window_kind(w), Some(w)).contains(&"Clear".to_string()));
+    for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).iter().any(|r| r == "line-100")), "grid:\n{}", rows(&node).join("\n"));
+    assert!(node.state.terms[&t].top > 0, "output scrolled into history");
+    let screen = rows(&node);
+    server.term_clear(&mut log, t);
+    node.catch_up(&log).unwrap();
+    assert_eq!(node.state.terms[&t].top, 0, "no history left");
+    assert_eq!(rows(&node), screen, "the screen as it was");
+}

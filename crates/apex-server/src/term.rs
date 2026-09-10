@@ -13,7 +13,7 @@ use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, TermMode};
 use alacritty_terminal::tty::{self, Options, Shell};
-use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor, Rgb};
+use alacritty_terminal::vte::ansi::{ClearMode, Color, CursorShape, Handler, NamedColor, Rgb};
 use alacritty_terminal::Term as AlacTerm;
 use futures::channel::mpsc::UnboundedSender;
 
@@ -237,7 +237,9 @@ impl TermHost {
     /// truecolor xterm with `extra` (the session, the socket) in its
     /// environment; with `cmd`, the login shell runs that instead (acme's
     /// `win cmd`).
-    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>, shell: Option<&str>) -> Result<TermHost, String> {
+    /// `scrollback`: lines of history kept (the `Newterm.scrollback`
+    /// setting; alacritty's default of 10000 otherwise).
+    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>, shell: Option<&str>, scrollback: usize) -> Result<TermHost, String> {
         tty::setup_env();
         let shell = match shell.map(str::trim).filter(|s| !s.is_empty()) {
             Some(s) => PathBuf::from(s),
@@ -275,7 +277,7 @@ impl TermHost {
         };
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let listener = Listener { id, tx: tx.clone() };
-        let term = AlacTerm::new(Config::default(), &Size { cols, rows }, listener.clone());
+        let term = AlacTerm::new(Config { scrolling_history: scrollback, ..Config::default() }, &Size { cols, rows }, listener.clone());
         let term = Arc::new(FairMutex::new(term));
         let label_tx = tx;
         let on_label = Box::new(move |l: Label| {
@@ -303,6 +305,12 @@ impl TermHost {
         self.rows = rows;
         self.term.lock().resize(Size { cols, rows });
         self.notifier.on_resize(WindowSize { num_lines: rows, num_cols: cols, cell_width: 8, cell_height: 16 });
+    }
+
+    /// The scrollback dropped (the `Clear` verb): the screen stays as it
+    /// is, at the bottom.
+    pub fn clear_history(&mut self) {
+        self.term.lock().clear_screen(ClearMode::Saved);
     }
 
     /// Positive scrolls towards newer output.
@@ -767,7 +775,7 @@ mod scroll_tests {
     fn scrolled_back_does_not_follow_output() {
         let (tx, _rx) = futures::channel::mpsc::unbounded();
         let cmd = "i=0; while [ $i -lt 400 ]; do echo line$i; i=$((i+1)); sleep 0.005; done; sleep 3";
-        let mut h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh")).unwrap();
+        let mut h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh"), 1000).unwrap();
         let top_of = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::View { top } = o { Some(*top) } else { None }).unwrap();
         let first_row = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::Rows { rows, .. } = o { Some(rows[0].iter().map(|c| c.ch).collect::<String>().trim_end().to_string()) } else { None }).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);

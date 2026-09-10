@@ -1096,6 +1096,14 @@ inside it addresses the session and the window it runs in; commands run
 from tags get the same. The shell starts once its window exists (the
 `TermWindow` proposal applied wherever the leader is), since the id is
 only known then; a resize that arrives first sets its starting size. The shell
+keeps `Newterm.scrollback` lines of history (`apex set
+Newterm.scrollback 50000` in the profile; 10000 by default, read when
+the terminal is made), and `Clear`, offered in a terminal's tools menu
+by a server rule (`apex term clear $win`), drops the scrollback and
+keeps the screen. A resize keeps the viewport where it was in the
+history as far as it can (alacritty's grid: a taller screen takes its
+extra lines from the history above, so a viewport scrolled back by
+fewer lines than the growth ends at the bottom). The shell
 is the `Newterm.shell` setting (`apex set Newterm.shell zsh` in the
 profile), else the daemon's `$SHELL`. Keys go xterm-style with option
 as meta: ESC before the key itself (opt-b is `ESC b`, not `∫`),

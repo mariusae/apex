@@ -303,7 +303,8 @@ impl Server {
     /// A terminal window in `col`: the user's shell, or `cmd` run by it
     /// (acme's `win cmd`), named `dir/-host` or `dir/-cmd`.
     /// `shell`: the session's `Newterm.shell` setting, if any.
-    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path, cmd: Option<&str>, shell: Option<&str>) -> Result<Proposal, String> {
+    /// `scrollback`: the `Newterm.scrollback` setting, lines of history.
+    pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path, cmd: Option<&str>, shell: Option<&str>, scrollback: usize) -> Result<Proposal, String> {
         let id = TermId(self.next_term);
         self.next_term += 1;
         self.node.create_shard(log, Shard::Term(id)).map_err(|e| e.to_string())?;
@@ -312,7 +313,7 @@ impl Server {
             .map_err(|e| e.to_string())?;
         // the shell starts once the window is there (`spawn_pending`),
         // with the window's id in its environment as acme's win has
-        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24 });
+        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24, scrollback });
         // win's name: the directory, then `-` and the host (`awd` keeps it
         // so), or the command
         let label = cmd.map(command_name).filter(|n| !n.is_empty()).unwrap_or_else(term::sysname);
@@ -332,7 +333,7 @@ impl Server {
             let Some(p) = self.pending_terms.remove(&id) else { continue };
             let mut env = self.env.clone();
             env.push(("winid".into(), w.0.to_string()));
-            match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref()) {
+            match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback) {
                 Ok(host) => {
                     if (p.cols, p.rows) != (80, 24) {
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols: p.cols, rows: p.rows }));
@@ -415,6 +416,14 @@ impl Server {
 
     pub fn term_scroll(&mut self, log: &mut Log, id: TermId, delta: isize) {
         self.term_wheel(log, id, delta, None)
+    }
+
+    /// `Clear`: the terminal's scrollback dropped; the screen stays.
+    pub fn term_clear(&mut self, log: &mut Log, id: TermId) {
+        if let Some(h) = self.terms.get_mut(&id) {
+            h.clear_history();
+            self.publish_term(log, id);
+        }
     }
 
     /// The wheel at a cell: the program's when it asked for the mouse
@@ -824,7 +833,7 @@ impl Server {
                 // `Newterm cmd args`: the terminal runs that instead of a shell
                 let rest = text[cmd.len()..].trim();
                 let shell = view.state.meta.setting(SERVER, "Newterm.shell").map(String::from);
-                props.push(self.new_term(log, col, &dir, if rest.is_empty() { None } else { Some(rest) }, shell.as_deref())?);
+                props.push(self.new_term(log, col, &dir, if rest.is_empty() { None } else { Some(rest) }, shell.as_deref(), scrollback_setting(view))?);
             }
             "Win" => {
                 // acme's win: the tool, run as a command named Win (so Kill
@@ -1028,6 +1037,21 @@ impl Server {
             let (_, e) = log.install_rule(SERVER, -100, rule);
             let _ = self.node.state.apply(Shard::Meta, &e);
         }
+        // Clear in a terminal's tools menu (or typed in its tag): the
+        // scrollback dropped, through the CLI
+        let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
+        let clear = PlumbRule {
+            verb: "Clear".into(),
+            text: None,
+            file: None,
+            kind: Some(WinKind::Term),
+            isfile: None,
+            isdir: None,
+            action: RuleAction::Run(format!("{apex} term clear $win")),
+            win: None, to: None,
+        };
+        let (_, e) = log.install_rule(SERVER, -10, clear);
+        let _ = self.node.state.apply(Shard::Meta, &e);
     }
 
     /// The Preview rules (WEB.md §3): one of the server's per extension a
@@ -1595,6 +1619,15 @@ struct PendingTerm {
     shell: Option<String>,
     cols: u16,
     rows: u16,
+    scrollback: usize,
+}
+
+/// Lines of scrollback a new terminal keeps: the `Newterm.scrollback`
+/// setting, else 10000.
+pub const DEFAULT_SCROLLBACK: usize = 10_000;
+
+pub fn scrollback_setting(view: &Node) -> usize {
+    view.state.meta.setting(SERVER, "Newterm.scrollback").and_then(|s| s.trim().parse().ok()).unwrap_or(DEFAULT_SCROLLBACK)
 }
 
 /// What acme's `runproc` puts in a command's environment: `winid`, and
