@@ -154,11 +154,14 @@ impl Render for Acme {
         let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
         for col in &l.cols {
-            // acme's colinit: the column is white where no window is, below
-            // its tag and the border under it; the black shows only as the
-            // borders between columns and windows
-            let top = font + apex_core::tiling::BORDER;
-            area = area.child(at(col.r.x0, col.r.y0 + top, col.r.dx(), col.r.dy() - top, div().size_full().bg(gpui::white()).into_any_element()));
+            // acme's colinit: the column is white where no window is, the
+            // tail below its last window (or its tag and the border under
+            // it); everywhere else the black root is the borders between
+            // the tag and the windows and between the windows
+            let tail = col.wins.last().map(|s| s.r.y1).unwrap_or(col.r.y0 + font + apex_core::tiling::BORDER);
+            if tail < col.r.y1 {
+                area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::white()).into_any_element()));
+            }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
             for (i, s) in col.wins.iter().enumerate() {
                 if !col.safe && i > 0 {
