@@ -1901,9 +1901,11 @@ impl Acme {
         let pos = e.position;
         if let Some(d) = &mut self.tab_drag {
             // a tab held: past a few pixels it is a drag; the tab floats
-            // under the pointer and takes its place among the others as
-            // its centre passes theirs (their places as they would be
-            // with it out of the row, so a swap cannot undo itself)
+            // under the pointer and passes a neighbour once it covers
+            // the whole of it: its far edge past the neighbour's far
+            // edge (measured against the neighbours' places with it out
+            // of the row, so a swap cannot undo itself; overlapping one
+            // partly changes nothing, whichever is the wider)
             d.pos = pos;
             if !d.moved && ((d.start.x - pos.x).abs() > px(4.) || (d.start.y - pos.y).abs() > px(4.)) {
                 d.moved = true;
@@ -1913,16 +1915,26 @@ impl Acme {
                 let mut all: Vec<(SessionUrl, gpui::Bounds<Pixels>)> = self.tab_bounds.borrow().clone();
                 all.sort_by(|a, b| a.1.origin.x.partial_cmp(&b.1.origin.x).unwrap_or(std::cmp::Ordering::Equal));
                 let gap = if all.len() >= 2 { all[1].1.origin.x - (all[0].1.origin.x + all[0].1.size.width) } else { px(4.) };
-                let centre = pos.x - grab + width / 2.;
+                let (gl, gr) = (pos.x - grab, pos.x - grab + width);
+                // the others' slots with the dragged tab out of the row
                 let mut left = all.first().map(|(_, b)| b.origin.x).unwrap_or(px(0.));
-                let mut before = None;
+                let mut slots: Vec<(SessionUrl, Pixels, Pixels)> = Vec::new();
                 for (u, b) in all.iter().filter(|(u, _)| *u != url) {
-                    if centre < left + b.size.width / 2. {
-                        before = Some(u.clone());
-                        break;
-                    }
+                    slots.push((u.clone(), left, left + b.size.width));
                     left += b.size.width + gap;
                 }
+                // where it is now among them, then past each neighbour it covers
+                let mut k = all.iter().position(|(u, _)| *u == url).unwrap_or(slots.len());
+                loop {
+                    if k < slots.len() && gr >= slots[k].2 {
+                        k += 1;
+                    } else if k > 0 && gl <= slots[k - 1].1 {
+                        k -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                let before = slots.get(k).map(|(u, _, _)| u.clone());
                 crate::pool::Pool::move_tab(cx, &url, before.as_ref());
             }
             cx.notify();

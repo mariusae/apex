@@ -1214,9 +1214,11 @@ this one (detach, attach).
   with B1 is a click on release until it has moved a few pixels; after
   that the tab floats under the pointer (keeping the grip it was taken
   by, kept within the strip's tabs), its place in the row stays as an
-  empty slot, and it takes a new place as its centre passes the others'
-  (their places as they would be with it out of the row, so a swap
-  cannot undo itself); the order is kept on release. The tab order is kept in `open-sessions` beside the
+  empty slot, and it passes a neighbour once it covers the whole of
+  it, its far edge past the neighbour's far edge (measured against the
+  neighbours' places with it out of the row, so a swap cannot undo
+  itself, and a partial overlap changes nothing whichever tab is the
+  wider); the order is kept on release. The tab order is kept in `open-sessions` beside the
   other state files, and at launch the tabs of last time are attached
   again in the background and parked, by identity: one that is gone
   (an ended session, a new daemon) is forgotten rather than made anew. Sessions shown
