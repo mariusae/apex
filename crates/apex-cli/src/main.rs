@@ -279,7 +279,12 @@ this attachment with -mine, gone when it detaches):
 	apex plumb rule add -file='\\.go$' -text='\\w+' -tool=lsp -priority=10
 
 See apex help rules for the predicates, the actions, and the templates." },
-    Cmd { name: "B", usage: "apex B FILE[:LINE]...", short: "open files in the session (plan 9's B)", flags: &[], run: b, long: "\
+    Cmd { name: "switch", usage: "apex switch SESSION [WIN]", short: "show another session in the window on this one", flags: &[], run: switch_cmd, long: "\
+Switch asks the window showing this session to show SESSION instead
+(by its id, a unique prefix of it, or its label), at window WIN there
+when given. Nothing happens when no window shows this session. B with
+SESSION.WIN[:LINE] does the same and lands at a line." },
+    Cmd { name: "B", usage: "apex B FILE[:LINE]... | apex B SESSION.WIN[:LINE]", short: "open files in the session (plan 9's B)", flags: &[], run: b, long: "\
 B opens each FILE in the session from the current directory, at LINE when
 given, through the plumbing rules that open in the session (see apex
 help rules), else as a path. It is plan 9's B: a shell in an apex terminal
@@ -1179,6 +1184,17 @@ fn plumb(ctx: &Ctx, p: &Parsed) -> R {
 }
 
 /// plan 9's `B`: each argument to the edit port, from this directory.
+fn switch_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    let (session, win) = match p.args.as_slice() {
+        [s] => (s.clone(), None),
+        [s, w] => (s.clone(), Some(WindowId(w.parse().map_err(|_| format!("{w}: not a window id"))?))),
+        _ => return Err("usage".into()),
+    };
+    let mut c = tool(ctx)?;
+    c.propose(Proposal::Switch { session, window: win }, TIMEOUT)?;
+    Ok(())
+}
+
 fn b(ctx: &Ctx, p: &Parsed) -> R {
     if p.args.is_empty() {
         return Err("usage".into());

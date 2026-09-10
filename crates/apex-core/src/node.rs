@@ -172,6 +172,9 @@ pub struct Node {
     /// Places to go (`Goto`, `Back`, `Fwd`), for the client (or a headless
     /// leader) to open and select (`take_gotos`).
     pub gotos: Vec<Loc>,
+    /// Places in other sessions to go to (a `Goto` or `Switch` naming
+    /// one): a UI switches sessions for them (`take_switches`).
+    pub switches: Vec<Loc>,
     /// `Exit` was executed (by anyone: a tag, `apex exec`): the client
     /// showing this replica should close its window.
     pub quit_requested: bool,
@@ -204,6 +207,7 @@ impl Node {
             seltext: None,
             shows: Vec::new(),
             gotos: Vec::new(),
+            switches: Vec::new(),
             quit_requested: false,
             warned: BTreeMap::new(),
             edit: EditLang::new(),
@@ -479,7 +483,7 @@ impl Node {
         let rest = self.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
         let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
         self.set_content(log, tag, &format!("{url} {rest}"))?;
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: Some(Loc { name: from, pos: Pos::Keep }), to: Loc { name: url.to_string(), pos: Pos::Keep } }))?;
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: Some(Loc { session: None, name: from, pos: Pos::Keep }), to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
         Ok(())
     }
 
@@ -1188,6 +1192,29 @@ impl Node {
         Ok(window)
     }
 
+    pub fn take_switches(&mut self) -> Vec<Loc> {
+        std::mem::take(&mut self.switches)
+    }
+
+    /// Is this place in another session than this one?
+    pub fn elsewhere(&self, loc: &Loc) -> bool {
+        match &loc.session {
+            Some(s) => !self.state.meta.id.is_empty() && *s != self.state.meta.id && !self.state.meta.id.starts_with(s.as_str()),
+            None => false,
+        }
+    }
+
+    /// The window a place names: by name, or by id as digits.
+    pub fn window_named(&self, name: &str) -> Option<WindowId> {
+        if let Ok(n) = name.parse::<u64>() {
+            let w = WindowId(n);
+            if self.state.window(w).is_ok() {
+                return Some(w);
+            }
+        }
+        self.state.windows.keys().copied().find(|w| self.window_name(*w) == name)
+    }
+
     pub fn take_gotos(&mut self) -> Vec<Loc> {
         std::mem::take(&mut self.gotos)
     }
@@ -1201,7 +1228,8 @@ impl Node {
             return None;
         }
         let (q0, q1) = self.selection(ViewId::Body(w)).ok()?;
-        Some(Loc { name, pos: Pos::Chars(q0, q1) })
+        let session = (!self.state.meta.id.is_empty()).then(|| self.state.meta.id.clone());
+        Some(Loc { session, name, pos: Pos::Chars(q0, q1) })
     }
 
     /// The character range a position names in `w`'s body.
@@ -1236,7 +1264,7 @@ impl Node {
 
     /// Land at a location whose window is open: select, show, warp.
     pub fn land(&mut self, log: &mut Log, loc: &Loc) -> Result<Option<WindowId>> {
-        let Some(w) = self.state.windows.keys().copied().find(|w| self.window_name(*w) == loc.name) else { return Ok(None) };
+        let Some(w) = self.window_named(&loc.name) else { return Ok(None) };
         if let Some((q0, q1)) = self.loc_range(w, &loc.pos) {
             self.select(log, ViewId::Body(w), q0, q1)?;
         }

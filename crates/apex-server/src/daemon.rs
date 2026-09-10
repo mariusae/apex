@@ -548,11 +548,11 @@ impl Daemon {
         self.send(id, ServerMsg::Welcome { attachment: a, snapshot });
         // the client's attach script runs now, as the attachment's own
         if let Some(script) = attach {
-            let s = self.sessions.get_mut(&session).unwrap();
+            let s = self.sessions.get_mut(&key).unwrap();
             s.server.run_attach(&s.view, a, &script);
         }
         // the others learn from the metalog that the leases moved
-        self.after(&session, Vec::new());
+        self.after(&key, Vec::new());
     }
 
     fn in_session(&mut self, id: u64, name: &str, m: ClientMsg) {

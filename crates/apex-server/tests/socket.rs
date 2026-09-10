@@ -180,7 +180,7 @@ fn sessions_are_listed_and_made() {
     let sock = daemon();
     let mut c = Remote::connect_as(&sock, "main", "t", AttachmentKind::Tool).unwrap();
     c.send(&ClientMsg::ListSessions);
-    assert!(wait(&mut c, |r| r.link.sessions.as_deref() == Some(&["main".to_string()][..])));
+    assert!(wait(&mut c, |r| r.link.sessions.as_ref().is_some_and(|v| v.iter().map(|s| s.label.as_str()).collect::<Vec<_>>() == ["main"])));
     c.send(&ClientMsg::NewSession { name: "two".into() });
     assert!(wait(&mut c, |r| r.link.sessions.as_ref().map(|s| s.len()) == Some(2)));
     let mut two = Remote::connect(&sock, "two", "ui").unwrap();
@@ -392,4 +392,59 @@ fn directory_windows_refresh_or_go_stale() {
     assert!(wait(&mut c, |r| body(r, w) == "a.txt\nb.txt\nc.txt\n"), "{}", body(&c, w));
     assert!(!c.node.state.buffer(b).unwrap().stale && !c.node.state.buffer(b).unwrap().dirty());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A place in another session: a Goto or Switch naming one is not
+/// landed here but handed to the UI as a switch (`take_switches`),
+/// with the window to land on; `apex B session.N:line` makes such a
+/// Goto, and Back from there leads back across sessions.
+#[test]
+fn places_in_other_sessions_become_switches_for_the_ui() {
+    let sock = daemon();
+    let mut ui = Remote::connect(&sock, "main", "ui").unwrap();
+    let here = ui.node.state.meta.id.clone();
+    assert_eq!(here.len(), 36);
+    // a second session, by its identity
+    ui.send(&ClientMsg::NewSession { name: "side".into() });
+    assert!(wait(&mut ui, |r| r.link.sessions.is_some()), "no session list came");
+    let side = ui.link.sessions.take().unwrap().into_iter().find(|s| s.label == "side").expect("side listed").id;
+    assert_ne!(side, here);
+    // a tool proposes a Switch: the UI, leading, gets it as a switch
+    let mut tool = Remote::connect_as(&sock, "main", "t", AttachmentKind::Tool).unwrap();
+    // (proposed without waiting: the UI must step to apply it)
+    tool.link.propose(apex_server::Proposal::Switch { session: side.clone(), window: Some(WindowId(7)) });
+    assert!(wait(&mut ui, |r| !r.node.switches.is_empty()));
+    let sw = ui.node.take_switches();
+    assert_eq!(sw, vec![Loc { session: Some(side.clone()), name: "7".into(), pos: Pos::Keep }]);
+    // a Goto with a session (apex B side.7:12): the same, with the line
+    let b = format!("{}.7:12", &side[..8]);
+    tool.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: b, dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
+    assert!(wait(&mut ui, |r| !r.node.switches.is_empty()));
+    let sw = ui.node.take_switches();
+    assert_eq!(sw, vec![Loc { session: Some(side[..8].to_string()), name: "7".into(), pos: Pos::Line(12) }]);
+    // a Goto to this session by its own id lands here, as any Goto does
+    // (each proposal waited for, both sides stepping: the UI applies)
+    let settled = |ui: &mut Remote, tool: &mut Remote, pid: u64| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !tool.link.applied.contains_key(&pid) && Instant::now() < deadline {
+            let _ = ui.step(Duration::from_millis(10));
+            let _ = tool.step(Duration::from_millis(10));
+        }
+        tool.link.applied.remove(&pid).expect("answered").expect("applied")
+    };
+    let col = ui.node.state.layout.cols[0].id;
+    let w = ui.node.new_window(&mut ui.log, col, "/tmp/here", "").unwrap();
+    let w2 = ui.node.new_window(&mut ui.log, col, "/tmp/there", "").unwrap();
+    ui.flush();
+    let pid = tool.link.propose(apex_server::Proposal::Goto { loc: Loc { session: Some(here.clone()), name: w.0.to_string(), pos: Pos::Keep } });
+    settled(&mut ui, &mut tool, pid);
+    assert_eq!(ui.node.seltext, Some(ViewId::Body(w)));
+    assert!(ui.node.switches.is_empty());
+    // the place left by a jump is on the stack with its session: Back
+    // from elsewhere would come here
+    let pid = tool.link.propose(apex_server::Proposal::Goto { loc: Loc { session: None, name: w2.0.to_string(), pos: Pos::Keep } });
+    settled(&mut ui, &mut tool, pid);
+    assert_eq!(ui.node.seltext, Some(ViewId::Body(w2)));
+    let back = ui.node.state.layout.nav_back.last().cloned();
+    assert!(back.as_ref().is_some_and(|l| l.session.as_deref() == Some(here.as_str()) && l.name == "/tmp/here"), "{:?}", ui.node.state.layout.nav_back);
 }

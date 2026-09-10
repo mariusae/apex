@@ -20,6 +20,9 @@ pub enum Proposal {
     OpenWeb { col: ColumnId, url: String },
     /// A window whose buffer `text` is HTML shown as a page (`apex web`).
     OpenHtml { col: ColumnId, name: String, text: String },
+    /// Show another session (by id, a prefix, or label), at `window`
+    /// there when given: a UI leading this one switches to it.
+    Switch { session: String, window: Option<WindowId> },
     /// The client rendering a web window says where its page went: the
     /// window's name follows, the place left goes on the navigation stack.
     WebNavigate { window: WindowId, url: String },
@@ -172,19 +175,24 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::CommandStart { name } => {
-            if let Some(top) = node.state.layout.top {
+            // the top row edited as a side effect: the text last selected
+            // (where keys and looks go) stays what it was
+            let was = node.seltext;
+            if node.state.layout.top.is_some() {
                 node.select(log, ViewId::Top, 0, 0)?;
                 node.replace_selection(log, ViewId::Top, &format!("{name} "))?;
                 node.select(log, ViewId::Top, 0, 0)?;
-                let _ = top;
             }
+            node.seltext = was;
             Ok(None)
         }
         Proposal::CommandExit { name } => {
+            let was = node.seltext;
             if node.state.layout.top.is_some() && node.look(log, ViewId::Top, &format!("{name} "))? {
                 node.replace_selection(log, ViewId::Top, "")?;
                 node.select(log, ViewId::Top, 0, 0)?;
             }
+            node.seltext = was;
             Ok(None)
         }
         Proposal::Complete { view, at, text } => {
@@ -228,11 +236,19 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         Proposal::Goto { loc } => {
             let from = node.current_loc();
             node.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: loc.clone() }))?;
+            if node.elsewhere(&loc) {
+                node.switches.push(loc); // another session: a UI switches to it
+                return Ok(None);
+            }
             let w = node.land(log, &loc)?;
             if w.is_none() {
                 node.gotos.push(loc); // the window must be opened first
             }
             Ok(w)
+        }
+        Proposal::Switch { session, window } => {
+            node.switches.push(Loc { session: Some(session), name: window.map(|w| w.0.to_string()).unwrap_or_default(), pos: Pos::Keep });
+            Ok(None)
         }
         Proposal::Nav { back } => {
             let stack = if back { &node.state.layout.nav_back } else { &node.state.layout.nav_forward };
@@ -241,6 +257,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             };
             let at = node.current_loc();
             node.append(log, Shard::Layout, Op::Layout(LayoutOp::NavPop { back, at }))?;
+            if node.elsewhere(&loc) {
+                node.switches.push(loc); // back to another session
+                return Ok(None);
+            }
             let w = node.land(log, &loc)?;
             if w.is_none() {
                 node.gotos.push(loc);

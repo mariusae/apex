@@ -197,7 +197,10 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     }
     let env = ok(&sock, &["-session=s2", "env"]);
     assert!(env.contains("FROM=host\n"), "{env}");
-    assert!(env.contains("ORDER=s2\n"), "{env}");
+    // $apexsession is the session's identity, the label is beside it
+    let id = ok(&sock, &["ls"]).lines().find(|l| l.starts_with("s2\t")).unwrap().split('\t').nth(1).unwrap().to_string();
+    assert!(env.contains(&format!("ORDER={id}\n")), "{env}");
+    assert!(env.contains("apexsessionlabel=s2\n"), "{env}");
     // the init's name left the top row when it was done
     assert!(!ok(&sock, &["-session=s2", "text", "read", "+Errors"]).contains("exit"), "init exited cleanly");
     // a terminal made now sees the environment
@@ -1001,7 +1004,7 @@ fn the_profiles_environment_at_its_end_is_the_sessions() {
     assert!(!env.contains("EDITOR="), "{env}");
     // the shell's own bookkeeping is not the session's
     assert!(!env.contains("\npid=") && !env.contains("\nstatus="), "{env}");
-    assert!(env.contains("apexsession=main\n"), "{env}");
+    assert!(env.contains("apexsessionlabel=main\n"), "{env}");
     // a command started now has the function
     ok(&sock, &["exec", "g there"]);
     let deadline = Instant::now() + Duration::from_secs(10);

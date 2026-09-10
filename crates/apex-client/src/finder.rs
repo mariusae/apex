@@ -268,7 +268,7 @@ impl Acme {
         self.finder = None;
         // a jump: the origin goes on the back stack, and we land there
         let Pick::Entry(Entry { name, .. }) = p;
-        let loc = Loc { name, pos: Pos::Keep };
+        let loc = Loc { session: None, name, pos: Pos::Keep };
         let _ = apex_server::proposal::apply(&mut self.node, &mut self.log, apex_server::Proposal::Goto { loc });
         self.sync();
         self.after();

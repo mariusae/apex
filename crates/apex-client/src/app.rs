@@ -202,6 +202,8 @@ pub struct Acme {
     show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
     pending_goto: Option<Loc>,
+    /// A place in another session to go to: the next render switches.
+    pub pending_switch: Option<Loc>,
     /// ⌘P, when open.
     pub finder: Option<crate::finder::Finder>,
     /// The windows as of the last frame, to notice closings.
@@ -465,6 +467,26 @@ impl Acme {
             }
             None => self.notice("no previous session\n"),
         }
+    }
+
+    /// A place in another session (a Goto or Switch named it): switch
+    /// to that session, then land there once it is up. The session is
+    /// named by identity; its label is what we knew, or a stub the
+    /// attach corrects.
+    pub fn switch_for(&mut self, loc: Loc, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = loc.session.clone() else { return };
+        if !self.node.elsewhere(&loc) {
+            self.goto(Loc { session: None, ..loc });
+            return;
+        }
+        let here = crate::shell::Host::of(&self.url);
+        let label = crate::shell::known_sessions().get(&here).and_then(|v| v.iter().find(|s| s.id == id || s.id.starts_with(&id)).map(|s| s.label.clone()));
+        let url = here.url(&label.unwrap_or_else(|| id.chars().take(8).collect())).with_id(&id);
+        self.switch_to(&url, window, cx);
+        if !loc.name.is_empty() {
+            self.pending_goto = Some(Loc { session: None, ..loc });
+        }
+        cx.notify();
     }
 
     pub fn switch_to(&mut self, url: &SessionUrl, window: &mut Window, cx: &mut Context<Self>) {
@@ -1060,6 +1082,7 @@ impl Acme {
             fullscreen: false,
             show_at: HashMap::new(),
             pending_goto: None,
+            pending_switch: None,
             finder: None,
             last_windows: std::collections::BTreeMap::new(),
             chooser: false,
@@ -1100,14 +1123,16 @@ impl Acme {
         for loc in self.node.take_gotos() {
             self.goto(loc);
         }
+        // places in other sessions: the render switches (it has the window)
+        if let Some(loc) = self.node.take_switches().pop() {
+            self.pending_switch = Some(loc);
+        }
         // a place whose file was being opened: land once it is
         if let Some(loc) = self.pending_goto.clone() {
-            if self.node.state.windows.keys().any(|w| self.node.window_name(*w) == loc.name) {
+            if let Some(w) = self.node.window_named(&loc.name) {
                 self.pending_goto = None;
                 let _ = self.node.land(&mut self.log, &loc);
-                if let Some(w) = self.node.state.windows.keys().copied().find(|w| self.node.window_name(*w) == loc.name) {
-                    self.want_visible.insert(ViewId::Body(w));
-                }
+                self.want_visible.insert(ViewId::Body(w));
             }
         }
         if let Backend::Remote(link) = &mut self.backend {
@@ -2208,6 +2233,10 @@ impl Acme {
     /// Go to a place: land if its window is open; else have the server
     /// open the file, and land when it arrives.
     pub fn goto(&mut self, loc: Loc) {
+        if self.node.elsewhere(&loc) {
+            self.pending_switch = Some(loc);
+            return;
+        }
         match self.node.land(&mut self.log, &loc) {
             Ok(Some(w)) => {
                 self.want_visible.insert(ViewId::Body(w));
@@ -2310,9 +2339,9 @@ impl Acme {
                 WebEvent::Title(_) => {}
                 WebEvent::Reload => self.webs.reload(w),
                 // a link followed in a page of ours: a web window on it
-                WebEvent::Link(url) => self.goto(Loc { name: url, pos: Pos::Keep }),
+                WebEvent::Link(url) => self.goto(Loc { session: None, name: url, pos: Pos::Keep }),
                 // a file link with a line: the file, at that line
-                WebEvent::Open(path, line) => self.goto(Loc { name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
+                WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
                 WebEvent::Loading(on) => self.webs.set_loading(w, on),
                 // the host's loopback, by its bare name: through the proxy
                 WebEvent::Reroute(url) => {

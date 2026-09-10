@@ -244,6 +244,12 @@ pub fn is_url(name: &str) -> bool {
 /// same headspace.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Loc {
+    /// The session, by identity, when it is not the one at hand: a
+    /// place in another session, which a UI switches to.
+    #[serde(default)]
+    pub session: Option<String>,
+    /// A window's name; or its id, as digits, for a window named
+    /// anywhere (`<session>.<win>`).
     pub name: String,
     pub pos: Pos,
 }

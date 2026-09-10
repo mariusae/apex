@@ -18,6 +18,8 @@
 //!   mean the end, so `q0: -1, q1: -1` appends), `select {window, q0, q1}`
 //! - `rename {window, name}`, `live {window, on}`, `delete {window}`
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
+//! - `switch {session, window?}`: another session shown (by id, a prefix
+//!   or label), at a window there
 //! - `rule {verb?, text?, file?, kind?, window?, priority?}` → `rule`: a
 //!   rule answered by this tool (`plumb` events); `unrule {rule}`
 //! - `ack {plumb, ok}`: the answer to a `plumb` event (within a second)
@@ -192,6 +194,12 @@ impl Bridge {
             }
             "errors" => {
                 self.tool.errors(v["dir"].as_str(), v["text"].as_str().ok_or("text")?).map_err(e)?;
+                Ok(json!({}))
+            }
+            "switch" => {
+                let session = v["session"].as_str().ok_or("session")?;
+                let w = v["window"].as_u64().map(WindowId);
+                self.tool.switch(session, w).map_err(e)?;
                 Ok(json!({}))
             }
             "rule" => {

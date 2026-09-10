@@ -43,6 +43,9 @@ What a tool can do:
 - `w.Watch(fn)`: edits by others to the window's body, as win follows
   typing; `t.OnRename`, `t.OnDelete`: the windows the tool made or
   watches.
+- `t.Switch(session, window)`: another session shown by the UI on this
+  one, at a window there; sessions are named by id (a prefix will do)
+  or label.
 - `t.Errors(dir, text)`: a note in +Errors. `t.Exec(text)`: a command
   as B2 would run it. `t.Set`, `t.Setting`: settings of the tool's own.
 - `t.Serve(ctx)`: runs the handlers until the session ends.

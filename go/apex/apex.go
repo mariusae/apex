@@ -301,6 +301,17 @@ func (t *Tool) Errors(dir, text string) error {
 	return t.call("errors", args, nil)
 }
 
+// Switch shows another session, at the window with this id there when
+// window is not 0. The session is named by its id, a unique prefix of
+// it, or its label. The UI showing this session switches to it.
+func (t *Tool) Switch(session string, window int) error {
+	args := map[string]any{"session": session}
+	if window != 0 {
+		args["window"] = window
+	}
+	return t.call("switch", args, nil)
+}
+
 // Set records a setting of the tool's own (gone when it detaches).
 func (t *Tool) Set(key, value string) error {
 	return t.call("set", map[string]any{"key": key, "value": value}, nil)

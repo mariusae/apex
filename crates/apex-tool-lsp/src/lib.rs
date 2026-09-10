@@ -874,7 +874,7 @@ impl Tool {
             }
             None => Pos::LineCol(range["start"]["line"].as_u64().unwrap_or(0) as usize, range["start"]["character"].as_u64().unwrap_or(0) as usize),
         };
-        self.propose(Proposal::Goto { loc: Loc { name, pos } }, TIMEOUT).is_ok()
+        self.propose(Proposal::Goto { loc: Loc { session: None, name, pos } }, TIMEOUT).is_ok()
     }
 }
 

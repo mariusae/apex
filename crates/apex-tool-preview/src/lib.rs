@@ -111,7 +111,7 @@ impl Tool {
         let src = match self.window_named(&self.file) {
             Some(w) => w,
             None => {
-                let loc = Loc { name: self.file.clone(), pos: Pos::Keep };
+                let loc = Loc { session: None, name: self.file.clone(), pos: Pos::Keep };
                 let r = self.propose(Proposal::Goto { loc }, TIMEOUT);
                 if debug() {
                     eprintln!("preview: goto answered {r:?}");
@@ -130,7 +130,7 @@ impl Tool {
         let name = apex_core::preview::preview_name(&self.file);
         if let Some(w) = self.window_named(&name) {
             if self.remote.node.window_live(w) {
-                let loc = Loc { name: name.clone(), pos: Pos::Keep };
+                let loc = Loc { session: None, name: name.clone(), pos: Pos::Keep };
                 let _ = self.propose(Proposal::Goto { loc }, TIMEOUT);
                 return Err("shown".into());
             }

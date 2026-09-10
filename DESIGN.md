@@ -498,6 +498,8 @@ server → client
 proposals (tools and the server → the leader; applied by whoever leads)
   OpenWindow{col, from?, name, text, hash, select_line?} · NewWindow{col, name} · TermWindow{col, name, term}
   SetContent{buffer, version?, text, hash} · Clean · Rename{buffer, window, name} · Stale
+  Switch{session, window?}                 show another session (by id, prefix or label), at a
+                                           window there: the leading UI switches to it
   ReplaceRange{select, dir?, buffer, version, q0, q1, text}
                                                        select: pipe output, left selected as acme's |
                                                        does; else a tool's write, dot left alone as a
@@ -505,6 +507,8 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Insert{buffer, version, at, text}                    at a point, the selection left alone (win)
   Errors{dir?, text} · Complete{view, at, text} · Snarf{text} · TermName{window, name}
   CommandStart{name} · CommandExit{name} · Status{ctx, exec, status}
+                                          (the top row edited without moving seltext: a command
+                                          ending never steals where keys and looks go)
   Look{ctx, text, reverse} · ClientDo{verb, args}     the last resort of a plumb; a UI's own verbs
   Exec{ctx, text} · Edit{window, program} · Select{view, q0, q1}
   Live{window, by?}                                    a process behind a window
@@ -685,6 +689,18 @@ and terminals get `apexsession` = the id and `apexsessionlabel` = the
 label; `apex ls` prints `label<TAB>id`; a window is nameable anywhere
 as `id.N` (the CLI accepts it where a WIN is, for its own session).
 The socket names the daemon, not a session, and stays as it is.
+*Places across sessions:* a `Loc` carries the session it is in (by
+identity; `None` is the session at hand) and names a window by name or
+by id as digits, so `<session>.<win>` is a place anywhere. A `Goto` or
+`Nav` (Back, Fwd) whose place is in another session is not landed by
+the node but handed to the UI as a switch (`Node::take_switches`);
+the UI switches to that session (parking this one, taking or attaching
+the other by its identity) and lands there once it is up. `current_loc`
+records the session, so the navigation stack spans sessions and Back
+returns across them. `Proposal::Switch{session, window?}` is the same
+for a tool that only wants the session shown (`apex switch`, the tool
+API's `switch`, the bridge's `switch`, Go's `Switch`); `apex B
+session.N[:line]` makes the `Goto`.
 
 *As built, profile and attach:* two scripts, named by what they
 configure. The host's `~/.apex/profile` is the session's setup on the

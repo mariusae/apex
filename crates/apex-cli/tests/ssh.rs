@@ -149,7 +149,7 @@ fn a_provider_is_a_command_named_apex_provider_on_the_path() {
 fn session_urls_name_a_provider_an_argument_and_a_session() {
     use ssh::SessionUrl;
     let u = SessionUrl::parse("sprite://box/dev").unwrap();
-    assert_eq!(u, SessionUrl { provider: "sprite".into(), arg: "box".into(), session: "dev".into() });
+    assert_eq!(u, SessionUrl { provider: "sprite".into(), arg: "box".into(), session: "dev".into(), id: None });
     assert_eq!(u.to_string(), "sprite://box/dev");
     assert_eq!(u.dest().as_deref(), Some("sprite:box"));
     let l = SessionUrl::parse("local:///work").unwrap();

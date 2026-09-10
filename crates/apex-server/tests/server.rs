@@ -592,7 +592,7 @@ fn jumps_stack_up_and_back_returns() {
     // a jump to b.txt:2, its window not open yet: the origin is recorded,
     // the place is left for whoever opens files
     let b_name = dir.join("b.txt").display().to_string();
-    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Goto { loc: Loc { name: b_name.clone(), pos: Pos::Line(2) } }).unwrap();
+    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Goto { loc: Loc { session: None, name: b_name.clone(), pos: Pos::Line(2) } }).unwrap();
     assert!(r.is_none());
     assert_eq!(node.state.layout.nav_back.len(), 1);
     assert_eq!(node.state.layout.nav_back[0].pos, Pos::Chars(4, 7));

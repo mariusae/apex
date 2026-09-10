@@ -1172,7 +1172,7 @@ impl Server {
                         continue;
                     }
                     p.trace.push(format!("{who}: opened {target}"));
-                    let loc = Loc { name: full.display().to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) };
+                    let loc = Loc { session: None, name: full.display().to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) };
                     return self.plumb_finish(id, vec![Proposal::Goto { loc }]);
                 }
                 RuleAction::Run(t) => {
@@ -1229,11 +1229,15 @@ impl Server {
         let (ctx, text, verb, edit_only, dir) = (p.req.ctx, p.req.text.clone(), p.req.verb.clone(), p.req.edit_only, p.dir.clone());
         let exec = p.req.exec;
         if edit_only {
-            // B: the text as a path, then
+            // B: a window named anywhere (session.N, a line after), else
+            // the text as a path
+            if let Some(loc) = global_window(&text) {
+                return self.plumb_finish(id, vec![Proposal::Goto { loc }]);
+            }
             let (path, line) = split_line(&text);
             let full = resolve(&dir, &path);
             let prop = if full.exists() {
-                Proposal::Goto { loc: Loc { name: full.display().to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) } }
+                Proposal::Goto { loc: Loc { session: None, name: full.display().to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) } }
             } else {
                 Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{text}: no such file\n") }
             };
@@ -1245,7 +1249,7 @@ impl Server {
             if let Some((target, addr)) = p.file.clone() {
                 // acme's look3: a file name opens the file at its address
                 let pos = address_pos(&addr);
-                return self.plumb_finish(id, vec![Proposal::Goto { loc: Loc { name: target, pos } }]);
+                return self.plumb_finish(id, vec![Proposal::Goto { loc: Loc { session: None, name: target, pos } }]);
             }
             return self.plumb_finish(id, vec![Proposal::Look { ctx, text, reverse }]);
         }
@@ -1314,6 +1318,22 @@ fn address_pos(addr: &str) -> Pos {
         return digits(rest).parse().map(|n| Pos::Chars(n, n)).unwrap_or(Pos::Keep);
     }
     digits(addr).parse().map(Pos::Line).unwrap_or(Pos::Keep)
+}
+
+/// `session.N` or `session.N:line`, a window named anywhere: the
+/// session by id or a prefix of it (hex and dashes, four or more), the
+/// window by id.
+pub fn global_window(text: &str) -> Option<Loc> {
+    let (rest, line) = match text.rsplit_once(':') {
+        Some((r, l)) if l.chars().all(|c| c.is_ascii_digit()) && !l.is_empty() => (r, l.parse().ok()),
+        _ => (text, None),
+    };
+    let (session, win) = rest.rsplit_once('.')?;
+    let win: u64 = win.parse().ok()?;
+    if session.len() < 4 || !session.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return None;
+    }
+    Some(Loc { session: Some(session.to_string()), name: win.to_string(), pos: line.map(Pos::Line).unwrap_or(Pos::Keep) })
 }
 
 fn split_line(target: &str) -> (String, Option<usize>) {

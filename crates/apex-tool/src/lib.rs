@@ -412,7 +412,7 @@ impl Tool {
     /// open, at `line` (1-based) when given.
     pub fn open(&mut self, name: &str, line: Option<usize>) -> Result<WindowId> {
         let pos = line.map(Pos::Line).unwrap_or(Pos::Keep);
-        self.propose(Proposal::Goto { loc: Loc { name: name.to_string(), pos } })?;
+        self.propose(Proposal::Goto { loc: Loc { session: None, name: name.to_string(), pos } })?;
         // the file may be on its way: wait for its window
         let deadline = std::time::Instant::now() + TIMEOUT;
         loop {
@@ -427,6 +427,14 @@ impl Tool {
                 return Err("the session is gone".into());
             }
         }
+    }
+
+    /// Show another session, at a window there when given: a UI leading
+    /// this session switches to it. The session is named by its id, a
+    /// unique prefix of it, or its label; the window by its id there.
+    pub fn switch(&mut self, session: &str, window: Option<WindowId>) -> Result<()> {
+        self.propose(Proposal::Switch { session: session.to_string(), window })?;
+        Ok(())
     }
 
     /// The window's whole text.
