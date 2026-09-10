@@ -63,6 +63,10 @@ pub struct Parked {
 
 pub struct Pool {
     parked: HashMap<String, Parked>,
+    /// Every session a window has shown, in the order first shown: the
+    /// order of the title bar's tabs, which list the ones still
+    /// connected (shown or parked).
+    order: Vec<SessionUrl>,
     /// Wakes the tending task.
     wake: Wake,
 }
@@ -77,7 +81,7 @@ impl Pool {
         let wake: Wake = Arc::new(move || {
             let _ = tx.unbounded_send(());
         });
-        cx.set_global(Pool { parked: HashMap::new(), wake });
+        cx.set_global(Pool { parked: HashMap::new(), order: Vec::new(), wake });
         cx.spawn(async move |cx| {
             use futures::StreamExt;
             while rx.next().await.is_some() {
@@ -85,6 +89,60 @@ impl Pool {
             }
         })
         .detach();
+    }
+
+    /// A window shows this session: a tab for it, in first-shown order.
+    /// Only once its identity is known: a session named by label alone
+    /// is noted after the attach says which it is.
+    pub fn note_open(cx: &mut App, url: &SessionUrl) {
+        if url.id.is_none() {
+            return;
+        }
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        if pool.order.contains(url) {
+            // the label may have changed: the tab says the current one
+            let pool = cx.global_mut::<Pool>();
+            if let Some(u) = pool.order.iter_mut().find(|u| *u == url) {
+                *u = url.clone();
+            }
+            return;
+        }
+        cx.global_mut::<Pool>().order.push(url.clone());
+    }
+
+    /// The tabs: the sessions still connected — `current`, shown in the
+    /// window asking, and the parked ones — in first-shown order.
+    pub fn tabs(cx: &App, current: &SessionUrl) -> Vec<SessionUrl> {
+        let Some(pool) = cx.try_global::<Pool>() else { return vec![current.clone()] };
+        let mut out: Vec<SessionUrl> = pool
+            .order
+            .iter()
+            .filter_map(|u| {
+                if *u == *current {
+                    Some(current.clone())
+                } else {
+                    pool.parked.values().find(|p| p.url == *u).map(|p| p.url.clone())
+                }
+            })
+            .collect();
+        if !out.contains(current) {
+            out.push(current.clone());
+        }
+        out
+    }
+
+    /// Let a parked session go: its link closes, its tab with it.
+    pub fn let_go(cx: &mut App, url: &SessionUrl) {
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        let keys: Vec<String> = pool.parked.iter().filter(|(_, p)| p.url == *url).map(|(k, _)| k.clone()).collect();
+        let pool = cx.global_mut::<Pool>();
+        for k in keys {
+            if let Some(mut p) = pool.parked.remove(&k) {
+                p.link.close();
+                crate::shell::log_line(&format!("parked {k} let go"));
+            }
+        }
+        pool.order.retain(|u| u != url);
     }
 
     /// Park a session: its wake comes here from now on.
@@ -107,6 +165,7 @@ impl Pool {
                 Some(k) => {
                     if let Some(mut p) = pool.parked.remove(&k) {
                         crate::shell::log_line(&format!("parked {k} let go: {CAP} is enough"));
+                        pool.order.retain(|u| *u != p.url);
                         p.link.close();
                     }
                 }
@@ -180,7 +239,9 @@ impl Pool {
         }
         for key in gone {
             crate::shell::log_line(&format!("parked {key}: link ended"));
-            pool.parked.remove(&key);
+            if let Some(p) = pool.parked.remove(&key) {
+                pool.order.retain(|u| *u != p.url);
+            }
         }
     }
 
@@ -195,6 +256,7 @@ impl Pool {
             return;
         }
         let pool = cx.global_mut::<Pool>();
+        pool.order.clear();
         for (_, mut p) in pool.parked.drain() {
             p.link.close();
         }

@@ -1149,6 +1149,12 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
+- *As built, tabs:* the title bar carries a tab per connected session
+  — this window's, and the parked ones — in the order first shown
+  (`Pool::order`), the current one selected (it toggles the picker);
+  another tab switches to that session, its × lets a parked one go,
+  and `+` opens the picker for a session not here yet. Sessions shown
+  by other windows are theirs, not tabs here.
 - *As built, the picker:* while it (or the finder, ⌘P) is up it has
   the keyboard. Its field is a one-line editor (`field.rs`) with a
   cursor and a selection and the keys a Mac field answers: arrows with

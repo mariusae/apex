@@ -1274,32 +1274,88 @@ impl Acme {
         };
         let clickable = self.socket.is_some();
         let open = self.selector.is_some();
-        let mut button = div()
-            .id("session")
-            .px(px(8.))
-            .py(px(3.))
-            .rounded(px(6.))
-            .text_size(px(13.))
-            .font_family(UI_FONT)
-            .text_color(rgb(0x000099))
-            .when(open, |d| d.bg(rgb(0xeaffff)))
-            .child(label);
-        if clickable {
-            button = button
-                .cursor_pointer()
-                .hover(|s| s.bg(rgb(0xeaffff)))
-                .on_mouse_down(
+        // a tab per connected session (this one, and the parked ones), in
+        // the order first shown; this one is the selected tab and toggles
+        // the picker; another switches to it; its × lets a parked one go
+        let mut tabs = div().id("tabs").flex().flex_row().items_center().gap(px(2.));
+        for (i, u) in crate::pool::Pool::tabs(cx, &self.url).into_iter().enumerate() {
+            let current = u == self.url;
+            // the label; the host dimmed after it for a session elsewhere
+            let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
+            let host = (!u.is_local()).then(|| u.arg.clone());
+            let fenced = current && self.fenced();
+            let mut tab = div()
+                .id(("tab", i))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
+                .px(px(8.))
+                .py(px(3.))
+                .rounded(px(6.))
+                .text_size(px(13.))
+                .font_family(UI_FONT)
+                .when(current, |d| d.text_color(rgb(0x000099)).bg(rgb(if open { 0xd4f5f5 } else { 0xeaffff })))
+                .when(!current, |d| d.text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                .child(text)
+                .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
+                .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
+            if clickable {
+                let url = u.clone();
+                tab = tab.cursor_pointer().on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        if this.selector.is_some() {
-                            this.close_selector(cx);
+                    cx.listener(move |this, _, window, cx| {
+                        if current {
+                            if this.selector.is_some() {
+                                this.close_selector(cx);
+                            } else {
+                                this.open_selector(cx);
+                            }
                         } else {
-                            this.open_selector(cx);
+                            this.switch_to(&url, window, cx);
+                            cx.notify();
                         }
                         cx.stop_propagation();
                     }),
                 );
+                if !current {
+                    let url = u.clone();
+                    tab = tab.child(
+                        div()
+                            .id(("tab-close", i))
+                            .text_size(px(11.))
+                            .text_color(rgb(0x9a9a9a))
+                            .hover(|s| s.text_color(rgb(0x000000)))
+                            .child("×")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |_, _, _, cx| {
+                                    crate::pool::Pool::let_go(cx, &url);
+                                    cx.notify();
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                    );
+                }
+            }
+            tabs = tabs.child(tab);
         }
+        // and one more: the picker, for a session not here yet
+        let mut plus = div().id("tab-new").px(px(7.)).py(px(3.)).rounded(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
+        if clickable {
+            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(0xe0e0e0)).text_color(rgb(0x000099))).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.selector.is_some() {
+                        this.close_selector(cx);
+                    } else {
+                        this.open_selector(cx);
+                    }
+                    cx.stop_propagation();
+                }),
+            );
+        }
+        let button = tabs.child(plus);
         div()
             .id("titlebar")
             .h(px(TITLEBAR_HEIGHT))

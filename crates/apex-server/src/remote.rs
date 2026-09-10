@@ -147,17 +147,21 @@ impl Link {
 
     /// `over_streams`, making the session first if the daemon has none
     /// of that name (a UI opening a session it was told to).
+    /// `over`, making the session when the daemon has none named
+    /// `session` (its id, or its label): then one labelled `label` is
+    /// made and attached to instead.
     pub fn over_streams_creating(
         reader: Box<dyn Read + Send>,
         writer: Box<dyn Write + Send>,
         closer: Option<Box<dyn FnOnce() + Send>>,
         session: &str,
+        label: &str,
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
     ) -> io::Result<(Link, Log, Node)> {
         let attach = if kind == AttachmentKind::Ui { local_attach() } else { None };
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, true, attach)
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, Some(label.to_string()), attach)
     }
 
     /// Attach over any byte stream pair: a child's stdout and stdin, say,
@@ -172,7 +176,7 @@ impl Link {
         wake: Option<Wake>,
     ) -> io::Result<(Link, Log, Node)> {
         let attach = if kind == AttachmentKind::Ui { local_attach() } else { None };
-        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, false, attach)
+        Self::over_streams_inner(reader, writer, closer, session, name, kind, wake, None, attach)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -184,17 +188,25 @@ impl Link {
         name: &str,
         kind: AttachmentKind,
         wake: Option<Wake>,
-        create: bool,
+        create: Option<String>,
         attach: Option<Script>,
     ) -> io::Result<(Link, Log, Node)> {
         let out = Outbound(Arc::new(Mutex::new(BufWriter::new(writer))));
         let (tx, rx) = channel::<ServerMsg>();
         let sinks = crate::plane::IoSinks::new();
         spawn_reader(reader, tx, wake, sinks.clone());
-        if create {
-            out.send(&ClientMsg::NewSession { name: session.to_string() })?;
+        // a session named by its label alone is made if it is not there;
+        // one named by its id is attached to as it is, and only when the
+        // daemon has none (it was ended, or the daemon is new) is one of
+        // the label made instead
+        let mut create = create;
+        if let Some(label) = create.as_deref() {
+            if label == session {
+                out.send(&ClientMsg::NewSession { name: label.to_string() })?;
+                create = None;
+            }
         }
-        out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach })?;
+        out.send(&ClientMsg::Hello { session: session.to_string(), name: name.to_string(), kind, attach: attach.clone() })?;
         // a daemon that never answers must not hold a client forever
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         let (attachment, snapshot) = loop {
@@ -207,6 +219,11 @@ impl Link {
             match m {
                 ServerMsg::Build { protocol, id } => check_build(protocol, &id)?,
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
+                ServerMsg::Error { text } if text.starts_with("no session") && create.is_some() => {
+                    let label = create.take().unwrap();
+                    out.send(&ClientMsg::NewSession { name: label.clone() })?;
+                    out.send(&ClientMsg::Hello { session: label, name: name.to_string(), kind, attach: attach.clone() })?;
+                }
                 ServerMsg::Error { text } => return Err(io::Error::other(text)),
                 _ => {}
             }
@@ -851,7 +868,7 @@ impl Remote {
             name,
             kind,
             None,
-            false,
+            None,
             attach,
         )?;
         Ok(Remote { log, node, link })

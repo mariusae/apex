@@ -698,8 +698,12 @@ fn ensure_server(socket: &Path, session: &str) -> R {
     if UnixStream::connect(socket).is_ok() {
         return Ok(());
     }
+    // a new daemon's first session: the label asked for, or the default
+    // when what was asked for is an id (of a session that is gone with
+    // the old daemon)
+    let first = if apex_server::providers::valid_label(session).is_ok() { session } else { apex_server::providers::DEFAULT_SESSION };
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    apex_server::daemon::spawn_server(&exe, socket, session).map_err(|e| format!("start server: {e}"))
+    apex_server::daemon::spawn_server(&exe, socket, first).map_err(|e| format!("start server: {e}"))
 }
 
 fn ls(ctx: &Ctx, _: &Parsed) -> R {

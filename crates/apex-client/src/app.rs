@@ -328,6 +328,7 @@ impl Acme {
         acme.wake = Some(wake);
         acme.wake_target = Some(target);
         crate::shell::note_recent(url);
+        Pool::note_open(cx, url);
         acme.open_initial(col, files);
         Ok(acme)
     }
@@ -346,6 +347,7 @@ impl Acme {
         acme.snarfouts = p.snarfouts;
         acme.pending_goto = p.pending_goto;
         crate::shell::note_recent(&acme.url.clone());
+        Pool::note_open(cx, &acme.url.clone());
         acme
     }
 
@@ -479,9 +481,14 @@ impl Acme {
             self.goto(Loc { session: None, ..loc });
             return;
         }
+        // the session as we know it: by id, a prefix of it, or its label
         let here = crate::shell::Host::of(&self.url);
-        let label = crate::shell::known_sessions().get(&here).and_then(|v| v.iter().find(|s| s.id == id || s.id.starts_with(&id)).map(|s| s.label.clone()));
-        let url = here.url(&label.unwrap_or_else(|| id.chars().take(8).collect())).with_id(&id);
+        let known = crate::shell::known_sessions().get(&here).and_then(|v| v.iter().find(|s| s.id == id || s.id.starts_with(&id) || s.label == id).cloned());
+        let url = match known {
+            Some(s) => here.url_of(&s),
+            None if apex_server::providers::valid_label(&id).is_ok() => here.url(&id),
+            None => here.url(&id.chars().take(8).collect::<String>()).with_id(&id),
+        };
         self.switch_to(&url, window, cx);
         if !loc.name.is_empty() {
             self.pending_goto = Some(Loc { session: None, ..loc });
@@ -496,6 +503,7 @@ impl Acme {
         }
         if let Some(p) = Pool::take(cx, url) {
             self.adopt_parked(p, window);
+            Pool::note_open(cx, &self.url.clone());
             return;
         }
         if url.is_local() {
@@ -797,6 +805,7 @@ impl Acme {
                         let _ = closer.shutdown(std::net::Shutdown::Both);
                     })),
                     url.session_ref(),
+                    &url.session,
                     "apex",
                     AttachmentKind::Ui,
                     Some(wake),
@@ -805,20 +814,20 @@ impl Acme {
             Some(dest) => {
                 apex_server::providers::deploy(&dest)?;
                 let cmd = apex_server::providers::attach_command(&dest, url.session_ref())?;
-                Self::connect_via(&cmd, url.session_ref(), wake)
+                Self::connect_via(&cmd, url.session_ref(), &url.session, wake)
             }
         }
     }
 
     /// Attach through a command's stdin and stdout.
-    pub fn connect_via(cmd: &str, session: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+    pub fn connect_via(cmd: &str, session: &str, label: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         let (stdin, stdout, closer) = apex_server::remote::bridge_child(cmd)?;
-        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, "apex", AttachmentKind::Ui, Some(wake))
+        Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, label, "apex", AttachmentKind::Ui, Some(wake))
     }
 
     /// Attach through an arbitrary command (`--via`).
     pub fn attach_via(cx: &mut Context<Self>, cmd: &str, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (mut link, mut log, mut node) = Self::connect_via(cmd, session, wake.clone())?;
+        let (mut link, mut log, mut node) = Self::connect_via(cmd, session, session, wake.clone())?;
         Self::arm(&mut link);
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,

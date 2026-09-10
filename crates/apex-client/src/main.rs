@@ -41,6 +41,9 @@ impl Render for Acme {
         if let Some(loc) = self.pending_switch.take() {
             self.switch_for(loc, window, cx);
         }
+        if self.connected {
+            crate::pool::Pool::note_open(cx, &self.url.clone()); // a tab, once identified
+        }
         if self.close_requested {
             shell::log_line(&format!("closing the window on {}", self.url));
             self.park_into_pool(cx);
