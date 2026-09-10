@@ -1322,7 +1322,10 @@ impl Acme {
                 .text_size(px(13.))
                 .font_family(UI_FONT)
                 .when(current, |d| d.h(px(TAB_H)).mx(px(DRAPE)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
-                .when(!current, |d| d.h(px(TAB_H - 4.)).mb(px(4.)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                // the same height and baseline as the selected one, so the
+                // text stays put as the selection moves; hovered, tinted
+                // in the same tab shape
+                .when(!current, |d| d.h(px(TAB_H)).mx(px(DRAPE)).rounded_t(px(DRAPE)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
                 .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
                 .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
