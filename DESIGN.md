@@ -1356,6 +1356,15 @@ A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column
 (`init_session` returns it, as acme loads into `row.col[ncol-1]`).
 
+The borders are acme's to the device pixel: acme's `Border` is
+`scalesize(display, 2)`, 2 device pixels at 1x and `(2*dpi+66)/133`
+above it (devdraw reports 110 dpi per unit of scale), 3 at 2x, and
+the line between a tag and its body is 1 device pixel unscaled. The
+tiling keeps its gaps at 2 logical pixels (integer layout, crisp
+text); the client paints the device pixels beyond acme's in the
+neighbour's colour (a tag reaching up, a column's contents reaching
+left), so the black that shows is acme's width.
+
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
 and `scrl.c`. Matching now: the three buttons and their chords, including

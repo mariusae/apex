@@ -140,6 +140,17 @@ impl Render for Acme {
         let at = |x: i32, y: i32, w: i32, h: i32, el: gpui::AnyElement| {
             div().absolute().left(px(x as f32)).top(px(y as f32)).w(px(w.max(0) as f32)).h(px(h.max(0) as f32)).overflow_hidden().child(el)
         };
+        // acme's Border is scalesize(display, 2): 2 device pixels at 1x,
+        // (2*dpi+66)/133 above (devdraw says 110 per unit of scale), 3 at
+        // 2x; the tiling's gap is 2 logical pixels, 4 at 2x. The gaps stay
+        // as laid out (integer logical pixels, crisp text), and the device
+        // pixels beyond acme's are painted over in the neighbour's colour:
+        // a window's or a column's tag reaches up, a column's contents
+        // reach left, so the black that shows is acme's
+        let scale = window.scale_factor();
+        let acme_border = if scale <= 1. { 2. } else { ((2. * (scale * 110.).floor() + 66.) / 133.).floor() };
+        let extra = ((apex_core::tiling::BORDER as f32 * scale - acme_border).max(0.) / scale).min(apex_core::tiling::BORDER as f32);
+        let fill = |x: f32, y: f32, w: f32, h: f32, c: u32| div().absolute().left(px(x)).top(px(y)).w(px(w.max(0.))).h(px(h.max(0.))).bg(gpui::rgb(c));
         // acme's pointer over acme's part of the window only; the box while
         // a layout box is held (the innermost hitbox's style wins)
         let pointer = if self.dragging_box() {
@@ -161,6 +172,38 @@ impl Render for Acme {
             let tail = col.wins.last().map(|s| s.r.y1).unwrap_or(col.r.y0 + font + apex_core::tiling::BORDER);
             if tail < col.r.y1 {
                 area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::white()).into_any_element()));
+            }
+            if extra > 0. {
+                // the borders trimmed to acme's: above the column tag and
+                // each window's tag (their colour), and, for a column with
+                // one to its left, along its left edge in what is there
+                let (x0, w, e) = (col.r.x0 as f32, col.r.dx() as f32, extra);
+                let left = if col.r.x0 > 0 { e } else { 0. };
+                area = area.child(fill(x0, col.r.y0 as f32 - e, w, e, text_element::PALEBLUEGREEN));
+                if left > 0. {
+                    area = area.child(fill(x0 - left, col.r.y0 as f32 - e, left, (font as f32) + e, text_element::PALEBLUEGREEN));
+                    if tail < col.r.y1 {
+                        area = area.child(fill(x0 - left, tail as f32, left, (col.r.y1 - tail) as f32, 0xffffff));
+                    }
+                }
+                for (i, s) in col.wins.iter().enumerate() {
+                    if !col.safe && i > 0 {
+                        continue;
+                    }
+                    let Ok(win) = self.node.state.window(s.window) else { continue };
+                    let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
+                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - e, s.r.dx() as f32, e, text_element::PALEBLUEGREEN));
+                    if left > 0. {
+                        area = area.child(fill(x0 - left, s.r.y0 as f32 - e, left, tag_h as f32 + e, text_element::PALEBLUEGREEN));
+                        if s.body.dy() > 0 {
+                            let c = match win.body {
+                                Body::Web | Body::Html(_) => 0xffffff,
+                                _ => text_element::PALEYELLOW,
+                            };
+                            area = area.child(fill(x0 - left, s.body.y0 as f32, left, s.body.dy() as f32, c));
+                        }
+                    }
+                }
             }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
             for (i, s) in col.wins.iter().enumerate() {
