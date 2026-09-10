@@ -41,9 +41,6 @@ impl Render for Acme {
         if let Some(loc) = self.pending_switch.take() {
             self.switch_for(loc, window, cx);
         }
-        if self.connected {
-            crate::pool::Pool::note_open(cx, &self.url.clone()); // a tab, once identified
-        }
         if self.close_requested {
             shell::log_line(&format!("closing the window on {}", self.url));
             self.park_into_pool(cx);
@@ -88,6 +85,15 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Sessions, _, cx| this.open_selector(cx)))
             .on_action(cx.listener(|this, _: &shell::PreviousSession, window, cx| this.previous_session(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab1, window, cx| this.go_to_tab(1, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab2, window, cx| this.go_to_tab(2, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab3, window, cx| this.go_to_tab(3, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab4, window, cx| this.go_to_tab(4, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab5, window, cx| this.go_to_tab(5, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab6, window, cx| this.go_to_tab(6, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab7, window, cx| this.go_to_tab(7, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab8, window, cx| this.go_to_tab(8, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Tab9, window, cx| this.go_to_tab(9, window, cx)))
             // the host's profile, the session's setup: opened, or made
             .on_action(cx.listener(|this, _: &shell::Profile, window, cx| this.menu_command("New ~/.apex/profile", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(cx)))
@@ -338,10 +344,16 @@ fn main() {
             };
             urls.into_iter().map(|(url, frame)| (Target::Url { url, files: files.clone() }, frame)).collect()
         };
+        let shown: Vec<SessionUrl> = targets.iter().filter_map(|(t, _)| match t {
+            Target::Url { url, .. } => Some(url.clone()),
+            _ => None,
+        }).collect();
         for (t, frame) in targets {
             open_window(cx, t, frame);
         }
         shell::save_open(cx);
+        // the tabs of last time, attached again in the background and parked
+        pool::Pool::restore(cx, &shown);
         cx.activate(true);
         // quitting from the Dock or by AppleScript does not run our Quit
         // action: remember the windows before they close on the way out
@@ -461,12 +473,20 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                         }
                         Target::Local(_) => unreachable!(),
                     };
-                    cx.spawn(async move |this, cx| {
+                    cx.spawn_in(window, async move |this, cx| {
                         use futures::StreamExt;
                         while wake_rx.next().await.is_some() {
-                            let r = this.update(cx, |acme: &mut Acme, cx| {
+                            let r = this.update_in(cx, |acme: &mut Acme, window, cx| {
                                 if !acme.poll_remote() {
                                     eprintln!("apex-ui: server went away");
+                                }
+                                // a place in another session, from a tool or
+                                // a Back: switched here, drawn or not
+                                if let Some(loc) = acme.pending_switch.take() {
+                                    acme.switch_for(loc, window, cx);
+                                }
+                                if acme.connected {
+                                    pool::Pool::note_open(cx, &acme.url.clone());
                                 }
                                 acme.settle_snarf(cx);
                                 if acme.close_requested {

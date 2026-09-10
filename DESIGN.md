@@ -1154,7 +1154,11 @@ this one (detach, attach).
   (`Pool::order`), the current one selected (it toggles the picker);
   another tab switches to that session, its × lets a parked one go,
   the current tab's × lets this session go and shows the one parked
-  last, and `+` opens the picker for a session not here yet. Sessions shown
+  last, and `+` opens the picker for a session not here yet. ⌘1…⌘9 go
+  to the Nth tab. The tab order is kept in `open-sessions` beside the
+  other state files, and at launch the tabs of last time are attached
+  again in the background and parked, by identity: one that is gone
+  (an ended session, a new daemon) is forgotten rather than made anew. Sessions shown
   by other windows are theirs, not tabs here.
 - *As built, the picker:* while it (or the finder, ⌘P) is up it has
   the keyboard. Its field is a one-line editor (`field.rs`) with a

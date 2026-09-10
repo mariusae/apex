@@ -470,6 +470,18 @@ impl Acme {
         cx.notify();
     }
 
+    /// cmd-N: the Nth tab.
+    pub fn go_to_tab(&mut self, n: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let tabs = Pool::tabs(cx, &self.url);
+        if let Some(u) = tabs.get(n.saturating_sub(1)) {
+            if *u != self.url {
+                let u = u.clone();
+                self.switch_to(&u, window, cx);
+                cx.notify();
+            }
+        }
+    }
+
     /// cmd-shift-k: back to the session parked most recently.
     pub fn previous_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match Pool::most_recent(cx) {
@@ -827,6 +839,27 @@ impl Acme {
                 Self::connect_via(&cmd, url.session_ref(), &url.session, wake)
             }
         }
+    }
+
+    /// Attach to a session that must already be there (a tab of last
+    /// time): nothing is made when it is gone.
+    pub(crate) fn connect_existing_targeted(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node, WakeTarget)> {
+        let target = WakeTarget::new(wake);
+        let wake = target.forwarding();
+        let (link, log, node) = match url.dest() {
+            None => {
+                let socket = apex_server::daemon::default_socket();
+                crate::shell::ensure_daemon(&socket)?;
+                Link::connect(&socket, url.session_ref(), "apex", AttachmentKind::Ui, Some(wake))?
+            }
+            Some(dest) => {
+                apex_server::providers::deploy(&dest)?;
+                let cmd = apex_server::providers::attach_command(&dest, url.session_ref())?;
+                let (stdin, stdout, closer) = apex_server::remote::bridge_child(&cmd)?;
+                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), url.session_ref(), "apex", AttachmentKind::Ui, Some(wake))?
+            }
+        };
+        Ok((link, log, node, target))
     }
 
     /// Attach through a command's stdin and stdout.
@@ -1397,6 +1430,11 @@ impl Acme {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
         self.connected = alive;
+        // a place in another session (a Goto or Switch just applied):
+        // the tick switches, whether or not the window is being drawn
+        if let Some(loc) = self.node.take_switches().pop() {
+            self.pending_switch = Some(loc);
+        }
         // the label follows a rename made anywhere (the metalog says)
         let (id, label) = (self.node.state.meta.id.clone(), self.node.state.meta.label.clone());
         if !id.is_empty() && self.url.id.as_deref() == Some(id.as_str()) && !label.is_empty() && self.url.session != label {

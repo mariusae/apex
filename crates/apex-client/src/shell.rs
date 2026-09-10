@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, PreviousSession, Profile, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -95,6 +95,15 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-w", CloseWindow, None),
         KeyBinding::new("cmd-k", Sessions, None),
         KeyBinding::new("cmd-shift-k", PreviousSession, None),
+        KeyBinding::new("cmd-1", Tab1, None),
+        KeyBinding::new("cmd-2", Tab2, None),
+        KeyBinding::new("cmd-3", Tab3, None),
+        KeyBinding::new("cmd-4", Tab4, None),
+        KeyBinding::new("cmd-5", Tab5, None),
+        KeyBinding::new("cmd-6", Tab6, None),
+        KeyBinding::new("cmd-7", Tab7, None),
+        KeyBinding::new("cmd-8", Tab8, None),
+        KeyBinding::new("cmd-9", Tab9, None),
         KeyBinding::new("cmd-,", Profile, None),
         KeyBinding::new("cmd-r", Get, None),
         KeyBinding::new("cmd-shift-r", Reconnect, None),
@@ -144,7 +153,7 @@ pub fn adopt_login_shell_environment() -> Vec<String> {
 
 // ---- which sessions to open ----------------------------------------------------------
 
-fn state_file() -> PathBuf {
+pub(crate) fn state_file() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
     PathBuf::from(home).join("Library/Application Support/apex/last-sessions")
 }

@@ -81,7 +81,11 @@ impl Pool {
         let wake: Wake = Arc::new(move || {
             let _ = tx.unbounded_send(());
         });
-        cx.set_global(Pool { parked: HashMap::new(), order: Vec::new(), wake });
+        // the tabs of last time: the order starts as they were, so the
+        // first window's own tab joins them rather than replacing them
+        let text = std::fs::read_to_string(Self::tabs_file()).unwrap_or_default();
+        let order: Vec<SessionUrl> = text.lines().filter_map(SessionUrl::parse).filter(|u| u.id.is_some()).collect();
+        cx.set_global(Pool { parked: HashMap::new(), order, wake });
         cx.spawn(async move |cx| {
             use futures::StreamExt;
             while rx.next().await.is_some() {
@@ -103,11 +107,66 @@ impl Pool {
             // the label may have changed: the tab says the current one
             let pool = cx.global_mut::<Pool>();
             if let Some(u) = pool.order.iter_mut().find(|u| *u == url) {
-                *u = url.clone();
+                if *u != *url || u.session != url.session {
+                    *u = url.clone();
+                    pool.save_tabs();
+                }
             }
             return;
         }
-        cx.global_mut::<Pool>().order.push(url.clone());
+        let pool = cx.global_mut::<Pool>();
+        pool.order.push(url.clone());
+        pool.save_tabs();
+    }
+
+    /// The tabs, one URL a line, for next time.
+    fn tabs_file() -> std::path::PathBuf {
+        crate::shell::state_file().with_file_name("open-sessions")
+    }
+
+    fn save_tabs(&self) {
+        let p = Self::tabs_file();
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let text: String = self.order.iter().map(|u| format!("{u}\n")).collect();
+        let _ = std::fs::write(p, text);
+    }
+
+    /// The tabs of last time, attached again in the background and
+    /// parked, each as it was named then (by identity: one that is gone
+    /// is dropped, not made anew); `shown` are the sessions windows
+    /// already have.
+    pub fn restore(cx: &mut App, shown: &[SessionUrl]) {
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        let wake = pool.wake.clone();
+        let urls: Vec<SessionUrl> = pool.order.clone();
+        crate::shell::log_line(&format!("restoring {} tab(s) of last time; {} shown already", urls.len(), shown.len()));
+        for url in urls {
+            if shown.contains(&url) {
+                continue;
+            }
+            crate::shell::log_line(&format!("tab {url}: attaching again"));
+            let (u, w) = (url.clone(), wake.clone());
+            let connecting = cx.background_executor().spawn(async move { crate::app::Acme::connect_existing_targeted(&u, w) });
+            cx.spawn(async move |cx| {
+                let r = connecting.await;
+                let _ = cx.update(|cx| match r {
+                    Ok((link, log, node, target)) => {
+                        crate::shell::log_line(&format!("tab {url} attached again, parked"));
+                        let parked = Parked { link, log, node, url: url.clone(), target, previews: Vec::new(), live: std::collections::HashMap::new(), snarfouts: Vec::new(), pending_goto: None, parked_at: Instant::now() };
+                        Pool::park(cx, parked);
+                    }
+                    Err(e) => {
+                        crate::shell::log_line(&format!("tab {url}: {e}; forgotten"));
+                        let pool = cx.global_mut::<Pool>();
+                        pool.order.retain(|u| *u != url);
+                        pool.save_tabs();
+                    }
+                });
+            })
+            .detach();
+        }
     }
 
     /// The tabs: the sessions still connected — `current`, shown in the
@@ -143,6 +202,7 @@ impl Pool {
             }
         }
         pool.order.retain(|u| u != url);
+        pool.save_tabs();
     }
 
     /// Park a session: its wake comes here from now on.
@@ -166,6 +226,7 @@ impl Pool {
                     if let Some(mut p) = pool.parked.remove(&k) {
                         crate::shell::log_line(&format!("parked {k} let go: {CAP} is enough"));
                         pool.order.retain(|u| *u != p.url);
+                        pool.save_tabs();
                         p.link.close();
                     }
                 }
@@ -241,6 +302,7 @@ impl Pool {
             crate::shell::log_line(&format!("parked {key}: link ended"));
             if let Some(p) = pool.parked.remove(&key) {
                 pool.order.retain(|u| *u != p.url);
+                pool.save_tabs();
             }
         }
     }
