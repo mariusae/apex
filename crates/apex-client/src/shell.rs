@@ -1314,23 +1314,25 @@ impl Acme {
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
             };
+            // the label, the host and the × share a baseline (the smaller
+            // text would otherwise float above or below the label's)
             let mut tab = div()
                 .id(("tab", i))
                 .relative()
                 .flex()
                 .flex_row()
-                .items_center()
+                .items_baseline()
                 .gap(px(5.))
                 .px(px(10.))
                 .mx(px(2.))
                 .text_size(px(13.))
                 .font_family(UI_FONT)
-                .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                .when(current, |d| d.h(px(TAB_H)).pt(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
                 // the other tabs: the same centre line as the selected one,
                 // so the text stays put as the selection moves; hovered, a
                 // rounded rectangle, as a browser's (only the selected tab
                 // drapes)
-                .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).pt(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
                 .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
                 .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
@@ -1381,7 +1383,8 @@ impl Acme {
             tabs = tabs.child(tab);
         }
         // and one more: the picker, for a session not here yet
-        let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
+        // the +, sized as the × and on the same line as they are
+        let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).pt(px(INSET)).px(px(7.)).flex().items_baseline().rounded(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(div().text_size(px(11.)).child("+"));
         if clickable {
             plus = plus.cursor_pointer().hover(|s| s.bg(rgb(0xe0e0e0)).text_color(rgb(0x000099))).on_mouse_down(
                 MouseButton::Left,
