@@ -26,7 +26,7 @@ actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindo
 /// forget which sessions were open.
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
-pub const TITLEBAR_HEIGHT: f32 = 30.;
+pub const TITLEBAR_HEIGHT: f32 = 34.;
 /// The top row's background (acme's tag colour): what the selected tab is.
 const PALEBLUEGREEN_TAB: u32 = 0xEAFFFF;
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
@@ -1292,10 +1292,10 @@ impl Acme {
         // colour of the row below it, rounded at the top, and its bottom
         // corners drape out into the strip (a square of its colour with
         // the strip's colour rounded away), so it flows into the window
-        const TAB_H: f32 = 24.;
+        const TAB_H: f32 = 26.;
         const DRAPE: f32 = 10.;
         const STRIP: u32 = 0xececec;
-        let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end().gap(px(2.));
+        let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
         let all = crate::pool::Pool::tabs(cx, &self.url);
         let others = all.len() > 1;
         for (i, u) in all.into_iter().enumerate() {
@@ -1317,15 +1317,17 @@ impl Acme {
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap(px(6.))
-                .px(px(12.))
+                .gap(px(5.))
+                .px(px(10.))
+                .mx(px(2.))
                 .text_size(px(13.))
                 .font_family(UI_FONT)
-                .when(current, |d| d.h(px(TAB_H)).mx(px(DRAPE)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
-                // the same height and baseline as the selected one, so the
-                // text stays put as the selection moves; hovered, tinted
-                // in the same tab shape
-                .when(!current, |d| d.h(px(TAB_H)).mx(px(DRAPE)).rounded_t(px(DRAPE)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                .when(current, |d| d.h(px(TAB_H)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                // the other tabs: the same centre line as the selected one,
+                // so the text stays put as the selection moves; hovered, a
+                // rounded rectangle, as a browser's (only the selected tab
+                // drapes)
+                .when(!current, |d| d.h(px(TAB_H - 4.)).mb(px(2.)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
                 .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
                 .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
