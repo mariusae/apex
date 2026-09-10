@@ -166,7 +166,12 @@ Session state is the URL and the title; nothing else. The window's name
 is the title (or the URL until there is one), so the tag reads as acme
 would name it. The client that hosts the view proposes `Navigate` when
 the page navigates (links, redirects, form posts), so a reattach
-elsewhere lands on the current page. Navigations also push onto the
+elsewhere lands on the current page. *As built*: the reported URL is
+the view's own at page load, the main frame's; WebKit's navigation
+policy callback fires for every frame (an ad's, a captcha's) without
+saying which, so it is not the source of the name, and `about:` URLs
+(the blank page a redirect passes through) are never reported.
+Navigations also push onto the
 session's navigation stack (`LayoutOp::Visit`, DESIGN.md §6.1), so
 `Back`, `Fwd`, ⌘[ and ⌘] work across web and text windows alike.
 
