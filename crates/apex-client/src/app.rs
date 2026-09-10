@@ -327,7 +327,8 @@ impl Acme {
             return Ok(acme);
         }
         let (link, mut log, mut node, target) = Self::connect_targeted(url, wake.clone())?;
-        let col = match node.state.layout.cols.first() {
+        // files given open in the last column, as acme's do
+        let col = match node.state.layout.cols.last() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };
@@ -896,7 +897,8 @@ impl Acme {
     /// Attach through an arbitrary command (`--via`).
     pub fn attach_via(cx: &mut Context<Self>, cmd: &str, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
         let (link, mut log, mut node) = Self::connect_via(cmd, session, session, wake.clone())?;
-        let col = match node.state.layout.cols.first() {
+        // files given open in the last column, as acme's do
+        let col = match node.state.layout.cols.last() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };
@@ -923,7 +925,8 @@ impl Acme {
         if let Some(old) = self.wake_target.replace(target) {
             drop(old);
         }
-        let col = match node.state.layout.cols.first() {
+        // files given open in the last column, as acme's do
+        let col = match node.state.layout.cols.last() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
         };

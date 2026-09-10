@@ -138,7 +138,7 @@ fn a_provider_is_a_command_named_apex_provider_on_the_path() {
     assert!(installed);
     assert_eq!(ssh::list_sessions("sprite:box").unwrap().into_iter().map(|s| s.label).collect::<Vec<_>>(), vec!["default".to_string()]);
     let c = Remote::via(&ssh::attach_command("sprite:box", "default").unwrap(), "default", "over-sprite", AttachmentKind::Ui).unwrap();
-    assert_eq!(c.node.state.layout.cols.len(), 1);
+    assert_eq!(c.node.state.layout.cols.len(), 2);
     drop(c);
     stop_host(&sock);
     let _ = std::fs::remove_dir_all(&home);

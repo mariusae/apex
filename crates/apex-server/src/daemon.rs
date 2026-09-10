@@ -323,7 +323,7 @@ impl Daemon {
         server.install_default_rules(&mut log);
         let mut view = Node::new(SERVER);
         view.catch_up(&log).expect("fresh log");
-        // the daemon lays the session out (one column, the top tag) so a
+        // the daemon lays the session out (two columns, the top tag) so a
         // tool can work before any UI attaches
         view.init_session(&mut log).expect("fresh session");
         self.sessions.insert(key.clone(), Session { id: sid, label: label.to_string(), log, server, view, leader: None });

@@ -344,11 +344,15 @@ impl Node {
 
     /// Set up a fresh session's layout: the top row and one column. The
     /// row's rectangle is a guess until a client resizes it.
+    /// The session laid out as acme starts: the top row and two columns
+    /// (acme's `-c` defaults to 2). Returns the last column, where acme
+    /// puts the files it was started with.
     pub fn init_session(&mut self, log: &mut Log) -> Result<ColumnId> {
         let top = self.create_buffer(log, "", TOP_TAG, None)?;
         self.append(log, Shard::Buffer(top), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Top }))?;
         self.create_shard(log, Shard::Layout)?;
         self.append(log, Shard::Layout, Op::Layout(LayoutOp::Init { top, r: Rect::new(0, 0, 1100, 700) }))?;
+        self.new_column(log, None)?;
         self.new_column(log, None)
     }
 

@@ -135,10 +135,11 @@ fn a_tool_works_on_a_headless_session_and_a_ui_takes_over() {
     // no UI: the daemon leads; a tool attaches and proposes
     let mut tool = Remote::connect_as(&sock, "main", "tool", AttachmentKind::Tool).unwrap();
     let ten = Duration::from_secs(10);
-    // a second column, through the leader (the daemon)
+    // a third column (a session starts with two), through the leader
+    // (the daemon)
     tool.propose(Proposal::Exec { ctx: ExecCtx::Top, text: "Newcol".into() }, ten).unwrap();
-    assert!(wait(&mut tool, |r| r.node.state.layout.cols.len() == 2));
-    let col = tool.node.state.layout.cols[1].id;
+    assert!(wait(&mut tool, |r| r.node.state.layout.cols.len() == 3));
+    let col = tool.node.state.layout.cols[2].id;
     let dir = std::env::temp_dir().join(format!("apex-headless-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("h.txt");

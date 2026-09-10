@@ -1352,6 +1352,10 @@ drag, and to the selection when an already open file is plumbed. macOS
 gives no mouse event for a warp, so the client remembers where it put the
 pointer for keyboard routing until the mouse really moves.
 
+A session starts as acme does: the top row and two columns (acme's
+`-c` defaults to 2), files given at launch opening in the last column
+(`init_session` returns it, as acme loads into `row.col[ncol-1]`).
+
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
 and `scrl.c`. Matching now: the three buttons and their chords, including

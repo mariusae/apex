@@ -196,8 +196,11 @@ fn del_warns_once_on_a_dirty_buffer() {
 #[test]
 fn columns_new_delete_sort() {
     let (mut log, mut node, col) = session();
+    // a session starts with two columns, as acme does
+    assert_eq!(node.state.layout.cols.len(), 2);
+    let first = node.state.layout.cols[0].id;
     let c2 = match node.exec(&mut log, ExecCtx::Top, "Newcol").unwrap() {
-        Executed::Done(_) => node.state.layout.cols[1].id,
+        Executed::Done(_) => node.state.layout.cols[2].id,
         other => panic!("{other:?}"),
     };
     let wb = node.new_window(&mut log, c2, "b", "").unwrap();
@@ -208,8 +211,9 @@ fn columns_new_delete_sort() {
     assert_eq!(wins.len(), 3);
     assert_eq!(&wins[1..], &[wa, wb]);
     assert!(matches!(node.exec(&mut log, ExecCtx::Column(c2), "Delcol").unwrap(), Executed::Done(_)));
-    assert_eq!(node.state.layout.cols.len(), 1);
+    assert_eq!(node.state.layout.cols.len(), 2);
     // acme lets the last column go too; New makes one again
+    assert!(matches!(node.exec(&mut log, ExecCtx::Column(first), "Delcol").unwrap(), Executed::Done(_)));
     assert!(matches!(node.exec(&mut log, ExecCtx::Column(col), "Delcol").unwrap(), Executed::Done(_)));
     assert_eq!(node.state.layout.cols.len(), 0);
     node.exec(&mut log, ExecCtx::Top, "New").unwrap();
