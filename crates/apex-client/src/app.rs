@@ -178,6 +178,12 @@ pub struct Acme {
     /// session is parked.
     pub wake_target: Option<WakeTarget>,
     pub selector: Option<Selector>,
+    /// A tab held with B1: a click until it moves, a drag reordering
+    /// the tabs after that.
+    pub tab_drag: Option<crate::shell::TabDrag>,
+    /// Where the tabs were drawn last frame, for the drag to know
+    /// which one the pointer has passed.
+    pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(SessionUrl, gpui::Bounds<Pixels>)>>>,
     /// ctrl-tab held: the session switcher.
     pub switcher: Option<crate::switcher::Switcher>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
@@ -1137,6 +1143,8 @@ impl Acme {
             wake: None,
             wake_target: None,
             selector: None,
+            tab_drag: None,
+            tab_bounds: Default::default(),
             switcher: None,
             tag_need: HashMap::new(),
             close_requested: false,
@@ -1891,6 +1899,23 @@ impl Acme {
 
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
+        if let Some(d) = &mut self.tab_drag {
+            // a tab held: past a few pixels it is a drag, and the tab
+            // goes where the pointer is among the others, live
+            if !d.moved && ((d.start.x - pos.x).abs() > px(4.) || (d.start.y - pos.y).abs() > px(4.)) {
+                d.moved = true;
+            }
+            if d.moved {
+                let url = d.url.clone();
+                let mut others: Vec<(SessionUrl, Pixels)> = self.tab_bounds.borrow().iter().filter(|(u, _)| *u != url).map(|(u, b)| (u.clone(), b.origin.x + b.size.width / 2.)).collect();
+                others.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                let before = others.iter().find(|(_, centre)| pos.x < *centre).map(|(u, _)| u.clone());
+                crate::pool::Pool::move_tab(cx, &url, before.as_ref());
+                cx.notify();
+            }
+            self.last_mouse = pos;
+            return;
+        }
         if self.menu.is_some() {
             self.menu_track(pos);
             self.last_mouse = pos;
@@ -1982,7 +2007,24 @@ impl Acme {
         }
     }
 
-    pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn mouse_up(&mut self, e: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(d) = self.tab_drag.take() {
+            // let go without moving: the click it was (the current tab
+            // toggles the picker; another is switched to)
+            if !d.moved {
+                if d.current {
+                    if self.selector.is_some() {
+                        self.close_selector(cx);
+                    } else {
+                        self.open_selector(cx);
+                    }
+                } else {
+                    self.switch_to(&d.url, window, cx);
+                }
+            }
+            cx.notify();
+            return;
+        }
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
         if self.mouse.scrolling.is_some_and(|(_, b, _)| b == button) {

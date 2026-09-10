@@ -1203,7 +1203,10 @@ this one (detach, attach).
   (a square of its colour with the strip's colour rounded away), and
   no line under the strip, so it flows into the window.
   ⌘1…⌘9 go
-  to the Nth tab. The tab order is kept in `open-sessions` beside the
+  to the Nth tab. Tabs drag to reorder: a tab held with B1 is a click
+  on release until it has moved a few pixels, and after that it goes
+  where the pointer is among the others as it moves (the tab a bit
+  translucent meanwhile), the new order kept. The tab order is kept in `open-sessions` beside the
   other state files, and at launch the tabs of last time are attached
   again in the background and parked, by identity: one that is gone
   (an ended session, a new daemon) is forgotten rather than made anew. Sessions shown

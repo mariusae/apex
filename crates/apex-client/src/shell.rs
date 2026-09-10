@@ -419,6 +419,16 @@ mod tests {
 /// ones, this machine's, the destination's — and actions below a
 /// divider. Every session is a URL: `local:///name`,
 /// `ssh://user@host/name`, `sprite://box/name`.
+/// A tab held with B1 (`Acme::tab_drag`): which, whether it is the
+/// current one, where the press was, and whether it has moved enough
+/// to be a drag rather than a click.
+pub struct TabDrag {
+    pub url: SessionUrl,
+    pub current: bool,
+    pub start: gpui::Point<Pixels>,
+    pub moved: bool,
+}
+
 pub struct Selector {
     pub filter: crate::field::LineEdit,
     /// Index into `rows()`; only pickable rows are ever landed on.
@@ -1303,6 +1313,9 @@ impl Acme {
         const STRIP: u32 = 0xececec;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
         let all = crate::pool::Pool::tabs(cx, &self.url);
+        // where each tab lands this frame, for a drag to reorder by
+        self.tab_bounds.borrow_mut().clear();
+        let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.url.clone());
         let others = all.len() > 1;
         for (i, u) in all.into_iter().enumerate() {
             let current = u == self.url;
@@ -1317,9 +1330,16 @@ impl Acme {
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
             };
+            let bounds = self.tab_bounds.clone();
+            let bounds_url = u.clone();
             let mut tab = div()
                 .id(("tab", i))
                 .relative()
+                .child(div().absolute().top(px(0.)).left(px(0.)).size_full().child(gpui::canvas(
+                    move |b, _, _| bounds.borrow_mut().push((bounds_url, b)),
+                    |_, _, _, _| {},
+                )))
+                .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.7))
                 .flex()
                 .flex_row()
                 .items_center()
@@ -1343,19 +1363,12 @@ impl Acme {
                 .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x555555)).child("fenced")));
             if clickable {
                 let url = u.clone();
+                // held: a click on release unless it moved, a drag
+                // reordering the tabs if it did (`mouse_move`, `mouse_up`)
                 tab = tab.cursor_pointer().on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, _, window, cx| {
-                        if current {
-                            if this.selector.is_some() {
-                                this.close_selector(cx);
-                            } else {
-                                this.open_selector(cx);
-                            }
-                        } else {
-                            this.switch_to(&url, window, cx);
-                            cx.notify();
-                        }
+                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                        this.tab_drag = Some(TabDrag { url: url.clone(), current, start: e.position, moved: false });
                         cx.stop_propagation();
                     }),
                 );

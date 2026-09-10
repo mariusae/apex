@@ -124,6 +124,21 @@ impl Pool {
         crate::shell::state_file().with_file_name("open-sessions")
     }
 
+    /// Move a tab (dragged) before `before` in the order, or to the end;
+    /// the order is saved, as it is what the next launch restores.
+    pub fn move_tab(cx: &mut App, url: &SessionUrl, before: Option<&SessionUrl>) {
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        let mut order = pool.order.clone();
+        order.retain(|u| u != url);
+        let at = before.and_then(|b| order.iter().position(|u| u == b)).unwrap_or(order.len());
+        order.insert(at, url.clone());
+        if order != pool.order {
+            let pool = cx.global_mut::<Pool>();
+            pool.order = order;
+            pool.save_tabs();
+        }
+    }
+
     fn save_tabs(&self) {
         let p = Self::tabs_file();
         if let Some(d) = p.parent() {
