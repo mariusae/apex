@@ -1293,7 +1293,7 @@ impl Acme {
         // corners drape out into the strip (a square of its colour with
         // the strip's colour rounded away), so it flows into the window
         const TAB_H: f32 = 24.;
-        const DRAPE: f32 = 8.;
+        const DRAPE: f32 = 10.;
         const STRIP: u32 = 0xececec;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end().gap(px(2.));
         let all = crate::pool::Pool::tabs(cx, &self.url);
