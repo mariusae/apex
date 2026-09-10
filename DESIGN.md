@@ -1058,9 +1058,12 @@ same rule. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
 that through the login shell instead of a shell, named `dir/-cmd`, as
 `win cmd` does. The
 shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,
-`apexsession` (the session's id), `apexsessionlabel` and `APEX_SOCKET`
-set, so `apex` inside it addresses the
-session it runs in; commands run from tags get the same two. The shell
+`apexsession` (the session's id), `apexsessionlabel`, `APEX_SOCKET` and
+`winid` (the terminal's window, as acme's win has it) set, so `apex`
+inside it addresses the session and the window it runs in; commands run
+from tags get the same. The shell starts once its window exists (the
+`TermWindow` proposal applied wherever the leader is), since the id is
+only known then; a resize that arrives first sets its starting size. The shell
 is the `Newterm.shell` setting (`apex set Newterm.shell zsh` in the
 profile), else the daemon's `$SHELL`. Keys go xterm-style with option
 as meta: ESC before the key itself (opt-b is `ESC b`, not `∫`),
@@ -1069,7 +1072,14 @@ and bash bind for words), opt-backspace `ESC DEL`, and other modified
 keys in xterm's `CSI 1;m` form (opt-up is `ESC [1;3A`). OSC 8
 hyperlinks travel in the term shard (`Cell::link` into
 `TermOp::Links`), draw underlined, and B3 on one plumbs the link
-rather than its text. A terminal's tag has `Send`, win's: the text
+rather than its text; B3 on a bare URL takes the whole of it (a file
+word would stop at `?`), less the punctuation closing a sentence. OSC
+52 (a program setting the clipboard: tmux, neovim, `apex snarf` from
+afar) goes into the snarf buffer as a `Snarf` proposal and, as
+`ServerMsg::Clipboard`, onto the clipboard of every UI on the session.
+Chords in a terminal: B1+B2 (or option while B1 is held) copies the
+sweep, B1+B3 (or command) types the clipboard into the shell, which
+the snarf buffer gets too. A terminal's tag has `Send`, win's: the text
 swept with B1, else the snarf buffer, typed into the shell with a
 newline (the client sends a visible selection itself; the server sends
 the snarf buffer). A terminal scrolled back stays on what it shows

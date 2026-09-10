@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 13;
+pub const PROTOCOL: u32 = 14;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -221,6 +221,9 @@ pub enum ServerMsg {
     RuleAdded { id: RuleId },
     Ps { procs: Vec<crate::Running> },
     TermLines { term: TermId, text: String },
+    /// A program in a terminal set the clipboard (OSC 52): the snarf
+    /// buffer has the text already; a UI puts it on its own clipboard.
+    Clipboard { text: String },
     /// The I/O plane: a frame on a stream this connection opened.
     Io { stream: u32, frame: IoFrame },
     /// The session this connection was attached to has been ended; the

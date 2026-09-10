@@ -50,10 +50,14 @@ fn open(server: &Server, log: &mut Log, node: &mut Node, col: ColumnId, dir: &st
     perform(node, log, vec![p]).unwrap()
 }
 
+/// What a client does after a command: perform what the server was
+/// handed, then let it see the windows (a terminal's shell starts once
+/// its window is there).
 fn poll(server: &mut Server, log: &mut Log, node: &mut Node) -> usize {
     let props = server.poll_execs(log, node);
     let n = props.len();
     perform(node, log, props);
+    server.close_orphan_terms(log, node);
     n
 }
 
@@ -428,8 +432,8 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     };
     let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
     // the shell's environment: the session, and a truecolor xterm
-    type_(&mut server, &mut log, "echo s=$apexsession c=$COLORTERM t=$TERM\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("s=main c=truecolor t=xterm-256color")), "grid:\n{}", rows(&node));
+    type_(&mut server, &mut log, "echo s=$apexsession c=$COLORTERM t=$TERM w=$winid\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains(&format!("s=main c=truecolor t=xterm-256color w={}", w.0))), "grid:\n{}", rows(&node));
     // the rule: {osc7 path}/-{title}. A label (plan9port's) alone is a
     // title, after the directory the terminal started in until one is reported
     let base = std::env::temp_dir().join(format!("apex-label-{}", std::process::id()));

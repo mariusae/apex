@@ -84,6 +84,8 @@ pub struct Link {
     pub ps: Option<Vec<crate::Running>>,
     /// Terminal text read with `TermRead`.
     pub term_lines: Vec<(TermId, String)>,
+    /// Texts programs put on the clipboard (OSC 52), for the UI's.
+    pub clips: Vec<String>,
     /// When the last `Pong` arrived (the owner's heartbeat).
     pub last_pong: Option<std::time::Instant>,
     /// The session was ended under us (`Ended`): the link closes next.
@@ -237,7 +239,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -383,6 +385,7 @@ impl Link {
             ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),
             ServerMsg::Ps { procs } => self.ps = Some(procs),
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
+            ServerMsg::Clipboard { text } => self.clips.push(text),
             ServerMsg::Ack { shard, seq } => {
                 self.acked.insert(shard, seq);
                 self.compact_mirror(node, log, shard);

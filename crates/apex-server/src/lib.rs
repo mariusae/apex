@@ -104,6 +104,12 @@ pub struct Server {
     next_term: u64,
     /// Terminals whose window has been seen: once it goes, so do they.
     windowed: BTreeSet<TermId>,
+    /// Terminals proposed but not started: the shell starts once the
+    /// window is there, so `$winid` can be in its environment.
+    pending_terms: HashMap<TermId, PendingTerm>,
+    /// Texts programs in terminals put on the clipboard (OSC 52), for
+    /// the daemon to pass to the UIs.
+    clips: Vec<String>,
     watches: watch::Watches,
     /// Stale buffers `Put` has refused once (acme: the second Put writes).
     put_warned: BTreeSet<BufferId>,
@@ -161,6 +167,8 @@ impl Server {
             cwd,
             next_term: 1,
             windowed: BTreeSet::new(),
+            pending_terms: HashMap::new(),
+            clips: Vec::new(),
             watches,
             put_warned: BTreeSet::new(),
             running: Default::default(),
@@ -298,16 +306,52 @@ impl Server {
     pub fn new_term(&mut self, log: &mut Log, col: ColumnId, dir: &Path, cmd: Option<&str>, shell: Option<&str>) -> Result<Proposal, String> {
         let id = TermId(self.next_term);
         self.next_term += 1;
-        let host = TermHost::spawn(id, dir, 80, 24, self.term_tx.clone(), &self.env, cmd, shell)?;
         self.node.create_shard(log, Shard::Term(id)).map_err(|e| e.to_string())?;
         self.node
             .append(log, Shard::Term(id), Op::Term(TermOp::Create { cols: 80, rows: 24 }))
             .map_err(|e| e.to_string())?;
-        self.terms.insert(id, host);
+        // the shell starts once the window is there (`spawn_pending`),
+        // with the window's id in its environment as acme's win has
+        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24 });
         // win's name: the directory, then `-` and the host (`awd` keeps it
         // so), or the command
-        let name = format!("{}/-{}", dir.display().to_string().trim_end_matches('/'), self.terms[&id].label);
+        let label = cmd.map(command_name).filter(|n| !n.is_empty()).unwrap_or_else(term::sysname);
+        let name = format!("{}/-{}", dir.display().to_string().trim_end_matches('/'), label);
         Ok(Proposal::TermWindow { col, name, term: id })
+    }
+
+    /// Start the shells of terminals whose windows have appeared, with
+    /// `winid` set to the window's, as acme's win has it.
+    pub fn spawn_pending(&mut self, log: &mut Log, view: &Node) {
+        let ready: Vec<(TermId, WindowId)> = self
+            .pending_terms
+            .keys()
+            .filter_map(|&t| view.state.windows.values().find(|w| w.body == Body::Term(t)).map(|w| (t, w.id)))
+            .collect();
+        for (id, w) in ready {
+            let Some(p) = self.pending_terms.remove(&id) else { continue };
+            let mut env = self.env.clone();
+            env.push(("winid".into(), w.0.to_string()));
+            match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref()) {
+                Ok(host) => {
+                    if (p.cols, p.rows) != (80, 24) {
+                        let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols: p.cols, rows: p.rows }));
+                    }
+                    self.terms.insert(id, host);
+                    self.windowed.insert(id);
+                }
+                Err(e) => {
+                    let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 1 }));
+                    let _ = self.node.errors(log, None, &format!("Newterm: {e}\n"));
+                }
+            }
+        }
+    }
+
+    /// What programs in terminals put on the clipboard (OSC 52) since
+    /// the last call.
+    pub fn take_clips(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.clips)
     }
 
     /// Publish what changed in a terminal's grid since it was last
@@ -355,6 +399,11 @@ impl Server {
     }
 
     pub fn term_resize(&mut self, log: &mut Log, id: TermId, cols: u16, rows: u16) {
+        if let Some(p) = self.pending_terms.get_mut(&id) {
+            // not started yet: it starts at this size
+            (p.cols, p.rows) = (cols, rows);
+            return;
+        }
         if let Some(h) = self.terms.get_mut(&id) {
             if cols != h.cols || rows != h.rows {
                 h.resize(cols, rows);
@@ -385,9 +434,12 @@ impl Server {
         let _ = self.node.delete_shard(log, Shard::Term(id));
     }
 
-    /// Close terminals whose windows are gone. A terminal whose window has
-    /// not appeared yet (the proposal is in flight) is left alone.
+    /// Terminals kept in step with their windows: shells started for
+    /// windows that have appeared (`spawn_pending`), terminals closed
+    /// whose windows are gone. A terminal whose window has not appeared
+    /// yet (the proposal is in flight) is left alone.
     pub fn close_orphan_terms(&mut self, log: &mut Log, view: &Node) {
+        self.spawn_pending(log, view);
         let live: BTreeSet<TermId> = view
             .state
             .windows
@@ -432,7 +484,15 @@ impl Server {
                         Event::PtyWrite(s) => h.write(s.as_bytes()),
                         Event::ColorRequest(i, fmt) => h.write(fmt(term::default_color(i)).as_bytes()),
                         Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
-                        Event::ClipboardStore(..) | Event::ClipboardLoad(..) => {}
+                        // OSC 52: into the snarf buffer, and (through the
+                        // daemon) onto the UIs' clipboards
+                        Event::ClipboardStore(_, text) => {
+                            if !text.is_empty() {
+                                self.clips.push(text.clone());
+                                props.push(Proposal::Snarf { text });
+                            }
+                        }
+                        Event::ClipboardLoad(..) => {}
                         Event::Exit | Event::ChildExit(_) => {
                             h.exited = true;
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 0 }));
@@ -1509,6 +1569,15 @@ fn child_env(env: &[(String, String)]) -> Vec<(String, String)> {
         }
     }
     all
+}
+
+/// A terminal proposed, its shell not started until its window exists.
+struct PendingTerm {
+    dir: PathBuf,
+    cmd: Option<String>,
+    shell: Option<String>,
+    cols: u16,
+    rows: u16,
 }
 
 /// What acme's `runproc` puts in a command's environment: `winid`, and

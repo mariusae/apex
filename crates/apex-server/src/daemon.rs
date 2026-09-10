@@ -237,9 +237,17 @@ impl Daemon {
                         let s = d.sessions.get_mut(&name).unwrap();
                         let props = s.server.pump(&mut s.log, &s.view, ev);
                         let changed = s.server.take_changed();
+                        let clips = s.server.take_clips();
                         d.after(&name, props);
                         for p in changed {
                             d.file_changed(sid, &p);
+                        }
+                        // OSC 52: every UI on the session gets the text
+                        let uis: Vec<u64> = d.conns.iter().filter(|(_, c)| c.session == Some(sid) && c.kind == AttachmentKind::Ui).map(|(id, _)| *id).collect();
+                        for text in clips {
+                            for &id in &uis {
+                                d.send(id, ServerMsg::Clipboard { text: text.clone() });
+                            }
                         }
                     }
                 }

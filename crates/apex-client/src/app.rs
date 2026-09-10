@@ -194,6 +194,9 @@ pub struct Acme {
     pub term_sel: Option<(WindowId, (usize, u64), (usize, u64))>,
     /// The snarf buffer as it was when a terminal copy was requested.
     snarf_wanted: Option<String>,
+    /// Texts programs put on the clipboard (OSC 52), to be written once
+    /// there is a context to write with.
+    clips: Vec<String>,
     /// A B2/B3 sweep in a terminal, shown in the button's colour.
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
@@ -317,8 +320,7 @@ impl Acme {
             acme.open_initial(acme.node.state.layout.cols.first().map(|c| c.id).unwrap_or(ColumnId(0)), files);
             return Ok(acme);
         }
-        let (mut link, mut log, mut node, target) = Self::connect_targeted(url, wake.clone())?;
-        Self::arm(&mut link);
+        let (link, mut log, mut node, target) = Self::connect_targeted(url, wake.clone())?;
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -815,6 +817,12 @@ impl Acme {
     }
 
     fn connect(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+        let (mut link, log, node) = Self::connect_link(url, wake)?;
+        Self::arm(&mut link);
+        Ok((link, log, node))
+    }
+
+    fn connect_link(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         match url.dest() {
             None => {
                 let socket = apex_server::daemon::default_socket();
@@ -838,7 +846,7 @@ impl Acme {
             Some(dest) => {
                 apex_server::providers::deploy(&dest)?;
                 let cmd = apex_server::providers::attach_command(&dest, url.session_ref())?;
-                Self::connect_via(&cmd, url.session_ref(), &url.session, wake)
+                Self::connect_via_link(&cmd, url.session_ref(), &url.session, wake)
             }
         }
     }
@@ -848,7 +856,7 @@ impl Acme {
     pub(crate) fn connect_existing_targeted(url: &SessionUrl, wake: Wake) -> std::io::Result<(Link, Log, Node, WakeTarget)> {
         let target = WakeTarget::new(wake);
         let wake = target.forwarding();
-        let (link, log, node) = match url.dest() {
+        let (mut link, log, node) = match url.dest() {
             None => {
                 let socket = apex_server::daemon::default_socket();
                 crate::shell::ensure_daemon(&socket)?;
@@ -861,19 +869,27 @@ impl Acme {
                 Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), url.session_ref(), "apex", AttachmentKind::Ui, Some(wake))?
             }
         };
+        Self::arm(&mut link);
         Ok((link, log, node, target))
     }
 
-    /// Attach through a command's stdin and stdout.
+    /// Attach through a command's stdin and stdout. Every link this
+    /// client makes is armed with its rules here or in `connect`: a
+    /// session shown later from the pool has them too.
     pub fn connect_via(cmd: &str, session: &str, label: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
+        let (mut link, log, node) = Self::connect_via_link(cmd, session, label, wake)?;
+        Self::arm(&mut link);
+        Ok((link, log, node))
+    }
+
+    fn connect_via_link(cmd: &str, session: &str, label: &str, wake: Wake) -> std::io::Result<(Link, Log, Node)> {
         let (stdin, stdout, closer) = apex_server::remote::bridge_child(cmd)?;
         Link::over_streams_creating(Box::new(stdout), Box::new(stdin), Some(closer), session, label, "apex", AttachmentKind::Ui, Some(wake))
     }
 
     /// Attach through an arbitrary command (`--via`).
     pub fn attach_via(cx: &mut Context<Self>, cmd: &str, session: &str, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
-        let (mut link, mut log, mut node) = Self::connect_via(cmd, session, session, wake.clone())?;
-        Self::arm(&mut link);
+        let (link, mut log, mut node) = Self::connect_via(cmd, session, session, wake.clone())?;
         let col = match node.state.layout.cols.first() {
             Some(c) => c.id,
             None => node.init_session(&mut log).map_err(std::io::Error::other)?,
@@ -897,8 +913,7 @@ impl Acme {
     /// Take a fresh link (made by `connect`, on any thread) as this
     /// window's: the second half of `reattach`, and what an attach made
     /// in the background comes back to.
-    pub fn adopt(&mut self, mut link: Link, mut log: Log, mut node: Node, target: WakeTarget, url: &SessionUrl, files: Vec<String>, window: &mut Window) -> std::io::Result<()> {
-        Self::arm(&mut link);
+    pub fn adopt(&mut self, link: Link, mut log: Log, mut node: Node, target: WakeTarget, url: &SessionUrl, files: Vec<String>, window: &mut Window) -> std::io::Result<()> {
         if let Some(old) = self.wake_target.replace(target) {
             drop(old);
         }
@@ -1132,6 +1147,7 @@ impl Acme {
             ping_ms: None,
             term_sel: None,
             snarf_wanted: None,
+            clips: Vec::new(),
             term_hl: None,
             fullscreen: false,
             show_at: HashMap::new(),
@@ -1432,6 +1448,7 @@ impl Acme {
     pub fn pump(&mut self, ev: ServerEvent) {
         if let Backend::Local(server) = &mut self.backend {
             let props = server.pump(&mut self.log, &self.node, ev);
+            self.clips.extend(server.take_clips());
             if let Some(w) = perform(&mut self.node, &mut self.log, props) {
                 self.show(w);
             }
@@ -1445,6 +1462,7 @@ impl Acme {
         let Backend::Remote(link) = &mut self.backend else { return true };
         let alive = link.poll(&mut self.node, &mut self.log);
         let ended = link.ended.take();
+        self.clips.append(&mut link.clips);
         if self.connected && !alive {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
@@ -1850,6 +1868,11 @@ impl Acme {
                     self.mouse.chorded = true;
                     self.term_copy(w, cx);
                 }
+                (Region::Term(..), MouseButton::Right) if self.mouse.term_drag.is_some() => {
+                    // B1+B3 in a terminal: the clipboard typed into the shell
+                    self.mouse.chorded = true;
+                    self.term_paste_clipboard(w, cx);
+                }
                 (Region::Term(c, r), MouseButton::Middle | MouseButton::Right) => {
                     // acme's textselect23: sweep, then act on what was swept
                     // (or on the word under a plain click)
@@ -1994,8 +2017,9 @@ impl Acme {
                 let text = match (swept, button) {
                     (Some(t), _) => Some(t),
                     (None, MouseButton::Middle) => self.term_word(w, cell.0, cell.1, is_exec_char),
-                    // B3 on an OSC 8 link plumbs the link, not its text
-                    (None, _) => self.term_link(w, cell.0, cell.1).or_else(|| self.term_word(w, cell.0, cell.1, is_file_char)),
+                    // B3 on an OSC 8 link plumbs the link, not its text;
+                    // on a URL, the whole URL (a file word stops at `?`)
+                    (None, _) => self.term_link(w, cell.0, cell.1).or_else(|| self.term_url(w, cell.0, cell.1)).or_else(|| self.term_word(w, cell.0, cell.1, is_file_char)),
                 };
                 if let Some(text) = text {
                     match button {
@@ -2070,6 +2094,19 @@ impl Acme {
             self.switcher_commit(window, cx);
             return;
         }
+        if let Some(w) = self.mouse.term_drag {
+            // in a terminal: option copies (nothing to cut), command pastes
+            if e.modifiers.alt && !prev.alt {
+                self.mouse.chorded = true;
+                self.term_copy(w, cx);
+                cx.notify();
+            } else if e.modifiers.platform && !prev.platform {
+                self.mouse.chorded = true;
+                self.term_paste_clipboard(w, cx);
+                cx.notify();
+            }
+            return;
+        }
         let Some(d) = self.mouse.b1 else { return };
         if e.modifiers.alt && !prev.alt {
             self.mouse.chorded = true;
@@ -2080,6 +2117,19 @@ impl Acme {
             self.paste(d.view, cx);
             cx.notify();
         }
+    }
+
+    /// The clipboard typed into a terminal (the B1+B3 chord there, as
+    /// pasting into text): the snarf buffer gets it too.
+    fn term_paste_clipboard(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        let Some(t) = self.term_of(w) else { return };
+        let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) else { return };
+        if text.is_empty() {
+            return;
+        }
+        let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: text.clone() }));
+        self.term_paste(t, text);
+        self.after();
     }
 
     fn take_range(&mut self, d: Drag, kind: HlKind) -> Option<String> {
@@ -2151,6 +2201,29 @@ impl Acme {
             return None;
         }
         t.links.get(cell.link as usize - 1).cloned()
+    }
+
+    /// A URL under a terminal cell: the run of non-blank text there,
+    /// from its `http://` or `https://` on, less any punctuation that
+    /// closes the sentence around it.
+    fn term_url(&self, w: WindowId, c: usize, r: usize) -> Option<String> {
+        let row = self.term_layouts.get(&w)?.rows.get(r)?;
+        let chars: Vec<char> = row.chars().collect();
+        if c >= chars.len() || chars[c].is_whitespace() {
+            return None;
+        }
+        let mut a = c;
+        while a > 0 && !chars[a - 1].is_whitespace() {
+            a -= 1;
+        }
+        let mut b = c + 1;
+        while b < chars.len() && !chars[b].is_whitespace() {
+            b += 1;
+        }
+        let run: String = chars[a..b].iter().collect();
+        let start = ["https://", "http://"].iter().filter_map(|s| run.find(s)).min()?;
+        let url = run[start..].trim_end_matches(|ch: char| ".,;:!?)>]}'\"".contains(ch));
+        (url.len() > start && url.contains("://") && url.split("://").nth(1).is_some_and(|rest| !rest.is_empty())).then(|| url.to_string())
     }
 
     fn term_word(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<String> {
@@ -2297,6 +2370,10 @@ impl Acme {
     /// A terminal copy is waiting for the server's text: once the snarf
     /// buffer changes, the clipboard gets it too.
     pub fn settle_snarf(&mut self, cx: &mut Context<Self>) {
+        // OSC 52 from a terminal: the last text set wins
+        if let Some(text) = self.clips.drain(..).last() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
         if let Some(prev) = &self.snarf_wanted {
             let s = &self.node.state.layout.snarf;
             if s != prev {
