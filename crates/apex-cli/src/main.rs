@@ -159,7 +159,8 @@ is lost, terminals are closed. Use it to let a daemon of an old build go
 before attaching with a new one (see apex help sessions)." },
     Cmd { name: "new-session", usage: "apex new-session NAME", short: "make a session", flags: &[], run: new_session, long: "\
 New-session makes a session labelled NAME on the daemon, starting a
-daemon if none answers. A label is lowercase letters, digits and -. Making a session that exists is fine: it is there.
+daemon if none answers. A label starts with a letter, then lowercase
+letters, digits and -. Making a session that exists is fine: it is there.
 
 A new session runs its profile, ~/.apex/profile on the daemon's host
 (see apex help scripts)." },

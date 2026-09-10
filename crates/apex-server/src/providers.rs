@@ -288,15 +288,17 @@ pub fn split_spec(spec: &str) -> Option<(&str, &str)> {
 /// A daemon's first session.
 pub const DEFAULT_SESSION: &str = "default";
 
-/// A session's label: lowercase letters, digits and `-`, neither empty
-/// nor starting or ending with a `-`. What people type and read; the
-/// identity is a UUID beside it.
+/// A session's label: a lowercase letter first, then lowercase letters,
+/// digits and `-`, not ending with a `-`. What people type and read;
+/// the identity is a UUID beside it (and, starting with a letter, a
+/// label is never mistaken for a prefix of one).
 pub fn valid_label(s: &str) -> Result<(), String> {
     if s.is_empty() {
         return Err("a session label is needed".into());
     }
-    if !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') || s.starts_with('-') || s.ends_with('-') {
-        return Err(format!("{s:?}: a session label is lowercase letters, digits and -"));
+    let first_ok = s.chars().next().is_some_and(|c| c.is_ascii_lowercase());
+    if !first_ok || !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') || s.ends_with('-') {
+        return Err(format!("{s:?}: a session label starts with a letter, then lowercase letters, digits and -"));
     }
     Ok(())
 }
@@ -519,7 +521,7 @@ mod label_tests {
         for ok in ["default", "notes", "my-notes", "x2", "a-b-c"] {
             assert!(valid_label(ok).is_ok(), "{ok}");
         }
-        for bad in ["", "Notes", "my notes", "a/b", "-x", "x-", "café", "a_b"] {
+        for bad in ["", "Notes", "my notes", "a/b", "-x", "x-", "café", "a_b", "2x", "9"] {
             assert!(valid_label(bad).is_err(), "{bad:?}");
         }
     }

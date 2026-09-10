@@ -681,14 +681,14 @@ impl Selector {
             return match (f.is_empty(), apex_server::providers::valid_label(f)) {
                 (true, _) => Vec::new(),
                 (false, Ok(())) => vec![Row::Rename(f.to_string())],
-                (false, Err(_)) => vec![Row::Note("a label: lowercase letters, digits and -".into())],
+                (false, Err(_)) => vec![Row::Note("a label: a letter first, then lowercase letters, digits and -".into())],
             };
         }
         if let Some(h) = &self.naming {
             return match (f.is_empty(), apex_server::providers::valid_label(f)) {
                 (true, _) => Vec::new(),
                 (false, Ok(())) => vec![Row::Create(h.url(f))],
-                (false, Err(_)) => vec![Row::Note("a label: lowercase letters, digits and -".into())],
+                (false, Err(_)) => vec![Row::Note("a label: a letter first, then lowercase letters, digits and -".into())],
             };
         }
         let fl = f.to_lowercase();
