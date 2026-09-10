@@ -276,6 +276,12 @@ impl Webs {
                     }
                     return false;
                 }
+                // about:blank and its kin are WebKit's own steps (a popup's
+                // first page, a redirect's hop), no place of the page's:
+                // let them pass without renaming the window after them
+                if u.starts_with("about:") || u.is_empty() {
+                    return true;
+                }
                 if let Some(rest) = u.strip_prefix("file://") {
                     // a file link: the host's file, through apexfile://
                     let path = rest.strip_prefix("localhost").unwrap_or(rest);
