@@ -329,9 +329,7 @@ impl Daemon {
     /// Relabel a session; everything attached stays attached, and
     /// learns the label from the metalog.
     fn rename_session(&mut self, from: &str, to: &str) -> Result<(), String> {
-        if to.is_empty() || to.contains('/') {
-            return Err(format!("bad session name {to:?}"));
-        }
+        crate::providers::valid_label(to)?;
         let key = self.resolve(from).ok_or_else(|| format!("no session {from}"))?;
         if self.sessions.values().any(|s| s.label == to) {
             return Err(format!("session {to} exists"));
@@ -478,8 +476,8 @@ impl Daemon {
             ClientMsg::Hello { session, name, kind, attach } => self.hello(id, session, name, kind, attach),
             ClientMsg::NewSession { name } => {
                 // making a session that exists is fine: it is there
-                if name.is_empty() || name.contains('/') {
-                    self.send(id, ServerMsg::Error { text: format!("bad session name {name:?}") });
+                if let Err(text) = crate::providers::valid_label(&name) {
+                    self.send(id, ServerMsg::Error { text });
                 } else {
                     self.new_session(&name);
                     self.send(id, ServerMsg::Sessions { sessions: self.infos() });

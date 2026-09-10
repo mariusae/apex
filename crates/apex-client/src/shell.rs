@@ -678,10 +678,18 @@ impl Selector {
             return Vec::new(); // the form is the panel then
         }
         if self.renaming {
-            return if f.is_empty() || f.contains('/') { Vec::new() } else { vec![Row::Rename(f.to_string())] };
+            return match (f.is_empty(), apex_server::providers::valid_label(f)) {
+                (true, _) => Vec::new(),
+                (false, Ok(())) => vec![Row::Rename(f.to_string())],
+                (false, Err(_)) => vec![Row::Note("a label: lowercase letters, digits and -".into())],
+            };
         }
         if let Some(h) = &self.naming {
-            return if f.is_empty() || f.contains('/') { Vec::new() } else { vec![Row::Create(h.url(f))] };
+            return match (f.is_empty(), apex_server::providers::valid_label(f)) {
+                (true, _) => Vec::new(),
+                (false, Ok(())) => vec![Row::Create(h.url(f))],
+                (false, Err(_)) => vec![Row::Note("a label: lowercase letters, digits and -".into())],
+            };
         }
         let fl = f.to_lowercase();
         let mut rows = Vec::new();
@@ -714,7 +722,7 @@ impl Selector {
         let mut actions = Vec::new();
         if !f.is_empty() {
             if let Some(u) = SessionUrl::parse(f) {
-                if !seen.contains(&u) {
+                if !seen.contains(&u) && apex_server::providers::valid_label(&u.session).is_ok() {
                     actions.push(Row::Create(u));
                 }
             }

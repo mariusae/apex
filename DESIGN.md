@@ -684,7 +684,9 @@ minted when it is made and recorded as the second entry of its metalog
 and a label for people (`MetaOp::Label{label}`, appended again on a
 rename, so attached clients learn the new label from the log). The
 daemon keys sessions by id and resolves whatever names one — the id,
-a unique prefix of four characters or more, or the label. Commands
+a unique prefix of four characters or more, or the label. A label is
+lowercase letters, digits and `-` (`providers::valid_label`, checked
+by the daemon, the CLI and the picker alike). Commands
 and terminals get `apexsession` = the id and `apexsessionlabel` = the
 label; `apex ls` prints `label<TAB>id`; a window is nameable anywhere
 as `id.N`: a bare id or name is the session at hand's, and the CLI

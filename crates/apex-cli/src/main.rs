@@ -158,8 +158,8 @@ Stop asks the daemon to exit. Every session ends with it: unsaved text
 is lost, terminals are closed. Use it to let a daemon of an old build go
 before attaching with a new one (see apex help sessions)." },
     Cmd { name: "new-session", usage: "apex new-session NAME", short: "make a session", flags: &[], run: new_session, long: "\
-New-session makes a session called NAME on the daemon, starting a daemon
-if none answers. Making a session that exists is fine: it is there.
+New-session makes a session labelled NAME on the daemon, starting a
+daemon if none answers. A label is lowercase letters, digits and -. Making a session that exists is fine: it is there.
 
 A new session runs its profile, ~/.apex/profile on the daemon's host
 (see apex help scripts)." },
@@ -830,6 +830,7 @@ fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
         [b] => (ctx.session.clone(), b.clone()),
         _ => return Err("usage".into()),
     };
+    apex_server::providers::valid_label(&to)?;
     apex_server::remote::rename_session(&ctx.socket, &from, &to).map_err(|e| e.to_string())
 }
 
@@ -844,6 +845,7 @@ fn end_session(ctx: &Ctx, p: &Parsed) -> R {
 
 fn new_session(ctx: &Ctx, p: &Parsed) -> R {
     let [name] = p.args.as_slice() else { return Err("usage".into()) };
+    apex_server::providers::valid_label(name)?;
     ensure_server(&ctx.socket, &ctx.session)?;
     apex_server::remote::new_session(&ctx.socket, name).map_err(|e| e.to_string())
 }

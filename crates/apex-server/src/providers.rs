@@ -288,6 +288,19 @@ pub fn split_spec(spec: &str) -> Option<(&str, &str)> {
 /// A daemon's first session.
 pub const DEFAULT_SESSION: &str = "default";
 
+/// A session's label: lowercase letters, digits and `-`, neither empty
+/// nor starting or ending with a `-`. What people type and read; the
+/// identity is a UUID beside it.
+pub fn valid_label(s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Err("a session label is needed".into());
+    }
+    if !s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') || s.starts_with('-') || s.ends_with('-') {
+        return Err(format!("{s:?}: a session label is lowercase letters, digits and -"));
+    }
+    Ok(())
+}
+
 /// A session anywhere, as a URL: `local:///name` (this machine's daemon,
 /// the pseudo-provider that takes no argument), `ssh://user@host/name`,
 /// `sprite://box/name`. The scheme is the provider, the authority its
@@ -494,5 +507,20 @@ mod identity_tests {
         assert_ne!(u, SessionUrl::parse("ssh://me@box/else").unwrap());
         assert_eq!(SessionUrl::parse("notes").unwrap().session_ref(), "notes");
         assert_eq!(SessionUrl::local("x").with_id("").id, None);
+    }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::valid_label;
+
+    #[test]
+    fn labels_are_lowercase_digits_and_dashes() {
+        for ok in ["default", "notes", "my-notes", "x2", "a-b-c"] {
+            assert!(valid_label(ok).is_ok(), "{ok}");
+        }
+        for bad in ["", "Notes", "my notes", "a/b", "-x", "x-", "café", "a_b"] {
+            assert!(valid_label(bad).is_err(), "{bad:?}");
+        }
     }
 }
