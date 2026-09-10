@@ -141,9 +141,18 @@ impl Pool {
         let Some(pool) = cx.try_global::<Pool>() else { return };
         let wake = pool.wake.clone();
         let urls: Vec<SessionUrl> = pool.order.clone();
+        // what the windows show, as they know it now: a window attached by
+        // label has the session's id by now, where the launch target
+        // carried last time's, stale once the daemon has been restarted;
+        // a tab compared against the stale id attached the same session
+        // again, and the parked link led while the window sat fenced
+        let mut shown: Vec<SessionUrl> = shown.to_vec();
+        shown.extend(Self::shown_urls(cx));
         crate::shell::log_line(&format!("restoring {} tab(s) of last time; {} shown already", urls.len(), shown.len()));
         for url in urls {
-            if shown.contains(&url) {
+            if shown.contains(&url) || shown.iter().any(|s| s.id.is_some() && url.id.is_some() && s.provider == url.provider && s.arg == url.arg && s.session == url.session) {
+                // the same session, or the same label on the same host
+                // under another id: last time's, before a restart
                 continue;
             }
             crate::shell::log_line(&format!("tab {url}: attaching again"));
@@ -206,8 +215,26 @@ impl Pool {
     }
 
     /// Park a session: its wake comes here from now on.
+    /// The sessions the windows show, as their links know them.
+    pub fn shown_urls(cx: &App) -> Vec<SessionUrl> {
+        cx.windows()
+            .into_iter()
+            .filter_map(|w| w.downcast::<crate::app::Acme>())
+            .filter_map(|h| h.read(cx).ok().map(|a| a.url.clone()))
+            .collect()
+    }
+
     pub fn park(cx: &mut App, p: Parked) {
         let Some(pool) = cx.try_global::<Pool>() else { return };
+        // a window shows this session already: a second attachment of
+        // ours would take the lead from it (the daemon lets the latest
+        // UI lead), leaving the window fenced; this link is let go
+        if Self::shown_urls(cx).iter().any(|s| *s == p.url) {
+            crate::shell::log_line(&format!("{}: shown already; not parked", p.url));
+            let mut p = p;
+            p.link.close();
+            return;
+        }
         p.target.set(pool.wake.clone());
         let key = p.url.to_string();
         let pool = cx.global_mut::<Pool>();

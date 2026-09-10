@@ -1197,7 +1197,14 @@ this one (detach, attach).
   other state files, and at launch the tabs of last time are attached
   again in the background and parked, by identity: one that is gone
   (an ended session, a new daemon) is forgotten rather than made anew. Sessions shown
-  by other windows are theirs, not tabs here.
+  by other windows are theirs, not tabs here. A tab is compared against
+  what the windows show as their links know it now, not the launch
+  target: a window attached by label has the session's current id,
+  where the target carried last time's, stale once the daemon has been
+  restarted; the same label on the same host under another id is
+  last time's, skipped. Nor is a link parked for a session a window
+  shows: the daemon lets the latest UI attachment lead, so a second
+  attachment of this client's own would fence the window it shows.
 - *As built, the picker:* while it (or the finder, ⌘P) is up it has
   the keyboard. Its field is a one-line editor (`field.rs`) with a
   cursor and a selection and the keys a Mac field answers: arrows with
