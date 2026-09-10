@@ -909,3 +909,32 @@ fn clear_drops_a_terminals_scrollback_and_keeps_its_screen() {
     assert_eq!(node.state.terms[&t].top, 0, "no history left");
     assert_eq!(rows(&node), screen, "the screen as it was");
 }
+
+#[test]
+fn a_resize_while_scrolled_back_waits_for_the_bottom() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().next().copied().expect("terminal");
+    for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect::<Vec<_>>()).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).iter().any(|r| r == "line-100")), "grid:\n{}", rows(&node).join("\n"));
+    server.term_scroll(&mut log, t, -30);
+    node.catch_up(&log).unwrap();
+    let first = rows(&node)[0].clone();
+    // the window changes size: the terminal, scrolled back, keeps its
+    // size (the program hears nothing, so cannot redraw over the reading)
+    server.term_resize(&mut log, t, 100, 40);
+    let deadline = Instant::now() + Duration::from_millis(500);
+    pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
+    assert_eq!((node.state.terms[&t].cols, node.state.terms[&t].rows), (80, 24));
+    assert_eq!(rows(&node)[0], first);
+    // back at the bottom: the size applies, and the program is told
+    server.term_scroll(&mut log, t, 100);
+    let deadline = Instant::now() + Duration::from_millis(500);
+    pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
+    assert_eq!((node.state.terms[&t].cols, node.state.terms[&t].rows), (100, 40));
+    assert_eq!(node.state.terms[&t].grid.len(), 40);
+}

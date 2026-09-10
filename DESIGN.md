@@ -1103,7 +1103,12 @@ by a server rule (`apex term clear $win`), drops the scrollback and
 keeps the screen. A resize keeps the viewport where it was in the
 history as far as it can (alacritty's grid: a taller screen takes its
 extra lines from the history above, so a viewport scrolled back by
-fewer lines than the growth ends at the bottom). The shell
+fewer lines than the growth ends at the bottom); and a size the window
+takes while the terminal is scrolled back is held (`TermHost::held_size`),
+neither the grid nor the pty resized, until the terminal is back at
+the bottom (a key, a paste, a scroll), so the program hears of one
+resize then and its redraw (a coding agent's, which clears the
+scrollback) cannot take away what is being read. The shell
 is the `Newterm.shell` setting (`apex set Newterm.shell zsh` in the
 profile), else the daemon's `$SHELL`. Keys go xterm-style with option
 as meta: ESC before the key itself (opt-b is `ESC b`, not `∫`),

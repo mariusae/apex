@@ -194,6 +194,11 @@ pub struct TermHost {
     notifier: Notifier,
     pub cols: u16,
     pub rows: u16,
+    /// A size the window took while the terminal was scrolled back,
+    /// held until it is back at the bottom: the program hears of a
+    /// resize only then, so its redraw (a coding agent's, clearing the
+    /// scrollback) cannot move what is being read.
+    pub held_size: Option<(u16, u16)>,
     pub exited: bool,
     /// Where the shell is, as far as its labels have told us (acme's win
     /// resolves relative names there).
@@ -290,7 +295,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf() })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf() })
     }
 
     pub fn write(&self, data: &[u8]) {
@@ -305,6 +310,11 @@ impl TermHost {
         self.rows = rows;
         self.term.lock().resize(Size { cols, rows });
         self.notifier.on_resize(WindowSize { num_lines: rows, num_cols: cols, cell_width: 8, cell_height: 16 });
+    }
+
+    /// Scrolled back into the history, not on the live screen.
+    pub fn scrolled_back(&self) -> bool {
+        self.term.lock().grid().display_offset() > 0
     }
 
     /// The scrollback dropped (the `Clear` verb): the screen stays as it

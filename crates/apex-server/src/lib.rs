@@ -361,6 +361,15 @@ impl Server {
     /// not with the wakeups.
     pub fn publish_term(&mut self, log: &mut Log, id: TermId) {
         let Some(h) = self.terms.get_mut(&id) else { return };
+        // back at the bottom: a size the window took meanwhile applies now
+        if !h.scrolled_back() {
+            if let Some((cols, rows)) = h.held_size.take() {
+                if cols != h.cols || rows != h.rows {
+                    h.resize(cols, rows);
+                    let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols, rows }));
+                }
+            }
+        }
         let ops = h.changed_ops();
         for op in ops {
             let _ = self.node.append(log, Shard::Term(id), Op::Term(op));
@@ -406,11 +415,20 @@ impl Server {
             return;
         }
         if let Some(h) = self.terms.get_mut(&id) {
-            if cols != h.cols || rows != h.rows {
-                h.resize(cols, rows);
-                let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols, rows }));
-                self.publish_term(log, id);
+            if cols == h.cols && rows == h.rows {
+                h.held_size = None;
+                return;
             }
+            if h.scrolled_back() {
+                // read on: the size waits until the terminal is back at
+                // the bottom (`publish_term` applies it then)
+                h.held_size = Some((cols, rows));
+                return;
+            }
+            h.held_size = None;
+            h.resize(cols, rows);
+            let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols, rows }));
+            self.publish_term(log, id);
         }
     }
 
