@@ -1292,7 +1292,10 @@ impl Acme {
         // colour of the row below it, rounded at the top, and its bottom
         // corners drape out into the strip (a square of its colour with
         // the strip's colour rounded away), so it flows into the window
-        const TAB_H: f32 = 26.;
+        // the selected tab nearly fills the bar; its text sits on the
+        // bar's centre line, with the other tabs' and the + beside it
+        const TAB_H: f32 = 30.;
+        const INSET: f32 = 4.;
         const DRAPE: f32 = 10.;
         const STRIP: u32 = 0xececec;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
@@ -1322,12 +1325,12 @@ impl Acme {
                 .mx(px(2.))
                 .text_size(px(13.))
                 .font_family(UI_FONT)
-                .when(current, |d| d.h(px(TAB_H)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
                 // the other tabs: the same centre line as the selected one,
                 // so the text stays put as the selection moves; hovered, a
                 // rounded rectangle, as a browser's (only the selected tab
                 // drapes)
-                .when(!current, |d| d.h(px(TAB_H - 4.)).mb(px(2.)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
                 .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
                 .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
@@ -1378,7 +1381,7 @@ impl Acme {
             tabs = tabs.child(tab);
         }
         // and one more: the picker, for a session not here yet
-        let mut plus = div().id("tab-new").px(px(7.)).py(px(3.)).rounded(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
+        let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
         if clickable {
             plus = plus.cursor_pointer().hover(|s| s.bg(rgb(0xe0e0e0)).text_color(rgb(0x000099))).on_mouse_down(
                 MouseButton::Left,
