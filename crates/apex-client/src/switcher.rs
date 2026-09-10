@@ -1,7 +1,8 @@
-//! The session switcher: ctrl-tab, held, steps through the sessions
-//! this client knows, most recent first, as an application switcher
-//! does; letting go of control switches to the one under the mark,
-//! ctrl-shift-tab steps back, escape leaves things as they are.
+//! The session switcher: ctrl-tab, held, steps through the connected
+//! sessions — the title bar's tabs — most recently shown first, as an
+//! application switcher does; letting go of control switches to the
+//! one under the mark, ctrl-shift-tab steps back, escape leaves things
+//! as they are.
 
 use gpui::{anchored, deferred, div, point, prelude::*, px, rgb, Context, Window};
 
@@ -12,8 +13,8 @@ use crate::pool::Pool;
 use crate::shell::UI_FONT;
 
 pub struct Switcher {
-    /// Most recent first: this window's session, the parked ones, then
-    /// the sessions attached to lately, then every other one known.
+    /// The connected sessions (the tabs), most recently shown first:
+    /// this window's, then the parked ones by when they were parked.
     pub entries: Vec<SessionUrl>,
     pub index: usize,
 }
@@ -21,21 +22,10 @@ pub struct Switcher {
 impl Acme {
     fn switcher_entries(&self, cx: &Context<Self>) -> Vec<SessionUrl> {
         let mut out: Vec<SessionUrl> = vec![self.url.clone()];
-        let mut add = |u: SessionUrl| {
+        for u in Pool::by_recency(cx) {
             if !out.contains(&u) {
                 out.push(u);
             }
-        };
-        for u in Pool::by_recency(cx) {
-            add(u);
-        }
-        for u in crate::shell::recent() {
-            add(u);
-        }
-        let mut known: Vec<SessionUrl> = crate::shell::known_sessions().into_iter().flat_map(|(h, names)| names.into_iter().map(move |s| h.url_of(&s))).collect();
-        known.sort_by_key(|u| u.to_string());
-        for u in known {
-            add(u);
         }
         out
     }
