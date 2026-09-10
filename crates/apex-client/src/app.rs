@@ -2792,6 +2792,14 @@ impl Acme {
             }
             return;
         }
+        // select all over a page: the page's, as Copy and Paste are
+        if text == "Edit ," {
+            if let Some(w) = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)) {
+                if self.webs.edit(w, "select-all") {
+                    return;
+                }
+            }
+        }
         let ctx = match self.window_at_pointer(window) {
             Some(w) => ExecCtx::Window(w),
             None if text == "New" || text.starts_with("New ") || text == "Back" || text == "Fwd" => ExecCtx::Top,
