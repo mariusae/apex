@@ -1400,9 +1400,8 @@ impl Acme {
             .pl(px(78.))
             .bg(rgb(STRIP))
             .gap(px(6.))
-            // the strip's bottom line, under the tabs: the selected tab
-            // covers it and joins the row below
-            .child(div().absolute().bottom(px(0.)).left(px(0.)).right(px(0.)).h(px(1.)).bg(rgb(0xc8c8c8)))
+            // no line under the strip: its grey meets the row below, and
+            // the selected tab runs straight into it
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &gpui::MouseDownEvent, window, cx| {

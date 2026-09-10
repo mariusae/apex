@@ -1157,8 +1157,8 @@ this one (detach, attach).
   last, and `+` opens the picker for a session not here yet. The
   selected tab is styled as a browser's: the colour of the row below
   it, rounded at the top, its bottom corners draping out into the strip
-  (a square of its colour with the strip's colour rounded away), the
-  strip's bottom line drawn under the tabs so it flows into the window.
+  (a square of its colour with the strip's colour rounded away), and
+  no line under the strip, so it flows into the window.
   ⌘1…⌘9 go
   to the Nth tab. The tab order is kept in `open-sessions` beside the
   other state files, and at launch the tabs of last time are attached
