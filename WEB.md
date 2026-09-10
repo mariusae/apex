@@ -175,6 +175,12 @@ Navigations also push onto the
 session's navigation stack (`LayoutOp::Visit`, DESIGN.md §6.1), so
 `Back`, `Fwd`, ⌘[ and ⌘] work across web and text windows alike.
 
+The Edit menu over a page is the page's: with the pointer over a web
+window, Copy, Cut, Paste and Select All (and their keys) go to the
+WKWebView's own editing actions, so a selection in a page or a preview
+copies and a field in one pastes; elsewhere they act on the text under
+the pointer as before.
+
 Cookies, local storage, history, zoom and scroll live in the client's
 own data store, one per session URL, never in the log. Attaching reloads
 the page.

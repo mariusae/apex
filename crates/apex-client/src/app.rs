@@ -2824,6 +2824,13 @@ impl Acme {
             self.overlay_edit(what, cx);
             return;
         }
+        // the pointer over a page: the page's selection is what Copy
+        // means, and Paste goes into its field
+        if let Some(w) = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)) {
+            if self.webs.edit(w, what) {
+                return;
+            }
+        }
         let target = match self.locate(self.pointer(window)) {
             Some((t, _)) => t,
             None => match self.node.seltext {

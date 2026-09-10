@@ -148,6 +148,42 @@ impl Webs {
         self.hosts.iter().find(|(_, h)| h.shown && h.bounds.is_some_and(|b| b.contains(&pos))).map(|(w, _)| *w)
     }
 
+    /// An Edit menu command (`copy`, `cut`, `paste`, `select-all`) for
+    /// the page in window `w`: WebKit does it on the page's selection,
+    /// as the menu would were it its own. False when the page cannot.
+    #[cfg(target_os = "macos")]
+    pub fn edit(&self, w: WindowId, what: &str) -> bool {
+        use objc::runtime::{Object, Sel};
+        use objc::{msg_send, sel, sel_impl};
+        use wry::WebViewExtMacOS;
+        let Some(h) = self.hosts.get(&w) else { return false };
+        let sel: Sel = match what {
+            "copy" => sel!(copy:),
+            "cut" => sel!(cut:),
+            "paste" => sel!(paste:),
+            "select-all" => sel!(selectAll:),
+            _ => return false,
+        };
+        let wk = h.view.webview();
+        let view = &*wk as *const _ as *mut Object;
+        // SAFETY: the WKWebView is alive while its host is; the editing
+        // selectors are WebKit's own on the main thread.
+        unsafe {
+            let can: bool = msg_send![view, respondsToSelector: sel];
+            if !can {
+                return false;
+            }
+            let nil: *mut Object = std::ptr::null_mut();
+            let _: () = msg_send![view, performSelector: sel withObject: nil];
+        }
+        true
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn edit(&self, _w: WindowId, _what: &str) -> bool {
+        false
+    }
+
     /// The page's history and reload: Back, Fwd, Get in its tag.
     pub fn go(&mut self, w: WindowId, nav: Nav) {
         let Some(h) = self.hosts.get_mut(&w) else { return };
