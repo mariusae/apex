@@ -277,7 +277,13 @@ directory, as B3 on it would: the first rule that matches and is taken
 acts, and with none left the text is looked for in the window (Look).
 With -dry-run, plumb prints what each rule would do instead. With -edit
 only rules that open in the session are tried, and failing those TEXT is
-opened as a path; that is what B does.
+opened as a path; that is what B does. Plumb exits non-zero when no
+rule takes TEXT (the session looks for it instead, as B3 would).
+
+Sessions have xdg-open in their PATH and as $BROWSER: a link to apex
+beside the binary that plumbs its one argument, so programs opening a
+URL or a file that way (gh, cargo doc --open, a browser's absence on
+a remote host) open it in the session, as B3 on it would.
 
 Plumb rule ls prints the table in the order it is tried: the rule's id,
 its owner, its priority, and the flags that make it. Plumb rule rm ID
@@ -537,8 +543,18 @@ fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // `apex-editor FILE`, the link $EDITOR names: `apex editor FILE`
     let argv0 = std::env::args().next().unwrap_or_default();
-    if argv0.rsplit('/').next() == Some("apex-editor") {
-        args.insert(0, "editor".into());
+    match argv0.rsplit('/').next() {
+        Some("apex-editor") => args.insert(0, "editor".into()),
+        // `xdg-open URL-or-FILE`, the link $BROWSER names and programs
+        // call to open things: plumbed, as B3 on it would
+        Some("xdg-open") => {
+            if args.len() != 1 || args[0].starts_with('-') {
+                eprintln!("usage: xdg-open URL-or-FILE (apex: plumbed into the session)");
+                std::process::exit(2);
+            }
+            args.insert(0, "plumb".into());
+        }
+        _ => {}
     }
     let global = match parse(GLOBAL, &args) {
         Ok(p) => p,
@@ -1226,10 +1242,16 @@ fn plumb(ctx: &Ctx, p: &Parsed) -> R {
         }
         return Ok(());
     }
-    let before = c.node.state.windows.len();
+    c.link.plumbed = None;
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
-    let _ = wait(&mut c, |r| r.node.state.windows.len() > before);
-    Ok(())
+    // the answer says whether a rule took it; none taking it is a
+    // failure here (the session looked for the text instead), as
+    // plan 9's plumb exits non-zero when the plumber refuses
+    wait(&mut c, |r| r.link.plumbed.is_some())?;
+    match c.link.plumbed.take() {
+        Some((true, _)) | None => Ok(()),
+        Some((false, why)) => Err(why),
+    }
 }
 
 /// plan 9's `B`: each argument to the edit port, from this directory.

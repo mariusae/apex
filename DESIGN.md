@@ -490,6 +490,7 @@ server → client
   Propose{id, proposal} · Applied{id, result}
   Sessions{names} · Error{text} · Pong{t} · Env{vars} · RuleAdded{id}
   PlumbTrace{lines}                       a dry run's report
+  Plumbed{ok, why}                        a plumb asked here is over: taken, or why not
   Plumb{id, ctx, verb, text, dir, groups, at?, sel?}
                                           a rule named this tool; answer PlumbAck within a second
   Io{stream, frame}                       Response{status, headers}, Body, End, Reset
@@ -728,7 +729,15 @@ command named `profile` with output in `+Errors`, and `apexsession`,
 `APEX_SOCKET` set, and `EDITOR` to `apex-editor`, a link
 beside the binary the CLI knows by name as `apex editor` (editinacme:
 the file plumbed to edit, exit when its window goes; one word, since
-zsh and rc do not split `$EDITOR` into words). The profile's environment at its
+zsh and rc do not split `$EDITOR` into words). Beside it too, and
+`$BROWSER`, is `xdg-open`, the same binary under the name programs
+call to open a URL or a file (gh, cargo doc --open, git web--browse,
+anything on a Linux host without a desktop): its one argument is
+plumbed from the working directory, as B3 on it would be, and it
+exits non-zero when no rule takes it (`ServerMsg::Plumbed`, which
+`apex plumb` also reports; the daemon's own verbs have no asker). The
+binary's directory leads the session's PATH, so the link shadows a
+host's own xdg-open there. The profile's environment at its
 end is the session's: the server prefixes the script with an exit hook
 (rc's `fn sigexit`, sh's `trap ... EXIT`) that runs `apex env -import`,
 which sends the shell's whole environment (`ClientMsg::EnvImport`);

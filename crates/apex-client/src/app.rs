@@ -3269,7 +3269,7 @@ fn plumb_local(server: &mut Server, node: &mut Node, log: &mut Log, req: PlumbRe
     let (id, mut step) = server.plumb_start(node, req);
     loop {
         match step {
-            PlumbStep::Done(props) => return perform(node, log, props),
+            PlumbStep::Done(props) | PlumbStep::Refused { props, .. } => return perform(node, log, props),
             PlumbStep::Trace(_) => return None,
             PlumbStep::Ask(apex_server::Proposal::ClientDo { verb, args }) => {
                 let r = client_do(&verb, &args);

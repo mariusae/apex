@@ -299,6 +299,12 @@ impl Daemon {
         if let Some(editor) = editor_command() {
             server.env.push(("EDITOR".into(), editor));
         }
+        // xdg-open, and $BROWSER, plumb what they are given: a URL or a
+        // file opened as B3 would open it, in the session (the link is
+        // beside the binary, whose directory leads the session's PATH)
+        if let Some(open) = link_beside("xdg-open") {
+            server.env.push(("BROWSER".into(), open));
+        }
         let sid = self.next_session;
         self.next_session += 1;
         {
@@ -1098,7 +1104,14 @@ impl Daemon {
         let Some(s) = self.sessions.get_mut(name) else { return };
         let sid = s.id;
         match step {
-            PlumbStep::Done(props) => self.after(name, props),
+            PlumbStep::Done(props) => {
+                self.after(name, props);
+                self.plumbed(asker, true, String::new());
+            }
+            PlumbStep::Refused { props, why } => {
+                self.after(name, props);
+                self.plumbed(asker, false, why);
+            }
             PlumbStep::Trace(lines) => self.send(asker, ServerMsg::PlumbTrace { lines }),
             PlumbStep::Ask(proposal) => {
                 let pid = self.next_pending;
@@ -1128,6 +1141,15 @@ impl Daemon {
                     }
                 }
             }
+        }
+    }
+
+    /// A plumb asked over the wire (`apex plumb`, a UI's B3) is over:
+    /// whoever asked hears how it went. A verb the server started itself
+    /// (asker 0) has nobody to tell.
+    fn plumbed(&mut self, asker: u64, ok: bool, why: String) {
+        if asker != 0 && self.conns.contains_key(&asker) {
+            self.send(asker, ServerMsg::Plumbed { ok, why });
         }
     }
 
@@ -1243,19 +1265,24 @@ fn daemon_log(socket: &Path) -> Option<std::fs::File> {
 fn editor_command() -> Option<String> {
     let exe = crate::self_exe()?;
     let two_words = format!("{} editor", exe.display());
+    Some(link_beside("apex-editor").unwrap_or(two_words))
+}
+
+/// A link of this name to the binary, beside it, made when it is
+/// missing and the directory allows: the CLI knows what to be by its
+/// name (`apex-editor`, `xdg-open`). None for a test binary (its
+/// directory is left alone) or when the link cannot be made.
+fn link_beside(name: &str) -> Option<String> {
+    let exe = crate::self_exe()?;
     if exe.file_name().and_then(|n| n.to_str()) != Some("apex") {
-        return Some(two_words); // a test binary: leave its directory alone
+        return None;
     }
-    let link = exe.with_file_name("apex-editor");
+    let link = exe.with_file_name(name);
     if !link.exists() {
         #[cfg(unix)]
         let _ = std::os::unix::fs::symlink("apex", &link);
     }
-    if link.exists() {
-        Some(link.display().to_string())
-    } else {
-        Some(two_words)
-    }
+    link.exists().then(|| link.display().to_string())
 }
 
 /// An HTTP status for a file error.

@@ -20,7 +20,9 @@ follows is the shape of things.
 `WIN` is a window id or a unique substring of a window's name. `APEX_SOCKET`
 and `APEX_SESSION` set the defaults (a shell in an apex terminal has
 `apexsession` and `APEX_SOCKET` set, so `apex` there works on the session
-it is in, and `EDITOR` set to `apex-editor`, a link to the binary that
+it is in, `BROWSER` set to `xdg-open`, a link to the binary beside it
+that plumbs its argument (so programs opening URLs and files that way
+open them in the session), and `EDITOR` set to `apex-editor`, a link to the binary that
 is plan9port's editinacme, `apex editor`: the file opens in the session
 and the command returns when its window is deleted); `apex attach`
 starts a daemon if the

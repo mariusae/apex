@@ -213,7 +213,8 @@ fn timed_out_get_rule_fails_without_reloading_generated_content() {
     let (id, step) = server.plumb_start(&node, req);
     assert!(matches!(step, apex_server::PlumbStep::AskTool { .. }), "{step:?}");
     let props = match server.plumb_next(&node, id, Err("timed out".into())) {
-        apex_server::PlumbStep::Done(props) => props,
+        // refused: no rule took it, and the walk says why (Plumbed's why)
+        apex_server::PlumbStep::Refused { props, why } if why.contains("no rule") => props,
         other => panic!("{other:?}"),
     };
     perform(&mut node, &mut log, props);

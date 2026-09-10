@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 14;
+pub const PROTOCOL: u32 = 15;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -215,6 +215,9 @@ pub enum ServerMsg {
     Env { vars: Vec<(String, String)> },
     /// What a dry-run plumb would do, rule by rule.
     PlumbTrace { lines: Vec<String> },
+    /// A plumb this connection asked for is over: a rule took it, or
+    /// none did (`why` says; what was done instead, a Look, is done).
+    Plumbed { ok: bool, why: String },
     /// A rule this tool installed names it: does it take this plumb?
     /// Answer with `PlumbAck{id}` within a second.
     Plumb { id: u64, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },

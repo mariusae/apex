@@ -64,6 +64,8 @@ pub struct Link {
     pub env: Option<Vec<(String, String)>>,
     /// A dry-run plumb's report, after a `Plumb{dry}`.
     pub trace: Option<Vec<String>>,
+    /// How the last plumb asked here ended (`Plumbed`).
+    pub plumbed: Option<(bool, String)>,
     /// Plumbs handed to this tool by rules naming it, to answer with
     /// `PlumbAck`.
     pub plumbs: Vec<ToolPlumb>,
@@ -239,7 +241,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -380,6 +382,7 @@ impl Link {
                 self.env = Some(vars);
             }
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
+            ServerMsg::Plumbed { ok, why } => self.plumbed = Some((ok, why)),
             ServerMsg::Plumb { id, rule, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),

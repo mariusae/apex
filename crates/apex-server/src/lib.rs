@@ -1311,14 +1311,18 @@ impl Server {
                 let pos = address_pos(&addr);
                 return self.plumb_finish(id, vec![Proposal::Goto { loc: Loc { session: None, name: target, pos } }]);
             }
-            return self.plumb_finish(id, vec![Proposal::Look { ctx, text, reverse }]);
+            let why = format!("no rule takes {text:?}: looked for it instead");
+            return match self.plumb_finish(id, vec![Proposal::Look { ctx, text, reverse }]) {
+                PlumbStep::Done(props) => PlumbStep::Refused { props, why },
+                step => step,
+            };
         }
         let mut props = vec![Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{verb}: no rule takes it here\n") }];
         if let Some(exec) = exec {
             props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Failed(format!("{verb}: no rule")) });
         }
         self.plumbs.remove(&id);
-        PlumbStep::Done(props)
+        PlumbStep::Refused { props, why: format!("{verb}: no rule takes it here") }
     }
 
     fn plumb_trace(&mut self, id: u64) -> PlumbStep {
@@ -1435,6 +1439,10 @@ pub struct PlumbReq {
 pub enum PlumbStep {
     /// Finished: these proposals carry the outcome.
     Done(Vec<Proposal>),
+    /// Finished, but no rule took the text: what is done instead (a
+    /// Look, a line in +Errors) and why, for whoever asked (`apex plumb`
+    /// exits with it; `xdg-open` reports it).
+    Refused { props: Vec<Proposal>, why: String },
     /// Ask the leader (a UI) to do this; `plumb_next` with the answer.
     Ask(Proposal),
     /// Ask this tool; `plumb_next` with its answer, or refusal after a
