@@ -216,8 +216,9 @@ hang. Once the attachment is fenced, proposals go to the new leader.
 
 *As built:* a client that has lost its leases (another UI attached and
 took them) sees it in the metalog it follows, and shows it: the square
-at the top-left of the top row fills red, the title bar reads
-"fenced", and the window title says another client leads.
+at the top-left of the top row fills red, the session's tab in the
+title bar fades into the strip (its name greyed, "fenced" after it),
+and the window title says another client leads.
 
 While an attachment holds entries the server has not acknowledged, the
 affected buffers are **unsynced** — a state distinct from dirty (§9), shown

@@ -1330,6 +1330,9 @@ impl Acme {
                 .line_height(px(LINE))
                 .font_family(UI_FONT)
                 .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                // fenced (another client leads, nothing here takes): the
+                // whole tab fades into the strip, its name greyed, and says so
+                .when(fenced, |d| d.opacity(0.4).text_color(rgb(0x555555)))
                 // the other tabs: the same centre line as the selected one,
                 // so the text stays put as the selection moves; hovered, a
                 // rounded rectangle, as a browser's (only the selected tab
@@ -1337,7 +1340,7 @@ impl Acme {
                 .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
                 .when_some(host, |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child(h)))
-                .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child("fenced")));
+                .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x555555)).child("fenced")));
             if clickable {
                 let url = u.clone();
                 tab = tab.cursor_pointer().on_mouse_down(
