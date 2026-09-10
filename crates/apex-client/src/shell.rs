@@ -27,6 +27,8 @@ actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindo
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
 pub const TITLEBAR_HEIGHT: f32 = 30.;
+/// The top row's background (acme's tag colour): what the selected tab is.
+const PALEBLUEGREEN_TAB: u32 = 0xEAFFFF;
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
 /// The system's UI font.
 pub const UI_FONT: &str = ".AppleSystemUIFont";
@@ -1286,7 +1288,14 @@ impl Acme {
         // a tab per connected session (this one, and the parked ones), in
         // the order first shown; this one is the selected tab and toggles
         // the picker; another switches to it; its × lets a parked one go
-        let mut tabs = div().id("tabs").flex().flex_row().items_center().gap(px(2.));
+        // the tabs sit on the strip's bottom edge; the selected one is the
+        // colour of the row below it, rounded at the top, and its bottom
+        // corners drape out into the strip (a square of its colour with
+        // the strip's colour rounded away), so it flows into the window
+        const TAB_H: f32 = 24.;
+        const DRAPE: f32 = 8.;
+        const STRIP: u32 = 0xececec;
+        let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end().gap(px(2.));
         let all = crate::pool::Pool::tabs(cx, &self.url);
         let others = all.len() > 1;
         for (i, u) in all.into_iter().enumerate() {
@@ -1295,19 +1304,25 @@ impl Acme {
             let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
             let fenced = current && self.fenced();
+            let bg = if open { 0xd4f5f5 } else { PALEBLUEGREEN_TAB };
+            let drape = |left: bool| {
+                let corner = div().size_full().bg(rgb(STRIP));
+                let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
+                let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
+                if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
+            };
             let mut tab = div()
                 .id(("tab", i))
+                .relative()
                 .flex()
                 .flex_row()
                 .items_center()
                 .gap(px(6.))
-                .px(px(8.))
-                .py(px(3.))
-                .rounded(px(6.))
+                .px(px(12.))
                 .text_size(px(13.))
                 .font_family(UI_FONT)
-                .when(current, |d| d.text_color(rgb(0x000099)).bg(rgb(if open { 0xd4f5f5 } else { 0xeaffff })))
-                .when(!current, |d| d.text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                .when(current, |d| d.h(px(TAB_H)).mx(px(DRAPE)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                .when(!current, |d| d.h(px(TAB_H - 4.)).mb(px(4.)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
                 .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
                 .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
@@ -1375,6 +1390,7 @@ impl Acme {
         let button = tabs.child(plus);
         div()
             .id("titlebar")
+            .relative()
             .h(px(TITLEBAR_HEIGHT))
             .w_full()
             .flex_none()
@@ -1382,10 +1398,11 @@ impl Acme {
             .flex_row()
             .items_center()
             .pl(px(78.))
-            .bg(rgb(0xececec))
-            .border_b_1()
-            .border_color(rgb(0xc8c8c8))
+            .bg(rgb(STRIP))
             .gap(px(6.))
+            // the strip's bottom line, under the tabs: the selected tab
+            // covers it and joins the row below
+            .child(div().absolute().bottom(px(0.)).left(px(0.)).right(px(0.)).h(px(1.)).bg(rgb(0xc8c8c8)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &gpui::MouseDownEvent, window, cx| {
