@@ -504,7 +504,8 @@ proposals (tools and the server → the leader; applied by whoever leads)
                                                        select: pipe output, left selected as acme's |
                                                        does; else a tool's write, dot left alone as a
                                                        write to acme's data file leaves it
-  Insert{buffer, version, at, text}                    at a point, the selection left alone (win)
+  Insert{buffer, version, at, text, follow}            at a point, the selection left alone (win);
+                                                       follow: a dot at the point moves past the text
   Errors{dir?, text} · Complete{view, at, text} · Snarf{text} · TermName{window, name}
   CommandStart{name} · CommandExit{name} · Status{ctx, exec, status}
                                           (the top row edited without moving seltext: a command
@@ -910,6 +911,20 @@ with a newline, dot after it: win holds a rule with the special verb
 `exec`, which takes every B2 command in the windows it applies to that
 no builtin and no other verb took, the whole line as its text, and is no
 word in the tools menu.
+
+*Win and the round trip:* every proposal from win is a round trip to
+the leader, and with a UI attached the leader is the UI, across the
+network when the daemon is far. Programs print a line per write (stdio
+is line-buffered on a tty), so win reads a line or two at a time; it
+proposes everything the shell has produced since its last proposal as
+one `Insert` (the batch grows to fill the wait, so the RTT bounds the
+latency of output, not its throughput), and the leader moves a dot
+sitting at the output point past the text in the same proposal
+(`Insert{follow}`), where a second `Select` round trip used to. Measured
+locally: `seq 1 1000000` into a win went from 46s to under 2s; the
+proposal count for 100k lines from 53k to 2. The daemon's watch sync,
+run after every message, skips the disk when the set of open files is
+the one it saw last.
 
 Typed client libraries (Rust, Go) are generated from the schema for programs
 that want more than the CLI.

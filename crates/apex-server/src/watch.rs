@@ -11,6 +11,10 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 pub struct Watches {
     watcher: Option<RecommendedWatcher>,
     dirs: BTreeSet<PathBuf>,
+    /// What was last asked for, before the directories were checked to
+    /// exist: the same ask again is answered without touching the disk
+    /// (a sync runs after every message the daemon handles).
+    asked: BTreeSet<PathBuf>,
     /// Canonical directory → the directory as buffers name it. FSEvents
     /// reports `/private/var/...` for a file opened as `/var/...`.
     canonical: HashMap<PathBuf, PathBuf>,
@@ -36,13 +40,18 @@ impl Watches {
             }
         })
         .ok();
-        Watches { watcher, dirs: BTreeSet::new(), canonical: HashMap::new(), written: HashMap::new() }
+        Watches { watcher, dirs: BTreeSet::new(), asked: BTreeSet::new(), canonical: HashMap::new(), written: HashMap::new() }
     }
 
     /// Watch exactly the parent directories of `files`, and `dirs`
     /// themselves (directory windows list their entries).
     pub fn sync<'a>(&mut self, files: impl Iterator<Item = &'a Path>, dirs: impl Iterator<Item = &'a Path>) {
-        let want: BTreeSet<PathBuf> = files.filter_map(|f| f.parent().map(Path::to_path_buf)).chain(dirs.map(Path::to_path_buf)).filter(|d| d.is_dir()).collect();
+        let asked: BTreeSet<PathBuf> = files.filter_map(|f| f.parent().map(Path::to_path_buf)).chain(dirs.map(Path::to_path_buf)).collect();
+        if asked == self.asked {
+            return;
+        }
+        let want: BTreeSet<PathBuf> = asked.iter().filter(|d| d.is_dir()).cloned().collect();
+        self.asked = asked;
         let Some(w) = self.watcher.as_mut() else { return };
         for d in self.dirs.difference(&want) {
             let _ = w.unwatch(d);

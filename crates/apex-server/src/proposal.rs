@@ -87,8 +87,11 @@ pub enum Proposal {
     Nav { back: bool },
     /// Insert at an address, valid at `version`, leaving the selection
     /// alone (what a tool writing output at a point wants; `ReplaceRange`
-    /// selects what it put, as a pipe's output is selected).
-    Insert { buffer: BufferId, version: Version, at: usize, text: String },
+    /// selects what it put, as a pipe's output is selected). With
+    /// `follow`, a view whose dot sits at `at` (an empty selection, at
+    /// win's output point) has it moved past the text, so typing stays
+    /// after the output: win's Insert and its Select in one round trip.
+    Insert { buffer: BufferId, version: Version, at: usize, text: String, follow: bool },
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -230,13 +233,18 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::ClientDo { verb, .. } => Err(CoreError::Missing(format!("no client here can {verb}"))),
-        Proposal::Insert { buffer, version, at, text } => {
+        Proposal::Insert { buffer, version, at, text, follow } => {
             let b = node.state.buffer(buffer)?;
             if b.version != version {
                 return Err(CoreError::Missing("buffer changed meanwhile".into()));
             }
             let at = at.min(b.text.len());
+            let following: Vec<ViewId> = if follow { b.views.iter().filter(|(_, v)| (v.q0, v.q1) == (at, at)).map(|(id, _)| *id).collect() } else { Vec::new() };
             node.insert_text(log, buffer, at, &text)?;
+            let end = at + text.chars().count();
+            for v in following {
+                node.select(log, v, end, end)?;
+            }
             Ok(None)
         }
         Proposal::Goto { loc } => {

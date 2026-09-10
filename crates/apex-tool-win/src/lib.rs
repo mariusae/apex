@@ -320,17 +320,31 @@ impl Win {
                 busy = true;
                 self.on_plumb(p);
             }
+            // everything the shell has produced meanwhile goes to the
+            // window in one proposal: a program printing line by line
+            // (stdio is line-buffered on a tty) is read a line or two at
+            // a time, and a proposal is a round trip to the leader, a
+            // far one when the UI is; the batch grows to fill the wait
+            let mut out: Vec<u8> = Vec::new();
+            let mut exited = false;
             while let Ok(ev) = self.rx.try_recv() {
                 busy = true;
                 match ev {
-                    Event::Output(bytes) => self.output(bytes),
+                    Event::Output(bytes) => out.extend_from_slice(&bytes),
                     Event::Exited => {
-                        if debug() {
-                            eprintln!("win: shell exited");
-                        }
-                        return Ok(());
+                        exited = true;
+                        break;
                     }
                 }
+            }
+            if !out.is_empty() {
+                self.output(out);
+            }
+            if exited {
+                if debug() {
+                    eprintln!("win: shell exited");
+                }
+                return Ok(());
             }
             if !busy {
                 std::thread::sleep(Duration::from_millis(10));
@@ -556,16 +570,10 @@ impl Win {
             let p = self.p.min(buf.text.len());
             let version = buf.version;
             self.ours.push_back((p, text.clone()));
-            // where dot is, before: at the point, it follows the output
-            let dot = buf.views.get(&ViewId::Body(self.window)).map(|v| (v.q0, v.q1));
-            match self.propose(Proposal::Insert { buffer: self.buffer, version, at: p, text: text.clone() }, TIMEOUT) {
-                Ok(_) => {
-                    if dot == Some((p, p)) {
-                        let n = text.chars().count();
-                        let _ = self.propose(Proposal::Select { view: ViewId::Body(self.window), q0: p + n, q1: p + n }, TIMEOUT);
-                    }
-                    return;
-                }
+            // dot at the point follows the output (the leader moves it,
+            // in the same round trip)
+            match self.propose(Proposal::Insert { buffer: self.buffer, version, at: p, text: text.clone(), follow: true }, TIMEOUT) {
+                Ok(_) => return,
                 Err(_) => {
                     // the buffer moved on (typing, say): the entries in
                     // between went through `before` while we waited and
@@ -620,7 +628,7 @@ impl Win {
             let Ok(buf) = self.remote.node.state.buffer(self.buffer) else { return };
             let end = (self.p + self.typing.chars().count()).min(buf.text.len());
             let version = buf.version;
-            match self.propose(Proposal::Insert { buffer: self.buffer, version, at: end, text: text.clone() }, TIMEOUT) {
+            match self.propose(Proposal::Insert { buffer: self.buffer, version, at: end, text: text.clone(), follow: false }, TIMEOUT) {
                 Ok(_) => {
                     let n = text.chars().count();
                     let _ = self.propose(Proposal::Select { view: ViewId::Body(self.window), q0: end + n, q1: end + n }, TIMEOUT);
