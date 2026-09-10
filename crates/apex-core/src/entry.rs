@@ -321,6 +321,12 @@ pub enum RunTo {
 pub enum MetaOp {
     /// First entry of a session's metalog.
     Init,
+    /// The session's identity, minted when it is made and never
+    /// changed: what sessions are known by (`<id>.<win>` names a
+    /// window anywhere).
+    Identity { id: String },
+    /// The session's label, for people: changed by a rename.
+    Label { label: String },
     ShardNew { shard: Shard },
     ShardDel { shard: Shard },
     Attach { attachment: AttachmentId, kind: AttachmentKind, name: String },

@@ -239,6 +239,7 @@ dependencies = [
  "ropey",
  "serde",
  "thiserror 2.0.20",
+ "uuid",
 ]
 
 [[package]]

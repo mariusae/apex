@@ -454,7 +454,10 @@ length):*
 ```
 client → server
   Hello{session, name, kind, attach?}     attach; a UI ships its ~/.apex/attach
-  NewSession{name}                        make a session (idempotent); its host's profile runs
+  NewSession{name}                        make a session labelled name (idempotent); its host's profile runs
+                                          (Hello/EndSession/RenameSession name a session by its id, a
+                                          unique prefix of it, or its label; Sessions lists {id, label};
+                                          Ended{id, label})
   ListSessions · RenameSession{from, to} · Stop · Ping{t}
   Append{shard, entries}                  entries this client sequenced as leader
   CreateShard{shard} · DeleteShard{shard}
@@ -670,6 +673,18 @@ program, which the tests point at a script running the commands under a
 scratch HOME.
 
 ---
+
+*As built, session identity:* every session has an identity, a UUID
+minted when it is made and recorded as the second entry of its metalog
+(`MetaOp::Identity{id}`, so every replica knows it from its snapshot),
+and a label for people (`MetaOp::Label{label}`, appended again on a
+rename, so attached clients learn the new label from the log). The
+daemon keys sessions by id and resolves whatever names one — the id,
+a unique prefix of four characters or more, or the label. Commands
+and terminals get `apexsession` = the id and `apexsessionlabel` = the
+label; `apex ls` prints `label<TAB>id`; a window is nameable anywhere
+as `id.N` (the CLI accepts it where a WIN is, for its own session).
+The socket names the daemon, not a session, and stays as it is.
 
 *As built, profile and attach:* two scripts, named by what they
 configure. The host's `~/.apex/profile` is the session's setup on the
@@ -1010,7 +1025,8 @@ same rule. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
 that through the login shell instead of a shell, named `dir/-cmd`, as
 `win cmd` does. The
 shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,
-`apexsession` and `APEX_SOCKET` set, so `apex` inside it addresses the
+`apexsession` (the session's id), `apexsessionlabel` and `APEX_SOCKET`
+set, so `apex` inside it addresses the
 session it runs in; commands run from tags get the same two. The shell
 is the `Newterm.shell` setting (`apex set Newterm.shell zsh` in the
 profile), else the daemon's `$SHELL`. Keys go xterm-style with option

@@ -34,6 +34,11 @@ fn apex(sock: &PathBuf, args: &[&str]) -> (bool, String, String) {
     (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
 }
 
+/// The labels in `apex ls` output (`label<TAB>id` per line).
+fn labels(ls: &str) -> Vec<String> {
+    ls.lines().map(|l| l.split('\t').next().unwrap_or("").to_string()).collect()
+}
+
 fn ok(sock: &PathBuf, args: &[&str]) -> String {
     let (success, out, err) = apex(sock, args);
     assert!(success, "apex {args:?} failed: {err}");
@@ -43,9 +48,9 @@ fn ok(sock: &PathBuf, args: &[&str]) -> String {
 #[test]
 fn scripts_drive_a_headless_session() {
     let sock = daemon();
-    assert_eq!(ok(&sock, &["ls"]), "main\n");
+    assert_eq!(labels(&ok(&sock, &["ls"])), vec!["main"]);
     ok(&sock, &["new-session", "side"]);
-    assert_eq!(ok(&sock, &["ls"]), "main\nside\n");
+    assert_eq!(labels(&ok(&sock, &["ls"])), vec!["main", "side"]);
 
     let dir = std::env::temp_dir().join(format!("apex-cli-files-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -897,10 +902,10 @@ fn a_session_can_be_ended() {
     // unsaved: refused, and still there
     let (success, _, err) = apex(&sock, &["end-session", "side"]);
     assert!(!success && err.contains("unsaved"), "{err}");
-    assert_eq!(ok(&sock, &["ls"]), "main\nside\n");
+    assert_eq!(labels(&ok(&sock, &["ls"])), vec!["main", "side"]);
     // forced: gone, the tool told and cut off, the command killed
     ok(&sock, &["end-session", "-f", "side"]);
-    assert_eq!(ok(&sock, &["ls"]), "main\n");
+    assert_eq!(labels(&ok(&sock, &["ls"])), vec!["main"]);
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut ended = None;
     let mut closed = false;
@@ -1090,4 +1095,42 @@ fn the_bridge_speaks_json_for_tools() {
     let ev = next(&mut out);
     assert_eq!(ev["event"], "bye", "{ev}");
     assert!(bridge.wait().unwrap().success());
+}
+
+/// Sessions are known by their identity: a UUID minted when they are
+/// made, in $apexsession (the label in $apexsessionlabel), accepted
+/// wherever a session is named (whole, a prefix, or the label), stable
+/// across a rename, and naming windows anywhere as `id.N`.
+#[test]
+fn sessions_have_an_identity_and_labels_for_people() {
+    let sock = daemon();
+    let ls = ok(&sock, &["ls"]);
+    let (label, id) = ls.trim().split_once('\t').unwrap();
+    assert_eq!(label, "main");
+    assert_eq!(id.len(), 36, "{id}");
+    // commands in the session know both
+    let env = ok(&sock, &["env"]);
+    assert!(env.contains(&format!("apexsession={id}\n")), "{env}");
+    assert!(env.contains("apexsessionlabel=main\n"), "{env}");
+    // the id, a prefix of it, or the label all name it
+    let w = ok(&sock, &[&format!("-session={id}"), "new", "/tmp/ident"]).trim().to_string();
+    assert!(ok(&sock, &[&format!("-session={}", &id[..8]), "win", "list"]).contains("/tmp/ident"));
+    assert!(ok(&sock, &["-session=main", "win", "list"]).contains("/tmp/ident"));
+    // a window named anywhere: id.N, in its session
+    assert!(ok(&sock, &["text", "read", &format!("{id}.{w}")]).is_empty());
+    assert!(ok(&sock, &["text", "read", &format!("{}.{w}", &id[..6])]).is_empty());
+    // a rename changes the label, not the identity; the old label is gone
+    ok(&sock, &["rename-session", "main", "renamed"]);
+    let ls = ok(&sock, &["ls"]);
+    assert_eq!(ls.trim(), format!("renamed\t{id}"), "{ls}");
+    assert!(ok(&sock, &[&format!("-session={id}"), "env"]).contains("apexsessionlabel=renamed\n"));
+    let (success, _, err) = apex(&sock, &["-session=main", "win", "list"]);
+    assert!(!success && err.contains("no session"), "{err}");
+    // a second session has its own; ending one by id leaves the other
+    ok(&sock, &["new-session", "side"]);
+    let ls = ok(&sock, &["ls"]);
+    let side = ls.lines().find(|l| l.starts_with("side\t")).unwrap().split('\t').nth(1).unwrap().to_string();
+    assert_ne!(side, id);
+    ok(&sock, &["end-session", "-f", &side]);
+    assert_eq!(labels(&ok(&sock, &["ls"])), vec!["renamed"]);
 }

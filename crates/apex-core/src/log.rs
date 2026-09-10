@@ -70,13 +70,33 @@ impl Default for Log {
 }
 
 impl Log {
-    /// A new session's store, with its metalog initialised.
+    /// A new session's store, with its metalog initialised and an
+    /// identity minted.
     pub fn new() -> Log {
+        Log::with_id(&new_session_id())
+    }
+
+    /// `new`, with the identity given.
+    pub fn with_id(id: &str) -> Log {
         let mut log = Log { shards: BTreeMap::new(), leases: BTreeMap::new(), next_attachment: 1, next_rule: 1, hook: None };
         log.shards.insert(Shard::Meta, ShardLog::default());
         log.leases.insert(Shard::Meta, LeaseState { holder: SERVER, epoch: 0, released: None });
         log.push_meta(MetaOp::Init);
+        log.push_meta(MetaOp::Identity { id: id.to_string() });
         log
+    }
+
+    /// The session's identity, as its metalog recorded it.
+    pub fn id(&self) -> Option<String> {
+        self.shards.get(&Shard::Meta)?.entries.iter().find_map(|e| match &e.op {
+            Op::Meta(MetaOp::Identity { id }) => Some(id.clone()),
+            _ => None,
+        })
+    }
+
+    /// Give the session its label (at creation, and on a rename).
+    pub fn set_label(&mut self, label: &str) -> Entry {
+        self.push_meta(MetaOp::Label { label: label.to_string() })
     }
 
     /// A client's mirror of a session, from a snapshot of its state: every
@@ -360,4 +380,9 @@ impl Log {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+/// A fresh session identity: a random UUID, in its usual spelling.
+pub fn new_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }

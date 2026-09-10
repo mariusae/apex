@@ -20,12 +20,13 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 11;
+pub const PROTOCOL: u32 = 12;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
     /// Attach to a session as a new attachment. A UI attachment takes the
     /// leases; a tool follows and proposes.
+    /// `session`: its id, a unique prefix of it, or its label.
     Hello { session: String, name: String, kind: AttachmentKind, attach: Option<Script> },
     /// Make a session (fine if it exists), with what its creator brings
     /// for its init.
@@ -203,7 +204,7 @@ pub enum ServerMsg {
     Propose { id: u64, proposal: Proposal },
     /// The outcome of a tool's `Propose`.
     Applied { id: u64, result: Result<Option<WindowId>, String> },
-    Sessions { names: Vec<String> },
+    Sessions { sessions: Vec<SessionInfo> },
     /// The server stored the client's entries of `shard` up to `seq`.
     Ack { shard: Shard, seq: Seq },
     /// A client-created shard is recorded and leased.
@@ -224,7 +225,7 @@ pub enum ServerMsg {
     Io { stream: u32, frame: IoFrame },
     /// The session this connection was attached to has been ended; the
     /// connection closes right after.
-    Ended { session: String },
+    Ended { id: String, label: String },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
@@ -269,4 +270,12 @@ mod io_tests {
         let f = FileFrame { version: 3, path: "/p".into(), bytes: b"hi".to_vec() };
         assert_eq!(FileFrame::decode(&f.encode()).unwrap(), f);
     }
+}
+
+/// A session as the daemon lists it: its identity, and its label for
+/// people. Ids are what sessions are known by; labels can change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    pub id: String,
+    pub label: String,
 }

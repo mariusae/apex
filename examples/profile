@@ -14,7 +14,8 @@
 #   fish  a vendor_conf.d snippet, found through $XDG_DATA_DIRS; its title
 #         uses $PWD verbatim instead of fish's prompt-style abbreviation
 #
-# It runs with $apexsession and $APEX_SOCKET set, so `apex`
+# It runs with $apexsession (the session's id), $apexsessionlabel and
+# $APEX_SOCKET set, so `apex`
 # here acts on the session being made; and its environment at its end,
 # variables and functions, is what the session's terminals and commands
 # get (an unset variable, x=(), is gone from theirs too).

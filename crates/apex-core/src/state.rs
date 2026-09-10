@@ -184,6 +184,9 @@ pub struct Rule {
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct Meta {
+    /// The session's identity (a UUID), and its label for people.
+    pub id: String,
+    pub label: String,
     pub shards: BTreeSet<Shard>,
     pub attachments: BTreeMap<AttachmentId, Attachment>,
     pub leases: BTreeMap<Shard, Lease>,
@@ -488,6 +491,8 @@ impl State {
         let m = &mut self.meta;
         match op {
             MetaOp::Init => {}
+            MetaOp::Identity { id } => m.id = id.clone(),
+            MetaOp::Label { label } => m.label = label.clone(),
             MetaOp::ShardNew { shard } => {
                 m.shards.insert(*shard);
                 m.leases.entry(*shard).or_insert(Lease { holder: SERVER, epoch: 0, seq: 0, pending: None, released: None });

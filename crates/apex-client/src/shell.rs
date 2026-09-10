@@ -269,7 +269,7 @@ pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<WindowBoun
         return Ok(again);
     }
     if let Some(first) = existing.first() {
-        return Ok(vec![(SessionUrl::local(first), None)]);
+        return Ok(vec![(SessionUrl::local(&first.label), None)]);
     }
     new_session(socket, apex_server::providers::DEFAULT_SESSION)?;
     Ok(vec![(SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None)])
@@ -861,16 +861,19 @@ impl Acme {
     fn ask_host(&mut self, h: Host, socket: PathBuf, epoch: u64, cx: &mut Context<Self>) {
         let host = h.clone();
         let asking = cx.background_executor().spawn(async move {
+            // (labels, for now: the picker is keyed by them until it is
+            // keyed by identity)
+            let labels = |v: Vec<apex_server::proto::SessionInfo>| v.into_iter().map(|s| s.label).collect::<Vec<String>>();
             if host.is_local() {
-                return list_sessions(&socket).map_err(|e| e.to_string());
+                return list_sessions(&socket).map(labels).map_err(|e| e.to_string());
             }
             // a host that has no apex yet (just added) gets ours first, as
             // attaching would, and is asked again
             let dest = host.dest();
             match apex_server::providers::list_sessions(&dest) {
-                Ok(names) => Ok(names),
+                Ok(names) => Ok(labels(names)),
                 Err(first) => match apex_server::providers::deploy(&dest) {
-                    Ok(_) => apex_server::providers::list_sessions(&dest).map_err(|e| e.to_string()),
+                    Ok(_) => apex_server::providers::list_sessions(&dest).map(labels).map_err(|e| e.to_string()),
                     Err(_) => Err(first.to_string()),
                 },
             }

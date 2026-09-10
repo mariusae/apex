@@ -261,9 +261,18 @@ pub fn attach_command(spec: &str, session: &str) -> io::Result<String> {
 }
 
 /// The sessions on the destination's daemon (started if it is not running).
-pub fn list_sessions(host: &str) -> io::Result<Vec<String>> {
+pub fn list_sessions(host: &str) -> io::Result<Vec<crate::proto::SessionInfo>> {
     let out = run(host, &format!("{REMOTE_BIN} -ensure-server ls"), None)?;
-    Ok(out.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect())
+    Ok(out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            // `label<TAB>id`; an older apex printed the label alone
+            let (label, id) = l.split_once('\t').unwrap_or((l, ""));
+            crate::proto::SessionInfo { id: id.to_string(), label: label.to_string() }
+        })
+        .collect())
 }
 
 /// `destination/session` from a name the user typed (`provider:name` or

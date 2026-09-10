@@ -90,7 +90,7 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     std::env::set_var("APEX_REMOTE_BINARIES", binaries());
     ssh::deploy("box").unwrap();
     // the daemon on the host is started by the bridge; sessions listed
-    assert_eq!(ssh::list_sessions("box").unwrap(), vec!["default".to_string()]);
+    assert_eq!(ssh::list_sessions("box").unwrap().into_iter().map(|s| s.label).collect::<Vec<_>>(), vec!["default".to_string()]);
     let cmd = ssh::attach_command("box", "default").unwrap();
     assert!(cmd.starts_with(&format!("{} box ", script.display())), "{cmd}");
     let mut c = Remote::via(&cmd, "default", "over-ssh", AttachmentKind::Ui).unwrap();
@@ -136,7 +136,7 @@ fn a_provider_is_a_command_named_apex_provider_on_the_path() {
     // the whole path through the provider
     let (_, installed) = ssh::deploy("sprite:box").unwrap();
     assert!(installed);
-    assert_eq!(ssh::list_sessions("sprite:box").unwrap(), vec!["default".to_string()]);
+    assert_eq!(ssh::list_sessions("sprite:box").unwrap().into_iter().map(|s| s.label).collect::<Vec<_>>(), vec!["default".to_string()]);
     let c = Remote::via(&ssh::attach_command("sprite:box", "default").unwrap(), "default", "over-sprite", AttachmentKind::Ui).unwrap();
     assert_eq!(c.node.state.layout.cols.len(), 1);
     drop(c);

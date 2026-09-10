@@ -19,7 +19,7 @@ use std::thread;
 
 use apex_core::*;
 
-use crate::proto::{file_url_path, FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script};
+use crate::proto::{SessionInfo, file_url_path, FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script};
 use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
 
 /// Start a daemon on `socket` from the `apex` binary at `exe`, detached
@@ -149,6 +149,8 @@ enum IoStream {
 struct Session {
     /// Stable across renames; what connections and events refer to.
     id: u64,
+    /// The label, for people (the identity is the map's key).
+    label: String,
     log: Log,
     server: Server,
     /// Follower replica of every shard, and the leader when no UI is
@@ -248,14 +250,43 @@ impl Daemon {
         Ok(())
     }
 
-    fn new_session(&mut self, name: &str) -> bool {
-        if self.sessions.contains_key(name) {
+    /// The key (the identity) of the session `s` names: its id, a unique
+    /// prefix of it (four characters or more), or its label.
+    fn resolve(&self, s: &str) -> Option<String> {
+        if self.sessions.contains_key(s) {
+            return Some(s.to_string());
+        }
+        if let Some((k, _)) = self.sessions.iter().find(|(_, x)| x.label == s) {
+            return Some(k.clone());
+        }
+        if s.len() >= 4 {
+            let hits: Vec<&String> = self.sessions.keys().filter(|k| k.starts_with(s)).collect();
+            if hits.len() == 1 {
+                return Some(hits[0].clone());
+            }
+        }
+        None
+    }
+
+    fn infos(&self) -> Vec<SessionInfo> {
+        let mut v: Vec<SessionInfo> = self.sessions.iter().map(|(id, s)| SessionInfo { id: id.clone(), label: s.label.clone() }).collect();
+        v.sort_by(|a, b| a.label.cmp(&b.label));
+        v
+    }
+
+    /// Make a session labelled `label`; false when one of that label
+    /// (or id) is there already.
+    fn new_session(&mut self, label: &str) -> bool {
+        if self.resolve(label).is_some() {
             return false;
         }
-        let log = Log::new();
+        let mut log = Log::new();
+        let key = log.id().expect("a fresh log has its identity");
+        log.set_label(label);
         let (mut server, mut srx) = Server::new(&log);
-        // shells and commands in this session know it, and the daemon
-        server.env = vec![("apexsession".into(), name.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
+        // shells and commands in this session know it by its identity,
+        // and by its label, and know the daemon
+        server.env = vec![("apexsession".into(), key.clone()), ("apexsessionlabel".into(), label.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
         // $EDITOR opens in the session and returns when the window goes
         if let Some(editor) = editor_command() {
             server.env.push(("EDITOR".into(), editor));
@@ -275,35 +306,44 @@ impl Daemon {
                 });
             });
         }
-        let mut log = log;
         server.install_default_rules(&mut log);
         let mut view = Node::new(SERVER);
         view.catch_up(&log).expect("fresh log");
         // the daemon lays the session out (one column, the top tag) so a
         // tool can work before any UI attaches
         view.init_session(&mut log).expect("fresh session");
-        self.sessions.insert(name.to_string(), Session { id: sid, log, server, view, leader: None });
+        self.sessions.insert(key.clone(), Session { id: sid, label: label.to_string(), log, server, view, leader: None });
+        eprintln!("apexd: session {label} ({key}) made");
         // its init runs now, as a command of the session
-        let s = self.sessions.get_mut(name).unwrap();
+        let s = self.sessions.get_mut(&key).unwrap();
         s.server.run_profile(&s.view, self.host_profile.as_deref());
-        self.after(name, Vec::new());
+        self.after(&key, Vec::new());
         true
     }
 
+    /// The key (identity) of the session with this internal number.
     fn name_of(&self, sid: u64) -> Option<String> {
         self.sessions.iter().find(|(_, s)| s.id == sid).map(|(n, _)| n.clone())
     }
 
-    /// Rename a session; everything attached stays attached.
+    /// Relabel a session; everything attached stays attached, and
+    /// learns the label from the metalog.
     fn rename_session(&mut self, from: &str, to: &str) -> Result<(), String> {
         if to.is_empty() || to.contains('/') {
             return Err(format!("bad session name {to:?}"));
         }
-        if self.sessions.contains_key(to) {
+        let key = self.resolve(from).ok_or_else(|| format!("no session {from}"))?;
+        if self.sessions.values().any(|s| s.label == to) {
             return Err(format!("session {to} exists"));
         }
-        let s = self.sessions.remove(from).ok_or_else(|| format!("no session {from}"))?;
-        self.sessions.insert(to.to_string(), s);
+        let s = self.sessions.get_mut(&key).unwrap();
+        let was = std::mem::replace(&mut s.label, to.to_string());
+        let e = s.log.set_label(to);
+        let _ = s.view.state.apply(Shard::Meta, &e);
+        // what commands started from now on see
+        s.server.set_env("apexsessionlabel", to);
+        eprintln!("apexd: session {was} renamed {to} ({key})");
+        self.after(&key, Vec::new());
         Ok(())
     }
 
@@ -311,26 +351,28 @@ impl Daemon {
     /// forced; else its commands and terminals are killed, everything
     /// attached is told and cut off, and the session is dropped.
     fn end_session(&mut self, name: &str, force: bool) -> Result<(), String> {
-        let s = self.sessions.get(name).ok_or_else(|| format!("no session {name}"))?;
+        let key = self.resolve(name).ok_or_else(|| format!("no session {name}"))?;
+        let s = &self.sessions[&key];
+        let label = s.label.clone();
         if !force {
             let dirty = s.view.state.buffers.values().filter(|b| b.name.starts_with('/') && !b.name.ends_with('/') && b.dirty()).count();
             if dirty > 0 {
-                return Err(format!("session {name}: {dirty} unsaved window(s); Put them, or end it with -f"));
+                return Err(format!("session {label}: {dirty} unsaved window(s); Put them, or end it with -f"));
             }
         }
         let sid = s.id;
         let members: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid)).map(|(id, _)| *id).collect();
         for id in members {
-            self.send(id, ServerMsg::Ended { session: name.to_string() });
+            self.send(id, ServerMsg::Ended { id: key.clone(), label: label.clone() });
             self.gone(id); // its streams and attachment go; dropping the sender closes it
         }
-        let s = self.sessions.remove(name).ok_or_else(|| format!("no session {name}"))?;
+        let s = self.sessions.remove(&key).ok_or_else(|| format!("no session {name}"))?;
         for r in s.server.processes() {
             s.server.kill(&r.pid.to_string());
         }
         // the server's drop ends its terminals
         drop(s);
-        eprintln!("apexd: session {name} ended");
+        eprintln!("apexd: session {label} ({key}) ended");
         Ok(())
     }
 
@@ -440,18 +482,18 @@ impl Daemon {
                     self.send(id, ServerMsg::Error { text: format!("bad session name {name:?}") });
                 } else {
                     self.new_session(&name);
-                    self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
+                    self.send(id, ServerMsg::Sessions { sessions: self.infos() });
                 }
             }
             ClientMsg::ListSessions => {
-                self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() });
+                self.send(id, ServerMsg::Sessions { sessions: self.infos() });
             }
             ClientMsg::RenameSession { from, to } => match self.rename_session(&from, &to) {
-                Ok(()) => self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() }),
+                Ok(()) => self.send(id, ServerMsg::Sessions { sessions: self.infos() }),
                 Err(text) => self.send(id, ServerMsg::Error { text }),
             },
             ClientMsg::EndSession { name, force } => match self.end_session(&name, force) {
-                Ok(()) => self.send(id, ServerMsg::Sessions { names: self.sessions.keys().cloned().collect() }),
+                Ok(()) => self.send(id, ServerMsg::Sessions { sessions: self.infos() }),
                 Err(text) => self.send(id, ServerMsg::Error { text }),
             },
             ClientMsg::Ping { t } => self.send(id, ServerMsg::Pong { t }),
@@ -467,10 +509,11 @@ impl Daemon {
     }
 
     fn hello(&mut self, id: u64, session: String, name: String, kind: AttachmentKind, attach: Option<Script>) {
-        let Some(s) = self.sessions.get_mut(&session) else {
+        let Some(key) = self.resolve(&session) else {
             self.send(id, ServerMsg::Error { text: format!("no session {session}") });
             return;
         };
+        let s = self.sessions.get_mut(&key).unwrap();
         let (a, e) = s.log.attach(kind, &name);
         let _ = s.view.state.apply(Shard::Meta, &e);
         if kind == AttachmentKind::Ui {

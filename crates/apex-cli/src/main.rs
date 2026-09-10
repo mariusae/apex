@@ -113,7 +113,7 @@ struct Ctx {
 
 const GLOBAL: &[Flag] = &[
     flag("socket", "the daemon's socket (default $APEX_SOCKET, else $TMPDIR/apex-$USER/main.sock)"),
-    flag("session", "the session to work on (default $apexsession, $APEX_SESSION, else default)"),
+    flag("session", "the session to work on, by id, a prefix of it, or label (default $apexsession, $APEX_SESSION, else default)"),
     switch("ensure-server", "start the daemon first if none answers on the socket"),
 ];
 
@@ -145,7 +145,11 @@ machines through ssh (see apex help sessions). It ignores SIGHUP.
 Attach and new-session start a daemon themselves when none answers, so
 server is for running one by hand, under a supervisor, say." },
     Cmd { name: "ls", usage: "apex ls", short: "list the daemon's sessions", flags: &[], run: ls, long: "\
-Ls prints the name of every session on the daemon, one per line." },
+Ls prints every session on the daemon, one per line: its label, a tab,
+and its id. Sessions are known by their id (a UUID, minted when the
+session is made and never changed); the label is for people and can be
+renamed. Anywhere a session is named, its id, a unique prefix of it
+(four characters or more) or its label will do." },
     Cmd { name: "stop", usage: "apex stop", short: "stop the daemon, its sessions with it", flags: &[], run: stop, long: "\
 Stop asks the daemon to exit. Every session ends with it: unsaved text
 is lost, terminals are closed. Use it to let a daemon of an old build go
@@ -451,7 +455,8 @@ is the session's setup on the machine running the daemon; the client's
 machine both live in the same ~/.apex, each run once in its role. When
 a session is made, one rc on its host sources the host's profile. It runs
 like any command, named profile in the top row with its output in
-+Errors, with apexsession and APEX_SOCKET set, so apex in it
++Errors, with apexsession (the session's id), apexsessionlabel and
+APEX_SOCKET set, so apex in it
 configures the session: apex open, apex exec Newcol, apex set, apex
 plumb rule add, apex tool lsp &. The profile's environment at its end
 is the session's: variables it sets or changes (x=y, path=($home/bin
@@ -676,7 +681,7 @@ fn ensure_server(socket: &Path, session: &str) -> R {
 
 fn ls(ctx: &Ctx, _: &Parsed) -> R {
     for s in apex_server::remote::list_sessions(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))? {
-        println!("{s}");
+        println!("{}\t{}", s.label, s.id);
     }
     Ok(())
 }
@@ -894,6 +899,17 @@ fn find_window(c: &Remote, spec: &str) -> Result<WindowId, String> {
     if let Ok(n) = spec.parse::<u64>() {
         let w = WindowId(n);
         return c.node.state.window(w).map(|_| w).map_err(|e| e.to_string());
+    }
+    // `session.N`: a window named anywhere; here, it must be this session's
+    if let Some((session, n)) = spec.rsplit_once('.') {
+        if let Ok(n) = n.parse::<u64>() {
+            let id = &c.node.state.meta.id;
+            if session == id || (session.len() >= 4 && id.starts_with(session)) || session == c.node.state.meta.label {
+                let w = WindowId(n);
+                return c.node.state.window(w).map(|_| w).map_err(|e| e.to_string());
+            }
+            return Err(format!("{spec}: window {n} of another session; use -session={session}"));
+        }
     }
     // a name exactly first (notes.md beside notes.md+Preview), then a
     // unique substring

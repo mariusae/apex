@@ -15,7 +15,7 @@ use std::thread;
 use apex_core::log::MirrorHook;
 use apex_core::*;
 
-use crate::proto::{FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script};
+use crate::proto::{FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script, SessionInfo};
 use crate::{proposal, Proposal};
 
 /// A shared, buffered writer: the mirror hook and the owner both send.
@@ -59,7 +59,7 @@ pub struct Link {
     /// Answers to this tool's proposals, by its ids.
     pub applied: HashMap<u64, Result<Option<WindowId>, String>>,
     /// The last session listing received.
-    pub sessions: Option<Vec<String>>,
+    pub sessions: Option<Vec<SessionInfo>>,
     /// The session environment, after an `Env`.
     pub env: Option<Vec<(String, String)>>,
     /// A dry-run plumb's report, after a `Plumb{dry}`.
@@ -354,8 +354,8 @@ impl Link {
             ServerMsg::Applied { id, result } => {
                 self.applied.insert(id, result);
             }
-            ServerMsg::Sessions { names } => {
-                self.sessions = Some(names);
+            ServerMsg::Sessions { sessions } => {
+                self.sessions = Some(sessions);
             }
             ServerMsg::Env { vars } => {
                 self.env = Some(vars);
@@ -382,7 +382,7 @@ impl Link {
             ServerMsg::Pong { .. } => {
                 self.last_pong = Some(std::time::Instant::now());
             }
-            ServerMsg::Ended { session } => self.ended = Some(session),
+            ServerMsg::Ended { label, .. } => self.ended = Some(label),
         }
         true
     }
@@ -429,13 +429,13 @@ impl Link {
 }
 
 /// Ask a daemon for its sessions without attaching.
-pub fn list_sessions(path: &Path) -> io::Result<Vec<String>> {
+pub fn list_sessions(path: &Path) -> io::Result<Vec<SessionInfo>> {
     let mut s = UnixStream::connect(path)?;
     write_frame(&mut s, &ClientMsg::ListSessions)?;
     let mut r = BufReader::new(s);
     loop {
         match read_frame::<_, ServerMsg>(&mut r)? {
-            Some(ServerMsg::Sessions { names }) => return Ok(names),
+            Some(ServerMsg::Sessions { sessions }) => return Ok(sessions),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
             Some(ServerMsg::Build { protocol, id }) => check_build(protocol, &id)?,
             Some(_) => {}
