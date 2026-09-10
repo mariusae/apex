@@ -426,6 +426,12 @@ pub struct TabDrag {
     pub url: SessionUrl,
     pub current: bool,
     pub start: gpui::Point<Pixels>,
+    /// Where the pointer is now.
+    pub pos: gpui::Point<Pixels>,
+    /// Where in the tab it was grabbed, from its left edge, and the
+    /// tab's width: the floating tab keeps that grip.
+    pub grab: Pixels,
+    pub width: Pixels,
     pub moved: bool,
 }
 
@@ -1313,9 +1319,27 @@ impl Acme {
         const STRIP: u32 = 0xececec;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
         let all = crate::pool::Pool::tabs(cx, &self.url);
+        // a tab being dragged floats under the pointer, kept within the
+        // strip's tabs (their bounds of last frame say where that is)
+        let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.url.clone());
+        let ghost: Option<(SessionUrl, Pixels, Pixels)> = self.tab_drag.as_ref().filter(|d| d.moved).and_then(|d| {
+            let bounds = self.tab_bounds.borrow();
+            let mine = bounds.iter().find(|(u, _)| *u == d.url).map(|(_, b)| *b)?;
+            let left = bounds.iter().map(|(_, b)| b.origin.x).fold(mine.origin.x, |a, x| if x < a { x } else { a });
+            let right = bounds.iter().map(|(_, b)| b.origin.x + b.size.width).fold(mine.origin.x + mine.size.width, |a, x| if x > a { x } else { a });
+            let mut x = d.pos.x - d.grab;
+            if x > right - d.width {
+                x = right - d.width;
+            }
+            if x < left {
+                x = left;
+            }
+            // the face carries its own margin: the bounds are the face's
+            Some((d.url.clone(), x - px(2.), mine.origin.y))
+        });
+        let mut floating: Option<gpui::Div> = None;
         // where each tab lands this frame, for a drag to reorder by
         self.tab_bounds.borrow_mut().clear();
-        let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.url.clone());
         let others = all.len() > 1;
         for (i, u) in all.into_iter().enumerate() {
             let current = u == self.url;
@@ -1324,43 +1348,58 @@ impl Acme {
             let host = (!u.is_local()).then(|| u.arg.clone());
             let fenced = current && self.fenced();
             let bg = if open { 0xd4f5f5 } else { PALEBLUEGREEN_TAB };
+            let closable = clickable && (!current || others);
             let drape = |left: bool| {
                 let corner = div().size_full().bg(rgb(STRIP));
                 let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
             };
+            // the tab's face: its look and its words, made twice for a
+            // tab being dragged (the placeholder in the row, the one
+            // under the pointer)
+            let face = |ghost: bool| {
+                div()
+                    .relative()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(5.))
+                    .px(px(10.))
+                    .mx(px(2.))
+                    .text_size(px(13.))
+                    .line_height(px(LINE))
+                    .font_family(UI_FONT)
+                    .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                    // fenced (another client leads, nothing here takes): the
+                    // whole tab fades into the strip, its name greyed, and says so
+                    .when(fenced, |d| d.opacity(0.4).text_color(rgb(0x555555)))
+                    // the other tabs: the same centre line as the selected one,
+                    // so the text stays put as the selection moves; hovered, a
+                    // rounded rectangle, as a browser's (only the selected tab
+                    // drapes); the one dragged shows as hovered
+                    .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                    .when(!current && ghost, |d| d.bg(rgb(0xe0e0e0)))
+                    .child(text.clone())
+                    .when_some(host.clone(), |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child(h)))
+                    .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x555555)).child("fenced")))
+                    .when(closable && ghost, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child("×")))
+            };
+            if let Some((_, x, y)) = ghost.as_ref().filter(|(g, _, _)| *g == u) {
+                // the tab under the pointer, over everything in the strip
+                floating = Some(div().absolute().left(*x).top(*y).child(face(true)));
+            }
             let bounds = self.tab_bounds.clone();
             let bounds_url = u.clone();
-            let mut tab = div()
+            let mut tab = face(false)
                 .id(("tab", i))
-                .relative()
                 .child(div().absolute().top(px(0.)).left(px(0.)).size_full().child(gpui::canvas(
                     move |b, _, _| bounds.borrow_mut().push((bounds_url, b)),
                     |_, _, _, _| {},
                 )))
-                .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.7))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(5.))
-                .px(px(10.))
-                .mx(px(2.))
-                .text_size(px(13.))
-                .line_height(px(LINE))
-                .font_family(UI_FONT)
-                .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
-                // fenced (another client leads, nothing here takes): the
-                // whole tab fades into the strip, its name greyed, and says so
-                .when(fenced, |d| d.opacity(0.4).text_color(rgb(0x555555)))
-                // the other tabs: the same centre line as the selected one,
-                // so the text stays put as the selection moves; hovered, a
-                // rounded rectangle, as a browser's (only the selected tab
-                // drapes)
-                .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
-                .child(text)
-                .when_some(host, |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child(h)))
-                .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x555555)).child("fenced")));
+                // dragged: its place in the row is kept, empty, as the
+                // tabs around it slide; the tab itself is the floating one
+                .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.));
             if clickable {
                 let url = u.clone();
                 // held: a click on release unless it moved, a drag
@@ -1368,13 +1407,20 @@ impl Acme {
                 tab = tab.cursor_pointer().on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                        this.tab_drag = Some(TabDrag { url: url.clone(), current, start: e.position, moved: false });
+                        let (grab, width) = this
+                            .tab_bounds
+                            .borrow()
+                            .iter()
+                            .find(|(u, _)| *u == url)
+                            .map(|(_, b)| (e.position.x - b.origin.x, b.size.width))
+                            .unwrap_or((px(0.), px(80.)));
+                        this.tab_drag = Some(TabDrag { url: url.clone(), current, start: e.position, pos: e.position, grab, width, moved: false });
                         cx.stop_propagation();
                     }),
                 );
                 // ×: a parked session let go; the current one let go
                 // too, the window moving to the one parked last
-                if !current || others {
+                if closable {
                     let url = u.clone();
                     tab = tab.child(
                         div()
@@ -1448,6 +1494,7 @@ impl Acme {
             )
             .child(button)
             .child(div().flex_1())
+            .when_some(floating, |d, f| d.child(f))
             .when_some(self.latency(), |d, l| d.child(div().pr(px(10.)).text_size(px(11.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child(l)))
             // the link to the daemon, at the right: bright while it is up, faded when gone
             .child(div().pr(px(12.)).text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))

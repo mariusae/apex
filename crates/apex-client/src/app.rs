@@ -1900,19 +1900,32 @@ impl Acme {
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
         if let Some(d) = &mut self.tab_drag {
-            // a tab held: past a few pixels it is a drag, and the tab
-            // goes where the pointer is among the others, live
+            // a tab held: past a few pixels it is a drag; the tab floats
+            // under the pointer and takes its place among the others as
+            // its centre passes theirs (their places as they would be
+            // with it out of the row, so a swap cannot undo itself)
+            d.pos = pos;
             if !d.moved && ((d.start.x - pos.x).abs() > px(4.) || (d.start.y - pos.y).abs() > px(4.)) {
                 d.moved = true;
             }
             if d.moved {
-                let url = d.url.clone();
-                let mut others: Vec<(SessionUrl, Pixels)> = self.tab_bounds.borrow().iter().filter(|(u, _)| *u != url).map(|(u, b)| (u.clone(), b.origin.x + b.size.width / 2.)).collect();
-                others.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-                let before = others.iter().find(|(_, centre)| pos.x < *centre).map(|(u, _)| u.clone());
+                let (url, grab, width) = (d.url.clone(), d.grab, d.width);
+                let mut all: Vec<(SessionUrl, gpui::Bounds<Pixels>)> = self.tab_bounds.borrow().clone();
+                all.sort_by(|a, b| a.1.origin.x.partial_cmp(&b.1.origin.x).unwrap_or(std::cmp::Ordering::Equal));
+                let gap = if all.len() >= 2 { all[1].1.origin.x - (all[0].1.origin.x + all[0].1.size.width) } else { px(4.) };
+                let centre = pos.x - grab + width / 2.;
+                let mut left = all.first().map(|(_, b)| b.origin.x).unwrap_or(px(0.));
+                let mut before = None;
+                for (u, b) in all.iter().filter(|(u, _)| *u != url) {
+                    if centre < left + b.size.width / 2. {
+                        before = Some(u.clone());
+                        break;
+                    }
+                    left += b.size.width + gap;
+                }
                 crate::pool::Pool::move_tab(cx, &url, before.as_ref());
-                cx.notify();
             }
+            cx.notify();
             self.last_mouse = pos;
             return;
         }
