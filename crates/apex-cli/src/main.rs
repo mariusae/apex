@@ -149,7 +149,10 @@ Ls prints every session on the daemon, one per line: its label, a tab,
 and its id. Sessions are known by their id (a UUID, minted when the
 session is made and never changed); the label is for people and can be
 renamed. Anywhere a session is named, its id, a unique prefix of it
-(four characters or more) or its label will do." },
+(four characters or more) or its label will do. Anywhere a window is
+named, a bare id or name is a window of the session at hand, and
+SESSION.N (the session by id or a prefix) a window of that session:
+the command works there." },
     Cmd { name: "stop", usage: "apex stop", short: "stop the daemon, its sessions with it", flags: &[], run: stop, long: "\
 Stop asks the daemon to exit. Every session ends with it: unsaved text
 is lost, terminals are closed. Use it to let a daemon of an old build go
@@ -543,13 +546,27 @@ fn main() {
         .or_else(|| std::env::var("apexsession").ok())
         .or_else(|| std::env::var("APEX_SESSION").ok())
         .unwrap_or_else(|| "default".into());
+    // a window named anywhere (session.N) as an argument: the command
+    // works in that session, on that window
+    let mut args = global.args.clone();
+    let mut session = session;
+    if !matches!(global.args.first().map(String::as_str), Some("B" | "plumb" | "switch" | "attach" | "new-session" | "end-session" | "rename-session" | "ls" | "editor")) {
+        for a in args.iter_mut().skip(1) {
+            if let Some(loc) = apex_server::global_window(a) {
+                if let Some(s) = loc.session {
+                    session = s;
+                    *a = loc.name;
+                }
+            }
+        }
+    }
     let ctx = Ctx { socket, session };
     if global.is("ensure-server") {
         if let Err(e) = ensure_server(&ctx.socket, &ctx.session) {
             die(&e);
         }
     }
-    let Some(name) = global.args.first().cloned() else { overview() };
+    let Some(name) = args.first().cloned() else { overview() };
     if name == "help" {
         help(global.args.get(1).map(String::as_str));
     }
@@ -557,7 +574,7 @@ fn main() {
         eprintln!("apex {name}: unknown command\nRun 'apex help' for usage.");
         std::process::exit(2);
     };
-    let parsed = match parse(cmd.flags, &global.args[1..]) {
+    let parsed = match parse(cmd.flags, &args[1..]) {
         Ok(p) => p,
         Err(e) if e == "help" => {
             usage(cmd);

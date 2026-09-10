@@ -687,7 +687,8 @@ daemon keys sessions by id and resolves whatever names one — the id,
 a unique prefix of four characters or more, or the label. Commands
 and terminals get `apexsession` = the id and `apexsessionlabel` = the
 label; `apex ls` prints `label<TAB>id`; a window is nameable anywhere
-as `id.N` (the CLI accepts it where a WIN is, for its own session).
+as `id.N`: a bare id or name is the session at hand's, and the CLI
+takes a `SESSION.N` argument as choosing that session for the command.
 The socket names the daemon, not a session, and stays as it is.
 *Places across sessions:* a `Loc` carries the session it is in (by
 identity; `None` is the session at hand) and names a window by name or

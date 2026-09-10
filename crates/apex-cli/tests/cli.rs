@@ -1134,6 +1134,11 @@ fn sessions_have_an_identity_and_labels_for_people() {
     let ls = ok(&sock, &["ls"]);
     let side = ls.lines().find(|l| l.starts_with("side\t")).unwrap().split('\t').nth(1).unwrap().to_string();
     assert_ne!(side, id);
+    // a window named as id.N from any session: the command works there
+    let w2 = ok(&sock, &[&format!("-session={id}"), "new", "/tmp/ident-two"]).trim().to_string();
+    assert!(ok(&sock, &[&format!("-session={side}"), "win", "list"]).is_empty());
+    ok(&sock, &[&format!("-session={side}"), "win", "del", &format!("{id}.{w2}")]);
+    assert!(!ok(&sock, &[&format!("-session={id}"), "win", "list"]).contains("/tmp/ident-two"));
     ok(&sock, &["end-session", "-f", &side]);
     assert_eq!(labels(&ok(&sock, &["ls"])), vec!["renamed"]);
 }
