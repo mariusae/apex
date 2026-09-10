@@ -139,7 +139,13 @@ impl Render for Acme {
         };
         // acme's pointer over acme's part of the window only; the box while
         // a layout box is held (the innermost hitbox's style wins)
-        let pointer = if self.dragging_box() { cursor::BOX_CURSOR } else { cursor::BIG_ARROW };
+        let pointer = if self.dragging_box() {
+            cursor::BOX_CURSOR
+        } else if self.over_page(window) {
+            cursor::NATIVE_CURSOR // the page's own, set as it asks
+        } else {
+            cursor::BIG_ARROW
+        };
         let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();

@@ -204,6 +204,8 @@ pub struct Acme {
     pending_goto: Option<Loc>,
     /// A place in another session to go to: the next render switches.
     pub pending_switch: Option<Loc>,
+    /// A page reported a cursor: apply it on the next tick.
+    page_cursor_now: bool,
     /// ⌘P, when open.
     pub finder: Option<crate::finder::Finder>,
     /// The windows as of the last frame, to notice closings.
@@ -1135,6 +1137,7 @@ impl Acme {
             show_at: HashMap::new(),
             pending_goto: None,
             pending_switch: None,
+            page_cursor_now: false,
             finder: None,
             last_windows: std::collections::BTreeMap::new(),
             chooser: false,
@@ -1315,7 +1318,23 @@ impl Acme {
         if !self.overlay_up() {
             self.webs.focus_tick(window);
         }
+        // the pointer over a page: the page's cursor, set by us (WebKit's
+        // own never shows inside this window), when it changed
+        if self.page_cursor_now {
+            self.page_cursor_now = false;
+            if let Some(p) = crate::web::native_mouse(window) {
+                if let Some(w) = self.webs.window_at(p) {
+                    crate::cursor::apply(self.webs.cursor(w));
+                }
+            }
+        }
         self.webs.any_loading()
+    }
+
+    /// Is the pointer over a page? Then gpui's cursor rect must say
+    /// nothing, and the page's cursor stands.
+    pub fn over_page(&self, window: &Window) -> bool {
+        !self.webs.is_empty() && crate::web::native_mouse(window).is_some_and(|p| self.webs.window_at(p).is_some())
     }
 
     /// Give the tiling this frame's measurements, refit any window whose
@@ -2400,6 +2419,11 @@ impl Acme {
                 // a file link with a line: the file, at that line
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
                 WebEvent::Loading(on) => self.webs.set_loading(w, on),
+                // the page's cursor: set now, if the pointer is on that page
+                WebEvent::Cursor(css) => {
+                    self.webs.set_cursor(w, &css);
+                    self.page_cursor_now = true;
+                }
                 // the host's loopback, by its bare name: through the proxy
                 WebEvent::Reroute(url) => {
                     self.webs.load(w, &url);

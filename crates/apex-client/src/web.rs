@@ -27,6 +27,10 @@ use apex_server::remote::{file_url, Wake};
 pub enum WebEvent {
     /// The page went to `url` (a link, a redirect, a form).
     Navigated(String),
+    /// The CSS cursor under the pointer changed (`pointer` over a link,
+    /// `text`, `default`...): the page's script says, since WebKit's own
+    /// cursor never reaches the screen inside this window.
+    Cursor(String),
     /// The document's title changed (not kept yet: WEB.md §2.1).
     #[allow(dead_code)]
     Title(String),
@@ -78,6 +82,27 @@ impl Drop for WebHost {
     }
 }
 
+/// Run in every page: the CSS cursor of the element under the pointer,
+/// reported when it changes. `auto` is read as WebKit would: a hand
+/// within a link, a beam in a text field, the arrow elsewhere.
+const CURSOR_SCRIPT: &str = r#"(function () {
+  let last = '';
+  function say(c) { if (c !== last) { last = c; try { window.ipc.postMessage('cursor:' + c); } catch (e) {} } }
+  function at(e) {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el) { say('default'); return; }
+    let c = getComputedStyle(el).cursor || 'auto';
+    if (c === 'auto') {
+      if (el.closest && el.closest('a[href], button, summary, [role=button], [role=link]')) c = 'pointer';
+      else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) c = 'text';
+      else c = 'default';
+    }
+    say(c);
+  }
+  document.addEventListener('mousemove', at, { capture: true, passive: true });
+  document.addEventListener('mouseleave', function () { say('default'); }, { capture: true, passive: true });
+})();"#;
+
 pub struct Webs {
     hosts: HashMap<WindowId, WebHost>,
     tx: Sender<(WindowId, WebEvent)>,
@@ -89,6 +114,8 @@ pub struct Webs {
     wake: Option<Wake>,
     /// The page the keyboard was given to, the pointer being over it.
     focused: Option<WindowId>,
+    /// The cursor each page last asked for.
+    cursors: HashMap<WindowId, gpui::CursorStyle>,
 }
 
 /// What Back, Fwd and Get do in a web window's tag.
@@ -113,7 +140,7 @@ impl Webs {
         if std::env::var_os("APEX_WEB_DEBUG").is_some() {
             eprintln!("web: views over a plane: {}, proxy port {proxy:?}", plane.is_some());
         }
-        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None }
+        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None, cursors: HashMap::new() }
     }
 
     /// The shown page under `pos`, if any.
@@ -198,15 +225,27 @@ impl Webs {
     fn build(&mut self, w: WindowId, page: Page, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
         let rect = Self::rect(bounds);
         let watches: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
-        let (tx1, tx2, tx3) = (self.tx.clone(), self.tx.clone(), self.tx.clone());
-        let (wake1, wake2, wake3) = (self.wake.clone(), self.wake.clone(), self.wake.clone());
+        let (tx1, tx2, tx3, tx4) = (self.tx.clone(), self.tx.clone(), self.tx.clone(), self.tx.clone());
+        let (wake1, wake2, wake3, wake4) = (self.wake.clone(), self.wake.clone(), self.wake.clone(), self.wake.clone());
         let from_buffer = matches!(page, Page::Html { .. });
-        let mut b = wry::WebViewBuilder::new().with_bounds(rect).with_on_page_load_handler(move |ev, _| {
-            let _ = tx3.send((w, WebEvent::Loading(matches!(ev, wry::PageLoadEvent::Started))));
-            if let Some(k) = &wake3 {
-                k();
-            }
-        });
+        let mut b = wry::WebViewBuilder::new()
+            .with_bounds(rect)
+            .with_on_page_load_handler(move |ev, _| {
+                let _ = tx3.send((w, WebEvent::Loading(matches!(ev, wry::PageLoadEvent::Started))));
+                if let Some(k) = &wake3 {
+                    k();
+                }
+            })
+            // the cursor the page wants under the pointer, as it changes
+            .with_initialization_script(CURSOR_SCRIPT)
+            .with_ipc_handler(move |req| {
+                if let Some(c) = req.body().strip_prefix("cursor:") {
+                    let _ = tx4.send((w, WebEvent::Cursor(c.to_string())));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
+                }
+            });
         b = match page {
             Page::Url(url) => {
                 if std::env::var_os("APEX_WEB_DEBUG").is_some() {
@@ -324,6 +363,28 @@ impl Webs {
 
     /// WebKit's word: content started arriving (already pulsing, mostly),
     /// or the page is done.
+    /// A page said what cursor it wants: the system one for the CSS name.
+    pub fn set_cursor(&mut self, w: WindowId, css: &str) {
+        use gpui::CursorStyle::*;
+        let style = match css {
+            "pointer" => PointingHand,
+            "text" | "vertical-text" => IBeam,
+            "grab" => OpenHand,
+            "grabbing" => ClosedHand,
+            "crosshair" => Crosshair,
+            "col-resize" | "ew-resize" | "e-resize" | "w-resize" => ResizeLeftRight,
+            "row-resize" | "ns-resize" | "n-resize" | "s-resize" => ResizeUpDown,
+            "not-allowed" | "no-drop" => OperationNotAllowed,
+            _ => Arrow,
+        };
+        self.cursors.insert(w, style);
+    }
+
+    /// The cursor a page last asked for (the arrow until it says).
+    pub fn cursor(&self, w: WindowId) -> gpui::CursorStyle {
+        self.cursors.get(&w).copied().unwrap_or(gpui::CursorStyle::Arrow)
+    }
+
     pub fn set_loading(&mut self, w: WindowId, on: bool) {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.loading = if on { h.loading.or_else(|| Some(std::time::Instant::now())) } else { None };

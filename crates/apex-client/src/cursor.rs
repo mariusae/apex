@@ -30,12 +30,34 @@ extern "C" {
 static mut ORIGINAL_SET: Option<extern "C" fn(&Object, Sel)> = None;
 extern "C" fn logged_set(this: &Object, sel: Sel) {
     unsafe {
-        let desc: Id = msg_send![this, description];
-        let utf8: *const std::os::raw::c_char = msg_send![desc, UTF8String];
-        let text = if utf8.is_null() { String::new() } else { std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned() };
-        let cls: *const Class = msg_send![this, class];
-        let name = (*cls).name();
-        crate::shell::log_line(&format!("cursor set: {name} {}", text.chars().take(80).collect::<String>()));
+        let me = this as *const Object as Id;
+        let named = |sel_name: &'static str, s: Sel| -> Option<&'static str> {
+            let c: Id = msg_send![class!(NSCursor), performSelector: s];
+            (c == me).then_some(sel_name)
+        };
+        let which = if me == ARROW {
+            "apex big arrow"
+        } else if me == BOXC {
+            "apex box"
+        } else if me == NATIVE {
+            "apex no-op"
+        } else {
+            named("system arrow", sel!(arrowCursor))
+                .or_else(|| named("pointing hand", sel!(pointingHandCursor)))
+                .or_else(|| named("I-beam", sel!(IBeamCursor)))
+                .or_else(|| named("current", sel!(currentCursor)))
+                .unwrap_or("other")
+        };
+        // who asks: the frames above us, the ones from a framework or us
+        let bt = std::backtrace::Backtrace::force_capture().to_string();
+        let frames: Vec<String> = bt
+            .lines()
+            .filter(|l| l.contains("WebKit") || l.contains("AppKit") || l.contains("gpui") || l.contains("apex") || l.contains("wry"))
+            .filter(|l| !l.contains("logged_set"))
+            .take(6)
+            .map(|l| l.trim().to_string())
+            .collect();
+        crate::shell::log_line(&format!("cursor set: {which} {me:p} via {}", frames.join(" | ")));
         if let Some(orig) = ORIGINAL_SET {
             orig(this, sel);
         }
@@ -220,6 +242,29 @@ pub const BOX_CURSOR: gpui::CursorStyle = gpui::CursorStyle::DragCopy;
 /// The style over a web or preview body: a cursor that sets nothing,
 /// leaving the pointer to the page.
 pub const NATIVE_CURSOR: gpui::CursorStyle = gpui::CursorStyle::ContextualMenu;
+
+/// Set the system cursor for a style now, over a page: gpui's cursor
+/// rect there is the no-op, so this stands until the page says otherwise.
+pub fn apply(style: gpui::CursorStyle) {
+    use gpui::CursorStyle::*;
+    unsafe {
+        let cls = class!(NSCursor);
+        let c: Id = match style {
+            PointingHand => msg_send![cls, pointingHandCursor],
+            IBeam => msg_send![cls, IBeamCursor],
+            OpenHand => msg_send![cls, openHandCursor],
+            ClosedHand => msg_send![cls, closedHandCursor],
+            Crosshair => msg_send![cls, crosshairCursor],
+            ResizeLeftRight => msg_send![cls, resizeLeftRightCursor],
+            ResizeUpDown => msg_send![cls, resizeUpDownCursor],
+            OperationNotAllowed => msg_send![cls, operationNotAllowedCursor],
+            _ => msg_send![cls, arrowCursor],
+        };
+        if !c.is_null() {
+            let _: () = msg_send![c, set];
+        }
+    }
+}
 
 /// Put the two cursors behind their styles, for the life of the process.
 pub fn install() {

@@ -1299,12 +1299,16 @@ the last column being deletable, `New` making a column when there is none;
 the mouse to the match; `Tab`, `Indent on|off` (autoindent), `ID`; Up and
 Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
 a third of the window and PageUp/PageDown two thirds; Home and End; the
-erase keys; over web and preview bodies the page's own pointer (gpui
-puts the hovered style's `NSCursor` in a cursor rect over its whole
-view, so a hitbox over each native view asks for a style behind which
-`cursor.rs` puts a cursor whose `set` does nothing, and the page's
-tracking areas decide: the hand over a link); double-click expansion
-with acme's
+erase keys; over web and preview bodies the page's own pointer: WebKit
+never sets a cursor inside this window (hover reaches the page, its
+cursor request does not reach the screen), so a script in every page
+reports the CSS cursor under the pointer over wry's IPC (`auto` read
+as WebKit reads it: a hand within a link, a beam in a field), the app
+maps it to a system cursor and sets it itself, and while the pointer
+is over a page gpui's cursor rect asks for a style behind which
+`cursor.rs` puts a cursor whose `set` does nothing, so gpui cannot
+undo it (`APEX_CURSOR_DEBUG=1` logs every cursor set and by whom);
+double-click expansion with acme's
 `isalnum` (`_` and any
 rune above Latin-1 are word characters, ASCII punctuation is not); the
 wheel's fractions of a line carried over so a trackpad's small deltas
