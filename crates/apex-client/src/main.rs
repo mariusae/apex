@@ -159,17 +159,25 @@ impl Render for Acme {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
                         Body::Web | Body::Html(_) => {
-                            // the native view goes where this canvas lands
+                            // the native view goes where this canvas lands;
+                            // over it the pointer is the system's, not acme's
+                            // (the innermost hitbox's style wins), so the page
+                            // shows its own hands and beams
                             webs_shown.insert(w);
                             let me2 = me.clone();
-                            canvas(
-                                move |bounds, window, cx| {
-                                    me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
-                                },
-                                |_, _, _, _| {},
-                            )
-                            .size_full()
-                            .into_any_element()
+                            div()
+                                .size_full()
+                                .cursor(gpui::CursorStyle::Arrow)
+                                .child(
+                                    canvas(
+                                        move |bounds, window, cx| {
+                                            me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
+                                        },
+                                        |_, _, _, _| {},
+                                    )
+                                    .size_full(),
+                                )
+                                .into_any_element()
                         }
                     };
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body));

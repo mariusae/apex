@@ -1299,7 +1299,10 @@ the last column being deletable, `New` making a column when there is none;
 the mouse to the match; `Tab`, `Indent on|off` (autoindent), `ID`; Up and
 Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
 a third of the window and PageUp/PageDown two thirds; Home and End; the
-erase keys; double-click expansion with acme's `isalnum` (`_` and any
+erase keys; the system pointer over web and preview bodies (a hitbox
+asking for it over each native view, where acme's big arrow would hide
+the page's own hands and beams); double-click expansion with acme's
+`isalnum` (`_` and any
 rune above Latin-1 are word characters, ASCII punctuation is not); the
 wheel's fractions of a line carried over so a trackpad's small deltas
 add up; and the pointers: plan9port's big arrow always, the box while
