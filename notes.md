@@ -44,3 +44,22 @@ server version vs. client version. at least display.
 
 
 term: on keyboard input, scroll to the end automatically.
+
+--
+
+## Open vs. Reveal for tools
+
+Originating question:
+
+> the purpose of calling open from a tool in this case is to scroll to the line. is that the way to do it? does plan9port acme have a better way?
+>
+> replace updates the buffer but preserves the viewport. We call open(name, line) afterward to scroll the current * row into view.
+>
+> Its downside is that Apex treats open as navigation: it selects the line and may warp the mouse. The call was added specifically for your “keep current change visible” request.
+
+Recommendation:
+
+- `Open(name, line)` works, but it is the wrong semantic level when the intent is only to keep a changed line visible.
+- In Apex, `Open` is a navigation/jump operation: it may select the target, record navigation state, and warp the mouse.
+- The closer plan9port acme pattern is: set dot/address, then `show`. That reveals the location without using the stronger open/jump path.
+- Apex should expose an equivalent tool-facing operation, such as `Show` or `Reveal`, that brings a line/range into view without navigation side effects like mouse warp.
