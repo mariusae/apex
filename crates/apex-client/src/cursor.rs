@@ -20,7 +20,26 @@ use objc::{class, msg_send, sel, sel_impl};
 
 extern "C" {
     fn class_getClassMethod(cls: *const Class, sel: Sel) -> *mut Method;
+    fn class_getInstanceMethod(cls: *const Class, sel: Sel) -> *mut Method;
     fn method_setImplementation(m: *mut Method, imp: Imp) -> Imp;
+}
+
+/// `APEX_CURSOR_DEBUG=1`: every `-[NSCursor set]` logged (who asks for
+/// what pointer, and when), to tell whether a page ever asks for its
+/// hand over a link.
+static mut ORIGINAL_SET: Option<extern "C" fn(&Object, Sel)> = None;
+extern "C" fn logged_set(this: &Object, sel: Sel) {
+    unsafe {
+        let desc: Id = msg_send![this, description];
+        let utf8: *const std::os::raw::c_char = msg_send![desc, UTF8String];
+        let text = if utf8.is_null() { String::new() } else { std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned() };
+        let cls: *const Class = msg_send![this, class];
+        let name = (*cls).name();
+        crate::shell::log_line(&format!("cursor set: {name} {}", text.chars().take(80).collect::<String>()));
+        if let Some(orig) = ORIGINAL_SET {
+            orig(this, sel);
+        }
+    }
 }
 
 #[repr(C)]
@@ -218,6 +237,14 @@ pub fn install() {
             msg_send![c, initWithImage: image hotSpot: NSPoint { x: 0., y: 0. }]
         };
         let cls: *const Class = class!(NSCursor);
+        if std::env::var_os("APEX_CURSOR_DEBUG").is_some() {
+            let set_m = class_getInstanceMethod(cls, sel!(set));
+            if !set_m.is_null() {
+                let imp: Imp = std::mem::transmute(logged_set as extern "C" fn(&Object, Sel));
+                let prev = method_setImplementation(set_m, imp);
+                ORIGINAL_SET = Some(std::mem::transmute(prev));
+            }
+        }
         let arrow_m = class_getClassMethod(cls, sel!(dragLinkCursor));
         let cross_m = class_getClassMethod(cls, sel!(dragCopyCursor));
         let native_m = class_getClassMethod(cls, sel!(contextualMenuCursor));
