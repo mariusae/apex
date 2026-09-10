@@ -460,6 +460,16 @@ impl Acme {
     /// once; local, it is attached now; elsewhere, the window says it is
     /// attaching and the attach comes back from a thread. What this
     /// window showed is parked first.
+    /// The current tab's ×: this session let go (its link closes, its
+    /// tab goes), the window showing the session parked most recently.
+    pub fn close_current_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(prev) = Pool::most_recent(cx) else { return };
+        let leaving = self.url.clone();
+        self.switch_to(&prev, window, cx);
+        Pool::let_go(cx, &leaving);
+        cx.notify();
+    }
+
     /// cmd-shift-k: back to the session parked most recently.
     pub fn previous_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match Pool::most_recent(cx) {

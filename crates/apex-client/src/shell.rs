@@ -1278,7 +1278,9 @@ impl Acme {
         // the order first shown; this one is the selected tab and toggles
         // the picker; another switches to it; its × lets a parked one go
         let mut tabs = div().id("tabs").flex().flex_row().items_center().gap(px(2.));
-        for (i, u) in crate::pool::Pool::tabs(cx, &self.url).into_iter().enumerate() {
+        let all = crate::pool::Pool::tabs(cx, &self.url);
+        let others = all.len() > 1;
+        for (i, u) in all.into_iter().enumerate() {
             let current = u == self.url;
             // the label; the host dimmed after it for a session elsewhere
             let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
@@ -1318,7 +1320,9 @@ impl Acme {
                         cx.stop_propagation();
                     }),
                 );
-                if !current {
+                // ×: a parked session let go; the current one let go
+                // too, the window moving to the one parked last
+                if !current || others {
                     let url = u.clone();
                     tab = tab.child(
                         div()
@@ -1329,8 +1333,12 @@ impl Acme {
                             .child("×")
                             .on_mouse_down(
                                 MouseButton::Left,
-                                cx.listener(move |_, _, _, cx| {
-                                    crate::pool::Pool::let_go(cx, &url);
+                                cx.listener(move |this, _, window, cx| {
+                                    if current {
+                                        this.close_current_session(window, cx);
+                                    } else {
+                                        crate::pool::Pool::let_go(cx, &url);
+                                    }
                                     cx.notify();
                                     cx.stop_propagation();
                                 }),

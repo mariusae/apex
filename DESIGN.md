@@ -1153,7 +1153,8 @@ this one (detach, attach).
   — this window's, and the parked ones — in the order first shown
   (`Pool::order`), the current one selected (it toggles the picker);
   another tab switches to that session, its × lets a parked one go,
-  and `+` opens the picker for a session not here yet. Sessions shown
+  the current tab's × lets this session go and shows the one parked
+  last, and `+` opens the picker for a session not here yet. Sessions shown
   by other windows are theirs, not tabs here.
 - *As built, the picker:* while it (or the finder, ⌘P) is up it has
   the keyboard. Its field is a one-line editor (`field.rs`) with a
