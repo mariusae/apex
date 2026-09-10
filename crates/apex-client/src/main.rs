@@ -154,6 +154,9 @@ impl Render for Acme {
         let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
         for col in &l.cols {
+            // acme's colinit: the column is white where no window is; the
+            // black shows only as the borders between columns and windows
+            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), col.r.dy(), div().size_full().bg(gpui::white()).into_any_element()));
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
             for (i, s) in col.wins.iter().enumerate() {
                 if !col.safe && i > 0 {
