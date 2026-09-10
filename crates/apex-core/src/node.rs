@@ -167,7 +167,8 @@ pub struct Node {
     typing: Option<(ViewId, GroupId)>,
     /// The most recently selected text (acme's `seltext`).
     pub seltext: Option<ViewId>,
-    /// What `errors` appended, for the client to show (`take_shows`).
+    /// Positions for the client to bring on screen (`take_shows`): the
+    /// start of what `errors` appended, a tool's `Show`.
     pub shows: Vec<(ViewId, usize)>,
     /// Places to go (`Goto`, `Back`, `Fwd`), for the client (or a headless
     /// leader) to open and select (`take_gotos`).
@@ -1275,7 +1276,8 @@ impl Node {
     }
 
     /// Positions a client should bring on screen (acme's `textshow`),
-    /// since the last call: the start of new `+Errors` text.
+    /// since the last call: the start of new `+Errors` text, a tool's
+    /// `Show`.
     pub fn take_shows(&mut self) -> Vec<(ViewId, usize)> {
         std::mem::take(&mut self.shows)
     }

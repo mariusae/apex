@@ -70,6 +70,12 @@ pub enum Proposal {
     /// Run an Edit program on a window's body.
     Edit { window: WindowId, program: String },
     Select { view: ViewId, q0: usize, q1: usize },
+    /// Bring the text at `at` on screen (acme's `show`, on a program's
+    /// `addr`): the window grown if it shows no lines, the view scrolled
+    /// only if `at` is off it. Dot, the mouse and the back stack are left
+    /// alone; a tool keeping a changed line in sight wants this, not
+    /// `Goto`.
+    Show { view: ViewId, at: usize },
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
@@ -319,6 +325,15 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             // look into the window: no scrolling to it, no focus
             node.select(log, view, q0, q1)?;
             Ok(None)
+        }
+        Proposal::Show { view, at } => {
+            let b = node.view_buffer(view)?;
+            let at = at.min(node.state.buffer(b)?.text.len());
+            if let Some(w) = view.window() {
+                node.reveal(log, w)?;
+            }
+            node.shows.push((view, at));
+            Ok(view.window())
         }
     }
 }

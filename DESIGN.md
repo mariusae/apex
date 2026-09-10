@@ -581,6 +581,7 @@ The CLI is the stable public API. Scripts never see the wire.
 ● apex text read <buf> [--addr A]    read a buffer or address range
 ● apex edit <buf> '<Edit program>'   run the Edit language (a proposal)
 ● apex sel <win> [q0 q1]             read/set a selection
+● apex show <win> [q | :line]        bring a place on screen, nothing else moved
 ● apex exec <win> '<command>'        as if B2
 ● apex events [--since N] [--shard S] stream entries as JSON lines
 ● apex term new|send|read|log        terminals
@@ -604,7 +605,7 @@ the attach protocol, plus `NewSession` and `ListSessions`. A session with
 no UI attached is led by the daemon itself, so scripts work headless and
 a UI that attaches later takes over what they did. `apex attach` starts
 the daemon if the socket does not answer. Implemented: `server ls
-new-session attach [-stdio] new open win text edit sel exec events term
+new-session attach [-stdio] new open win text edit sel show exec events term
 plumb B env set cat lsp label awd version`; flags are Go's (`-flag=value`)
 and `apex help` documents everything, `apex help <topic>` included;
 `apex ps` and `apex kill` see and end what the server runs (the
@@ -837,8 +838,14 @@ Rust API for tools, a curated surface on `Remote` with nothing of the
 wire or the replicated state showing through: `Tool::attach(name)`,
 `next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
-`new_window open read replace append select selection rename set_live
-delete exec exec_in errors watch unwatch set setting`. Depending on
+`new_window open read replace append select selection show show_line
+line rename set_live delete exec exec_in errors watch unwatch set
+setting`. `open` is a jump (acme's plumbing a `file:line`: the origin
+on the back stack, the line selected and shown, the mouse warped there);
+`show` is acme's `show` after `addr=`: the place brought on screen if
+it is off it, and nothing else moved. A tool that edits a window and
+wants its change kept in sight uses `show`; `open` is for taking the
+user somewhere. Depending on
 `apex-server` directly is the internals, not the API. The bundled
 tools (win, lsp, preview) stay on the internals on purpose: they ship
 with the daemon and are rebuilt with it, so the lockstep costs them
@@ -846,8 +853,8 @@ nothing, and win in particular needs what the crate hides. *Tools in other langu
 the tool NAME and speaks JSON, one object a line, on stdin and stdout
 (`apex-tool-bridge`, a client of `apex-tool`, its commands and events
 the crate's methods and events one for one): commands in
-(`windows new open read write select rename live delete exec errors
-rule unrule ack watch unwatch set setting`), each answered in order by
+(`windows new open read write select show line rename live delete
+exec errors rule unrule ack watch unwatch set setting`), each answered in order by
 id; events out (`hello`, `plumb` with the rule that matched, `edit`
 for a watched window's body by others, `renamed`, `deleted`, `bye`).
 The bridge is one `Remote` with the win-style `before` hook for edits;

@@ -475,6 +475,36 @@ impl Tool {
         Ok(())
     }
 
+    /// Bring the text at `at` into view: the window is scrolled only if
+    /// `at` is off screen (and grown if it shows no lines). Nothing else
+    /// moves: not dot, not the mouse, not the back stack. What a tool
+    /// keeping a line it changed in sight wants, where `open` would jump
+    /// the user there. acme's `show` after `addr=`.
+    pub fn show(&mut self, w: WindowId, at: usize) -> Result<()> {
+        self.body_of(w)?;
+        self.propose(Proposal::Show { view: ViewId::Body(w), at })?;
+        Ok(())
+    }
+
+    /// `show` at the start of line `n` (1-based).
+    pub fn show_line(&mut self, w: WindowId, n: usize) -> Result<()> {
+        let at = self.line_start(w, n)?;
+        self.show(w, at)
+    }
+
+    /// The characters `[q0, q1)` of line `n` (1-based), the newline
+    /// excluded; an error past the last line.
+    pub fn line(&self, w: WindowId, n: usize) -> Result<Range> {
+        let b = self.body_of(w)?;
+        let text = &self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text;
+        let (q0, q1) = text.line_range(n.saturating_sub(1)).ok_or_else(|| format!("no line {n}"))?;
+        Ok(Range { q0, q1 })
+    }
+
+    fn line_start(&self, w: WindowId, n: usize) -> Result<usize> {
+        Ok(self.line(w, n)?.q0)
+    }
+
     /// Give the window (its buffer) a new name.
     pub fn rename(&mut self, w: WindowId, name: &str) -> Result<()> {
         let b = self.body_of(w)?;

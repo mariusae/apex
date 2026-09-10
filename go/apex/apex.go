@@ -372,6 +372,32 @@ func (w *Window) Select(q0, q1 int) error {
 	return w.t.call("select", map[string]any{"window": w.ID, "q0": q0, "q1": q1}, nil)
 }
 
+// Show brings the text at character offset at into view: the window is
+// scrolled only if at is off screen. Nothing else moves: not the
+// selection, not the mouse, not the back stack. A tool keeping a line
+// it changed in sight wants this, where Open would jump the user there.
+func (w *Window) Show(at int) error {
+	return w.t.call("show", map[string]any{"window": w.ID, "at": at}, nil)
+}
+
+// ShowLine is Show at the start of line n (1-based).
+func (w *Window) ShowLine(n int) error {
+	return w.t.call("show", map[string]any{"window": w.ID, "line": n}, nil)
+}
+
+// Line returns the character range [q0, q1) of line n (1-based), the
+// newline excluded.
+func (w *Window) Line(n int) (q0, q1 int, err error) {
+	var r struct {
+		Q0 int `json:"q0"`
+		Q1 int `json:"q1"`
+	}
+	if err := w.t.call("line", map[string]any{"window": w.ID, "line": n}, &r); err != nil {
+		return 0, 0, err
+	}
+	return r.Q0, r.Q1, nil
+}
+
 // Rename gives the window (its buffer) a new name.
 func (w *Window) Rename(name string) error {
 	return w.t.call("rename", map[string]any{"window": w.ID, "name": name}, nil)

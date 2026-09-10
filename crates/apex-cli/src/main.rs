@@ -217,7 +217,13 @@ of window WIN, as `Edit PROGRAM` in its tag would:
 	apex edit main.go ',x/foo/ c/bar/'" },
     Cmd { name: "sel", usage: "apex sel WIN [Q0 Q1]", short: "read or set a window's selection", flags: &[], run: sel, long: "\
 Sel prints the selection of window WIN as two character offsets, or with
-Q0 and Q1 sets it." },
+Q0 and Q1 sets it. The window is not scrolled to it: see show." },
+    Cmd { name: "show", usage: "apex show WIN [Q | :LINE]", short: "bring a place in a window on screen", flags: &[], run: show, long: "\
+Show brings the text at character offset Q, or the start of line LINE,
+of window WIN into view, scrolling only if it is off screen; with no
+place, the selection. Nothing else moves: not the selection, not the
+mouse, not the back stack (compare plumbing a file:line, which does all
+three). acme's show after addr=." },
     Cmd { name: "exec", usage: "apex exec [WIN] COMMAND", short: "run a command as B2 would", flags: &[], run: exec, long: "\
 Exec runs COMMAND as B2 on it would: in the context of window WIN, or of
 the top row when no window is given. Built-ins (Put, Del, Look, ...),
@@ -1094,6 +1100,25 @@ fn sel(ctx: &Ctx, p: &Parsed) -> R {
         }
         _ => Err("usage".into()),
     }
+}
+
+fn show(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    let spec = p.args.first().ok_or("usage")?;
+    let w = find_window(&c, spec)?;
+    let v = ViewId::Body(w);
+    let at = match p.args.get(1) {
+        None => c.node.selection(v).map_err(|e| e.to_string())?.0,
+        Some(a) if a.starts_with(':') => {
+            let n: usize = a[1..].parse().map_err(|_| "LINE must be a number")?;
+            let b = c.node.view_buffer(v).map_err(|e| e.to_string())?;
+            let text = &c.node.state.buffer(b).map_err(|e| e.to_string())?.text;
+            text.line_range(n.saturating_sub(1)).ok_or_else(|| format!("no line {n}"))?.0
+        }
+        Some(q) => q.parse().map_err(|_| "Q must be a number")?,
+    };
+    c.propose(Proposal::Show { view: v, at }, TIMEOUT)?;
+    Ok(())
 }
 
 fn exec(ctx: &Ctx, p: &Parsed) -> R {

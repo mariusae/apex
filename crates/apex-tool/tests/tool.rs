@@ -47,6 +47,12 @@ fn a_tool_works_a_window_and_answers_its_verb() {
     t.append(w, &format!("{}\n", p.text.to_uppercase())).unwrap();
     t.answer(&p, true).unwrap();
     assert_eq!(t.read(w).unwrap(), "Hello\nLOUD\n");
+    // show: a place brought on screen, dot left where it was
+    assert_eq!(t.line(w, 2).map(|r| (r.q0, r.q1)).unwrap(), (6, 10));
+    t.show_line(w, 2).unwrap();
+    t.show(w, 0).unwrap();
+    assert!(t.line(w, 4).is_err());
+    assert_eq!(t.selection(w).map(|r| (r.q0, r.q1)).unwrap(), (0, 5));
     // watched: an edit by someone else is an event; ours is not
     t.watch(w).unwrap();
     let b = other.node.state.window(w).unwrap().body_buffer().unwrap();

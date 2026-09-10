@@ -16,6 +16,9 @@
 //! - `read {window}` → `text`; `selection {window}` → `q0, q1`
 //! - `write {window, q0, q1, text}` (a range replaced; `q0`/`q1` of -1
 //!   mean the end, so `q0: -1, q1: -1` appends), `select {window, q0, q1}`
+//! - `show {window, at}` or `show {window, line}`: the text there brought
+//!   into view if it is off screen, dot and the mouse left alone (where
+//!   `open` jumps the user there); `line {window, line}` → `q0, q1`
 //! - `rename {window, name}`, `live {window, on}`, `delete {window}`
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
 //! - `switch {session, window?}`: another session shown (by id, a prefix
@@ -173,6 +176,19 @@ impl Bridge {
                 let (q0, q1) = (v["q0"].as_u64().ok_or("q0")? as usize, v["q1"].as_u64().ok_or("q1")? as usize);
                 self.tool.select(window(v)?, q0, q1).map_err(e)?;
                 Ok(json!({}))
+            }
+            "show" => {
+                let w = window(v)?;
+                match (v["at"].as_u64(), v["line"].as_u64()) {
+                    (Some(at), _) => self.tool.show(w, at as usize).map_err(e)?,
+                    (None, Some(n)) => self.tool.show_line(w, n as usize).map_err(e)?,
+                    _ => return Err("at or line".into()),
+                }
+                Ok(json!({}))
+            }
+            "line" => {
+                let r = self.tool.line(window(v)?, v["line"].as_u64().ok_or("line")? as usize).map_err(e)?;
+                Ok(json!({ "q0": r.q0, "q1": r.q1 }))
             }
             "rename" => {
                 self.tool.rename(window(v)?, v["name"].as_str().ok_or("name")?).map_err(e)?;
