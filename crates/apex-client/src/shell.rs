@@ -1296,6 +1296,9 @@ impl Acme {
         // bar's centre line, with the other tabs' and the + beside it
         const TAB_H: f32 = 30.;
         const INSET: f32 = 4.;
+        // one line box for every piece of text in a tab, whatever its
+        // size, so centring them centres them on the same line
+        const LINE: f32 = 18.;
         const DRAPE: f32 = 10.;
         const STRIP: u32 = 0xececec;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
@@ -1314,28 +1317,27 @@ impl Acme {
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
             };
-            // the label, the host and the × share a baseline (the smaller
-            // text would otherwise float above or below the label's)
             let mut tab = div()
                 .id(("tab", i))
                 .relative()
                 .flex()
                 .flex_row()
-                .items_baseline()
+                .items_center()
                 .gap(px(5.))
                 .px(px(10.))
                 .mx(px(2.))
                 .text_size(px(13.))
+                .line_height(px(LINE))
                 .font_family(UI_FONT)
-                .when(current, |d| d.h(px(TAB_H)).pt(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
                 // the other tabs: the same centre line as the selected one,
                 // so the text stays put as the selection moves; hovered, a
                 // rounded rectangle, as a browser's (only the selected tab
                 // drapes)
-                .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).pt(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
+                .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
                 .child(text)
-                .when_some(host, |d, h| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child(h)))
-                .when(fenced, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x9a9a9a)).child("fenced")));
+                .when_some(host, |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child(h)))
+                .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child("fenced")));
             if clickable {
                 let url = u.clone();
                 tab = tab.cursor_pointer().on_mouse_down(
@@ -1362,6 +1364,7 @@ impl Acme {
                         div()
                             .id(("tab-close", i))
                             .text_size(px(11.))
+                            .line_height(px(LINE))
                             .text_color(rgb(0x9a9a9a))
                             .hover(|s| s.text_color(rgb(0x000000)))
                             .child("×")
@@ -1384,7 +1387,7 @@ impl Acme {
         }
         // and one more: the picker, for a session not here yet
         // the +, sized as the × and on the same line as they are
-        let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).pt(px(INSET)).px(px(7.)).flex().items_baseline().rounded(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(div().text_size(px(11.)).child("+"));
+        let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(11.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
         if clickable {
             plus = plus.cursor_pointer().hover(|s| s.bg(rgb(0xe0e0e0)).text_color(rgb(0x000099))).on_mouse_down(
                 MouseButton::Left,
