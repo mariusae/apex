@@ -41,6 +41,9 @@ impl Render for Acme {
         if let Some(loc) = self.pending_switch.take() {
             self.switch_for(loc, window, cx);
         }
+        if self.leave_requested {
+            self.leave(window, cx);
+        }
         if self.close_requested {
             shell::log_line(&format!("closing the window on {}", self.url));
             self.park_into_pool(cx);
@@ -507,6 +510,9 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                     pool::Pool::note_open(cx, &acme.url.clone());
                                 }
                                 acme.settle_snarf(cx);
+                                if acme.leave_requested {
+                                    acme.leave(window, cx);
+                                }
                                 if acme.close_requested {
                                     acme.close_now(cx);
                                 }

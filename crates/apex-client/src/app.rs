@@ -190,6 +190,9 @@ pub struct Acme {
     pub tag_need: HashMap<ViewId, (usize, bool)>,
     /// `Exit`: the next frame closes this window.
     pub close_requested: bool,
+    /// The session shown is over (ended here or under us): the window
+    /// moves to the session parked last, or closes when there is none.
+    pub leave_requested: bool,
     pending: Option<Pending>,
     /// The title last given to the OS window.
     pub title_shown: String,
@@ -428,9 +431,9 @@ impl Acme {
                 let _ = this.update(cx, |acme, cx| {
                     match r {
                         Ok(()) if acme.url == url => {
-                            crate::shell::log_line(&format!("ended {url}: closing the window"));
+                            crate::shell::log_line(&format!("ended {url}: leaving it"));
                             acme.connected = false; // nothing to park
-                            acme.close_now(cx);
+                            acme.leave_requested = true;
                         }
                         Ok(()) => {}
                         Err(e) => acme.notice(&format!("End: {e}\n")),
@@ -446,6 +449,24 @@ impl Acme {
     pub fn park_into_pool(&mut self, cx: &mut gpui::App) {
         if let Some(p) = self.park() {
             Pool::park(cx, p);
+        }
+    }
+
+    /// The session shown is over: its tab goes, and the window shows the
+    /// session parked last, or closes when no other is connected.
+    pub fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_requested = false;
+        let gone = self.url.clone();
+        Pool::let_go(cx, &gone);
+        match Pool::most_recent(cx) {
+            Some(prev) => {
+                crate::shell::log_line(&format!("{gone} over: the window shows {prev}"));
+                self.switch_to(&prev, window, cx);
+            }
+            None => {
+                crate::shell::log_line(&format!("{gone} over, nothing else connected: closing the window"));
+                self.close_now(cx);
+            }
         }
     }
 
@@ -1151,6 +1172,7 @@ impl Acme {
             switcher: None,
             tag_need: HashMap::new(),
             close_requested: false,
+            leave_requested: false,
             pending: None,
             title_shown: String::new(),
             connected: true,
@@ -1522,9 +1544,11 @@ impl Acme {
             }
         }
         if let Some(name) = ended {
-            // the session was ended under us: the window says so, offline
+            // the session was ended under us: on to another tab, or the
+            // window says so, offline
             self.connected = false;
             self.notice(&format!("session {name} ended\n"));
+            self.leave_requested = true;
         }
         self.answer_asks();
         // what the proposals just applied left to do: places to go (a
