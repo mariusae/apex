@@ -2009,7 +2009,6 @@ impl Acme {
 
     pub fn mouse_up(&mut self, e: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(d) = self.tab_drag.take() {
-            crate::web::set_movable(window, true);
             // let go without moving: the click it was (the current tab
             // toggles the picker; another is switched to)
             if !d.moved {

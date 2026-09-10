@@ -409,6 +409,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                 appears_transparent: true,
                 traffic_light_position: Some(gpui::point(px(10.), px(8.))),
             }),
+            // the title bar is ours: AppKit must not take a drag there as a
+            // window move (a tab dragged reorders the tabs); the strip's
+            // own handler moves the window (`start_window_move`)
+            app_owns_titlebar_drag: true,
             ..Default::default()
         },
         move |window, cx| {

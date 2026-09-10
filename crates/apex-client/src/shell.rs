@@ -1367,10 +1367,8 @@ impl Acme {
                 // reordering the tabs if it did (`mouse_move`, `mouse_up`)
                 tab = tab.cursor_pointer().on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, e: &gpui::MouseDownEvent, window, cx| {
+                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
                         this.tab_drag = Some(TabDrag { url: url.clone(), current, start: e.position, moved: false });
-                        // else AppKit drags the window by its title bar
-                        crate::web::set_movable(window, false);
                         cx.stop_propagation();
                     }),
                 );
