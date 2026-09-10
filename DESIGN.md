@@ -701,7 +701,13 @@ records the session, so the navigation stack spans sessions and Back
 returns across them. `Proposal::Switch{session, window?}` is the same
 for a tool that only wants the session shown (`apex switch`, the tool
 API's `switch`, the bridge's `switch`, Go's `Switch`); `apex B
-session.N[:line]` makes the `Goto`.
+session.N[:line]` makes the `Goto`. All of this is within one daemon:
+a session id is meaningful anywhere but is acted on where its daemon
+is. *Intended, not built:* places across daemons go through the client
+UI, the one party that knows several — as a URL scheme the app
+registers (`apex://<session>/<win>`), so a tool on any host emits a
+URL the plumber already carries and the app resolves the session id
+against its known hosts and switches, by the same path as `Switch`.
 
 *As built, profile and attach:* two scripts, named by what they
 configure. The host's `~/.apex/profile` is the session's setup on the
