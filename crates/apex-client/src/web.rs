@@ -627,6 +627,30 @@ pub fn focus_ui(window: &Window) {
 #[cfg(not(target_os = "macos"))]
 pub fn focus_ui(_window: &Window) {}
 
+/// Whether AppKit may move the window when its title bar is dragged.
+/// Off while a tab is held: the title bar is a transparent one over
+/// the content view, and AppKit takes a drag there as a window move
+/// before the content's own handlers see a mouse move.
+#[cfg(target_os = "macos")]
+pub fn set_movable(window: &Window, on: bool) {
+    use objc::{msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(h) = HasWindowHandle::window_handle(window) else { return };
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return };
+    let view = h.ns_view.as_ptr() as *mut objc::runtime::Object;
+    // SAFETY: gpui's own NSView, alive while the window is; a plain
+    // AppKit message on the main thread.
+    unsafe {
+        let ns_window: *mut objc::runtime::Object = msg_send![view, window];
+        if !ns_window.is_null() {
+            let _: () = msg_send![ns_window, setMovable: on];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_movable(_window: &Window, _on: bool) {}
+
 /// What a view shows: a URL, or a buffer's HTML.
 enum Page<'a> {
     Url(&'a str),
