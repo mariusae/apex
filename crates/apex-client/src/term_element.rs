@@ -98,6 +98,7 @@ impl Element for TermElement {
     ) -> Option<Prepaint> {
         let fontspec = font_for(true);
         let font = fontspec.font.clone();
+        let bold_font = gpui::Font { weight: gpui::FontWeight::BOLD, ..fontspec.font.clone() };
         let run = move |len: usize, color: Hsla| TextRun { len, font: font.clone(), color, background_color: None, underline: None, strikethrough: None };
         let cell_w = window.text_system().shape_line("M".into(), fontspec.size, &[run(1, gpui::black())], None).width;
         let lh = fontspec.line_height;
@@ -162,13 +163,16 @@ impl Element for TermElement {
                     let start = line.len();
                     line.push(if ch == '\0' { ' ' } else { ch });
                     let len = line.len() - start;
-                    let _bold = flags & FLAG_BOLD != 0;
+                    let bold = flags & FLAG_BOLD != 0;
                     // underlined text, and OSC 8 links (B3 on one plumbs it)
                     let ul = flags & FLAG_UNDERLINE != 0 || link != 0;
                     match runs.last_mut() {
-                        Some(r) if r.color == fgc && r.underline.is_some() == ul => r.len += len,
+                        Some(r) if r.color == fgc && r.underline.is_some() == ul && (r.font.weight == gpui::FontWeight::BOLD) == bold => r.len += len,
                         _ => {
                             let mut r = run(len, fgc);
+                            if bold {
+                                r.font = bold_font.clone();
+                            }
                             if ul {
                                 r.underline = Some(gpui::UnderlineStyle { thickness: px(1.), color: Some(fgc), wavy: false });
                             }

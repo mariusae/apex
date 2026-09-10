@@ -1071,7 +1071,8 @@ opt-left/right as `ESC b`/`ESC f` (Terminal.app's defaults, what zsh
 and bash bind for words), opt-backspace `ESC DEL`, and other modified
 keys in xterm's `CSI 1;m` form (opt-up is `ESC [1;3A`). OSC 8
 hyperlinks travel in the term shard (`Cell::link` into
-`TermOp::Links`), draw underlined, and B3 on one plumbs the link
+`TermOp::Links`), draw underlined (bold cells in the font's bold
+weight), and B3 on one plumbs the link
 rather than its text; B3 on a bare URL takes the whole of it (a file
 word would stop at `?`), less the punctuation closing a sentence. OSC
 52 (a program setting the clipboard: tmux, neovim, `apex snarf` from
