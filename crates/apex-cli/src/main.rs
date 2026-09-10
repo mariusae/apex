@@ -271,11 +271,13 @@ every change in place), named NAME, or +web in the current directory.
 Relative links in it resolve against the window's directory on the
 host (apexfile://). A link followed in such a page opens a web window
 on it." },
-    Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path")], run: plumb, long: "\
+    Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] [-win=WIN] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path"), flag("win", "plumb as from window WIN (an id or a name), as B3 there would")], run: plumb, long: "\
 Plumb sends TEXT through the session's plumbing rules from the current
 directory, as B3 on it would: the first rule that matches and is taken
 acts, and with none left the text is looked for in the window (Look).
-With -dry-run, plumb prints what each rule would do instead. With -edit
+With -win, the plumb comes from that window, as B3 in it would (rules
+for one window, -win=ID, then apply), and a dry run says what would
+happen there. With -dry-run, plumb prints what each rule would do instead. With -edit
 only rules that open in the session are tried, and failing those TEXT is
 opened as a path; that is what B does. Plumb exits non-zero when no
 rule takes TEXT (the session looks for it instead, as B3 would).
@@ -1236,14 +1238,18 @@ fn plumb(ctx: &Ctx, p: &Parsed) -> R {
     let (dry, edit_only) = (p.is("dry-run"), p.is("edit"));
     let dir = std::env::current_dir().ok().map(|d| d.display().to_string());
     let mut c = tool(ctx)?;
+    let pctx = match p.get("win") {
+        Some(spec) => ExecCtx::Window(find_window(&c, spec)?),
+        None => ExecCtx::Top,
+    };
     if dry {
-        for line in c.plumb_dry(ExecCtx::Top, &text, dir, edit_only, TIMEOUT)? {
+        for line in c.plumb_dry(pctx, &text, dir, edit_only, TIMEOUT)? {
             println!("{line}");
         }
         return Ok(());
     }
     c.link.plumbed = None;
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text, dir, edit_only, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
+    c.send(&ClientMsg::Plumb { ctx: pctx, text, dir, edit_only, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
     // the answer says whether a rule took it; none taking it is a
     // failure here (the session looked for the text instead), as
     // plan 9's plumb exits non-zero when the plumber refuses

@@ -839,7 +839,14 @@ character); a `http://` or `https://` run is taken whole; otherwise the
 word (acme's `isalnum`). A sweep or selection is taken as it is, still
 read for a name and address. The rules see that text; when none takes
 it, a file opens at its address (acme's `look3` after plumbing) and
-anything else is looked for. `alt` is no longer sent. Left out:
+anything else is looked for, in the text last selected with B1
+(`seltext`), as acme's look3 searches. Not from a terminal's or a
+page's own text (a B3 without `at`/`sel` spans from a window whose
+body is not text): there is nothing there to look in, and the last
+selected text is another window's, which such a B3 must not go and
+select in (a terminal can never be `seltext`, so it would stay some
+other window's forever); that plumb is refused. `apex plumb -win=WIN`
+plumbs as from a window, dry runs included. `alt` is no longer sent. Left out:
 `<name>` as an include file. Actions: `Edit` (open in the session), `Run` (a host command,
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
 the UI, which may refuse; a headless leader always does), `Tool(name)`

@@ -801,3 +801,39 @@ fn a_terminals_name_is_the_reported_directory_and_the_title() {
     assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar/")), Some("my title here"), d, "host"), "/foo/bar/-my title here");
     assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), None, d, "host"), "/foo/bar/-host");
 }
+
+#[test]
+fn b3_in_a_terminal_that_no_rule_takes_looks_nowhere_else() {
+    // a text window holding the token was the last selected text
+    // (seltext: where acme's look3 searches); B3 on the same token in
+    // a terminal, taken by no rule, must not search and select it there
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let a = node.new_window(&mut log, col, "/tmp/smartlog", "commit D117573677 landed\n").unwrap();
+    node.select(&mut log, ViewId::Body(a), 0, 0).unwrap();
+    assert_eq!(node.seltext, Some(ViewId::Body(a)));
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let term = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(term), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let (_, step) = server.plumb_start(&node, req);
+    let props = match step {
+        apex_server::PlumbStep::Refused { props, why } => {
+            assert!(why.contains("no rule takes"), "{why}");
+            props
+        }
+        other => panic!("{other:?}"),
+    };
+    assert!(props.is_empty(), "{props:?}");
+    perform(&mut node, &mut log, props);
+    assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (0, 0), "the other window's dot moved");
+    // the same B3 from the text window itself still looks there
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(a), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let (_, step) = server.plumb_start(&node, req);
+    let props = match step {
+        apex_server::PlumbStep::Refused { props, .. } => props,
+        other => panic!("{other:?}"),
+    };
+    assert!(props.iter().any(|p| matches!(p, Proposal::Look { .. })), "{props:?}");
+    perform(&mut node, &mut log, props);
+    assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (7, 17));
+}

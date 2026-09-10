@@ -1311,6 +1311,15 @@ impl Server {
                 let pos = address_pos(&addr);
                 return self.plumb_finish(id, vec![Proposal::Goto { loc: Loc { session: None, name: target, pos } }]);
             }
+            // B3 on a terminal's (or a page's) own text, not a tag's (a
+            // tag click brings its spans): there is no text to look in,
+            // and the last text selected elsewhere (seltext, where acme
+            // would search) is another window's business
+            let from_grid = p.req.at.is_none() && p.req.sel.is_none() && matches!(ctx, ExecCtx::Window(w) if view.state.window(w).ok().is_some_and(|x| !matches!(x.body, Body::Text(_))));
+            if from_grid {
+                self.plumbs.remove(&id);
+                return PlumbStep::Refused { props: Vec::new(), why: format!("no rule takes {text:?}") };
+            }
             let why = format!("no rule takes {text:?}: looked for it instead");
             return match self.plumb_finish(id, vec![Proposal::Look { ctx, text, reverse }]) {
                 PlumbStep::Done(props) => PlumbStep::Refused { props, why },
