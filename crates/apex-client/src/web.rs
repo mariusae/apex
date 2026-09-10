@@ -230,8 +230,14 @@ impl Webs {
         let from_buffer = matches!(page, Page::Html { .. });
         let mut b = wry::WebViewBuilder::new()
             .with_bounds(rect)
-            .with_on_page_load_handler(move |ev, _| {
+            .with_on_page_load_handler(move |ev, url| {
                 let _ = tx3.send((w, WebEvent::Loading(matches!(ev, wry::PageLoadEvent::Started))));
+                // where the page is: the view's own URL, the main frame's
+                // (the navigation handler sees every frame's, an iframe's
+                // ad or captcha included, and cannot tell them apart)
+                if !from_buffer && !url.is_empty() && !url.starts_with("about:") {
+                    let _ = tx3.send((w, WebEvent::Navigated(apex_url(&url))));
+                }
                 if let Some(k) = &wake3 {
                     k();
                 }
@@ -299,10 +305,8 @@ impl Webs {
                     }
                     return false;
                 }
-                let _ = tx1.send((w, WebEvent::Navigated(apex_url(&u))));
-                if let Some(k) = &wake1 {
-                    k();
-                }
+                // any other navigation, the page's or a frame's, goes ahead;
+                // the window's name follows the page from the load handler
                 true
             })
             .with_document_title_changed_handler(move |t| {
