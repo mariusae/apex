@@ -627,7 +627,10 @@ impl Element for TextElement {
                     };
                     window.paint_quad(fill(inner, fillc));
                     window.paint_quad(fill(
-                        Bounds::new(point(bounds.left(), bounds.bottom() - px(1.)), size(bounds.size.width, px(1.))),
+                        // acme's line between tag and body is one device
+                        // pixel, unscaled (wind.c: r1.max.y = r1.min.y+1);
+                        // the row the tiling leaves for it is a logical one
+                        Bounds::new(point(bounds.left(), bounds.bottom() - px(1.) / window.scale_factor()), size(bounds.size.width, px(1.) / window.scale_factor())),
                         pal.border,
                     ));
                     layout_box = Some(b);
