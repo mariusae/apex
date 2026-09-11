@@ -452,6 +452,48 @@ mod tests {
 /// ones, this machine's, the destination's — and actions below a
 /// divider. Every session is a URL: `local:///name`,
 /// `ssh://user@host/name`, `sprite://box/name`.
+/// A tab's status card, shown while the tab is hovered: label and
+/// value lines. Records its bounds so the web views cut a hole for it.
+pub struct TabCard {
+    pub lines: Vec<(String, String)>,
+    pub mark: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
+}
+
+impl gpui::Render for TabCard {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let t = crate::theme::theme();
+        let mark = self.mark.clone();
+        let mut card = div()
+            .relative()
+            .bg(rgb(t.panel_bg))
+            .border_1()
+            .border_color(rgb(t.panel_border))
+            .rounded(px(8.))
+            .shadow_md()
+            .px(px(12.))
+            .py(px(8.))
+            .text_size(px(12.))
+            .line_height(px(17.))
+            .font_family(UI_FONT)
+            .text_color(rgb(t.panel_text))
+            .child(div().absolute().top(px(0.)).left(px(0.)).size_full().child(gpui::canvas(
+                move |b, _, _| mark.borrow_mut().push(b),
+                |_, _, _, _| {},
+            ).size_full()));
+        for (k, v) in &self.lines {
+            card = card.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(10.))
+                    .child(div().w(px(56.)).text_color(rgb(t.panel_dim)).child(k.clone()))
+                    .child(div().child(v.clone())),
+            );
+        }
+        card
+    }
+}
+
 /// A tab held with B1 (`Acme::tab_drag`): which, whether it is the
 /// current one, where the press was, and whether it has moved enough
 /// to be a drag rather than a click.
@@ -1571,6 +1613,13 @@ impl Acme {
                 // tabs around it slide; the tab itself is the floating one
                 .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.));
             if clickable {
+                // hovered: a card with the session's status and round trips
+                let lines = self.tab_status(&u, cx);
+                let mark = self.overlay_bounds.clone();
+                tab = tab.tooltip(move |_, cx| {
+                    let (lines, mark) = (lines.clone(), mark.clone());
+                    cx.new(|_| TabCard { lines, mark }).into()
+                });
                 let url = u.clone();
                 // held: a click on release unless it moved, a drag
                 // reordering the tabs if it did (`mouse_move`, `mouse_up`)
@@ -1674,9 +1723,7 @@ impl Acme {
             .child(button)
             .child(div().flex_1())
             .when_some(floating, |d, f| d.child(f))
-            .when_some(self.latency(), |d, l| d.child(div().pr(px(10.)).text_size(px(11.)).font_family(UI_FONT).text_color(rgb(t.tab_dim)).child(l)))
-            // the link to the daemon, at the right: bright while it is up, faded when gone
-            .child(div().pr(px(12.)).text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))
+
     }
 
     /// The dropdown, when open.

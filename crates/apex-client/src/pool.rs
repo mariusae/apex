@@ -235,6 +235,15 @@ impl Pool {
     }
 
     /// Park a session: its wake comes here from now on.
+    /// A parked session's link, for a tab's status card: the last log
+    /// round trip in ms, and how long since the daemon last answered a
+    /// heartbeat, when it has.
+    pub fn link_status(cx: &App, url: &SessionUrl) -> Option<(Option<u64>, Option<std::time::Duration>)> {
+        let pool = cx.try_global::<Pool>()?;
+        let p = pool.parked.values().find(|p| p.url == *url)?;
+        Some((p.link.ack_ms, p.link.last_pong.map(|t| t.elapsed())))
+    }
+
     /// The theme changed: every parked link tells its daemon the colours
     /// too, so a session shown later is right from the start.
     pub fn send_config(cx: &mut App) {

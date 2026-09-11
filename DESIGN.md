@@ -1229,7 +1229,12 @@ this one (detach, attach).
   selected tab is styled as a browser's: the colour of the row below
   it, rounded at the top, its bottom corners draping out into the strip
   (a square of its colour with the strip's colour rounded away), and
-  no line under the strip, so it flows into the window.
+  no line under the strip, so it flows into the window. A tab hovered
+  shows a card: the session, its host, the link's state (leading,
+  fenced, disconnected; parked and when last heard from) and the round
+  trips spelled out, the heartbeat's as "Ping" and a log append's
+  acknowledgement as "Log" (the strip's "ms/ms" readout and the ⚡ are
+  gone: a fenced or disconnected tab shows it by fading).
   ⌘1…⌘9 go
   to the Nth tab. Tabs drag to reorder, as a browser's: a tab held
   with B1 is a click on release until it has moved a few pixels; after

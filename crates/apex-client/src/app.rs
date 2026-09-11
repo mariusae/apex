@@ -1175,14 +1175,43 @@ impl Acme {
 
     /// What the titlebar shows of the link: the heartbeat's round trip
     /// and the log's (an entry flushed to its Ack), in milliseconds.
-    pub fn latency(&self) -> Option<String> {
-        let Backend::Remote(link) = &self.backend else { return None };
-        if !self.connected {
-            return None;
+    /// A tab's status card (hovered): the session, where it is, how the
+    /// link stands, and the round trips spelled out: the heartbeat's
+    /// (ping) and a log append's acknowledgement (log).
+    pub fn tab_status(&self, url: &SessionUrl, cx: &gpui::App) -> Vec<(String, String)> {
+        let ms = |m: Option<u64>| m.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
+        let mut lines = vec![("Session".to_string(), url.session.clone())];
+        let host = if url.is_local() { "this machine".to_string() } else { format!("{} ({})", url.arg, url.provider) };
+        lines.push(("Host".into(), host));
+        if *url == self.url {
+            let state = match &self.backend {
+                Backend::Local(_) => "in-process".to_string(),
+                Backend::Remote(_) if !self.connected => "disconnected".into(),
+                Backend::Remote(_) if self.fenced() => "attached, fenced: another client leads".into(),
+                Backend::Remote(_) => "attached, leading".into(),
+            };
+            lines.push(("Status".into(), state));
+            lines.push(("Ping".into(), ms(self.ping_ms)));
+            let ack = match &self.backend {
+                Backend::Remote(link) => link.ack_ms,
+                _ => None,
+            };
+            lines.push(("Log".into(), ms(ack)));
+        } else {
+            match Pool::link_status(cx, url) {
+                Some((ack, pong)) => {
+                    let heard = match pong {
+                        Some(d) if d.as_secs() < 2 => "just now".to_string(),
+                        Some(d) => format!("{}s ago", d.as_secs()),
+                        None => "not yet".into(),
+                    };
+                    lines.push(("Status".into(), format!("parked, attached; last heard {heard}")));
+                    lines.push(("Log".into(), ms(ack)));
+                }
+                None => lines.push(("Status".into(), "not connected".into())),
+            }
         }
-        let ping = self.ping_ms.map(|m| format!("{m}ms")).unwrap_or_else(|| "—".into());
-        let log = link.ack_ms.map(|m| format!("{m}ms")).unwrap_or_else(|| "—".into());
-        Some(format!("{ping}/{log}"))
+        lines
     }
 
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
