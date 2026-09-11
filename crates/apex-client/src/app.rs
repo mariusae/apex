@@ -2858,6 +2858,10 @@ impl Acme {
     }
 
     pub fn scroll_wheel(&mut self, e: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        // an overlay up has the wheel (its list scrolls itself)
+        if self.selector.is_some() || self.finder.is_some() {
+            return;
+        }
         let Some((target, region)) = self.locate(e.position) else { return };
         let lh = match target {
             Target::Term(w, _) => self.term_layouts.get(&w).map(|l| l.line_height),

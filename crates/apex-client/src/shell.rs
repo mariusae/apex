@@ -497,8 +497,8 @@ pub struct Selector {
     /// a host that is down must not hold the picker).
     pub sessions: HashMap<Host, Loading>,
     pub current: SessionUrl,
-    /// Typing a new name for this window's session.
-    pub renaming: bool,
+    /// Typing a new name for this session (a tab, right-clicked).
+    pub renaming: Option<SessionUrl>,
     /// Typing the name of a new session on this host.
     pub naming: Option<Host>,
     /// The new-host form: a provider, a host.
@@ -588,8 +588,7 @@ pub enum Row {
     Create(SessionUrl),
     /// "+ new host…": the form next.
     NewHost,
-    /// "Rename this session…": type the new name next.
-    RenameThis,
+    /// The new name typed for the session being renamed.
     Rename(String),
 }
 
@@ -755,7 +754,7 @@ impl Selector {
         if self.connect.is_some() {
             return Vec::new(); // the form is the panel then
         }
-        if self.renaming {
+        if self.renaming.is_some() {
             return match (f.is_empty(), apex_server::providers::valid_label(f)) {
                 (true, _) => Vec::new(),
                 (false, Ok(())) => vec![Row::Rename(f.to_string())],
@@ -784,13 +783,8 @@ impl Selector {
                 rows.push(Row::Section("Recently closed"));
                 rows.extend(closed);
             }
-            if f.is_empty() {
-                if !rows.is_empty() {
-                    rows.push(Row::Divider);
-                }
-                rows.push(Row::RenameThis);
-            } else if rows.is_empty() {
-                rows.push(Row::Note("no tab matches".into()));
+            if rows.is_empty() {
+                rows.push(Row::Note(if f.is_empty() { "no tabs".into() } else { "no tab matches".into() }));
             }
             return rows;
         }
@@ -942,6 +936,48 @@ impl Acme {
         self.open_picker(PickerMode::Tabs, cx);
     }
 
+    /// A tab right-clicked: its session renamed (the picker's field, on
+    /// that session).
+    pub fn open_rename(&mut self, url: SessionUrl, cx: &mut Context<Self>) {
+        self.open_picker(PickerMode::Tabs, cx);
+        if let Some(sel) = self.selector.as_mut() {
+            sel.renaming = Some(url);
+            sel.filter.clear();
+            sel.cursor = 0;
+        }
+        cx.notify();
+    }
+
+    /// A session other than this window's renamed, on its host.
+    pub fn rename_other(&mut self, url: &SessionUrl, to: &str, cx: &mut Context<Self>) {
+        let (url, to) = (url.clone(), to.to_string());
+        let socket = apex_server::daemon::default_socket();
+        let renaming = cx.background_executor().spawn({
+            let (url, to) = (url.clone(), to.clone());
+            async move {
+                if url.is_local() {
+                    apex_server::remote::rename_session(&socket, url.session_ref(), &to).map_err(|e| e.to_string())
+                } else {
+                    let dest = url.dest().unwrap_or_default();
+                    apex_server::providers::run(&dest, &format!("{} rename-session {} {}", apex_server::providers::REMOTE_BIN, url.session_ref(), to), None).map(|_| ()).map_err(|e| e.to_string())
+                }
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let r = renaming.await;
+            let _ = cx.update(|cx| {
+                let _ = this.update(cx, |acme, cx| {
+                    match r {
+                        Ok(()) => renamed_recent(&url, &url.with_session(&to)),
+                        Err(e) => acme.notice(&format!("rename: {e}\n")),
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
     pub fn open_picker(&mut self, mode: PickerMode, cx: &mut Context<Self>) {
         let Some(socket) = self.socket.clone() else { return };
         static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -952,8 +988,17 @@ impl Acme {
             hosts.push(here);
         }
         let tabs = if self.chooser { Vec::new() } else { crate::pool::Pool::tabs(cx, &self.url) };
-        let closed: Vec<SessionUrl> = recent().into_iter().filter(|u| !tabs.contains(u)).collect();
-        let mut sel = Selector { mode, tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        // recently closed: the recent sessions not open here, one per
+        // place and label (a session made anew under an old label is
+        // the same tab to the eye)
+        let same = |a: &SessionUrl, b: &SessionUrl| a.provider == b.provider && a.arg == b.arg && a.session == b.session;
+        let mut closed: Vec<SessionUrl> = Vec::new();
+        for u in recent() {
+            if !tabs.iter().any(|t| same(t, &u)) && !closed.iter().any(|c| same(c, &u)) {
+                closed.push(u);
+            }
+        }
+        let mut sel = Selector { mode, tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: None, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
         // what each host had last time, shown at once; the answers update it
         let mut known = known_sessions();
         for h in &hosts {
@@ -1160,10 +1205,10 @@ impl Acme {
         }
         match key {
             "escape" => {
-                if sel.naming.is_some() || sel.renaming {
+                if sel.naming.is_some() || sel.renaming.is_some() {
                     // back to the list
                     sel.naming = None;
-                    sel.renaming = false;
+                    sel.renaming = None;
                     sel.filter.clear();
                     sel.land_on_current();
                     cx.notify();
@@ -1285,17 +1330,13 @@ impl Acme {
                 }
                 cx.notify();
             }
-            Row::RenameThis => {
-                if let Some(sel) = self.selector.as_mut() {
-                    sel.renaming = true;
-                    sel.filter.clear();
-                    sel.cursor = 0;
-                }
-                cx.notify();
-            }
             Row::Rename(to) => {
-                self.selector = None;
-                self.rename_session(&to, window);
+                let target = self.selector.take().and_then(|s| s.renaming).unwrap_or_else(|| self.url.clone());
+                if target == self.url {
+                    self.rename_session(&to, window);
+                } else {
+                    self.rename_other(&target, &to, cx);
+                }
                 cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }
@@ -1412,7 +1453,7 @@ impl Acme {
         let strip: u32 = t.strip;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
         // tab search, a browser's: the ▾ before the tabs (⌘⇧A)
-        let mut search = div().id("tab-search").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(11.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(t.tab_dim)).child("▾");
+        let mut search = div().id("tab-search").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(6.)).flex().items_center().rounded(px(6.)).text_size(px(17.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(t.tab_dim)).child("▾");
         if clickable {
             search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
@@ -1527,6 +1568,15 @@ impl Acme {
                         cx.stop_propagation();
                     }),
                 );
+                // right-clicked: the session renamed
+                let url = u.clone();
+                tab = tab.on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, _, _, cx| {
+                        this.open_rename(url.clone(), cx);
+                        cx.stop_propagation();
+                    }),
+                );
                 // ×: a parked session let go; the current one let go
                 // too, the window moving to the one parked last
                 if closable {
@@ -1613,8 +1663,8 @@ impl Acme {
     pub fn selector_panel(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let sel = self.selector.as_ref()?;
         let rows = sel.rows();
-        let hint = if sel.renaming {
-            "New name for this session…".to_string()
+        let hint = if let Some(u) = &sel.renaming {
+            format!("New name for {}…", u.session)
         } else if let Some(h) = &sel.naming {
             let (name, prov) = h.parts();
             format!("Name for the new session on {name} {prov}…")
@@ -1626,7 +1676,7 @@ impl Acme {
         // the field: the text typed, its selection and caret, or the hint
         let t = crate::theme::theme();
         let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&sel.filter, sel.caret_visible(), &hint, true));
-        let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
+        let mut list = div().id("picker-list").flex().flex_col().py(px(6.)).px(px(6.)).max_h(px(480.)).overflow_y_scroll();
         let row_style = |d: gpui::Stateful<gpui::Div>, picked: bool| {
             d.flex()
                 .flex_row()
@@ -1692,6 +1742,10 @@ impl Acme {
                         text = text.child(div().text_color(rgb(t.panel_accent)).child("Create"));
                     }
                     text = text.child(div().child(label));
+                    if sel.mode == PickerMode::Tabs && !host.is_empty() {
+                        // where it is, as a small pill
+                        text = text.child(div().px(px(6.)).rounded(px(8.)).bg(rgb(t.panel_hover)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(host.clone()));
+                    }
                     if create {
                         // where it will be, since the section does not say
                         if !host.is_empty() {
@@ -1734,12 +1788,12 @@ impl Acme {
                     )
                     .into_any_element()
                 }
-                Row::NewSession(_) | Row::NewHost | Row::RenameThis | Row::Rename(_) => {
+                Row::NewSession(_) | Row::NewHost | Row::Rename(_) => {
                     let (text, indent) = match row {
                         Row::NewSession(_) => ("+ new session".to_string(), 22.),
                         Row::NewHost => ("+ new host…".to_string(), 10.),
                         Row::Rename(n) => (format!("Rename to “{n}”"), 10.),
-                        _ => ("Rename This Session…".to_string(), 10.),
+                        _ => unreachable!(),
                     };
                     let r = row.clone();
                     row_style(div().id(("row", i)), picked)
@@ -1759,7 +1813,7 @@ impl Acme {
             list = list.child(el);
         }
         if rows.is_empty() && sel.connect.is_none() {
-            let what = if sel.renaming || sel.naming.is_some() { "Type a name" } else { "Nothing matches" };
+            let what = if sel.renaming.is_some() || sel.naming.is_some() { "Type a name" } else { "Nothing matches" };
             list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(what));
         }
         let mut panel = div()
@@ -1795,7 +1849,7 @@ mod picker_tests {
         sessions.insert(local.clone(), Loading::Ready(vec![si("default"), si("notes")]));
         sessions.insert(box_.clone(), Loading::Seeded(vec![si("work")]));
         sessions.insert(down.clone(), Loading::Failed(vec![si("old")], "no route".into()));
-        Selector { mode: PickerMode::NewTab, tabs: Vec::new(), closed: Vec::new(), filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
+        Selector { mode: PickerMode::NewTab, tabs: Vec::new(), closed: Vec::new(), filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: None, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
     }
 
     #[test]
@@ -1811,7 +1865,6 @@ mod picker_tests {
                 Row::Note(t) => format!("note:{}", t.split(':').next().unwrap()),
                 Row::Divider => "-".into(),
                 Row::NewHost => "+host".into(),
-                Row::RenameThis => "rename".into(),
                 other => format!("{other:?}"),
             })
             .collect();
@@ -1831,10 +1884,9 @@ mod picker_tests {
             Row::Section(s) => format!("[{s}]"),
             Row::Open(u) => u.session.clone(),
             Row::Divider => "-".into(),
-            Row::RenameThis => "rename".into(),
             other => format!("{other:?}"),
         }).collect();
-        assert_eq!(shape, vec!["[Open tabs]", "default", "notes", "[Recently closed]", "old", "-", "rename"]);
+        assert_eq!(shape, vec!["[Open tabs]", "default", "notes", "[Recently closed]", "old"]);
         sel.land_on_current();
         assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "notes"));
         // a new tab's picker lands on its first row (this window's

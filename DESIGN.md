@@ -1222,8 +1222,10 @@ this one (detach, attach).
   not tabs here, "+ new session" under each host, a URL typed to
   create one, "+ new host…". Before the tabs, a browser's tab search:
   ▾ (⌘⇧A) drops a searchable list of the open tabs and the recently
-  closed ones (the recent sessions not open here), the current landed
-  on, and "Rename this session…". The
+  closed ones (the recent sessions not open here, one per place and
+  label), each with its host as a pill, the current landed on; a tab
+  right-clicked renames its session, this window's or another's (on
+  its host, through the CLI's rename-session). The
   selected tab is styled as a browser's: the colour of the row below
   it, rounded at the top, its bottom corners draping out into the strip
   (a square of its colour with the strip's colour rounded away), and

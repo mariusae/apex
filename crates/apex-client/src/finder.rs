@@ -292,7 +292,7 @@ impl Acme {
         let picks = f.picks();
         let t = crate::theme::theme();
         let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&f.filter, f.caret_visible(), "Go to a window, or a file closed lately…", true));
-        let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
+        let mut list = div().id("finder-list").flex().flex_col().py(px(6.)).px(px(6.)).max_h(px(480.)).overflow_y_scroll();
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;
             let Pick::Entry(e) = pick;
