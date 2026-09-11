@@ -1452,10 +1452,27 @@ impl Acme {
         let t = crate::theme::theme();
         let strip: u32 = t.strip;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
-        // tab search, a browser's: the ▾ before the tabs (⌘⇧A)
-        let mut search = div().id("tab-search").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(6.)).flex().items_center().rounded(px(6.)).text_size(px(17.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(t.tab_dim)).child("▾");
+        // tab search, a browser's: a chevron in a rounded square before
+        // the tabs (⌘⇧A), a shade of the strip
+        let mut search = div()
+            .id("tab-search")
+            .h(px(TAB_H - INSET - 4.))
+            .w(px(28.))
+            .mb(px(INSET + 2.))
+            .mr(px(4.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(8.))
+            .bg(rgb(t.tab_button))
+            .text_size(px(15.))
+            .line_height(px(LINE))
+            .font_family(UI_FONT)
+            .text_color(rgb(t.tab_text))
+            .pb(px(5.)) // the glyph hangs low in its box: centred by eye
+            .child("⌄");
         if clickable {
-            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
+            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_button_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::Tabs) {
