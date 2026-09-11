@@ -190,6 +190,11 @@ pub struct Acme {
     pub tag_need: HashMap<ViewId, (usize, bool)>,
     /// `Exit`: the next frame closes this window.
     pub close_requested: bool,
+    /// The terminal under the pointer, and whether the app is in front:
+    /// the terminal with the keyboard, in acme's model, told of focus
+    /// gained and lost (`TermFocus`) as either changes.
+    term_under_pointer: Option<TermId>,
+    app_active: bool,
     /// The session shown is over (ended here or under us): the window
     /// moves to the session parked last, or closes when there is none.
     pub leave_requested: bool,
@@ -635,10 +640,37 @@ impl Acme {
 
     /// What the daemon must know of this client beyond presentation:
     /// the terminal colours programs are told (the theme's). Sent when
-    /// a link is made and again when the theme changes.
+    /// a link is made and again when the theme changes; then the
+    /// terminal with the keyboard loses and regains focus, so a program
+    /// that asks its colours on focus asks again.
     pub fn send_config(&mut self) {
         if let Backend::Remote(link) = &mut self.backend {
             link.send(&ClientMsg::ClientConfig { term: crate::theme::term_colors() });
+            if let (true, Some(t)) = (self.app_active, self.term_under_pointer) {
+                link.send(&ClientMsg::TermFocus { term: t, focused: false });
+                link.send(&ClientMsg::TermFocus { term: t, focused: true });
+            }
+        }
+    }
+
+    /// The keyboard's terminal, as the pointer and the app's activation
+    /// have it: the one that had it is told it lost it, the one that
+    /// has it now that it gained it.
+    fn term_focus_now(&mut self, under: Option<TermId>, active: bool) {
+        let was = if self.app_active { self.term_under_pointer } else { None };
+        let now = if active { under } else { None };
+        self.term_under_pointer = under;
+        self.app_active = active;
+        if was == now {
+            return;
+        }
+        if let Backend::Remote(link) = &mut self.backend {
+            if let Some(t) = was {
+                link.send(&ClientMsg::TermFocus { term: t, focused: false });
+            }
+            if let Some(t) = now {
+                link.send(&ClientMsg::TermFocus { term: t, focused: true });
+            }
         }
     }
 
@@ -1182,6 +1214,8 @@ impl Acme {
             switcher: None,
             tag_need: HashMap::new(),
             close_requested: false,
+            term_under_pointer: None,
+            app_active: true,
             leave_requested: false,
             pending: None,
             title_shown: String::new(),
@@ -1995,6 +2029,13 @@ impl Acme {
             self.pointer = None;
         }
         self.last_mouse = pos;
+        // the terminal under the pointer has the keyboard
+        let under = match self.locate(pos) {
+            Some((Target::Term(_, t), _)) => Some(t),
+            _ => None,
+        };
+        let active = self.app_active;
+        self.term_focus_now(under, active);
         let mut changed = false;
         if let Some((_, _, y)) = self.mouse.scrolling.as_mut() {
             *y = pos.y; // the bar follows the pointer's height
@@ -2925,6 +2966,10 @@ impl Acme {
     /// Unless a mouse button is down: then a click into the window is
     /// what activated it, and the pointer stays where the click was.
     pub fn window_activated(&mut self, active: bool, window: &mut Window) {
+        // the terminal under the pointer loses the keyboard with the app,
+        // and has it back with it
+        let under = self.term_under_pointer;
+        self.term_focus_now(under, active);
         if !active || self.last_mouse == Point::default() || crate::warp::button_down() {
             return;
         }

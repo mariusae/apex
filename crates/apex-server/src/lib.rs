@@ -441,6 +441,14 @@ impl Server {
         self.term_wheel(log, id, delta, None)
     }
 
+    /// The terminal gained or lost the keyboard; a program that asked is
+    /// told (`TermHost::focus`).
+    pub fn term_focus(&mut self, id: TermId, on: bool) {
+        if let Some(h) = self.terms.get(&id) {
+            h.focus(on);
+        }
+    }
+
     /// `Clear`: the terminal's scrollback dropped; the screen stays.
     pub fn term_clear(&mut self, log: &mut Log, id: TermId) {
         if let Some(h) = self.terms.get_mut(&id) {

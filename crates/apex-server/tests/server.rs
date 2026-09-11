@@ -960,3 +960,26 @@ fn a_program_asking_the_background_is_told_the_clients_colours() {
     ask(&mut server, &mut log);
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("rgb:1e1e/1e1e/1414")), "grid:\n{}", rows(&node));
 }
+
+#[test]
+fn focus_reaches_programs_that_asked_for_it() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    let type_line = |server: &mut Server, log: &mut Log, line: &str| {
+        for c in line.chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    // before a program asks, focus is nothing to it
+    server.term_focus(t, true);
+    // focus reporting on, then cat -v shows what the program reads
+    type_line(&mut server, &mut log, "printf '\\033[?1004h'; cat -v\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("cat -v")));
+    std::thread::sleep(Duration::from_millis(200));
+    server.term_focus(t, false);
+    server.term_focus(t, true);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[O^[[I")), "{}", grid_text(&node));
+}

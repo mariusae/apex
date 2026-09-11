@@ -633,6 +633,7 @@ impl Daemon {
             }
             ClientMsg::TermResize { term, cols, rows } => s.server.term_resize(&mut s.log, term, cols, rows),
             ClientMsg::TermClear { term } => s.server.term_clear(&mut s.log, term),
+            ClientMsg::TermFocus { term, focused } => s.server.term_focus(term, focused),
             ClientMsg::TermScroll { term, delta, at } => s.server.term_wheel(&mut s.log, term, delta as isize, at),
             ClientMsg::Env { set } => {
                 for (k, v) in &set {

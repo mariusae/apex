@@ -1400,8 +1400,14 @@ parked links too: the terminal colours (`TermColors`: ink, paper, the
 sixteen) that programs asking with OSC 10, 11 and 4 are told, so one
 deciding its palette by the background learns the paper it is drawn
 on; a session with no UI answers acme's light ones, and with several
-the latest to say. (A program told once does not ask again; DECSET
-2031's dark/light notification is a possible follow-on.)
+the latest to say. Focus: a terminal has the keyboard while the
+pointer is over it and the app is in front (acme's model), and as
+that changes the client sends `TermFocus`, which the daemon passes to
+a program that asked (DECSET 1004, xterm's `CSI I`/`CSI O`); many ask
+their colours again on gaining focus, and a theme change is followed
+by focus lost and regained on the keyboard's terminal for that
+reason. (DECSET 2031's dark/light notification is a possible
+follow-on for the rest.)
 
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`

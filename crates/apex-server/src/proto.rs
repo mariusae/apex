@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 18;
+pub const PROTOCOL: u32 = 19;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -86,6 +86,11 @@ pub enum ClientMsg {
     ClientConfig { term: TermColors },
     /// The terminal's scrollback dropped (`Clear`); the screen stays.
     TermClear { term: TermId },
+    /// The terminal gained or lost the keyboard: in acme's model, the
+    /// pointer came over it or left it, or the app came to the front or
+    /// went behind. A program that asked (DECSET 1004) is told, and
+    /// many ask their colours again on gaining focus.
+    TermFocus { term: TermId, focused: bool },
     /// The wheel over a terminal, `delta` lines (positive: down), `at`
     /// the cell under the pointer when it was the wheel (the program
     /// may be reporting the mouse), none from the scrollbar.

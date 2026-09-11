@@ -410,6 +410,14 @@ impl TermHost {
         *self.term.lock().mode()
     }
 
+    /// Focus gained or lost, to a program that asked for it (DECSET
+    /// 1004): xterm's `CSI I` and `CSI O`.
+    pub fn focus(&self, on: bool) {
+        if self.mode().contains(TermMode::FOCUS_IN_OUT) {
+            self.write(if on { b"\x1b[I" } else { b"\x1b[O" });
+        }
+    }
+
     pub fn paste(&self, text: &str) {
         if self.mode().contains(TermMode::BRACKETED_PASTE) {
             let mut v = b"\x1b[200~".to_vec();
