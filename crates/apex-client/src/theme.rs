@@ -240,8 +240,29 @@ fn file() -> std::path::PathBuf {
     crate::shell::state_file().with_file_name("theme")
 }
 
+/// View ▸ Always Show Tabs in Full Screen (on by default, as a
+/// browser's): the strip stays as part of the layout in full screen;
+/// off, it hides and comes when the pointer is at the top, with the
+/// menu bar. Kept in the `fullscreen-tabs` state file.
+static FULLSCREEN_TABS: AtomicBool = AtomicBool::new(true);
+
+pub fn fullscreen_tabs() -> bool {
+    FULLSCREEN_TABS.load(Ordering::Relaxed)
+}
+
+pub fn set_fullscreen_tabs(on: bool) {
+    FULLSCREEN_TABS.store(on, Ordering::Relaxed);
+    let p = crate::shell::state_file().with_file_name("fullscreen-tabs");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, if on { "always\n" } else { "hover\n" });
+}
+
 /// The choice of last time, applied.
 pub fn load() {
+    let tabs = std::fs::read_to_string(crate::shell::state_file().with_file_name("fullscreen-tabs")).map(|s| s.trim() != "hover").unwrap_or(true);
+    FULLSCREEN_TABS.store(tabs, Ordering::Relaxed);
     let m = match std::fs::read_to_string(file()).map(|s| s.trim().to_string()).as_deref() {
         Ok("dark") => Mode::Dark,
         Ok("system") => Mode::System,

@@ -20,7 +20,15 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
+
+/// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
+/// remade with the mark, every window laid out again.
+pub fn toggle_fullscreen_tabs(cx: &mut App) {
+    crate::theme::set_fullscreen_tabs(!crate::theme::fullscreen_tabs());
+    cx.set_menus(menus());
+    cx.refresh_windows();
+}
 
 /// The theme chosen in the View menu: kept, the menus remade with the
 /// choice marked, every window redrawn.
@@ -107,10 +115,13 @@ pub fn menus() -> Vec<Menu> {
             items: {
                 let m = crate::theme::mode();
                 let mark = |name: &str, mine: crate::theme::Mode| if m == mine { format!("{name} ✓") } else { name.to_string() };
+                let tabs = if crate::theme::fullscreen_tabs() { "Always Show Tabs in Full Screen ✓" } else { "Always Show Tabs in Full Screen" };
                 vec![
                     MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
                     MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
                     MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
+                    MenuItem::separator(),
+                    MenuItem::action(tabs, ToggleFullscreenTabs),
                 ]
             },
         },

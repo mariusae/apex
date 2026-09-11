@@ -1235,9 +1235,13 @@ this one (detach, attach).
   trips spelled out, the heartbeat's as "Ping" and a log append's
   acknowledgement as "Log" (the strip's "ms/ms" readout and the ⚡ are
   gone: a fenced or disconnected tab shows it by fading). In full
-  screen the strip is hidden; the pointer at the top edge brings it
-  over the top of the layout (a browser's full screen), and it goes
-  once the pointer is below it.
+  screen the strip stays, with View ▸ Always Show Tabs in Full Screen
+  (on by default, kept in `fullscreen-tabs`); off, it hides, and the
+  pointer at the top brings it over the top of the layout as the menu
+  bar comes (the pointer is asked of the system each tick, since the
+  menu bar takes its moves), going once the pointer is below it;
+  AppKit's own title bar container, which would slide down empty with
+  the menu bar, is hidden while full screen lasts.
   ⌘1…⌘9 go
   to the Nth tab. Tabs drag to reorder, as a browser's: a tab held
   with B1 is a click on release until it has moved a few pixels; after

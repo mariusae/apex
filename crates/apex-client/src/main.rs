@@ -146,10 +146,11 @@ impl Render for Acme {
             web::set_native_titlebar_hidden(window, self.fullscreen);
             self.native_bar_hidden = self.fullscreen;
         }
-        // full screen: the strip only when the pointer brings it, over the
-        // top of the layout rather than above it
-        let strip_over = self.fullscreen && self.strip_revealed;
-        let root = if self.fullscreen { root } else { root.child(self.titlebar(cx)) };
+        // full screen with the tabs always shown: the strip as ever; else
+        // only when the pointer brings it, over the top of the layout
+        let hides = self.strip_hides();
+        let strip_over = hides && self.strip_revealed;
+        let root = if hides { root } else { root.child(self.titlebar(cx)) };
 
         // acme's tiling placed everything; draw each piece where it says
         let l = self.node.state.layout.clone();
@@ -363,6 +364,7 @@ fn main() {
         cx.on_action(|_: &shell::ThemeLight, cx| shell::set_theme(theme::Mode::Light, cx));
         cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
+        cx.on_action(|_: &shell::ToggleFullscreenTabs, cx| shell::toggle_fullscreen_tabs(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             // the action arrives while the focused window is mid-update,

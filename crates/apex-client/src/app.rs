@@ -1239,6 +1239,9 @@ impl Acme {
                                 if acme.web_focus_tick(window) {
                                     cx.notify();
                                 }
+                                if acme.strip_tick(window) {
+                                    cx.notify();
+                                }
                             }
                         });
                     }
@@ -1581,11 +1584,40 @@ impl Acme {
     /// Where acme's area starts: below the title bar, or at the top when
     /// the window is full screen.
     pub fn top(&self) -> f32 {
-        if self.fullscreen {
+        if self.strip_hides() {
             0.
         } else {
             TITLEBAR_HEIGHT
         }
+    }
+
+    /// Full screen with the strip not always shown: it hides, and comes
+    /// with the menu bar.
+    pub fn strip_hides(&self) -> bool {
+        self.fullscreen && !crate::theme::fullscreen_tabs()
+    }
+
+    /// Full screen, the strip hiding: where the pointer is, asked of the
+    /// system (the menu bar takes its moves at the top, and it can be
+    /// over a page), every tick; near the top it brings the strip, as
+    /// the menu bar comes, and below the strip it lets it go. True when
+    /// the strip's state changed.
+    pub fn strip_tick(&mut self, window: &Window) -> bool {
+        if !self.strip_hides() {
+            if self.strip_revealed {
+                self.strip_revealed = false;
+                return true;
+            }
+            return false;
+        }
+        let Some(p) = crate::web::native_mouse(window) else { return false };
+        let inside = p.x >= px(0.) && p.x <= window.viewport_size().width;
+        let revealed = inside && if self.strip_revealed { p.y <= px(TITLEBAR_HEIGHT + 10.) } else { p.y <= px(3.) };
+        if revealed != self.strip_revealed {
+            self.strip_revealed = revealed;
+            return true;
+        }
+        false
     }
 
     fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
@@ -2100,18 +2132,6 @@ impl Acme {
             self.pointer = None;
         }
         self.last_mouse = pos;
-        // full screen: the strip comes near the top edge (the menu bar
-        // comes at the edge itself, and takes the pointer's moves while
-        // it is over it), and goes once the pointer is below the strip
-        if self.fullscreen {
-            let revealed = if self.strip_revealed { pos.y <= px(crate::shell::TITLEBAR_HEIGHT + 10.) } else { pos.y <= px(8.) };
-            if revealed != self.strip_revealed {
-                self.strip_revealed = revealed;
-                cx.notify();
-            }
-        } else if self.strip_revealed {
-            self.strip_revealed = false;
-        }
         // the terminal under the pointer has the keyboard
         let under = match self.locate(pos) {
             Some((Target::Term(_, t), _)) => Some(t),
