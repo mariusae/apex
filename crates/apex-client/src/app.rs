@@ -181,6 +181,9 @@ pub struct Acme {
     /// A tab held with B1: a click until it moves, a drag reordering
     /// the tabs after that.
     pub tab_drag: Option<crate::shell::TabDrag>,
+    /// The tab under the pointer, and since when: its status card shows
+    /// beneath it once the pointer has rested there a moment.
+    pub tab_hovered: Option<(SessionUrl, std::time::Instant)>,
     /// Where the tabs were drawn last frame, for the drag to know
     /// which one the pointer has passed.
     pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(SessionUrl, gpui::Bounds<Pixels>)>>>,
@@ -1268,6 +1271,7 @@ impl Acme {
             wake_target: None,
             selector: None,
             tab_drag: None,
+            tab_hovered: None,
             tab_bounds: Default::default(),
             overlay_bounds: Default::default(),
             switcher: None,
