@@ -227,8 +227,14 @@ impl Render for Acme {
                             // style winning), so links get the hand
                             webs_shown.insert(w);
                             let me2 = me.clone();
+                            // the paper under the view: what shows while an
+                            // overlay (the picker, the finder, the tools
+                            // menu) has the native view hidden, else the
+                            // root's black would
+                            let paper = if matches!(win.body, Body::Html(_)) { t.body_bg } else { t.column };
                             div()
                                 .size_full()
+                                .bg(gpui::rgb(paper))
                                 .cursor(cursor::NATIVE_CURSOR)
                                 .child(
                                     canvas(
