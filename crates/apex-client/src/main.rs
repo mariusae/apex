@@ -71,6 +71,9 @@ impl Render for Acme {
         let font = f32::from(text_element::font_for(false).line_height) as i32;
 
         let t = theme::theme();
+        // the overlays record where they land this frame; the last thing
+        // laid out cuts the web views' holes to match (`Webs::set_holes`)
+        self.overlay_bounds.borrow_mut().clear();
         let root = div()
             .id("apex")
             .size_full()
@@ -253,7 +256,7 @@ impl Render for Acme {
             }
         }
         if let Some(m) = &self.menu {
-            area = area.child(menu_element(m, font));
+            area = area.child(menu_element(m, font, self.overlay_mark()));
         }
         let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
@@ -266,10 +269,23 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        match self.switcher_panel(cx) {
-            Some(panel) => root.child(panel).into_any_element(),
-            None => root.into_any_element(),
-        }
+        let root = match self.switcher_panel(cx) {
+            Some(panel) => root.child(panel),
+            None => root,
+        };
+        let holes = self.overlay_bounds.clone();
+        let me3 = me.clone();
+        let cutter = gpui::deferred(
+            div().absolute().top(px(0.)).left(px(0.)).w(px(0.)).h(px(0.)).child(canvas(
+                move |_, _, cx| {
+                    let holes: Vec<Bounds<gpui::Pixels>> = holes.borrow().clone();
+                    me3.update(cx, |acme, _| acme.webs.set_holes(&holes));
+                },
+                |_, _, _, _| {},
+            )),
+        )
+        .with_priority(3);
+        root.child(cutter).into_any_element()
     }
 }
 
@@ -672,7 +688,7 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
 
 /// menuhit's painting: the box, its border, the items centred, the
 /// highlighted one in negative, and the scroll bar when there is one.
-fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
+fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
     let r = m.menur;
     let mut el = div()
@@ -683,7 +699,8 @@ fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
         .h(px(r.dy() as f32))
         .bg(rgb(theme::theme().menu_bg))
         .border(px(menu::BLACKBORDER as f32))
-        .border_color(rgb(theme::theme().menu_border));
+        .border_color(rgb(theme::theme().menu_border))
+        .child(mark);
     // children are placed relative to the menu's own origin
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);

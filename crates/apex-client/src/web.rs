@@ -97,6 +97,9 @@ pub struct WebHost {
     url: String,
     bounds: Option<Bounds<Pixels>>,
     shown: bool,
+    /// The holes cut in the view (`set_holes`), in the view's own
+    /// coordinates, as last applied.
+    holes: Vec<(f64, f64, f64, f64)>,
     /// A page from a buffer: the buffer version shown, and the directory
     /// its relative links resolve in.
     html: Option<(u64, String)>,
@@ -224,6 +227,87 @@ impl Webs {
     pub fn edit(&self, _w: WindowId, _what: &str) -> bool {
         false
     }
+
+    /// Holes cut in the views where the overlays are: a mask on each
+    /// view's layer, the view's rectangle less the overlays' (even-odd),
+    /// so gpui's overlay shows through and the page stays live around
+    /// it. No overlay over a view, no mask.
+    #[cfg(target_os = "macos")]
+    pub fn set_holes(&mut self, holes: &[Bounds<Pixels>]) {
+        use objc::runtime::Object;
+        use objc::{class, msg_send, sel, sel_impl};
+        use wry::WebViewExtMacOS;
+        #[repr(C)]
+        struct CGPoint { x: f64, y: f64 }
+        #[repr(C)]
+        struct CGSize { w: f64, h: f64 }
+        #[repr(C)]
+        struct CGRect { origin: CGPoint, size: CGSize }
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGPathCreateMutable() -> *mut std::ffi::c_void;
+            fn CGPathAddRect(path: *mut std::ffi::c_void, m: *const std::ffi::c_void, rect: CGRect);
+            fn CGPathRelease(path: *mut std::ffi::c_void);
+        }
+        #[link(name = "QuartzCore", kind = "framework")]
+        extern "C" {}
+        // the panels' shadows reach past their bounds
+        let margin = gpui::px(18.);
+        for h in self.hosts.values_mut() {
+            let Some(vb) = h.bounds else { continue };
+            if !h.shown {
+                continue;
+            }
+            let local: Vec<(f64, f64, f64, f64)> = holes
+                .iter()
+                .filter_map(|o| {
+                    let x0 = (o.origin.x - margin).max(vb.origin.x);
+                    let y0 = (o.origin.y - margin).max(vb.origin.y);
+                    let x1 = (o.origin.x + o.size.width + margin).min(vb.origin.x + vb.size.width);
+                    let y1 = (o.origin.y + o.size.height + margin).min(vb.origin.y + vb.size.height);
+                    (x1 > x0 && y1 > y0).then(|| (f64::from(f32::from(x0 - vb.origin.x)), f64::from(f32::from(y0 - vb.origin.y)), f64::from(f32::from(x1 - x0)), f64::from(f32::from(y1 - y0))))
+                })
+                .collect();
+            if local == h.holes {
+                continue;
+            }
+            h.holes = local.clone();
+            let wk = h.view.webview();
+            let view = &*wk as *const _ as *mut Object;
+            // SAFETY: the WKWebView is alive while its host is; CoreAnimation
+            // and CoreGraphics calls on the main thread.
+            unsafe {
+                let layer: *mut Object = msg_send![view, layer];
+                if layer.is_null() {
+                    continue;
+                }
+                if local.is_empty() {
+                    let nil: *mut Object = std::ptr::null_mut();
+                    let _: () = msg_send![layer, setMask: nil];
+                    continue;
+                }
+                let bounds: CGRect = msg_send![layer, bounds];
+                let flipped: bool = msg_send![layer, isGeometryFlipped];
+                let path = CGPathCreateMutable();
+                CGPathAddRect(path, std::ptr::null(), CGRect { origin: CGPoint { x: 0., y: 0. }, size: CGSize { w: bounds.size.w, h: bounds.size.h } });
+                for (x, y, w, hh) in &local {
+                    // the layer's origin is top-left when flipped, else bottom-left
+                    let y = if flipped { *y } else { bounds.size.h - y - hh };
+                    CGPathAddRect(path, std::ptr::null(), CGRect { origin: CGPoint { x: *x, y }, size: CGSize { w: *w, h: *hh } });
+                }
+                let shape: *mut Object = msg_send![class!(CAShapeLayer), layer];
+                let _: () = msg_send![shape, setFrame: bounds];
+                let _: () = msg_send![shape, setPath: path];
+                let rule: *mut Object = msg_send![class!(NSString), stringWithUTF8String: b"even-odd\0".as_ptr()];
+                let _: () = msg_send![shape, setFillRule: rule];
+                let _: () = msg_send![layer, setMask: shape];
+                CGPathRelease(path);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_holes(&mut self, _holes: &[Bounds<Pixels>]) {}
 
     /// The theme changed: every page from a buffer takes the new colours
     /// in place (its `#apex-theme` style rewritten; nothing reloads).
@@ -427,7 +511,7 @@ impl Webs {
             Ok(view) => {
                 let _ = view.set_visible(visible);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, html, followed: None, loading, watches, plane: self.plane.clone() });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone() });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }

@@ -1692,7 +1692,8 @@ impl Acme {
             .shadow_lg()
             .flex()
             .flex_col()
-            .overflow_hidden();
+            .overflow_hidden()
+            .child(self.overlay_mark());
         panel = match &sel.connect {
             Some(form) => panel.child(self.connect_form(form, sel.caret_visible(), cx)),
             None => panel.child(field).child(list),

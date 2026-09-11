@@ -27,6 +27,15 @@ Decisions taken in discussion, restated so they are not relitigated:
   buffer-without-history.
 - The preview follows dot: scroll sync is in scope, as a second pass.
 
+*As built, overlays:* a web view is a native view above everything the
+client paints, so an overlay (the picker, the finder, the switcher,
+the tools menu) would be under it. Rather than hide the views while
+one is up, the client cuts a hole: each overlay records its bounds as
+it is laid out, and the last thing laid out masks every view's layer
+with its rectangle less the overlays' (a CAShapeLayer, even-odd, the
+panels' shadow margin included), so the overlay shows through and the
+page stays live around it. No overlay over a view, no mask.
+
 Order of work, done in this order: the I/O plane (porting today's
 `Watch` onto it), then web windows with `wry`, then `apex md` and
 `apex tool preview`.

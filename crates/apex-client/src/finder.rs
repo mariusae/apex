@@ -346,6 +346,7 @@ impl Acme {
             .shadow_lg()
             .flex()
             .flex_col()
+            .child(self.overlay_mark())
             .child(field)
             .child(list)
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));

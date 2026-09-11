@@ -88,7 +88,7 @@ impl Acme {
             list = list.child(row);
         }
         let t = crate::theme::theme();
-        let panel = div().w(px(360.)).max_h(px(560.)).bg(rgb(t.panel_bg)).border_1().border_color(rgb(t.panel_border)).rounded(px(10.)).shadow_lg().overflow_hidden().child(list);
+        let panel = div().w(px(360.)).max_h(px(560.)).bg(rgb(t.panel_bg)).border_1().border_color(rgb(t.panel_border)).rounded(px(10.)).shadow_lg().overflow_hidden().child(self.overlay_mark()).child(list);
         Some(deferred(anchored().position(point(px(72.), px(self.top() + 40.))).child(panel)).with_priority(2))
     }
 }

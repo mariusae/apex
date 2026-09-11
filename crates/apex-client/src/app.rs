@@ -184,6 +184,11 @@ pub struct Acme {
     /// Where the tabs were drawn last frame, for the drag to know
     /// which one the pointer has passed.
     pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(SessionUrl, gpui::Bounds<Pixels>)>>>,
+    /// Where the overlays (the picker, the finder, the switcher, the
+    /// tools menu) were drawn this frame: holes cut in the web views,
+    /// which are native views above everything gpui paints, so the
+    /// overlays show through them and the pages stay live around them.
+    pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
     /// ctrl-tab held: the session switcher.
     pub switcher: Option<crate::switcher::Switcher>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
@@ -636,6 +641,24 @@ impl Acme {
         window.set_window_title(&Self::title(&p.url));
         crate::shell::note_recent(&p.url);
         self.sync();
+    }
+
+    /// A mark for an overlay's panel: records the panel's bounds this
+    /// frame (`overlay_bounds`), for the holes in the web views. Zero
+    /// size, so it takes no clicks.
+    pub fn overlay_mark(&self) -> gpui::AnyElement {
+        use gpui::prelude::*;
+        let rc = self.overlay_bounds.clone();
+        gpui::div()
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .size_full()
+            .child(gpui::canvas(
+                move |b, _, _| rc.borrow_mut().push(b),
+                |_, _, _, _| {},
+            ).size_full())
+            .into_any_element()
     }
 
     /// What the daemon must know of this client beyond presentation:
@@ -1211,6 +1234,7 @@ impl Acme {
             selector: None,
             tab_drag: None,
             tab_bounds: Default::default(),
+            overlay_bounds: Default::default(),
             switcher: None,
             tag_need: HashMap::new(),
             close_requested: false,
@@ -2582,7 +2606,9 @@ impl Acme {
             // the first view: the plane and the proxy come from the link now
             self.webs = Webs::new(self.io_plane(), self.wake.clone());
         }
-        let visible = !self.overlay_up();
+        // shown under an overlay too: a hole is cut where the overlay is
+        // (`Webs::set_holes`), the page live around it
+        let visible = true;
         if std::env::var_os("APEX_WEB_DEBUG").is_some() {
             eprintln!("web: place {w} {name} at {bounds:?} body {:?}", self.node.state.window(w).map(|x| x.body));
         }
