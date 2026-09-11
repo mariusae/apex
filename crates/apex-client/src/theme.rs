@@ -141,7 +141,9 @@ pub const DARK: Theme = Theme {
     tag_border: 0x8888CC,
     text: 0xE8E8DC,
     sweep_text: 0xFFFFFF,
-    border: 0x000000,
+    // the borders a mid warm grey: black would sink into the paper, the
+    // ink would shout; halfway between reads as a rule
+    border: 0x76766C,
     column: 0x101010,
     dirty: 0x6A6AF0,
     unsynced: 0x88CC88,
