@@ -233,7 +233,10 @@ the live colour, as a terminal's does, and breathes towards pale while
 the page loads (WebKit's page-load events, drawn on the pointer timer).
 `apex md` pages are styled as the editor is: acme's papers and inks,
 Lucida Grande for text and Menlo for code, code blocks on a grey
-ground (inline code only in the fixed-width face), headings unruled. The stylesheet takes its colours from `--apex-*` variables
+ground (inline code only in the fixed-width face), headings unruled.
+Front matter (a `---` or `+++` block at the top) is left out of the
+page; the line markers still count its lines, so following dot stays
+right. The stylesheet takes its colours from `--apex-*` variables
 that the client sets on every page rendered from a buffer (a
 `<style id="apex-theme">` it adds, rewritten in place when the theme
 changes, so Dark and Light follow the View menu without a reload); a

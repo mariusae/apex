@@ -1,4 +1,3 @@
-
 remotes should work as long as you can supply a way to execute a command on the remote and connect stdin/out/err. 
 
 for example, fly.io's sprites can run commands in this way:

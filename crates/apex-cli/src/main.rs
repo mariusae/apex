@@ -827,6 +827,30 @@ fn md(_: &Ctx, _: &Parsed) -> R {
     std::io::stdout().write_all(html.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// The length of a front matter block at the top of `text`: a line of
+/// `---` (YAML) or `+++` (TOML), the block, and the same line closing
+/// it, newline included; 0 when there is none (an unclosed one is text).
+pub fn front_matter_len(text: &str) -> usize {
+    let fence = if text.starts_with("---") { "---" } else if text.starts_with("+++") { "+++" } else { return 0 };
+    let Some(first_nl) = text.find('\n') else { return 0 };
+    if text[fence.len()..first_nl].trim().is_empty() == false {
+        return 0;
+    }
+    let mut at = first_nl + 1;
+    while at <= text.len() {
+        let end = text[at..].find('\n').map(|i| at + i).unwrap_or(text.len());
+        let line = text[at..end].trim_end_matches('\r');
+        if line.trim_end() == fence {
+            return (end + 1).min(text.len());
+        }
+        if end >= text.len() {
+            break;
+        }
+        at = end + 1;
+    }
+    0
+}
+
 /// Markdown as a whole page, with the stylesheet Preview pages get.
 pub fn markdown_page(text: &str) -> String {
     use pulldown_cmark::{html, Options, Parser};
@@ -840,11 +864,14 @@ pub fn markdown_page(text: &str) -> String {
     // a preview can follow dot (WEB.md §3.3)
     let line_starts: Vec<usize> = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
     let line_at = |offset: usize| line_starts.partition_point(|&s| s <= offset);
+    // front matter (a --- or +++ block at the top) is for the tools that
+    // read it, not the reader; the line numbers still count it
+    let skip = front_matter_len(text);
     let mut events: Vec<pulldown_cmark::Event> = Vec::new();
-    for (ev, range) in Parser::new_ext(text, opts).into_offset_iter() {
+    for (ev, range) in Parser::new_ext(&text[skip..], opts).into_offset_iter() {
         use pulldown_cmark::{CowStr, Event, Tag};
         if let Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::BlockQuote(_) | Tag::CodeBlock(_) | Tag::Item | Tag::Table(_) | Tag::HtmlBlock) = &ev {
-            events.push(Event::Html(CowStr::from(format!("<span class=\"apex-line\" data-line=\"{}\"></span>", line_at(range.start)))));
+            events.push(Event::Html(CowStr::from(format!("<span class=\"apex-line\" data-line=\"{}\"></span>", line_at(range.start + skip)))));
         }
         events.push(ev);
     }
@@ -1632,4 +1659,24 @@ fn cat(ctx: &Ctx, p: &Parsed) -> R {
     let bytes = c.read_file(path, TIMEOUT)?;
     std::io::stdout().write_all(&bytes).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod front_matter_tests {
+    use super::{front_matter_len, markdown_page};
+
+    #[test]
+    fn front_matter_is_left_out_and_lines_still_count() {
+        let text = "---\ntitle: x\ntags: [a]\n---\n# Head\n\nbody\n";
+        assert_eq!(front_matter_len(text), "---\ntitle: x\ntags: [a]\n---\n".len());
+        let page = markdown_page(text);
+        assert!(!page.contains("title: x"), "{page}");
+        assert!(page.contains("<h1>"));
+        // the heading is on line 5 of the file: the markers count from 1
+        assert!(page.contains("data-line=\"5\""), "{page}");
+        assert_eq!(front_matter_len("+++\na = 1\n+++\nrest"), 12);
+        assert_eq!(front_matter_len("--- not front matter\n---\n"), 0);
+        assert_eq!(front_matter_len("---\nunclosed\n"), 0);
+        assert_eq!(front_matter_len("# plain\n"), 0);
+    }
 }
