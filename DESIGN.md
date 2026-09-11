@@ -1393,7 +1393,15 @@ carries the index, and a program's inverse of the defaults carries
 "the ink" and "the paper", for the client to colour by its theme
 (`Cell` in entry.rs on the packing); a colour given as RGB, or a
 palette entry the program set, is drawn as given. Web pages and
-previews keep their own colours.
+previews keep their own colours. What is not presentation alone
+travels to the daemon as `ClientMsg::ClientConfig`, sent when a link
+is made (an attach, a reattach) and again when the theme changes, to
+parked links too: the terminal colours (`TermColors`: ink, paper, the
+sixteen) that programs asking with OSC 10, 11 and 4 are told, so one
+deciding its palette by the background learns the paper it is drawn
+on; a session with no UI answers acme's light ones, and with several
+the latest to say. (A program told once does not ask again; DECSET
+2031's dark/light notification is a possible follow-on.)
 
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`

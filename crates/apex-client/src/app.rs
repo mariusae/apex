@@ -633,10 +633,20 @@ impl Acme {
         self.sync();
     }
 
+    /// What the daemon must know of this client beyond presentation:
+    /// the terminal colours programs are told (the theme's). Sent when
+    /// a link is made and again when the theme changes.
+    pub fn send_config(&mut self) {
+        if let Backend::Remote(link) = &mut self.backend {
+            link.send(&ClientMsg::ClientConfig { term: crate::theme::term_colors() });
+        }
+    }
+
     /// What this client does for the rules, and the rules it brings: it
     /// can `open` things the way the platform does, and URLs go there.
     /// The rules are its own, gone when it detaches.
     fn arm(link: &mut Link) {
+        link.send(&ClientMsg::ClientConfig { term: crate::theme::term_colors() });
         let urls = PlumbRule {
             verb: "plumb".into(),
             text: Some(r"https?://\S+".into()),

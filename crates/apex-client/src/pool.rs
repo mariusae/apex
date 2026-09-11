@@ -230,6 +230,16 @@ impl Pool {
     }
 
     /// Park a session: its wake comes here from now on.
+    /// The theme changed: every parked link tells its daemon the colours
+    /// too, so a session shown later is right from the start.
+    pub fn send_config(cx: &mut App) {
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        let term = crate::theme::term_colors();
+        for p in pool.parked.values() {
+            p.link.send(&apex_server::proto::ClientMsg::ClientConfig { term });
+        }
+    }
+
     /// The sessions the windows show, as their links know them.
     pub fn shown_urls(cx: &App) -> Vec<SessionUrl> {
         cx.windows()

@@ -667,6 +667,12 @@ impl Daemon {
                 self.tool_answered(tid, if ok { Ok(()) } else { Err("refused".into()) });
                 return;
             }
+            ClientMsg::ClientConfig { term } => {
+                // a UI's colours: what programs in terminals are told
+                if self.conns.get(&id).is_some_and(|c| c.kind == AttachmentKind::Ui) {
+                    s.server.term_colors = term;
+                }
+            }
             ClientMsg::RuleAdd { rule, priority, mine } => {
                 if let Err(e) = rule.check() {
                     self.send(id, ServerMsg::Error { text: format!("rule: {e}") });

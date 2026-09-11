@@ -751,6 +751,9 @@ fn bg_of(c: Color, colors: &alacritty_terminal::term::color::Colors) -> u32 {
     }
 }
 
+/// alacritty's RGB, by the name the protocol uses for it.
+pub type Rgb8 = Rgb;
+
 /// The 256-colour xterm palette used when the application hasn't set one.
 pub fn default_color(index: usize) -> Rgb {
     const ANSI: [(u8, u8, u8); 16] = [

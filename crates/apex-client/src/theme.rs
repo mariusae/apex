@@ -220,6 +220,13 @@ pub fn theme() -> &'static Theme {
     if is_dark() { &DARK } else { &LIGHT }
 }
 
+/// The terminal's colours as the daemon should answer programs that
+/// ask for them: the theme's ink, paper and sixteen.
+pub fn term_colors() -> apex_server::proto::TermColors {
+    let t = theme();
+    apex_server::proto::TermColors { fg: t.text, bg: t.body_bg, ansi: t.ansi }
+}
+
 fn file() -> std::path::PathBuf {
     crate::shell::state_file().with_file_name("theme")
 }

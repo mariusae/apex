@@ -27,6 +27,13 @@ actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindo
 pub fn set_theme(m: crate::theme::Mode, cx: &mut App) {
     crate::theme::set_mode(m);
     cx.set_menus(menus());
+    // the daemons hear the new colours, for the programs that ask
+    for w in cx.windows() {
+        if let Some(h) = w.downcast::<crate::app::Acme>() {
+            let _ = h.update(cx, |acme, _, _| acme.send_config());
+        }
+    }
+    crate::pool::Pool::send_config(cx);
     cx.refresh_windows();
 }
 

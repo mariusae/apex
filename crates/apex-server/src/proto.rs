@@ -20,7 +20,38 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 17;
+pub const PROTOCOL: u32 = 18;
+
+/// A client's terminal colours, RGB: the ink, the paper, and the
+/// sixteen ANSI colours its theme draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TermColors {
+    pub fg: u32,
+    pub bg: u32,
+    pub ansi: [u32; 16],
+}
+
+impl TermColors {
+    /// acme's paper and black ink with xterm's sixteen: what a session
+    /// with no UI attached answers.
+    pub const LIGHT: TermColors = TermColors {
+        fg: 0x000000,
+        bg: 0xFFFFEA,
+        ansi: [0x000000, 0xCC241D, 0x3C8A2A, 0xB08A00, 0x1C4FD6, 0x9A2D9A, 0x0F8A8A, 0xBBBBBB, 0x555555, 0xFF5555, 0x55C055, 0xD6C000, 0x5580FF, 0xDD55DD, 0x33C0C0, 0xFFFFFF],
+    };
+
+    /// The colour a program asks for by index: 0..15 the palette, 256
+    /// the ink, 257 the paper; anything else xterm's cube and greys.
+    pub fn color(&self, index: usize) -> crate::term::Rgb8 {
+        let hex = match index {
+            0..=15 => self.ansi[index],
+            256 => self.fg,
+            257 => self.bg,
+            _ => return crate::term::default_color(index),
+        };
+        crate::term::Rgb8 { r: (hex >> 16) as u8, g: (hex >> 8) as u8, b: hex as u8 }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -47,6 +78,12 @@ pub enum ClientMsg {
     TermKey { term: TermId, key: TermKey },
     TermPaste { term: TermId, text: String },
     TermResize { term: TermId, cols: u16, rows: u16 },
+    /// What the client shows: sent on attach and whenever it changes
+    /// (the theme), for what is not presentation alone. The terminal's
+    /// colours as programs may ask for them (OSC 10, 11 and 4): a
+    /// program deciding its own palette by the background must learn
+    /// the paper it is drawn on.
+    ClientConfig { term: TermColors },
     /// The terminal's scrollback dropped (`Clear`); the screen stays.
     TermClear { term: TermId },
     /// The wheel over a terminal, `delta` lines (positive: down), `at`

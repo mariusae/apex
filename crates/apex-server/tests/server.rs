@@ -584,7 +584,7 @@ fn a_name_typed_into_the_tag_is_where_put_writes() {
 
 #[test]
 fn jumps_stack_up_and_back_returns() {
-    let (mut log, mut node, col, mut server, _rx) = session();
+    let (mut log, mut node, col, server, _rx) = session();
     let dir = std::env::temp_dir().join(format!("apex-nav-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("a.txt"), "one\ntwo\nthree\n").unwrap();
@@ -937,4 +937,26 @@ fn a_resize_while_scrolled_back_waits_for_the_bottom() {
     pump_until(&mut log, &mut node, &mut server, &mut rx, |_| Instant::now() > deadline);
     assert_eq!((node.state.terms[&t].cols, node.state.terms[&t].rows), (100, 40));
     assert_eq!(node.state.terms[&t].grid.len(), 40);
+}
+
+#[test]
+fn a_program_asking_the_background_is_told_the_clients_colours() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().next().copied().expect("terminal");
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    let ask = |server: &mut Server, log: &mut Log| {
+        // OSC 11 ?: the answer comes back as input, which the shell shows
+        for c in "printf '\\e]11;?\\a'\r".chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    // no UI has said: acme's paper
+    ask(&mut server, &mut log);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("rgb:ffff/ffff/eaea")), "grid:\n{}", rows(&node));
+    // a dark UI's paper, once it has said
+    server.term_colors = apex_server::proto::TermColors { bg: 0x1E1E14, ..apex_server::proto::TermColors::LIGHT };
+    ask(&mut server, &mut log);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("rgb:1e1e/1e1e/1414")), "grid:\n{}", rows(&node));
 }

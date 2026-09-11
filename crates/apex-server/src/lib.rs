@@ -95,6 +95,10 @@ pub struct Server {
     /// own: the session (`apexsession`) and the socket, so `apex` in a
     /// terminal works on the session it is in.
     pub env: Vec<(String, String)>,
+    /// The colours the UI draws terminals in (`ClientConfig`), for the
+    /// programs that ask (OSC 10, 11, 4): acme's light ones until a UI
+    /// says otherwise, the latest UI's after.
+    pub term_colors: crate::proto::TermColors,
     /// The environment the profile was given, in full: what its own has
     /// changed by its end is applied to the session's (`import_env`).
     profile_base: Option<Vec<(String, String)>>,
@@ -162,6 +166,7 @@ impl Server {
             tx,
             term_tx,
             env: Vec::new(),
+            term_colors: crate::proto::TermColors::LIGHT,
             profile_base: None,
             performed: BTreeSet::new(),
             cwd,
@@ -509,7 +514,9 @@ impl Server {
                         // an xterm title is the window's title
                         Event::Title(t) => h.title = Some(t),
                         Event::PtyWrite(s) => h.write(s.as_bytes()),
-                        Event::ColorRequest(i, fmt) => h.write(fmt(term::default_color(i)).as_bytes()),
+                        // a program asking its colours (OSC 10, 11, 4): the
+                        // UI's, as it draws them
+                        Event::ColorRequest(i, fmt) => h.write(fmt(self.term_colors.color(i)).as_bytes()),
                         Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
                         // OSC 52: into the snarf buffer, and (through the
                         // daemon) onto the UIs' clipboards
