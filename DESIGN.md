@@ -1258,8 +1258,10 @@ this one (detach, attach).
   host's `~/.apex/profile`. ⌃Tab steps through the connected sessions,
   the title bar's tabs, live, as a browser steps its tabs
   (`switcher.rs`): each press switches the window to the next one,
-  most recently shown first (this one, then the parked ones by when
-  they were parked), ⌃⇧Tab to the one before; the order is the one
+  most recently settled on first (this one, then the parked ones by
+  when a window last stopped on them; the ones passed through in a
+  walk do not count, so from a walk a→b→c the next ⌃Tab goes back to
+  a), ⌃⇧Tab to the one before; the order is the one
   when control was pressed and holds while it is held, so the presses
   walk the list rather than bouncing between the last two; letting go
   ends the walk where it is, and ⎋ with control still held goes back

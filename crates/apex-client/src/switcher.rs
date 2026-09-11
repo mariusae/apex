@@ -53,9 +53,12 @@ impl Acme {
         cx.notify();
     }
 
-    /// Control let go: the walk is over, where it stands.
+    /// Control let go: the walk is over, where it stands, and that is
+    /// where the window has settled (the sessions passed through are
+    /// not: the next ctrl-tab goes back to the one left).
     pub fn switcher_commit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.switcher = None;
+        Pool::note_settled(cx, &self.url.clone());
         cx.notify();
     }
 

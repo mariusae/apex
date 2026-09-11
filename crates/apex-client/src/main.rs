@@ -584,6 +584,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                 }
                                 if acme.connected {
                                     pool::Pool::note_open(cx, &acme.url.clone());
+                                    // settled here, unless ctrl-tab is passing through
+                                    if acme.switcher.is_none() {
+                                        pool::Pool::note_settled(cx, &acme.url.clone());
+                                    }
                                 }
                                 acme.settle_snarf(cx);
                                 if acme.leave_requested {

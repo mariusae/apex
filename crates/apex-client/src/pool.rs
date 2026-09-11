@@ -67,6 +67,11 @@ pub struct Pool {
     /// order of the title bar's tabs, which list the ones still
     /// connected (shown or parked).
     order: Vec<SessionUrl>,
+    /// The sessions a window has settled on, the most recent first:
+    /// where it stopped, not where ctrl-tab passed through (an
+    /// application switcher's order). `by_recency` follows it, so the
+    /// next ctrl-tab after settling goes back to the session left.
+    settled: Vec<SessionUrl>,
     /// Wakes the tending task.
     wake: Wake,
 }
@@ -85,7 +90,7 @@ impl Pool {
         // first window's own tab joins them rather than replacing them
         let text = std::fs::read_to_string(Self::tabs_file()).unwrap_or_default();
         let order: Vec<SessionUrl> = text.lines().filter_map(SessionUrl::parse).filter(|u| u.id.is_some()).collect();
-        cx.set_global(Pool { parked: HashMap::new(), order, wake });
+        cx.set_global(Pool { parked: HashMap::new(), order, settled: Vec::new(), wake });
         cx.spawn(async move |cx| {
             use futures::StreamExt;
             while rx.next().await.is_some() {
@@ -293,12 +298,30 @@ impl Pool {
         Pool::by_recency(cx).into_iter().next()
     }
 
-    /// The parked sessions, the most recently parked first.
+    /// A window has settled on `url` (shown it, and no ctrl-tab walk is
+    /// passing through): the most recent of the settled.
+    pub fn note_settled(cx: &mut App, url: &SessionUrl) {
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        if pool.settled.first() == Some(url) {
+            return;
+        }
+        let pool = cx.global_mut::<Pool>();
+        pool.settled.retain(|u| u != url);
+        pool.settled.insert(0, url.clone());
+    }
+
+    /// The parked sessions, the most recently settled on first; ones
+    /// never settled on (attached again at launch, say) after those, the
+    /// most recently parked first.
     pub fn by_recency(cx: &App) -> Vec<SessionUrl> {
         let Some(pool) = cx.try_global::<Pool>() else { return Vec::new() };
-        let mut v: Vec<(Instant, SessionUrl)> = pool.parked.values().map(|p| (p.parked_at, p.url.clone())).collect();
-        v.sort_by(|a, b| b.0.cmp(&a.0));
-        v.into_iter().map(|(_, u)| u).collect()
+        let mut v: Vec<(usize, std::cmp::Reverse<Instant>, SessionUrl)> = pool
+            .parked
+            .values()
+            .map(|p| (pool.settled.iter().position(|u| *u == p.url).unwrap_or(usize::MAX), std::cmp::Reverse(p.parked_at), p.url.clone()))
+            .collect();
+        v.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+        v.into_iter().map(|(_, _, u)| u).collect()
     }
 
     /// Take a parked session to show it.
