@@ -227,6 +227,8 @@ pub struct Acme {
     /// it over the top of the window (a browser's full screen), and it
     /// goes once the pointer has left it.
     pub strip_revealed: bool,
+    /// Whether AppKit's title bar container is hidden (full screen).
+    pub native_bar_hidden: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
     show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
@@ -1277,6 +1279,7 @@ impl Acme {
             tab_drag: None,
             tab_hovered: None,
             strip_revealed: false,
+            native_bar_hidden: false,
             tab_bounds: Default::default(),
             overlay_bounds: Default::default(),
             switcher: None,
@@ -2097,9 +2100,11 @@ impl Acme {
             self.pointer = None;
         }
         self.last_mouse = pos;
-        // full screen: the strip comes at the top edge, goes below it
+        // full screen: the strip comes near the top edge (the menu bar
+        // comes at the edge itself, and takes the pointer's moves while
+        // it is over it), and goes once the pointer is below the strip
         if self.fullscreen {
-            let revealed = if self.strip_revealed { pos.y <= px(crate::shell::TITLEBAR_HEIGHT + 6.) } else { pos.y <= px(2.) };
+            let revealed = if self.strip_revealed { pos.y <= px(crate::shell::TITLEBAR_HEIGHT + 10.) } else { pos.y <= px(8.) };
             if revealed != self.strip_revealed {
                 self.strip_revealed = revealed;
                 cx.notify();

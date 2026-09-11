@@ -768,6 +768,46 @@ pub fn focus_ui(window: &Window) {
 #[cfg(not(target_os = "macos"))]
 pub fn focus_ui(_window: &Window) {}
 
+/// AppKit's own title bar container, shown or not. In full screen AppKit
+/// slides it down with the menu bar when the pointer reaches the top, an
+/// empty bar over our strip; hidden, our strip is what comes.
+#[cfg(target_os = "macos")]
+pub fn set_native_titlebar_hidden(window: &Window, hidden: bool) {
+    use objc::runtime::Object;
+    use objc::{msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(h) = HasWindowHandle::window_handle(window) else { return };
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return };
+    let view = h.ns_view.as_ptr() as *mut Object;
+    // SAFETY: gpui's own NSView, alive while the window is; AppKit
+    // messages on the main thread. The container is the close button's
+    // grandparent (NSTitlebarContainerView), as gpui finds it too.
+    unsafe {
+        let ns_window: *mut Object = msg_send![view, window];
+        if ns_window.is_null() {
+            return;
+        }
+        let close: *mut Object = msg_send![ns_window, standardWindowButton: 0u64];
+        if close.is_null() {
+            return;
+        }
+        let buttons: *mut Object = msg_send![close, superview];
+        if buttons.is_null() {
+            return;
+        }
+        let container: *mut Object = msg_send![buttons, superview];
+        if container.is_null() {
+            return;
+        }
+        let _: () = msg_send![container, setHidden: hidden];
+        let alpha: f64 = if hidden { 0. } else { 1. };
+        let _: () = msg_send![container, setAlphaValue: alpha];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_native_titlebar_hidden(_window: &Window, _hidden: bool) {}
+
 /// What a view shows: a URL, or a buffer's HTML.
 enum Page<'a> {
     Url(&'a str),

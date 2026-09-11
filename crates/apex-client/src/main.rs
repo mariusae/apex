@@ -140,6 +140,12 @@ impl Render for Acme {
             .on_scroll_wheel(cx.listener(Self::scroll_wheel));
         // full screen: acme's area is the whole screen, no title bar
         self.fullscreen = window.is_fullscreen();
+        // full screen: AppKit's own title bar would slide down with the
+        // menu bar, an empty bar over our strip; hidden while it lasts
+        if self.native_bar_hidden != self.fullscreen {
+            web::set_native_titlebar_hidden(window, self.fullscreen);
+            self.native_bar_hidden = self.fullscreen;
+        }
         // full screen: the strip only when the pointer brings it, over the
         // top of the layout rather than above it
         let strip_over = self.fullscreen && self.strip_revealed;
