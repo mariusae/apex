@@ -505,10 +505,16 @@ impl Acme {
     /// The current tab's ×: this session let go (its link closes, its
     /// tab goes), the window showing the session parked most recently.
     pub fn close_current_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(prev) = Pool::most_recent(cx) else { return };
         let leaving = self.url.clone();
-        self.switch_to(&prev, window, cx);
-        Pool::let_go(cx, &leaving);
+        match Pool::most_recent(cx) {
+            Some(prev) => {
+                self.switch_to(&prev, window, cx);
+                Pool::let_go(cx, &leaving);
+            }
+            // the last tab: the window goes with it, as a browser's does
+            // (the session stays, parked, for a window asking later)
+            None => self.close_requested = true,
+        }
         cx.notify();
     }
 
@@ -2145,16 +2151,9 @@ impl Acme {
         if let Some(d) = self.tab_drag.take() {
             // let go without moving: the click it was (the current tab
             // toggles the picker; another is switched to)
-            if !d.moved {
-                if d.current {
-                    if self.selector.is_some() {
-                        self.close_selector(cx);
-                    } else {
-                        self.open_selector(cx);
-                    }
-                } else {
-                    self.switch_to(&d.url, window, cx);
-                }
+            if !d.moved && !d.current {
+                // (the current tab, clicked, is where we are)
+                self.switch_to(&d.url, window, cx);
             }
             cx.notify();
             return;

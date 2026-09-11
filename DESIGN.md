@@ -1214,10 +1214,16 @@ this one (detach, attach).
   or opens the file, and warps the pointer to it as acme's warps do.
 - *As built, tabs:* the title bar carries a tab per connected session
   — this window's, and the parked ones — in the order first shown
-  (`Pool::order`), the current one selected (it toggles the picker);
-  another tab switches to that session, its × lets a parked one go,
-  the current tab's × lets this session go and shows the one parked
-  last, and `+` opens the picker for a session not here yet. The
+  (`Pool::order`), the current one selected; another tab switches to
+  that session, its × lets a parked one go, the current tab's × (and
+  ⌘W) lets this session go and shows the one parked last (the last
+  tab's closes the window, as a browser's does), and `+` (⌘T) opens
+  the picker for a new tab: the sessions on the known hosts that are
+  not tabs here, "+ new session" under each host, a URL typed to
+  create one, "+ new host…". Before the tabs, a browser's tab search:
+  ▾ (⌘⇧A) drops a searchable list of the open tabs and the recently
+  closed ones (the recent sessions not open here), the current landed
+  on, and "Rename this session…". The
   selected tab is styled as a browser's: the colour of the row below
   it, rounded at the top, its bottom corners draping out into the strip
   (a square of its colour with the strip's colour rounded away), and
@@ -1253,7 +1259,7 @@ this one (detach, attach).
   ^H ^U ^W ^K, and the Edit menu's ⌘A ⌘X ⌘C ⌘V ⌘Z on it; the window
   keys do nothing below it. As hosts answer, the cursor keeps the row
   it is on wherever that row moves to (`Selector::keeping`); untouched,
-  it lands on this window's session once that is listed. ⌘⇧K switches
+  it lands on the first row (the tabs' list on this window's tab). ⌘⇧K switches
   to the session parked most recently, and ⌘, opens (or makes) the
   host's `~/.apex/profile`. ⌃Tab steps through the connected sessions,
   the title bar's tabs, live, as a browser steps its tabs
@@ -1267,7 +1273,7 @@ this one (detach, attach).
   ends the walk where it is, and ⎋ with control still held goes back
   to where it began. (There is no list to look at: the tabs are the
   list. ⌘Tab is the system's; no app can take it.)
-  ⌘K remembers hosts, not sessions
+  The new tab's picker remembers hosts, not sessions
 (`known-hosts` beside the other state files, seeded from the recent
 sessions; `local` always first). It is a section per host, the host's
 name with its provider in parentheses dimmed and a × to forget it,
@@ -1287,13 +1293,13 @@ every host, reachable or not (attaching tries again and says what is
 wrong). The search narrows sessions and hosts, and a URL typed in
 still creates directly.
 - *As built, parked sessions:* switching a window to another session
-(⌘K) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
+(a tab, ⌃Tab, the pickers) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
 session is parked, still attached and still leading, in an app-wide
 pool (`client/pool.rs`, a gpui global), where a task tends every
 parked link: entries applied, tools' proposals answered, tags
 refreshed, gotos opened, the rules' asks answered as far as an unseen
 session can (`open` yes; the rest declined). A window asked for a
-parked session, by ⌘K or as a new window, takes it back at once with
+parked session, by a tab or a picker or as a new window, takes it back at once with
 its state as it was left (web views are made again). A link's wake goes
 through a target that moves between the window and the pool. Eight stay
 parked, the least recently parked let go beyond that; a parked link
@@ -1491,9 +1497,10 @@ answers on the default socket — starting one through the bundled `apex`
 with the home directory as its working directory — and opens one window
 per session it had open last time (`~/Library/Application
 Support/apex/last-sessions`), else the first existing session, else a new
-`local`. The title bar is the app's own: the session name is a button
-that drops down the selector (also ⌘K), a list filtered by what you type,
-where a name that matches nothing becomes "Create session". Choosing
+`local`. The title bar is the app's own: tabs for the connected
+sessions, `+` (⌘T) dropping the picker for a new one, a list filtered
+by what you type, where a name that matches nothing becomes "Create
+session", and ▾ (⌘⇧A) the tab search. Choosing
 re-points this window; ⌘N opens another window on the same session. The
 menu bar carries Quit, Hide, New Window, Sessions, Close Window and the
 Edit menu, whose items act on the text under the pointer, as acme's keys

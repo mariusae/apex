@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem]);
 
 /// The theme chosen in the View menu: kept, the menus remade with the
 /// choice marked, every window redrawn.
@@ -71,7 +71,9 @@ pub fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action("New", NewFile),
                 MenuItem::action("New Window", NewWindow),
-                MenuItem::action("Sessions…", Sessions),
+                MenuItem::action("New Tab", NewTab),
+                MenuItem::action("Search Tabs…", SearchTabs),
+                MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Go to…", Goto),
                 MenuItem::action("Back", NavBack),
                 MenuItem::action("Forward", NavFwd),
@@ -123,9 +125,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-n", NewFile, None),
         KeyBinding::new("cmd-shift-n", NewWindow, None),
         KeyBinding::new("cmd-s", Put, None),
-        KeyBinding::new("cmd-w", Del, None),
+        KeyBinding::new("cmd-t", NewTab, None),
+        KeyBinding::new("cmd-shift-a", SearchTabs, None),
+        KeyBinding::new("cmd-w", CloseTab, None),
         KeyBinding::new("cmd-shift-w", CloseWindow, None),
-        KeyBinding::new("cmd-k", Sessions, None),
         KeyBinding::new("cmd-shift-k", PreviousSession, None),
         KeyBinding::new("cmd-1", Tab1, None),
         KeyBinding::new("cmd-2", Tab2, None),
@@ -465,7 +468,23 @@ pub struct TabDrag {
     pub moved: bool,
 }
 
+/// What the picker is for: a new tab (the sessions not open here, the
+/// hosts, a session to create, a host to add: ⌘T and the `+`), or the
+/// tabs (the open ones and the recently closed, searched: ⌘⇧A and the
+/// ▾ before the tabs, a browser's tab search).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PickerMode {
+    NewTab,
+    Tabs,
+}
+
 pub struct Selector {
+    pub mode: PickerMode,
+    /// The tabs open now, in the strip's order (left out of a new tab's
+    /// list; the first section of the tabs' list).
+    pub tabs: Vec<SessionUrl>,
+    /// Tabs closed lately, the latest first (the tabs' second section).
+    pub closed: Vec<SessionUrl>,
     pub filter: crate::field::LineEdit,
     /// Index into `rows()`; only pickable rows are ever landed on.
     pub cursor: usize,
@@ -555,6 +574,8 @@ impl Loading {
 pub enum Row {
     /// A host's section: its name, and the host, to forget it by.
     Header(Host),
+    /// A section of the tabs' list: "Open tabs", "Recently closed".
+    Section(&'static str),
     Divider,
     /// A session on a host.
     Open(SessionUrl),
@@ -720,7 +741,7 @@ pub fn session_parts(u: &SessionUrl) -> (String, String, String) {
 
 impl Row {
     pub fn pickable(&self) -> bool {
-        !matches!(self, Row::Header(_) | Row::Divider | Row::Note(_))
+        !matches!(self, Row::Header(_) | Row::Section(_) | Row::Divider | Row::Note(_))
     }
 }
 
@@ -749,8 +770,33 @@ impl Selector {
             };
         }
         let fl = f.to_lowercase();
+        if self.mode == PickerMode::Tabs {
+            // the open tabs, then the recently closed, those matching
+            let matches = |u: &SessionUrl| fl.is_empty() || u.to_string().to_lowercase().contains(&fl);
+            let mut rows = Vec::new();
+            let open: Vec<Row> = self.tabs.iter().filter(|u| matches(u)).map(|u| Row::Open(u.clone())).collect();
+            if !open.is_empty() {
+                rows.push(Row::Section("Open tabs"));
+                rows.extend(open);
+            }
+            let closed: Vec<Row> = self.closed.iter().filter(|u| !self.tabs.contains(u) && matches(u)).map(|u| Row::Open(u.clone())).collect();
+            if !closed.is_empty() {
+                rows.push(Row::Section("Recently closed"));
+                rows.extend(closed);
+            }
+            if f.is_empty() {
+                if !rows.is_empty() {
+                    rows.push(Row::Divider);
+                }
+                rows.push(Row::RenameThis);
+            } else if rows.is_empty() {
+                rows.push(Row::Note("no tab matches".into()));
+            }
+            return rows;
+        }
         let mut rows = Vec::new();
-        let mut seen: Vec<SessionUrl> = Vec::new();
+        // a new tab: the sessions open here already are not offered
+        let mut seen: Vec<SessionUrl> = self.tabs.clone();
         for h in &self.hosts {
             let (name, prov) = h.parts();
             let host_matches = fl.is_empty() || format!("{name} {prov}").to_lowercase().contains(&fl);
@@ -785,7 +831,6 @@ impl Selector {
             }
         } else {
             actions.push(Row::NewHost);
-            actions.push(Row::RenameThis);
         }
         if !actions.is_empty() {
             if !rows.is_empty() {
@@ -837,11 +882,13 @@ impl Selector {
     /// Put the cursor on this window's session, when it is listed.
     pub fn land_on_current(&mut self) {
         let rows = self.rows();
-        if let Some(i) = rows.iter().position(|r| matches!(r, Row::Open(u) if *u == self.current)) {
-            self.cursor = i;
-        } else {
-            self.settle();
+        if self.mode == PickerMode::Tabs {
+            if let Some(i) = rows.iter().position(|r| matches!(r, Row::Open(u) if *u == self.current)) {
+                self.cursor = i;
+                return;
+            }
         }
+        self.settle();
     }
 }
 
@@ -885,7 +932,17 @@ pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
 }
 
 impl Acme {
+    /// ⌘T, the `+`: the picker for a new tab.
     pub fn open_selector(&mut self, cx: &mut Context<Self>) {
+        self.open_picker(PickerMode::NewTab, cx);
+    }
+
+    /// ⌘⇧A, the ▾: the tabs, open and recently closed, searched.
+    pub fn open_tab_search(&mut self, cx: &mut Context<Self>) {
+        self.open_picker(PickerMode::Tabs, cx);
+    }
+
+    pub fn open_picker(&mut self, mode: PickerMode, cx: &mut Context<Self>) {
         let Some(socket) = self.socket.clone() else { return };
         static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let epoch = EPOCH.fetch_add(1, Ordering::Relaxed);
@@ -894,7 +951,9 @@ impl Acme {
         if !hosts.contains(&here) {
             hosts.push(here);
         }
-        let mut sel = Selector { filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        let tabs = if self.chooser { Vec::new() } else { crate::pool::Pool::tabs(cx, &self.url) };
+        let closed: Vec<SessionUrl> = recent().into_iter().filter(|u| !tabs.contains(u)).collect();
+        let mut sel = Selector { mode, tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: false, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
         // what each host had last time, shown at once; the answers update it
         let mut known = known_sessions();
         for h in &hosts {
@@ -907,9 +966,11 @@ impl Acme {
         sel.land_on_current();
         self.selector = Some(sel);
         // every host's sessions, asked for in the background: a host that
-        // is down, or slow, holds nothing up
-        for h in hosts {
-            self.ask_host(h, socket.clone(), epoch, cx);
+        // is down, or slow, holds nothing up (the tabs' list needs none)
+        if mode == PickerMode::NewTab {
+            for h in hosts {
+                self.ask_host(h, socket.clone(), epoch, cx);
+            }
         }
         // blink the caret while the selector is open
         cx.spawn(async move |this, cx| loop {
@@ -1208,7 +1269,7 @@ impl Acme {
 
     pub fn choose(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         match row {
-            Row::Header(_) | Row::Divider | Row::Note(_) => {}
+            Row::Header(_) | Row::Section(_) | Row::Divider | Row::Note(_) => {}
             Row::NewHost => {
                 if let Some(sel) = self.selector.as_mut() {
                     sel.connect = Some(Connect::new());
@@ -1350,6 +1411,22 @@ impl Acme {
         let t = crate::theme::theme();
         let strip: u32 = t.strip;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
+        // tab search, a browser's: the ▾ before the tabs (⌘⇧A)
+        let mut search = div().id("tab-search").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(11.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(t.tab_dim)).child("▾");
+        if clickable {
+            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::Tabs) {
+                        this.close_selector(cx);
+                    } else {
+                        this.open_tab_search(cx);
+                    }
+                    cx.stop_propagation();
+                }),
+            );
+        }
+        tabs = tabs.child(search);
         let all = crate::pool::Pool::tabs(cx, &self.url);
         // a tab being dragged floats under the pointer, kept within the
         // strip's tabs (their bounds of last frame say where that is)
@@ -1486,7 +1563,7 @@ impl Acme {
             plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
-                    if this.selector.is_some() {
+                    if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::NewTab) {
                         this.close_selector(cx);
                     } else {
                         this.open_selector(cx);
@@ -1541,8 +1618,10 @@ impl Acme {
         } else if let Some(h) = &sel.naming {
             let (name, prov) = h.parts();
             format!("Name for the new session on {name} {prov}…")
+        } else if sel.mode == PickerMode::Tabs {
+            "Search open and recently closed tabs…".to_string()
         } else {
-            "Search sessions and hosts, or type a URL to create one…".to_string()
+            "New tab: a session or host, or type a URL to create one…".to_string()
         };
         // the field: the text typed, its selection and caret, or the hint
         let t = crate::theme::theme();
@@ -1601,6 +1680,7 @@ impl Acme {
                     }
                     d.into_any_element()
                 }
+                Row::Section(name) => div().px(px(10.)).pt(px(8.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(*name).into_any_element(),
                 Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(t.panel_divider)).into_any_element(),
                 Row::Note(n) => div().px(px(22.)).py(px(4.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(n.clone()).into_any_element(),
                 Row::Open(u) | Row::Create(u) => {
@@ -1715,7 +1795,7 @@ mod picker_tests {
         sessions.insert(local.clone(), Loading::Ready(vec![si("default"), si("notes")]));
         sessions.insert(box_.clone(), Loading::Seeded(vec![si("work")]));
         sessions.insert(down.clone(), Loading::Failed(vec![si("old")], "no route".into()));
-        Selector { filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
+        Selector { mode: PickerMode::NewTab, tabs: Vec::new(), closed: Vec::new(), filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: false, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
     }
 
     #[test]
@@ -1737,11 +1817,31 @@ mod picker_tests {
             .collect();
         // a host still asked shows what it had last time, then "asking…";
         // one that could not be reached keeps what it had, and says so
-        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "work", "note:asking…", "+session", "[gone]", "old", "note:unreachable", "+session", "-", "+host", "rename"]);
-        // the cursor lands on this window's session
+        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "work", "note:asking…", "+session", "[gone]", "old", "note:unreachable", "+session", "-", "+host"]);
+        // a new tab leaves out the sessions open here already
         let mut sel = picker();
+        sel.tabs = vec![SessionUrl::local("notes")];
+        assert!(!sel.rows().iter().any(|r| matches!(r, Row::Open(u) if u.session == "notes")));
+        // the tabs' list: open, then recently closed, the current landed on
+        let mut sel = picker();
+        sel.mode = PickerMode::Tabs;
+        sel.tabs = vec![SessionUrl::local("default"), SessionUrl::local("notes")];
+        sel.closed = vec![SessionUrl::local("notes"), SessionUrl::local("old")];
+        let shape: Vec<String> = sel.rows().iter().map(|r| match r {
+            Row::Section(s) => format!("[{s}]"),
+            Row::Open(u) => u.session.clone(),
+            Row::Divider => "-".into(),
+            Row::RenameThis => "rename".into(),
+            other => format!("{other:?}"),
+        }).collect();
+        assert_eq!(shape, vec!["[Open tabs]", "default", "notes", "[Recently closed]", "old", "-", "rename"]);
         sel.land_on_current();
         assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "notes"));
+        // a new tab's picker lands on its first row (this window's
+        // session is not among them; the tabs' list lands on it)
+        let mut sel = picker();
+        sel.land_on_current();
+        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "default"));
         // a filter narrows to sessions and hosts that carry it; a URL typed creates
         let mut sel = picker();
         sel.filter = "dev".into();
