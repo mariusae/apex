@@ -1216,7 +1216,7 @@ this one (detach, attach).
   — this window's, and the parked ones — in the order first shown
   (`Pool::order`), the current one selected; another tab switches to
   that session, its × lets a parked one go, the current tab's × (and
-  ⌘W) lets this session go and shows the one parked last (the last
+  ⌘⇧W) lets this session go and shows the one parked last (the last
   tab's closes the window, as a browser's does), and `+` (⌘T) opens
   the picker for a new tab: the sessions on the known hosts that are
   not tabs here, "+ new session" under each host, a URL typed to
@@ -1300,7 +1300,7 @@ every host, reachable or not (attaching tries again and says what is
 wrong). The search narrows sessions and hosts, and a URL typed in
 still creates directly.
 - *As built, parked sessions:* switching a window to another session
-(a tab, ⌃Tab, the pickers) or closing it (⌘⇧W, the red button, `Exit`) does not detach: the
+(a tab, ⌃Tab, the pickers) or closing it (the red button, `Exit`) does not detach: the
 session is parked, still attached and still leading, in an app-wide
 pool (`client/pool.rs`, a gpui global), where a task tends every
 parked link: entries applied, tools' proposals answered, tags
