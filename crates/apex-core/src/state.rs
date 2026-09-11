@@ -86,6 +86,22 @@ pub struct Slot {
     /// a window obscured by a full-column one, whose rectangles go stale.
     pub frmax: i32,
     pub maxlines: i32,
+    /// The pixels the body gave up to end on a whole line (acme trims
+    /// `t->all` so): the window's allocation is `r.dy() + extra`, and
+    /// a column resize scales that, not the trimmed height, else every
+    /// resize would hand a window's remainder to the one below it and
+    /// the bottom window would take the column over, a few pixels at a
+    /// time.
+    #[serde(default)]
+    pub extra: i32,
+    /// The window's share of its column's window space, in parts per
+    /// million, as the user last left it (a drag, a grow, an add, a
+    /// close); a column resize sizes the windows by their shares and
+    /// leaves the shares alone, so resizing back and forth returns the
+    /// layout it started from. Zero until the next resize reads it off
+    /// the rectangles.
+    #[serde(default)]
+    pub share: i32,
 }
 
 /// A column: its rectangle (the tag is its first line) and its windows

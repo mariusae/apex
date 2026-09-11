@@ -295,7 +295,7 @@ fn arrange_entries_replay_identically() {
     f.catch_up(&log).unwrap();
     assert_eq!(f.state.hash(), n.state.hash());
     assert_eq!(f.state.layout, n.state.layout);
-    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0 }] };
+    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0 }] };
 }
 
 #[test]
@@ -317,4 +317,24 @@ fn showing_a_window_with_no_lines_grows_it() {
     let before = n.state.layout.clone();
     n.reveal(&mut log, w2).unwrap();
     assert_eq!(n.state.layout, before);
+}
+
+#[test]
+fn resizing_back_and_forth_keeps_the_windows_proportions() {
+    // acme trims each window but the last to whole lines on a resize;
+    // scaling from the trimmed heights handed the remainders down the
+    // column, a few pixels a step, until the bottom window had it all
+    let mut l = row();
+    add(&mut l, 0, 1, None);
+    add(&mut l, 0, 2, None);
+    add(&mut l, 0, 3, None);
+    let before: Vec<i32> = wins(&l, 0).iter().map(|(_, y0, y1)| y1 - y0).collect();
+    for i in 0..200 {
+        let h = if i % 2 == 0 { 700 - 37 } else { 700 };
+        tiling::rowresize(&mut l, Rect::new(0, 0, 1000, h), &info());
+    }
+    let after: Vec<i32> = wins(&l, 0).iter().map(|(_, y0, y1)| y1 - y0).collect();
+    for (i, (a, b)) in before.iter().zip(after.iter()).enumerate() {
+        assert!((a - b).abs() <= FONT, "window {i}: {a} -> {b} after 200 resizes; all {before:?} -> {after:?}");
+    }
 }

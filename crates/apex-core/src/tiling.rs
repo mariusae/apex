@@ -150,6 +150,31 @@ impl Slot {
 /// as many lines as it needs, the body the rest, trimmed to whole lines
 /// unless `keepextra`. Returns the window's new bottom.
 pub fn winresize(l: &mut Layout, ci: usize, wi: usize, r: Rect, keepextra: bool, info: &dyn Info) -> i32 {
+    // every caller but colresize is the user's doing: the shares are
+    // read anew from the rectangles at the next resize
+    let y = winresize_in(l, ci, wi, r, keepextra, info);
+    l.cols[ci].wins[wi].share = 0;
+    y
+}
+
+/// Parts per million: a column's window space, shared out.
+const SHARE_UNIT: i64 = 1_000_000;
+
+/// The shares read off the windows' allocations (their rectangles and
+/// the remainders they gave up to whole lines).
+fn sync_shares(l: &mut Layout, ci: usize) {
+    let allocs: Vec<i64> = l.cols[ci].wins.iter().map(|s| (s.r.dy() + s.extra).max(1) as i64).collect();
+    let total: i64 = allocs.iter().sum::<i64>().max(1);
+    let n = allocs.len();
+    let mut given = 0i64;
+    for (i, s) in l.cols[ci].wins.iter_mut().enumerate() {
+        let share = if i == n - 1 { SHARE_UNIT - given } else { allocs[i] * SHARE_UNIT / total };
+        s.share = share as i32;
+        given += share;
+    }
+}
+
+fn winresize_in(l: &mut Layout, ci: usize, wi: usize, r: Rect, keepextra: bool, info: &dyn Info) -> i32 {
     let font = info.font_height().max(1);
     let id = l.cols[ci].wins[wi].window;
     // wintaglines: the tag laid out in all of r tells how many lines fit
@@ -167,10 +192,12 @@ pub fn winresize(l: &mut Layout, ci: usize, wi: usize, r: Rect, keepextra: bool,
         body.y1 = y;
     }
     // textresize
+    let mut extra = 0;
     if body.dy() <= 0 {
         body.y1 = body.y0;
     } else if !keepextra {
-        body.y1 -= body.dy() % bf;
+        extra = body.dy() % bf;
+        body.y1 -= extra;
     }
     let fr_maxlines = body.dy() / bf;
     let nlines = info.body_nlines(id, r.dx(), fr_maxlines).clamp(0, fr_maxlines);
@@ -181,6 +208,7 @@ pub fn winresize(l: &mut Layout, ci: usize, wi: usize, r: Rect, keepextra: bool,
     s.nlines = nlines;
     s.frmax = fr_maxlines;
     s.maxlines = nlines.min(s.maxlines.max(fr_maxlines));
+    s.extra = extra;
     s.r.y1
 }
 
@@ -268,7 +296,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
             // maxlines from what fits
             let bf = info.body_font_height(id).max(1);
             let body_dy = (r.dy() - font - 1).max(0);
-            Slot { window: id, r, body: Rect::new(r.x0, (r.y0 + font + 1).min(r.y1), r.x1, r.y1), taglines: 1, nlines: 0, frmax: body_dy / bf, maxlines: body_dy / bf }
+            Slot { window: id, r, body: Rect::new(r.x0, (r.y0 + font + 1).min(r.y1), r.x1, r.y1), taglines: 1, nlines: 0, frmax: body_dy / bf, maxlines: body_dy / bf, extra: 0, share: 0 }
         }
         Adding::Existing(s) => s,
     };
@@ -328,24 +356,27 @@ pub fn colresize(l: &mut Layout, ci: usize, r: Rect, info: &dyn Info) {
     r1.y0 = r1.y1;
     r1.y1 += BORDER;
     r1.y1 = r.y1;
-    let new = r.dy() - n as i32 * (BORDER + font);
-    let old = l.cols[ci].r.dy() - n as i32 * (BORDER + font);
+    // the windows sized by their shares of the column's window space
+    // (acme scales the last heights, which, trimmed to whole lines each
+    // time, hand their remainders down the column resize after resize)
+    let stale = n > 0 && (l.cols[ci].wins.iter().any(|s| s.share <= 0) || l.cols[ci].wins.iter().map(|s| s.share as i64).sum::<i64>() != SHARE_UNIT);
+    if stale {
+        sync_shares(l, ci);
+    }
+    let space = (r.dy() - font - n as i32 * BORDER).max(0) as i64;
     for i in 0..n {
-        let wdy = l.cols[ci].wins[i].r.dy();
         l.cols[ci].wins[i].maxlines = 0;
         if i == n - 1 {
             r1.y1 = r.y1;
         } else {
-            r1.y1 = r1.y0;
-            if new > 0 && old > 0 && wdy > BORDER + font {
-                r1.y1 += (wdy - BORDER - font) * new / old + BORDER + font;
-            }
+            let alloc = (l.cols[ci].wins[i].share as i64 * space + SHARE_UNIT / 2) / SHARE_UNIT;
+            r1.y1 = r1.y0 + BORDER + alloc as i32;
         }
         r1.y1 = r1.y1.max(r1.y0 + BORDER + font);
         let mut r2 = r1;
         r2.y1 = r2.y0 + BORDER;
         r1.y0 = r2.y1;
-        r1.y0 = winresize(l, ci, i, r1, i == n - 1, info);
+        r1.y0 = winresize_in(l, ci, i, r1, i == n - 1, info);
     }
     l.cols[ci].r = r;
 }

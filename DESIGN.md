@@ -1369,6 +1369,19 @@ A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column
 (`init_session` returns it, as acme loads into `row.col[ncol-1]`).
 
+*Resizing, as built:* acme's `colresize` scales each window's last
+height by the column's new height over its old, and each window but
+the last is then trimmed to whole lines; scaled again from the trimmed
+height, every resize handed a window's remainder to the one below it,
+and a window dragged back and forth gave the bottom windows the column
+a few pixels a step. Each window keeps its share of the column's
+window space (`Slot::share`, parts per million, `Slot::extra` the
+pixels trimmed), read off the rectangles after any change the user
+makes (a drag, a grow, an add, a close: every `winresize` but a
+column resize's clears it) and left alone by a resize, which sizes the
+windows by their shares; so a resize undone returns the layout it
+started from.
+
 The borders are acme's to the device pixel: acme's `Border` is
 `scalesize(display, 2)`, 2 device pixels at 1x and `(2*dpi+66)/133`
 above it (devdraw reports 110 dpi per unit of scale), 3 at 2x, and
