@@ -21,11 +21,12 @@ mod switcher;
 mod term_element;
 mod pool;
 mod text_element;
+mod theme;
 mod warp;
 mod web;
 
 use gpui::{
-    black, canvas, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
+    canvas, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
     WindowBounds, WindowOptions,
 };
 
@@ -69,10 +70,11 @@ impl Render for Acme {
         let me = cx.entity();
         let font = f32::from(text_element::font_for(false).line_height) as i32;
 
+        let t = theme::theme();
         let root = div()
             .id("apex")
             .size_full()
-            .bg(black())
+            .bg(gpui::rgb(t.border))
             .flex()
             .flex_col()
             .track_focus(&self.focus)
@@ -171,7 +173,7 @@ impl Render for Acme {
             // the tag and the windows and between the windows
             let tail = col.wins.last().map(|s| s.r.y1).unwrap_or(col.r.y0 + font + apex_core::tiling::BORDER);
             if tail < col.r.y1 {
-                area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::white()).into_any_element()));
+                area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::rgb(t.column)).into_any_element()));
             }
             if extra > 0. {
                 // the borders trimmed to acme's: above the column tag and
@@ -179,11 +181,11 @@ impl Render for Acme {
                 // one to its left, along its left edge in what is there
                 let (x0, w, e) = (col.r.x0 as f32, col.r.dx() as f32, extra);
                 let left = if col.r.x0 > 0 { e } else { 0. };
-                area = area.child(fill(x0, col.r.y0 as f32 - e, w, e, text_element::PALEBLUEGREEN));
+                area = area.child(fill(x0, col.r.y0 as f32 - e, w, e, t.tag_bg));
                 if left > 0. {
-                    area = area.child(fill(x0 - left, col.r.y0 as f32 - e, left, (font as f32) + e, text_element::PALEBLUEGREEN));
+                    area = area.child(fill(x0 - left, col.r.y0 as f32 - e, left, (font as f32) + e, t.tag_bg));
                     if tail < col.r.y1 {
-                        area = area.child(fill(x0 - left, tail as f32, left, (col.r.y1 - tail) as f32, 0xffffff));
+                        area = area.child(fill(x0 - left, tail as f32, left, (col.r.y1 - tail) as f32, t.column));
                     }
                 }
                 for (i, s) in col.wins.iter().enumerate() {
@@ -192,13 +194,13 @@ impl Render for Acme {
                     }
                     let Ok(win) = self.node.state.window(s.window) else { continue };
                     let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - e, s.r.dx() as f32, e, text_element::PALEBLUEGREEN));
+                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - e, s.r.dx() as f32, e, t.tag_bg));
                     if left > 0. {
-                        area = area.child(fill(x0 - left, s.r.y0 as f32 - e, left, tag_h as f32 + e, text_element::PALEBLUEGREEN));
+                        area = area.child(fill(x0 - left, s.r.y0 as f32 - e, left, tag_h as f32 + e, t.tag_bg));
                         if s.body.dy() > 0 {
                             let c = match win.body {
                                 Body::Web | Body::Html(_) => 0xffffff,
-                                _ => text_element::PALEYELLOW,
+                                _ => t.body_bg,
                             };
                             area = area.child(fill(x0 - left, s.body.y0 as f32, left, s.body.dy() as f32, c));
                         }
@@ -320,7 +322,12 @@ fn main() {
     gpui_platform::application().run(move |cx: &mut App| {
         cursor::install();
         pool::Pool::install(cx);
+        theme::load();
         cx.set_menus(shell::menus());
+        // the View menu: the theme, the choice marked in the menu
+        cx.on_action(|_: &shell::ThemeLight, cx| shell::set_theme(theme::Mode::Light, cx));
+        cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
+        cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             // the action arrives while the focused window is mid-update,
@@ -580,6 +587,13 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             });
             let focus = view.read(cx).focus.clone();
             window.focus(&focus, cx);
+            // the system's appearance, for the System theme: as it is now,
+            // and as it changes
+            theme::set_system_dark(matches!(window.appearance(), gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark));
+            window.observe_window_appearance(|window, cx| {
+                theme::set_system_dark(matches!(window.appearance(), gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark));
+                cx.refresh_windows();
+            }).detach();
             // cmd-` back into this window: the pointer where it was
             view.update(cx, |_, cx| {
                 cx.observe_window_activation(window, |acme: &mut Acme, window, _| {
@@ -661,9 +675,9 @@ fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
         .top(px(r.y0 as f32))
         .w(px(r.dx() as f32))
         .h(px(r.dy() as f32))
-        .bg(rgb(menu::BACK))
+        .bg(rgb(theme::theme().menu_bg))
         .border(px(menu::BLACKBORDER as f32))
-        .border_color(rgb(menu::BORD));
+        .border_color(rgb(theme::theme().menu_border));
     // children are placed relative to the menu's own origin
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);
@@ -679,8 +693,8 @@ fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(rgb(if hl { menu::HIGH } else { menu::BACK }))
-                .text_color(rgb(if hl { menu::HTEXT } else { menu::TEXT }))
+                .bg(rgb(if hl { theme::theme().menu_hl } else { theme::theme().menu_bg }))
+                .text_color(rgb(if hl { theme::theme().menu_hl_text } else { theme::theme().menu_text }))
                 .font_family("Lucida Grande")
                 .text_size(px(13.))
                 .line_height(px(font as f32))
@@ -697,7 +711,7 @@ fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
                 .top(px((sr.y0 - r.y0 - menu::BLACKBORDER) as f32))
                 .w(px(sr.dx() as f32))
                 .h(px(sr.dy() as f32))
-                .bg(rgb(menu::BACK))
+                .bg(rgb(theme::theme().menu_bg))
                 .child(
                     div()
                         .absolute()
@@ -706,8 +720,8 @@ fn menu_element(m: &menu::Menu, font: i32) -> gpui::AnyElement {
                         .w(px(sr.dx() as f32))
                         .h(px(th.dy() as f32))
                         .border(px(1.))
-                        .border_color(rgb(menu::BORD))
-                        .bg(rgb(menu::HIGH)),
+                        .border_color(rgb(theme::theme().menu_border))
+                        .bg(rgb(theme::theme().menu_hl)),
                 ),
         );
     }

@@ -20,7 +20,15 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, Sessions, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem]);
+
+/// The theme chosen in the View menu: kept, the menus remade with the
+/// choice marked, every window redrawn.
+pub fn set_theme(m: crate::theme::Mode, cx: &mut App) {
+    crate::theme::set_mode(m);
+    cx.set_menus(menus());
+    cx.refresh_windows();
+}
 
 /// Set by the Quit action so closing windows on the way out does not
 /// forget which sessions were open.
@@ -28,7 +36,6 @@ pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
 pub const TITLEBAR_HEIGHT: f32 = 34.;
 /// The top row's background (acme's tag colour): what the selected tab is.
-const PALEBLUEGREEN_TAB: u32 = 0xEAFFFF;
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
 /// The system's UI font.
 pub const UI_FONT: &str = ".AppleSystemUIFont";
@@ -81,6 +88,19 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Paste", Paste),
                 MenuItem::action("Select All", SelectAll),
             ],
+        },
+        Menu {
+            name: "View".into(),
+            disabled: false,
+            items: {
+                let m = crate::theme::mode();
+                let mark = |name: &str, mine: crate::theme::Mode| if m == mine { format!("{name} ✓") } else { name.to_string() };
+                vec![
+                    MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
+                    MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
+                    MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
+                ]
+            },
         },
     ]
 }
@@ -1239,6 +1259,7 @@ impl Acme {
     /// The new-host form: the providers as a row of pills (the chosen one
     /// marked), then the host field with the caret.
     fn connect_form(&self, form: &Connect, caret_on: bool, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let t = crate::theme::theme();
         let row = |label: &str, active: bool| {
             div()
                 .flex()
@@ -1249,8 +1270,8 @@ impl Acme {
                 .py(px(8.))
                 .text_size(px(14.))
                 .font_family(UI_FONT)
-                .when(active, |d| d.bg(rgb(0xeaffff)))
-                .child(div().w(px(80.)).text_color(rgb(0x6f6f6f)).text_size(px(12.)).child(label.to_string()))
+                .when(active, |d| d.bg(rgb(t.tab_bg)))
+                .child(div().w(px(80.)).text_color(rgb(t.panel_dim)).text_size(px(12.)).child(label.to_string()))
         };
         let field = |value: &crate::field::LineEdit, hint: &str, active: bool| crate::field::field_view(value, caret_on, hint, active);
         let mut pills = div().flex().flex_row().items_center().gap(px(6.));
@@ -1263,9 +1284,9 @@ impl Acme {
                     .py(px(2.))
                     .rounded(px(10.))
                     .border_1()
-                    .border_color(rgb(0xb8b8b8))
-                    .when(chosen, |d| d.bg(rgb(0x000099)).text_color(rgb(0xffffff)).border_color(rgb(0x000099)))
-                    .when(!chosen, |d| d.text_color(rgb(0x111111)).hover(|s| s.bg(rgb(0xe4e4e4))))
+                    .border_color(rgb(t.panel_border))
+                    .when(chosen, |d| d.bg(rgb(t.panel_chosen_bg)).text_color(rgb(t.panel_chosen_text)).border_color(rgb(t.panel_chosen_bg)))
+                    .when(!chosen, |d| d.text_color(rgb(t.panel_text)).hover(|s| s.bg(rgb(t.panel_hover))))
                     .cursor_pointer()
                     .child(p.clone())
                     .on_mouse_down(
@@ -1282,12 +1303,12 @@ impl Acme {
             );
         }
         let mut el = div().flex().flex_col().py(px(6.));
-        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child("New host"));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child("New host"));
         el = el.child(row("Provider", form.field == Field::Provider).child(pills));
         el = el.child(row("Host", form.field == Field::Host).child(field(&form.host, "user@host, a box name…", form.field == Field::Host)));
         let ready = form.host().is_some();
         let hint = if ready { "enter adds it and asks for its sessions  ·  ←→ providers  ·  esc back" } else { "type the host  ·  ←→ providers  ·  esc back" };
-        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(hint));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(hint));
         el.into_any_element()
     }
 
@@ -1316,7 +1337,8 @@ impl Acme {
         // size, so centring them centres them on the same line
         const LINE: f32 = 18.;
         const DRAPE: f32 = 10.;
-        const STRIP: u32 = 0xececec;
+        let t = crate::theme::theme();
+        let strip: u32 = t.strip;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
         let all = crate::pool::Pool::tabs(cx, &self.url);
         // a tab being dragged floats under the pointer, kept within the
@@ -1347,10 +1369,10 @@ impl Acme {
             let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
             let fenced = current && self.fenced();
-            let bg = if open { 0xd4f5f5 } else { PALEBLUEGREEN_TAB };
+            let bg = if open { t.tab_open_bg } else { t.tab_bg };
             let closable = clickable && (!current || others);
             let drape = |left: bool| {
-                let corner = div().size_full().bg(rgb(STRIP));
+                let corner = div().size_full().bg(rgb(strip));
                 let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
@@ -1370,20 +1392,20 @@ impl Acme {
                     .text_size(px(13.))
                     .line_height(px(LINE))
                     .font_family(UI_FONT)
-                    .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(0x000099)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                    .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(t.tab_current_text)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
-                    .when(fenced, |d| d.opacity(0.4).text_color(rgb(0x555555)))
+                    .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
                     // the other tabs: the same centre line as the selected one,
                     // so the text stays put as the selection moves; hovered, a
                     // rounded rectangle, as a browser's (only the selected tab
                     // drapes); the one dragged shows as hovered
-                    .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(0x555555)).hover(|s| s.bg(rgb(0xe0e0e0))))
-                    .when(!current && ghost, |d| d.bg(rgb(0xe0e0e0)))
+                    .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(t.tab_hover))))
+                    .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
                     .child(text.clone())
-                    .when_some(host.clone(), |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child(h)))
-                    .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x555555)).child("fenced")))
-                    .when(closable && ghost, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(0x9a9a9a)).child("×")))
+                    .when_some(host.clone(), |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_dim)).child(h)))
+                    .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child("fenced")))
+                    .when(closable && ghost, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_dim)).child("×")))
             };
             if let Some((_, x, y)) = ghost.as_ref().filter(|(g, _, _)| *g == u) {
                 // the tab under the pointer, over everything in the strip
@@ -1427,8 +1449,8 @@ impl Acme {
                             .id(("tab-close", i))
                             .text_size(px(11.))
                             .line_height(px(LINE))
-                            .text_color(rgb(0x9a9a9a))
-                            .hover(|s| s.text_color(rgb(0x000000)))
+                            .text_color(rgb(t.tab_dim))
+                            .hover(|s| s.text_color(rgb(t.tab_close_hover)))
                             .child("×")
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -1451,7 +1473,7 @@ impl Acme {
         // the +, sized as the × and on the same line as they are
         let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(11.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
         if clickable {
-            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(0xe0e0e0)).text_color(rgb(0x000099))).on_mouse_down(
+            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.selector.is_some() {
@@ -1474,7 +1496,7 @@ impl Acme {
             .flex_row()
             .items_center()
             .pl(px(78.))
-            .bg(rgb(STRIP))
+            .bg(rgb(strip))
             .gap(px(6.))
             // no line under the strip: its grey meets the row below, and
             // the selected tab runs straight into it
@@ -1495,7 +1517,7 @@ impl Acme {
             .child(button)
             .child(div().flex_1())
             .when_some(floating, |d, f| d.child(f))
-            .when_some(self.latency(), |d, l| d.child(div().pr(px(10.)).text_size(px(11.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child(l)))
+            .when_some(self.latency(), |d, l| d.child(div().pr(px(10.)).text_size(px(11.)).font_family(UI_FONT).text_color(rgb(t.tab_dim)).child(l)))
             // the link to the daemon, at the right: bright while it is up, faded when gone
             .child(div().pr(px(12.)).text_size(px(13.)).opacity(if self.connected { 1.0 } else { 0.25 }).child("⚡"))
     }
@@ -1513,7 +1535,8 @@ impl Acme {
             "Search sessions and hosts, or type a URL to create one…".to_string()
         };
         // the field: the text typed, its selection and caret, or the hint
-        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(0xdddddd)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&sel.filter, sel.caret_visible(), &hint, true));
+        let t = crate::theme::theme();
+        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&sel.filter, sel.caret_visible(), &hint, true));
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         let row_style = |d: gpui::Stateful<gpui::Div>, picked: bool| {
             d.flex()
@@ -1526,8 +1549,8 @@ impl Acme {
                 .text_size(px(14.))
                 .font_family(UI_FONT)
                 .cursor_pointer()
-                .when(picked, |d| d.bg(rgb(0x9eeeee)))
-                .when(!picked, |d| d.hover(|s| s.bg(rgb(0xe4e4e4))))
+                .when(picked, |d| d.bg(rgb(t.panel_pick)))
+                .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
         };
         for (i, row) in rows.iter().enumerate() {
             let picked = i == sel.cursor && row.pickable();
@@ -1546,8 +1569,8 @@ impl Acme {
                                 .id(("forget", i))
                                 .px(px(6.))
                                 .rounded(px(4.))
-                                .text_color(rgb(0x888888))
-                                .hover(|s| s.bg(rgb(0xcfcfcf)).text_color(rgb(0x111111)))
+                                .text_color(rgb(t.panel_dim))
+                                .hover(|s| s.bg(rgb(t.panel_hover)).text_color(rgb(t.panel_text)))
                                 .child("×")
                                 .on_mouse_down(
                                     MouseButton::Left,
@@ -1568,28 +1591,28 @@ impl Acme {
                     }
                     d.into_any_element()
                 }
-                Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(0xdddddd)).into_any_element(),
-                Row::Note(t) => div().px(px(22.)).py(px(4.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(t.clone()).into_any_element(),
+                Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(t.panel_divider)).into_any_element(),
+                Row::Note(n) => div().px(px(22.)).py(px(4.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(n.clone()).into_any_element(),
                 Row::Open(u) | Row::Create(u) => {
                     let is_current = matches!(row, Row::Open(u) if *u == self.url);
                     let create = matches!(row, Row::Create(_));
                     let (label, host, provider) = session_parts(u);
                     let mut text = div().flex().flex_row().items_baseline().gap(px(8.));
                     if create {
-                        text = text.child(div().text_color(rgb(0x000099)).child("Create"));
+                        text = text.child(div().text_color(rgb(t.panel_accent)).child("Create"));
                     }
                     text = text.child(div().child(label));
                     if create {
                         // where it will be, since the section does not say
                         if !host.is_empty() {
-                            text = text.child(div().text_color(rgb(0x8a8a8a)).child(host));
+                            text = text.child(div().text_color(rgb(t.panel_dim)).child(host));
                         }
-                        text = text.child(div().text_color(rgb(0x8a8a8a)).text_size(px(12.)).child(provider));
+                        text = text.child(div().text_color(rgb(t.panel_dim)).text_size(px(12.)).child(provider));
                     }
                     let r = row.clone();
-                    let mut d = row_style(div().id(("row", i)), picked).pl(px(22.)).text_color(rgb(0x111111)).child(text);
+                    let mut d = row_style(div().id(("row", i)), picked).pl(px(22.)).text_color(rgb(t.panel_text)).child(text);
                     if is_current {
-                        d = d.child(div().text_color(rgb(0x000099)).child("✓"));
+                        d = d.child(div().text_color(rgb(t.panel_accent)).child("✓"));
                     }
                     // a session is ended from here: "end" at the right
                     if !create {
@@ -1600,8 +1623,8 @@ impl Acme {
                                 .px(px(6.))
                                 .rounded(px(4.))
                                 .text_size(px(12.))
-                                .text_color(rgb(0x888888))
-                                .hover(|s| s.bg(rgb(0xf0c0c0)).text_color(rgb(0x111111)))
+                                .text_color(rgb(t.panel_dim))
+                                .hover(|s| s.bg(rgb(t.panel_danger_hover)).text_color(rgb(t.panel_text)))
                                 .child("end")
                                 .on_mouse_down(
                                     MouseButton::Left,
@@ -1631,7 +1654,7 @@ impl Acme {
                     let r = row.clone();
                     row_style(div().id(("row", i)), picked)
                         .pl(px(indent))
-                        .text_color(rgb(0x000099))
+                        .text_color(rgb(t.panel_accent))
                         .child(text)
                         .on_mouse_down(
                             MouseButton::Left,
@@ -1647,14 +1670,14 @@ impl Acme {
         }
         if rows.is_empty() && sel.connect.is_none() {
             let what = if sel.renaming || sel.naming.is_some() { "Type a name" } else { "Nothing matches" };
-            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child(what));
+            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(what));
         }
         let mut panel = div()
             .w(px(620.))
             .max_h(px(560.))
-            .bg(rgb(0xf4f4f4))
+            .bg(rgb(t.panel_bg))
             .border_1()
-            .border_color(rgb(0xc8c8c8))
+            .border_color(rgb(t.panel_border))
             .rounded(px(10.))
             .shadow_lg()
             .flex()

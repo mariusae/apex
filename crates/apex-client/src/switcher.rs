@@ -68,7 +68,8 @@ impl Acme {
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         for (i, u) in s.entries.iter().enumerate() {
             let on = i == s.index;
-            let (fg, dim) = (rgb(0x111111), rgb(0x8a8a8a));
+            let t = crate::theme::theme();
+            let (fg, dim) = (rgb(t.panel_text), rgb(t.panel_dim));
             let mut row = div()
                 .flex()
                 .flex_row()
@@ -79,14 +80,15 @@ impl Acme {
                 .rounded(px(6.))
                 .text_size(px(14.))
                 .font_family(UI_FONT)
-                .when(on, |d| d.bg(rgb(0x9eeeee)))
+                .when(on, |d| d.bg(rgb(t.panel_pick)))
                 .child(div().text_color(fg).child(u.session.clone()));
             if !u.is_local() {
                 row = row.child(div().text_size(px(12.)).text_color(dim).child(u.arg.clone()));
             }
             list = list.child(row);
         }
-        let panel = div().w(px(360.)).max_h(px(560.)).bg(rgb(0xf4f4f4)).border_1().border_color(rgb(0xc8c8c8)).rounded(px(10.)).shadow_lg().overflow_hidden().child(list);
+        let t = crate::theme::theme();
+        let panel = div().w(px(360.)).max_h(px(560.)).bg(rgb(t.panel_bg)).border_1().border_color(rgb(t.panel_border)).rounded(px(10.)).shadow_lg().overflow_hidden().child(list);
         Some(deferred(anchored().position(point(px(72.), px(self.top() + 40.))).child(panel)).with_priority(2))
     }
 }

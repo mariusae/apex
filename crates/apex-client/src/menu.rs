@@ -14,12 +14,8 @@ pub const NSCROLL: i32 = 20; // number entries in scrolling part
 pub const SCROLLWID: i32 = 14; // width of scroll bar
 pub const GAP: i32 = 4; // between text and scroll bar
 
-/// menuhit's colours: "main tone is greenish, with negative selection"
-pub const BACK: u32 = 0xD4FFD4; // allocimagemix(DPalegreen, DWhite)
-pub const HIGH: u32 = 0x448844; // DDarkgreen
-pub const BORD: u32 = 0x88CC88; // DMedgreen
-pub const TEXT: u32 = 0x000000;
-pub const HTEXT: u32 = BACK;
+// menuhit's colours ("main tone is greenish, with negative selection")
+// are the theme's menu_* (theme.rs).
 
 pub struct Menu {
     pub window: WindowId,

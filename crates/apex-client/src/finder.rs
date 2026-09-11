@@ -290,7 +290,8 @@ impl Acme {
     pub fn finder_panel(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let f = self.finder.as_ref()?;
         let picks = f.picks();
-        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(0xdddddd)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&f.filter, f.caret_visible(), "Go to a window, or a file closed lately…", true));
+        let t = crate::theme::theme();
+        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&f.filter, f.caret_visible(), "Go to a window, or a file closed lately…", true));
         let mut list = div().flex().flex_col().py(px(6.)).px(px(6.));
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;
@@ -318,12 +319,12 @@ impl Acme {
                 .text_size(px(14.))
                 .font_family(UI_FONT)
                 .cursor_pointer()
-                .when(picked, |d| d.bg(rgb(0x9eeeee)))
-                .when(!picked, |d| d.hover(|s| s.bg(rgb(0xe4e4e4))))
+                .when(picked, |d| d.bg(rgb(t.panel_pick)))
+                .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
                 .child(div().w(px(14.)).text_color(rgb(mark_color)).child(mark))
-                .child(div().text_color(rgb(if open { 0x111111 } else { 0x555555 })).child(name))
-                .child(div().flex_1().text_size(px(12.)).text_color(rgb(0x8a8a8a)).overflow_hidden().child(dir))
-                .when(!open, |d| d.child(div().text_size(px(11.)).text_color(rgb(0x8a8a8a)).child("closed")))
+                .child(div().text_color(rgb(if open { t.panel_text } else { t.panel_text_dim })).child(name))
+                .child(div().flex_1().text_size(px(12.)).text_color(rgb(t.panel_dim)).overflow_hidden().child(dir))
+                .when(!open, |d| d.child(div().text_size(px(11.)).text_color(rgb(t.panel_dim)).child("closed")))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| {
@@ -334,13 +335,13 @@ impl Acme {
             list = list.child(row);
         }
         if picks.is_empty() {
-            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("Nothing matches"));
+            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child("Nothing matches"));
         }
         let panel = div()
             .w(px(620.))
-            .bg(rgb(0xf4f4f4))
+            .bg(rgb(t.panel_bg))
             .border_1()
-            .border_color(rgb(0xc8c8c8))
+            .border_color(rgb(t.panel_border))
             .rounded(px(8.))
             .shadow_lg()
             .flex()

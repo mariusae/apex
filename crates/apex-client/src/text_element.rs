@@ -18,17 +18,8 @@ pub const SCROLLWID: f32 = 12.;
 pub const MARGIN: f32 = 16.; // Scrollwid + Scrollgap
 pub const TABSTOP: usize = 4;
 
-// acme's colours, from plan9port src/cmd/acme/acme.c (iconinit) and
-// include/draw.h. The two backgrounds are allocimagemix(DPaleyellow, DWhite)
-// and allocimagemix(DPalebluegreen, DWhite): a 63/255 blend of the colour
-// into white, which libdraw's MUL rounding makes exactly FFFFEA and EAFFFF.
-pub const PALEYELLOW: u32 = 0xFFFFEA; // textcols[BACK]
-pub const DARKYELLOW: u32 = 0xEEEE9E; // textcols[HIGH]  DDarkyellow
-pub const YELLOWGREEN: u32 = 0x99994C; // textcols[BORD] DYellowgreen
-pub const PALEBLUEGREEN: u32 = 0xEAFFFF; // tagcols[BACK]
-pub const PALEGREYGREEN: u32 = 0x9EEEEE; // tagcols[HIGH] DPalegreygreen
-pub const PURPLEBLUE: u32 = 0x8888CC; // tagcols[BORD] DPurpleblue; also colbutton
-pub const MEDBLUE: u32 = 0x000099; // modbutton fill, DMedblue
+// acme's colours live in theme.rs (the light theme), with the dark
+// theme beside them.
 /// `a` towards `b` by `t` (0..1), per channel.
 pub fn mix(a: u32, b: u32, t: f32) -> u32 {
     let ch = |shift: u32| {
@@ -39,22 +30,7 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
     ch(16) | ch(8) | ch(0)
 }
 
-/// A live window's handle: a process is behind it. Dark magenta with a
-/// quarter of yellow in it (a raspberry): unlike the dirty blue, the
-/// fenced red, the unsynced green, and the scrollbar's dark yellow.
-pub const LIVE: u32 = 0xB24073;
-/// A stale window's handle: dirty, and the disk has moved on underneath
-/// (`Get` in the tag would drop the edits). Gold, a caution and one of
-/// acme's yellows; simulated for deuteranopia it stands well clear of
-/// every other handle colour and of the tag's border, where a dark
-/// cyan (the live raspberry), an orange (the scrollbar's olive) and a
-/// medium blue (the border's purple-blue) had each fallen on one.
-pub const STALE: u32 = 0xFFD700;
-pub const BUT2COL: u32 = 0xAA0000; // but2col, text drawn white
-pub const BUT3COL: u32 = 0x006600; // but3col, text drawn white
 pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
-/// Not acme's: the unsynced signal in the tag box (DMedgreen).
-pub const MEDGREEN: u32 = 0x88CC88;
 
 pub fn rgb(hex: u32) -> Hsla {
     Rgba::from(gpui::rgb(hex)).into()
@@ -67,9 +43,10 @@ pub struct Palette {
 }
 
 pub fn palette(kind: Kind) -> Palette {
+    let t = crate::theme::theme();
     match kind {
-        Kind::Body => Palette { bg: rgb(PALEYELLOW), sel: rgb(DARKYELLOW), border: rgb(YELLOWGREEN) },
-        _ => Palette { bg: rgb(PALEBLUEGREEN), sel: rgb(PALEGREYGREEN), border: rgb(PURPLEBLUE) },
+        Kind::Body => Palette { bg: rgb(t.body_bg), sel: rgb(t.body_sel), border: rgb(t.body_border) },
+        _ => Palette { bg: rgb(t.tag_bg), sel: rgb(t.tag_sel), border: rgb(t.tag_border) },
     }
 }
 
@@ -343,8 +320,8 @@ fn shape(
 ) -> LineInfo {
     let (disp, map) = expand(line_text, start);
     let disp: SharedString = disp.into();
-    let black = gpui::black();
-    let white = gpui::white();
+    let black = rgb(crate::theme::theme().text);
+    let white = rgb(crate::theme::theme().sweep_text);
     let run = |len: usize, color: Hsla| TextRun {
         len,
         font: fontspec.font.clone(),
@@ -612,16 +589,17 @@ impl Element for TextElement {
                     window.paint_quad(fill(b, pal.border));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
+                    let th = crate::theme::theme();
                     let fillc = if pp.unsynced {
-                        rgb(MEDGREEN)
+                        rgb(th.unsynced)
                     } else if let (true, Some(t)) = (pp.live, pp.pulse) {
-                        rgb(mix(LIVE, 0xFFFFEA, t * 0.85))
+                        rgb(mix(th.live, th.tag_bg, t * 0.85))
                     } else if pp.live {
-                        rgb(LIVE)
+                        rgb(th.live)
                     } else if pp.stale {
-                        rgb(STALE)
+                        rgb(th.stale)
                     } else if pp.dirty {
-                        rgb(MEDBLUE)
+                        rgb(th.dirty)
                     } else {
                         pal.bg
                     };
@@ -647,7 +625,7 @@ impl Element for TextElement {
                     window.paint_quad(fill(b, pal.border));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
-                    window.paint_quad(fill(inner, if pp.fenced { gpui::rgb(0xaa0000).into() } else { pal.bg }));
+                    window.paint_quad(fill(inner, if pp.fenced { rgb(crate::theme::theme().fenced) } else { pal.bg }));
                 }
             }
 
@@ -659,8 +637,8 @@ impl Element for TextElement {
                 let ranges: [(usize, usize, Hsla); 2] = [
                     (q0, q1, pal.sel),
                     match pp.hl {
-                        Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(BUT2COL)),
-                        Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(BUT3COL)),
+                        Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().exec_hl)),
+                        Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().look_hl)),
                         None => (0, 0, pal.sel),
                     },
                 ];
@@ -712,7 +690,7 @@ impl Element for TextElement {
                     let (ds, _) = line.subs[sub];
                     let cx_ = origin.x + x(d) - x(ds);
                     let ty = ly + lh * sub as f32;
-                    let black = gpui::black();
+                    let black = rgb(crate::theme::theme().text);
                     window.paint_quad(fill(Bounds::new(point(cx_, ty), size(px(1.), lh)), black));
                     window.paint_quad(fill(Bounds::new(point(cx_ - px(1.), ty), size(px(3.), px(3.))), black));
                     window.paint_quad(fill(Bounds::new(point(cx_ - px(1.), ty + lh - px(3.)), size(px(3.), px(3.))), black));

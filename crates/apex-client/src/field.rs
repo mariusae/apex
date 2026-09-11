@@ -316,12 +316,13 @@ impl LineEdit {
 /// the cursor when `active`, or the hint when empty.
 pub fn field_view(e: &LineEdit, caret_on: bool, hint: &str, active: bool) -> Div {
     let mut row = div().flex().flex_row().items_center();
-    let caret = || div().w(px(1.5)).h(px(16.)).flex_none().when(caret_on, |d| d.bg(rgb(0x000099)));
+    let t = crate::theme::theme();
+    let caret = || div().w(px(1.5)).h(px(16.)).flex_none().when(caret_on, |d| d.bg(rgb(t.panel_accent)));
     if e.is_empty() {
         if active {
             row = row.child(caret());
         }
-        return row.child(div().pl(px(4.)).text_color(rgb(0x8a8a8a)).child(hint.to_string()));
+        return row.child(div().pl(px(4.)).text_color(rgb(t.panel_dim)).child(hint.to_string()));
     }
     let sel = e.selection();
     let mut points = vec![0, e.cursor, e.len()];
@@ -339,7 +340,7 @@ pub fn field_view(e: &LineEdit, caret_on: bool, hint: &str, active: bool) -> Div
         }
         let text: String = chars[a..z].iter().collect();
         let selected = sel.is_some_and(|(s0, s1)| s0 <= a && z <= s1);
-        row = row.child(div().text_color(rgb(0x111111)).when(selected, |d| d.bg(rgb(0xb4d5fe))).child(text));
+        row = row.child(div().text_color(rgb(t.panel_text)).when(selected, |d| d.bg(rgb(t.field_sel))).child(text));
     }
     if e.cursor == e.len() && active {
         row = row.child(caret());

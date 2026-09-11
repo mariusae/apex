@@ -10,7 +10,7 @@ use apex_core::{Cell, TermId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
-use crate::text_element::{font_for, mix, rgb, FontSpec, BUT2COL, BUT3COL, MARGIN, PALEYELLOW, SCROLLWID, YELLOWGREEN};
+use crate::text_element::{font_for, mix, rgb, FontSpec, MARGIN, SCROLLWID};
 
 /// How far the cursor's cell is tinted from its background towards
 /// black: enough to find, not enough to shout.
@@ -108,7 +108,8 @@ impl Element for TermElement {
         self.acme.update(cx, |acme, _| {
             acme.term_resize(term, cols, rows_n);
             let t = acme.node.state.terms.get(&term)?;
-            let fg_default = gpui::black();
+            let th = crate::theme::theme();
+            let fg_default = rgb(th.text);
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
             // the selection, if it is in this terminal: acme's yellow
             let order = |a: (usize, u64), b: (usize, u64)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
@@ -123,12 +124,12 @@ impl Element for TermElement {
             let highlight = |x: usize, y: usize| -> Option<(Hsla, Hsla)> {
                 if let Some((b, r)) = hl {
                     if within(x, y, r) {
-                        let bg = if b == gpui::MouseButton::Middle { BUT2COL } else { BUT3COL };
-                        return Some((rgb(bg), gpui::white()));
+                        let bg = if b == gpui::MouseButton::Middle { th.exec_hl } else { th.look_hl };
+                        return Some((rgb(bg), rgb(th.sweep_text)));
                     }
                 }
                 if sel.is_some_and(|r| within(x, y, r)) {
-                    return Some((rgb(0xeeee9e), gpui::black()));
+                    return Some((rgb(th.body_sel), rgb(th.text)));
                 }
                 None
             };
@@ -146,8 +147,8 @@ impl Element for TermElement {
                         if cx_ as usize == x && cy as usize == y {
                             // the cursor: the cell's background tinted
                             // down a little, the text as it is, not inverted
-                            let under = if bg == 0 { PALEYELLOW } else { bg & 0xff_ffff };
-                            bgc = Some(rgb(mix(under, 0x000000, CURSOR_TINT)));
+                            let under = if bg == 0 { th.body_bg } else { bg & 0xff_ffff };
+                            bgc = Some(rgb(mix(under, th.cursor_tint_to, CURSOR_TINT)));
                         }
                     }
                     if let Some((b, f)) = highlight(x, y) {
@@ -201,9 +202,10 @@ impl Element for TermElement {
         let lh = pp.fontspec.line_height;
         let origin = point(bounds.left() + px(MARGIN), bounds.top());
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            window.paint_quad(fill(bounds, rgb(PALEYELLOW)));
+            let th = crate::theme::theme();
+            window.paint_quad(fill(bounds, rgb(th.body_bg)));
             let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
-            window.paint_quad(fill(sb, rgb(YELLOWGREEN)));
+            window.paint_quad(fill(sb, rgb(th.body_border)));
             for (i, row) in pp.rows.iter().enumerate() {
                 let y = origin.y + lh * i as f32;
                 for &(x, n, c) in &row.bgs {
@@ -218,7 +220,7 @@ impl Element for TermElement {
                 if let Some((cx_, cy)) = pp.cursor {
                     let x = origin.x + pp.cell_w * cx_ as f32;
                     let y = origin.y + lh * cy as f32;
-                    window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), gpui::black(), BorderStyle::Solid));
+                    window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(th.text), BorderStyle::Solid));
                 }
             }
             let layout = TermLayout {

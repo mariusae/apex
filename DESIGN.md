@@ -1378,6 +1378,17 @@ text); the client paints the device pixels beyond acme's in the
 neighbour's colour (a tag reaching up, a column's contents reaching
 left), so the black that shows is acme's width.
 
+*Themes (View menu: Light, Dark, System; kept in the `theme` state
+file):* acme's colours are the light theme; the dark one keeps its
+make (`theme.rs`): two tinted papers, warm for bodies and cool for
+tags, inverted to deep grounds; selections the tints lit; the mid tone
+borders as they are; ink warm white; the handle colours kept where
+they read on dark and lifted where they would not (the dirty blue, the
+fenced red), each pair checked under a deuteranopia simulation as the
+light ones were. System follows the window's appearance as macOS
+reports it. Every colour the client paints comes from the theme; web
+pages and previews keep their own.
+
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
 and `scrl.c`. Matching now: the three buttons and their chords, including
