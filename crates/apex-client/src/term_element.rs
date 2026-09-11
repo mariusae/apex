@@ -34,8 +34,17 @@ impl TermLayout {
     }
 }
 
-fn color(packed: u32) -> Hsla {
-    rgb(packed & 0x00ff_ffff)
+/// A cell's colour as the theme has it (entry.rs on the packing).
+fn color_rgb(packed: u32, th: &crate::theme::Theme) -> u32 {
+    match packed >> 24 {
+        0xfe => th.ansi[(packed & 0xf) as usize],
+        0xfd => if packed & 1 == 0 { th.text } else { th.body_bg },
+        _ => packed & 0x00ff_ffff,
+    }
+}
+
+fn color(packed: u32, th: &crate::theme::Theme) -> Hsla {
+    rgb(color_rgb(packed, th))
 }
 
 struct RowDraw {
@@ -141,13 +150,13 @@ impl Element for TermElement {
                 let mut bgs: Vec<(u16, u16, Hsla)> = Vec::new();
                 for (x, cell) in row.iter().enumerate() {
                     let Cell { ch, fg, bg, flags, link } = *cell;
-                    let mut fgc = if fg == 0 { fg_default } else { color(fg) };
-                    let mut bgc = if bg == 0 { None } else { Some(color(bg)) };
+                    let mut fgc = if fg == 0 { fg_default } else { color(fg, th) };
+                    let mut bgc = if bg == 0 { None } else { Some(color(bg, th)) };
                     if let Some((cx_, cy)) = cursor {
                         if cx_ as usize == x && cy as usize == y {
                             // the cursor: the cell's background tinted
                             // down a little, the text as it is, not inverted
-                            let under = if bg == 0 { th.body_bg } else { bg & 0xff_ffff };
+                            let under = if bg == 0 { th.body_bg } else { color_rgb(bg, th) };
                             bgc = Some(rgb(mix(under, th.cursor_tint_to, CURSOR_TINT)));
                         }
                     }

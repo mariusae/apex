@@ -171,6 +171,12 @@ pub enum LayoutOp {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Cell {
     pub ch: char,
+    /// A colour, by its top byte: `0xff` a colour the program named,
+    /// RGB in the low bytes; `0xfe` one of the sixteen ANSI colours by
+    /// index (the low byte), the program not having set that entry, so
+    /// the client draws it from its theme's palette; `0xfd` the theme's
+    /// own ink (0) or paper (1), where a program inverted the defaults.
+    /// `fg` 0 is the theme's ink; `bg` 0 is no background of its own.
     pub fg: u32,
     pub bg: u32,
     pub flags: u8,

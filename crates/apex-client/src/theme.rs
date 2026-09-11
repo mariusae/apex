@@ -66,6 +66,9 @@ pub struct Theme {
     pub panel_accent: u32,
     pub panel_danger_hover: u32,
     pub field_sel: u32,
+    /// The sixteen ANSI colours a program in a terminal gets when it
+    /// names one and has not set the palette itself.
+    pub ansi: [u32; 16],
     // the tools menu (menuhit's: greenish, negative selection)
     pub menu_bg: u32,
     pub menu_hl: u32,
@@ -116,6 +119,8 @@ pub const LIGHT: Theme = Theme {
     panel_accent: 0x000099,
     panel_danger_hover: 0xF0C0C0,
     field_sel: 0xB4D5FE,
+    // xterm's, as the server sent them before the theme
+    ansi: [0x000000, 0xCC241D, 0x3C8A2A, 0xB08A00, 0x1C4FD6, 0x9A2D9A, 0x0F8A8A, 0xBBBBBB, 0x555555, 0xFF5555, 0x55C055, 0xD6C000, 0x5580FF, 0xDD55DD, 0x33C0C0, 0xFFFFFF],
     menu_bg: 0xD4FFD4,
     menu_hl: 0x448844,
     menu_border: 0x88CC88,
@@ -168,6 +173,10 @@ pub const DARK: Theme = Theme {
     panel_accent: 0xA0A0FF,
     panel_danger_hover: 0x6A3030,
     field_sel: 0x2A4A6A,
+    // the same hues, lit for the dark paper: black a shade of it, white
+    // the ink, the rest lighter and a little softer; the bright ones
+    // brighter still
+    ansi: [0x2A2A20, 0xE06060, 0x8AC26A, 0xD6B85A, 0x6A9EE6, 0xC07AC0, 0x5AB8B8, 0xC8C8BC, 0x6A6A5E, 0xF08080, 0xA8D88A, 0xF0D070, 0x8AB8F0, 0xD69AD6, 0x80D0D0, 0xE8E8DC],
     menu_bg: 0x1C3A1C,
     menu_hl: 0x448844,
     menu_border: 0x5A9A5A,

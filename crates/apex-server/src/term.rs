@@ -638,8 +638,6 @@ impl TermHost {
         let t = self.term.lock();
         let content = t.renderable_content();
         let colors = content.colors;
-        let fg_default = resolve(Color::Named(NamedColor::Foreground), colors).unwrap_or(Rgb { r: 0, g: 0, b: 0 });
-        let bg_default = Rgb { r: 0xff, g: 0xff, b: 0xea };
         let rows_n = t.grid().screen_lines();
         let cols_n = t.grid().columns();
         let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0, link: 0 };
@@ -659,15 +657,17 @@ impl TermHost {
             if flags.contains(Flags::WIDE_CHAR_SPACER) || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
                 continue;
             }
-            let mut fg = resolve(cell.fg, colors).unwrap_or(fg_default);
-            let mut bg = resolve_bg(cell.bg, colors);
+            let mut fg = fg_of(cell.fg, colors);
+            let mut bg = bg_of(cell.bg, colors);
             if flags.contains(Flags::INVERSE) {
-                let b = bg.unwrap_or(bg_default);
-                bg = Some(fg);
+                // the defaults swapped are the theme's paper as ink and
+                // ink as paper, whatever the theme (the client knows)
+                let b = if bg == 0 { DEFAULT_BG } else { bg };
+                bg = if fg == 0 { DEFAULT_FG } else { fg };
                 fg = b;
             }
             if flags.contains(Flags::DIM) {
-                fg = Rgb { r: 0x77, g: 0x77, b: 0x77 };
+                fg = pack(Rgb { r: 0x77, g: 0x77, b: 0x77 });
             }
             let mut f = 0u8;
             if flags.contains(Flags::BOLD) {
@@ -692,7 +692,7 @@ impl TermHost {
                 }
                 None => 0,
             };
-            rows[row as usize][col] = Cell { ch, fg: pack(fg), bg: bg.map(pack).unwrap_or(0), flags: f, link };
+            rows[row as usize][col] = Cell { ch, fg, bg, flags: f, link };
         }
         let cursor = content.cursor;
         let visible = cursor.shape != CursorShape::Hidden;
@@ -714,24 +714,40 @@ impl Drop for TermHost {
     }
 }
 
+/// A cell colour as `Cell` carries it (entry.rs): a named RGB.
 fn pack(c: Rgb) -> u32 {
     0xff00_0000 | ((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32
 }
 
-fn resolve(c: Color, colors: &alacritty_terminal::term::color::Colors) -> Option<Rgb> {
+/// One of the sixteen ANSI colours by index, for the client's theme to
+/// colour: only while the program has not set that palette entry.
+fn pack_index(i: u8) -> u32 {
+    0xfe00_0000 | i as u32
+}
+
+/// The theme's ink and paper, where a program inverted the defaults.
+pub const DEFAULT_FG: u32 = 0xfd00_0000;
+pub const DEFAULT_BG: u32 = 0xfd00_0001;
+
+/// A foreground as the cell carries it: 0 for the default ink.
+fn fg_of(c: Color, colors: &alacritty_terminal::term::color::Colors) -> u32 {
     match c {
-        Color::Spec(rgb) => Some(rgb),
-        Color::Named(NamedColor::Background) => colors[NamedColor::Background],
-        Color::Named(n) => Some(colors[n].unwrap_or_else(|| default_color(n as usize))),
-        Color::Indexed(i) => Some(colors[i as usize].unwrap_or_else(|| default_color(i as usize))),
+        Color::Spec(rgb) => pack(rgb),
+        Color::Named(NamedColor::Foreground) => colors[NamedColor::Foreground].map(pack).unwrap_or(0),
+        Color::Named(NamedColor::Background) => colors[NamedColor::Background].map(pack).unwrap_or(DEFAULT_BG),
+        Color::Named(n) if (n as usize) < 16 => colors[n].map(pack).unwrap_or_else(|| pack_index(n as u8)),
+        Color::Named(n) => pack(colors[n].unwrap_or_else(|| default_color(n as usize))),
+        Color::Indexed(i) if i < 16 => colors[i as usize].map(pack).unwrap_or_else(|| pack_index(i)),
+        Color::Indexed(i) => pack(colors[i as usize].unwrap_or_else(|| default_color(i as usize))),
     }
 }
 
-/// Background: `None` means the window's own background.
-fn resolve_bg(c: Color, colors: &alacritty_terminal::term::color::Colors) -> Option<Rgb> {
+/// A background as the cell carries it: 0 for none of its own.
+fn bg_of(c: Color, colors: &alacritty_terminal::term::color::Colors) -> u32 {
     match c {
-        Color::Named(NamedColor::Background) => colors[NamedColor::Background],
-        other => resolve(other, colors),
+        Color::Named(NamedColor::Background) => colors[NamedColor::Background].map(pack).unwrap_or(0),
+        Color::Named(NamedColor::Foreground) => colors[NamedColor::Foreground].map(pack).unwrap_or(DEFAULT_FG),
+        other => fg_of(other, colors),
     }
 }
 

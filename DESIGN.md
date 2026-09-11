@@ -1386,8 +1386,14 @@ borders as they are; ink warm white; the handle colours kept where
 they read on dark and lifted where they would not (the dirty blue, the
 fenced red), each pair checked under a deuteranopia simulation as the
 light ones were. System follows the window's appearance as macOS
-reports it. Every colour the client paints comes from the theme; web
-pages and previews keep their own.
+reports it. Every colour the client paints comes from the theme,
+the sixteen ANSI colours of terminals included: a cell whose colour
+the program named by index (the palette entry not set by the program)
+carries the index, and a program's inverse of the defaults carries
+"the ink" and "the paper", for the client to colour by its theme
+(`Cell` in entry.rs on the packing); a colour given as RGB, or a
+palette entry the program set, is drawn as given. Web pages and
+previews keep their own colours.
 
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
