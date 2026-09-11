@@ -269,10 +269,6 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        let root = match self.switcher_panel(cx) {
-            Some(panel) => root.child(panel),
-            None => root,
-        };
         let holes = self.overlay_bounds.clone();
         let me3 = me.clone();
         let cutter = gpui::deferred(

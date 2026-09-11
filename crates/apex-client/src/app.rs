@@ -184,12 +184,12 @@ pub struct Acme {
     /// Where the tabs were drawn last frame, for the drag to know
     /// which one the pointer has passed.
     pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(SessionUrl, gpui::Bounds<Pixels>)>>>,
-    /// Where the overlays (the picker, the finder, the switcher, the
-    /// tools menu) were drawn this frame: holes cut in the web views,
+    /// Where the overlays (the picker, the finder, the tools menu) were
+    /// drawn this frame: holes cut in the web views,
     /// which are native views above everything gpui paints, so the
     /// overlays show through them and the pages stay live around them.
     pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
-    /// ctrl-tab held: the session switcher.
+    /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
@@ -2265,7 +2265,7 @@ impl Acme {
     pub fn modifiers_changed(&mut self, e: &ModifiersChangedEvent, window: &mut Window, cx: &mut Context<Self>) {
         let prev = self.mouse.mods;
         self.mouse.mods = e.modifiers;
-        // control let go with the switcher up: the session under the mark
+        // control let go: the ctrl-tab walk ends where it stands
         if self.switcher.is_some() && !e.modifiers.control {
             self.switcher_commit(window, cx);
             return;
@@ -2898,16 +2898,17 @@ impl Acme {
 
     /// Keys go to the text under the pointer, as in acme.
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // ctrl-tab: the session switcher, stepped while control is held
+        // ctrl-tab: the next session, switched to live, while control is
+        // held; escape then goes back to where it began
         {
             let ks = &e.keystroke;
             if ks.modifiers.control && ks.key == "tab" {
-                self.switcher_step(ks.modifiers.shift, cx);
+                self.switcher_step(ks.modifiers.shift, window, cx);
                 return;
             }
             if self.switcher.is_some() {
                 if ks.key == "escape" {
-                    self.close_switcher(cx);
+                    self.close_switcher(window, cx);
                 }
                 return;
             }
