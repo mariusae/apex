@@ -1717,7 +1717,8 @@ impl Acme {
             .flex()
             .flex_row()
             .items_center()
-            .pl(px(78.))
+            // room for the traffic lights, which full screen has none of
+            .pl(px(if self.fullscreen { 12. } else { 78. }))
             .bg(rgb(strip))
             .gap(px(6.))
             // no line under the strip: its grey meets the row below, and

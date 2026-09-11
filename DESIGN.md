@@ -1234,7 +1234,10 @@ this one (detach, attach).
   fenced, disconnected; parked and when last heard from) and the round
   trips spelled out, the heartbeat's as "Ping" and a log append's
   acknowledgement as "Log" (the strip's "ms/ms" readout and the ⚡ are
-  gone: a fenced or disconnected tab shows it by fading).
+  gone: a fenced or disconnected tab shows it by fading). In full
+  screen the strip is hidden; the pointer at the top edge brings it
+  over the top of the layout (a browser's full screen), and it goes
+  once the pointer is below it.
   ⌘1…⌘9 go
   to the Nth tab. Tabs drag to reorder, as a browser's: a tab held
   with B1 is a click on release until it has moved a few pixels; after

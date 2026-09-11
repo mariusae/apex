@@ -140,6 +140,9 @@ impl Render for Acme {
             .on_scroll_wheel(cx.listener(Self::scroll_wheel));
         // full screen: acme's area is the whole screen, no title bar
         self.fullscreen = window.is_fullscreen();
+        // full screen: the strip only when the pointer brings it, over the
+        // top of the layout rather than above it
+        let strip_over = self.fullscreen && self.strip_revealed;
         let root = if self.fullscreen { root } else { root.child(self.titlebar(cx)) };
 
         // acme's tiling placed everything; draw each piece where it says
@@ -270,6 +273,12 @@ impl Render for Acme {
         let root = match self.finder_panel(cx) {
             Some(panel) => root.child(panel),
             None => root,
+        };
+        let root = if strip_over {
+            let width = window.viewport_size().width;
+            root.child(gpui::deferred(div().absolute().top(px(0.)).left(px(0.)).w(width).h(px(shell::TITLEBAR_HEIGHT)).child(self.titlebar(cx)).child(self.overlay_mark())).with_priority(1))
+        } else {
+            root
         };
         let holes = self.overlay_bounds.clone();
         let me3 = me.clone();

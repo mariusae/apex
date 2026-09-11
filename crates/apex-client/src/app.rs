@@ -223,6 +223,10 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
+    /// Full screen hides the strip; the pointer at the top edge brings
+    /// it over the top of the window (a browser's full screen), and it
+    /// goes once the pointer has left it.
+    pub strip_revealed: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
     show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
@@ -1272,6 +1276,7 @@ impl Acme {
             selector: None,
             tab_drag: None,
             tab_hovered: None,
+            strip_revealed: false,
             tab_bounds: Default::default(),
             overlay_bounds: Default::default(),
             switcher: None,
@@ -2092,6 +2097,16 @@ impl Acme {
             self.pointer = None;
         }
         self.last_mouse = pos;
+        // full screen: the strip comes at the top edge, goes below it
+        if self.fullscreen {
+            let revealed = if self.strip_revealed { pos.y <= px(crate::shell::TITLEBAR_HEIGHT + 6.) } else { pos.y <= px(2.) };
+            if revealed != self.strip_revealed {
+                self.strip_revealed = revealed;
+                cx.notify();
+            }
+        } else if self.strip_revealed {
+            self.strip_revealed = false;
+        }
         // the terminal under the pointer has the keyboard
         let under = match self.locate(pos) {
             Some((Target::Term(_, t), _)) => Some(t),
