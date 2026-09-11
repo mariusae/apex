@@ -1674,7 +1674,7 @@ mod front_matter_tests {
         assert!(page.contains("<h1>"));
         // the heading is on line 5 of the file: the markers count from 1
         assert!(page.contains("data-line=\"5\""), "{page}");
-        assert_eq!(front_matter_len("+++\na = 1\n+++\nrest"), 12);
+        assert_eq!(front_matter_len("+++\na = 1\n+++\nrest"), 14);
         assert_eq!(front_matter_len("--- not front matter\n---\n"), 0);
         assert_eq!(front_matter_len("---\nunclosed\n"), 0);
         assert_eq!(front_matter_len("# plain\n"), 0);
