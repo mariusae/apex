@@ -33,4 +33,17 @@ pub fn move_to(window: &Window, p: Point<Pixels>) {
         // a warp otherwise suppresses mouse movement for a moment
         CGAssociateMouseAndMouseCursorPosition(true);
     }
+    // AppKit hides the pointer while keys are typed, until the mouse
+    // moves; a warp is not a move, so a pointer put somewhere from the
+    // keyboard (ctrl-tab, a Goto) would sit there unseen
+    show();
+}
+
+/// The pointer shown, where it is: AppKit's typing-hides-it undone.
+pub fn show() {
+    use objc::{class, msg_send, sel, sel_impl};
+    // SAFETY: a class method on NSCursor, on the main thread.
+    unsafe {
+        let _: () = msg_send![class!(NSCursor), setHiddenUntilMouseMoves: false];
+    }
 }
