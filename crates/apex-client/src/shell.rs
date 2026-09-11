@@ -1516,8 +1516,13 @@ impl Acme {
             let fenced = current && self.fenced();
             let bg = if open { t.tab_open_bg } else { t.tab_bg };
             let closable = clickable && (!current || others);
-            let drape = |left: bool| {
-                let corner = div().size_full().bg(rgb(strip));
+            // the drapes lie over the neighbours' corners: the colour
+            // rounded away is the strip's, or a hovered neighbour's
+            let hovered = self.tab_hovered;
+            let drape = move |left: bool| {
+                let neighbour = if left { i.checked_sub(1) } else { Some(i + 1) };
+                let under = if neighbour.is_some() && hovered == neighbour { t.tab_hover } else { strip };
+                let corner = div().size_full().bg(rgb(under));
                 let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
@@ -1569,6 +1574,14 @@ impl Acme {
                 .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.));
             if clickable {
                 let url = u.clone();
+                // which tab the pointer is over, for the selected one's drapes
+                tab = tab.on_hover(cx.listener(move |this, on: &bool, _, cx| {
+                    let was = this.tab_hovered;
+                    this.tab_hovered = if *on { Some(i) } else if was == Some(i) { None } else { was };
+                    if this.tab_hovered != was {
+                        cx.notify();
+                    }
+                }));
                 // held: a click on release unless it moved, a drag
                 // reordering the tabs if it did (`mouse_move`, `mouse_up`)
                 tab = tab.cursor_pointer().on_mouse_down(
