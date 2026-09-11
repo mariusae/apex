@@ -30,7 +30,10 @@ pub fn set_theme(m: crate::theme::Mode, cx: &mut App) {
     // the daemons hear the new colours, for the programs that ask
     for w in cx.windows() {
         if let Some(h) = w.downcast::<crate::app::Acme>() {
-            let _ = h.update(cx, |acme, _, _| acme.send_config());
+            let _ = h.update(cx, |acme, _, _| {
+                acme.send_config();
+                acme.webs.restyle(); // pages from buffers take the colours
+            });
         }
     }
     crate::pool::Pool::send_config(cx);

@@ -853,10 +853,11 @@ pub fn markdown_page(text: &str) -> String {
     format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>{MD_STYLE}\n{MD_PAGE}</style></head><body><article class=\"markdown-body\">\n{body}</article></body></html>\n")
 }
 
-/// GitHub's own Markdown stylesheet (github-markdown-css, MIT), and the
-/// page around it as GitHub lays it out.
-const MD_STYLE: &str = include_str!("github-markdown-light.css");
-const MD_PAGE: &str = ".markdown-body { box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; } @media (max-width: 767px) { .markdown-body { padding: 15px; } } body { margin: 0; background: #fff; }";
+/// The editor's own look for Markdown: acme's papers and inks as
+/// `--apex-*` variables the client sets to its theme's (light acme's
+/// when nothing does), Lucida Grande for text and Menlo for code.
+const MD_STYLE: &str = include_str!("apex-markdown.css");
+const MD_PAGE: &str = "";
 
 fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
     let (from, to) = match p.args.as_slice() {

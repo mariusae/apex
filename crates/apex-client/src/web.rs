@@ -46,7 +46,48 @@ pub enum WebEvent {
     Open(String, Option<usize>),
     /// The page started (true) or finished loading.
     Loading(bool),
+    /// A code block's copy handle was clicked: its text, for the snarf
+    /// buffer and the clipboard.
+    Copy(String),
 }
+
+/// The theme, as a page rendered from a buffer sees it: the editor's
+/// colours as CSS variables, and the copy handle on code blocks.
+fn theme_css() -> String {
+    let t = crate::theme::theme();
+    let hex = |c: u32| format!("#{c:06X}");
+    let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2C2C24, 0x4A4A40, 0x9A9A8E) } else { (0xE8E8DC, 0xC8C8B8, 0x6F6F60) };
+    let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
+    format!(
+        ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
+         html{{background:{}}}\
+         .apex-copy{{position:absolute;top:4px;right:4px;font:11px \"Lucida Grande\",sans-serif;color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
+         pre:hover .apex-copy,.apex-copy:focus{{opacity:1}}",
+        hex(t.body_bg), hex(t.text), hex(code_bg), hex(rule), hex(t.body_border), hex(link), hex(t.body_sel), hex(dim), hex(t.tag_bg),
+        hex(t.body_bg), hex(dim), hex(t.body_bg), hex(rule)
+    )
+}
+
+/// The copy handle: every code block gets a button that sends the
+/// block's text over (`copy:`), those made later too (a re-render).
+const COPY_SCRIPT: &str = r#"(function () {
+  function dress(pre) {
+    if (pre.querySelector(':scope > .apex-copy')) return;
+    const b = document.createElement('button');
+    b.className = 'apex-copy'; b.type = 'button'; b.title = 'Copy to the snarf buffer'; b.textContent = 'copy';
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      const code = pre.querySelector('code');
+      const text = code ? code.textContent : Array.from(pre.childNodes).filter(n => n !== b).map(n => n.textContent).join('');
+      try { window.ipc.postMessage('copy:' + text); } catch (e) {}
+      b.textContent = 'copied'; setTimeout(function () { b.textContent = 'copy'; }, 1200);
+    });
+    pre.appendChild(b);
+  }
+  function all() { document.querySelectorAll('pre').forEach(dress); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', all); else all();
+  new MutationObserver(all).observe(document.documentElement, { childList: true, subtree: true });
+})();"#;
 
 /// One window's view.
 pub struct WebHost {
@@ -184,6 +225,17 @@ impl Webs {
         false
     }
 
+    /// The theme changed: every page from a buffer takes the new colours
+    /// in place (its `#apex-theme` style rewritten; nothing reloads).
+    pub fn restyle(&self) {
+        let css = js_string(&theme_css());
+        for h in self.hosts.values() {
+            if h.html.is_some() {
+                let _ = h.view.evaluate_script(&format!("(function(){{var s=document.getElementById('apex-theme');if(s){{s.textContent={css};}}}})();"));
+            }
+        }
+    }
+
     /// The page's history and reload: Back, Fwd, Get in its tag.
     pub fn go(&mut self, w: WindowId, nav: Nav) {
         let Some(h) = self.hosts.get_mut(&w) else { return };
@@ -253,7 +305,7 @@ impl Webs {
         let h = self.hosts.get_mut(&w).unwrap();
         if h.html.as_ref().is_some_and(|(v, _)| *v != version) {
             h.html = Some((version, dir.to_string()));
-            let _ = h.view.evaluate_script(&morph_script(&with_base(html, dir)));
+            let _ = h.view.evaluate_script(&morph_script(&dress(html, dir)));
         }
         h.settle_view(rect, bounds, visible);
     }
@@ -286,6 +338,11 @@ impl Webs {
                     if let Some(k) = &wake4 {
                         k();
                     }
+                } else if let Some(text) = req.body().strip_prefix("copy:") {
+                    let _ = tx4.send((w, WebEvent::Copy(text.to_string())));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
                 }
             });
         b = match page {
@@ -295,7 +352,7 @@ impl Webs {
                 }
                 b.with_url(&webkit_url(url))
             }
-            Page::Html { html, dir, .. } => b.with_html(with_base(html, dir)),
+            Page::Html { html, dir, .. } => b.with_initialization_script(COPY_SCRIPT).with_html(dress(html, dir)),
         };
         b = b
             .with_navigation_handler(move |u| {
@@ -648,6 +705,19 @@ impl WebHost {
 
 /// The HTML with a `<base>` on the window's directory on the host, so
 /// relative links and resources resolve there, unless it brings its own.
+/// A page from a buffer dressed for the editor: its base, and the
+/// theme's colours as `--apex-*` (a page whose stylesheet uses them,
+/// `apex md`'s, takes the editor's look; another is not touched).
+fn dress(html: &str, dir: &str) -> String {
+    let html = with_base(html, dir);
+    let style = format!("<style id=\"apex-theme\">{}</style>", theme_css());
+    let lower = html.to_ascii_lowercase();
+    match lower.find("</head>") {
+        Some(i) => format!("{}{}{}", &html[..i], style, &html[i..]),
+        None => format!("{style}{html}"),
+    }
+}
+
 fn with_base(html: &str, dir: &str) -> String {
     if dir.is_empty() || html.to_ascii_lowercase().contains("<base ") {
         return html.to_string();

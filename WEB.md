@@ -222,9 +222,16 @@ that line instead (a `Goto`). The page's own context menu (back,
 forward, reload) is WebKit's, untouched. A web window's handle shows
 the live colour, as a terminal's does, and breathes towards pale while
 the page loads (WebKit's page-load events, drawn on the pointer timer).
-`apex md` pages are styled as GitHub renders Markdown: its stylesheet
-(github-markdown-css, MIT, in `apex-cli/src`) in a `.markdown-body`
-article laid out as GitHub does.
+`apex md` pages are styled as the editor is: acme's papers and inks,
+Lucida Grande for text and Menlo for code, code blocks on a grey
+ground. The stylesheet takes its colours from `--apex-*` variables
+that the client sets on every page rendered from a buffer (a
+`<style id="apex-theme">` it adds, rewritten in place when the theme
+changes, so Dark and Light follow the View menu without a reload); a
+page whose stylesheet does not use them is untouched. Every code block
+gets a copy handle, a button the client's script adds (on re-renders
+too): clicking it sends the block's text over the page's IPC
+(`copy:`), into the snarf buffer and onto the clipboard.
 
 *Spike (stage 3), done:* a `wry` 0.56 child view built with
 `build_as_child` on gpui's `Window` (which implements

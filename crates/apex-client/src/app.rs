@@ -2648,6 +2648,13 @@ impl Acme {
                 // a file link with a line: the file, at that line
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
                 WebEvent::Loading(on) => self.webs.set_loading(w, on),
+                // a code block's copy handle: into the snarf buffer, and
+                // the clipboard with it
+                WebEvent::Copy(text) => {
+                    let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: text.clone() }));
+                    self.clips.push(text);
+                    self.after();
+                }
                 // the page's cursor: set now, if the pointer is on that page
                 WebEvent::Cursor(css) => {
                     self.webs.set_cursor(w, &css);

@@ -1,0 +1,38 @@
+/* apex's Markdown: the editor's own look. The colours are the theme's,
+   set by the client on the page as --apex-* (light acme's when none). */
+:root {
+  --apex-bg: #FFFFEA; --apex-fg: #000000; --apex-code-bg: #E8E8DC;
+  --apex-rule: #C8C8B8; --apex-border: #99994C; --apex-link: #000099;
+  --apex-sel: #EEEE9E; --apex-dim: #6F6F60; --apex-tag-bg: #EAFFFF;
+}
+html, body { margin: 0; background: var(--apex-bg); color: var(--apex-fg); }
+body {
+  font: 13px/1.5 "Lucida Grande", "Lucida Sans Unicode", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: auto;
+}
+::selection { background: var(--apex-sel); }
+.markdown-body { box-sizing: border-box; max-width: 860px; margin: 0 auto; padding: 24px 32px 48px; }
+@media (max-width: 600px) { .markdown-body { padding: 12px 14px 32px; } }
+.markdown-body > :first-child { margin-top: 0; }
+h1, h2, h3, h4, h5, h6 { font-weight: bold; line-height: 1.25; margin: 1.4em 0 0.5em; }
+h1 { font-size: 1.7em; } h2 { font-size: 1.4em; } h3 { font-size: 1.2em; } h4 { font-size: 1.05em; } h5, h6 { font-size: 1em; }
+h1, h2 { padding-bottom: 0.25em; border-bottom: 1px solid var(--apex-rule); }
+p, ul, ol, dl, table, pre, blockquote { margin: 0 0 0.9em; }
+a { color: var(--apex-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, kbd, samp, tt { font-family: Menlo, "DejaVu Sans Mono", monospace; font-size: 12px; }
+code { background: var(--apex-code-bg); padding: 1px 4px; border-radius: 3px; }
+pre { background: var(--apex-code-bg); padding: 10px 12px; border-radius: 4px; overflow: auto; line-height: 1.4; position: relative; }
+pre code { background: none; padding: 0; border-radius: 0; }
+blockquote { margin-left: 0; padding: 0 1em; color: var(--apex-dim); border-left: 3px solid var(--apex-border); }
+ul, ol { padding-left: 1.8em; }
+li + li { margin-top: 0.2em; }
+li.task-list-item { list-style: none; margin-left: -1.3em; }
+hr { border: 0; border-top: 1px solid var(--apex-rule); margin: 1.5em 0; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid var(--apex-rule); padding: 4px 10px; text-align: left; }
+th { background: var(--apex-tag-bg); }
+img { max-width: 100%; }
+dt { font-weight: bold; } dd { margin-left: 1.5em; }
+sup.footnote-ref a, .footnote-definition { font-size: 0.9em; }
+.apex-line { display: inline; }
