@@ -1459,7 +1459,7 @@ impl Acme {
             .h(px(TAB_H - INSET - 4.))
             .w(px(28.))
             .mb(px(INSET + 2.))
-            .mr(px(4.))
+            .mr(px(DRAPE / 2. + 1.)) // clear of the first tab's drape too
             .flex()
             .items_center()
             .justify_center()
@@ -1502,7 +1502,7 @@ impl Acme {
                 x = left;
             }
             // the face carries its own margin: the bounds are the face's
-            Some((d.url.clone(), x - px(2.), mine.origin.y))
+            Some((d.url.clone(), x - px(DRAPE / 2.), mine.origin.y))
         });
         let mut floating: Option<gpui::Div> = None;
         // where each tab lands this frame, for a drag to reorder by
@@ -1516,13 +1516,8 @@ impl Acme {
             let fenced = current && self.fenced();
             let bg = if open { t.tab_open_bg } else { t.tab_bg };
             let closable = clickable && (!current || others);
-            // the drapes lie over the neighbours' corners: the colour
-            // rounded away is the strip's, or a hovered neighbour's
-            let hovered = self.tab_hovered;
             let drape = move |left: bool| {
-                let neighbour = if left { i.checked_sub(1) } else { Some(i + 1) };
-                let under = if neighbour.is_some() && hovered == neighbour { t.tab_hover } else { strip };
-                let corner = div().size_full().bg(rgb(under));
+                let corner = div().size_full().bg(rgb(strip));
                 let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
                 let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
@@ -1538,7 +1533,10 @@ impl Acme {
                     .items_center()
                     .gap(px(5.))
                     .px(px(10.))
-                    .mx(px(2.))
+                    // a drape's width between tabs, so the selected tab's
+                    // drapes lie on the strip alone, never on a neighbour's
+                    // hover (a browser's tabs sit a little apart too)
+                    .mx(px(DRAPE / 2.))
                     .text_size(px(13.))
                     .line_height(px(LINE))
                     .font_family(UI_FONT)
@@ -1574,14 +1572,6 @@ impl Acme {
                 .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.));
             if clickable {
                 let url = u.clone();
-                // which tab the pointer is over, for the selected one's drapes
-                tab = tab.on_hover(cx.listener(move |this, on: &bool, _, cx| {
-                    let was = this.tab_hovered;
-                    this.tab_hovered = if *on { Some(i) } else if was == Some(i) { None } else { was };
-                    if this.tab_hovered != was {
-                        cx.notify();
-                    }
-                }));
                 // held: a click on release unless it moved, a drag
                 // reordering the tabs if it did (`mouse_move`, `mouse_up`)
                 tab = tab.cursor_pointer().on_mouse_down(
