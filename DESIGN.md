@@ -1682,7 +1682,12 @@ tool calls are lines whose status glyph is ticked off in place, the
 files they work on plumbable `path:line` and their edits shown as
 diffs, the plan a block replaced in place, and a permission request a
 line offering `Allow Always Deny Never` to B2, which then says what was
-decided. `Mode` reaches the agent's modes (Claude's manual, accept
+decided. The handle pulses (`set_working`) while the agent works and
+rests while it waits on an answer, so the window says whose turn it is,
+and `Preview` toggles a page beside it (`new_page`) holding the last
+reply the agent finished, rendered through the session's markdown
+converter: it stands still until the next reply is whole, where the
+transcript has the half-said. `Mode` reaches the agent's modes (Claude's manual, accept
 edits, plan, auto, bypass), `Commands` its slash commands, `Login` its
 authentication when it wants one. The agent reads files through apex
 when a window has them (unsaved edits included) and writes them back the

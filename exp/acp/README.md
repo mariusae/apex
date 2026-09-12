@@ -42,6 +42,11 @@ agent does want a login, the window says so and `Login` does it.
   asks for one (`Mode plan`, `Mode accept`, `Mode bypass`).
   `Commands` lists the agent's slash commands; a prompt that begins with
   `/` goes to the agent as it is.
+- The window's handle pulses while the agent works, and rests while it
+  waits for you to answer a permission. `Preview` opens a page beside
+  the window with the last reply the agent finished, rendered as
+  markdown, and closes it again. It holds still until the next reply is
+  whole: what is half-said is in the transcript.
 - `Cancel` interrupts the turn. Something typed while the agent is busy
   goes as the next prompt when the turn ends, if it ends in a newline.
 - The agent reads files through apex when a window has them (unsaved
@@ -56,7 +61,8 @@ agent does want a login, the window says so and `Login` does it.
 `fake_agent.py` here speaks enough ACP over stdio to show every path:
 a streamed reply, a plan, modes, slash commands, a tool call that reads a
 file through apex, a permission request, a diff, a write, and
-cancellation (prompt `slow`, then `Cancel`).
+cancellation (prompt `slow`, then `Cancel`, which is also how to watch
+the handle pulse).
 
     apex-acp -agent "python3 exp/acp/fake_agent.py" -thoughts
 

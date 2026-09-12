@@ -8,9 +8,11 @@
 //! the `Send` verb. Tool calls are lines the agent's progress ticks off
 //! in place; their file locations are plumbable. When the agent asks
 //! permission, the line offers `Allow Always Deny Never` to B2. `Cancel`
-//! interrupts the turn. The agent reads files through apex when they
-//! are open (unsaved edits included); its writes go to disk, where
-//! apex's watcher brings them into clean windows.
+//! interrupts the turn. The window's handle pulses while the agent
+//! works, and rests while it waits for an answer. `Preview` toggles a
+//! page beside it holding the last finished reply, rendered. The agent
+//! reads files through apex when they are open (unsaved edits
+//! included); its writes go back the same way.
 //!
 //!     apex-acp [-agent claude|codex|CMD] [-cwd DIR] [-thoughts]
 //!
@@ -380,10 +382,18 @@ struct Win {
     auth: Vec<(String, String)>,
     /// The agent's slash commands, as it last said.
     commands: Vec<(String, String)>,
+    /// What the agent has said in this turn, and the last turn's whole
+    /// reply, which the page shows.
+    reply: String,
+    last: Option<String>,
+    /// The page window, while `Preview` has one open.
+    page: Option<WindowId>,
+    /// What we last told the window about the work going on.
+    pulsing: bool,
     inbox: tokio::sync::mpsc::UnboundedSender<In>,
 }
 
-const VERBS: [&str; 9] = ["Send", "Cancel", "Allow", "Always", "Deny", "Never", "Mode", "Commands", "Login"];
+const VERBS: [&str; 10] = ["Send", "Cancel", "Allow", "Always", "Deny", "Never", "Mode", "Commands", "Login", "Preview"];
 
 impl Win {
     fn run(cwd: PathBuf, label: String, thoughts: bool, out: mpsc::Receiver<Out>, inbox: tokio::sync::mpsc::UnboundedSender<In>) -> apex_tool::Result<()> {
@@ -396,8 +406,19 @@ impl Win {
         for v in VERBS {
             verbs.insert(t.offer(Rule::verb(v).window(w))?, v);
         }
-        let mut win = Win { t, w, len: 0, mark: 0, col0: true, anchors: HashMap::new(), titles: HashMap::new(), said: HashMap::new(), plan: None, pending: VecDeque::new(), busy: false, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), commands: Vec::new(), inbox };
+        let mut win = Win { t, w, len: 0, mark: 0, col0: true, anchors: HashMap::new(), titles: HashMap::new(), said: HashMap::new(), plan: None, pending: VecDeque::new(), busy: false, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), commands: Vec::new(), reply: String::new(), last: None, page: None, pulsing: false, inbox };
 
+        let r = win.serve(out);
+        // the page is ours: it goes with us
+        if let Some(p) = win.page.take() {
+            let _ = win.t.delete(p);
+        }
+        r
+    }
+
+    /// Until the window goes, or the session does.
+    fn serve(&mut self, out: mpsc::Receiver<Out>) -> apex_tool::Result<()> {
+        let win = self;
         loop {
             // the agent's news first, then the window's
             while let Ok(o) = out.try_recv() {
@@ -411,6 +432,7 @@ impl Win {
                 None if !win.t.windows().iter().any(|x| x.id == win.w) => return Ok(()),
                 None => {}
                 Some(Event::Deleted { window }) if window == win.w => return Ok(()),
+                Some(Event::Deleted { window }) if Some(window) == win.page => win.page = None,
                 Some(Event::Edit(e)) if e.window == win.w => win.edit(e.q0, e.nd, &e.text)?,
                 Some(Event::Plumb(p)) => {
                     let taken = match win.verbs.get(&p.rule).copied() {
@@ -537,6 +559,7 @@ impl Win {
             "Mode" => self.set_mode(args.trim())?,
             "Commands" => self.list_commands()?,
             "Login" => self.login(args.trim())?,
+            "Preview" => self.toggle_page()?,
             _ => return Ok(false),
         }
         Ok(true)
@@ -564,6 +587,8 @@ impl Win {
         self.mark = self.len;
         self.col0 = true;
         self.busy = true;
+        self.reply.clear();
+        self.pulse();
         let _ = self.inbox.send(In::Prompt(prompt));
         Ok(())
     }
@@ -594,6 +619,7 @@ impl Win {
             self.splice(at, at + p.offered, said)?;
         }
         self.anchors.remove(&p.offer);
+        self.pulse();
         Ok(())
     }
 
@@ -666,6 +692,59 @@ impl Win {
         Ok(())
     }
 
+    /// `Preview` opens a page beside the window holding the last reply
+    /// the agent finished, and closes it again. It stands until the
+    /// next reply is whole: what is half-said is in the transcript.
+    fn toggle_page(&mut self) -> apex_tool::Result<()> {
+        match self.page.take() {
+            Some(w) => {
+                let _ = self.t.delete(w);
+                Ok(())
+            }
+            None => {
+                let name = format!("{}+Preview", self.t.window_name(self.w).unwrap_or_else(|| "+agent".to_string()));
+                let html = self.rendered();
+                let w = self.t.new_page(&name, &html)?;
+                // ours, as the preview tool's page is: the handle says
+                // live rather than dirty, and Del does not ask
+                let _ = self.t.set_live(w, true);
+                self.page = Some(w);
+                Ok(())
+            }
+        }
+    }
+
+    /// The page again, when one is open.
+    fn show_page(&mut self) -> apex_tool::Result<()> {
+        let Some(w) = self.page else { return Ok(()) };
+        let html = self.rendered();
+        self.t.replace(w, 0, apex_tool::END, &html)
+    }
+
+    /// The last reply as a page: through the converter the session names
+    /// for markdown (`Preview.md`, `apex md` unless a setting says
+    /// otherwise), so a page here looks like every other preview.
+    fn rendered(&self) -> String {
+        let Some(md) = self.last.as_deref() else {
+            return "<p><em>no reply yet</em></p>".to_string();
+        };
+        let cmd = self.t.setting("Preview.md").unwrap_or_else(|| "apex md".to_string());
+        match filter(&cmd, md, &self.cwd) {
+            Ok(html) => html,
+            Err(e) => format!("<pre>{}</pre>", escape(&format!("{cmd}: {e}\n\n{md}"))),
+        }
+    }
+
+    /// The handle pulses while the agent is working, and rests while it
+    /// waits on an answer of ours: the window says whose turn it is.
+    fn pulse(&mut self) {
+        let want = self.busy && self.pending.is_empty();
+        if want != self.pulsing {
+            self.pulsing = want;
+            let _ = self.t.set_working(self.w, want);
+        }
+    }
+
     fn note(&mut self, text: &str) -> apex_tool::Result<()> {
         self.line_start()?;
         self.out(&format!("{text}\n"))
@@ -728,6 +807,7 @@ impl Win {
                 const OFFERED: &str = "Allow Always Deny Never";
                 self.out(&format!("{OFFERED}\n"))?;
                 self.pending.push_back(Pending { key, offer, offered: OFFERED.chars().count(), options: req.options, responder });
+                self.pulse();
                 Ok(())
             }
             Out::Read { req, responder } => {
@@ -748,6 +828,13 @@ impl Win {
             }
             Out::Turn(res) => {
                 self.busy = false;
+                self.pulse();
+                // only a turn the agent finished is worth showing: a
+                // cancelled or failed one leaves the last reply standing
+                if matches!(res, Ok(StopReason::EndTurn)) && !self.reply.trim().is_empty() {
+                    self.last = Some(std::mem::take(&mut self.reply));
+                    self.show_page()?;
+                }
                 self.line_start()?;
                 match res {
                     Ok(StopReason::EndTurn) => {}
@@ -765,6 +852,7 @@ impl Win {
             }
             Out::Gone(why) => {
                 self.busy = false;
+                self.pulse();
                 self.line_start()?;
                 self.out(&format!("{why}\n"))
             }
@@ -773,7 +861,11 @@ impl Win {
 
     fn update(&mut self, u: SessionUpdate) -> apex_tool::Result<()> {
         match u {
-            SessionUpdate::AgentMessageChunk(c) => self.out(&content_text(&c.content)),
+            SessionUpdate::AgentMessageChunk(c) => {
+                let text = content_text(&c.content);
+                self.reply.push_str(&text);
+                self.out(&text)
+            }
             SessionUpdate::AgentThoughtChunk(c) => {
                 if self.thoughts {
                     self.out_prefixed("  · ", &content_text(&c.content))?;
@@ -992,6 +1084,42 @@ fn hunk(old: &str, new: &str) -> (Vec<String>, usize) {
         cut += part.len() - shown;
     }
     (lines, cut)
+}
+
+/// Run `cmd` with `input` on its standard input, in `dir`, and take
+/// what it writes.
+fn filter(cmd: &str, input: &str, dir: &Path) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(shell())
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let text = input.to_string();
+    let mut stdin = child.stdin.take().ok_or("no stdin")?;
+    // a big reply would fill the pipe before the child reads it
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(text.as_bytes());
+    });
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let _ = writer.join();
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+fn shell() -> String {
+    std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/sh".to_string())
+}
+
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 fn status_glyph(s: ToolCallStatus) -> &'static str {
