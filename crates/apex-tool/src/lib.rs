@@ -20,8 +20,20 @@
 //! ```
 //!
 //! `next_event` returns `None` when the session is over. A plumb must be
-//! answered within a second, or it is taken as refused and the next rule
-//! tried. Text offsets count characters, as apex does throughout. The
+//! answered before its deadline, or the tool is taken to have failed and
+//! the next rule is tried: a second for B3 text, which is a search, and
+//! ten for a verb, which may be work the tool does before it answers.
+//!
+//! A rule may take a word apex has its own meaning for -- `Put`, `Get`,
+//! `Del`, any built-in -- so long as it says which windows it is about
+//! (`.window(w)`, or a `.file(..)`/`.kind(..)` pattern). Answering such
+//! a plumb `taken` means the word meant what the tool says and nothing
+//! else happens; answering it refused hands it back, and apex does what
+//! it always does with that word. A formatter claims `Put`, reshapes the
+//! buffer, and refuses, so the ordinary `Put` writes the tidy text. A
+//! tool that never answers decides nothing: the word fails rather than
+//! falling through, so a dead tool cannot make `Get` reload a generated
+//! window. Text offsets count characters, as apex does throughout. The
 //! tool finds its session as any command does: `APEX_SOCKET` and
 //! `apexsession`, which apex sets for everything it runs.
 //!
@@ -160,8 +172,10 @@ pub struct Rule {
 }
 
 impl Rule {
-    /// A word offered in the tools menu of matching windows and run by
-    /// B2 there.
+    /// A word offered in the tools menu of matching windows, and run by
+    /// B2 wherever it is written: a tag, the menu, `apex exec`. A word
+    /// apex knows may be taken too, if the rule says which windows it is
+    /// about; see the crate documentation.
     pub fn verb(verb: &str) -> Rule {
         Rule { verb: Some(verb.to_string()), ..Rule::default() }
     }

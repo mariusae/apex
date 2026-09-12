@@ -516,6 +516,7 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Exec{ctx, text} · Edit{window, program} · Select{view, q0, q1}
   Live{window, by?}                                    a process behind a window
   Working{window, by?}                                 work going on behind a window
+  Builtin{ctx, text}                                   a word's own meaning, the rules already asked
   Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
   OpenWeb{col, url} · WebNavigate{window, url}         a web window; its page moved (WEB.md §2)
 ```
@@ -823,7 +824,38 @@ warped onto it, so a click alone repeats it; tracked while the button is
 held, the item under the pointer highlighted in negative, none outside;
 released on an item it runs as B2 would, released outside nothing runs;
 more than 25 items scroll. Verbs are not written into tags. B2 on a
-verb's word walks the rules with it, ahead of the shell. A `Plumb`
+verb's word walks the rules with it, ahead of the shell.
+
+*As built, claiming a word apex knows:* a word resolves the same way
+wherever it is written -- typed in a tag and B2'd, picked from the tools
+menu, `apex exec`, a tool's own exec -- and the order is one: a rule that
+claims the word here, then apex's own meaning of it, then the shell.
+Acme has this through the event file: a program holding a window's
+`event` sees every command in it, built-ins included, with a flag bit
+saying whether acme knows the word, and may write the event back for acme
+to perform it (`exec.c`, the `nopen[QWevent]` test before `exectab` is
+consulted). Apex has no event file, so the claim is a rule, and the bar
+for claiming is that the rule says which windows it is about -- `-win`,
+`-file` or a kind -- since a claim on `Put` is a claim to *be* Put, and a
+rule that says nothing about where it applies would be making it
+everywhere. `Node::claimed` answers this from the replicated rule table,
+so every node agrees and it costs nothing when nothing is claimed; a
+claimed word resolves to `Handler::Server` whatever it means, so the walk
+runs where the rules are.
+
+Three answers, and apex's own meaning is the last step of the walk, as
+opening a file is for B3. A tool that **takes** the word has defined it:
+nothing else happens. A tool that **declines** hands it back, and the
+walk goes on to the next rule and at last to the built-in
+(`Proposal::Builtin`, which performs a word's own meaning without
+resolving it again, so a tool cannot loop by re-issuing the word). A tool
+that **never answers** has decided nothing: the walk goes on, but the
+built-in does not run, because silence is not a decision and `Get` would
+reload a generated window over a tool that merely died
+(`Server::plumb_failed`, beside `plumb_next`). The budget for an answer
+is a second for B3, which is a search, and ten for a verb, which may be
+the work the word names -- a formatter claims `Put`, reshapes the buffer,
+then declines so the ordinary `Put` writes the tidy text. A `Plumb`
 carries where it came from: `at`, the pointer or dot as a `Span`, and
 `sel`, what was swept or the selection the pointer was in; a click
 sends `at` alone. The expansion is acme's, one for one (`look.c`'s
@@ -862,7 +894,10 @@ show_line line rename set_live set_working delete exec exec_in errors
 watch unwatch set setting`. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text
 keeps one window and writes it again with `replace`, rather than opening
-a window a turn. `set_working` is the pulsing handle (§11). `open` is a jump (acme's plumbing a `file:line`: the origin
+a window a turn. `set_working` is the pulsing handle (§11). A rule whose
+verb is a word apex knows claims it where the rule applies, and
+`answer(plumb, false)` hands it back to apex's own meaning of it
+(§6.2). `open` is a jump (acme's plumbing a `file:line`: the origin
 on the back stack, the line selected and shown, the mouse warped there);
 `show` is acme's `show` after `addr=`: the place brought on screen if
 it is off it, and nothing else moved. A tool that edits a window and

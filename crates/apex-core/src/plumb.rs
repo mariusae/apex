@@ -126,6 +126,12 @@ impl PlumbRule {
         if self.verb.is_empty() || self.verb.contains(char::is_whitespace) {
             return Err(format!("bad verb {:?}", self.verb));
         }
+        // a rule for a word apex knows would never be reached unless it
+        // says where it applies: refuse it rather than install a rule
+        // that quietly never fires
+        if is_builtin(&self.verb) && self.win.is_none() && self.file.is_none() && self.kind.is_none() {
+            return Err(format!("{}: a rule for a word apex knows must say where it applies (-win, -file or -kind)", self.verb));
+        }
         Ok(())
     }
 }
@@ -188,12 +194,43 @@ pub fn ordered(rules: &BTreeMap<RuleId, Rule>) -> Vec<(RuleId, &Rule)> {
     v
 }
 
+/// B3's verb: the walk asks who wants a piece of text, rather than who
+/// runs a word.
+pub const PLUMB: &str = "plumb";
+
 /// The verbs a window shows in its tag: every rule that applies to it
 /// and answers something other than `plumb`, once each, in order.
 /// The verb that takes every B2 command in a window that nothing else
 /// took (no builtin, no verb rule): win's, so that B2 on an old command
 /// line types it to the shell. Not a word in the menu.
 pub const EXEC: &str = "exec";
+
+/// The words apex performs itself: the leader's built-ins and the
+/// server's, in one list. A rule bound to a window may take one of these
+/// for that window (§6.2); everything else about them is apex's.
+pub const BUILTINS: &[&str] = &[
+    // the leader's (`Node::builtin`)
+    "Cut", "Paste", "Snarf", "Undo", "Redo", "Look", "Edit", "Newcol", "Delcol", "Del", "Delete", "Zerox", "Font", "Sort", "Exit", "Tab", "Indent", "ID", "Send", "Web",
+    // the server's (`Server::perform`)
+    "Put", "Putall", "Get", "New", "Newterm", "Win", "Kill", "Newweb",
+];
+
+/// Does apex have a meaning of its own for this word?
+pub fn is_builtin(word: &str) -> bool {
+    BUILTINS.contains(&word)
+}
+
+/// Whether a rule claims `verb` in this window. A claim must say which
+/// windows it is about -- a window of its own (`-win`), a name (`-file`)
+/// or a kind -- because a claim on a word apex has its own meaning for
+/// is a claim to be that meaning, and a rule that says nothing about
+/// where it applies would be making it everywhere.
+pub fn claims_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: WindowId) -> bool {
+    rules.values().any(|r| {
+        let scoped = r.rule.win.is_some() || r.rule.file.is_some() || r.rule.kind.is_some();
+        r.rule.verb == verb && scoped && r.rule.applies_to(name, kind, Some(w))
+    })
+}
 
 pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: Option<WindowId>) -> bool {
     rules

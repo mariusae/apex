@@ -82,6 +82,10 @@ pub enum Proposal {
     /// Work is going on behind a window: its handle pulses while it is
     /// so. `by` is the attachment that keeps it (`None` ends it).
     Working { window: WindowId, by: Option<AttachmentId> },
+    /// Apex's own meaning of a word, performed without asking the rules:
+    /// where a word a tool had claimed falls through when the tool
+    /// declines it (§6.2). Never resolved again, so a tool cannot loop.
+    Builtin { ctx: ExecCtx, text: String },
     /// Take the user to a place: the origin goes on the back stack; the
     /// window is opened if it must be (the leader asks the server), and
     /// selected, shown, and warped to.
@@ -283,6 +287,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.gotos.push(loc);
             }
             Ok(w)
+        }
+        Proposal::Builtin { ctx, text } => {
+            node.run_builtin(log, ctx, &text)?;
+            Ok(None)
         }
         Proposal::Working { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Working { by }))?;

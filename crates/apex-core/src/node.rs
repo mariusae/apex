@@ -1353,16 +1353,32 @@ impl Node {
         }
     }
 
-    fn get_uses_rule(&self, ctx: ExecCtx) -> bool {
+    /// Has a rule claimed this word in this window? Rules are consulted
+    /// before apex's own meaning of a word, but only a rule that says
+    /// which windows it is about may take one (§6.2). The rule table is
+    /// replicated, so every node answers this the same way, and the
+    /// question costs nothing when nobody has claimed anything.
+    pub fn claimed(&self, ctx: ExecCtx, text: &str) -> bool {
         let ExecCtx::Window(w) = ctx else { return false };
-        crate::plumb::offers_verb(&self.state.meta.rules, "Get", &self.window_name(w), self.window_kind(w), Some(w))
+        let Some(verb) = text.split_whitespace().next() else { return false };
+        crate::plumb::claims_verb(&self.state.meta.rules, verb, &self.window_name(w), self.window_kind(w), w)
+    }
+
+    /// Which handler a command resolves to here: the rules first, so a
+    /// tool that has claimed the word gets it, then `Node::resolve`.
+    pub fn resolve_in(&self, ctx: ExecCtx, text: &str) -> Handler {
+        if self.claimed(ctx, text) {
+            // the walk runs on the server, whatever the word means
+            return Handler::Server;
+        }
+        Node::resolve(text)
     }
 
     /// Execute `text` as B2 would from `ctx`. Built-ins run here; anything
     /// else is recorded for the server.
     pub fn exec(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<Executed> {
         // acme's get: a dirty window is asked once before reloading
-        if text.trim() == "Get" && !self.get_uses_rule(ctx) {
+        if text.trim() == "Get" && !self.claimed(ctx, "Get") {
             if let ExecCtx::Window(w) = ctx {
                 let len = self.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.state.buffer(b).ok()).map(|b| b.text.len()).unwrap_or(0);
                 if len > 0 && !self.window_name(w).ends_with('/') && !self.winclean(log, w, true)? {
@@ -1372,7 +1388,7 @@ impl Node {
         }
         self.end_typing();
         let text = text.trim().to_string();
-        let mut handler = Node::resolve(&text);
+        let mut handler = self.resolve_in(ctx, &text);
         if text == "Send" {
             if let ExecCtx::Window(w) = ctx {
                 if matches!(self.state.window(w).map(|x| x.body), Ok(Body::Term(_))) {
@@ -1412,6 +1428,17 @@ impl Node {
             ExecCtx::Column(c) => Ok(c),
             ExecCtx::Top => self.state.layout.cols.first().map(|c| c.id).ok_or_else(|| CoreError::Missing("no column".into())),
         }
+    }
+
+    /// Perform apex's own meaning of a word, whatever the rules say: what
+    /// a claimed word falls through to when the tool declines it
+    /// (`Proposal::Builtin`). The exec entry is the walk's, so no status
+    /// is appended here.
+    pub fn run_builtin(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<()> {
+        if self.builtin(log, ctx, text.trim())? {
+            self.quit_requested = true;
+        }
+        Ok(())
     }
 
     /// Returns `Ok(true)` for Exit.

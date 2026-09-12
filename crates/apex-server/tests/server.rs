@@ -212,8 +212,10 @@ fn timed_out_get_rule_fails_without_reloading_generated_content() {
     let req = server.take_plumb_starts().into_iter().next().expect("Get plumb start");
     let (id, step) = server.plumb_start(&node, req);
     assert!(matches!(step, apex_server::PlumbStep::AskTool { .. }), "{step:?}");
-    let props = match server.plumb_next(&node, id, Err("timed out".into())) {
-        // refused: no rule took it, and the walk says why (Plumbed's why)
+    let props = match server.plumb_failed(&node, id, "timed out".into()) {
+        // a tool that never answered decides nothing: the word does not
+        // fall through to apex's own Get, which would reload the window
+        // from a file that is not there
         apex_server::PlumbStep::Refused { props, why } if why.contains("no rule") => props,
         other => panic!("{other:?}"),
     };

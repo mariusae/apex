@@ -3567,7 +3567,7 @@ fn plumb_local(server: &mut Server, node: &mut Node, log: &mut Log, req: PlumbRe
                 perform(node, log, vec![p]);
                 step = server.plumb_next(node, id, Ok(()));
             }
-            PlumbStep::AskTool { tool, .. } => step = server.plumb_next(node, id, Err(format!("no tool {tool} in-process"))),
+            PlumbStep::AskTool { tool, .. } => step = server.plumb_failed(node, id, format!("no tool {tool} in-process")),
         }
     }
 }

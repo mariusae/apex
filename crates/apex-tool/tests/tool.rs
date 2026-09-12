@@ -119,3 +119,82 @@ fn work_behind_a_window_shows_while_the_tool_is_there() {
     drop(t);
     assert!(!settle(&mut other, false), "the work ends with the tool");
 }
+
+#[test]
+fn a_tool_takes_a_word_apex_knows_and_can_hand_it_back() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-claim-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("notes.txt");
+    std::fs::write(&path, "disk\n").unwrap();
+    let name = path.display().to_string();
+
+    let mut t = Tool::attach_to(&sock, "main", "fmt").unwrap();
+    let w = t.open(&name, None).unwrap();
+    // Put in this window is ours: the word apex has a meaning for
+    let put = t.offer(Rule::verb("Put").window(w)).unwrap();
+    let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
+    let b2 = |other: &mut Remote, text: &str| {
+        other.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: text.into() }, Duration::from_secs(5)).unwrap();
+    };
+    let plumb = |t: &mut Tool| -> apex_tool::Plumb {
+        let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("the claimed word");
+        let Event::Plumb(p) = ev else { panic!("{ev:?}") };
+        p
+    };
+    let disk = |path: &std::path::Path| std::fs::read_to_string(path).unwrap();
+
+    // taken: the file is not written, the word meant what we said
+    t.replace(w, 0, END, "ours\n").unwrap();
+    b2(&mut other, "Put");
+    let p = plumb(&mut t);
+    assert_eq!((p.rule, p.verb.as_str(), p.window), (put, "Put", Some(w)));
+    t.answer(&p, true).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(disk(&path), "disk\n", "a taken Put does not write the file");
+
+    // declined: the walk carries on to apex's own Put, which writes it
+    b2(&mut other, "Put");
+    let p = plumb(&mut t);
+    t.answer(&p, false).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while disk(&path) != "ours\n" && Instant::now() < deadline {
+        let _ = t.next_event(Some(Duration::from_millis(50)));
+    }
+    assert_eq!(disk(&path), "ours\n", "a declined Put falls through to apex's");
+
+    // a rule that says nothing about where it applies may not claim a
+    // word apex knows: this Put is apex's, and never reaches the tool
+    t.withdraw(put);
+    assert!(t.offer(Rule::verb("Put")).is_err(), "an unscoped rule for a word apex knows is refused");
+    // one that applies somewhere else does not take it here either
+    let elsewhere = t.offer(Rule::verb("Put").file(r"\+never$")).unwrap();
+    let _ = elsewhere;
+    std::fs::write(&path, "disk again\n").unwrap();
+    t.replace(w, 0, END, "second\n").unwrap();
+    b2(&mut other, "Put");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while disk(&path) != "second\n" && Instant::now() < deadline {
+        let _ = t.next_event(Some(Duration::from_millis(50)));
+    }
+    assert_eq!(disk(&path), "second\n", "an unscoped rule does not take Put");
+
+    // a word the leader performs, not the server: Del, claimed, declined,
+    // and the window goes as it always would
+    let del = t.offer(Rule::verb("Del").window(w)).unwrap();
+    b2(&mut other, "Del");
+    let p = plumb(&mut t);
+    assert_eq!((p.rule, p.verb.as_str()), (del, "Del"));
+    t.answer(&p, true).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(t.windows().iter().any(|x| x.id == w), "a taken Del keeps the window");
+    b2(&mut other, "Del");
+    let p = plumb(&mut t);
+    t.answer(&p, false).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while t.windows().iter().any(|x| x.id == w) && Instant::now() < deadline {
+        let _ = t.next_event(Some(Duration::from_millis(50)));
+    }
+    assert!(!t.windows().iter().any(|x| x.id == w), "a declined Del falls through to apex's");
+    let _ = std::fs::remove_dir_all(&dir);
+}

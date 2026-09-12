@@ -477,8 +477,14 @@ func (t *Tool) OnDelete(fn func(w *Window)) { t.onDelete = fn }
 // offers it everywhere; each field set narrows that.
 type Rule struct {
 	// The verb: a word offered in the tools menu of matching windows and
-	// run by B2 there. Empty means plumb: B3 (Look) on text the rule
-	// matches goes to the tool.
+	// run by B2 wherever it is written, a tag or the menu alike. Empty
+	// means plumb: B3 (Look) on text the rule matches goes to the tool.
+	//
+	// A word apex knows (Put, Get, Del, any built-in) may be taken as
+	// well, so long as the rule says which windows it is about, through
+	// Window, File or Kind. The handler returning true means the word
+	// meant what the tool says; returning false hands it back, and apex
+	// does with it what it always does.
 	Verb string
 	// A regexp the plumbed text (or the verb's arguments) must match
 	// whole; its groups arrive in Plumb.Groups.
@@ -535,8 +541,11 @@ type Span struct {
 }
 
 // Offer installs a rule answered by handle, which runs from Serve and
-// returns whether the tool took it (false lets the next rule try). It
-// must return within a second.
+// returns whether the tool took it (false lets the next rule try, and,
+// for a word apex knows, apex's own meaning of it last of all). It must
+// return within a second for plumbed text and within ten for a verb;
+// returning nothing at all is a failure rather than a refusal, and a
+// word apex knows does not fall through after one.
 func (t *Tool) Offer(r Rule, handle func(Plumb) bool) (RuleID, error) {
 	args := map[string]any{}
 	if r.Verb != "" {

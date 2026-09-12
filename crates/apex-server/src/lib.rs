@@ -104,6 +104,9 @@ pub struct Server {
     profile_base: Option<Vec<(String, String)>>,
     /// Execs already performed, so a scan does not repeat them.
     performed: BTreeSet<(ExecCtx, Seq)>,
+    /// Execs to perform without asking the rules: a word a tool had
+    /// claimed and then declined, which now means what apex means by it.
+    plain: BTreeSet<(ExecCtx, Seq)>,
     pub cwd: PathBuf,
     next_term: u64,
     /// Terminals whose window has been seen: once it goes, so do they.
@@ -169,6 +172,7 @@ impl Server {
             term_colors: crate::proto::TermColors::LIGHT,
             profile_base: None,
             performed: BTreeSet::new(),
+            plain: BTreeSet::new(),
             cwd,
             next_term: 1,
             windowed: BTreeSet::new(),
@@ -825,9 +829,23 @@ impl Server {
             self.spawn_shell(ctx, seq, rest.trim().to_string(), dir, stdin, mode, env);
             return Ok(None);
         }
+        // a tool has claimed this word in this window: the rules take it,
+        // and fall back here if the tool declines (§6.2)
+        let plainly = self.plain.remove(&(ctx, seq));
+        if !plainly && view.claimed(ctx, text) {
+            if let Some(req) = self.verb_request(view, ctx, seq, text) {
+                self.plumb_starts.push(req);
+                return Ok(None);
+            }
+        }
         let mut words = text.split_whitespace();
         let cmd = words.next().unwrap_or("");
         let arg = words.clone().next();
+        // the leader's own built-ins reach the server only this way: a
+        // claimed word, declined, whose meaning is the leader's to perform
+        if plainly && Node::resolve(text) == Handler::Leader {
+            return Ok(Some(vec![Proposal::Builtin { ctx, text: text.to_string() }]));
+        }
         let mut props = Vec::new();
         match cmd {
             "Put" => {
@@ -847,10 +865,6 @@ impl Server {
             }
             "Get" => {
                 let w = win.ok_or("Get needs a window")?;
-                if let Some(req) = self.get_rule_request(view, ctx, seq, text) {
-                    self.plumb_starts.push(req);
-                    return Ok(None);
-                }
                 props.push(self.get(view, w)?);
             }
             "New" => {
@@ -1186,10 +1200,10 @@ impl Server {
         };
         let remaining: Vec<(RuleId, apex_core::state::Rule)> = apex_core::plumb::ordered(&view.state.meta.rules).into_iter().map(|(i, r)| (i, r.clone())).collect();
         if nothing {
-            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace });
+            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace, failed: false });
             return (id, if self.plumbs[&id].req.dry { self.plumb_trace(id) } else { self.plumb_finish(id, Vec::new()) });
         }
-        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace });
+        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace, failed: false });
         let step = self.plumb_advance(view, id);
         (id, step)
     }
@@ -1205,6 +1219,19 @@ impl Server {
                 }
                 Err(e) => p.trace.push(format!("refused: {e}")),
             }
+        }
+        self.plumb_advance(view, id)
+    }
+
+    /// A step that did not answer at all: no tool there, no answer in
+    /// time, a client that could not. The walk goes on to the next rule,
+    /// but a word apex knows will not fall through to apex's own meaning
+    /// afterwards -- silence is not a decision, and Get would reload a
+    /// generated window over a tool that merely died.
+    pub fn plumb_failed(&mut self, view: &Node, id: u64, why: String) -> PlumbStep {
+        if let Some(p) = self.plumbs.get_mut(&id) {
+            p.failed = true;
+            p.trace.push(format!("failed: {why}"));
         }
         self.plumb_advance(view, id)
     }
@@ -1383,6 +1410,18 @@ impl Server {
                 step => step,
             };
         }
+        // every rule declined a word apex has its own meaning for: that
+        // meaning is the last step of the walk, as opening the file is
+        // for B3 (§6.2). The exec is performed again, plainly this time.
+        let failed = self.plumbs.get(&id).is_some_and(|p| p.failed);
+        if let Some(exec) = exec {
+            if apex_core::plumb::is_builtin(&verb) && !failed {
+                self.plumbs.remove(&id);
+                self.plain.insert((ctx, exec));
+                self.performed.remove(&(ctx, exec));
+                return PlumbStep::Done(Vec::new());
+            }
+        }
         let mut props = vec![Proposal::Errors { dir: Some(dir.display().to_string()), text: format!("{verb}: no rule takes it here\n") }];
         if let Some(exec) = exec {
             props.push(Proposal::Status { ctx, exec, status: ExecStatusOp::Failed(format!("{verb}: no rule")) });
@@ -1427,13 +1466,6 @@ impl Server {
         Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None, reverse: false })
     }
 
-    fn get_rule_request(&self, view: &Node, ctx: ExecCtx, seq: Seq, text: &str) -> Option<PlumbReq> {
-        let ExecCtx::Window(w) = ctx else { return None };
-        if !apex_core::plumb::offers_verb(&view.state.meta.rules, "Get", &view.window_name(w), view.window_kind(w), Some(w)) {
-            return None;
-        }
-        self.verb_request(view, ctx, seq, text)
-    }
 }
 
 /// `name:line` split, when the tail is a number.
@@ -1529,6 +1561,8 @@ struct Plumb {
     file: Option<(String, String)>,
     remaining: Vec<(RuleId, apex_core::state::Rule)>,
     trace: Vec<String>,
+    /// A step neither took the word nor declined it: it never answered.
+    failed: bool,
 }
 
 impl Server {

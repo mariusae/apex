@@ -168,6 +168,16 @@ enum Pending {
     Plumb { session: u64, plumb: u64, asker: u64 },
 }
 
+/// How long a tool has to answer a B3: a search, which should not keep
+/// the user waiting, and whose refusal costs nothing.
+const B3_ANSWER: std::time::Duration = std::time::Duration::from_secs(1);
+/// How long it has to answer a verb. Longer, because the tool may be
+/// doing the work the word names before it answers -- a formatter
+/// reshaping a buffer before it lets Put write it -- and because a word
+/// apex knows falls through to apex's own meaning rather than to
+/// nothing.
+const VERB_ANSWER: std::time::Duration = std::time::Duration::from_secs(10);
+
 pub struct Daemon {
     socket: PathBuf,
     /// The host's init file for new sessions (`~/.apex/init`).
@@ -251,7 +261,7 @@ impl Daemon {
                         }
                     }
                 }
-                Event::PlumbTimeout(tid) => d.tool_answered(tid, Err("no answer in time".into())),
+                Event::PlumbTimeout(tid) => d.tool_failed(tid, "no answer in time".into()),
             }
         }
         let _ = std::fs::remove_file(path);
@@ -1098,12 +1108,22 @@ impl Daemon {
         }
     }
 
-    /// A tool's answer (or its silence) to a plumb handed to it.
+    /// A tool's answer to a plumb handed to it: taken, or declined.
     fn tool_answered(&mut self, tid: u64, outcome: Result<(), String>) {
         let Some((sid, plumb, asker)) = self.tool_plumbs.remove(&tid) else { return };
         let Some(name) = self.name_of(sid) else { return };
         let s = self.sessions.get_mut(&name).unwrap();
         let step = s.server.plumb_next(&s.view, plumb, outcome);
+        self.drive(&name, plumb, step, asker);
+    }
+
+    /// A tool that never answered: the walk goes on, but a word apex
+    /// knows will not fall through to its own meaning after this.
+    fn tool_failed(&mut self, tid: u64, why: String) {
+        let Some((sid, plumb, asker)) = self.tool_plumbs.remove(&tid) else { return };
+        let Some(name) = self.name_of(sid) else { return };
+        let s = self.sessions.get_mut(&name).unwrap();
+        let step = s.server.plumb_failed(&s.view, plumb, why);
         self.drive(&name, plumb, step, asker);
     }
 
@@ -1135,16 +1155,19 @@ impl Daemon {
                         let tid = self.next_tool_plumb;
                         self.next_tool_plumb += 1;
                         self.tool_plumbs.insert(tid, (sid, plumb, asker));
+                        // B3 is a search and wants to be quick; a verb is
+                        // work the user asked for by name, and a tool may
+                        // do it (an agent, a formatter) before it answers
+                        let wait = if verb == apex_core::plumb::PLUMB { B3_ANSWER } else { VERB_ANSWER };
                         self.send(cid, ServerMsg::Plumb { id: tid, rule, ctx, verb, text, dir, groups, at, sel });
-                        // a second, then it is taken as refused
                         let tx = self.tx.clone();
                         thread::spawn(move || {
-                            thread::sleep(std::time::Duration::from_secs(1));
+                            thread::sleep(wait);
                             let _ = tx.send(Event::PlumbTimeout(tid));
                         });
                     }
                     None => {
-                        let step = s.server.plumb_next(&s.view, plumb, Err(format!("no tool {tool} attached")));
+                        let step = s.server.plumb_failed(&s.view, plumb, format!("no tool {tool} attached"));
                         self.drive(name, plumb, step, asker);
                     }
                 }

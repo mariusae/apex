@@ -26,8 +26,14 @@
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
 //! - `rule {verb?, text?, file?, kind?, window?, priority?}` → `rule`: a
-//!   rule answered by this tool (`plumb` events); `unrule {rule}`
-//! - `ack {plumb, ok}`: the answer to a `plumb` event (within a second)
+//!   rule answered by this tool (`plumb` events); `unrule {rule}`. A verb
+//!   apex knows (`Put`, `Get`, `Del`, ...) may be taken by a rule that
+//!   says which windows it is about (`window`, `file` or `kind`): `ack`
+//!   with `ok` means the word meant what the tool says, `ok: false` hands
+//!   it back to apex's own meaning of it.
+//! - `ack {plumb, ok}`: the answer to a `plumb` event, within a second
+//!   for B3 text and ten for a verb; silence is a failure, not an answer,
+//!   and a word apex knows does not fall through after one
 //! - `watch {window}` / `unwatch {window}`: `edit` events for its body
 //! - `set {key, value}` / `setting {key}` → `value`
 //!
