@@ -1,0 +1,14 @@
+[package]
+name = "apex-acp"
+version = "0.1.0"
+edition = "2021"
+description = "Experimental: an Agent Client Protocol client as an apex tool"
+
+[[bin]]
+name = "apex-acp"
+path = "src/main.rs"
+
+[dependencies]
+apex-tool = { path = "../../crates/apex-tool" }
+agent-client-protocol = "2.1"
+tokio = { version = "1", features = ["rt", "macros", "process", "io-util", "sync", "time"] }

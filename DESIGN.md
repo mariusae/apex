@@ -863,7 +863,11 @@ on the back stack, the line selected and shown, the mouse warped there);
 `show` is acme's `show` after `addr=`: the place brought on screen if
 it is off it, and nothing else moved. A tool that edits a window and
 wants its change kept in sight uses `show`; `open` is for taking the
-user somewhere. Depending on
+user somewhere. `Edit` events are others' edits only: the leader applies
+every proposal as itself, so an edit's entries do not say who asked for
+it, and the crate recognises its own replacements in a watched window by
+their shape (buffer, offset, length, text) and drops them as they come
+back. Depending on
 `apex-server` directly is the internals, not the API. The bundled
 tools (win, lsp, preview) stay on the internals on purpose: they ship
 with the daemon and are rebuilt with it, so the lockstep costs them
@@ -1646,6 +1650,28 @@ provenance and re-attach for free. The cost is a schema-registration
 story, clients that must render entries they do not understand, and a
 harder question of what a client-led shard kind would even mean. Do it
 only if a second or third concrete need for it appears beyond plumbing.
+
+### Exploration: agents over ACP
+
+`exp/acp` is a spike, outside the workspace's supported surface: an
+Agent Client Protocol client (`apex-acp`) written against the public
+tool API only, so it is also a test of that API's reach. An ACP agent
+(`claude-agent-acp`, `codex-acp`, ...) runs as its child; the session is
+a window `DIR/+agent` in the acme manner of `+Errors` and win: the
+agent's text streams in at an output point, what the user types after
+it is the next prompt (Enter on the last line sends, as win does; `Send`
+for a pasted block), tool calls are lines whose status glyph is ticked
+off in place, their locations plumbable `path:line`, the plan a block
+replaced in place, and a permission request a line offering `Allow
+Always Deny Never` to B2. The agent reads files through apex when a
+window has them (unsaved edits included) and writes them to disk, where
+the watcher (§9) brings them into clean windows. Left out so far: the
+terminal capability (agents run commands themselves and report), images,
+session modes and slash commands, resuming a session, several agents in
+one window. What it suggests for the real thing: an agent's transcript
+wants to be a shard (above), not a buffer the tool patches; and the
+prompt/output split wants a first-class mark rather than an offset the
+tool tracks through others' edits.
 
 ### Open questions
 
