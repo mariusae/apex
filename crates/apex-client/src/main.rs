@@ -630,10 +630,16 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             window.focus(&focus, cx);
             // the system's appearance, for the System theme: as it is now,
             // and as it changes
-            theme::set_system_dark(matches!(window.appearance(), gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark));
+            // (the window's link was made before the appearance was known,
+            // and told light's colours: told again now)
+            let dark = matches!(window.appearance(), gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark);
+            theme::set_system_dark(dark);
+            if theme::mode() == theme::Mode::System && dark {
+                shell::apply_theme(cx);
+            }
             window.observe_window_appearance(|window, cx| {
                 theme::set_system_dark(matches!(window.appearance(), gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark));
-                cx.refresh_windows();
+                shell::apply_theme(cx);
             }).detach();
             // cmd-` back into this window: the pointer where it was
             view.update(cx, |_, cx| {

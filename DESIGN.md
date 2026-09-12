@@ -1432,8 +1432,10 @@ carries the index, and a program's inverse of the defaults carries
 palette entry the program set, is drawn as given. Web pages and
 previews keep their own colours. What is not presentation alone
 travels to the daemon as `ClientMsg::ClientConfig`, sent when a link
-is made (an attach, a reattach) and again when the theme changes, to
-parked links too: the terminal colours (`TermColors`: ink, paper, the
+is made (an attach, a reattach) and again when the theme in effect
+changes, a choice in the View menu or, under System, the appearance
+macOS reports (which a window's first link is made before, so it is
+told again once the window is up), to parked links too: the terminal colours (`TermColors`: ink, paper, the
 sixteen) that programs asking with OSC 10, 11 and 4 are told, so one
 deciding its palette by the background learns the paper it is drawn
 on; a session with no UI answers acme's light ones, and with several

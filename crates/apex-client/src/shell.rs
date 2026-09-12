@@ -34,6 +34,14 @@ pub fn toggle_fullscreen_tabs(cx: &mut App) {
 /// choice marked, every window redrawn.
 pub fn set_theme(m: crate::theme::Mode, cx: &mut App) {
     crate::theme::set_mode(m);
+    apply_theme(cx);
+}
+
+/// The theme in effect changed (chosen, or the system's appearance
+/// under System): the menus remade with the mark, every link told the
+/// colours (a link made before the system's appearance was known was
+/// told light's), pages restyled, every window redrawn.
+pub fn apply_theme(cx: &mut App) {
     cx.set_menus(menus());
     // the daemons hear the new colours, for the programs that ask
     for w in cx.windows() {
