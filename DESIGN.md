@@ -1656,22 +1656,37 @@ only if a second or third concrete need for it appears beyond plumbing.
 `exp/acp` is a spike, outside the workspace's supported surface: an
 Agent Client Protocol client (`apex-acp`) written against the public
 tool API only, so it is also a test of that API's reach. An ACP agent
-(`claude-agent-acp`, `codex-acp`, ...) runs as its child; the session is
-a window `DIR/+agent` in the acme manner of `+Errors` and win: the
-agent's text streams in at an output point, what the user types after
-it is the next prompt (Enter on the last line sends, as win does; `Send`
-for a pasted block), tool calls are lines whose status glyph is ticked
-off in place, their locations plumbable `path:line`, the plan a block
-replaced in place, and a permission request a line offering `Allow
-Always Deny Never` to B2. The agent reads files through apex when a
-window has them (unsaved edits included) and writes them to disk, where
-the watcher (§9) brings them into clean windows. Left out so far: the
-terminal capability (agents run commands themselves and report), images,
-session modes and slash commands, resuming a session, several agents in
-one window. What it suggests for the real thing: an agent's transcript
-wants to be a shard (above), not a buffer the tool patches; and the
-prompt/output split wants a first-class mark rather than an offset the
-tool tracks through others' edits.
+runs as its child; the session is a window `DIR/+claude`, named for the
+agent, in the acme manner of `+Errors` and win: the agent's text streams
+in at an output point, what the user types after it is the next prompt
+(Enter on the last line sends, as win does; `Send` for a pasted block),
+tool calls are lines whose status glyph is ticked off in place, the
+files they work on plumbable `path:line` and their edits shown as
+diffs, the plan a block replaced in place, and a permission request a
+line offering `Allow Always Deny Never` to B2, which then says what was
+decided. `Mode` reaches the agent's modes (Claude's manual, accept
+edits, plan, auto, bypass), `Commands` its slash commands, `Login` its
+authentication when it wants one. The agent reads files through apex
+when a window has them (unsaved edits included) and writes them back the
+same way, as an edit followed by a `Put`, so the change is visible and
+undoable and on disk for whatever the agent builds next; with no window
+open it writes to disk, where the watcher (§9) brings it into clean
+windows. Anthropic's `claude-agent-acp` is the default agent, run from
+an install or fetched with npx, on the Claude Code CLI's own
+credentials. Left out so far: the terminal capability (agents run
+commands themselves and report the output), images, resuming a session,
+several agents in one window.
+
+What the spike says, back to apex. Tools that write a window they also
+watch need their own edits filtered out, which the crate now does. An
+agent's transcript wants to be a shard (above), not a buffer the tool
+patches: the tool keeps offsets for the output point, each tool call's
+status glyph and the plan block, and shifts them through every edit by
+hand. The prompt/output split wants a first-class mark. And agents
+resend a tool call's whole content with each update, so a client that
+appends must remember what it has already shown; a shard of entries
+keyed by tool call would make that the model's problem, not the
+renderer's.
 
 ### Open questions
 

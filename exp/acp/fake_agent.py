@@ -23,12 +23,24 @@ def ask(method, params):
         handle(m)  # something else arrived first
 
 cancelled = [False]
+authed = [False]
 def handle(m):
     method = m.get("method")
     if method == "initialize":
-        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {}, "agentInfo": {"name": "fake-agent", "version": "0.1"}}})
+        auth = [{"id": "fake-login", "name": "Log in to Fake"}] if os.environ.get("FAKE_NEEDS_AUTH") else []
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {}, "authMethods": auth, "agentInfo": {"name": "fake-agent", "version": "0.1"}}})
+    elif method == "authenticate":
+        authed[0] = True
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {}})
     elif method == "session/new":
-        send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessionId": "s1"}})
+        if os.environ.get("FAKE_NEEDS_AUTH") and not authed[0]:
+            send({"jsonrpc": "2.0", "id": m["id"], "error": {"code": -32000, "message": "Authentication required"}})
+            return
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessionId": "s1", "modes": {"currentModeId": "default", "availableModes": [{"id": "default", "name": "Always ask"}, {"id": "acceptEdits", "name": "Accept edits"}, {"id": "plan", "name": "Plan mode"}]}}})
+        notify("s1", {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "review", "description": "review the diff"}, {"name": "compact", "description": "compact the context"}]})
+    elif method == "session/set_mode":
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {}})
+        notify(m["params"]["sessionId"], {"sessionUpdate": "current_mode_update", "currentModeId": m["params"]["modeId"]})
     elif method == "session/cancel":
         cancelled[0] = True
     elif method == "session/prompt":
@@ -57,6 +69,9 @@ def handle(m):
         outcome = r.get("result", {}).get("outcome", {})
         sys.stderr.write(f"fake: permission {outcome}\n")
         notify(sid, {"sessionUpdate": "tool_call", "toolCallId": "t2", "title": "Edit " + path, "kind": "edit", "status": "completed" if outcome.get("outcome") == "selected" and outcome.get("optionId") == "once" else "failed"})
+        notify(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "completed", "content": [{"type": "diff", "path": path, "oldText": "one\ntwo\nthree\n", "newText": "one\nTWO\nthree\nfour\n"}]})
+        w = ask("fs/write_text_file", {"sessionId": sid, "path": path, "content": "one\nTWO\nthree\nfour\n"})
+        sys.stderr.write(f"fake: write {w.get('result', w.get('error'))}\n")
         notify(sid, {"sessionUpdate": "plan", "entries": [{"content": "read the file", "priority": "medium", "status": "completed"}, {"content": "answer", "priority": "medium", "status": "completed"}]})
         notify(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\nDone with " + path + "."}})
         send({"jsonrpc": "2.0", "id": m["id"], "result": {"stopReason": "end_turn"}})

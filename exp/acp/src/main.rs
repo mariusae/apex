@@ -12,10 +12,12 @@
 //! are open (unsaved edits included); its writes go to disk, where
 //! apex's watcher brings them into clean windows.
 //!
-//!     apex-acp [-agent CMD] [-cwd DIR] [-thoughts]
+//!     apex-acp [-agent claude|codex|CMD] [-cwd DIR] [-thoughts]
 //!
-//! The agent command defaults to `$APEX_ACP_AGENT`, else the SDK's
-//! `npx -y @agentclientprotocol/claude-agent-acp@latest`.
+//! The agent defaults to `$APEX_ACP_AGENT`, else Anthropic's Claude
+//! adapter: `claude-agent-acp` when it is installed, else npx fetching
+//! `@agentclientprotocol/claude-agent-acp`. `-agent` takes either of
+//! those short names or a command of its own.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -24,19 +26,28 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ClientCapabilities, ContentBlock, FileSystemCapabilities, Implementation, InitializeRequest, NewSessionRequest,
-    PermissionOption, PermissionOptionKind, Plan, PlanEntryStatus, PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification,
-    SessionUpdate, StopReason, TextContent, ToolCallContent, ToolCallLocation, ToolCallStatus, ToolCallUpdate, WriteTextFileRequest,
-    WriteTextFileResponse,
+    AuthMethodId, AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock, FileSystemCapabilities, Implementation,
+    InitializeRequest, NewSessionRequest, PermissionOption, PermissionOptionKind, Plan, PlanEntryStatus, PromptRequest,
+    ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionModeId, SessionNotification, SessionUpdate, SetSessionModeRequest, StopReason, TextContent,
+    ToolCallContent, ToolCallLocation, ToolCallStatus, ToolCallUpdate, WriteTextFileRequest, WriteTextFileResponse,
 };
 use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{AcpAgent, Agent, ConnectionTo, Responder};
+use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo, Responder};
 use apex_tool::{Event, Rule, RuleId, Tool, WindowId};
 
 /// What the agent side tells the window side.
 enum Out {
-    Ready { agent: String },
+    /// The agent answered `initialize`.
+    Hello { agent: String, auth: Vec<(String, String)> },
+    /// A session could not be started: `Login` must come first.
+    NeedsAuth(String),
+    /// A session is going: its modes, and the one it is in.
+    Ready { modes: Vec<(String, String)>, mode: Option<String> },
+    /// A mode we asked for was taken (agents do not all say so).
+    Mode(String),
+    /// Something worth a line of its own.
+    Note(String),
     Update(SessionUpdate),
     Permission { req: RequestPermissionRequest, responder: Responder<RequestPermissionResponse> },
     Read { req: ReadTextFileRequest, responder: Responder<ReadTextFileResponse> },
@@ -51,6 +62,8 @@ enum Out {
 enum In {
     Prompt(String),
     Cancel,
+    Mode(String),
+    Auth(String),
 }
 
 struct Opts {
@@ -60,7 +73,7 @@ struct Opts {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex-acp [-agent CMD] [-cwd DIR] [-thoughts]");
+    eprintln!("usage: apex-acp [-agent claude|codex|CMD] [-cwd DIR] [-thoughts]");
     std::process::exit(2);
 }
 
@@ -89,7 +102,8 @@ fn main() {
     // the window side: a thread of its own, since the tool API is synchronous
     let cwd = opts.cwd.clone();
     let thoughts = opts.thoughts;
-    let window = std::thread::spawn(move || match Win::run(cwd, thoughts, out_rx, in_tx) {
+    let name = label(opts.agent.as_deref());
+    let window = std::thread::spawn(move || match Win::run(cwd, name, thoughts, out_rx, in_tx) {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("apex-acp: {}", e.0);
@@ -110,12 +124,91 @@ fn main() {
     std::process::exit(code);
 }
 
+// ---- finding the agent -------------------------------------------------------
+
+/// What a window of this agent's is called: `DIR/+claude`, as `+Errors`
+/// is called.
+fn label(spec: Option<&str>) -> String {
+    match spec.map(str::trim) {
+        None | Some("") | Some("claude") => "claude".to_string(),
+        Some("codex") => "codex".to_string(),
+        Some(cmd) => {
+            // the agent, not what runs it: `python3 agent.py` is agent
+            const RUNNERS: [&str; 10] = ["python", "python3", "node", "npx", "bun", "bunx", "deno", "uv", "uvx", "sh"];
+            let word = cmd
+                .split_whitespace()
+                .find(|w| {
+                    let stem = Path::new(w).file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    !w.starts_with('-') && !RUNNERS.contains(&stem)
+                })
+                .unwrap_or("agent");
+            let word = word.rsplit('/').next().unwrap_or(word);
+            let word = word.split('@').find(|p| !p.is_empty()).unwrap_or("agent");
+            Path::new(word).file_stem().and_then(|s| s.to_str()).unwrap_or("agent").to_string()
+        }
+    }
+}
+
+/// The Claude adapter, and the others published the same way.
+const CLAUDE: (&str, &str) = ("claude-agent-acp", "@agentclientprotocol/claude-agent-acp@latest");
+const CODEX: (&str, &str) = ("codex-acp", "@agentclientprotocol/codex-acp@latest");
+
+/// The agent to run: what was asked for, else the Claude adapter.
+fn resolve(spec: Option<&str>) -> Result<(AcpAgent, String), String> {
+    match spec.map(str::trim) {
+        None | Some("") | Some("claude") => adapter(CLAUDE),
+        Some("codex") => adapter(CODEX),
+        Some(cmd) => AcpAgent::from_str(cmd).map(|a| (a, cmd.to_string())).map_err(|e| e.to_string()),
+    }
+}
+
+/// An adapter published on npm: the command itself when it is installed,
+/// else npx, which may be one someone else brought along.
+fn adapter((bin, pkg): (&str, &str)) -> Result<(AcpAgent, String), String> {
+    if let Some(p) = on_path(bin) {
+        return Ok((AcpAgent::new(AcpAgentConfig::new(p)), bin.to_string()));
+    }
+    let (npx, node_bin) = npx().ok_or_else(|| format!("{bin} is not installed and there is no npx to fetch it with: install node, or -agent CMD"))?;
+    let mut cfg = AcpAgentConfig::new(&npx).args(["-y", pkg]);
+    if let Some(dir) = node_bin {
+        // an npx that is not on PATH needs its node found by name
+        let path = std::env::var("PATH").unwrap_or_default();
+        cfg = cfg.env("PATH", format!("{}:{path}", dir.display()));
+    }
+    Ok((AcpAgent::new(cfg), format!("npx {pkg}")))
+}
+
+fn on_path(name: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+/// npx, and the bin directory to put on PATH when it is not there
+/// already: `$APEX_ACP_NODE_BIN`, else a node another program brought
+/// (Zed keeps one for its own agents).
+fn npx() -> Option<(PathBuf, Option<PathBuf>)> {
+    if let Some(p) = on_path("npx") {
+        return Some((p, None));
+    }
+    let mut dirs: Vec<PathBuf> = std::env::var_os("APEX_ACP_NODE_BIN").map(|d| vec![PathBuf::from(d)]).unwrap_or_default();
+    if let Some(home) = std::env::var_os("HOME") {
+        let zed = PathBuf::from(&home).join("Library/Application Support/Zed/node");
+        if let Ok(rd) = std::fs::read_dir(&zed) {
+            let mut found: Vec<PathBuf> = rd.flatten().map(|e| e.path().join("bin")).filter(|p| p.join("npx").is_file()).collect();
+            found.sort();
+            dirs.extend(found.into_iter().rev());
+        }
+    }
+    dirs.into_iter().find(|d| d.join("npx").is_file()).map(|d| (d.join("npx"), Some(d)))
+}
+
 // ---- the agent side ----------------------------------------------------------
 
 async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::mpsc::UnboundedReceiver<In>) -> Result<(), agent_client_protocol::Error> {
-    let agent = match &opts.agent {
-        Some(cmd) => AcpAgent::from_str(cmd)?,
-        None => AcpAgent::claude_agent(),
+    let (agent, how) = resolve(opts.agent.as_deref()).map_err(|e| agent_client_protocol::Error::into_internal_error(std::io::Error::other(e)))?;
+    let _ = out.send(Out::Note(format!("starting {how}…")));
+    let agent = match std::env::var_os("APEX_ACP_DEBUG") {
+        Some(_) => agent.with_debug(|line, dir| eprintln!("acp {dir:?}: {line}")),
+        None => agent,
     };
     let (o1, o2, o3, o4) = (out.clone(), out.clone(), out.clone(), out.clone());
     let cwd = opts.cwd.clone();
@@ -156,10 +249,34 @@ async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::
                 .send_request(InitializeRequest::new(ProtocolVersion::V1).client_capabilities(caps).client_info(Implementation::new("apex-acp", env!("CARGO_PKG_VERSION"))))
                 .block_task()
                 .await?;
-            let agent = init.agent_info.map(|i| format!("{} {}", i.name, i.version)).unwrap_or_else(|| "agent".to_string());
-            let session = conn.send_request(NewSessionRequest::new(cwd)).block_task().await?;
+            let name = init.agent_info.map(|i| format!("{} {}", i.name, i.version)).unwrap_or_else(|| "the agent".to_string());
+            let auth: Vec<(String, String)> = init.auth_methods.iter().map(|m| (m.id().0.to_string(), m.name().to_string())).collect();
+            let _ = out.send(Out::Hello { agent: name, auth });
+            // a session, logging in first when the agent asks for it
+            let session = loop {
+                match conn.send_request(NewSessionRequest::new(cwd.clone())).block_task().await {
+                    Ok(s) => break s,
+                    Err(e) => {
+                        let _ = out.send(Out::NeedsAuth(e.to_string()));
+                        loop {
+                            match inbox.recv().await {
+                                Some(In::Auth(m)) => match conn.send_request(AuthenticateRequest::new(AuthMethodId::new(m))).block_task().await {
+                                    Ok(_) => break,
+                                    Err(e) => {
+                                        let _ = out.send(Out::Note(format!("login: {e}")));
+                                    }
+                                },
+                                Some(_) => {}
+                                None => return Ok(()),
+                            }
+                        }
+                    }
+                }
+            };
             let sid = session.session_id;
-            let _ = out.send(Out::Ready { agent });
+            let modes = session.modes.as_ref().map(|m| m.available_modes.iter().map(|x| (x.id.0.to_string(), x.name.clone())).collect()).unwrap_or_default();
+            let mode = session.modes.as_ref().map(|m| m.current_mode_id.0.to_string());
+            let _ = out.send(Out::Ready { modes, mode });
 
             let mut queue: VecDeque<String> = VecDeque::new();
             loop {
@@ -167,7 +284,18 @@ async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::
                     Some(t) => t,
                     None => match inbox.recv().await {
                         Some(In::Prompt(t)) => t,
-                        Some(In::Cancel) => continue,
+                        Some(In::Mode(m)) => {
+                            match conn.send_request(SetSessionModeRequest::new(sid.clone(), SessionModeId::new(m.clone()))).block_task().await {
+                                Ok(_) => {
+                                    let _ = out.send(Out::Mode(m));
+                                }
+                                Err(e) => {
+                                    let _ = out.send(Out::Note(format!("mode: {e}")));
+                                }
+                            }
+                            continue;
+                        }
+                        Some(In::Cancel) | Some(In::Auth(_)) => continue,
                         None => return Ok(()),
                     },
                 };
@@ -179,6 +307,23 @@ async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::
                         m = inbox.recv() => match m {
                             Some(In::Cancel) => { let _ = conn.send_notification(CancelNotification::new(sid.clone())); }
                             Some(In::Prompt(t)) => queue.push_back(t),
+                            // mid-turn: sent on a task of its own, so the
+                            // turn's own response can still come in
+                            Some(In::Mode(m)) => {
+                                let (c, s, o) = (conn.clone(), sid.clone(), out.clone());
+                                let _ = conn.spawn(async move {
+                                    match c.send_request(SetSessionModeRequest::new(s, SessionModeId::new(m.clone()))).block_task().await {
+                                        Ok(_) => {
+                                            let _ = o.send(Out::Mode(m));
+                                        }
+                                        Err(e) => {
+                                            let _ = o.send(Out::Note(format!("mode: {e}")));
+                                        }
+                                    }
+                                    Ok(())
+                                });
+                            }
+                            Some(In::Auth(_)) => {}
                             None => return Ok(()),
                         },
                     }
@@ -195,6 +340,10 @@ async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::
 struct Pending {
     /// Anchor of its line's glyph.
     key: String,
+    /// Anchor of the words offered, and how many they are: the decision
+    /// takes their place.
+    offer: String,
+    offered: usize,
     options: Vec<PermissionOption>,
     responder: Responder<RequestPermissionResponse>,
 }
@@ -212,6 +361,10 @@ struct Win {
     anchors: HashMap<String, usize>,
     /// Titles of tool calls seen.
     titles: HashMap<String, String>,
+    /// What each tool call has already put in the window, in order:
+    /// an update carries the whole list again, and only what is new of
+    /// it is worth a line.
+    said: HashMap<String, Vec<String>>,
     /// The plan block, replaced in place.
     plan: Option<(usize, usize)>,
     pending: VecDeque<Pending>,
@@ -220,15 +373,22 @@ struct Win {
     verbs: HashMap<RuleId, &'static str>,
     /// The session's directory, which paths are shown relative to.
     cwd: PathBuf,
+    /// The modes the agent offers (id, name), and the one it is in.
+    modes: Vec<(String, String)>,
+    mode: Option<String>,
+    /// How the agent can be logged in to, when it is not.
+    auth: Vec<(String, String)>,
+    /// The agent's slash commands, as it last said.
+    commands: Vec<(String, String)>,
     inbox: tokio::sync::mpsc::UnboundedSender<In>,
 }
 
-const VERBS: [&str; 6] = ["Send", "Cancel", "Allow", "Always", "Deny", "Never"];
+const VERBS: [&str; 9] = ["Send", "Cancel", "Allow", "Always", "Deny", "Never", "Mode", "Commands", "Login"];
 
 impl Win {
-    fn run(cwd: PathBuf, thoughts: bool, out: mpsc::Receiver<Out>, inbox: tokio::sync::mpsc::UnboundedSender<In>) -> apex_tool::Result<()> {
+    fn run(cwd: PathBuf, label: String, thoughts: bool, out: mpsc::Receiver<Out>, inbox: tokio::sync::mpsc::UnboundedSender<In>) -> apex_tool::Result<()> {
         let mut t = Tool::attach("acp")?;
-        let name = format!("{}/+agent", cwd.display().to_string().trim_end_matches('/'));
+        let name = format!("{}/+{label}", cwd.display().to_string().trim_end_matches('/'));
         let w = t.new_window(&name)?;
         t.watch(w)?;
         let _ = t.set_live(w, true);
@@ -236,8 +396,8 @@ impl Win {
         for v in VERBS {
             verbs.insert(t.offer(Rule::verb(v).window(w))?, v);
         }
-        let mut win = Win { t, w, len: 0, mark: 0, col0: true, anchors: HashMap::new(), titles: HashMap::new(), plan: None, pending: VecDeque::new(), busy: false, thoughts, verbs, cwd, inbox };
-        win.out("starting the agent…\n")?;
+        let mut win = Win { t, w, len: 0, mark: 0, col0: true, anchors: HashMap::new(), titles: HashMap::new(), said: HashMap::new(), plan: None, pending: VecDeque::new(), busy: false, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), commands: Vec::new(), inbox };
+
         loop {
             // the agent's news first, then the window's
             while let Ok(o) = out.try_recv() {
@@ -374,6 +534,9 @@ impl Win {
             "Always" => self.decide(PermissionOptionKind::AllowAlways)?,
             "Deny" => self.decide(PermissionOptionKind::RejectOnce)?,
             "Never" => self.decide(PermissionOptionKind::RejectAlways)?,
+            "Mode" => self.set_mode(args.trim())?,
+            "Commands" => self.list_commands()?,
+            "Login" => self.login(args.trim())?,
             _ => return Ok(false),
         }
         Ok(true)
@@ -421,26 +584,150 @@ impl Win {
         let _ = p.responder.respond(RequestPermissionResponse::new(outcome));
         self.glyph(&p.key, if allow { "✓" } else { "✗" })?;
         self.anchors.remove(&p.key);
+        let said = match kind {
+            PermissionOptionKind::AllowOnce => "allowed",
+            PermissionOptionKind::AllowAlways => "allowed, and not asked again",
+            PermissionOptionKind::RejectOnce => "denied",
+            _ => "denied, and not asked again",
+        };
+        if let Some(&at) = self.anchors.get(&p.offer) {
+            self.splice(at, at + p.offered, said)?;
+        }
+        self.anchors.remove(&p.offer);
         Ok(())
+    }
+
+    /// A mode by its name, when the agent named it.
+    fn mode_name(&self, id: &str) -> String {
+        self.modes.iter().find(|(i, _)| i == id).map(|(_, n)| n.clone()).unwrap_or_else(|| id.to_string())
+    }
+
+    /// `Mode` alone says what the modes are; `Mode NAME` asks for one,
+    /// by its id or its name, a unique prefix of either.
+    fn set_mode(&mut self, want: &str) -> apex_tool::Result<()> {
+        if self.modes.is_empty() {
+            return self.note("this agent has no modes");
+        }
+        if want.is_empty() {
+            let here = self.mode.clone().unwrap_or_default();
+            let w = self.modes.iter().map(|(id, _)| id.chars().count()).max().unwrap_or(0);
+            let mut s = String::from("modes:\n");
+            for (id, name) in &self.modes {
+                let mark = if *id == here { '*' } else { ' ' };
+                s.push_str(&format!("  {mark} {id:<w$}  {name}\n", w = w));
+            }
+            self.line_start()?;
+            return self.out(&s);
+        }
+        let want_low = want.to_lowercase();
+        let hit = self
+            .modes
+            .iter()
+            .find(|(id, name)| id.eq_ignore_ascii_case(want) || name.eq_ignore_ascii_case(want))
+            .or_else(|| self.modes.iter().find(|(id, name)| id.to_lowercase().starts_with(&want_low) || name.to_lowercase().starts_with(&want_low)));
+        match hit {
+            Some((id, _)) => {
+                let _ = self.inbox.send(In::Mode(id.clone()));
+                Ok(())
+            }
+            None => self.note(&format!("no mode {want}")),
+        }
+    }
+
+    fn list_commands(&mut self) -> apex_tool::Result<()> {
+        if self.commands.is_empty() {
+            return self.note("the agent has offered no commands");
+        }
+        let w = self.commands.iter().map(|(n, _)| n.chars().count()).max().unwrap_or(0);
+        let mut s = String::from("commands:\n");
+        for (n, d) in self.commands.clone() {
+            s.push_str(&format!("  /{n:<w$}  {d}\n", w = w));
+        }
+        self.line_start()?;
+        self.out(&s)
+    }
+
+    /// `Login` with a method the agent named, or its only one.
+    fn login(&mut self, want: &str) -> apex_tool::Result<()> {
+        let pick = match (want.is_empty(), self.auth.as_slice()) {
+            (_, []) => return self.note("the agent offers no way to log in from here"),
+            (true, [(id, _)]) => id.clone(),
+            (true, _) => {
+                let list = self.auth.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>().join(", ");
+                return self.note(&format!("Login with one of: {list}"));
+            }
+            (false, ms) => match ms.iter().find(|(id, name)| id.eq_ignore_ascii_case(want) || name.eq_ignore_ascii_case(want)) {
+                Some((id, _)) => id.clone(),
+                None => return self.note(&format!("no login method {want}")),
+            },
+        };
+        self.note(&format!("logging in with {pick}…"))?;
+        let _ = self.inbox.send(In::Auth(pick));
+        Ok(())
+    }
+
+    fn note(&mut self, text: &str) -> apex_tool::Result<()> {
+        self.line_start()?;
+        self.out(&format!("{text}\n"))
     }
 
     // ---- the agent's news ----
 
     fn take(&mut self, o: Out) -> apex_tool::Result<()> {
         match o {
-            Out::Ready { agent } => {
+            Out::Hello { agent, auth } => {
+                self.auth = auth;
                 self.line_start()?;
-                self.out(&format!("{agent} is ready.\n\n"))
+                self.out(&format!("{agent}\n"))
+            }
+            Out::NeedsAuth(why) => {
+                self.line_start()?;
+                self.out(&format!("no session: {why}\n"))?;
+                match self.auth.clone().as_slice() {
+                    [] => self.out("the agent offers no way to log in from here\n"),
+                    ms => {
+                        let list = ms.iter().map(|(id, name)| format!("{id} ({name})")).collect::<Vec<_>>().join(", ");
+                        self.out(&format!("Login to go on: {list}\n"))
+                    }
+                }
+            }
+            Out::Ready { modes, mode } => {
+                self.modes = modes;
+                self.mode = mode;
+                self.line_start()?;
+                let m = self.mode.clone().map(|m| format!(" [{}]", self.mode_name(&m))).unwrap_or_default();
+                self.out(&format!("ready{m}\n\n"))
+            }
+            Out::Mode(id) => {
+                let name = self.mode_name(&id);
+                self.mode = Some(id);
+                self.note(&format!("mode: {name}"))
+            }
+            Out::Note(n) => {
+                self.line_start()?;
+                self.out(&format!("{n}\n"))
             }
             Out::Update(u) => self.update(u),
             Out::Permission { req, responder } => {
                 let id = req.tool_call.tool_call_id.0.to_string();
-                let title = req.tool_call.fields.title.clone().or_else(|| self.titles.get(&id).cloned()).unwrap_or(id);
-                let key = format!("perm:{}", self.pending.len() + self.anchors.len());
+                let seen = self.titles.contains_key(&id);
+                let title = req.tool_call.fields.title.clone().or_else(|| self.titles.get(&id).cloned()).unwrap_or_else(|| id.clone());
+                let n = self.pending.len() + self.anchors.len();
+                let (key, offer) = (format!("perm:{n}"), format!("offer:{n}"));
                 self.line_start()?;
+                // the call has a line of its own already: this goes under it
+                if seen {
+                    self.out("    ")?;
+                }
                 self.anchors.insert(key.clone(), self.mark);
-                self.out(&format!("? {title}: Allow Always Deny Never\n"))?;
-                self.pending.push_back(Pending { key, options: req.options, responder });
+                self.out("? ")?;
+                if !seen {
+                    self.out(&format!("{title}: "))?;
+                }
+                self.anchors.insert(offer.clone(), self.mark);
+                const OFFERED: &str = "Allow Always Deny Never";
+                self.out(&format!("{OFFERED}\n"))?;
+                self.pending.push_back(Pending { key, offer, offered: OFFERED.chars().count(), options: req.options, responder });
                 Ok(())
             }
             Out::Read { req, responder } => {
@@ -452,9 +739,10 @@ impl Win {
                 Ok(())
             }
             Out::Write { req, responder } => {
-                let _ = match std::fs::write(&req.path, req.content) {
+                let res = self.write_file(&req.path, &req.content);
+                let _ = match res {
                     Ok(()) => responder.respond(WriteTextFileResponse::new()),
-                    Err(e) => responder.respond_with_internal_error(format!("{}: {e}", req.path.display())),
+                    Err(e) => responder.respond_with_internal_error(e),
                 };
                 Ok(())
             }
@@ -499,14 +787,20 @@ impl Win {
                 self.line_start()?;
                 self.anchors.insert(id.clone(), self.mark);
                 self.out(&format!("{} {}\n", status_glyph(tc.status), tc.title))?;
-                self.locations(&tc.locations)?;
-                self.contents(&tc.content)
+                self.locations(&id, &tc.locations)?;
+                self.contents(&id, &tc.content)
             }
             SessionUpdate::ToolCallUpdate(up) => self.tool_update(&up),
             SessionUpdate::Plan(plan) => self.show_plan(&plan),
             SessionUpdate::CurrentModeUpdate(m) => {
-                self.line_start()?;
-                self.out(&format!("mode: {}\n", m.current_mode_id.0))
+                let id = m.current_mode_id.0.to_string();
+                let name = self.mode_name(&id);
+                self.mode = Some(id);
+                self.note(&format!("mode: {name}"))
+            }
+            SessionUpdate::AvailableCommandsUpdate(u) => {
+                self.commands = u.available_commands.iter().map(|c| (c.name.clone(), c.description.clone())).collect();
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -526,10 +820,10 @@ impl Win {
             self.glyph(&id, status_glyph(s))?;
         }
         if let Some(locs) = &f.locations {
-            self.locations(locs)?;
+            self.locations(&id, locs)?;
         }
         if let Some(c) = &f.content {
-            self.contents(c)?;
+            self.contents(&id, c)?;
         }
         Ok(())
     }
@@ -539,10 +833,35 @@ impl Win {
         p.strip_prefix(&self.cwd).unwrap_or(p).display().to_string()
     }
 
-    fn locations(&mut self, locs: &[ToolCallLocation]) -> apex_tool::Result<()> {
-        for l in locs {
+    /// Write the blocks of `key` that are not already there. Agents
+    /// resend a tool call's whole content and locations with every
+    /// update of it; what has not changed is already on the screen.
+    fn fresh(&mut self, key: &str, blocks: Vec<String>) -> apex_tool::Result<()> {
+        let old = self.said.entry(key.to_string()).or_default().clone();
+        for (i, b) in blocks.iter().enumerate() {
+            if old.get(i) == Some(b) {
+                continue;
+            }
             self.line_start()?;
+            self.out(b)?;
+        }
+        self.said.insert(key.to_string(), blocks);
+        Ok(())
+    }
+
+    /// Where a call works, one line per file: agents name the same file
+    /// again as they learn where in it they are, and the second naming
+    /// is no news.
+    fn locations(&mut self, id: &str, locs: &[ToolCallLocation]) -> apex_tool::Result<()> {
+        let key = format!("{id}/where");
+        for l in locs {
             let p = self.shown(&l.path);
+            let seen = self.said.entry(key.clone()).or_default();
+            if seen.iter().any(|x| *x == p) {
+                continue;
+            }
+            seen.push(p.clone());
+            self.line_start()?;
             match l.line {
                 Some(n) => self.out(&format!("    {p}:{n}\n"))?,
                 None => self.out(&format!("    {p}\n"))?,
@@ -551,34 +870,41 @@ impl Win {
         Ok(())
     }
 
-    fn contents(&mut self, cs: &[ToolCallContent]) -> apex_tool::Result<()> {
+    fn contents(&mut self, id: &str, cs: &[ToolCallContent]) -> apex_tool::Result<()> {
+        let mut blocks = Vec::new();
         for c in cs {
-            self.line_start()?;
+            let mut b = String::new();
             match c {
                 ToolCallContent::Diff(d) => {
                     let p = self.shown(&d.path);
-                    self.out(&format!("    edit {p}\n"))?
+                    let (lines, cut) = hunk(d.old_text.as_deref().unwrap_or(""), &d.new_text);
+                    let (minus, plus) = (lines.iter().filter(|l| l.starts_with('-')).count(), lines.iter().filter(|l| l.starts_with('+')).count());
+                    b.push_str(&format!("    {p}  +{plus} -{minus}\n"));
+                    for l in &lines {
+                        b.push_str(&format!("    {l}\n"));
+                    }
+                    if cut > 0 {
+                        b.push_str(&format!("    … {cut} more lines\n"));
+                    }
                 }
-                ToolCallContent::Terminal(t) => self.out(&format!("    terminal {}\n", t.terminal_id.0))?,
+                ToolCallContent::Terminal(t) => b.push_str(&format!("    terminal {}\n", t.terminal_id.0)),
                 ToolCallContent::Content(c) => {
                     let text = content_text(&c.content);
                     let lines: Vec<&str> = text.lines().collect();
                     let shown = lines.len().min(12);
-                    let mut s = String::new();
                     for l in &lines[..shown] {
-                        s.push_str("    ");
-                        s.push_str(l);
-                        s.push('\n');
+                        b.push_str(&format!("    {l}\n"));
                     }
                     if lines.len() > shown {
-                        s.push_str(&format!("    … {} more lines\n", lines.len() - shown));
+                        b.push_str(&format!("    … {} more lines\n", lines.len() - shown));
                     }
-                    self.out(&s)?;
                 }
                 _ => {}
             }
+            blocks.push(b);
         }
-        Ok(())
+        blocks.retain(|b| !b.is_empty());
+        self.fresh(&format!("{id}/what"), blocks)
     }
 
     fn show_plan(&mut self, plan: &Plan) -> apex_tool::Result<()> {
@@ -602,6 +928,23 @@ impl Win {
         Ok(())
     }
 
+    /// A file written: through its window when one is open, so the
+    /// change is an edit the user can undo and see, and then put, so
+    /// what the agent builds and tests next is on disk too. With no
+    /// window, straight to the disk, where the watcher (§9) brings it
+    /// into any clean window later.
+    fn write_file(&mut self, path: &Path, content: &str) -> Result<(), String> {
+        let name = path.display().to_string();
+        let open = self.t.windows().into_iter().find(|w| w.name == name).map(|w| w.id);
+        match open {
+            Some(w) => {
+                self.t.replace(w, 0, apex_tool::END, content).map_err(|e| e.0)?;
+                self.t.exec_in(Some(w), "Put").map_err(|e| e.0)
+            }
+            None => std::fs::write(path, content).map_err(|e| format!("{name}: {e}")),
+        }
+    }
+
     /// A file's text: the window's when one is open under that name,
     /// else the disk's. `line` is 1-based; `limit` counts lines.
     fn read_file(&self, path: &Path, line: Option<u32>, limit: Option<u32>) -> Result<String, String> {
@@ -622,6 +965,33 @@ impl Win {
         }
         Ok(out)
     }
+}
+
+/// The one changed stretch between two texts, as `-`/`+` lines, and how
+/// many were left out. Agents edit a place at a time, so the common
+/// prefix and suffix are enough to find it.
+fn hunk(old: &str, new: &str) -> (Vec<String>, usize) {
+    const KEEP: usize = 12;
+    let (o, n): (Vec<&str>, Vec<&str>) = (old.lines().collect(), new.lines().collect());
+    let mut a = 0;
+    while a < o.len() && a < n.len() && o[a] == n[a] {
+        a += 1;
+    }
+    let mut b = 0;
+    while a + b < o.len() && a + b < n.len() && o[o.len() - 1 - b] == n[n.len() - 1 - b] {
+        b += 1;
+    }
+    let (gone, come) = (&o[a..o.len() - b], &n[a..n.len() - b]);
+    let mut lines = Vec::new();
+    let mut cut = 0;
+    for (mark, part) in [('-', gone), ('+', come)] {
+        let shown = part.len().min(KEEP);
+        for l in &part[..shown] {
+            lines.push(format!("{mark}{l}"));
+        }
+        cut += part.len() - shown;
+    }
+    (lines, cut)
 }
 
 fn status_glyph(s: ToolCallStatus) -> &'static str {
