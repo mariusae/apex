@@ -60,10 +60,16 @@ fn a_tool_works_a_window_and_answers_its_verb() {
     while other.node.state.buffer(b).unwrap().text.to_string() != "Hello\nLOUD\n" && Instant::now() < deadline {
         let _ = other.step(Duration::from_millis(20));
     }
+    t.append(w, "mine\n").unwrap();
+    assert_eq!(t.next_event(Some(Duration::from_millis(300))).unwrap(), None);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while other.node.state.buffer(b).unwrap().text.to_string() != "Hello\nLOUD\nmine\n" && Instant::now() < deadline {
+        let _ = other.step(Duration::from_millis(20));
+    }
     let version = other.node.state.buffer(b).unwrap().version;
-    other.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: END.min(11), q1: 11, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
+    other.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: END.min(16), q1: 16, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
     let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("an edit");
-    assert_eq!(ev, Event::Edit(apex_tool::Edit { window: w, q0: 11, nd: 0, text: "typed\n".into() }));
+    assert_eq!(ev, Event::Edit(apex_tool::Edit { window: w, q0: 16, nd: 0, text: "typed\n".into() }));
     // a rename and a deletion are events too (live, so Del does not ask)
     t.rename(w, "/tmp/shout-renamed").unwrap();
     t.set_live(w, true).unwrap();

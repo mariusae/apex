@@ -211,6 +211,10 @@ pub struct Tool {
     /// renames and deletions are reported for these.
     ours: BTreeMap<WindowId, String>,
     events: VecDeque<Event>,
+    /// Replacements of ours in watched windows still to come back: the
+    /// leader applies proposals as itself, so an edit's entries do not
+    /// say who asked for it, and ours are known by their shape.
+    own: VecDeque<(BufferId, usize, usize, String)>,
 }
 
 impl Tool {
@@ -227,7 +231,7 @@ impl Tool {
         let remote = Remote::connect_as(socket, session, name, AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
         // called by our name, not apex, in the top row and ps
         remote.announce(name);
-        Ok(Tool { remote, watched: BTreeSet::new(), ours: BTreeMap::new(), events: VecDeque::new() })
+        Ok(Tool { remote, watched: BTreeSet::new(), ours: BTreeMap::new(), events: VecDeque::new(), own: VecDeque::new() })
     }
 
     /// The attachment's name.
@@ -312,13 +316,13 @@ impl Tool {
     fn before(&mut self, m: &ServerMsg) {
         let ServerMsg::Entries { shard, entries } = m else { return };
         let Shard::Buffer(b) = shard else { return };
-        let me = self.remote.attachment();
         let Some(w) = self.watched.iter().copied().find(|w| self.remote.node.state.window(*w).ok().and_then(|x| x.body_buffer()) == Some(*b)) else { return };
         for e in entries {
-            if e.attachment == me {
-                continue;
-            }
             if let Op::Buffer(BufferOp::Edit { q0, nd, text, .. }) = &e.op {
+                if let Some(i) = self.own.iter().position(|(ob, oq0, ond, otext)| ob == b && oq0 == q0 && ond == nd && otext == text) {
+                    self.own.remove(i);
+                    continue;
+                }
                 self.events.push_back(Event::Edit(Edit { window: w, q0: *q0, nd: *nd, text: text.clone() }));
             }
         }
@@ -459,6 +463,14 @@ impl Tool {
         let (q0, q1) = (q0.min(len), q1.min(len));
         if q1 < q0 {
             return Err("q1 before q0".into());
+        }
+        if self.watched.contains(&w) {
+            // ours, when it comes back; a bounded memory, should the
+            // leader have changed it on the way
+            self.own.push_back((b, q0, q1 - q0, text.to_string()));
+            if self.own.len() > 256 {
+                self.own.pop_front();
+            }
         }
         self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0, q1, text: text.to_string() })?;
         Ok(())
