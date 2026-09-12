@@ -20,6 +20,8 @@
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
 //! - `rename {window, name}`, `live {window, on}`, `working {window, on}`, `delete {window}`
+//! - `page {name, html}` → `window` (a window showing HTML as a page;
+//!   `write` on it rewrites the page)
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
@@ -151,6 +153,11 @@ impl Bridge {
             "new" => {
                 let name = v["name"].as_str().ok_or("name")?;
                 Ok(json!({ "window": self.tool.new_window(name).map_err(e)?.0 }))
+            }
+            "page" => {
+                let name = v["name"].as_str().ok_or("name")?;
+                let html = v["html"].as_str().unwrap_or("");
+                Ok(json!({ "window": self.tool.new_page(name, html).map_err(e)?.0 }))
             }
             "open" => {
                 let name = v["name"].as_str().ok_or("name")?;

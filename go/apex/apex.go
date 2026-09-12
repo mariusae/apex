@@ -269,6 +269,18 @@ func (t *Tool) New(name string) (*Window, error) {
 	return &Window{ID: r.Window, t: t}, nil
 }
 
+// NewPage makes a window showing html as a page, in the last column.
+// Writing to the window rewrites the page.
+func (t *Tool) NewPage(name, html string) (*Window, error) {
+	var r struct {
+		Window int `json:"window"`
+	}
+	if err := t.call("page", map[string]any{"name": name, "html": html}, &r); err != nil {
+		return nil, err
+	}
+	return &Window{ID: r.Window, t: t}, nil
+}
+
 // Open shows the file (or directory) of this name, opening it if it is
 // not open, at line (1-based) when line is not 0.
 func (t *Tool) Open(name string, line int) (*Window, error) {

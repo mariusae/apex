@@ -412,6 +412,18 @@ impl Tool {
         Ok(w)
     }
 
+    /// A new window in the last column showing `html` as a page (WEB.md
+    /// §3). Its body is the HTML, so `replace` rewrites the page in
+    /// place: a tool with something to show that is not text keeps one
+    /// window and writes it again. The name is a path, as every
+    /// window's is, and says nothing about where the HTML came from.
+    pub fn new_page(&mut self, name: &str, html: &str) -> Result<WindowId> {
+        let col = self.remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
+        let w = self.propose(Proposal::OpenHtml { col, name: name.to_string(), text: html.to_string() })?.ok_or("no window made")?;
+        self.remember(w);
+        Ok(w)
+    }
+
     /// The file (or directory) of this name shown, opened if it is not
     /// open, at `line` (1-based) when given.
     pub fn open(&mut self, name: &str, line: Option<usize>) -> Result<WindowId> {

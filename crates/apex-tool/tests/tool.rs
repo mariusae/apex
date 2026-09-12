@@ -84,6 +84,18 @@ fn a_tool_works_a_window_and_answers_its_verb() {
 }
 
 #[test]
+fn a_page_window_is_made_and_written_again() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "shower").unwrap();
+    let w = t.new_page("/tmp/shower+Preview", "<h1>one</h1>").unwrap();
+    assert_eq!(t.read(w).unwrap(), "<h1>one</h1>");
+    assert!(t.windows().iter().any(|x| x.id == w && x.name == "/tmp/shower+Preview"));
+    // the page is its body: written again, it is another page
+    t.replace(w, 0, END, "<h1>two</h1>").unwrap();
+    assert_eq!(t.read(w).unwrap(), "<h1>two</h1>");
+}
+
+#[test]
 fn work_behind_a_window_shows_while_the_tool_is_there() {
     let sock = daemon();
     let mut t = Tool::attach_to(&sock, "main", "slow").unwrap();

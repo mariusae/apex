@@ -857,9 +857,12 @@ Rust API for tools, a curated surface on `Remote` with nothing of the
 wire or the replicated state showing through: `Tool::attach(name)`,
 `next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
-`new_window open read replace append select selection show show_line
-line rename set_live delete exec exec_in errors watch unwatch set
-setting`. `open` is a jump (acme's plumbing a `file:line`: the origin
+`new_window new_page open read replace append select selection show
+show_line line rename set_live set_working delete exec exec_in errors
+watch unwatch set setting`. `new_page` makes a window whose body is
+HTML, shown as a page: a tool with something to show that is not text
+keeps one window and writes it again with `replace`, rather than opening
+a window a turn. `set_working` is the pulsing handle (§11). `open` is a jump (acme's plumbing a `file:line`: the origin
 on the back stack, the line selected and shown, the mouse warped there);
 `show` is acme's `show` after `addr=`: the place brought on screen if
 it is off it, and nothing else moved. A tool that edits a window and
