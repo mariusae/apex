@@ -43,17 +43,22 @@ pub fn set_theme(m: crate::theme::Mode, cx: &mut App) {
 /// told light's), pages restyled, every window redrawn.
 pub fn apply_theme(cx: &mut App) {
     cx.set_menus(menus());
-    // the daemons hear the new colours, for the programs that ask
-    for w in cx.windows() {
-        if let Some(h) = w.downcast::<crate::app::Acme>() {
-            let _ = h.update(cx, |acme, _, _| {
-                acme.send_config();
-                acme.webs.restyle(); // pages from buffers take the colours
-            });
+    // the daemons hear the new colours, for the programs that ask: after
+    // this update, since a menu's action arrives while the focused window
+    // is mid-update and cannot be reached (its link, the one the shown
+    // session's terminals answer from, was left on the old colours)
+    cx.defer(|cx| {
+        for w in cx.windows() {
+            if let Some(h) = w.downcast::<crate::app::Acme>() {
+                let _ = h.update(cx, |acme, _, _| {
+                    acme.send_config();
+                    acme.webs.restyle(); // pages from buffers take the colours
+                });
+            }
         }
-    }
-    crate::pool::Pool::send_config(cx);
-    cx.refresh_windows();
+        crate::pool::Pool::send_config(cx);
+        cx.refresh_windows();
+    });
 }
 
 /// Set by the Quit action so closing windows on the way out does not
