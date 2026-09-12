@@ -1696,9 +1696,33 @@ undoable and on disk for whatever the agent builds next; with no window
 open it writes to disk, where the watcher (§9) brings it into clean
 windows. Anthropic's `claude-agent-acp` is the default agent, run from
 an install or fetched with npx, on the Claude Code CLI's own
-credentials. Left out so far: the terminal capability (agents run
-commands themselves and report the output), images, resuming a session,
-several agents in one window.
+credentials.
+
+*Terminals* (the protocol's `terminal/*`, advertised as a client
+capability) are how an agent runs commands: it asks us to start one, to
+say what it has written, to wait for its end, to kill it, to let it go.
+A terminal here is a child of ours with its output captured, not a pty
+-- what the protocol asks for is a command run, its bytes kept and its
+exit status reported, and nothing in it is interactive. Every command's
+output goes to one window beside the session's, `DIR/+claude+run`,
+acme's `+Errors` for what the agent runs: one window rather than one a
+command, so a turn that builds and tests and greps does not bury the
+column. Each command's output is headed by the command itself whenever
+another wrote last, and followed by how it ended, and it arrives live,
+so a build is watched as it runs and a compiler's `path:line` is
+plumbable the moment it is printed; the window follows its output by
+acme's rule (§8, win's), so scrolling back to read an error holds it
+still. The handle pulses while anything is running. `Stop` in the
+session's window ends every command going; Del on the run window clears
+it, and what is still running goes on into a fresh one; deleting the
+session's window, or releasing a terminal, ends the commands it holds.
+A command is started in a process group of its own so that ending it
+reaches what it started -- killing the shell alone would leave the
+build running. What the agent reads is the command's own bytes, to the
+byte limit it asked for (truncated from the front, at a character
+boundary, as the protocol says); the heading and the exit line are the
+window's, not the transcript's. Left out so far: images, resuming a
+session, several agents in one window.
 
 What the spike says, back to apex. Tools that write a window they also
 watch need their own edits filtered out, which the crate now does. An
@@ -1709,7 +1733,11 @@ hand. The prompt/output split wants a first-class mark. And agents
 resend a tool call's whole content with each update, so a client that
 appends must remember what it has already shown; a shard of entries
 keyed by tool call would make that the model's problem, not the
-renderer's.
+renderer's. And the terminal capability wants a terminal: the tool API
+has no way to make one (a `term` shard is the server's, §3.2), so the
+spike captures a child's pipes instead and gets no pty, no `^C`, no
+interactive command -- the one place where the public surface fell
+short of what the experiment needed.
 
 ### Open questions
 

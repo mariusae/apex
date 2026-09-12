@@ -11,4 +11,5 @@ path = "src/main.rs"
 [dependencies]
 apex-tool = { path = "../../crates/apex-tool" }
 agent-client-protocol = "2.1"
+libc = "0.2"
 tokio = { version = "1", features = ["rt", "macros", "process", "io-util", "sync", "time"] }

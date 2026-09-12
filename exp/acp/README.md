@@ -49,26 +49,41 @@ agent does want a login, the window says so and `Login` does it.
   whole: what is half-said is in the transcript.
 - `Cancel` interrupts the turn. Something typed while the agent is busy
   goes as the next prompt when the turn ends, if it ends in a newline.
+- Commands the agent runs go into one window beside this one,
+  `DIR/+claude+run`, as acme's `+Errors` holds what B2 runs. Output
+  arrives live, each command headed by itself and followed by how it
+  ended, so a build is watched as it runs and a compiler's `path:line`
+  is B3'd the moment it is printed; the window follows its output as a
+  win does, so scrolling back to read an error holds it still. Its
+  handle pulses while anything is running. `Stop` here ends every
+  command going. Del on the run window clears it; what is still
+  running goes on, into a fresh one.
 - The agent reads files through apex when a window has them (unsaved
   edits included). It writes them back through the window too, so the
   change is an edit you can see and undo, and then a `Put`, so what the
   agent builds and tests next is on disk. With no window open, it writes
   straight to disk, where the watcher brings it into clean windows.
-- Deleting the window ends the agent.
+- Deleting the window ends the agent, and the commands it was running.
 
 ## Trying it without an agent
 
 `fake_agent.py` here speaks enough ACP over stdio to show every path:
 a streamed reply, a plan, modes, slash commands, a tool call that reads a
-file through apex, a permission request, a diff, a write, and
-cancellation (prompt `slow`, then `Cancel`, which is also how to watch
-the handle pulse).
+file through apex, a permission request, a diff, a write, a command run
+in a terminal, and cancellation (prompt `slow`, then `Cancel`, which is
+also how to watch the handle pulse). Its command ticks for three
+seconds, long enough to watch the output arrive and to `Stop` it;
+`$FAKE_CMD` is a shell script of your own instead.
 
     apex-acp -agent "python3 exp/acp/fake_agent.py" -thoughts
 
 ## Not done
 
-The terminal capability (agents run commands themselves and report the
-output, which is what the transcript shows), images, resuming a session,
-several agents in one window, session config options, styling of any
-kind.
+Images, resuming a session, several agents in one window, session config
+options, styling of any kind.
+
+A terminal here is a child process with its output captured, which is
+what the protocol asks for, but not a pty: nothing typed reaches a
+command, so one that wants an answer will wait for an end of file it
+never gets. A real pty would mean a `term` window, which the tool API
+does not offer.

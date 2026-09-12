@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A fake ACP agent: streams a reply, makes a tool call, asks permission,
-reads a file through the client, updates a plan. Logs to stderr."""
+reads a file through the client, runs a command in its terminal, updates
+a plan. Logs to stderr."""
 import json, sys, os
 
 def send(msg):
@@ -24,9 +25,11 @@ def ask(method, params):
 
 cancelled = [False]
 authed = [False]
+terminals = [False]
 def handle(m):
     method = m.get("method")
     if method == "initialize":
+        terminals[0] = bool(m.get("params", {}).get("clientCapabilities", {}).get("terminal"))
         auth = [{"id": "fake-login", "name": "Log in to Fake"}] if os.environ.get("FAKE_NEEDS_AUTH") else []
         send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {}, "authMethods": auth, "agentInfo": {"name": "fake-agent", "version": "0.1"}}})
     elif method == "authenticate":
@@ -72,6 +75,20 @@ def handle(m):
         notify(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "completed", "content": [{"type": "diff", "path": path, "oldText": "one\ntwo\nthree\n", "newText": "one\nTWO\nthree\nfour\n"}]})
         w = ask("fs/write_text_file", {"sessionId": sid, "path": path, "content": "one\nTWO\nthree\nfour\n"})
         sys.stderr.write(f"fake: write {w.get('result', w.get('error'))}\n")
+        if terminals[0]:
+            # a command that takes a few seconds, so its output arrives
+            # live and there is time to B2 Kill it
+            script = os.environ.get("FAKE_CMD", "for i in 1 2 3; do echo tick $i; sleep 1; done; echo done")
+            r = ask("terminal/create", {"sessionId": sid, "command": "sh", "args": ["-c", script]})
+            tid = r.get("result", {}).get("terminalId")
+            sys.stderr.write(f"fake: terminal {tid}\n")
+            notify(sid, {"sessionUpdate": "tool_call", "toolCallId": "t3", "title": "sh -c " + script, "kind": "execute", "status": "in_progress", "content": [{"type": "terminal", "terminalId": tid}]})
+            e = ask("terminal/wait_for_exit", {"sessionId": sid, "terminalId": tid}).get("result", {})
+            o = ask("terminal/output", {"sessionId": sid, "terminalId": tid}).get("result", {})
+            sys.stderr.write(f"fake: exit {e} output {o.get('output')!r}\n")
+            ok = e.get("exitStatus", e).get("exitCode") == 0
+            notify(sid, {"sessionUpdate": "tool_call_update", "toolCallId": "t3", "status": "completed" if ok else "failed"})
+            ask("terminal/release", {"sessionId": sid, "terminalId": tid})
         notify(sid, {"sessionUpdate": "plan", "entries": [{"content": "read the file", "priority": "medium", "status": "completed"}, {"content": "answer", "priority": "medium", "status": "completed"}]})
         notify(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\nDone with " + path + "."}})
         send({"jsonrpc": "2.0", "id": m["id"], "result": {"stopReason": "end_turn"}})

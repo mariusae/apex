@@ -250,6 +250,7 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "apex-tool",
+ "libc",
  "tokio",
 ]
 

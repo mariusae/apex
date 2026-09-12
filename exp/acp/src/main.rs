@@ -12,7 +12,8 @@
 //! works, and rests while it waits for an answer. `Preview` toggles a
 //! page beside it holding the last finished reply, rendered. The agent
 //! reads files through apex when they are open (unsaved edits
-//! included); its writes go back the same way.
+//! included); its writes go back the same way, and the commands it runs
+//! (§ terminals) go into a window of their own, `Stop` ending them.
 //!
 //!     apex-acp [-agent claude|codex|CMD] [-cwd DIR] [-thoughts]
 //!
@@ -28,15 +29,20 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    AuthMethodId, AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock, FileSystemCapabilities, Implementation,
-    InitializeRequest, NewSessionRequest, PermissionOption, PermissionOptionKind, Plan, PlanEntryStatus, PromptRequest,
-    ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionModeId, SessionNotification, SessionUpdate, SetSessionModeRequest, StopReason, TextContent,
-    ToolCallContent, ToolCallLocation, ToolCallStatus, ToolCallUpdate, WriteTextFileRequest, WriteTextFileResponse,
+    AuthMethodId, AuthenticateRequest, CancelNotification, ClientCapabilities, ContentBlock, CreateTerminalRequest,
+    CreateTerminalResponse, FileSystemCapabilities, Implementation, InitializeRequest, KillTerminalRequest, KillTerminalResponse,
+    NewSessionRequest, PermissionOption, PermissionOptionKind, Plan, PlanEntryStatus, PromptRequest, ReadTextFileRequest,
+    ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionModeId, SessionNotification, SessionUpdate, SetSessionModeRequest,
+    StopReason, TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse, TextContent, ToolCallContent,
+    ToolCallLocation, ToolCallStatus, ToolCallUpdate, WaitForTerminalExitRequest, WaitForTerminalExitResponse, WriteTextFileRequest,
+    WriteTextFileResponse,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo, Responder};
 use apex_tool::{Event, Rule, RuleId, Tool, WindowId};
+
+mod term;
 
 /// What the agent side tells the window side.
 enum Out {
@@ -54,10 +60,23 @@ enum Out {
     Permission { req: RequestPermissionRequest, responder: Responder<RequestPermissionResponse> },
     Read { req: ReadTextFileRequest, responder: Responder<ReadTextFileResponse> },
     Write { req: WriteTextFileRequest, responder: Responder<WriteTextFileResponse> },
+    /// The agent wants a command run, or news of one it is running.
+    Term(TermReq),
     /// A turn ended, well or badly.
     Turn(Result<StopReason, String>),
     /// The agent side is over.
     Gone(String),
+}
+
+/// The `terminal/*` methods, which the window side answers: it owns the
+/// commands, since it is what shows them.
+enum TermReq {
+    Create { req: CreateTerminalRequest, responder: Responder<CreateTerminalResponse> },
+    Output { req: TerminalOutputRequest, responder: Responder<TerminalOutputResponse> },
+    /// Answered when the command is over, which may be a long time.
+    Wait { req: WaitForTerminalExitRequest, responder: Responder<WaitForTerminalExitResponse> },
+    Kill { req: KillTerminalRequest, responder: Responder<KillTerminalResponse> },
+    Release { req: ReleaseTerminalRequest, responder: Responder<ReleaseTerminalResponse> },
 }
 
 /// What the window side tells the agent side.
@@ -213,6 +232,7 @@ async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::
         None => agent,
     };
     let (o1, o2, o3, o4) = (out.clone(), out.clone(), out.clone(), out.clone());
+    let (t1, t2, t3, t4, t5) = (out.clone(), out.clone(), out.clone(), out.clone(), out.clone());
     let cwd = opts.cwd.clone();
     agent_client_protocol::Client
         .builder()
@@ -245,8 +265,46 @@ async fn agent_side(opts: Opts, out: mpsc::Sender<Out>, mut inbox: tokio::sync::
             },
             agent_client_protocol::on_receive_request!(),
         )
+        .on_receive_request(
+            async move |req: CreateTerminalRequest, responder, _cx| {
+                let _ = t1.send(Out::Term(TermReq::Create { req, responder }));
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: TerminalOutputRequest, responder, _cx| {
+                let _ = t2.send(Out::Term(TermReq::Output { req, responder }));
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: WaitForTerminalExitRequest, responder, _cx| {
+                // held until the command ends: the window side answers
+                let _ = t3.send(Out::Term(TermReq::Wait { req, responder }));
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: KillTerminalRequest, responder, _cx| {
+                let _ = t4.send(Out::Term(TermReq::Kill { req, responder }));
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |req: ReleaseTerminalRequest, responder, _cx| {
+                let _ = t5.send(Out::Term(TermReq::Release { req, responder }));
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
         .connect_with(agent, |conn: ConnectionTo<Agent>| async move {
-            let caps = ClientCapabilities::new().fs(FileSystemCapabilities::new().read_text_file(true).write_text_file(true));
+            let caps = ClientCapabilities::new()
+                .fs(FileSystemCapabilities::new().read_text_file(true).write_text_file(true))
+                .terminal(true);
             let init = conn
                 .send_request(InitializeRequest::new(ProtocolVersion::V1).client_capabilities(caps).client_info(Implementation::new("apex-acp", env!("CARGO_PKG_VERSION"))))
                 .block_task()
@@ -350,6 +408,14 @@ struct Pending {
     responder: Responder<RequestPermissionResponse>,
 }
 
+/// A command the agent is running, and who is waiting for it to end.
+struct Term {
+    run: term::Run,
+    waiting: Vec<Responder<WaitForTerminalExitResponse>>,
+    /// Whether its end has been told: to the window, and to the waiters.
+    ended: bool,
+}
+
 struct Win {
     t: Tool,
     w: WindowId,
@@ -390,10 +456,20 @@ struct Win {
     page: Option<WindowId>,
     /// What we last told the window about the work going on.
     pulsing: bool,
+    /// The commands the agent is running, by the id we gave each.
+    terms: HashMap<String, Term>,
+    next_term: usize,
+    /// The window every command's output goes to, and which command
+    /// wrote to it last: another's output is headed afresh.
+    run: Option<WindowId>,
+    wrote: Option<String>,
+    run_col0: bool,
+    /// Whether the run window is pulsing.
+    running: bool,
     inbox: tokio::sync::mpsc::UnboundedSender<In>,
 }
 
-const VERBS: [&str; 10] = ["Send", "Cancel", "Allow", "Always", "Deny", "Never", "Mode", "Commands", "Login", "Preview"];
+const VERBS: [&str; 11] = ["Send", "Cancel", "Allow", "Always", "Deny", "Never", "Mode", "Commands", "Login", "Preview", "Stop"];
 
 impl Win {
     fn run(cwd: PathBuf, label: String, thoughts: bool, out: mpsc::Receiver<Out>, inbox: tokio::sync::mpsc::UnboundedSender<In>) -> apex_tool::Result<()> {
@@ -406,13 +482,16 @@ impl Win {
         for v in VERBS {
             verbs.insert(t.offer(Rule::verb(v).window(w))?, v);
         }
-        let mut win = Win { t, w, len: 0, mark: 0, col0: true, anchors: HashMap::new(), titles: HashMap::new(), said: HashMap::new(), plan: None, pending: VecDeque::new(), busy: false, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), commands: Vec::new(), reply: String::new(), last: None, page: None, pulsing: false, inbox };
+        let mut win = Win { t, w, len: 0, mark: 0, col0: true, anchors: HashMap::new(), titles: HashMap::new(), said: HashMap::new(), plan: None, pending: VecDeque::new(), busy: false, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), commands: Vec::new(), reply: String::new(), last: None, page: None, pulsing: false, terms: HashMap::new(), next_term: 1, run: None, wrote: None, run_col0: true, running: false, inbox };
 
         let r = win.serve(out);
         // the page is ours: it goes with us
         if let Some(p) = win.page.take() {
             let _ = win.t.delete(p);
         }
+        // and so are the commands: nothing the agent started outlives
+        // its window. The run window stays, as the record of what ran.
+        win.terms.clear();
         r
     }
 
@@ -424,6 +503,7 @@ impl Win {
             while let Ok(o) = out.try_recv() {
                 win.take(o)?;
             }
+            win.tick_terms()?;
             let ev = win.t.next_event(Some(Duration::from_millis(20)))?;
             if ev.is_some() && std::env::var_os("APEX_ACP_DEBUG").is_some() {
                 eprintln!("acp: {ev:?} len={} mark={} busy={}", win.len, win.mark, win.busy);
@@ -433,6 +513,13 @@ impl Win {
                 None => {}
                 Some(Event::Deleted { window }) if window == win.w => return Ok(()),
                 Some(Event::Deleted { window }) if Some(window) == win.page => win.page = None,
+                // Del on the run window clears it; what is still running
+                // goes on, into a fresh one
+                Some(Event::Deleted { window }) if Some(window) == win.run => {
+                    win.run = None;
+                    win.wrote = None;
+                    win.running = false;
+                }
                 Some(Event::Edit(e)) if e.window == win.w => win.edit(e.q0, e.nd, &e.text)?,
                 Some(Event::Plumb(p)) => {
                     let taken = match win.verbs.get(&p.rule).copied() {
@@ -560,6 +647,7 @@ impl Win {
             "Commands" => self.list_commands()?,
             "Login" => self.login(args.trim())?,
             "Preview" => self.toggle_page()?,
+            "Stop" => self.kill_terms()?,
             _ => return Ok(false),
         }
         Ok(true)
@@ -750,6 +838,203 @@ impl Win {
         self.out(&format!("{text}\n"))
     }
 
+    // ---- terminals: the commands the agent runs ----
+
+    /// The window every command's output goes to, made when the first
+    /// one starts and again if it is deleted: acme's `+Errors` for what
+    /// the agent runs. One window rather than one a command, so a turn
+    /// that builds and tests and greps does not bury the column.
+    fn run_window(&mut self) -> apex_tool::Result<WindowId> {
+        if let Some(w) = self.run {
+            if self.t.windows().iter().any(|x| x.id == w) {
+                return Ok(w);
+            }
+            self.run = None;
+            self.wrote = None;
+        }
+        let name = format!("{}+run", self.t.window_name(self.w).unwrap_or_else(|| "+agent".to_string()));
+        let w = self.t.new_window(&name)?;
+        // ours, as the page is: Del does not ask about the text in it
+        let _ = self.t.set_live(w, true);
+        self.run = Some(w);
+        self.run_col0 = true;
+        self.running = false;
+        Ok(w)
+    }
+
+    /// Output from the command `id` into the run window, headed by the
+    /// command itself whenever another one wrote last. `line` asks for
+    /// it to begin on a line of its own. Nothing is written here that
+    /// the agent reads: what it asked for is the command's own bytes,
+    /// which the head and the exit line are not part of.
+    fn to_run(&mut self, id: &str, cmd: &str, text: &str, line: bool) -> apex_tool::Result<()> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let w = self.run_window()?;
+        let mut s = String::new();
+        if self.wrote.as_deref() != Some(id) {
+            if !self.run_col0 {
+                s.push('\n');
+            }
+            if self.wrote.is_some() {
+                s.push('\n');
+            }
+            s.push_str(&format!("$ {cmd}\n"));
+            self.wrote = Some(id.to_string());
+        } else if line && !self.run_col0 {
+            s.push('\n');
+        }
+        s.push_str(text);
+        self.run_col0 = s.ends_with('\n');
+        self.t.append(w, &s)
+    }
+
+    /// What the commands have written since the last turn round the
+    /// loop, and which of them have ended. Their output arrives on
+    /// threads of its own (`term`); this is where it reaches a window,
+    /// and where an agent waiting on `terminal/wait_for_exit` is
+    /// answered.
+    fn tick_terms(&mut self) -> apex_tool::Result<()> {
+        let ids: Vec<String> = self.terms.keys().cloned().collect();
+        for id in ids {
+            let Some(t) = self.terms.get_mut(&id) else { continue };
+            let cmd = t.run.command.clone();
+            let text = t.run.take_fresh();
+            let ended = if t.ended { None } else { t.run.settled() };
+            self.to_run(&id, &cmd, &text, false)?;
+            let Some(e) = ended else { continue };
+            // whatever the pipes still held when it went
+            let last = self.terms.get(&id).map(|t| t.run.take_fresh()).unwrap_or_default();
+            self.to_run(&id, &cmd, &last, false)?;
+            self.to_run(&id, &cmd, &format!("({e})\n"), true)?;
+            if let Some(t) = self.terms.get_mut(&id) {
+                t.ended = true;
+                for r in std::mem::take(&mut t.waiting) {
+                    let _ = r.respond(WaitForTerminalExitResponse::new(exit_status(&e)));
+                }
+            }
+        }
+        self.pulse_run();
+        Ok(())
+    }
+
+    /// The run window's handle pulses while a command is going, as the
+    /// agent's does while it thinks.
+    fn pulse_run(&mut self) {
+        let want = self.terms.values().any(|t| !t.ended);
+        if want != self.running {
+            self.running = want;
+            if let Some(w) = self.run {
+                let _ = self.t.set_working(w, want);
+            }
+        }
+    }
+
+    /// `Stop` ends every command the agent has running. The agent is
+    /// told as it would be of any other end: a killed command reports
+    /// the signal that took it.
+    fn kill_terms(&mut self) -> apex_tool::Result<()> {
+        let mut killed = 0;
+        for t in self.terms.values_mut() {
+            if !t.ended {
+                t.run.kill();
+                killed += 1;
+            }
+        }
+        if killed == 0 {
+            return self.note("the agent is running nothing");
+        }
+        Ok(())
+    }
+
+    fn start_term(&mut self, id: &str, req: &CreateTerminalRequest) -> Result<(), String> {
+        let cwd = req.cwd.clone().unwrap_or_else(|| self.cwd.clone());
+        let env: Vec<(String, String)> = req.env.iter().map(|v| (v.name.clone(), v.value.clone())).collect();
+        let run = term::Run::start(&req.command, &req.args, &env, &cwd, req.output_byte_limit).map_err(|e| format!("{}: {e}", req.command))?;
+        self.terms.insert(id.to_string(), Term { run, waiting: Vec::new(), ended: false });
+        // the window comes with the command, not with its first output,
+        // so that starting one is visible at once
+        let _ = self.run_window();
+        self.pulse_run();
+        Ok(())
+    }
+
+    fn term_req(&mut self, r: TermReq) -> apex_tool::Result<()> {
+        match r {
+            TermReq::Create { req, responder } => {
+                let id = format!("t{}", self.next_term);
+                self.next_term += 1;
+                let _ = match self.start_term(&id, &req) {
+                    Ok(()) => responder.respond(CreateTerminalResponse::new(TerminalId::new(id))),
+                    Err(e) => responder.respond_with_internal_error(e),
+                };
+            }
+            TermReq::Output { req, responder } => {
+                let id = req.terminal_id.0.to_string();
+                let _ = match self.terms.get_mut(&id) {
+                    Some(t) => {
+                        let (output, truncated) = t.run.output();
+                        let exit = t.run.exit();
+                        let res = TerminalOutputResponse::new(output, truncated);
+                        responder.respond(match exit {
+                            Some(e) => res.exit_status(exit_status(&e)),
+                            None => res,
+                        })
+                    }
+                    None => responder.respond_with_internal_error(gone(&id)),
+                };
+            }
+            TermReq::Wait { req, responder } => {
+                let id = req.terminal_id.0.to_string();
+                match self.terms.get_mut(&id) {
+                    // the tick answers it once the command is over and
+                    // its output is all in
+                    Some(t) if !t.ended => t.waiting.push(responder),
+                    Some(t) => {
+                        let e = t.run.exit().unwrap_or(term::Exit { code: None, signal: None });
+                        let _ = responder.respond(WaitForTerminalExitResponse::new(exit_status(&e)));
+                    }
+                    None => {
+                        let _ = responder.respond_with_internal_error(gone(&id));
+                    }
+                }
+            }
+            TermReq::Kill { req, responder } => {
+                let id = req.terminal_id.0.to_string();
+                let _ = match self.terms.get_mut(&id) {
+                    Some(t) => {
+                        t.run.kill();
+                        responder.respond(KillTerminalResponse::new())
+                    }
+                    None => responder.respond_with_internal_error(gone(&id)),
+                };
+            }
+            TermReq::Release { req, responder } => {
+                let id = req.terminal_id.0.to_string();
+                let _ = match self.terms.remove(&id) {
+                    Some(mut t) => {
+                        let (cmd, ended) = (t.run.command.clone(), t.ended);
+                        let text = t.run.take_fresh();
+                        for r in std::mem::take(&mut t.waiting) {
+                            let _ = r.respond_with_internal_error("the terminal was released");
+                        }
+                        // the command goes with the terminal it ran in
+                        drop(t);
+                        self.to_run(&id, &cmd, &text, false)?;
+                        if !ended {
+                            self.to_run(&id, &cmd, "(released while running)\n", true)?;
+                        }
+                        self.pulse_run();
+                        responder.respond(ReleaseTerminalResponse::new())
+                    }
+                    None => responder.respond_with_internal_error(gone(&id)),
+                };
+            }
+        }
+        Ok(())
+    }
+
     // ---- the agent's news ----
 
     fn take(&mut self, o: Out) -> apex_tool::Result<()> {
@@ -787,6 +1072,7 @@ impl Win {
                 self.out(&format!("{n}\n"))
             }
             Out::Update(u) => self.update(u),
+            Out::Term(r) => self.term_req(r),
             Out::Permission { req, responder } => {
                 let id = req.tool_call.tool_call_id.0.to_string();
                 let seen = self.titles.contains_key(&id);
@@ -979,7 +1265,12 @@ impl Win {
                         b.push_str(&format!("    … {cut} more lines\n"));
                     }
                 }
-                ToolCallContent::Terminal(t) => b.push_str(&format!("    terminal {}\n", t.terminal_id.0)),
+                // the output itself is in the run window: the line
+                // names it, so B3 opens it
+                ToolCallContent::Terminal(t) => match self.run.and_then(|w| self.t.window_name(w)) {
+                    Some(n) => b.push_str(&format!("    {}\n", self.shown(Path::new(&n)))),
+                    None => b.push_str(&format!("    terminal {}\n", t.terminal_id.0)),
+                },
                 ToolCallContent::Content(c) => {
                     let text = content_text(&c.content);
                     let lines: Vec<&str> = text.lines().collect();
@@ -1120,6 +1411,16 @@ fn shell() -> String {
 
 fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn exit_status(e: &term::Exit) -> TerminalExitStatus {
+    TerminalExitStatus::new().exit_code(e.code).signal(e.signal.clone())
+}
+
+/// A terminal the agent names that we do not have: it was released, or
+/// never made.
+fn gone(id: &str) -> String {
+    format!("no terminal {id}")
 }
 
 fn status_glyph(s: ToolCallStatus) -> &'static str {
