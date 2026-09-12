@@ -128,7 +128,7 @@ lease never moves):
 | shard | one per | entries | default leader |
 |---|---|---|---|
 | `buffer` | buffer | `Create`, `Edit{version, q0, nd, text, group}`, `Undo/Redo{version}`, `Clean{version}`, `Stale{hash}`, `Rename`, `ViewAdd/Del{view}`, `Select{view, q0, q1}`, `Origin{view, off}` | server |
-| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done|Failed|Unknown}`, `Delete`; *as built also* `Tab`, `Indent`, `TagExpand`, `Live{by}` | server |
+| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done|Failed|Unknown}`, `Delete`; *as built also* `Tab`, `Indent`, `TagExpand`, `Live{by}`, `Working{by}` | server |
 | `layout` | session | `Init{top}`, `ColNew/Del/Resize`, `WinPlace{window, col, at}`, `WinRemove`, `WinResize`, `Snarf`, `Exec` from column tags and the top row; *as built also* `Arrange{r, cols}`, `Status`, `Visit{from, to}`, `NavPop{back, at}` (the navigation stacks, `Layout{nav_back, nav_forward}` of `Loc{name, pos}`) | server |
 | `term` | terminal | `Rows{seq, rows: [cells]}`, `Cursor`, `Mode`, `Resize`, `Exit` | server, **pinned** |
 | `metalog` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}`, `PlumbRuleInstall/Remove{attachment, priority, predicate, action}`; *as built also* `Set/Unset{owner, key, value}` (settings, the session's or an attachment's) | server, **pinned** |
@@ -515,6 +515,7 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Look{ctx, text, reverse} · ClientDo{verb, args}     the last resort of a plumb; a UI's own verbs
   Exec{ctx, text} · Edit{window, program} · Select{view, q0, q1}
   Live{window, by?}                                    a process behind a window
+  Working{window, by?}                                 work going on behind a window
   Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
   OpenWeb{col, url} · WebNavigate{window, url}         a web window; its page moved (WEB.md §2)
 ```
@@ -1354,6 +1355,20 @@ left of the connection mark, the heartbeat's round trip and the log's
   (`transcript::last_output`: the last line is the prompt, earlier
   prompts begin like it and carry its marker), read from the host for a
   terminal (`TermRead`), into the snarf buffer and clipboard.
+- *As built:* a window is **working** when a tool says so
+  (`WindowOp::Working{by}`, `Tool::set_working`): its handle breathes
+  between its own colour and the tag's, a second and a fifth to the
+  cycle, for as long as the work lasts. It is not a fourth state but a
+  mark over the three: a clean, dirty, stale or live window can be
+  working, and its handle keeps saying which it is. A handle with
+  nothing else to say breathes from the live colour, so the work still
+  shows. It is for work with nothing to show while it runs, where a
+  window would otherwise look idle: an agent thinking, a language
+  server indexing, a build. Like `Live`, it holds only while the
+  attachment that set it is there, so a tool that dies leaves no window
+  pulsing for ever, and the client draws those windows again each tick
+  while any of them is working. A loading web page, which pulsed before
+  any of this existed, is the same thing said by the client itself.
 - *As built:* the app remembers every window with its session URL and
   its frame (`last-sessions`, one line each), saved on every move or
   resize and on Quit, and opens them all again at launch, each on its

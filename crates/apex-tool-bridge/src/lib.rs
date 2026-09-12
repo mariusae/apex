@@ -19,7 +19,7 @@
 //! - `show {window, at}` or `show {window, line}`: the text there brought
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
-//! - `rename {window, name}`, `live {window, on}`, `delete {window}`
+//! - `rename {window, name}`, `live {window, on}`, `working {window, on}`, `delete {window}`
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
@@ -192,6 +192,10 @@ impl Bridge {
             }
             "rename" => {
                 self.tool.rename(window(v)?, v["name"].as_str().ok_or("name")?).map_err(e)?;
+                Ok(json!({}))
+            }
+            "working" => {
+                self.tool.set_working(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
             }
             "live" => {

@@ -1236,7 +1236,7 @@ impl Acme {
                         let _ = h.update(cx, |acme, window, cx| {
                             if cx.entity_id() == mine {
                                 alive = true;
-                                if acme.web_focus_tick(window) {
+                                if acme.web_focus_tick(window) || acme.any_working() {
                                     cx.notify();
                                 }
                                 if acme.strip_tick(window) {
@@ -1472,6 +1472,12 @@ impl Acme {
             }
         }
         self.pointer.unwrap_or_else(|| window.mouse_position())
+    }
+
+    /// Is a tool working behind any window? Their handles pulse, so the
+    /// window is drawn again while it lasts.
+    pub fn any_working(&self) -> bool {
+        self.node.state.windows.keys().any(|w| self.node.window_working(*w))
     }
 
     /// Keys follow the pointer between pages and the rest (WEB.md §2.2);
@@ -1789,16 +1795,11 @@ impl Acme {
                 let body = win.body_buffer().and_then(|b| self.node.state.buffer(b).ok());
                 let dirty = body.is_some_and(|b| b.dirty());
                 let stale = body.is_some_and(|b| b.stale && b.dirty());
-                // a page is live as a terminal is; while it loads, its
-                // handle breathes between live and pale
+                // a page is live as a terminal is; while it loads, and
+                // while a tool works behind a window, the handle
+                // breathes between its colour and pale
                 let web = win.body == Body::Web;
-                let pulse = if web && self.webs.loading(w) {
-                    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) % 1200;
-                    let t = ms as f32 / 1200.0;
-                    Some(if t < 0.5 { t * 2.0 } else { 2.0 - t * 2.0 })
-                } else {
-                    None
-                };
+                let pulse = ((web && self.webs.loading(w)) || self.node.window_working(w)).then(breath);
                 (win.mono, dirty, stale, web || self.node.window_live(w), pulse)
             }
             _ => (false, false, false, false, None),
@@ -3516,6 +3517,19 @@ pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
         "open" => spawn_quiet(if cfg!(target_os = "macos") { "open" } else { "xdg-open" }, &[args]).map(|_| ()),
         "preview" => open_preview(None, Path::new(args)).map(|_| ()),
         _ => Err(format!("apex-ui cannot {verb}")),
+    }
+}
+
+/// Where a pulsing handle is this instant: 0 at its own colour, 1 at
+/// pale, back and forth over a second and a fifth.
+fn breath() -> f32 {
+    const PERIOD: u128 = 1200;
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) % PERIOD;
+    let t = ms as f32 / PERIOD as f32;
+    if t < 0.5 {
+        t * 2.0
+    } else {
+        2.0 - t * 2.0
     }
 }
 

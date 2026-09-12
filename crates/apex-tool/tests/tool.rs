@@ -82,3 +82,28 @@ fn a_tool_works_a_window_and_answers_its_verb() {
     assert_eq!(t.next_event(Some(Duration::from_millis(200))).unwrap(), None);
     assert!(t.window_name(w).is_none());
 }
+
+#[test]
+fn work_behind_a_window_shows_while_the_tool_is_there() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "slow").unwrap();
+    let w = t.new_window("/tmp/slow-notes").unwrap();
+    let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
+    let settle = |other: &mut Remote, want: bool| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while other.node.window_working(w) != want && Instant::now() < deadline {
+            let _ = other.step(Duration::from_millis(20));
+        }
+        other.node.window_working(w)
+    };
+    assert!(!settle(&mut other, false), "idle to begin with");
+    t.set_working(w, true).unwrap();
+    assert!(settle(&mut other, true), "the handle pulses while the tool works");
+    t.set_working(w, false).unwrap();
+    assert!(!settle(&mut other, false), "and stops when the work is done");
+    // a tool that goes while it works leaves no window pulsing forever
+    t.set_working(w, true).unwrap();
+    assert!(settle(&mut other, true));
+    drop(t);
+    assert!(!settle(&mut other, false), "the work ends with the tool");
+}

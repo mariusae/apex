@@ -644,6 +644,13 @@ impl Node {
         }
     }
 
+    /// Is a tool working behind this window? Like `live`, it holds only
+    /// while the attachment that said so is still here.
+    pub fn window_working(&self, w: WindowId) -> bool {
+        let Ok(win) = self.state.window(w) else { return false };
+        win.working.is_some_and(|a| self.state.meta.attachments.contains_key(&a))
+    }
+
     /// What kind of window this is, for plumbing rules.
     pub fn window_kind(&self, window: WindowId) -> WinKind {
         let Ok(w) = self.state.window(window) else { return WinKind::File };

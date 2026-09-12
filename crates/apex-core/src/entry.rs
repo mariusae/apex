@@ -136,6 +136,12 @@ pub enum WindowOp {
     /// state beside clean and dirty. `by` is the attachment that keeps
     /// it so; the state ends with that attachment, or with `None`.
     Live { by: Option<AttachmentId> },
+    /// Work is going on behind this window (a tool waiting on something
+    /// slow: an agent thinking, a build running): the handle pulses
+    /// while it lasts. `by` is the attachment that keeps it so; the
+    /// state ends with that attachment, or with `None`. Beside live,
+    /// not instead of it: a window can be both.
+    Working { by: Option<AttachmentId> },
     /// B2 (or the CLI) executed something in this window.
     Exec(ExecOp),
     Status { exec: Seq, status: ExecStatusOp },

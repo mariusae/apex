@@ -266,8 +266,9 @@ pub struct Source {
     /// A process is behind the window (a terminal's, a win's): neither
     /// clean nor dirty.
     pub live: bool,
-    /// A page loading: how far (0..1) the handle is from live towards
-    /// pale this instant.
+    /// Work with nothing to show (a page loading, a tool thinking): how
+    /// far (0..1) the handle is from its colour towards pale this
+    /// instant.
     pub pulse: Option<f32>,
     pub unsynced: bool,
     /// This client no longer leads (its leases went elsewhere): the top
@@ -590,18 +591,25 @@ impl Element for TextElement {
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
                     let th = crate::theme::theme();
-                    let fillc = if pp.unsynced {
-                        rgb(th.unsynced)
-                    } else if let (true, Some(t)) = (pp.live, pp.pulse) {
-                        rgb(mix(th.live, th.tag_bg, t * 0.85))
+                    // what the handle says when nothing is going on
+                    let resting = if pp.unsynced {
+                        Some(th.unsynced)
                     } else if pp.live {
-                        rgb(th.live)
+                        Some(th.live)
                     } else if pp.stale {
-                        rgb(th.stale)
+                        Some(th.stale)
                     } else if pp.dirty {
-                        rgb(th.dirty)
+                        Some(th.dirty)
                     } else {
-                        pal.bg
+                        None
+                    };
+                    let fillc = match (pp.pulse, resting) {
+                        // pulsing: between that colour and the tag's own;
+                        // a handle with nothing to say breathes from live,
+                        // so the work still shows
+                        (Some(t), c) => rgb(mix(c.unwrap_or(th.live), th.tag_bg, t * 0.85)),
+                        (None, Some(c)) => rgb(c),
+                        (None, None) => pal.bg,
                     };
                     window.paint_quad(fill(inner, fillc));
                     window.paint_quad(fill(

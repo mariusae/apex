@@ -403,6 +403,12 @@ func (w *Window) Rename(name string) error {
 	return w.t.call("rename", map[string]any{"window": w.ID, "name": name}, nil)
 }
 
+// SetWorking says the tool is working on something behind the window:
+// its handle pulses until it is turned off, or until the tool detaches.
+func (w *Window) SetWorking(on bool) error {
+	return w.t.call("working", map[string]any{"window": w.ID, "on": on}, nil)
+}
+
 // SetLive marks the window as having this tool behind it: its handle
 // shows so, and Del does not ask about unsaved text. The mark goes when
 // the tool detaches.

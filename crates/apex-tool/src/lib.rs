@@ -525,6 +525,16 @@ impl Tool {
         Ok(())
     }
 
+    /// Say that the tool is working on something behind the window: its
+    /// handle pulses until this is turned off, or until the tool
+    /// detaches. For work with nothing to show while it lasts (an agent
+    /// thinking, a build running), so the window says it is not idle.
+    pub fn set_working(&mut self, w: WindowId, on: bool) -> Result<()> {
+        let by = on.then_some(self.remote.attachment());
+        self.propose(Proposal::Working { window: w, by })?;
+        Ok(())
+    }
+
     /// Mark the window as having this tool behind it: its handle shows
     /// so, and Del does not ask about unsaved text. The mark goes when
     /// the tool detaches.

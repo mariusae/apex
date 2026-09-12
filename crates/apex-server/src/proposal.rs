@@ -79,6 +79,9 @@ pub enum Proposal {
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
+    /// Work is going on behind a window: its handle pulses while it is
+    /// so. `by` is the attachment that keeps it (`None` ends it).
+    Working { window: WindowId, by: Option<AttachmentId> },
     /// Take the user to a place: the origin goes on the back stack; the
     /// window is opened if it must be (the leader asks the server), and
     /// selected, shown, and warped to.
@@ -280,6 +283,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.gotos.push(loc);
             }
             Ok(w)
+        }
+        Proposal::Working { window, by } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Working { by }))?;
+            Ok(None)
         }
         Proposal::Live { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;
