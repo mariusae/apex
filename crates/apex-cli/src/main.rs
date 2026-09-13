@@ -122,6 +122,7 @@ const RULE_FLAGS: &[Flag] = &[
     switch("unlisted", "the verb is no word in the menu; B2 still runs it where it is written"),
     flag("text", "the plumbed text (a verb's arguments) must match this regexp, whole; groups bind $0..$9"),
     flag("file", "the window's name must match this regexp"),
+    flag("owner", "a tool of this name (a regexp) owns the window; empty for one no tool owns"),
     flag("win", "the rule is for the window with this id alone (ids are never reused)"),
     flag("kind", "the window must be: file, dir, term or errors"),
     flag("isfile", "this (expanded, relative to the window's directory) must be a file"),
@@ -518,6 +519,11 @@ Predicates (all given must hold):
 	-text=RE      the plumbed text (a verb's arguments) matches RE, whole;
 	              its groups bind $0..$9
 	-file=RE      the window's name matches RE
+	-owner=RE     a tool named by RE owns the window (it made it and
+	              writes it): what says a rule is about one tool's
+	              windows and no others, where a name would guess. A
+	              window no tool owns is owned by nobody, its name the
+	              empty one, so -owner='' means a real file
 	-win=ID       the window is the one with this id, whatever its name
 	              (ids are never reused: a tool's rules for its own window)
 	-kind=K       file, dir, term, errors or web
@@ -1436,6 +1442,7 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
     };
     let r = PlumbRule {
         verb: f.get("verb").unwrap_or("plumb").to_string(),
+        owner: f.get("owner").map(String::from),
         unlisted: f.is("unlisted"),
         text: f.get("text").map(String::from),
         file: f.get("file").map(String::from),

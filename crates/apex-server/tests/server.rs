@@ -115,6 +115,7 @@ fn get_rule_overrides_filesystem_get_and_stays_scoped() {
     let w_live = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
     let rule = PlumbRule {
         verb: "Get".into(),
+        owner: None,
         unlisted: false,
         text: None,
         file: Some(r"\+smartlog$".into()),
@@ -127,8 +128,8 @@ fn get_rule_overrides_filesystem_get_and_stays_scoped() {
     let (_, e) = log.install_rule(SERVER, 0, rule);
     node.state.apply(Shard::Meta, &e).unwrap();
 
-    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_live), node.window_kind(w_live), Some(w_live)), vec!["Get"]);
-    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_file), node.window_kind(w_file), Some(w_file)).is_empty());
+    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_live), node.window_kind(w_live), Some(w_live), None), vec!["Get"]);
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_file), node.window_kind(w_file), Some(w_file), None).is_empty());
 
     node.exec(&mut log, ExecCtx::Window(w_live), "Get").unwrap();
     assert_eq!(poll(&mut server, &mut log, &mut node), 0);
@@ -162,6 +163,7 @@ fn dirty_get_rule_reaches_the_tool_on_first_invocation() {
     let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
     let rule = PlumbRule {
         verb: "Get".into(),
+        owner: None,
         unlisted: false,
         text: None,
         file: Some(r"\+smartlog$".into()),
@@ -198,6 +200,7 @@ fn timed_out_get_rule_fails_without_reloading_generated_content() {
     let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
     let rule = PlumbRule {
         verb: "Get".into(),
+        owner: None,
         unlisted: false,
         text: None,
         file: Some(r"\+smartlog$".into()),
@@ -485,6 +488,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     // a rule offering Preview on .md files, run as a command
     let rule = PlumbRule {
         verb: "Preview".into(),
+        owner: None,
         unlisted: false,
         text: None,
         file: Some(r"\.md$".into()),
@@ -499,7 +503,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     let p = server.open_file(col, None, &dir, "notes.md", None).unwrap();
     let w = perform(&mut node, &mut log, vec![p]).expect("window");
     // the verb is offered in the window's tools menu (B4), not its tag
-    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_name(w), n.window_kind(w), Some(w));
+    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_name(w), n.window_kind(w), Some(w), None);
     assert_eq!(verbs(&node, w), vec!["Preview"]);
     node.update_tags(&mut log).unwrap();
     let tag = node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string();
@@ -902,7 +906,7 @@ fn clear_drops_a_terminals_scrollback_and_keeps_its_screen() {
     let t = node.state.terms.keys().next().copied().expect("terminal");
     let w = node.state.windows.values().find(|x| x.body == Body::Term(t)).map(|x| x.id).expect("its window");
     // the verb is offered in a terminal, by the server's rule
-    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w), node.window_kind(w), Some(w)).contains(&"Clear".to_string()));
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w), node.window_kind(w), Some(w), None).contains(&"Clear".to_string()));
     for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
         server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
     }

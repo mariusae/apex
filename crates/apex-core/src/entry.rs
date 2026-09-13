@@ -132,6 +132,17 @@ pub enum WindowOp {
     Indent { on: bool },
     /// acme's `tagexpand`: whether the tag shows all its lines (Down) or one (Up).
     TagExpand { on: bool },
+    /// A tool owns this window: it made it and writes it, and what is
+    /// in it is the tool's doing rather than a file's contents. `by` is
+    /// the attachment, whose name says which tool; the claim ends with
+    /// that attachment, or with `None`. acme says this by a program
+    /// holding the window's `event` file open (`xfid.c`, which turns
+    /// `filemenu` off for as long as it is held), and it means the same
+    /// here: no file menu in the tag, nothing for `Del` to ask about,
+    /// and a rule may name the owner to speak to that tool's windows
+    /// and no others. It is not `Live`, which comes and goes with the
+    /// work; a window is owned for as long as its tool is there.
+    Own { by: Option<AttachmentId> },
     /// A process is behind this window (a win tool's shell): live, a
     /// state beside clean and dirty. `by` is the attachment that keeps
     /// it so; the state ends with that attachment, or with `None`.
@@ -222,6 +233,14 @@ pub struct PlumbRule {
     /// word in the tools menu of every window the rule applies to,
     /// executed by B2 wherever it is written.
     pub verb: String,
+    /// The tool that owns the window (`WindowOp::Own`) must be named
+    /// by this regexp: `win-.*` for any win's window, `acp` for the
+    /// agent's. A window no tool owns is owned by nobody and its name
+    /// is the empty one, so the empty regexp means a real file and not
+    /// a tool's window. What a rule says to one tool's windows and no
+    /// others, where a name pattern would be guessing.
+    #[serde(default)]
+    pub owner: Option<String>,
     /// Whether the verb is no word in the menu. It still runs when B2
     /// takes it -- from the tag, from the window's own text, from
     /// `apex exec` -- so it is for verbs that want a place or an

@@ -633,6 +633,17 @@ impl Node {
         Ok(())
     }
 
+    /// The tool that owns this window, by the name it attached under
+    /// (`WindowOp::Own`), while that attachment is still here. What it
+    /// holds is the tool's doing and not a file's contents: no file
+    /// menu, nothing for `Del` to ask about, and a rule may name it to
+    /// speak to that tool's windows and no others. acme says the same
+    /// by a program holding the window's `event` file (`xfid.c`).
+    pub fn window_owner(&self, w: WindowId) -> Option<&str> {
+        let a = self.state.window(w).ok()?.owner?;
+        self.state.meta.attachments.get(&a).map(|a| a.name.as_str())
+    }
+
     /// Is a process behind this window: a terminal whose program runs, or a
     /// text window a tool (win) keeps live? A third state beside clean and
     /// dirty; it ends with the program, or with the tool's attachment.
@@ -1030,7 +1041,7 @@ impl Node {
         let name = self.window_name(w);
         let isdir = name.ends_with('/');
         let isscratch = crate::entry::is_scratch(&name) || name.ends_with("/guide");
-        if isscratch || isdir || self.window_live(w) {
+        if isscratch || isdir || self.window_owner(w).is_some() || self.window_live(w) {
             return Ok(true); // a live window's text is a transcript, not a file
         }
         if !self.window_dirty(w) {
@@ -1080,13 +1091,18 @@ impl Node {
             // to ask about. acme's win says the same by writing `clean`
             // to its ctl after every write.
             let live = self.window_live(w);
+            // a tool owns it: what is in it is the tool's doing, so
+            // there is no file menu at all, as acme drops it while a
+            // program holds the window's `event` file
+            let owned = self.window_owner(w).is_some();
             let Ok(win) = self.state.window(w) else { continue };
             let tag = win.tag;
             let name = self.window_name(w);
             let mut new = format!("{name} Del Snarf");
             // a program's window is no file: nothing to Undo into, and
-            // nothing to Put it to (§ `is_scratch`)
-            let filemenu = !crate::entry::is_scratch(&name);
+            // nothing to Put it to, whether it says so by being owned
+            // or by the name it is called (§ `is_scratch`)
+            let filemenu = !owned && !crate::entry::is_scratch(&name);
             if let (Some(b), true) = (win.body_buffer(), filemenu) {
                 let buf = self.state.buffer(b)?;
                 if !buf.undo.is_empty() {
@@ -1369,7 +1385,7 @@ impl Node {
     pub fn claimed(&self, ctx: ExecCtx, text: &str) -> bool {
         let ExecCtx::Window(w) = ctx else { return false };
         let Some(verb) = text.split_whitespace().next() else { return false };
-        crate::plumb::claims_verb(&self.state.meta.rules, verb, &self.window_name(w), self.window_kind(w), w)
+        crate::plumb::claims_verb(&self.state.meta.rules, verb, &self.window_name(w), self.window_kind(w), w, self.window_owner(w))
     }
 
     /// Which handler a command resolves to here: the rules first, so a

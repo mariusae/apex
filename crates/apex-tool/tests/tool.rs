@@ -23,6 +23,39 @@ fn daemon() -> PathBuf {
     path
 }
 
+/// A rule may name the tool that owns a window, and so speak to that
+/// tool's windows and no others, where a name pattern would be guessing.
+#[test]
+fn a_rule_may_name_the_tool_that_owns_the_window() {
+    let sock = daemon();
+    let mut win = Tool::attach_to(&sock, "main", "win-42").unwrap();
+    let mut acp = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let a = win.new_window("/tmp/proj/-sh").unwrap();
+    let b = acp.new_window("/tmp/proj/-claude").unwrap();
+    win.set_owner(a, true).unwrap();
+    acp.set_owner(b, true).unwrap();
+    // the client's Snarfout rule: win's windows, whatever they are called
+    win.offer(Rule::verb("Snarfout").owner("win-.*")).unwrap();
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let menu = |c: &mut Remote, w: WindowId| {
+        for _ in 0..40 {
+            let _ = c.step(Duration::from_millis(20));
+        }
+        apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w), Some(w), c.node.window_owner(w))
+    };
+    assert_eq!(menu(&mut c, a), vec!["Snarfout"]);
+    assert_eq!(c.node.window_owner(a), Some("win-42"));
+    assert_eq!(c.node.window_owner(b), Some("acp"));
+    // ... and not the agent's, though it is named the same way
+    assert!(menu(&mut c, b).is_empty());
+    // a window no tool owns is owned by nobody: the empty name, which
+    // is how the lsp's Back and Fwd say they are for real files
+    let f = acp.new_window("/tmp/proj/main.rs").unwrap();
+    acp.offer(Rule::verb("Back").owner("")).unwrap();
+    assert_eq!(menu(&mut c, f), vec!["Back"]);
+    assert_eq!(menu(&mut c, a), vec!["Snarfout"]);
+    assert!(menu(&mut c, b).is_empty());
+}
 /// A verb that wants a place or an argument is offered `unlisted`: it
 /// runs when B2 takes it, but is no word in the window's tools menu.
 #[test]

@@ -76,6 +76,9 @@ pub enum Proposal {
     /// alone; a tool keeping a changed line in sight wants this, not
     /// `Goto`.
     Show { view: ViewId, at: usize },
+    /// A tool owns this window (`by` its attachment), or no longer does
+    /// (`None`): it made it and writes it, so it is no file.
+    Own { window: WindowId, by: Option<AttachmentId> },
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
@@ -294,6 +297,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         }
         Proposal::Working { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Working { by }))?;
+            Ok(None)
+        }
+        Proposal::Own { window, by } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Own { by }))?;
             Ok(None)
         }
         Proposal::Live { window, by } => {

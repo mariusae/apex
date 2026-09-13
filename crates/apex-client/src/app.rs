@@ -719,6 +719,7 @@ impl Acme {
         link.send(&ClientMsg::ClientConfig { term: crate::theme::term_colors() });
         let urls = PlumbRule {
             verb: "plumb".into(),
+            owner: None,
             unlisted: false,
             text: Some(r"https?://\S+".into()),
             file: None,
@@ -729,13 +730,16 @@ impl Acme {
             win: None, to: None,
         };
         link.send(&ClientMsg::RuleAdd { rule: urls, priority: -10, mine: true });
-        // Snarfout in terminals and win windows: the last command's output
-        for (kind, file) in [(WinKind::Term, None), (WinKind::File, Some(r"/-[^/]+$".to_string()))] {
+        // Snarfout in terminals and win windows: the last command's
+        // output. A win window says it is win's (`Own`); it is not
+        // guessed at by the shape of its name
+        for (kind, owner) in [(WinKind::Term, None), (WinKind::File, Some("win-.*".to_string()))] {
             let rule = PlumbRule {
                 verb: "Snarfout".into(),
+                owner,
                 unlisted: false,
                 text: None,
-                file,
+                file: None,
                 kind: Some(kind),
                 isfile: None,
                 isdir: None,
@@ -2805,7 +2809,7 @@ impl Acme {
     /// item under the pointer on release runs as B2 would, none if it is
     /// released outside.
     fn menu_open(&mut self, w: WindowId, at: Point<Pixels>, window: &mut Window) {
-        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w), Some(w));
+        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w), Some(w), self.node.window_owner(w));
         if items.is_empty() {
             return;
         }

@@ -9,7 +9,8 @@
 //! What it offers, through rules owned by its attachment: the verbs
 //! `Def Refs Type Hov Sig Fmt Rn` in the tools menu of source windows
 //! (cmd-B3 on an identifier is `Def` at the pointer; B3 itself stays
-//! acme's look), and `Back`/`Fwd` everywhere. Diagnostics go to
+//! acme's look), and `Back`/`Fwd` in any file window no tool owns.
+//! Diagnostics go to
 //! `root/+lsp`.
 
 use std::collections::{BTreeMap, HashMap};
@@ -343,7 +344,7 @@ impl Tool {
         let file = format!(r"\.({})$", l.exts.join("|"));
         let mut ids = Vec::new();
         for v in VERBS {
-            let rule = PlumbRule { verb: v.to_string(), unlisted: false, text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
+            let rule = PlumbRule { verb: v.to_string(), owner: None, unlisted: false, text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
             ids.push(self.remote.rule_add(rule, 0, true, TIMEOUT)?);
         }
         self.rules.insert(lang.to_string(), ids);
@@ -396,12 +397,16 @@ impl Tool {
     }
 
     /// The rules that name us from the start: Back and Fwd, the
-    /// session's stack, which need no server. The verbs (cmd-B3 is `Def`
+    /// session's stack, which need no server -- in a file window no
+    /// tool owns, since going about the source is what they are for. The verbs (cmd-B3 is `Def`
     /// at the pointer; B3 itself stays acme's look) come with each
     /// language's server, once it is ready (`install_verbs`).
     fn install_rules(&mut self) -> Result<(), String> {
         for v in NAV_VERBS {
-            let r = PlumbRule { verb: v.into(), unlisted: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
+            // in a file window and one no tool owns: the stack is for
+            // going about the source, not for a terminal, an agent's
+            // window or a win's, whose menus have their own words
+            let r = PlumbRule { verb: v.into(), owner: Some(String::new()), unlisted: false, text: None, file: None, kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
             // a priority below the verbs', so the menu lists them after
             self.remote.rule_add(r, -1, true, TIMEOUT)?;
         }

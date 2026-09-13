@@ -24,6 +24,13 @@
 //! the next rule is tried: a second for B3 text, which is a search, and
 //! ten for a verb, which may be work the tool does before it answers.
 //!
+//! A window a tool makes is claimed with `set_owner`: what is in it is
+//! the tool's doing and not a file's contents, so its tag has no file
+//! menu and `Del` asks nothing about it, as acme does for as long as a
+//! program holds a window's `event` file. The owner is named, so a rule
+//! may say `Rule::owner("win-.*")` and be about one tool's windows and
+//! no others.
+//!
 //! A verb is a word in the tools menu of the windows its rule applies
 //! to, and runs wherever B2 takes it. `Rule::unlisted` keeps it out of
 //! the menu without taking it away: for a word the tool writes into a
@@ -170,6 +177,7 @@ pub enum Event {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rule {
     verb: Option<String>,
+    owner: Option<String>,
     unlisted: bool,
     text: Option<String>,
     file: Option<String>,
@@ -202,6 +210,17 @@ impl Rule {
     /// The window's name must match this regexp.
     pub fn file(mut self, re: &str) -> Rule {
         self.file = Some(re.to_string());
+        self
+    }
+
+    /// The tool that owns the window (`set_owner`) must be named by
+    /// this regexp: `win-.*` for any win's window, `acp` for the
+    /// agent's. A window no tool owns is owned by nobody and its name
+    /// is the empty one, so `.owner("")` means a real file and not a
+    /// tool's window. What says a rule is about one tool's windows and
+    /// no others, where a name pattern would be guessing.
+    pub fn owner(mut self, re: &str) -> Rule {
+        self.owner = Some(re.to_string());
         self
     }
 
@@ -608,6 +627,21 @@ impl Tool {
         Ok(())
     }
 
+    /// Claim the window as this tool's: it made it and writes it, so
+    /// what is in it is the tool's doing and not a file's contents.
+    /// The tag loses its file menu (no `Undo`, `Redo`, `Put`, `Get`)
+    /// and `Del` asks nothing, as acme does for as long as a program
+    /// holds a window's `event` file. A rule may name the owner
+    /// (`Rule::owner`) to speak to one tool's windows and no others,
+    /// which is better than guessing at their names. The claim ends
+    /// when the tool detaches, or with `false`. It is not `set_live`,
+    /// which comes and goes with the work: a window is owned for as
+    /// long as its tool is there.
+    pub fn set_owner(&mut self, w: WindowId, on: bool) -> Result<()> {
+        let by = on.then_some(self.remote.attachment());
+        self.propose(Proposal::Own { window: w, by })?;
+        Ok(())
+    }
     /// Mark the window as having this tool behind it: its handle shows
     /// so, and Del does not ask about unsaved text. The mark goes when
     /// the tool detaches.
@@ -672,6 +706,7 @@ impl Tool {
     pub fn offer(&mut self, r: Rule) -> Result<RuleId> {
         let rule = PlumbRule {
             verb: r.verb.unwrap_or_else(|| "plumb".to_string()),
+            owner: r.owner,
             unlisted: r.unlisted,
             text: r.text,
             file: r.file,

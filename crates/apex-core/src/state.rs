@@ -55,6 +55,9 @@ pub struct Window {
     /// acme's `tagexpand`: false after Up in the tag, true after Down.
     pub tagexpand: bool,
     pub execs: BTreeMap<Seq, ExecRecord>,
+    /// The attachment of the tool that owns this window
+    /// (`WindowOp::Own`): it made it and writes it.
+    pub owner: Option<AttachmentId>,
     /// The attachment whose process is behind this window (`WindowOp::Live`).
     pub live: Option<AttachmentId>,
     /// The attachment working behind this window (`WindowOp::Working`).
@@ -376,12 +379,13 @@ impl State {
                 if self.windows.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("window {id}")));
                 }
-                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: false, tagexpand: true, execs: BTreeMap::new(), live: None, working: None });
+                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: false, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None });
             }
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),
             WindowOp::Indent { on } => self.window_mut(id)?.autoindent = *on,
             WindowOp::TagExpand { on } => self.window_mut(id)?.tagexpand = *on,
+            WindowOp::Own { by } => self.window_mut(id)?.owner = *by,
             WindowOp::Live { by } => self.window_mut(id)?.live = *by,
             WindowOp::Working { by } => self.window_mut(id)?.working = *by,
             WindowOp::Exec(x) => {

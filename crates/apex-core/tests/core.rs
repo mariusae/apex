@@ -477,6 +477,23 @@ fn a_live_window_is_not_put() {
     node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Live { by: None })).unwrap();
     node.update_tags(&mut log).unwrap();
     assert!(tag(&node).contains(" Put"), "{}", tag(&node));
+    // a window a tool owns is never Put either, and says so whatever it
+    // is called: acme drops the file menu for as long as a program
+    // holds the window's `event` file, and `Own` is that claim
+    let f = node.new_window(&mut log, col, "/tmp/proj/report", "").unwrap();
+    node.insert(&mut log, ViewId::Body(f), "written by a tool\n").unwrap();
+    node.update_tags(&mut log).unwrap();
+    let tag_of = |n: &Node, w: WindowId| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
+    assert!(tag_of(&node, f).contains(" Put"));
+    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by })).unwrap();
+    assert_eq!(node.window_owner(f), Some("ui"));
+    node.update_tags(&mut log).unwrap();
+    assert!(!tag_of(&node, f).contains(" Put") && !tag_of(&node, f).contains(" Undo"), "{}", tag_of(&node, f));
+    assert!(node.winclean(&mut log, f, true).unwrap());
+    // and lets go when the tool does
+    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by: None })).unwrap();
+    node.update_tags(&mut log).unwrap();
+    assert!(tag_of(&node, f).contains(" Put"));
     // a window named as a program's is never Put, live or not: the
     // last part of the name begins with `-` (its own) or `+` (output)
     for name in ["/tmp/proj/-claude", "/tmp/proj/-claude+run", "/tmp/proj/+Errors", "/tmp/-"] {
@@ -489,6 +506,7 @@ fn a_live_window_is_not_put() {
         assert!(node.winclean(&mut log, s, true).unwrap(), "{name}");
     }
 }
+
 #[test]
 fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
     let (mut log, mut node, col) = session();

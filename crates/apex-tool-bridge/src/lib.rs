@@ -27,7 +27,10 @@
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
-//! - `rule {verb?, text?, file?, kind?, window?, priority?, unlisted?}` →
+//! - `own {window, on?}`: the window is this tool's, so it is no file:
+//!   no file menu in its tag, nothing for `Del` to ask about, and
+//!   `owner` on a rule speaks to it
+//! - `rule {verb?, text?, file?, kind?, window?, owner?, priority?, unlisted?}` →
 //!   `rule`: a rule answered by this tool (`plumb` events); `unrule
 //!   {rule}`. `unlisted` keeps the verb out of the tools menu without
 //!   taking it away: for one meant to be clicked where the tool wrote
@@ -256,6 +259,9 @@ impl Bridge {
                 if let Some(f) = v["file"].as_str() {
                     r = r.file(f);
                 }
+                if let Some(o) = v["owner"].as_str() {
+                    r = r.owner(o);
+                }
                 if let Some(k) = v["kind"].as_str() {
                     r = r.kind(WinKind::parse(k).ok_or_else(|| format!("kind {k}: file, dir, term, errors or web"))?);
                 }
@@ -279,6 +285,10 @@ impl Bridge {
                 let id = v["plumb"].as_u64().ok_or("plumb")?;
                 let p = Plumb { id, rule: RuleId(0), verb: String::new(), text: String::new(), dir: String::new(), window: None, groups: Vec::new(), at: None, sel: None };
                 self.tool.answer(&p, v["ok"].as_bool().unwrap_or(true)).map_err(e)?;
+                Ok(json!({}))
+            }
+            "own" => {
+                self.tool.set_owner(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
             }
             "watch" => {

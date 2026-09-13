@@ -811,8 +811,8 @@ acme's tools port directly because the event model is the same, generalised:
   that fans out to several tools in priority order emulates it if ever
   needed.
 
-*As built (plumbing):* the rule is `PlumbRule{verb, unlisted, text,
-file, kind, isfile, isdir, action, to}` in the metalog (`PlumbRuleInstall{id,
+*As built (plumbing):* the rule is `PlumbRule{verb, unlisted, owner,
+text, file, kind, isfile, isdir, action, to}` in the metalog (`PlumbRuleInstall{id,
 attachment, priority}`), owned by the session (`SERVER`) or by an
 attachment, whose rules go with it. A **verb** is the command a rule
 answers: `plumb` is B3; any other verb is offered in the window's
@@ -903,8 +903,8 @@ wire or the replicated state showing through: `Tool::attach(name)`,
 `next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window new_page open read replace append select selection show
-show_line line rename tag set_tag set_live set_working delete exec
-exec_in errors watch unwatch set setting`. `tag`/`set_tag` are the
+show_line line rename tag set_tag set_owner set_live set_working delete
+exec exec_in errors watch unwatch set setting`. `tag`/`set_tag` are the
 user's half of a window's tag, what follows `|`: the words before it
 are apex's own and stay the leader's business. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text
@@ -1410,6 +1410,25 @@ left of the connection mark, the heartbeat's round trip and the log's
   `Undo`, `Redo`, `Put` or `Get` in the tag, and `Del` asks nothing
   (`entry::is_scratch`, which generalises the `+Errors` and `/guide`
   cases acme and apex already had).
+- *As built:* a window is **owned** when a tool says it made it and
+  writes it (`WindowOp::Own{by}`, `Tool::set_owner`), which is a
+  different thing from live and outlasts it: live comes and goes with
+  the work, where a window is owned for as long as its tool is there.
+  What it holds is the tool's doing and not a file's contents, so its
+  tag has no file menu at all and `Del` asks nothing. This is acme's
+  rule exactly: acme turns `w->filemenu` off the moment a program opens
+  the window's `event` file and on again when it closes it (`xfid.c`),
+  which is how win and every acme-integrated program has always worked;
+  acme also lets a program say it outright, `nomenu` on `ctl`. The
+  owner is *named* -- the name the tool attached under -- so a rule may
+  say `-owner=RE` and be about one tool's windows and no others: the
+  client's `Snarfout` is `-owner='win-.*' -kind=file` where it used to
+  guess at `-file='/-[^/]+$'`. A window no tool owns is owned by nobody
+  and its name is the empty one, so `-owner=''` is how a rule says it
+  is about real files and not any tool's windows: the lsp's `Back` and
+  `Fwd` are `-kind=file -owner=''`, the session's jump stack being for
+  going about the source and not for a terminal, an agent's window or a
+  win's, each of which has its own words in its menu.
   The app offers `Snarfout` in terminals and win windows: the last
   command as `$ cmd` (the prompt normalised) and its output, the lines
   between the last two prompts

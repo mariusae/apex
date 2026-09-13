@@ -196,6 +196,7 @@ fn win_rules(window: WindowId, name: &str) -> Vec<PlumbRule> {
         .into_iter()
         .map(|verb| PlumbRule {
             verb: verb.into(),
+            owner: None,
             unlisted: false,
             text: None,
             file: None,
@@ -232,6 +233,10 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
     while remote.node.state.window(window).is_err() && std::time::Instant::now() < deadline {
         let _ = remote.step(Duration::from_millis(20));
     }
+    // ours: the shell's transcript, not a file, and a rule naming the
+    // owner (`-owner='^win'`) is about win's windows and no others
+    let by = Some(remote.attachment());
+    let _ = remote.propose(Proposal::Own { window, by }, TIMEOUT);
     let buffer = remote.node.state.window(window).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
     // the shell, $acmeshell (rc) -i unless a command was given
     let argv: Vec<String> = if cmd.is_empty() { vec![apex_server::command_shell(), "-i".into()] } else { cmd.to_vec() };

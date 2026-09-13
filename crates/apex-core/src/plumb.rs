@@ -79,10 +79,22 @@ fn whole(re: &str) -> Option<regex::Regex> {
 impl PlumbRule {
     /// Does this rule apply to a window of this name and kind (the parts
     /// of the predicate that do not need the text)?
-    pub fn applies_to(&self, name: &str, kind: WinKind, w: Option<WindowId>) -> bool {
+    /// Whether the rule is about this window: its id, its kind, its
+    /// name, and the tool that owns it (`Node::window_owner`, `None`
+    /// when no tool does).
+    pub fn applies_to(&self, name: &str, kind: WinKind, w: Option<WindowId>, owner: Option<&str>) -> bool {
         if let Some(id) = self.win {
             if w != Some(id) {
                 return false;
+            }
+        }
+        if let Some(o) = &self.owner {
+            // a window no tool owns is owned by nobody, and its name is
+            // the empty one: `-owner=''` is what says a rule is about
+            // real files and not a tool's windows
+            match whole(o) {
+                Some(re) if re.is_match(owner.unwrap_or("")) => {}
+                _ => return false,
             }
         }
         if let Some(k) = self.kind {
@@ -152,6 +164,9 @@ impl PlumbRule {
         if self.verb != "plumb" {
             out.push(format!("-verb={}", word(&self.verb)));
         }
+        if let Some(o) = &self.owner {
+            out.push(format!("-owner={}", word(o)));
+        }
         if self.unlisted {
             out.push("-unlisted".to_string());
         }
@@ -197,7 +212,7 @@ pub fn ordered(rules: &BTreeMap<RuleId, Rule>) -> Vec<(RuleId, &Rule)> {
     v
 }
 
-/// B3's verb: the walk asks who wants a piece of text, unlisted: false, rather than who
+/// B3's verb: the walk asks who wants a piece of text, rather than who
 /// runs a word.
 pub const PLUMB: &str = "plumb";
 
@@ -226,27 +241,27 @@ pub fn is_builtin(word: &str) -> bool {
 /// or a kind -- because a claim on a word apex has its own meaning for
 /// is a claim to be that meaning, and a rule that says nothing about
 /// where it applies would be making it everywhere.
-pub fn claims_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: WindowId) -> bool {
+pub fn claims_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: WindowId, owner: Option<&str>) -> bool {
     rules.values().any(|r| {
-        let scoped = r.rule.win.is_some() || r.rule.file.is_some() || r.rule.kind.is_some();
-        r.rule.verb == verb && scoped && r.rule.applies_to(name, kind, Some(w))
+        let scoped = r.rule.win.is_some() || r.rule.file.is_some() || r.rule.kind.is_some() || r.rule.owner.is_some();
+        r.rule.verb == verb && scoped && r.rule.applies_to(name, kind, Some(w), owner)
     })
 }
 
-pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: Option<WindowId>) -> bool {
+pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind: WinKind, w: Option<WindowId>, owner: Option<&str>) -> bool {
     rules
         .values()
-        .any(|r| r.rule.verb == verb && r.rule.applies_to(name, kind, w))
+        .any(|r| r.rule.verb == verb && r.rule.applies_to(name, kind, w, owner))
 }
 
 /// The verbs a window shows in its tools menu: every rule that applies
 /// to it and answers something other than `plumb`, once each, in order.
 /// An `unlisted` rule is left out, and so is `exec`, which is every
 /// word and so no word.
-pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind, w: Option<WindowId>) -> Vec<String> {
+pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind, w: Option<WindowId>, owner: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (_, r) in ordered(rules) {
-        if r.rule.verb != "plumb" && r.rule.verb != EXEC && !r.rule.unlisted && r.rule.applies_to(name, kind, w) && !out.contains(&r.rule.verb) {
+        if r.rule.verb != "plumb" && r.rule.verb != EXEC && !r.rule.unlisted && r.rule.applies_to(name, kind, w, owner) && !out.contains(&r.rule.verb) {
             out.push(r.rule.verb.clone());
         }
     }
@@ -264,7 +279,7 @@ mod tests {
     use crate::entry::RuleAction;
 
     fn rule(text: Option<&str>, file: Option<&str>) -> PlumbRule {
-        PlumbRule { verb: "plumb".into(), unlisted: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
+        PlumbRule { verb: "plumb".into(), owner: None, unlisted: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
     }
 
     #[test]
@@ -285,9 +300,9 @@ mod tests {
     #[test]
     fn windows_are_matched_by_name_and_kind() {
         let mut r = rule(None, Some(r"\.md$"));
-        assert!(r.applies_to("/a/notes.md", WinKind::File, None));
-        assert!(!r.applies_to("/a/notes.txt", WinKind::File, None));
+        assert!(r.applies_to("/a/notes.md", WinKind::File, None, None));
+        assert!(!r.applies_to("/a/notes.txt", WinKind::File, None, None));
         r.kind = Some(WinKind::Dir);
-        assert!(!r.applies_to("/a/notes.md", WinKind::File, None));
+        assert!(!r.applies_to("/a/notes.md", WinKind::File, None, None));
     }
 }

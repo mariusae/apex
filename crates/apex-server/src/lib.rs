@@ -1067,6 +1067,7 @@ impl Server {
     pub fn install_default_rules(&mut self, log: &mut Log) {
         let r = |text: &str, isfile: Option<&str>, isdir: Option<&str>, edit: &str| PlumbRule {
             verb: "plumb".into(),
+            owner: None,
             unlisted: false,
             text: Some(text.into()),
             file: None,
@@ -1090,6 +1091,7 @@ impl Server {
         let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
         let clear = PlumbRule {
             verb: "Clear".into(),
+            owner: None,
             unlisted: false,
             text: None,
             file: None,
@@ -1127,6 +1129,7 @@ impl Server {
             }
             let rule = PlumbRule {
                 verb: "Preview".into(),
+                owner: None,
                 unlisted: false,
                 text: None,
                 file: Some(apex_core::preview::pattern_of_ext(ext)),
@@ -1279,7 +1282,7 @@ impl Server {
                 ExecCtx::Window(w) => Some(w),
                 _ => None,
             };
-            if !r.applies_to(&p.name, p.kind, pw) {
+            if !r.applies_to(&p.name, p.kind, pw, pw.and_then(|w| view.window_owner(w))) {
                 p.trace.push(format!("{who}: not this window"));
                 continue;
             }
@@ -1451,12 +1454,13 @@ impl Server {
             ExecCtx::Window(w) => Some(w),
             _ => None,
         };
-        let offered = apex_core::plumb::offers_verb(&view.state.meta.rules, verb, &name, kind, cw);
+        let owner = cw.and_then(|w| view.window_owner(w));
+        let offered = apex_core::plumb::offers_verb(&view.state.meta.rules, verb, &name, kind, cw, owner);
         // no rule offers the word: a rule for every command here (win's
         // exec) takes the whole line
         let (verb, rest) = if offered {
             (verb, text[verb.len()..].trim().to_string())
-        } else if apex_core::plumb::offers_verb(&view.state.meta.rules, apex_core::plumb::EXEC, &name, kind, cw) {
+        } else if apex_core::plumb::offers_verb(&view.state.meta.rules, apex_core::plumb::EXEC, &name, kind, cw, owner) {
             (apex_core::plumb::EXEC, text.trim().to_string())
         } else {
             return None;
