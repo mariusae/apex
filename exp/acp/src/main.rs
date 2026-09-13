@@ -37,12 +37,13 @@
 //! the agent replays the whole of it, and the window is rebuilt from
 //! what comes, since the agent's record is the one that outlived us.
 //!
-//!     apex-acp [-agent claude|codex|CMD] [-cwd DIR] [-thoughts] [-transcript] [-resume]
+//!     apex-acp [claude|codex|CMD] [-cwd DIR] [-thoughts] [-transcript] [-resume]
 //!
-//! The agent defaults to `$APEX_ACP_AGENT`, else Anthropic's Claude
-//! adapter: `claude-agent-acp` when it is installed, else npx fetching
-//! `@agentclientprotocol/claude-agent-acp`. `-agent` takes either of
-//! those short names or a command of its own.
+//! The agent is the argument, there being one thing to say: either of
+//! those short names, or a command of its own. With none it is
+//! `$APEX_ACP_AGENT`, else Anthropic's Claude adapter:
+//! `claude-agent-acp` when it is installed, else npx fetching
+//! `@agentclientprotocol/claude-agent-acp`.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -165,16 +166,16 @@ struct Opts {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: apex-acp [-agent claude|codex|CMD] [-cwd DIR] [-thoughts] [-transcript] [-resume]");
+    eprintln!("usage: apex-acp [claude|codex|CMD] [-cwd DIR] [-thoughts] [-transcript] [-resume]");
     std::process::exit(2);
 }
 
 fn parse_args() -> Opts {
     let mut opts = Opts { agent: std::env::var("APEX_ACP_AGENT").ok().filter(|s| !s.is_empty()), cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")), thoughts: false, transcript: false, resume: false };
     let mut args = std::env::args().skip(1);
+    let mut said = false; // the agent is said once, or not at all
     while let Some(a) = args.next() {
         match a.as_str() {
-            "-agent" | "--agent" => opts.agent = Some(args.next().unwrap_or_else(|| usage())),
             "-cwd" | "--cwd" => {
                 let d = PathBuf::from(args.next().unwrap_or_else(|| usage()));
                 opts.cwd = if d.is_absolute() { d } else { opts.cwd.join(d) };
@@ -182,6 +183,11 @@ fn parse_args() -> Opts {
             "-thoughts" | "--thoughts" => opts.thoughts = true,
             "-transcript" | "--transcript" => opts.transcript = true,
             "-resume" | "--resume" => opts.resume = true,
+            // the one thing this takes without a flag to name it
+            _ if !a.starts_with('-') && !said => {
+                said = true;
+                opts.agent = Some(a);
+            }
             _ => usage(),
         }
     }
@@ -264,7 +270,7 @@ fn adapter((bin, pkg): (&str, &str)) -> Result<(AcpAgent, String), String> {
     if let Some(p) = on_path(bin) {
         return Ok((AcpAgent::new(AcpAgentConfig::new(p)), bin.to_string()));
     }
-    let (npx, node_bin) = npx().ok_or_else(|| format!("{bin} is not installed and there is no npx to fetch it with: install node, or -agent CMD"))?;
+    let (npx, node_bin) = npx().ok_or_else(|| format!("{bin} is not installed and there is no npx to fetch it with: install node, or name a command of your own"))?;
     let mut cfg = AcpAgentConfig::new(&npx).args(["-y", pkg]);
     if let Some(dir) = node_bin {
         // an npx that is not on PATH needs its node found by name

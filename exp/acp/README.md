@@ -9,13 +9,14 @@ play with the idea of a native, responsive interface to coding agents.
 
     cargo build -p apex-acp
     apex-acp                    # Anthropic's Claude adapter, the default
-    apex-acp -agent codex       # the Codex adapter
-    apex-acp -agent "CMD ARGS"  # any program that speaks ACP on stdio
+    apex-acp codex              # the Codex adapter
+    apex-acp "CMD ARGS"         # any program that speaks ACP on stdio
     apex-acp -cwd DIR -thoughts # elsewhere; show the agent's thinking
     apex-acp -transcript        # open the transcript window too
     apex-acp -resume            # take up the newest session here
 
-`$APEX_ACP_AGENT` says the same as `-agent`. Run it from an apex terminal
+The agent is the argument, there being one thing to say;
+`$APEX_ACP_AGENT` says the same. Run it from an apex terminal
 or B2 it in a window: it attaches to the session it was started in
 (`APEX_SOCKET`, `apexsession`) and makes the window `DIR/-claude`, named
 after the agent: a program's window is named for it after a `-`, as
@@ -173,7 +174,7 @@ while the transcript takes the whole.
 `$FAKE_NO_SESSIONS` makes it a directory nothing has happened in, and
 `$FAKE_NO_RESUME` an agent that cannot take a session up at all.
 
-    apex-acp -agent "python3 exp/acp/fake_agent.py" -thoughts
+    apex-acp "python3 exp/acp/fake_agent.py" -thoughts
 
 ## Not done
 
