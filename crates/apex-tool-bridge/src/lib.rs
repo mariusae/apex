@@ -20,6 +20,8 @@
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
 //! - `rename {window, name}`, `live {window, on}`, `working {window, on}`, `delete {window}`
+//! - `tag {window}` → `text`, `settag {window, text}`: the user's half of
+//!   the window's tag, what follows `|` (the words before it are apex's)
 //! - `page {name, html}` → `window` (a window showing HTML as a page;
 //!   `write` on it rewrites the page)
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
@@ -205,6 +207,11 @@ impl Bridge {
             }
             "rename" => {
                 self.tool.rename(window(v)?, v["name"].as_str().ok_or("name")?).map_err(e)?;
+                Ok(json!({}))
+            }
+            "tag" => Ok(json!({ "text": self.tool.tag(window(v)?).map_err(e)? })),
+            "settag" => {
+                self.tool.set_tag(window(v)?, v["text"].as_str().ok_or("text")?).map_err(e)?;
                 Ok(json!({}))
             }
             "working" => {

@@ -823,8 +823,11 @@ opened so that the last one chosen sits under the pointer, which is
 warped onto it, so a click alone repeats it; tracked while the button is
 held, the item under the pointer highlighted in negative, none outside;
 released on an item it runs as B2 would, released outside nothing runs;
-more than 25 items scroll. Verbs are not written into tags. B2 on a
-verb's word walks the rules with it, ahead of the shell.
+more than 25 items scroll. Verbs are not written into tags: apex does
+not put a rule's word there. A tool may furnish its own window's tag
+(`set_tag`, the text after `|`), as apex-acp does with `Send` — that is
+the window saying what it is for, not the rule table leaking into tags.
+B2 on a verb's word walks the rules with it, ahead of the shell.
 
 *As built, claiming a word apex knows:* a word resolves the same way
 wherever it is written -- typed in a tag and B2'd, picked from the tools
@@ -890,8 +893,10 @@ wire or the replicated state showing through: `Tool::attach(name)`,
 `next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window new_page open read replace append select selection show
-show_line line rename set_live set_working delete exec exec_in errors
-watch unwatch set setting`. `new_page` makes a window whose body is
+show_line line rename tag set_tag set_live set_working delete exec
+exec_in errors watch unwatch set setting`. `tag`/`set_tag` are the
+user's half of a window's tag, what follows `|`: the words before it
+are apex's own and stay the leader's business. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text
 keeps one window and writes it again with `replace`, rather than opening
 a window a turn. `set_working` is the pulsing handle (§11). A rule whose

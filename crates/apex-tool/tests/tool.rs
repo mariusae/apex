@@ -95,6 +95,33 @@ fn a_page_window_is_made_and_written_again() {
     assert_eq!(t.read(w).unwrap(), "<h1>two</h1>");
 }
 
+/// The tag's two halves: the leader keeps the words before `|` up to
+/// date, a tool writes what follows and it stays written.
+#[test]
+fn a_tool_furnishes_its_window_tag() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "tagger").unwrap();
+    let w = t.new_window("/tmp/tagger-notes").unwrap();
+    t.set_tag(w, "Look Send").unwrap();
+    assert_eq!(t.tag(w).unwrap(), " Look Send ");
+    // words of apex's own come and go in the head (the buffer is
+    // dirty, so Undo and Put), and the tool's half is left alone
+    t.append(w, "a line\n").unwrap();
+    let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut tag = String::new();
+    while Instant::now() < deadline {
+        let _ = other.step(Duration::from_millis(20));
+        if let Some(text) = other.node.state.window(w).ok().and_then(|win| other.node.state.buffer(win.tag).ok()).map(|b| b.text.to_string()) {
+            tag = text;
+            if tag.contains("Put") {
+                break;
+            }
+        }
+    }
+    assert_eq!(tag, "/tmp/tagger-notes Del Snarf Undo Put | Look Send ");
+    assert_eq!(t.tag(w).unwrap(), " Look Send ");
+}
 #[test]
 fn work_behind_a_window_shows_while_the_tool_is_there() {
     let sock = daemon();

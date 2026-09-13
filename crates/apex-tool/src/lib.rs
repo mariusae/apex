@@ -543,6 +543,36 @@ impl Tool {
         Ok(self.line(w, n)?.q0)
     }
 
+    /// The user's half of the window's tag: what follows `|`. The words
+    /// before it are apex's own (`Del Snarf Undo Put` ...), kept up to
+    /// date by the leader; what comes after is whoever's wrote it.
+    pub fn tag(&self, w: WindowId) -> Result<String> {
+        let b = self.tag_of(w)?;
+        let text = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string();
+        Ok(match text.split_once('|') {
+            Some((_, rest)) => rest.to_string(),
+            None => String::new(),
+        })
+    }
+    /// Write it: one space after the `|`, then `text`. Nothing that was
+    /// there is put back, `Look` included, so a tool furnishing its
+    /// window's tag says the whole of it (`"Look Send"`).
+    pub fn set_tag(&mut self, w: WindowId, text: &str) -> Result<()> {
+        let b = self.tag_of(w)?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let (len, version) = (buf.text.len(), buf.version);
+        let (at, text) = match buf.text.to_string().chars().position(|c| c == '|') {
+            Some(i) => (i + 1, format!(" {} ", text.trim())),
+            // no bar yet: make one (the leader writes it, but a tag it
+            // has not reached is still a tag)
+            None => (len, format!(" | {} ", text.trim())),
+        };
+        self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: at, q1: len, text })?;
+        Ok(())
+    }
+    fn tag_of(&self, w: WindowId) -> Result<BufferId> {
+        Ok(self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.tag)
+    }
     /// Give the window (its buffer) a new name.
     pub fn rename(&mut self, w: WindowId, name: &str) -> Result<()> {
         let b = self.body_of(w)?;
