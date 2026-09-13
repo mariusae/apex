@@ -1029,7 +1029,7 @@ impl Node {
     pub fn winclean(&mut self, log: &mut Log, w: WindowId, _conservative: bool) -> Result<bool> {
         let name = self.window_name(w);
         let isdir = name.ends_with('/');
-        let isscratch = name.ends_with("+Errors") || name.ends_with("/guide");
+        let isscratch = crate::entry::is_scratch(&name) || name.ends_with("/guide");
         if isscratch || isdir || self.window_live(w) {
             return Ok(true); // a live window's text is a transcript, not a file
         }
@@ -1074,11 +1074,19 @@ impl Node {
     pub fn update_tags(&mut self, log: &mut Log) -> Result<()> {
         let wins: Vec<WindowId> = self.state.windows.keys().copied().collect();
         for w in wins {
+            // live is a third state beside clean and dirty
+            // (`window_live`): the text is a program's, not a file's,
+            // so there is nothing to Put, as there is nothing for Del
+            // to ask about. acme's win says the same by writing `clean`
+            // to its ctl after every write.
+            let live = self.window_live(w);
             let Ok(win) = self.state.window(w) else { continue };
             let tag = win.tag;
             let name = self.window_name(w);
             let mut new = format!("{name} Del Snarf");
-            let filemenu = !name.ends_with("+Errors");
+            // a program's window is no file: nothing to Undo into, and
+            // nothing to Put it to (§ `is_scratch`)
+            let filemenu = !crate::entry::is_scratch(&name);
             if let (Some(b), true) = (win.body_buffer(), filemenu) {
                 let buf = self.state.buffer(b)?;
                 if !buf.undo.is_empty() {
@@ -1088,7 +1096,7 @@ impl Node {
                     new.push_str(" Redo");
                 }
                 let isdir = name.ends_with('/');
-                if !isdir && !name.is_empty() && buf.dirty() {
+                if !isdir && !name.is_empty() && buf.dirty() && !live {
                     new.push_str(" Put");
                 }
                 if isdir {

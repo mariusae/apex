@@ -453,6 +453,42 @@ fn errors_go_to_the_directory_window_in_the_last_column() {
     assert_eq!(node.window_name(e), "+Errors");
 }
 
+/// A window a program writes is not a file: nothing to Put it to. It
+/// says so two ways -- by being live, which is a third state beside
+/// clean and dirty, and by its name (`+Errors`, `dir/-claude`), which
+/// says it whether or not anything is behind it just now.
+#[test]
+fn a_live_window_is_not_put() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/proj/notes.txt", "").unwrap();
+    node.insert(&mut log, ViewId::Body(w), "the agent says\n").unwrap();
+    let tag = |n: &Node| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
+    // dirty and nobody behind it: Put, as any written-in window has
+    node.update_tags(&mut log).unwrap();
+    assert!(tag(&node).contains(" Put"), "{}", tag(&node));
+    // a tool says it is live: the handle says so, and the tag stops
+    // offering to write it to a file of that name
+    let by = node.state.meta.attachments.keys().next().copied();
+    node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Live { by })).unwrap();
+    assert!(node.window_live(w));
+    node.update_tags(&mut log).unwrap();
+    assert!(!tag(&node).contains(" Put"), "{}", tag(&node));
+    // and comes back when the program behind it is gone
+    node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Live { by: None })).unwrap();
+    node.update_tags(&mut log).unwrap();
+    assert!(tag(&node).contains(" Put"), "{}", tag(&node));
+    // a window named as a program's is never Put, live or not: the
+    // last part of the name begins with `-` (its own) or `+` (output)
+    for name in ["/tmp/proj/-claude", "/tmp/proj/-claude+run", "/tmp/proj/+Errors", "/tmp/-"] {
+        let s = node.new_window(&mut log, col, name, "").unwrap();
+        node.insert(&mut log, ViewId::Body(s), "written by a program\n").unwrap();
+        node.update_tags(&mut log).unwrap();
+        let t = node.state.buffer(node.state.window(s).unwrap().tag).unwrap().text.to_string();
+        assert!(!t.contains(" Put") && !t.contains(" Undo"), "{name}: {t}");
+        // and Del does not ask about what is in it
+        assert!(node.winclean(&mut log, s, true).unwrap(), "{name}");
+    }
+}
 #[test]
 fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
     let (mut log, mut node, col) = session();

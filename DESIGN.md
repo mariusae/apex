@@ -1401,7 +1401,15 @@ left of the connection mark, the heartbeat's round trip and the log's
   (`0xB24073`, dark magenta with a quarter of yellow: unlike the dirty
   blue, the fenced red, the unsynced green and the scrollbar's dark
   yellow beside it), `Del` does not ask (the text is a transcript, not a file), and
-  `apex win list` marks it `>`.
+  `apex win list` marks it `>`. The tag says the same: a live window is
+  offered no `Put`, since there is no file of that name to write it to.
+  A window's *name* says it too, and says it whether or not anything is
+  behind it just now: the last part beginning with `-` (a program's own
+  window, as win names its `dir/-`) or `+` (auxiliary output beside
+  one, as acme's `+Errors`) means there is no file of that name -- no
+  `Undo`, `Redo`, `Put` or `Get` in the tag, and `Del` asks nothing
+  (`entry::is_scratch`, which generalises the `+Errors` and `/guide`
+  cases acme and apex already had).
   The app offers `Snarfout` in terminals and win windows: the last
   command as `$ cmd` (the prompt normalised) and its output, the lines
   between the last two prompts

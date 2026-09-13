@@ -251,6 +251,17 @@ pub struct PlumbRule {
     pub to: Option<RunTo>,
 }
 
+/// Is this a window a program writes rather than a file? The last part
+/// of the name begins with `-`, a program's own window (acme's win
+/// names its `dir/-`), or `+`, auxiliary output beside one (acme's
+/// `+Errors`) -- so `dir/-claude` and `dir/-claude+run` are both, and
+/// `dir/main.rs` is not. There is no file of that name to `Put` it to,
+/// and nothing in it for `Del` to ask about: the text is a transcript.
+pub fn is_scratch(name: &str) -> bool {
+    let last = name.rsplit('/').next().unwrap_or(name);
+    last.starts_with('+') || last.starts_with('-')
+}
+
 /// Is this name a URL (a web window's), not a path? `scheme://...`.
 pub fn is_url(name: &str) -> bool {
     match name.split_once("://") {
