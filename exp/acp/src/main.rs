@@ -776,8 +776,19 @@ struct Win {
     run_col0: bool,
     /// Whether the run window is pulsing.
     running: bool,
+    /// When the prompt the agent is answering went to it, while nothing
+    /// has come back for it yet, and whether the wait has been remarked
+    /// on. An agent's first word can be a long time coming -- the model
+    /// is thinking, and nothing is streamed until it has something to
+    /// say -- and a window that says nothing for that long reads as a
+    /// window that has hung.
+    waiting: Option<std::time::Instant>,
+    waited: bool,
     inbox: tokio::sync::mpsc::UnboundedSender<In>,
 }
+
+/// How long the agent may say nothing before the window says so.
+const QUIET: Duration = Duration::from_secs(5);
 
 /// The left margin: who is speaking. Three things are said in this
 /// window and each is marked, so that the eye can tell them apart down
@@ -840,7 +851,7 @@ impl Win {
         // session of ours is handed back, and B3 does what it always
         // does with it
         let pick = t.offer(Rule::plumb().text(r"[0-9a-fA-F]{4,}(-[0-9a-fA-F]{4,})*").window(w))?;
-        let mut win = Win { t, w, len: 0, mark: 0, col0: true, blank: true, anchors: HashMap::new(), titles: HashMap::new(), plan: None, action: None, tail: None, tail_blank: true, ready: false, tr: Trans::default(), pending: VecDeque::new(), sent: 0, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), agent: "the agent".to_string(), can: Can::default(), replay: None, replaying: false, in_user: false, in_agent: false, msg: None, owed: false, commands: Vec::new(), sessions: Vec::new(), pick, reply: String::new(), prompts: VecDeque::new(), asked: String::new(), last: None, page: None, pulsing: false, settled: false, terms: HashMap::new(), next_term: 1, run: None, wrote: None, run_col0: true, running: false, inbox };
+        let mut win = Win { t, w, len: 0, mark: 0, col0: true, blank: true, anchors: HashMap::new(), titles: HashMap::new(), plan: None, action: None, tail: None, tail_blank: true, ready: false, tr: Trans::default(), pending: VecDeque::new(), sent: 0, thoughts, verbs, cwd, modes: Vec::new(), mode: None, auth: Vec::new(), agent: "the agent".to_string(), can: Can::default(), replay: None, replaying: false, in_user: false, in_agent: false, msg: None, owed: false, commands: Vec::new(), sessions: Vec::new(), pick, reply: String::new(), prompts: VecDeque::new(), asked: String::new(), last: None, page: None, pulsing: false, settled: false, terms: HashMap::new(), next_term: 1, run: None, wrote: None, run_col0: true, running: false, waiting: None, waited: false, inbox };
         if transcript {
             win.toggle_transcript()?;
         }
@@ -868,6 +879,7 @@ impl Win {
             // what the handle says follows what was written, by either
             // of us, and what is going on
             win.pulse();
+            win.say_waiting()?;
             let ev = win.t.next_event(Some(Duration::from_millis(20)))?;
             if ev.is_some() && std::env::var_os("APEX_ACP_DEBUG").is_some() {
                 eprintln!("acp: {ev:?} len={} mark={} busy={}", win.len, win.mark, win.busy());
@@ -1303,9 +1315,55 @@ impl Win {
         self.tr_out(&format!("{prompt}\n\n"))?;
         self.end_message();
         self.sent += 1;
+        // the wait is this prompt's only when nothing is ahead of it;
+        // one that queues waits on the turn before it, and its own wait
+        // starts when that turn ends
+        if self.sent == 1 {
+            self.wait_from_now();
+        }
         self.pulse();
         let _ = self.inbox.send(In::Prompt(prompt));
         Ok(())
+    }
+
+    fn wait_from_now(&mut self) {
+        self.waiting = Some(std::time::Instant::now());
+        self.waited = false;
+    }
+
+    /// The agent has said nothing for [`QUIET`]: say so, once, before
+    /// whatever finally comes. The handle pulses all the while, but a
+    /// pulse says only that we think it is working; this says how long
+    /// it has been at it and what else is in hand, which is what tells
+    /// a slow answer from a stuck one.
+    fn say_waiting(&mut self) -> apex_tool::Result<()> {
+        let Some(since) = self.waiting else { return Ok(()) };
+        if self.waited || since.elapsed() < QUIET {
+            return Ok(());
+        }
+        self.waited = true;
+        let mut also = Vec::new();
+        if !self.ready {
+            also.push("the session is not started yet".to_string());
+        }
+        if let Some(m) = &self.mode {
+            also.push(self.mode_name(m));
+        }
+        let behind = self.sent.saturating_sub(1);
+        if behind > 0 {
+            also.push(format!("{behind} more waiting behind it"));
+        }
+        match self.terms.len() {
+            0 => {}
+            1 => also.push("a command running".to_string()),
+            n => also.push(format!("{n} commands running")),
+        }
+        let also = match also.is_empty() {
+            true => String::new(),
+            false => format!(" ({})", also.join(", ")),
+        };
+        let line = format!("nothing from {} yet, {}s after the prompt went{also}", self.agent, since.elapsed().as_secs());
+        self.note(&line)
     }
 
     /// Answer the oldest pending permission with the option of this kind,
@@ -1501,6 +1559,7 @@ impl Win {
         self.tr = Trans { w: self.tr.w, ..Trans::default() };
         self.reply.clear();
         self.prompts.clear();
+        self.waiting = None;
         self.asked.clear();
         self.last = None;
         self.in_user = false;
@@ -1850,6 +1909,11 @@ impl Win {
     // ---- the agent's news ----
 
     fn take(&mut self, o: Out) -> apex_tool::Result<()> {
+        // the agent has answered for the turn, whatever it had to say:
+        // the wait is over, and nothing is owed about it
+        if matches!(o, Out::Update(_) | Out::Permission { .. } | Out::Read { .. } | Out::Write { .. } | Out::Term(_)) {
+            self.waiting = None;
+        }
         match o {
             Out::Hello { agent, auth, can } => {
                 self.auth = auth;
@@ -2024,11 +2088,20 @@ impl Win {
             }
             Out::Dropped(n) => {
                 self.sent = self.sent.saturating_sub(n);
+                if self.sent == 0 {
+                    self.waiting = None;
+                }
                 self.pulse();
                 self.note(&format!("{n} waiting to be sent went too"))
             }
             Out::Turn(res) => {
                 self.sent = self.sent.saturating_sub(1);
+                // a prompt that queued behind this one goes now, and
+                // its own wait starts here
+                match self.sent {
+                    0 => self.waiting = None,
+                    _ => self.wait_from_now(),
+                }
                 self.end_message();
                 self.pulse();
                 let asked = self.prompts.pop_front().unwrap_or_default();
@@ -2054,6 +2127,7 @@ impl Win {
             }
             Out::Gone(why) => {
                 self.sent = 0;
+                self.waiting = None;
                 self.pulse();
                 self.note(&why)
             }
