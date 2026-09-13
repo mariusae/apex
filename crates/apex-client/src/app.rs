@@ -3527,9 +3527,9 @@ pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
 }
 
 /// Where a pulsing handle is this instant: 0 at its own colour, 1 at
-/// pale, back and forth over a second and a fifth.
+/// pale, back and forth over a second and a half.
 fn breath() -> f32 {
-    const PERIOD: u128 = 1200;
+    const PERIOD: u128 = 1440;
     let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) % PERIOD;
     let t = ms as f32 / PERIOD as f32;
     if t < 0.5 {

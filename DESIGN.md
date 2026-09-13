@@ -1453,7 +1453,7 @@ left of the connection mark, the heartbeat's round trip and the log's
   terminal (`TermRead`), into the snarf buffer and clipboard.
 - *As built:* a window is **working** when a tool says so
   (`WindowOp::Working{by}`, `Tool::set_working`): its handle breathes
-  between its own colour and the tag's, a second and a fifth to the
+  between its own colour and the tag's, a second and a half to the
   cycle, for as long as the work lasts. It is not a fourth state but a
   mark over the three: a clean, dirty, stale or live window can be
   working, and its handle keeps saying which it is. A handle with
