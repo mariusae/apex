@@ -24,6 +24,11 @@
 //! the next rule is tried: a second for B3 text, which is a search, and
 //! ten for a verb, which may be work the tool does before it answers.
 //!
+//! A window a tool writes is written with `insert_following`, so that
+//! a dot sitting at the point it writes at moves along with the output
+//! and the reader need click nothing to go on typing at the end; a dot
+//! anywhere else, in a draft being typed, is left where it is.
+//!
 //! A window a tool makes is claimed with `set_owner`: what is in it is
 //! the tool's doing and not a file's contents, so its tag has no file
 //! menu and `Del` asks nothing about it, as acme does for as long as a
@@ -549,6 +554,28 @@ impl Tool {
         Ok(())
     }
 
+    /// Add text at `at`, the dot following it: a dot sitting exactly
+    /// there is moved past the text, in the same round trip, as a win's
+    /// output moves along the point its reader types at. A dot anywhere
+    /// else is left where the edit leaves it, so a draft half-typed
+    /// keeps its cursor in it while output arrives before it. What a
+    /// window a program writes wants: nothing need be clicked to go on
+    /// typing at the end of it, and what is typed is not interrupted.
+    pub fn insert_following(&mut self, w: WindowId, at: usize, text: &str) -> Result<()> {
+        let b = self.body_of(w)?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let (len, version) = (buf.text.len(), buf.version);
+        let at = at.min(len);
+        if self.watched.contains(&w) {
+            // ours, when it comes back, as `replace` remembers its own
+            self.own.push_back((b, at, 0, text.to_string()));
+            if self.own.len() > 256 {
+                self.own.pop_front();
+            }
+        }
+        self.propose(Proposal::Insert { buffer: b, version, at, text: text.to_string(), follow: true })?;
+        Ok(())
+    }
     /// Bring the text at `at` into view: the window is scrolled only if
     /// `at` is off screen (and grown if it shows no lines). Nothing else
     /// moves: not dot, not the mouse, not the back stack. What a tool

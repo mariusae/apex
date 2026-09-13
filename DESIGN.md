@@ -902,9 +902,9 @@ Rust API for tools, a curated surface on `Remote` with nothing of the
 wire or the replicated state showing through: `Tool::attach(name)`,
 `next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
-`new_window new_page open read replace append select selection show
-show_line line rename tag set_tag set_owner set_live set_working delete
-exec exec_in errors watch unwatch set setting`. `tag`/`set_tag` are the
+`new_window new_page open read replace append insert_following select
+selection show show_line line rename tag set_tag set_owner set_live
+set_working delete exec exec_in errors watch unwatch set setting`. `tag`/`set_tag` are the
 user's half of a window's tag, what follows `|`: the words before it
 are apex's own and stay the leader's business. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text
@@ -917,7 +917,17 @@ on the back stack, the line selected and shown, the mouse warped there);
 `show` is acme's `show` after `addr=`: the place brought on screen if
 it is off it, and nothing else moved. A tool that edits a window and
 wants its change kept in sight uses `show`; `open` is for taking the
-user somewhere. `Edit` events are others' edits only: the leader applies
+user somewhere. A window a tool writes to is written with
+`insert_following` (`Proposal::Insert{follow}`, which win has always
+used and the crate now offers): a dot sitting exactly at the point
+written at is moved past the text by the leader in the same round trip,
+so the typing point rides the output and nothing has to be clicked to
+go on typing at the end, while a dot anywhere else -- in a draft
+half-typed -- is left where it is and only shifted along by the text
+going in before it. `replace` moves no dot at all, which is what
+rewriting a status glyph or a block in place wants. Neither needs a
+`show`: the window follows its own output by acme's rule (§8), so
+having scrolled back to read something holds it still. `Edit` events are others' edits only: the leader applies
 every proposal as itself, so an edit's entries do not say who asked for
 it, and the crate recognises its own replacements in a watched window by
 their shape (buffer, offset, length, text) and drops them as they come

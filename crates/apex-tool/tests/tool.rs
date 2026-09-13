@@ -23,6 +23,34 @@ fn daemon() -> PathBuf {
     path
 }
 
+/// A window a program writes: the dot follows what goes in at the point
+/// it sits at, so nothing need be clicked to go on typing at the end,
+/// and a dot anywhere else -- in a draft being typed -- is left in it.
+#[test]
+fn output_carries_the_dot_along_but_leaves_a_draft_alone() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let w = t.new_window("/tmp/acp-out").unwrap();
+    let dot = |t: &Tool| t.selection(w).map(|r| (r.q0, r.q1)).unwrap();
+    assert_eq!(dot(&t), (0, 0));
+    // output at the dot takes it with it, write after write
+    t.insert_following(w, 0, "one\n").unwrap();
+    assert_eq!(dot(&t), (4, 4));
+    t.insert_following(w, 4, "two\n").unwrap();
+    assert_eq!(dot(&t), (8, 8));
+    // a draft at the end, the cursor in it, past the output point
+    t.replace(w, END, END, "draft").unwrap();
+    t.select(w, 13, 13).unwrap();
+    // output goes in before it: the draft moves along and keeps the
+    // cursor, which does not jump back to where the output ended
+    t.insert_following(w, 8, "three\n").unwrap();
+    assert_eq!(t.read(w).unwrap(), "one\ntwo\nthree\ndraft");
+    assert_eq!(dot(&t), (19, 19));
+    // and `replace` moves nothing, wherever the dot is
+    t.select(w, 0, 0).unwrap();
+    t.replace(w, 0, 0, "zero\n").unwrap();
+    assert_eq!(dot(&t), (0, 0));
+}
 /// A rule may name the tool that owns a window, and so speak to that
 /// tool's windows and no others, where a name pattern would be guessing.
 #[test]
