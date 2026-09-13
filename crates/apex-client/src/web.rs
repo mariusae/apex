@@ -162,6 +162,21 @@ pub struct Webs {
     cursors: HashMap<WindowId, gpui::CursorStyle>,
 }
 
+/// A page that has the keyboard when its view goes hands it back first.
+/// AppKit leaves the window itself as the first responder when a view
+/// that is one is taken out of it, and a window responder answers no
+/// key: every keystroke beeps then, and the keys that still arrive come
+/// the roundabout way, twice. The views go together when a session is
+/// parked or adopted (`Webs` replaced whole), where nothing else is
+/// watching, so the handing back belongs here.
+impl Drop for Webs {
+    fn drop(&mut self) {
+        for h in self.hosts.values() {
+            let _ = h.view.focus_parent();
+        }
+    }
+}
+
 /// What Back, Fwd and Get do in a web window's tag.
 pub enum Nav {
     Back,
@@ -338,15 +353,18 @@ impl Webs {
     pub fn focus_tick(&mut self, window: &Window) {
         let Some(pos) = native_mouse(window) else { return };
         let over = self.window_at(pos);
-        if over == self.focused {
-            return;
-        }
         match over {
-            Some(w) => {
+            Some(w) if over != self.focused => {
                 if let Some(h) = self.hosts.get(&w) {
                     let _ = h.view.focus();
                 }
             }
+            Some(_) => {}
+            // every tick, not only when the pointer leaves a page: the
+            // keyboard can go from gpui's view behind our back (a page
+            // taking it, a view of AppKit's), and what `focused` says was
+            // asked for is then not what the window has. `focus_ui` looks
+            // before it acts, so a tick that finds it right costs nothing.
             None => focus_ui(window),
         }
         self.focused = over;
@@ -535,6 +553,11 @@ impl Webs {
                 let _ = h.view.set_visible(false);
                 h.shown = false;
             }
+        }
+        // the page the keyboard was given to is hidden or gone: the tick
+        // must not read `focused` as though it still had it
+        if self.focused.is_some_and(|w| !self.hosts.get(&w).is_some_and(|h| h.shown)) {
+            self.focused = None;
         }
     }
 
