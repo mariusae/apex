@@ -415,6 +415,28 @@ func (w *Window) Rename(name string) error {
 	return w.t.call("rename", map[string]any{"window": w.ID, "name": name}, nil)
 }
 
+// Tag is the user's half of the window's tag: what follows `|`. The
+// words before it are apex's own (Del, Snarf, Undo, Put and the rest),
+// kept up to date by the session.
+func (w *Window) Tag() (string, error) {
+	var r struct {
+		Text string `json:"text"`
+	}
+	if err := w.t.call("tag", map[string]any{"window": w.ID}, &r); err != nil {
+		return "", err
+	}
+	return r.Text, nil
+}
+
+// SetTag writes that half: one space after the `|`, then text. Nothing
+// that was there is put back, Look included, so a tool furnishing its
+// window's tag says the whole of it ("Look Send"). It is the window
+// saying what it is for, and the place for a verb that wants to be
+// clicked without going by way of the tools menu.
+func (w *Window) SetTag(text string) error {
+	return w.t.call("settag", map[string]any{"window": w.ID, "text": text}, nil)
+}
+
 // SetWorking says the tool is working on something behind the window:
 // its handle pulses until it is turned off, or until the tool detaches.
 func (w *Window) SetWorking(on bool) error {
@@ -426,6 +448,29 @@ func (w *Window) SetWorking(on bool) error {
 // the tool detaches.
 func (w *Window) SetLive(on bool) error {
 	return w.t.call("live", map[string]any{"window": w.ID, "on": on}, nil)
+}
+
+// SetOwner claims the window as this tool's: the tool made it and
+// writes it, so what is in it is the tool's doing and not a file's
+// contents. The tag loses its file menu — no Undo, Redo, Put or Get —
+// and Del asks nothing, as acme does for as long as a program holds a
+// window's event file. A rule may name the owner (Rule.Owner) to speak
+// to one tool's windows and no others. The claim ends when the tool
+// detaches, or with false. It is not SetLive or SetWorking, which come
+// and go with the work: a window is owned for as long as its tool is
+// there.
+func (w *Window) SetOwner(on bool) error {
+	return w.t.call("own", map[string]any{"window": w.ID, "on": on}, nil)
+}
+
+// SetClean says the window holds what it should hold: the handle stops
+// saying otherwise and Del stops asking. A window a tool writes is
+// dirtied by the writing, and this is how it says the writing was the
+// point — acme's `ctl clean`, which win writes after every write of its
+// own. What the reader types afterwards makes it dirty again, which is
+// then worth saying: it is theirs, and has not been acted on.
+func (w *Window) SetClean() error {
+	return w.t.call("clean", map[string]any{"window": w.ID}, nil)
 }
 
 // Delete closes the window (Del there).
@@ -491,13 +536,30 @@ type Rule struct {
 	Text string
 	// A regexp the window's name must match.
 	File string
+	// A regexp the name of the tool that owns the window
+	// (Window.SetOwner) must match: `win-.*` for any win's window.
+	// A window no tool owns is owned by nobody, and its owner's name
+	// is the empty one, so NoOwner is what says a rule is about real
+	// files and not a tool's windows. Empty means the rule does not
+	// care either way.
+	Owner string
 	// file, dir, term, errors or web.
 	Kind string
 	// This one window only, whatever its name.
 	Window *Window
 	// Higher goes first among rules that match; 0 is usual.
 	Priority int
+	// The verb is no word in the tools menu. It still runs when B2
+	// takes it — from the tag, from the window's own text, from
+	// `apex exec` — so this is for a verb that wants a place (a word
+	// the tool wrote into its window, to be clicked where it stands)
+	// or an argument (`Mode plan`), and would only crowd the menu.
+	Unlisted bool
 }
+
+// NoOwner is the Owner of a window no tool owns: a real file, and not
+// a window a tool made and writes.
+const NoOwner = "^$"
 
 // A RuleID names an installed rule.
 type RuleID int
@@ -557,6 +619,9 @@ func (t *Tool) Offer(r Rule, handle func(Plumb) bool) (RuleID, error) {
 	if r.File != "" {
 		args["file"] = r.File
 	}
+	if r.Owner != "" {
+		args["owner"] = r.Owner
+	}
 	if r.Kind != "" {
 		args["kind"] = r.Kind
 	}
@@ -565,6 +630,9 @@ func (t *Tool) Offer(r Rule, handle func(Plumb) bool) (RuleID, error) {
 	}
 	if r.Priority != 0 {
 		args["priority"] = r.Priority
+	}
+	if r.Unlisted {
+		args["unlisted"] = true
 	}
 	var res struct {
 		Rule int `json:"rule"`

@@ -35,11 +35,24 @@ What a tool can do:
   `w.Select(q0, q1)`, `w.Selection()`, `w.Rename(name)`,
   `w.SetLive(on)`, `w.Delete()`, `w.Exec(text)`: a window's text and
   state. Offsets count characters, not bytes.
+- `w.SetOwner(on)`: the window is this tool's, not a file — no file
+  menu in its tag, and nothing for `Del` to ask about. `w.SetClean()`
+  says what it holds is what it should hold, which a tool writing a
+  window says after every write, as acme's win does. `w.Tag()`,
+  `w.SetTag(text)`: the user's half of the tag, what follows `|`, for a
+  window to say what it is for.
 - `t.Offer(rule, handler)`: a verb in the tools menu of the windows the
   rule matches (or B3 on text it matches, with `Verb` empty), answered
   by the handler, which returns whether it took it. A verb acts on the
   window's dot, `p.At`; B3 also brings what it took, `p.Sel`;
   `p.Range()` picks the one to act on. `t.Withdraw(id)`.
+- A rule that says which windows it is about — `Window`, `File`,
+  `Kind`, `Owner` — may take a word apex knows (`Put`, `Get`, `Del`):
+  the handler returning false hands it back, and apex does with it what
+  it always does. `Owner` is the tool whose window it is, `NoOwner` a
+  real file. `Unlisted` keeps a verb out of the tools menu without
+  taking it away, for one meant to be clicked where it stands or given
+  an argument.
 - `w.Watch(fn)`: edits by others to the window's body, as win follows
   typing; `t.OnRename`, `t.OnDelete`: the windows the tool made or
   watches.

@@ -31,8 +31,22 @@ func TestAgainstASession(t *testing.T) {
 	if err != nil || text != "one\n" {
 		t.Fatalf("read: %q, %v", text, err)
 	}
+	// a window a tool owns is no file: it says so, and says that what
+	// it holds is what it should hold
+	if err := w.SetOwner(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetClean(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetTag("Shout"); err != nil {
+		t.Fatal(err)
+	}
+	if tag, err := w.Tag(); err != nil || strings.TrimSpace(tag) != "Shout" {
+		t.Fatalf("tag: %q, %v", tag, err)
+	}
 	got := make(chan Plumb, 1)
-	if _, err := tool.Offer(Rule{Verb: "Shout", Window: w}, func(p Plumb) bool {
+	if _, err := tool.Offer(Rule{Verb: "Shout", Window: w, Unlisted: true}, func(p Plumb) bool {
 		got <- p
 		return true
 	}); err != nil {
