@@ -1067,6 +1067,7 @@ impl Server {
     pub fn install_default_rules(&mut self, log: &mut Log) {
         let r = |text: &str, isfile: Option<&str>, isdir: Option<&str>, edit: &str| PlumbRule {
             verb: "plumb".into(),
+            unlisted: false,
             text: Some(text.into()),
             file: None,
             kind: None,
@@ -1089,6 +1090,7 @@ impl Server {
         let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
         let clear = PlumbRule {
             verb: "Clear".into(),
+            unlisted: false,
             text: None,
             file: None,
             kind: Some(WinKind::Term),
@@ -1125,6 +1127,7 @@ impl Server {
             }
             let rule = PlumbRule {
                 verb: "Preview".into(),
+                unlisted: false,
                 text: None,
                 file: Some(apex_core::preview::pattern_of_ext(ext)),
                 kind: Some(WinKind::File),

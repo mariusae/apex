@@ -23,6 +23,30 @@ fn daemon() -> PathBuf {
     path
 }
 
+/// A verb that wants a place or an argument is offered `unlisted`: it
+/// runs when B2 takes it, but is no word in the window's tools menu.
+#[test]
+fn an_unlisted_verb_works_but_is_not_in_the_menu() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let w = t.new_window("/tmp/acp-notes").unwrap();
+    t.offer(Rule::verb("Send").window(w)).unwrap();
+    let allow = t.offer(Rule::verb("Allow").window(w).unlisted()).unwrap();
+    // the menu has the one, not the other
+    let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
+    let menu = |r: &Remote| apex_core::plumb::verbs_for(&r.node.state.meta.rules, "/tmp/acp-notes", WinKind::File, Some(w), r.node.window_owner(w));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while menu(&other).is_empty() && Instant::now() < deadline {
+        let _ = other.step(Duration::from_millis(20));
+    }
+    assert_eq!(menu(&other), vec!["Send"]);
+    // but B2 on the word still reaches the tool, arguments and all
+    other.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Allow once".into() }, Duration::from_secs(5)).unwrap();
+    let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("an event");
+    let Event::Plumb(p) = ev else { panic!("{ev:?}") };
+    assert_eq!((p.rule, p.verb.as_str(), p.text.as_str()), (allow, "Allow", "once"));
+    t.answer(&p, true).unwrap();
+}
 #[test]
 fn a_tool_works_a_window_and_answers_its_verb() {
     let sock = daemon();

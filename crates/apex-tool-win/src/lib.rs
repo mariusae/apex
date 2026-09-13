@@ -196,6 +196,7 @@ fn win_rules(window: WindowId, name: &str) -> Vec<PlumbRule> {
         .into_iter()
         .map(|verb| PlumbRule {
             verb: verb.into(),
+            unlisted: false,
             text: None,
             file: None,
             kind: None,

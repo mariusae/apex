@@ -27,8 +27,11 @@
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
-//! - `rule {verb?, text?, file?, kind?, window?, priority?}` → `rule`: a
-//!   rule answered by this tool (`plumb` events); `unrule {rule}`. A verb
+//! - `rule {verb?, text?, file?, kind?, window?, priority?, unlisted?}` →
+//!   `rule`: a rule answered by this tool (`plumb` events); `unrule
+//!   {rule}`. `unlisted` keeps the verb out of the tools menu without
+//!   taking it away: for one meant to be clicked where the tool wrote
+//!   it, or to be given an argument. A verb
 //!   apex knows (`Put`, `Get`, `Del`, ...) may be taken by a rule that
 //!   says which windows it is about (`window`, `file` or `kind`): `ack`
 //!   with `ok` means the word meant what the tool says, `ok: false` hands
@@ -261,6 +264,9 @@ impl Bridge {
                 }
                 if let Some(p) = v["priority"].as_i64() {
                     r = r.priority(p as i32);
+                }
+                if v["unlisted"].as_bool().unwrap_or(false) {
+                    r = r.unlisted();
                 }
                 Ok(json!({ "rule": self.tool.offer(r).map_err(e)?.0 }))
             }

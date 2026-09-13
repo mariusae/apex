@@ -24,6 +24,12 @@
 //! the next rule is tried: a second for B3 text, which is a search, and
 //! ten for a verb, which may be work the tool does before it answers.
 //!
+//! A verb is a word in the tools menu of the windows its rule applies
+//! to, and runs wherever B2 takes it. `Rule::unlisted` keeps it out of
+//! the menu without taking it away: for a word the tool writes into a
+//! window to be clicked where it stands, or one that wants an argument
+//! after it, a menu entry is only clutter.
+//!
 //! A rule may take a word apex has its own meaning for -- `Put`, `Get`,
 //! `Del`, any built-in -- so long as it says which windows it is about
 //! (`.window(w)`, or a `.file(..)`/`.kind(..)` pattern). Answering such
@@ -164,6 +170,7 @@ pub enum Event {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rule {
     verb: Option<String>,
+    unlisted: bool,
     text: Option<String>,
     file: Option<String>,
     kind: Option<WinKind>,
@@ -209,6 +216,16 @@ impl Rule {
         self
     }
 
+    /// The verb is no word in the tools menu. It still runs when B2
+    /// takes it -- from the tag, from the window's own text, from
+    /// `apex exec` -- so this is for verbs that want a place or an
+    /// argument, and would only crowd a menu: a word the tool writes
+    /// into the window to be clicked where it stands (`Allow`), or one
+    /// that means nothing without what follows it (`Mode plan`).
+    pub fn unlisted(mut self) -> Rule {
+        self.unlisted = true;
+        self
+    }
     /// Higher goes first among rules that match; 0 is usual.
     pub fn priority(mut self, p: i32) -> Rule {
         self.priority = p;
@@ -655,6 +672,7 @@ impl Tool {
     pub fn offer(&mut self, r: Rule) -> Result<RuleId> {
         let rule = PlumbRule {
             verb: r.verb.unwrap_or_else(|| "plumb".to_string()),
+            unlisted: r.unlisted,
             text: r.text,
             file: r.file,
             kind: r.kind,

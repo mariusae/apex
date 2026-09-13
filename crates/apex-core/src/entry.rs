@@ -219,9 +219,17 @@ pub enum AttachmentKind {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct PlumbRule {
     /// The command this rule answers: `plumb` is B3; anything else is a
-    /// word in the tag of every window the rule applies to, executed by
-    /// B2 there.
+    /// word in the tools menu of every window the rule applies to,
+    /// executed by B2 wherever it is written.
     pub verb: String,
+    /// Whether the verb is no word in the menu. It still runs when B2
+    /// takes it -- from the tag, from the window's own text, from
+    /// `apex exec` -- so it is for verbs that want a place or an
+    /// argument: a word written in the window to be clicked where it
+    /// stands, or one that means nothing without what follows it.
+    /// Nothing for a `plumb` rule, which is in no menu anyway.
+    #[serde(default)]
+    pub unlisted: bool,
     /// The plumbed text (for `plumb`) or the arguments (a verb) must match
     /// this regexp; its groups bind `$0`..`$9`.
     pub text: Option<String>,

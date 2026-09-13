@@ -119,6 +119,7 @@ const GLOBAL: &[Flag] = &[
 
 const RULE_FLAGS: &[Flag] = &[
     flag("verb", "the command the rule answers: plumb (B3, the default) or a word for the tools menu"),
+    switch("unlisted", "the verb is no word in the menu; B2 still runs it where it is written"),
     flag("text", "the plumbed text (a verb's arguments) must match this regexp, whole; groups bind $0..$9"),
     flag("file", "the window's name must match this regexp"),
     flag("win", "the rule is for the window with this id alone (ids are never reused)"),
@@ -507,6 +508,11 @@ applies to, and B2 on the word does the same. The verb exec is special:
 it takes every B2 command in the windows it applies to that no builtin
 and no other verb took, the whole line as its text (win's rule, so that
 B2 on an old command line runs it again); it is no word in the menu.
+-unlisted keeps a verb of your own out of the menu the same way, without
+taking it away: B2 still runs it wherever it is written. It is for verbs
+that want a place or an argument -- a word a tool writes into a window
+to be clicked where it stands, or one that means nothing on its own --
+which would otherwise only crowd the menu.
 
 Predicates (all given must hold):
 	-text=RE      the plumbed text (a verb's arguments) matches RE, whole;
@@ -1430,6 +1436,7 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
     };
     let r = PlumbRule {
         verb: f.get("verb").unwrap_or("plumb").to_string(),
+        unlisted: f.is("unlisted"),
         text: f.get("text").map(String::from),
         file: f.get("file").map(String::from),
         win: match f.get("win") {

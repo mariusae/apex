@@ -115,6 +115,7 @@ fn get_rule_overrides_filesystem_get_and_stays_scoped() {
     let w_live = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
     let rule = PlumbRule {
         verb: "Get".into(),
+        unlisted: false,
         text: None,
         file: Some(r"\+smartlog$".into()),
         kind: Some(WinKind::File),
@@ -161,6 +162,7 @@ fn dirty_get_rule_reaches_the_tool_on_first_invocation() {
     let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
     let rule = PlumbRule {
         verb: "Get".into(),
+        unlisted: false,
         text: None,
         file: Some(r"\+smartlog$".into()),
         kind: Some(WinKind::File),
@@ -196,6 +198,7 @@ fn timed_out_get_rule_fails_without_reloading_generated_content() {
     let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
     let rule = PlumbRule {
         verb: "Get".into(),
+        unlisted: false,
         text: None,
         file: Some(r"\+smartlog$".into()),
         kind: Some(WinKind::File),
@@ -482,6 +485,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     // a rule offering Preview on .md files, run as a command
     let rule = PlumbRule {
         verb: "Preview".into(),
+        unlisted: false,
         text: None,
         file: Some(r"\.md$".into()),
         kind: Some(WinKind::File),

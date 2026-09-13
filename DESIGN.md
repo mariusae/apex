@@ -811,8 +811,8 @@ acme's tools port directly because the event model is the same, generalised:
   that fans out to several tools in priority order emulates it if ever
   needed.
 
-*As built (plumbing):* the rule is `PlumbRule{verb, text, file, kind,
-isfile, isdir, action, to}` in the metalog (`PlumbRuleInstall{id,
+*As built (plumbing):* the rule is `PlumbRule{verb, unlisted, text,
+file, kind, isfile, isdir, action, to}` in the metalog (`PlumbRuleInstall{id,
 attachment, priority}`), owned by the session (`SERVER`) or by an
 attachment, whose rules go with it. A **verb** is the command a rule
 answers: `plumb` is B3; any other verb is offered in the window's
@@ -823,8 +823,18 @@ opened so that the last one chosen sits under the pointer, which is
 warped onto it, so a click alone repeats it; tracked while the button is
 held, the item under the pointer highlighted in negative, none outside;
 released on an item it runs as B2 would, released outside nothing runs;
-more than 25 items scroll. Verbs are not written into tags: apex does
-not put a rule's word there. A tool may furnish its own window's tag
+more than 25 items scroll. A rule may be **unlisted**
+(`Rule::unlisted`, `-unlisted`, the bridge's `unlisted`), which keeps
+its verb out of that menu without taking it away: B2 still runs it
+wherever it is written. It is for verbs that want a place or an
+argument and would only crowd the menu -- a word a tool writes into its
+window to be clicked where it stands (apex-acp's `Allow Always Deny
+Never` on the line asking), or one that means nothing without what
+follows it (`Mode plan`, `Resume ID`). Whether a verb is listed is the
+rule's to say, not the window's, so the same word may be a menu item
+for one tool and a thing to click for another. `exec` is unlisted by
+its nature: it is every word, and so no word. Verbs are not written
+into tags either: apex does not put a rule's word there. A tool may furnish its own window's tag
 (`set_tag`, the text after `|`), as apex-acp does with `Send` — that is
 the window saying what it is for, not the rule table leaking into tags.
 B2 on a verb's word walks the rules with it, ahead of the shell.

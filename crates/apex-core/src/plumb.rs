@@ -152,6 +152,9 @@ impl PlumbRule {
         if self.verb != "plumb" {
             out.push(format!("-verb={}", word(&self.verb)));
         }
+        if self.unlisted {
+            out.push("-unlisted".to_string());
+        }
         if let Some(t) = &self.text {
             out.push(format!("-text={}", word(t)));
         }
@@ -194,15 +197,13 @@ pub fn ordered(rules: &BTreeMap<RuleId, Rule>) -> Vec<(RuleId, &Rule)> {
     v
 }
 
-/// B3's verb: the walk asks who wants a piece of text, rather than who
+/// B3's verb: the walk asks who wants a piece of text, unlisted: false, rather than who
 /// runs a word.
 pub const PLUMB: &str = "plumb";
 
-/// The verbs a window shows in its tag: every rule that applies to it
-/// and answers something other than `plumb`, once each, in order.
 /// The verb that takes every B2 command in a window that nothing else
 /// took (no builtin, no verb rule): win's, so that B2 on an old command
-/// line types it to the shell. Not a word in the menu.
+/// line types it to the shell. Never a word in the menu.
 pub const EXEC: &str = "exec";
 
 /// The words apex performs itself: the leader's built-ins and the
@@ -238,10 +239,14 @@ pub fn offers_verb(rules: &BTreeMap<RuleId, Rule>, verb: &str, name: &str, kind:
         .any(|r| r.rule.verb == verb && r.rule.applies_to(name, kind, w))
 }
 
+/// The verbs a window shows in its tools menu: every rule that applies
+/// to it and answers something other than `plumb`, once each, in order.
+/// An `unlisted` rule is left out, and so is `exec`, which is every
+/// word and so no word.
 pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind, w: Option<WindowId>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for (_, r) in ordered(rules) {
-        if r.rule.verb != "plumb" && r.rule.verb != EXEC && r.rule.applies_to(name, kind, w) && !out.contains(&r.rule.verb) {
+        if r.rule.verb != "plumb" && r.rule.verb != EXEC && !r.rule.unlisted && r.rule.applies_to(name, kind, w) && !out.contains(&r.rule.verb) {
             out.push(r.rule.verb.clone());
         }
     }
@@ -259,7 +264,7 @@ mod tests {
     use crate::entry::RuleAction;
 
     fn rule(text: Option<&str>, file: Option<&str>) -> PlumbRule {
-        PlumbRule { verb: "plumb".into(), text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
+        PlumbRule { verb: "plumb".into(), unlisted: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
     }
 
     #[test]

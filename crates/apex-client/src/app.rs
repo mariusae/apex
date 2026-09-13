@@ -719,6 +719,7 @@ impl Acme {
         link.send(&ClientMsg::ClientConfig { term: crate::theme::term_colors() });
         let urls = PlumbRule {
             verb: "plumb".into(),
+            unlisted: false,
             text: Some(r"https?://\S+".into()),
             file: None,
             kind: None,
@@ -732,6 +733,7 @@ impl Acme {
         for (kind, file) in [(WinKind::Term, None), (WinKind::File, Some(r"/-[^/]+$".to_string()))] {
             let rule = PlumbRule {
                 verb: "Snarfout".into(),
+                unlisted: false,
                 text: None,
                 file,
                 kind: Some(kind),
