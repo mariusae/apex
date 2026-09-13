@@ -294,7 +294,7 @@ impl Server {
         if renamed {
             out.push(Proposal::Rename { buffer: b, window: w, name });
         }
-        out.push(Proposal::Clean { buffer: b, version, hash });
+        out.push(Proposal::Clean { buffer: b, version, hash: Some(hash) });
         Ok(out)
     }
 

@@ -31,7 +31,9 @@ pub enum Proposal {
     /// edited meanwhile is flagged stale instead.
     SetContent { buffer: BufferId, version: Option<Version>, text: String, hash: String },
     /// The file on disk equals the buffer at `version` (`Put`).
-    Clean { buffer: BufferId, version: Version, hash: String },
+    /// The buffer is clean at this version, and this is what stands on
+    /// disk -- `None` when nothing does, as for a window a tool writes.
+    Clean { buffer: BufferId, version: Version, hash: Option<String> },
     /// `Put newname`: rename the buffer and its window's tag.
     Rename { buffer: BufferId, window: WindowId, name: String },
     /// A range replaced, valid at `version`: pipe output (`select`, as
@@ -162,7 +164,7 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Clean { buffer, version, hash } => {
-            node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(hash) }))?;
+            node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Clean { version, disk_hash: hash }))?;
             Ok(None)
         }
         Proposal::Rename { buffer, window, name } => {

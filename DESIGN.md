@@ -903,8 +903,9 @@ wire or the replicated state showing through: `Tool::attach(name)`,
 `next_event` (`Plumb`, `Edit`, `Renamed`, `Deleted`; `None` when the
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window new_page open read replace append insert_following select
-selection show show_line line rename tag set_tag set_owner set_live
-set_working delete exec exec_in errors watch unwatch set setting`. `tag`/`set_tag` are the
+selection show show_line line rename tag set_tag set_clean set_owner
+set_live set_working delete exec exec_in errors watch unwatch set
+setting`. `tag`/`set_tag` are the
 user's half of a window's tag, what follows `|`: the words before it
 are apex's own and stay the leader's business. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text
@@ -1438,7 +1439,12 @@ left of the connection mark, the heartbeat's round trip and the log's
   is about real files and not any tool's windows: the lsp's `Back` and
   `Fwd` are `-kind=file -owner=''`, the session's jump stack being for
   going about the source and not for a terminal, an agent's window or a
-  win's, each of which has its own words in its menu.
+  win's, each of which has its own words in its menu. `Tool::set_clean`
+  is acme's `ctl clean`: the writing dirties a window, and this says the
+  writing was the point, leaving *dirty* to mean what it means
+  everywhere else -- your text, not acted on -- so a tool can spend the
+  three states on saying something better than that it has been written
+  to.
   The app offers `Snarfout` in terminals and win windows: the last
   command as `$ cmd` (the prompt normalised) and its output, the lines
   between the last two prompts

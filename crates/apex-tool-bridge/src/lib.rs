@@ -30,6 +30,7 @@
 //! - `own {window, on?}`: the window is this tool's, so it is no file:
 //!   no file menu in its tag, nothing for `Del` to ask about, and
 //!   `owner` on a rule speaks to it
+//! - `clean {window}`: what the window holds is what it should hold
 //! - `rule {verb?, text?, file?, kind?, window?, owner?, priority?, unlisted?}` →
 //!   `rule`: a rule answered by this tool (`plumb` events); `unrule
 //!   {rule}`. `unlisted` keeps the verb out of the tools menu without
@@ -289,6 +290,10 @@ impl Bridge {
             }
             "own" => {
                 self.tool.set_owner(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
+                Ok(json!({}))
+            }
+            "clean" => {
+                self.tool.set_clean(window(v)?).map_err(e)?;
                 Ok(json!({}))
             }
             "watch" => {

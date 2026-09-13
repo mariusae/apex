@@ -24,17 +24,17 @@
 //! the next rule is tried: a second for B3 text, which is a search, and
 //! ten for a verb, which may be work the tool does before it answers.
 //!
-//! A window a tool writes is written with `insert_following`, so that
-//! a dot sitting at the point it writes at moves along with the output
-//! and the reader need click nothing to go on typing at the end; a dot
-//! anywhere else, in a draft being typed, is left where it is.
-//!
 //! A window a tool makes is claimed with `set_owner`: what is in it is
 //! the tool's doing and not a file's contents, so its tag has no file
 //! menu and `Del` asks nothing about it, as acme does for as long as a
 //! program holds a window's `event` file. The owner is named, so a rule
 //! may say `Rule::owner("win-.*")` and be about one tool's windows and
 //! no others.
+//!
+//! A window a tool writes is written with `insert_following`, so that
+//! a dot sitting at the point it writes at moves along with the output
+//! and the reader need click nothing to go on typing at the end; a dot
+//! anywhere else, in a draft being typed, is left where it is.
 //!
 //! A verb is a word in the tools menu of the windows its rule applies
 //! to, and runs wherever B2 takes it. `Rule::unlisted` keeps it out of
@@ -240,6 +240,12 @@ impl Rule {
         self
     }
 
+    /// Higher goes first among rules that match; 0 is usual.
+    pub fn priority(mut self, p: i32) -> Rule {
+        self.priority = p;
+        self
+    }
+
     /// The verb is no word in the tools menu. It still runs when B2
     /// takes it -- from the tag, from the window's own text, from
     /// `apex exec` -- so this is for verbs that want a place or an
@@ -248,11 +254,6 @@ impl Rule {
     /// that means nothing without what follows it (`Mode plan`).
     pub fn unlisted(mut self) -> Rule {
         self.unlisted = true;
-        self
-    }
-    /// Higher goes first among rules that match; 0 is usual.
-    pub fn priority(mut self, p: i32) -> Rule {
-        self.priority = p;
         self
     }
 }
@@ -548,12 +549,6 @@ impl Tool {
         self.replace(w, END, END, text)
     }
 
-    pub fn select(&mut self, w: WindowId, q0: usize, q1: usize) -> Result<()> {
-        self.body_of(w)?;
-        self.propose(Proposal::Select { view: ViewId::Body(w), q0, q1 })?;
-        Ok(())
-    }
-
     /// Add text at `at`, the dot following it: a dot sitting exactly
     /// there is moved past the text, in the same round trip, as a win's
     /// output moves along the point its reader types at. A dot anywhere
@@ -576,6 +571,13 @@ impl Tool {
         self.propose(Proposal::Insert { buffer: b, version, at, text: text.to_string(), follow: true })?;
         Ok(())
     }
+
+    pub fn select(&mut self, w: WindowId, q0: usize, q1: usize) -> Result<()> {
+        self.body_of(w)?;
+        self.propose(Proposal::Select { view: ViewId::Body(w), q0, q1 })?;
+        Ok(())
+    }
+
     /// Bring the text at `at` into view: the window is scrolled only if
     /// `at` is off screen (and grown if it shows no lines). Nothing else
     /// moves: not dot, not the mouse, not the back stack. What a tool
@@ -617,6 +619,7 @@ impl Tool {
             None => String::new(),
         })
     }
+
     /// Write it: one space after the `|`, then `text`. Nothing that was
     /// there is put back, `Look` included, so a tool furnishing its
     /// window's tag says the whole of it (`"Look Send"`).
@@ -633,9 +636,11 @@ impl Tool {
         self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: at, q1: len, text })?;
         Ok(())
     }
+
     fn tag_of(&self, w: WindowId) -> Result<BufferId> {
         Ok(self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.tag)
     }
+
     /// Give the window (its buffer) a new name.
     pub fn rename(&mut self, w: WindowId, name: &str) -> Result<()> {
         let b = self.body_of(w)?;
@@ -669,6 +674,21 @@ impl Tool {
         self.propose(Proposal::Own { window: w, by })?;
         Ok(())
     }
+
+    /// Say the window is clean: what it holds is what it should hold.
+    /// The handle stops saying otherwise and `Del` stops asking. A
+    /// window a tool writes is dirtied by the writing, and this is how
+    /// it says the writing was the point -- acme's `ctl clean`, which
+    /// win writes after every write of its own. What the user types
+    /// into it afterwards makes it dirty again, which is then worth
+    /// saying: it is theirs, and has not been acted on.
+    pub fn set_clean(&mut self, w: WindowId) -> Result<()> {
+        let b = self.body_of(w)?;
+        let version = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.version;
+        self.propose(Proposal::Clean { buffer: b, version, hash: None })?;
+        Ok(())
+    }
+
     /// Mark the window as having this tool behind it: its handle shows
     /// so, and Del does not ask about unsaved text. The mark goes when
     /// the tool detaches.
