@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """A fake ACP agent: streams a reply, makes a tool call, asks permission,
 reads a file through the client, runs a command in its terminal, updates
-a plan. Logs to stderr."""
-import json, sys, os
+a plan, and lists and replays the sessions it pretends to have had.
+Logs to stderr."""
+import json, sys, os, datetime
 
 def send(msg):
     sys.stdout.write(json.dumps(msg) + "\n"); sys.stdout.flush()
@@ -31,7 +32,9 @@ def handle(m):
     if method == "initialize":
         terminals[0] = bool(m.get("params", {}).get("clientCapabilities", {}).get("terminal"))
         auth = [{"id": "fake-login", "name": "Log in to Fake"}] if os.environ.get("FAKE_NEEDS_AUTH") else []
-        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": {}, "authMethods": auth, "agentInfo": {"name": "fake-agent", "version": "0.1"}}})
+        # $FAKE_NO_RESUME: an agent that cannot take a session up again
+        caps = {} if os.environ.get("FAKE_NO_RESUME") else {"loadSession": True, "sessionCapabilities": {"list": {}, "resume": {}}}
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": 1, "agentCapabilities": caps, "authMethods": auth, "agentInfo": {"name": "fake-agent", "version": "0.1"}}})
     elif method == "authenticate":
         authed[0] = True
         send({"jsonrpc": "2.0", "id": m["id"], "result": {}})
@@ -41,6 +44,33 @@ def handle(m):
             return
         send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessionId": "s1", "modes": {"currentModeId": "default", "availableModes": [{"id": "default", "name": "Always ask"}, {"id": "acceptEdits", "name": "Accept edits"}, {"id": "plan", "name": "Plan mode"}]}}})
         notify("s1", {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "review", "description": "review the diff"}, {"name": "compact", "description": "compact the context"}]})
+    elif method == "session/list":
+        cwd = m.get("params", {}).get("cwd") or os.getcwd()
+        if os.environ.get("FAKE_NO_SESSIONS"):  # a directory nothing has happened in
+            send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessions": []}})
+            return
+        # uuids, as the real adapters give, so B3 on one can be tried;
+        # the times are relative so every resolution of them shows
+        now = datetime.datetime.now(datetime.timezone.utc)
+        def ago(**kw):
+            return (now - datetime.timedelta(**kw)).isoformat().replace("+00:00", "Z")
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"sessions": [
+            {"sessionId": "9e4f1a20-0049-41a2-b614-f7ad8a71fb56", "cwd": cwd, "title": "What is in /etc/hosts", "updatedAt": ago(hours=3)},
+            {"sessionId": "0d1ca0bf-b79e-4650-850f-f010b697e8a0", "cwd": cwd, "title": "A conversation from this week", "updatedAt": ago(days=3)},
+            {"sessionId": "bed8cc1b-222c-4fb4-9f92-9eff45fb6068", "cwd": cwd, "title": "An older conversation", "updatedAt": ago(days=40)},
+        ]}})
+    elif method == "session/load":
+        # a replay: a past conversation said again as ordinary updates,
+        # the user's half included, and then the modes
+        sid = m["params"]["sessionId"]
+        notify(sid, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "what is in /etc/hosts?\n"}})
+        notify(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Let me look."}})
+        notify(sid, {"sessionUpdate": "tool_call", "toolCallId": "r1", "title": "Read /etc/hosts", "kind": "read", "status": "completed", "locations": [{"path": "/etc/hosts", "line": 1}]})
+        notify(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "\nIt names localhost, and nothing else worth saying."}})
+        notify(sid, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "thanks\n"}})
+        notify(sid, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Any time."}})
+        send({"jsonrpc": "2.0", "id": m["id"], "result": {"modes": {"currentModeId": "plan", "availableModes": [{"id": "default", "name": "Always ask"}, {"id": "acceptEdits", "name": "Accept edits"}, {"id": "plan", "name": "Plan mode"}]}}})
+        notify(sid, {"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "review", "description": "review the diff"}, {"name": "compact", "description": "compact the context"}]})
     elif method == "session/set_mode":
         send({"jsonrpc": "2.0", "id": m["id"], "result": {}})
         notify(m["params"]["sessionId"], {"sessionUpdate": "current_mode_update", "currentModeId": m["params"]["modeId"]})

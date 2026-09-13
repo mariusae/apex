@@ -1767,29 +1767,159 @@ only if a second or third concrete need for it appears beyond plumbing.
 `exp/acp` is a spike, outside the workspace's supported surface: an
 Agent Client Protocol client (`apex-acp`) written against the public
 tool API only, so it is also a test of that API's reach. An ACP agent
-runs as its child; the session is a window `DIR/+claude`, named for the
-agent, in the acme manner of `+Errors` and win: the agent's text streams
+runs as its child; the session is a window `DIR/-claude`, named for the
+agent after a `-` as win names its own, with `+run` and `+transcript`
+beside it for what it puts out, in the acme manner of `+Errors`: a
+program's window is the `-`, its auxiliary output the `+`. All of them
+are live, so none is offered a `Put`. The agent's text streams
 in at an output point, what the user types after it is the next prompt
-(Enter on the last line sends, as win does; `Send` for a pasted block),
-tool calls are lines whose status glyph is ticked off in place, the
-files they work on plumbable `path:line` and their edits shown as
-diffs, the plan a block replaced in place, and a permission request a
-line offering `Allow Always Deny Never` to B2, which then says what was
-decided. The handle pulses (`set_working`) while the agent works and
-rests while it waits on an answer, so the window says whose turn it is,
-and `Preview` toggles a page beside it (`new_page`) holding the last
-reply the agent finished, rendered through the session's markdown
-converter: it stands still until the next reply is whole, where the
-transcript has the half-said. `Mode` reaches the agent's modes (Claude's manual, accept
-edits, plan, auto, bypass), `Commands` its slash commands, `Login` its
-authentication when it wants one. The agent reads files through apex
-when a window has them (unsaved edits included) and writes them back the
-same way, as an edit followed by a `Put`, so the change is visible and
-undoable and on disk for whatever the agent builds next; with no window
-open it writes to disk, where the watcher (§9) brings it into clean
-windows. Anthropic's `claude-agent-acp` is the default agent, run from
-an install or fetched with npx, on the Claude Code CLI's own
-credentials.
+(`Send`, which the window puts in its own tag; Enter is Enter, since a
+prompt is as many lines as it wants, and a `Send` during a turn queues
+behind it), the plan a block replaced in place, and a permission request
+a line offering `Allow Always Deny Never` to B2, which then says what
+was decided. `Interrupt` ends the turn the agent is in
+(`session/cancel`), as Esc does in the Claude CLI, and takes anything
+queued behind it with it: it is an end to the work and not to one turn
+of it, and the window is told how many prompts went so that it knows it
+is no longer busy. The handle says what the window is waiting for: it pulses
+(`set_working`) and is live while the agent works, is clean when the
+answer is whole and nothing of the user's is left in it, and is dirty
+when a prompt is typed and not yet sent -- dirty meaning here what it
+means of a file, your text and not acted on (`set_clean` after every
+settle is what leaves it free to mean that). It rests while the agent
+waits on an answer, so the window says whose turn it is, and `Preview` toggles a page beside it (`new_page`) holding
+the last exchange the agent finished, rendered through the session's
+markdown converter: what was asked, quoted as markdown quotes it, and
+then the answer to it. The answer is the agent's *last* message of the
+turn and not every message of it: the ones before are the commentary it
+made on the way, which the window keeps a line of each and which read as
+nothing at all run together on a page. It stands still until the next
+answer is whole, where the transcript has the half-said. What was asked
+is held against its turn (the agent takes prompts in order, so the
+prompts wait in a queue and each comes off with its answer), so a
+prompt queued during a turn is still shown with the reply it got.
+
+*What the agent is doing* is one line at the end of the session's
+window, written over as the work moves on and gone as soon as there is
+anything else to say: the agent's own words for the call (ACP's `title`
+-- what the agent would say it is doing), with the status glyph in
+front. One line, and a short one: a title is often the command itself,
+heredoc and all, and a window meant to hold the summary of the work
+must not swell with the code in it while it is going on, so what runs
+past the first line or past its width is cut with a `…`. That window
+holds the conversation and the decisions in it and nothing else -- not
+a log of every read and grep -- so it does not grow by a line a tool
+call. The line lives at the end because the window's own output point
+is there; anything else written takes its place, so a position
+remembered across a write is taken after it is gone, not before.
+
+*The left margin says who is speaking.* What is said in the session's
+window is marked, so that a glance down the column tells one from
+another without reading a word: `–` is apex itself (what the agent is,
+what it is ready for, what was asked of it that could not be done, a
+listing it was asked for -- marked once at the head of a block, as a
+message is) and `•` is what the agent answered. Shapes rather than dots
+-- a bar, a bullet -- since nothing in a window has a colour to be told
+by, and a size is a poor difference; of a width, since a wide one would
+stand out for no reason, so the bar is an en dash and not an em, which
+is also not the hyphen a Markdown list begins with, a reply being full
+of those. `?` on a question and `⋯▶✓✗` on the work are the other two
+things the margin holds, and neither is a voice.
+
+*`~` ends a turn,* and so begins the next thing said: what stands under
+it is the user's, which is why a prompt wants no mark of its own -- it
+is what lies between the `~` ending the last turn and the bullets
+answering it. At the end of the window the marker is also where to
+type: it is set off on both sides and the cursor is left on the line
+below it, the output carrying the dot along (§ the tool API), so
+nothing has to be clicked to answer. It is put down when the window
+settles and taken away by anything written after it (with the action
+line, in `out`, and the blank lines around it go with it, so that
+taking it away leaves what was there and no more); a prompt sent under
+one leaves it where it is, and it stays as the record of where that
+exchange began. A prompt queued during a turn never waited for the
+window to settle, and a replayed one never had a window to settle in,
+so each is given a marker as it is written: a prompt is never without
+one. The transcript beside the window is marked the same way, though
+nothing is typed in it, since the record wants the boundaries the
+conversation had.
+
+*What the agent says* begins with a `•`, a message to a bullet. The
+calls are taken away again as they finish and the messages are not, so
+what the window keeps is a line a step of the work, which is what the
+agent itself thought worth saying about it. Where one message ends and
+the next begins is the agent's to say (ACP's `messageId` on each
+chunk); an agent that does not say is taken to have ended one wherever
+anything else is written. The bullet waits for the words it stands in
+front of, since a message that opens with a blank line would else
+leave it on a line of its own, and it is ours rather than the agent's:
+the page `Preview` renders has what was said and not our mark on it.
+
+*The transcript* is the whole of what the session said, machinery and
+all: a line a tool call whose glyph is ticked off in place, the files
+they work on plumbable `path:line`, their edits as diffs, the plans,
+the questions and what was answered. `Transcript` (or `-transcript`)
+opens a window on it, `DIR/-claude+transcript`, and closes it again, as
+Del there does. It is kept whether or not a window is showing it -- the
+text and the offsets it is written over at -- so a window opens on the
+whole of the conversation rather than on the rest of it, and one closed
+and opened again says the same. Nothing is shown at: it is written at
+the end with `insert_following`, as the session's own window is, so it
+follows its output by acme's rule (§8, win's) and carries the dot with
+it: scrolling back to read a diff holds it still, and the run window
+beside it does the same. Only a rewrite in place -- a status glyph, the
+plan block -- goes through `replace`, which moves nothing. The two are written from the one update: what the conversation
+says goes to both, and only the machinery differs. Decisions go to
+both, and a question asked under a tool call's line in the transcript
+has to name itself in the window, where no such line stands.
+
+`Mode` reaches the agent's modes (Claude's manual, accept edits, plan,
+auto, bypass), `Commands` its
+slash commands, `Login` its authentication when it wants one. The agent
+reads files through apex when a window has them (unsaved edits included)
+and writes them back the same way, as an edit followed by a `Put`, so
+the change is visible and undoable and on disk for whatever the agent
+builds next; with no window open it writes to disk, where the watcher
+(§9) brings it into clean windows. Anthropic's `claude-agent-acp` is the
+default agent, run from an install or fetched with npx, on the Claude
+Code CLI's own credentials.
+
+*Taking a session up again.* Two things outlive the program and
+disagree: the agent keeps the conversation, and the window keeps dead
+text. The agent's record is the one still true, so a resume rebuilds the
+window rather than adding to it. `Resume` lists what the agent has had
+in this directory (`session/list`, filtered by `cwd`, newest first) a
+line each: the id the agent knows it by, when it was last worked in,
+and what it is about. Nothing of a session is kept on our side -- the
+agent knows them all, and the id is the name we call one by. The time
+is shown at the resolution that tells it apart, the clock today, the
+weekday within the week and the date beyond it, in this machine's zone;
+the column is as wide as the widest of them, as every other listing
+here is sized. The listing is text like any other, so B3 on an id takes
+that session up (`Rule::plumb`, scoped to the window). A click stops at
+the hyphens -- they are not word characters, so what B3 hands us is one
+part of a uuid and not the whole -- and a part that tells the sessions
+apart is enough; a sweep gives the whole. A hex word naming no session
+of ours is refused rather than left unanswered, so B3 falls through to
+what it would have done: the plumber's hand-back (above) is what makes
+a rule this broad safe to offer. `Resume ID` says the same in words,
+and `-resume` starts on the newest without asking. `session/load` then
+says the whole of it again as ordinary `session/update` notifications,
+which is why the rest needs no special case: tool calls, plans and diffs
+rebuild themselves through the code that shows them live. Three things
+differ. What is replayed is gathered until the whole of it is here, so a
+load that fails leaves the session we had standing. The window is not
+scrolled to on every chunk of two hundred, but once, at the end. And
+`user_message_chunk`, which is dropped live because the user's words are
+in the window already -- they typed them there -- is on a replay the
+only source of their half, and is written as the prompt it was. The one
+line saying what the agent is doing earns its keep here: in brief the
+tool calls collapse into it as they go, and a resumed window reads as
+the conversation rather than as the machinery, while the transcript
+takes the whole reconstruction whether or not a window was showing one
+at the time. An agent that can continue a
+session but not say it again (`session/resume` without `loadSession`)
+hands back the session alone, and the window says so.
 
 *Terminals* (the protocol's `terminal/*`, advertised as a client
 capability) are how an agent runs commands: it asks us to start one, to
@@ -1797,7 +1927,7 @@ say what it has written, to wait for its end, to kill it, to let it go.
 A terminal here is a child of ours with its output captured, not a pty
 -- what the protocol asks for is a command run, its bytes kept and its
 exit status reported, and nothing in it is interactive. Every command's
-output goes to one window beside the session's, `DIR/+claude+run`,
+output goes to one window beside the session's, `DIR/-claude+run`,
 acme's `+Errors` for what the agent runs: one window rather than one a
 command, so a turn that builds and tests and greps does not bury the
 column. Each command's output is headed by the command itself whenever
@@ -1814,8 +1944,8 @@ reaches what it started -- killing the shell alone would leave the
 build running. What the agent reads is the command's own bytes, to the
 byte limit it asked for (truncated from the front, at a character
 boundary, as the protocol says); the heading and the exit line are the
-window's, not the transcript's. Left out so far: images, resuming a
-session, several agents in one window.
+window's, not the transcript's. Left out so far: images, several agents
+in one window.
 
 What the spike says, back to apex. Tools that write a window they also
 watch need their own edits filtered out, which the crate now does. An
