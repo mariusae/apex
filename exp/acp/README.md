@@ -67,6 +67,13 @@ agent does want a login, the window says so and `Login` does it.
   it stays as the record of where that exchange began; one sent during
   a turn, queued behind it, is given a `~` of its own, so a prompt is
   never without one.
+- An agent's first word can be a long time coming: nothing is streamed
+  until the model has something to say, and with thinking on that is
+  seconds. The handle pulses all the while, but a pulse says only that
+  we think it is working, so five seconds of silence gets a line of its
+  own — how long it has been, what the agent is, and what else is in
+  hand — and then whatever finally comes. One line a turn, and none at
+  all for a turn answered promptly.
 - The cursor rides the output: it sits where a prompt is typed from the
   moment the session is ready, and the window follows what arrives, so
   nothing has to be clicked or scrolled to answer. What is half-typed
