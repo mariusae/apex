@@ -1995,8 +1995,12 @@ in place. B3 in a block (a plumb rule on the window, refused outside
 any block so that B3 keeps its meaning there) opens the agent's
 transcript, `AGENTDIR/-claude+ID`, named for the agent's directory so
 its `path:line`s resolve from where the agent worked, and read from the
-agent's own record as it grows, in the transcript window's idiom. What
-the spike says back: the hooks carry the call's id, so a call's status
+agent's own record as it grows, in the transcript window's idiom.
+`Goto` goes to the agent itself: the hook keeps the `apexsession` and
+`winid` apex put in the environment of the command that started it,
+and `Tool::switch` takes the pane's UI to that window, in that session,
+so the pane is a way straight to any agent from anywhere. What the
+spike says back: the hooks carry the call's id, so a call's status
 can be written over in place in a transcript the agent itself keeps;
 and the same offsets-by-hand that apex-acp keeps are kept here too, a
 second vote for the transcript being a shard.

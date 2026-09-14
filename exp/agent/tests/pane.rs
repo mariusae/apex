@@ -136,6 +136,26 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let text = wait_text(&mut c, &pane_name, |t| t.contains("\n~ claude"));
     assert_eq!(text, format!("– 1 agent\n\n~ claude  {dir}  0b1c1425\n  what is in hosts?\n  • It names localhost.\n"));
 
+    // Goto with dot in the block: this agent was started outside apex,
+    // and +Errors says so rather than going nowhere
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Goto".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut said = String::new();
+    while Instant::now() < deadline && !said.contains("not started in an apex window") {
+        let _ = c.step(Duration::from_millis(20));
+        said = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
+    }
+    assert!(said.contains("Goto 0b1c1425: claude was not started in an apex window"), "{said:?}");
+    // told where it was started, Goto has somewhere to go, and says nothing
+    event::append(&logs, &Event { apex: Some("main".into()), win: Some(1), ..ev("PermissionRequest") }).unwrap();
+    wait_text(&mut c, &pane_name, |t| t.contains("\n? claude"));
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Goto 0b1c".into() }, Duration::from_secs(5)).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let _ = c.step(Duration::from_millis(20));
+    let said: String = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
+    assert_eq!(said.matches("Goto").count(), 1, "{said:?}");
+
     // the session ends: the block goes, the log with it, and the
     // transcript window says so and stays
     event::append(&logs, &ev("SessionEnd")).unwrap();

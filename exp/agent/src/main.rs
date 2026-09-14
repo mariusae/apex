@@ -16,7 +16,9 @@
 //! you, `✗` a turn that failed, `~` a turn over and the next prompt
 //! yours, `▶` at work. B3 anywhere in a block (or `Open`) opens the
 //! agent's transcript beside it, named for the agent's own directory,
-//! and read from the agent's own record as it grows.
+//! and read from the agent's own record as it grows; `Goto` goes to
+//! the agent itself, the window it was started in, in whatever session
+//! that was.
 
 use std::path::PathBuf;
 

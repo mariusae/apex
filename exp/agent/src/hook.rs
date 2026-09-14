@@ -26,6 +26,7 @@ pub fn run(agent: &str) -> i32 {
     // the log away, or the hooks may have been put in mid-session)
     if ev.event == "SessionStart" || !event::log_path(&dir, &ev.session).exists() {
         ev.pid = agent_pid(agent);
+        (ev.apex, ev.win) = here(std::env::var("apexsession").ok().as_deref(), std::env::var("winid").ok().as_deref());
     }
     let _ = event::append(&dir, &ev);
     0
@@ -63,6 +64,8 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
         cwd,
         transcript: s("transcript_path"),
         pid: None,
+        apex: None,
+        win: None,
         sub: s("agent_id"),
         tool,
         call: s("tool_use_id"),
@@ -81,6 +84,16 @@ fn cut(s: &str, n: usize) -> String {
     let mut out: String = s.chars().take(n).collect();
     out.push('…');
     out
+}
+
+/// Where the agent was started, when it was started from apex: the
+/// session (`apexsession`) and the window (`winid`, `0` for none),
+/// which apex puts in a command's environment and the agent passes on
+/// to its hooks.
+fn here(session: Option<&str>, win: Option<&str>) -> (Option<String>, Option<u64>) {
+    let session = session.map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    let win = win.and_then(|w| w.trim().parse::<u64>().ok()).filter(|&w| w != 0);
+    (session, win)
 }
 
 /// The agent's process: the nearest ancestor of ours that is the agent
@@ -149,6 +162,14 @@ mod tests {
         let e = event_from("claude", &v);
         assert_eq!(e.sub.as_deref(), Some("a1"));
         assert_eq!(e.title.as_deref(), Some("Read: y.rs"));
+    }
+
+    #[test]
+    fn where_the_agent_was_started_is_kept_when_apex_says() {
+        assert_eq!(here(Some("9e21ab77-x"), Some("42")), (Some("9e21ab77-x".into()), Some(42)));
+        assert_eq!(here(Some("9e21ab77-x"), Some("0")), (Some("9e21ab77-x".into()), None));
+        assert_eq!(here(None, None), (None, None));
+        assert_eq!(here(Some(""), Some("x")), (None, None));
     }
 
     #[test]

@@ -34,7 +34,8 @@ The hook is this same program, `apex-agent hook claude`, run by the
 agent at every event with the event's JSON on its standard input. It
 appends one line to `~/.apex/agents/SESSION.jsonl` and exits: what
 happened, when, which tool and what the call was in words, the prompt
-or the last message when the event carries one. The agent's input is
+or the last message when the event carries one, and, once, the agent's
+process and the apex session and window it was started in. The agent's input is
 not kept -- a `Write`'s input is the file -- so a log stays small.
 
 The pane reads those logs, and nothing else: no socket, no daemon.
@@ -89,6 +90,13 @@ B3 anywhere in a block opens the agent's transcript beside the pane, as
 does `Open` with dot in it, or `Open ID` (or `Open claude`, when there
 is one). B3 outside any block is handed back and does what it always
 does.
+
+`Goto`, the same way, goes to the agent itself: the window it was
+started in, in whatever apex session that was -- apex puts
+`apexsession` and `winid` in a command's environment, the agent passes
+them on to its hooks, and the hook keeps them -- so the pane is a way
+straight to any agent, wherever it is. One started outside apex has
+nowhere to go to, and `+Errors` says so.
 
 ## The transcript
 

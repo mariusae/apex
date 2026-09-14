@@ -33,6 +33,9 @@ pub struct Agent {
     pub cwd: String,
     pub transcript: Option<String>,
     pub pid: Option<u32>,
+    /// The apex session and window it was started in, when it was.
+    pub apex: Option<String>,
+    pub win: Option<u64>,
     pub started: i64,
     /// When it last said anything, in milliseconds.
     pub last: i64,
@@ -55,7 +58,7 @@ pub struct Agent {
 
 impl Agent {
     pub fn new(session: &str) -> Agent {
-        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, why: None, subagents: 0, mode: None }
+        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, why: None, subagents: 0, mode: None }
     }
 
     /// Enough of the id to tell it apart, and to B3.
@@ -79,6 +82,10 @@ impl Agent {
         }
         if e.pid.is_some() {
             self.pid = e.pid;
+        }
+        if e.apex.is_some() {
+            self.apex = e.apex.clone();
+            self.win = e.win;
         }
         if e.mode.is_some() {
             self.mode = e.mode.clone();

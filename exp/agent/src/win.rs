@@ -64,6 +64,7 @@ pub struct Pane {
     starts: Vec<usize>,
     details: HashMap<WindowId, Detail>,
     open: RuleId,
+    goto: RuleId,
     look: RuleId,
     pulsing: bool,
     last_slow: Instant,
@@ -88,9 +89,11 @@ impl Pane {
         let name = format!("{}/-agents", opts.cwd.display().to_string().trim_end_matches('/'));
         let w = t.new_window(&name)?;
         let _ = t.set_owner(w, true);
-        let _ = t.set_tag(w, "Look Open");
-        // Open with dot in a block, or `Open ID`; B3 anywhere in a block
+        let _ = t.set_tag(w, "Look Open Goto");
+        // Open and Goto with dot in a block, or with the agent named
+        // after them; B3 anywhere in a block
         let open = t.offer(Rule::verb("Open").window(w))?;
+        let goto = t.offer(Rule::verb("Goto").window(w))?;
         let look = t.offer(Rule::plumb().window(w).priority(10))?;
         let home = std::env::var("HOME").ok();
         // a change under a watched directory wakes the loop; what it
@@ -105,7 +108,7 @@ impl Pane {
             }
         })
         .ok();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), open, look, pulsing: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), open, goto, look, pulsing: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
         // the directory must be there to be watched: a hook makes it
         // otherwise, and the watch would miss the making
         let _ = std::fs::create_dir_all(&pane.opts.dir);
@@ -155,6 +158,8 @@ impl Pane {
                 Some(Event::Plumb(p)) => {
                     let taken = if p.rule == self.open {
                         self.open_verb(&p.text, p.at)?
+                    } else if p.rule == self.goto {
+                        self.goto_verb(&p.text, p.at)?
                     } else if p.rule == self.look {
                         self.open_at(p.sel.or(p.at))?
                     } else {
@@ -353,28 +358,54 @@ impl Pane {
         Ok(true)
     }
 
-    /// `Open`: with words, the agent whose id begins so (or whose kind
-    /// or directory is named); without, the one dot is in.
-    fn open_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+    /// The agent a verb means: with words after it, the one whose id
+    /// begins so (or whose kind or directory is named); without, the
+    /// one dot is in. `None` when there is no such one, which +Errors
+    /// says when words were given and dot outside any block does not.
+    fn meant(&mut self, verb: &str, args: &str, at: Option<Range>) -> apex_tool::Result<Option<String>> {
         let want = args.trim();
         if want.is_empty() {
-            return self.open_at(at);
+            return Ok(at.and_then(|r| self.block_at(r.q0).map(String::from)));
         }
         let keys: Vec<String> = self.agents.ordered().iter().filter(|a| a.session.starts_with(want) || a.kind == want || a.cwd.ends_with(want)).map(|a| a.session.clone()).collect();
         match keys.as_slice() {
-            [one] => {
-                self.open_detail(one)?;
-                Ok(true)
-            }
+            [one] => Ok(Some(one.clone())),
             [] => {
-                self.t.errors(None, &format!("Open {want}: no such agent\n"))?;
-                Ok(true)
+                self.t.errors(None, &format!("{verb} {want}: no such agent\n"))?;
+                Ok(None)
             }
             many => {
-                self.t.errors(None, &format!("Open {want}: {} agents match; say more of the id\n", many.len()))?;
-                Ok(true)
+                self.t.errors(None, &format!("{verb} {want}: {} agents match; say more of the id\n", many.len()))?;
+                Ok(None)
             }
         }
+    }
+
+    /// `Open`: the agent's transcript.
+    fn open_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        match self.meant("Open", args, at)? {
+            Some(key) => {
+                self.open_detail(&key)?;
+                Ok(true)
+            }
+            None => Ok(!args.trim().is_empty()),
+        }
+    }
+
+    /// `Goto`: the window the agent was started in, in whatever session
+    /// that was -- the hooks carry the `apexsession` and `winid` apex
+    /// put in its environment -- so the pane is a way straight to any
+    /// agent. One started outside apex has nowhere to go to, and
+    /// +Errors says so.
+    fn goto_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        let Some(key) = self.meant("Goto", args, at)? else { return Ok(!args.trim().is_empty()) };
+        let Some(a) = self.agents.get(&key) else { return Ok(true) };
+        let (kind, short) = (a.kind.clone(), a.short());
+        match (a.apex.clone(), a.win) {
+            (Some(session), Some(win)) => self.t.switch(&session, Some(WindowId(win)))?,
+            _ => self.t.errors(None, &format!("Goto {short}: {kind} was not started in an apex window\n"))?,
+        }
+        Ok(true)
     }
 
     // ---- the transcripts ----

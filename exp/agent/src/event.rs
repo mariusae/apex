@@ -31,6 +31,12 @@ pub struct Event {
     /// The agent's process, found once at the start of the session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    /// Where the agent was started, when it was started from apex: the
+    /// session and the window, so that `Goto` can go there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apex: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub win: Option<u64>,
     /// Set when the hook fired inside a subagent: which one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
