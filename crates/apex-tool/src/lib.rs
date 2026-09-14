@@ -614,8 +614,10 @@ impl Tool {
     pub fn tag(&self, w: WindowId) -> Result<String> {
         let b = self.tag_of(w)?;
         let text = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string();
-        Ok(match text.split_once('|') {
-            Some((_, rest)) => rest.to_string(),
+        // the bar past the name (§ `apex_core::tag_bar`): a name may hold
+        // one of its own, and that one divides nothing
+        Ok(match apex_core::tag_bar(&text, &self.remote.node.window_name(w)) {
+            Some(i) => text.chars().skip(i + 1).collect(),
             None => String::new(),
         })
     }
@@ -627,7 +629,7 @@ impl Tool {
         let b = self.tag_of(w)?;
         let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
         let (len, version) = (buf.text.len(), buf.version);
-        let (at, text) = match buf.text.to_string().chars().position(|c| c == '|') {
+        let (at, text) = match apex_core::tag_bar(&buf.text.to_string(), &self.remote.node.window_name(w)) {
             Some(i) => (i + 1, format!(" {} ", text.trim())),
             // no bar yet: make one (the leader writes it, but a tag it
             // has not reached is still a tag)

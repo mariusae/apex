@@ -206,6 +206,23 @@ fn a_tool_furnishes_its_window_tag() {
     }
     assert_eq!(tag, "/tmp/tagger-notes Del Snarf Undo Put | Look Send ");
     assert_eq!(t.tag(w).unwrap(), " Look Send ");
+    // a name with a bar of its own: the tool's half is still what
+    // follows the bar past the name, and writing it leaves the name
+    let b = t.new_window("/tmp/tagger|notes").unwrap();
+    t.set_tag(b, "Look Send").unwrap();
+    assert_eq!(t.tag(b).unwrap(), " Look Send ");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut tag = String::new();
+    while Instant::now() < deadline {
+        let _ = other.step(Duration::from_millis(20));
+        if let Some(text) = other.node.state.window(b).ok().and_then(|win| other.node.state.buffer(win.tag).ok()).map(|x| x.text.to_string()) {
+            tag = text;
+            if tag.contains("Send") {
+                break;
+            }
+        }
+    }
+    assert_eq!(tag, "/tmp/tagger|notes Del Snarf | Look Send ");
 }
 #[test]
 fn work_behind_a_window_shows_while_the_tool_is_there() {

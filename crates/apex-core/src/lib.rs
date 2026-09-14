@@ -23,7 +23,7 @@ pub mod transcript;
 pub use entry::*;
 pub use ids::*;
 pub use log::{Log, LogError};
-pub use node::{CoreError, EditRun, Executed, Node};
+pub use node::{tag_bar, CoreError, EditRun, Executed, Node};
 pub use state::{Applied, ApplyError, State};
 pub use text::Text;
 pub use tiling::{Rect, Warp};

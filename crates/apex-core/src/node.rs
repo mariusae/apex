@@ -21,6 +21,17 @@ pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
 pub const TOP_TAG: &str = "Newcol Newterm Win Web Kill Putall Exit End ";
 pub const ERRORS: &str = "+Errors";
 
+/// Where the bar that divides apex's half of a window's tag from the
+/// user's stands (a rune offset), if it is there yet. It is the first
+/// bar *after* the name, not the first in the text: a name may hold a
+/// bar of its own -- a file called `a|b`, a terminal named after an
+/// xterm title (`renaming... | proj`) -- and that one is not it.
+pub fn tag_bar(tag: &str, name: &str) -> Option<usize> {
+    let word = |s: &str| s.split(' ').next().unwrap_or("").chars().count();
+    let start = if tag.starts_with(name) { name.chars().count() } else { word(tag) };
+    tag.chars().skip(start).position(|c| c == '|').map(|i| start + i)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CoreError {
     #[error(transparent)]
@@ -1135,10 +1146,14 @@ impl Node {
             if typed != name && win.body_buffer().is_some() {
                 new = format!("{typed}{}", &new[name.len()..]);
             }
-            let k = old.chars().position(|c| c == '|').map(|i| i + 1).unwrap_or(old.chars().count());
+            // the bar past the name, not the first in the text (§ `tag_bar`):
+            // taking the first left the menu standing and wrote another in
+            // front of it at every pass, so the tag grew without bound
+            let bar = tag_bar(&old, &name);
+            let k = bar.map(|i| i + 1).unwrap_or(old.chars().count());
             let head: String = old.chars().take(k).collect();
             if head != new {
-                if !old.contains('|') {
+                if bar.is_none() {
                     new.push_str(" Look ");
                 }
                 let group = self.new_group();
@@ -1681,5 +1696,9 @@ mod click_tests {
         // brackets: inside them, the whole
         assert_eq!(double_click(&t, 8), (8, 8));
         assert!(!acme_isalnum(' ') && !acme_isalnum('(') && acme_isalnum('_') && acme_isalnum('é'));
+        // the blank written down (`term::word` puts it in a terminal's
+        // name for the blanks of an xterm title): a word character, so
+        // the name is still one word under a double-click
+        assert!(acme_isalnum('␣'));
     }
 }

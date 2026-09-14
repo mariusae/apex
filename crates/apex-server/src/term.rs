@@ -60,12 +60,38 @@ pub fn sysname() -> String {
 /// follows a `-`. Before either, `dir/-host`, win's naming.
 pub fn compose_name(cwd: Option<&Path>, title: Option<&str>, initial_dir: &Path, initial_label: &str) -> String {
     let dir = |d: &Path| d.display().to_string().trim_end_matches('/').to_string();
-    match (cwd, title) {
+    let t = title.map(|t| word(t));
+    match (cwd, t) {
         (Some(c), Some(t)) => format!("{}/-{t}", dir(c)),
         (Some(c), None) => format!("{}/-{initial_label}", dir(c)),
         (None, Some(t)) => format!("{}/-{t}", dir(initial_dir)),
         (None, None) => format!("{}/-{initial_label}", dir(initial_dir)),
     }
+}
+
+/// A title made into one word, which is what a name is here: a
+/// terminal's name lives in the first word of its tag, and the bar after
+/// it is apex's. A title is nobody's to choose -- a coding agent writes
+/// its state into one, blanks, bar and all (`renaming... | proj`) -- so
+/// runs of blanks and any bar become a single `␣` (U+2423), the blank
+/// written down. It reads as the space it stands for and is a word
+/// character (`acme_isalnum`), so the name is still one word to a
+/// double-click and to B3.
+pub fn word(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut gap = false;
+    for c in title.trim().chars() {
+        if c.is_whitespace() || c == '|' {
+            gap = true;
+            continue;
+        }
+        if gap && !out.is_empty() {
+            out.push('\u{2423}');
+        }
+        gap = false;
+        out.push(c);
+    }
+    out
 }
 
 /// A leading `~` or `~/` (a shell's short form of the home directory, as
@@ -137,6 +163,17 @@ mod tests {
         assert_eq!(expand_tilde("~/src"), format!("{home}/src"));
         assert_eq!(expand_tilde("~"), home);
         assert_eq!(expand_tilde("/a/~/b"), "/a/~/b");
+    }
+
+    #[test]
+    fn a_title_is_one_word() {
+        let dir = PathBuf::from("/a/b");
+        let name = |t: &str| compose_name(Some(&dir), Some(t), &dir, "host");
+        assert_eq!(name("proj"), "/a/b/-proj");
+        // a coding agent's title: its state, a spinner, and the project
+        assert_eq!(name("renaming... ⠹ | proj"), "/a/b/-renaming...␣⠹␣proj");
+        assert_eq!(name("  padded  "), "/a/b/-padded");
+        assert_eq!(name("|"), "/a/b/-");
     }
 }
 

@@ -1151,8 +1151,15 @@ rule, `{osc7 path}/-{title}` (`term::compose_name`): OSC 7
 (`file://host/path`) is the path, and once it has reported, nothing else
 ever is; the title is an xterm title (OSC 0/2) or plan9port's
 `ESC ] ; text BEL` label (`apex label`); with a title but no directory
-reported the name is `-title`. `apex awd [LABEL]` reports the directory
-and titles the window `LABEL` (the host), so it reads `pwd/-host` as
+reported the name is `-title`. A title is made into one word first
+(`term::word`): a name is the first word of the tag and the bar after it
+is apex's, while a title is nobody's to choose -- a coding agent writes
+its state into one over and over, blanks, bar and all
+(`renaming... ⠹ | proj`) -- so runs of blanks and any bar become a
+single `␣` (U+2423), the blank written down: it reads as the space it
+stands for, and it is a word character, so the name is still one word to
+a double-click and to B3. `apex awd [LABEL]` reports the directory and titles the
+window `LABEL` (the host), so it reads `pwd/-host` as
 plan9port's awd names it. The reported directory is the terminal's,
 where B2/B3 resolve relative names. The win tool names its window by the
 same rule. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
@@ -1472,8 +1479,11 @@ left of the connection mark, the heartbeat's round trip and the log's
   `winsettag` leaves a typed first word alone, a click in the tag or a
   command from the window commits it (`wincommit`: the buffer takes the
   name), and `Put` resolves a relative name where the window is and makes
-  it absolute. `New` in a tag is an empty window; `apex new [LABEL]` is
-  the same with stdin in it (acme's `cmd | New`); `apex open` opens files.
+  it absolute. The bar that divides apex's half of the tag from the
+  user's is the first one *after* the name (`tag_bar`): a name may hold a
+  bar of its own (a file called `a|b`), and it is not that one. `New` in
+  a tag is an empty window; `apex new [LABEL]` is the same with stdin in
+  it (acme's `cmd | New`); `apex open` opens files.
 - Over a WAN, mosh-style predictive echo is unnecessary for editing (the
   client leads) and only relevant for terminals; it can come later.
 

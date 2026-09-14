@@ -468,6 +468,17 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     type_(&mut server, &mut log, "printf '\\033]2;~/src\\007'\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-~/src", b.display())), "name: {}", name(&node));
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), b);
+    // a title of a program's own making (a coding agent writes its state
+    // into one, over and over) is still one word: blanks and the bar --
+    // the tag's own -- become `_`, so the tag keeps its shape however
+    // often the title changes, and does not grow
+    let tag = |n: &Node| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
+    for i in 0..3 {
+        type_(&mut server, &mut log, &format!("printf '\\033]2;renaming...{i} | proj\\007'\r"));
+        assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-renaming...{i}␣proj", b.display())), "name: {}", name(&node));
+        node.update_tags(&mut log).unwrap();
+        assert_eq!(tag(&node), format!("{}/-renaming...{i}␣proj Del Snarf Send | Look ", b.display()), "the tag grew");
+    }
     // the labels never reached the screen
     assert!(!rows(&node).contains("\u{1b}"));
     // the shell's exit is still noticed
@@ -806,9 +817,12 @@ fn a_terminals_name_is_the_reported_directory_and_the_title() {
     use apex_server::term::compose_name;
     let d = std::path::Path::new("/here");
     assert_eq!(compose_name(None, None, d, "host"), "/here/-host");
-    // a title before any directory is reported: where the terminal started, then the title
-    assert_eq!(compose_name(None, Some("my title here"), d, "host"), "/here/-my title here");
-    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar/")), Some("my title here"), d, "host"), "/foo/bar/-my title here");
+    // a title before any directory is reported: where the terminal started,
+    // then the title, made into one word (a name is a word, and the bar
+    // after it in the tag is apex's)
+    assert_eq!(compose_name(None, Some("my title here"), d, "host"), "/here/-my␣title␣here");
+    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar/")), Some("my title here"), d, "host"), "/foo/bar/-my␣title␣here");
+    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), Some("renaming... \u{2839} | proj"), d, "host"), "/foo/bar/-renaming...\u{2423}\u{2839}\u{2423}proj");
     assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), None, d, "host"), "/foo/bar/-host");
 }
 

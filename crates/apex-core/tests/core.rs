@@ -549,3 +549,22 @@ fn look_runs_backwards_for_shift_b3() {
     assert!(node.look(&mut log, v, "ab").unwrap());
     assert_eq!(node.selection(v).unwrap(), (3, 5));
 }
+
+/// A name with a bar in it (an xterm title is one: codex writes
+/// `renaming... | proj`) does not make the tag grow. The bar that ends
+/// apex's half of the tag is the one after the name, not the first one
+/// in the text; taking the first one left the menu standing and wrote
+/// another in front of it at every `winsettag`.
+#[test]
+fn a_name_with_a_bar_does_not_grow_the_tag() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/proj/a|b.txt", "").unwrap();
+    let tag = |n: &Node| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
+    node.update_tags(&mut log).unwrap();
+    let once = tag(&node);
+    for _ in 0..5 {
+        node.update_tags(&mut log).unwrap();
+    }
+    assert_eq!(tag(&node), once, "the tag grew");
+    assert!(once.starts_with("/tmp/proj/a|b.txt Del Snarf |"), "{once}");
+}
