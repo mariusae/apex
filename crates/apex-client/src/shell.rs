@@ -1569,6 +1569,14 @@ impl Acme {
             Some((d.url.clone(), x - px(DRAPE / 2.), mine.origin.y))
         });
         let mut floating: Option<gpui::Div> = None;
+        // where the hovered tab sits, for its card to hang under: read
+        // with the drag's, before the bounds are cleared, since what the
+        // tabs record they record at paint, a frame behind this one
+        let hovered: Option<(SessionUrl, gpui::Bounds<Pixels>)> = self
+            .tab_hovered
+            .as_ref()
+            .filter(|(_, since)| since.elapsed() >= CARD_DELAY)
+            .and_then(|(u, _)| self.tab_bounds.borrow().iter().find(|(x, _)| x == u).map(|(_, b)| (u.clone(), *b)));
         // where each tab lands this frame, for a drag to reorder by
         self.tab_bounds.borrow_mut().clear();
         let others = all.len() > 1;
@@ -1726,11 +1734,10 @@ impl Acme {
         }
         let button = tabs.child(plus);
         // the hovered tab's card, beneath it, once the pointer has rested
-        let card = self.tab_hovered.as_ref().filter(|(_, since)| since.elapsed() >= CARD_DELAY).and_then(|(u, _)| {
-            let b = self.tab_bounds.borrow().iter().find(|(x, _)| x == u).map(|(_, b)| *b)?;
-            let lines = self.tab_status(u, cx);
+        let card = hovered.map(|(u, b)| {
+            let lines = self.tab_status(&u, cx);
             let el = tab_card(&lines, self.overlay_bounds.clone());
-            Some(gpui::deferred(gpui::anchored().position(gpui::point(b.origin.x, b.origin.y + b.size.height + px(4.))).child(el)).with_priority(1))
+            gpui::deferred(gpui::anchored().position(gpui::point(b.origin.x, b.origin.y + b.size.height + px(4.))).child(el)).with_priority(1)
         });
         div()
             .id("titlebar")
