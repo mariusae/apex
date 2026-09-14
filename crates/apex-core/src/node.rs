@@ -1250,7 +1250,9 @@ impl Node {
     /// Is this place in another session than this one?
     pub fn elsewhere(&self, loc: &Loc) -> bool {
         match &loc.session {
-            Some(s) => !self.state.meta.id.is_empty() && *s != self.state.meta.id && !self.state.meta.id.starts_with(s.as_str()),
+            // by its id, a prefix of it, or its label: `apex switch default`
+            // from a terminal on default is a goto here, not a leaving
+            Some(s) => !self.state.meta.id.is_empty() && *s != self.state.meta.id && !self.state.meta.id.starts_with(s.as_str()) && (self.state.meta.label.is_empty() || *s != self.state.meta.label),
             None => false,
         }
     }

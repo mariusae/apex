@@ -32,6 +32,13 @@ fn window_named(c: &Remote, name: &str) -> Option<WindowId> {
     c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w) == name)
 }
 
+/// Whether the window's body is dirty: written and not said to be whole.
+fn dirty(c: &mut Remote, w: WindowId) -> bool {
+    let _ = c.step(Duration::from_millis(50));
+    let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
+    c.node.state.buffer(b).unwrap().dirty()
+}
+
 fn text_of(c: &Remote, w: WindowId) -> String {
     let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
     c.node.state.buffer(b).unwrap().text.to_string()
@@ -108,9 +115,12 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     };
     assert_eq!(text, format!("– 1 agent\n\n▶ claude  {dir}  0b1c1425\n  what is in hosts?\n  ▶ Read: /etc/hosts\n"));
 
+    // written while an agent works, the pane is dirty and pulsing
+    let w = window_named(&c, &pane_name).unwrap();
+    assert!(dirty(&mut c, w));
+
     // B3 on the agent's name: its transcript, beside the pane, named
     // for the agent's own directory
-    let w = window_named(&c, &pane_name).unwrap();
     let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
     let chars: Vec<char> = text.chars().collect();
     let at = chars.windows(6).position(|w| w.iter().collect::<String>() == "claude").unwrap();
@@ -135,6 +145,11 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     assert_eq!(text, "~\n\nwhat is in hosts?\n\n✓ Read: /etc/hosts\n    127.0.0.1 localhost\n• It names localhost.\n");
     let text = wait_text(&mut c, &pane_name, |t| t.contains("\n~ claude"));
     assert_eq!(text, format!("– 1 agent\n\n~ claude  {dir}  0b1c1425\n  what is in hosts?\n  • It names localhost.\n"));
+    // no agent busy: the pane is clean
+    let since = Instant::now();
+    while dirty(&mut c, w) && since.elapsed() < Duration::from_secs(3) {}
+    assert!(!dirty(&mut c, w), "the pane stayed dirty with no agent busy");
+    eprintln!("the pane was clean in {:?}", since.elapsed());
 
     // Goto with dot in the block: this agent was started outside apex,
     // and +Errors says so rather than going nowhere
@@ -161,6 +176,9 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     event::append(&logs, &ev("SessionEnd")).unwrap();
     let text = wait_text(&mut c, &pane_name, |t| t.starts_with("– no agents"));
     assert!(!text.contains("0b1c1425"), "{text}");
+    let since = Instant::now();
+    while dirty(&mut c, w) && since.elapsed() < Duration::from_secs(3) {}
+    assert!(!dirty(&mut c, w), "the pane stayed dirty with no agents");
     let text = wait_text(&mut c, &detail_name, |t| t.contains("gone"));
     let all: Vec<(String, String)> = c.node.state.windows.keys().map(|w| (c.node.window_name(*w), text_of(&c, *w))).collect();
     assert!(text.ends_with("• It names localhost.\n– the agent is gone\n"), "{text:?}; windows: {all:?}");

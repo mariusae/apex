@@ -82,9 +82,10 @@ second is what it was asked, cut to one line. The third is what it is
 doing about it -- the tool call going, in the agent's own words for it
 (`Bash: Build and test`) or the thing itself (`Edit: src/main.rs`) --
 or the call it is asking leave for, or its last word on the turn, or
-why the turn failed. A block that changes is written in place; the
-window's handle pulses while any agent works. The first line is
-apex's own, `–`, and says how many.
+why the turn failed. A block that changes is written in place. The
+window's handle pulses while any agent works, and the window is clean
+while none does: what it says is whole and nothing is going on behind
+it. The first line is apex's own, `–`, and says how many.
 
 B3 anywhere in a block opens the agent's transcript beside the pane, as
 does `Open` with dot in it, or `Open ID` (or `Open claude`, when there

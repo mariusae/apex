@@ -67,6 +67,9 @@ pub struct Pane {
     goto: RuleId,
     look: RuleId,
     pulsing: bool,
+    /// Whether we have written the pane since we last said it was
+    /// clean.
+    dirty: bool,
     last_slow: Instant,
     last_render: Instant,
     home: Option<String>,
@@ -108,7 +111,7 @@ impl Pane {
             }
         })
         .ok();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), open, goto, look, pulsing: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), open, goto, look, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
         // the directory must be there to be watched: a hook makes it
         // otherwise, and the watch would miss the making
         let _ = std::fs::create_dir_all(&pane.opts.dir);
@@ -305,11 +308,13 @@ impl Pane {
                 if blocks[i].1 != self.blocks[i].1 {
                     let (q0, q1) = (self.starts[i], self.starts[i] + self.blocks[i].1.chars().count());
                     self.t.replace(self.w, q0, q1, &blocks[i].1)?;
+                    self.dirty = true;
                 }
             }
         } else {
             let (text, _) = agents::pane_text(&header, &blocks);
             self.t.replace(self.w, 0, END, &text)?;
+            self.dirty = true;
         }
         let (_, starts) = agents::pane_text(&header, &blocks);
         self.header = header;
@@ -322,6 +327,14 @@ impl Pane {
         if working != self.pulsing {
             self.pulsing = working;
             let _ = self.t.set_working(self.w, working);
+        }
+        // and is clean while none does: what it says is whole, and
+        // nothing is going on behind it. Written while agents work, it
+        // is dirty as any window a program is writing is, and the
+        // pulse says why
+        if !working && self.dirty {
+            self.dirty = false;
+            let _ = self.t.set_clean(self.w);
         }
         // and each transcript's, while its agent does
         let mut pulse = Vec::new();
@@ -360,12 +373,23 @@ impl Pane {
 
     /// The agent a verb means: with words after it, the one whose id
     /// begins so (or whose kind or directory is named); without, the
-    /// one dot is in. `None` when there is no such one, which +Errors
-    /// says when words were given and dot outside any block does not.
+    /// one dot is in, or the only one there is. `None` when there is no
+    /// such one, and +Errors says why, unless dot is simply outside any
+    /// block with nothing to choose from.
     fn meant(&mut self, verb: &str, args: &str, at: Option<Range>) -> apex_tool::Result<Option<String>> {
         let want = args.trim();
         if want.is_empty() {
-            return Ok(at.and_then(|r| self.block_at(r.q0).map(String::from)));
+            if let Some(key) = at.and_then(|r| self.block_at(r.q0).map(String::from)) {
+                return Ok(Some(key));
+            }
+            return match self.blocks.len() {
+                0 => Ok(None),
+                1 => Ok(Some(self.blocks[0].0.clone())),
+                n => {
+                    self.t.errors(None, &format!("{verb}: which of the {n}? B2 it with dot in the agent's block, or say its id: {verb} ID\n"))?;
+                    Ok(None)
+                }
+            };
         }
         let keys: Vec<String> = self.agents.ordered().iter().filter(|a| a.session.starts_with(want) || a.kind == want || a.cwd.ends_with(want)).map(|a| a.session.clone()).collect();
         match keys.as_slice() {

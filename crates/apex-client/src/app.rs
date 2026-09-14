@@ -1438,7 +1438,14 @@ impl Acme {
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
             Pending::Warp(Warp::Sel(v)) => {
                 let q0 = self.node.selection(v).map(|s| s.0).unwrap_or(0);
-                self.layouts.get(&v).and_then(|tl| tl.point_of(q0)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
+                match self.layouts.get(&v).and_then(|tl| tl.point_of(q0)) {
+                    Some(q) => Some(point(q.x + px(4.), q.y + font - px(4.))),
+                    // a body that is not text (a terminal, a page) has no
+                    // layout to find the selection in: the top of it, where
+                    // a new window is landed on, so a Goto to a terminal
+                    // still arrives
+                    None => v.window().and_then(|w| l.slot(w)).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
+                }
             }
         };
         if std::env::var_os("APEX_DEBUG_WARP").is_some() {
