@@ -264,43 +264,96 @@ fn resolve(spec: Option<&str>) -> Result<(AcpAgent, String), String> {
     }
 }
 
-/// An adapter published on npm: the command itself when it is installed,
-/// else npx, which may be one someone else brought along.
+/// The oldest node an adapter will run on. The adapters ask for it and
+/// their dependencies ask for it, but npm only says so and installs
+/// anyway, so an old node fails later and elsewhere: the agent exits 1
+/// and what comes back is a page of npm's warnings with the reason
+/// nowhere in it. Better to look before starting.
+const NODE_MIN: u32 = 20;
+
+/// An adapter published on npm: the command itself when it is
+/// installed, else npx to fetch it. Either way it is a node program --
+/// installed, its `#!/usr/bin/env node` takes the first node on PATH;
+/// fetched, npx is that node's -- so the node comes first, and one too
+/// old to run the adapter is no better than none.
 fn adapter((bin, pkg): (&str, &str)) -> Result<(AcpAgent, String), String> {
-    if let Some(p) = on_path(bin) {
-        return Ok((AcpAgent::new(AcpAgentConfig::new(p)), bin.to_string()));
-    }
-    let (npx, node_bin) = npx().ok_or_else(|| format!("{bin} is not installed and there is no npx to fetch it with: install node, or name a command of your own"))?;
-    let mut cfg = AcpAgentConfig::new(&npx).args(["-y", pkg]);
+    let (npx, node_bin) = npx().map_err(|e| format!("{bin}: {e}"))?;
+    let (mut cfg, how) = match on_path(bin) {
+        Some(p) => (AcpAgentConfig::new(p), bin.to_string()),
+        None => (AcpAgentConfig::new(&npx).args(["-y", pkg]), format!("npx {pkg}")),
+    };
     if let Some(dir) = node_bin {
-        // an npx that is not on PATH needs its node found by name
+        // a node that is not the one on PATH must be found by name,
+        // both by npx and by the adapter's own shebang
         let path = std::env::var("PATH").unwrap_or_default();
         cfg = cfg.env("PATH", format!("{}:{path}", dir.display()));
     }
-    Ok((AcpAgent::new(cfg), format!("npx {pkg}")))
+    Ok((AcpAgent::new(cfg), how))
 }
 
 fn on_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
-/// npx, and the bin directory to put on PATH when it is not there
-/// already: `$APEX_ACP_NODE_BIN`, else a node another program brought
-/// (Zed keeps one for its own agents).
-fn npx() -> Option<(PathBuf, Option<PathBuf>)> {
-    if let Some(p) = on_path("npx") {
-        return Some((p, None));
-    }
+/// What `node --version` says, as its major number.
+fn node_major(node: &Path) -> Option<u32> {
+    let out = std::process::Command::new(node).arg("--version").output().ok()?;
+    let v = String::from_utf8_lossy(&out.stdout);
+    v.trim().trim_start_matches('v').split('.').next()?.parse().ok()
+}
+
+/// Every npx we might use, newest-looking first, each with the node
+/// that will run it and the bin directory to put on PATH when it is not
+/// the one already there: `$APEX_ACP_NODE_BIN` first, since naming it
+/// is the way to say that the node on PATH will not do; then PATH; then
+/// a node another program brought along (Zed keeps one for its own
+/// agents, under Application Support on a Mac and `.local/share`
+/// elsewhere).
+fn npxs() -> Vec<(PathBuf, PathBuf, Option<PathBuf>)> {
     let mut dirs: Vec<PathBuf> = std::env::var_os("APEX_ACP_NODE_BIN").map(|d| vec![PathBuf::from(d)]).unwrap_or_default();
+    let mut out: Vec<(PathBuf, PathBuf, Option<PathBuf>)> = Vec::new();
+    if let (Some(npx), Some(node)) = (on_path("npx"), on_path("node")) {
+        out.push((npx, node, None));
+    }
     if let Some(home) = std::env::var_os("HOME") {
-        let zed = PathBuf::from(&home).join("Library/Application Support/Zed/node");
-        if let Ok(rd) = std::fs::read_dir(&zed) {
-            let mut found: Vec<PathBuf> = rd.flatten().map(|e| e.path().join("bin")).filter(|p| p.join("npx").is_file()).collect();
+        for zed in ["Library/Application Support/Zed/node", ".local/share/zed/node"] {
+            let Ok(rd) = std::fs::read_dir(PathBuf::from(&home).join(zed)) else { continue };
+            let mut found: Vec<PathBuf> = rd.flatten().map(|e| e.path().join("bin")).collect();
             found.sort();
             dirs.extend(found.into_iter().rev());
         }
     }
-    dirs.into_iter().find(|d| d.join("npx").is_file()).map(|d| (d.join("npx"), Some(d)))
+    // what was named for us goes in front of PATH, the rest behind it
+    let named = std::env::var_os("APEX_ACP_NODE_BIN").is_some() as usize;
+    for (i, d) in dirs.into_iter().enumerate() {
+        let (npx, node) = (d.join("npx"), d.join("node"));
+        if npx.is_file() {
+            let at = if i < named { 0 } else { out.len() };
+            out.insert(at, (npx, node, Some(d)));
+        }
+    }
+    out
+}
+
+/// The first of them whose node is new enough, and the bin directory it
+/// wants on PATH. A node that is there but too old is worth saying so
+/// about: it is the whole of the trouble, and nothing downstream names
+/// it.
+fn npx() -> Result<(PathBuf, Option<PathBuf>), String> {
+    let mut old: Option<(PathBuf, u32)> = None;
+    for (npx, node, dir) in npxs() {
+        match node_major(&node) {
+            Some(v) if v >= NODE_MIN => return Ok((npx, dir)),
+            Some(v) => {
+                old.get_or_insert((node, v));
+            }
+            None => {}
+        }
+    }
+    Err(match old {
+        Some((node, v)) => format!("node {v} ({}) is too old to run it; it wants {NODE_MIN} or newer. Point $APEX_ACP_NODE_BIN at the bin directory of one, or name a command of your own", node.display()),
+        None => "not installed, and there is no npx to fetch it with: install node, or name a command of your own".to_string(),
+    })
 }
 
 // ---- the agent side ----------------------------------------------------------
@@ -2646,5 +2699,49 @@ mod tests {
         // no time, nothing to say
         assert_eq!(when(None, t), "");
         assert_eq!(when(Some("whenever"), t), "");
+    }
+
+    /// A bin directory holding a node that says `version` and an npx
+    /// beside it, as a node installation has.
+    fn fake_node(at: &Path, version: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = at.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("node"), format!("#!/bin/sh\necho {version}\n")).unwrap();
+        std::fs::write(bin.join("npx"), "#!/bin/sh\nexit 0\n").unwrap();
+        for f in ["node", "npx"] {
+            std::fs::set_permissions(bin.join(f), std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        bin
+    }
+
+    /// A node too old to run the adapter is passed over as if it were
+    /// not there -- npm installs under it all the same, and the failure
+    /// then comes out of the agent with nothing in it that says why.
+    #[test]
+    fn a_node_too_old_for_the_adapter_is_no_node_at_all() {
+        let tmp = std::env::temp_dir().join(format!("apex-acp-node-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let old = fake_node(&tmp.join("old"), "v16.20.2");
+        let new = fake_node(&tmp.join("new"), "v24.18.1");
+
+        // nothing but an old node on PATH: no npx to use, and the
+        // reason named is the node and its version
+        std::env::set_var("PATH", old.display().to_string());
+        std::env::remove_var("APEX_ACP_NODE_BIN");
+        let e = npx().unwrap_err();
+        assert!(e.contains("node 16") && e.contains("too old"), "{e}");
+
+        // one named for us wins over PATH, that being the way to say
+        // the node on PATH will not do
+        std::env::set_var("APEX_ACP_NODE_BIN", new.display().to_string());
+        assert_eq!(npx().unwrap(), (new.join("npx"), Some(new.clone())));
+
+        // a new enough one on PATH needs nothing put in front of it
+        std::env::remove_var("APEX_ACP_NODE_BIN");
+        std::env::set_var("PATH", format!("{}:{}", new.display(), old.display()));
+        assert_eq!(npx().unwrap(), (new.join("npx"), None));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

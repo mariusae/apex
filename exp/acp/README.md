@@ -25,12 +25,19 @@ output, as acme's `+Errors` is. Nothing there is a file, so the tag
 does not offer to `Put` it.
 
 The Claude and Codex adapters are npm packages. `apex-acp` runs
-`claude-agent-acp` when it is installed, else fetches it with npx; when
-npx is not on `PATH` it will use a node another program brought along
-(`$APEX_ACP_NODE_BIN`, else the one Zed keeps for its own agents). The
-first run fetches the package, which takes a moment. Credentials are the
-Claude Code CLI's own, so a logged-in `claude` needs nothing more; if the
-agent does want a login, the window says so and `Login` does it.
+`claude-agent-acp` when it is installed, else fetches it with npx. Both
+want node 20 or newer, and npm will install them under an older one
+anyway, saying so in warnings and leaving the failure to come later out
+of the agent; so the node is looked at first, and one too old is passed
+over as if it were not there. Failing the node on `PATH`, one another
+program brought along is used (`$APEX_ACP_NODE_BIN`, else the one Zed
+keeps for its own agents); naming `$APEX_ACP_NODE_BIN` is how to say
+that the node on `PATH` will not do, so it is tried before it. With no
+node new enough anywhere, the window says which one was found and how
+old it is. The first run fetches the package, which takes a moment.
+Credentials are the Claude Code CLI's own, so a logged-in `claude` needs
+nothing more; if the agent does want a login, the window says so and
+`Login` does it.
 
 ## Using it
 
