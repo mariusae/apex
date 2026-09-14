@@ -6,7 +6,8 @@ members = ["crates/apex-edit", "crates/apex-core", "crates/apex-server", "crates
     "crates/apex-tool-preview",
     "crates/apex-tool",
     "crates/apex-tool-bridge",
-    "exp/acp"]
+    "exp/acp",
+    "exp/agent"]
 
 [workspace.package]
 edition = "2021"

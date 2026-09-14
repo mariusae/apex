@@ -255,6 +255,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "apex-agent"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "apex-tool",
+ "libc",
+ "notify",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "apex-cli"
 version = "0.1.0"
 dependencies = [

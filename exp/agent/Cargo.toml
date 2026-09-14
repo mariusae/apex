@@ -1,0 +1,20 @@
+[package]
+name = "apex-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Experimental: one window that says what every agent is doing, fed by their hooks"
+
+[[bin]]
+name = "apex-agent"
+path = "src/main.rs"
+
+[dependencies]
+apex-tool = { path = "../../crates/apex-tool" }
+libc = "0.2"
+notify = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+apex-core = { path = "../../crates/apex-core" }
+apex-server = { path = "../../crates/apex-server" }

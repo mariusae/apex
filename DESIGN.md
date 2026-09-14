@@ -1972,6 +1972,35 @@ spike captures a child's pipes instead and gets no pty, no `^C`, no
 interactive command -- the one place where the public surface fell
 short of what the experiment needed.
 
+### Exploration: a pane of agents
+
+`exp/agent` is a second spike on the same API: `apex-agent`, one
+window that says what every agent on the machine is doing, fed by the
+hooks Claude Code and Codex offer rather than by a protocol of our own.
+`apex-agent install` puts the hooks in; each one is `apex-agent hook
+AGENT`, which appends a line to `~/.apex/agents/SESSION.jsonl` and
+exits. The pane reads the logs and nothing else -- no socket, no
+daemon -- so nothing need be running when an agent starts, a pane
+started late sees what came before it, and two see the same; the logs'
+directory and each open transcript's are watched with `notify` as §9
+watches files, a slow pass every few seconds catches what a watch let
+by, and an agent whose process is gone (found once, asked after with
+`kill(pid, 0)` on that pass) goes the way of one that said
+`SessionEnd`. The window is `DIR/-agents`, a block an agent, the
+margin its state in the order they want attention -- `?` asking, `✗`
+failed, `~` your turn, `▶` at work -- with what it was asked and what
+it is doing about it under, the tool call in the agent's own words as
+the action line of apex-acp has it; a block that changes is written
+in place. B3 in a block (a plumb rule on the window, refused outside
+any block so that B3 keeps its meaning there) opens the agent's
+transcript, `AGENTDIR/-claude+ID`, named for the agent's directory so
+its `path:line`s resolve from where the agent worked, and read from the
+agent's own record as it grows, in the transcript window's idiom. What
+the spike says back: the hooks carry the call's id, so a call's status
+can be written over in place in a transcript the agent itself keeps;
+and the same offsets-by-hand that apex-acp keeps are kept here too, a
+second vote for the transcript being a shard.
+
 ### Open questions
 
 - Granularity of `layout` leasing when a tool wants to open windows while the
