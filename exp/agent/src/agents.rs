@@ -25,6 +25,14 @@ pub enum State {
     Ended,
 }
 
+/// A whole exchange: what was asked, and the agent's answer to it --
+/// its last word on the turn. The page shows one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Exchange {
+    pub asked: String,
+    pub said: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Agent {
     pub session: String,
@@ -50,6 +58,9 @@ pub struct Agent {
     pub asking: Option<String>,
     /// Its last word on the turn.
     pub said: Option<String>,
+    /// The last exchange finished, which the page shows: it stands
+    /// while the next turn is going, until that one is whole.
+    pub exchange: Option<Exchange>,
     /// Why the turn failed.
     pub why: Option<String>,
     pub subagents: usize,
@@ -58,7 +69,7 @@ pub struct Agent {
 
 impl Agent {
     pub fn new(session: &str) -> Agent {
-        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, why: None, subagents: 0, mode: None }
+        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, why: None, subagents: 0, mode: None }
     }
 
     /// Enough of the id to tell it apart, and to B3.
@@ -167,6 +178,9 @@ impl Agent {
                 self.asked = None;
                 self.asking = None;
                 self.said = e.text.clone();
+                if let Some(said) = e.text.as_deref().filter(|t| !t.trim().is_empty()) {
+                    self.exchange = Some(Exchange { asked: self.prompt.clone().unwrap_or_default(), said: said.to_string() });
+                }
             }
             "Interrupt" => {
                 self.state = State::Idle;
@@ -382,6 +396,11 @@ mod tests {
         ag.apply(&Event { text: Some("Done: the tool is built.\n\nMore below.".into()), ..ev("0b1c1425-aaaa", "Stop", 8000) });
         let (_, b) = pane(&ag.ordered(), 8000, Some("/home/me"));
         assert_eq!(b[0].1, "~ claude  ~/src/apex  0b1c1425\n  build an experimental tool, apex-agent…\n  • Done: the tool is built.…\n");
+        // the exchange is kept whole for the page, and stands through the next turn
+        let x = ag.get("0b1c1425-aaaa").unwrap().exchange.clone().unwrap();
+        assert_eq!((x.asked.as_str(), x.said.as_str()), ("build an experimental tool, apex-agent\n\nit should use hooks", "Done: the tool is built.\n\nMore below."));
+        ag.apply(&Event { text: Some("and now?".into()), ..ev("0b1c1425-aaaa", "UserPromptSubmit", 8500) });
+        assert_eq!(ag.get("0b1c1425-aaaa").unwrap().exchange.as_ref().map(|x| x.said.as_str()), Some("Done: the tool is built.\n\nMore below."));
         assert_eq!(b[1].0, "9e21ab77-bbbb");
         // subagents are counted and their calls are not the line
         ag.apply(&Event { sub: Some("a1".into()), kind: Some("Explore".into()), ..ev("9e21ab77-bbbb", "SubagentStart", 9000) });

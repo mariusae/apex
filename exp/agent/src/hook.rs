@@ -41,14 +41,15 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
     let cwd = s("cwd").unwrap_or_default();
     let tool = s("tool_name");
     let title = tool.as_deref().map(|t| call_title(t, v.get("tool_input").unwrap_or(&Value::Null), &cwd));
+    // a prompt and an answer are kept whole, within reason: the page
+    // shows the whole of the last exchange. A notification is a line
     let text = match event.as_str() {
-        "UserPromptSubmit" => s("prompt"),
-        "Stop" | "SubagentStop" => s("last_assistant_message"),
-        "Notification" => s("message"),
-        "StopFailure" => s("message").or_else(|| s("error")),
+        "UserPromptSubmit" => s("prompt").map(|t| cut(&t, WHOLE)),
+        "Stop" | "SubagentStop" => s("last_assistant_message").map(|t| cut(&t, WHOLE)),
+        "Notification" => s("message").map(|t| cut(&t, LINE)),
+        "StopFailure" => s("message").or_else(|| s("error")).map(|t| cut(&t, LINE)),
         _ => None,
-    }
-    .map(|t| cut(&t, 2000));
+    };
     let kind = s("notification_type")
         .or_else(|| s("session_start_method"))
         .or_else(|| s("source"))
@@ -75,6 +76,10 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
         mode: s("permission_mode"),
     }
 }
+
+/// How much of a prompt or an answer is kept, and of anything else.
+const WHOLE: usize = 64 * 1024;
+const LINE: usize = 2000;
 
 /// The first `n` characters, and a mark where the rest was.
 fn cut(s: &str, n: usize) -> String {
@@ -175,8 +180,12 @@ mod tests {
     #[test]
     fn a_long_text_is_cut_and_says_so() {
         let long = "x".repeat(3000);
-        let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "UserPromptSubmit", "prompt": long, "cwd": "/"});
+        let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "Notification", "message": long, "cwd": "/"});
         let e = event_from("claude", &v);
         assert_eq!(e.text.as_ref().map(|t| t.chars().count()), Some(2001));
+        // a prompt is kept whole: the page shows it
+        let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "UserPromptSubmit", "prompt": "x".repeat(3000), "cwd": "/"});
+        let e = event_from("claude", &v);
+        assert_eq!(e.text.as_ref().map(|t| t.chars().count()), Some(3000));
     }
 }

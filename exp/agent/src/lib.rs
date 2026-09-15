@@ -6,5 +6,6 @@ pub mod agents;
 pub mod event;
 pub mod hook;
 pub mod install;
+pub mod page;
 pub mod transcript;
 pub mod win;

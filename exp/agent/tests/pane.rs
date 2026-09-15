@@ -95,7 +95,9 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
     event::append(&logs, &Event { call: Some("t1".into()), tool: Some("Read".into()), title: Some("Read: /etc/hosts".into()), ..ev("PreToolUse") }).unwrap();
 
-    let t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    // the page's converter: the markdown itself, so the test can read it
+    t.set("Preview.md", "cat");
     let pane = Pane::start(t, Opts { cwd: tmp.clone(), dir: logs.clone(), thoughts: false }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
@@ -150,6 +152,22 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     while dirty(&mut c, w) && since.elapsed() < Duration::from_secs(3) {}
     assert!(!dirty(&mut c, w), "the pane stayed dirty with no agent busy");
     eprintln!("the pane was clean in {:?}", since.elapsed());
+
+    // Preview with dot in the block: the last exchange as a page, what
+    // was asked quoted and then the answer; written again as the next
+    // turn ends
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
+    let page_name = format!("{detail_name}+Preview");
+    let text = wait_text(&mut c, &page_name, |t| t.contains("localhost"));
+    assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
+    event::append(&logs, &Event { text: Some("and /etc/passwd?".into()), ..ev("UserPromptSubmit") }).unwrap();
+    event::append(&logs, &Event { text: Some("Users, one a line.".into()), ..ev("Stop") }).unwrap();
+    let text = wait_text(&mut c, &page_name, |t| t.contains("passwd"));
+    assert_eq!(text, "> and /etc/passwd?\n\nUsers, one a line.\n");
+    // Preview again closes it
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview 0b1c".into() }, Duration::from_secs(5)).unwrap();
+    wait_gone(&mut c, &page_name);
 
     // Goto with dot in the block: this agent was started outside apex,
     // and +Errors says so rather than going nowhere

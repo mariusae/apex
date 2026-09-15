@@ -1996,6 +1996,10 @@ any block so that B3 keeps its meaning there) opens the agent's
 transcript, `AGENTDIR/-claude+ID`, named for the agent's directory so
 its `path:line`s resolve from where the agent worked, and read from the
 agent's own record as it grows, in the transcript window's idiom.
+`Preview` is apex-acp's: the last exchange the agent finished as a
+page, the prompt quoted and the answer under it through the session's
+markdown converter, written afresh as each turn ends, since the `Stop`
+hook carries the agent's last word whole.
 `Goto` goes to the agent itself: the hook keeps the `apexsession` and
 `winid` apex put in the environment of the command that started it,
 and `Tool::switch` takes the pane's UI to that window, in that session,

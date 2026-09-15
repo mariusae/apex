@@ -22,6 +22,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::agents::{self, Agents, State};
 use crate::event::{self, Tail};
+use crate::page;
 use crate::transcript::{self, Op, Parser, Writer};
 
 pub struct Opts {
@@ -63,8 +64,11 @@ pub struct Pane {
     blocks: Vec<(String, String)>,
     starts: Vec<usize>,
     details: HashMap<WindowId, Detail>,
+    /// The pages open, each showing an agent's last exchange.
+    pages: HashMap<WindowId, String>,
     open: RuleId,
     goto: RuleId,
+    preview: RuleId,
     look: RuleId,
     pulsing: bool,
     /// Whether we have written the pane since we last said it was
@@ -92,11 +96,12 @@ impl Pane {
         let name = format!("{}/-agents", opts.cwd.display().to_string().trim_end_matches('/'));
         let w = t.new_window(&name)?;
         let _ = t.set_owner(w, true);
-        let _ = t.set_tag(w, "Look Open Goto");
-        // Open and Goto with dot in a block, or with the agent named
-        // after them; B3 anywhere in a block
+        let _ = t.set_tag(w, "Look Open Goto Preview");
+        // Open, Goto and Preview with dot in a block, or with the agent
+        // named after them; B3 anywhere in a block
         let open = t.offer(Rule::verb("Open").window(w))?;
         let goto = t.offer(Rule::verb("Goto").window(w))?;
+        let preview = t.offer(Rule::verb("Preview").window(w))?;
         let look = t.offer(Rule::plumb().window(w).priority(10))?;
         let home = std::env::var("HOME").ok();
         // a change under a watched directory wakes the loop; what it
@@ -111,7 +116,7 @@ impl Pane {
             }
         })
         .ok();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), open, goto, look, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), pages: HashMap::new(), open, goto, preview, look, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
         // the directory must be there to be watched: a hook makes it
         // otherwise, and the watch would miss the making
         let _ = std::fs::create_dir_all(&pane.opts.dir);
@@ -147,6 +152,7 @@ impl Pane {
                 None => {}
                 Some(Event::Deleted { window }) if window == self.w => return Ok(()),
                 Some(Event::Deleted { window }) => {
+                    self.pages.remove(&window);
                     if let Some(d) = self.details.remove(&window) {
                         if let Some(dir) = d.tail.as_ref().and_then(|t| t.path.parent()).map(Path::to_path_buf) {
                             self.unwatch(&dir);
@@ -163,6 +169,8 @@ impl Pane {
                         self.open_verb(&p.text, p.at)?
                     } else if p.rule == self.goto {
                         self.goto_verb(&p.text, p.at)?
+                    } else if p.rule == self.preview {
+                        self.preview_verb(&p.text, p.at)?
                     } else if p.rule == self.look {
                         self.open_at(p.sel.or(p.at))?
                     } else {
@@ -233,8 +241,11 @@ impl Pane {
     }
 
     /// A hook's word about a call, in the transcript window when one is
-    /// open: running, wanted, refused.
+    /// open: running, wanted, refused. A turn's end, in the page.
     fn heard(&mut self, ev: &event::Event) -> apex_tool::Result<()> {
+        if ev.event == "Stop" {
+            self.show_page(&ev.session)?;
+        }
         let Some(d) = self.details.values_mut().find(|d| d.session == ev.session) else { return Ok(()) };
         let glyph = match ev.event.as_str() {
             "PreToolUse" => Some("▶"),
@@ -430,6 +441,39 @@ impl Pane {
             _ => self.t.errors(None, &format!("Goto {short}: {kind} was not started in an apex window\n"))?,
         }
         Ok(true)
+    }
+
+    // ---- the pages ----
+
+    /// `Preview`: the agent's last exchange as a page beside the pane,
+    /// what was asked and then the answer, rendered as apex-acp's is;
+    /// again, to close it. It is written afresh as each turn ends, so
+    /// it always shows the latest answer whole.
+    fn preview_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        let Some(key) = self.meant("Preview", args, at)? else { return Ok(!args.trim().is_empty()) };
+        if let Some((&w, _)) = self.pages.iter().find(|(_, s)| **s == key) {
+            let _ = self.t.delete(w);
+            self.pages.remove(&w);
+            return Ok(true);
+        }
+        let Some(a) = self.agents.get(&key).cloned() else { return Ok(true) };
+        let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
+        let name = format!("{}/-{kind}+{}+Preview", a.cwd.trim_end_matches('/'), a.short());
+        let html = page::render(&self.t, Path::new(&a.cwd), a.exchange.as_ref().map(|x| (x.asked.as_str(), x.said.as_str())));
+        let w = self.t.new_page(&name, &html)?;
+        // ours, as the preview tool's page is: Del does not ask
+        let _ = self.t.set_owner(w, true);
+        let _ = self.t.set_live(w, true);
+        self.pages.insert(w, key);
+        Ok(true)
+    }
+
+    /// The agent's page again, when one is open.
+    fn show_page(&mut self, session: &str) -> apex_tool::Result<()> {
+        let Some((&w, _)) = self.pages.iter().find(|(_, s)| *s == session) else { return Ok(()) };
+        let Some(a) = self.agents.get(session) else { return Ok(()) };
+        let html = page::render(&self.t, Path::new(&a.cwd), a.exchange.as_ref().map(|x| (x.asked.as_str(), x.said.as_str())));
+        self.t.replace(w, 0, END, &html)
     }
 
     // ---- the transcripts ----

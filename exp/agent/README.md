@@ -34,7 +34,8 @@ The hook is this same program, `apex-agent hook claude`, run by the
 agent at every event with the event's JSON on its standard input. It
 appends one line to `~/.apex/agents/SESSION.jsonl` and exits: what
 happened, when, which tool and what the call was in words, the prompt
-or the last message when the event carries one, and, once, the agent's
+or the last message when the event carries one (those two kept whole,
+within reason, since the page shows them), and, once, the agent's
 process and the apex session and window it was started in. The agent's input is
 not kept -- a `Write`'s input is the file -- so a log stays small.
 
@@ -91,6 +92,17 @@ B3 anywhere in a block opens the agent's transcript beside the pane, as
 does `Open` with dot in it, or `Open ID` (or `Open claude`, when there
 is one). B3 outside any block is handed back and does what it always
 does.
+
+`Preview`, the same way, opens a page beside the pane with the last
+exchange the agent finished, rendered as apex-acp's `Preview` renders
+its own: what was asked, quoted, and then the answer -- the agent's
+last word on the turn, not the running commentary on the way to it,
+which the transcript has. It is written afresh as each turn ends, so it
+always shows the latest answer whole, and holds still while the next
+one is being made. `Preview` again closes it. The page is
+`AGENTDIR/-claude+ID+Preview`, and goes through the converter the
+session names for markdown (`Preview.md`, `apex md` unless a setting
+says otherwise), so it looks like every other preview.
 
 `Goto`, the same way, goes to the agent itself: the window it was
 started in, in whatever apex session that was -- apex puts
