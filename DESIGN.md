@@ -2024,7 +2024,12 @@ session began are its repository's own diff (git, sapling, mercurial),
 in a window at the repository's root with each hunk located as
 `path:line`; the directory's past sessions are listed as apex-acp's
 `Resume` lists them, and an id B3'd anywhere opens a transcript by a
-plumbing rule the tool offers. The same logs read as text: `ls`,
+plumbing rule the tool offers. An agent in a terminal of the pane's own
+session (the recorded `apexsession` is this one's, which
+`Tool::session` says) has the verbs offered on its window too, by
+rules naming it -- `Transcript`, `Preview`, `Changes` while it runs,
+`Allow Deny Ask` while it asks -- so the agent's own window answers it,
+as apex-acp's does. The same logs read as text: `ls`,
 `wait` (the agent's state as the exit status) and `events`, for
 scripts to chain on. What the
 spike says back: the hooks carry the call's id, so a call's status

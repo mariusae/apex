@@ -248,6 +248,50 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let _ = c.step(Duration::from_millis(20));
     let said: String = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
     assert_eq!(said.matches("Goto").count(), 1, "{said:?}");
+    // an agent in a terminal of this very session: its verbs are offered
+    // on that window too, and the three that answer while it asks
+    let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/-term", proj.display()) }, Duration::from_secs(5)).unwrap().unwrap();
+    let sid = c.node.state.meta.id.clone();
+    assert!(!sid.is_empty());
+    // the window's tools menu, once every verb wanted is in it (or,
+    // wanting none, once Allow has gone)
+    let menu = |c: &mut Remote, w: WindowId, want: &[&str]| -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut v = Vec::new();
+        while Instant::now() < deadline {
+            let _ = c.step(Duration::from_millis(20));
+            v = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w), Some(w), c.node.window_owner(w));
+            if (want.is_empty() && !v.iter().any(|x| x == "Allow")) || (!want.is_empty() && want.iter().all(|x| v.iter().any(|y| y == x))) {
+                break;
+            }
+        }
+        v
+    };
+    event::append(&logs, &Event { apex: Some(sid.clone()), win: Some(tw.0), ..ev("UserPromptSubmit") }).unwrap();
+    let v = menu(&mut c, tw, &["Transcript", "Preview", "Changes"]);
+    assert!(["Transcript", "Preview", "Changes"].iter().all(|x| v.iter().any(|y| y == x)), "{v:?}");
+    assert!(!v.iter().any(|x| x == "Allow"), "{v:?}");
+    // Preview in the agent's window is that agent's page
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(tw), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
+    wait_text(&mut c, &page_name, |t| t.contains("Removed."));
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(tw), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
+    wait_gone(&mut c, &page_name);
+    // asking: Allow Deny Ask come to the window, and Allow there answers
+    event::append(&logs, &Event { call: Some("t8".into()), title: Some("Bash: rm -rf target".into()), ..ev("PermissionRequest") }).unwrap();
+    let v = menu(&mut c, tw, &["Allow", "Deny", "Ask"]);
+    assert!(["Allow", "Deny", "Ask"].iter().all(|x| v.iter().any(|y| y == x)), "{v:?}");
+    let log = event::log_path(&logs, "0b1c1425-aaaa");
+    let from = std::fs::metadata(&log).unwrap().len();
+    let asked = std::thread::spawn(move || hook::await_decision(&log, from, "t8", Duration::from_secs(5)));
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(tw), text: "Deny".into() }, Duration::from_secs(5)).unwrap();
+    assert_eq!(asked.join().unwrap(), Some("deny".to_string()));
+    let v = menu(&mut c, tw, &[]);
+    assert!(!v.iter().any(|x| x == "Allow") && v.iter().any(|x| x == "Transcript"), "{v:?}");
+    event::append(&logs, &Event { call: Some("t8".into()), ..ev("PostToolUse") }).unwrap();
+    event::append(&logs, &Event { text: Some("Left it.".into()), ..ev("Stop") }).unwrap();
+    wait_text(&mut c, &pane_name, |t| t.contains("Left it."));
+
     // Send with nothing to type into is said too; with somewhere, it wants apex
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Send 0b1c hello".into() }, Duration::from_secs(5)).unwrap();
     let said = wait_text(&mut c, "+Errors", |t| t.contains("Send:"));

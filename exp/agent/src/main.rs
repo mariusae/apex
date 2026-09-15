@@ -28,8 +28,9 @@
 //! goes to the agent itself, the window it was started in, in whatever
 //! session that was; `Send TEXT` types into that window; `Start` and
 //! `Resume` make terminals running agents; `History` lists the
-//! directory's past sessions. `ls`, `wait` and `events` are the same
-//! logs as text, for scripts.
+//! directory's past sessions. An agent in a terminal of the pane's own
+//! session has these verbs on its window too. `ls`, `wait` and
+//! `events` are the same logs as text, for scripts.
 
 use std::path::PathBuf;
 use std::time::Duration;

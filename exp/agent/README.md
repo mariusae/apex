@@ -154,6 +154,17 @@ the agent, in the pane's directory or the one named, by `Newterm`; the
 hooks pick it up from there. `Resume ID` does the same with a past
 session, in the directory it was had in, so the agent replays it there.
 
+## In the agent's own window
+
+An agent running in a terminal of the pane's own session is known by
+the session and window its hooks recorded, and the pane offers its
+verbs on that window too: `Transcript`, `Preview` and `Changes` in the
+terminal's tools menu for as long as the agent runs, and `Allow`,
+`Deny` and `Ask` for as long as it asks -- so the agent's window is the
+place to answer it from, as apex-acp's is, with nothing added to the
+agent. The verbs go when the agent does. A rule may name a window
+(`Rule::verb("Preview").window(w)`), which is all this is.
+
 ## The transcript
 
 `AGENTDIR/-claude+0b1c1425`: named for the agent's own directory, so a

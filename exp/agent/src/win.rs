@@ -18,6 +18,13 @@
 //! a decision is an event in the agent's log, which its hook is
 //! waiting to read; a prompt is typed into the agent's terminal by
 //! `apex term send`; an agent is started by `Newterm`.
+//!
+//! An agent running in a terminal of this very session is known by
+//! the session and window its hooks recorded, and the pane offers its
+//! verbs on that window too -- `Transcript`, `Preview`, `Changes` in
+//! the terminal's own tools menu while the agent runs, and `Allow
+//! Deny Ask` while it asks -- so the agent's window is the place to
+//! answer it from, as apex-acp's is, with nothing added to the agent.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -127,7 +134,25 @@ pub struct Pane {
     /// Our presence file, which says to the hooks that there is a pane
     /// to ask.
     presence: PathBuf,
+    /// This session's id: an agent whose hooks recorded it runs here.
+    session: String,
+    /// The agents' own windows in this session, with the verbs offered
+    /// on each: the ones for as long as the agent runs, and the ones
+    /// for as long as it asks.
+    targets: HashMap<WindowId, Target>,
 }
+
+/// An agent's terminal in this session, and what is offered on it.
+struct Target {
+    session: String,
+    rules: Vec<RuleId>,
+    asking: Vec<RuleId>,
+}
+
+/// The verbs on an agent's own window: the transcript, named as
+/// apex-acp names its own; the page; the changes.
+const TARGET_VERBS: [&str; 3] = ["Transcript", "Preview", "Changes"];
+const ASKING_VERBS: [&str; 3] = ["Allow", "Deny", "Ask"];
 
 impl Pane {
     /// The pane in the session this program was started in.
@@ -175,7 +200,8 @@ impl Pane {
         let _ = std::fs::create_dir_all(event::panes_dir(&opts.dir));
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence };
+        let (session, _) = t.session();
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -201,6 +227,7 @@ impl Pane {
                 self.look()?;
                 self.sweep();
                 self.render()?;
+                self.sync_targets()?;
             } else if self.last_render.elapsed() >= MINUTES {
                 self.render()?;
             }
@@ -227,11 +254,14 @@ impl Pane {
                     }
                 }
                 Some(Event::Plumb(p)) => {
-                    let taken = match self.verbs.get(&p.rule).copied() {
-                        Some(v) => self.verb(v, &p.text, p.at)?,
-                        None if p.rule == self.look => self.open_at(p.sel.or(p.at))?,
-                        None if p.rule == self.look_any => self.open_id(&p.text)?,
-                        None => match p.window.and_then(|w| self.details.get(&w).map(|d| (d.send, w))) {
+                    // in an agent's own window, the verb means that agent
+                    let target = p.window.and_then(|w| self.targets.get(&w).map(|t| t.session.clone()));
+                    let taken = match (self.verbs.get(&p.rule).copied(), target) {
+                        (Some(v), Some(key)) => self.verb_for(v, &key)?,
+                        (Some(v), None) => self.verb(v, &p.text, p.at)?,
+                        (None, _) if p.rule == self.look => self.open_at(p.sel.or(p.at))?,
+                        (None, _) if p.rule == self.look_any => self.open_id(&p.text)?,
+                        (None, _) => match p.window.and_then(|w| self.details.get(&w).map(|d| (d.send, w))) {
                             Some((send, w)) if send == p.rule => self.send_from_detail(w, &p.text)?,
                             _ => false,
                         },
@@ -241,6 +271,73 @@ impl Pane {
                 Some(_) => {}
             }
         }
+    }
+
+    /// A verb in an agent's own window: about that agent, whatever dot
+    /// or the words say.
+    fn verb_for(&mut self, v: &str, key: &str) -> apex_tool::Result<bool> {
+        match v {
+            "Transcript" => {
+                self.open_detail(key)?;
+                Ok(true)
+            }
+            "Preview" => self.preview_for(key),
+            "Changes" => self.changes_for(key),
+            "Allow" | "Deny" | "Ask" => self.decide_for(v, key),
+            _ => Ok(false),
+        }
+    }
+
+    /// The agents running in terminals of this session, and what is
+    /// offered on their windows: verbs for as long as the agent runs,
+    /// and the three that answer a question for as long as it asks.
+    /// A window gone, or an agent gone, takes its verbs away.
+    fn sync_targets(&mut self) -> apex_tool::Result<()> {
+        let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
+        // what should be targeted now
+        let want: Vec<(WindowId, String, bool)> = self
+            .agents
+            .ordered()
+            .iter()
+            .filter(|a| a.apex.as_deref() == Some(self.session.as_str()) && !self.session.is_empty())
+            .filter_map(|a| a.win.map(|w| (WindowId(w), a.session.clone(), a.state == State::Asking && a.decided.is_none())))
+            .filter(|(w, _, _)| windows.contains(w) && *w != self.w)
+            .collect();
+        // gone: the window, or the agent, or another agent in its place
+        let stale: Vec<WindowId> = self.targets.iter().filter(|(w, t)| !want.iter().any(|(ww, s, _)| ww == *w && *s == t.session)).map(|(w, _)| *w).collect();
+        for w in stale {
+            if let Some(t) = self.targets.remove(&w) {
+                for r in t.rules.into_iter().chain(t.asking) {
+                    self.verbs.remove(&r);
+                    self.t.withdraw(r);
+                }
+            }
+        }
+        for (w, session, asking) in want {
+            if !self.targets.contains_key(&w) {
+                let mut rules = Vec::new();
+                for v in TARGET_VERBS {
+                    let r = self.t.offer(Rule::verb(v).window(w).priority(5))?;
+                    self.verbs.insert(r, v);
+                    rules.push(r);
+                }
+                self.targets.insert(w, Target { session: session.clone(), rules, asking: Vec::new() });
+            }
+            let t = self.targets.get_mut(&w).expect("just made");
+            if asking && t.asking.is_empty() {
+                for v in ASKING_VERBS {
+                    let r = self.t.offer(Rule::verb(v).window(w).priority(5))?;
+                    self.verbs.insert(r, v);
+                    t.asking.push(r);
+                }
+            } else if !asking && !t.asking.is_empty() {
+                for r in std::mem::take(&mut t.asking) {
+                    self.verbs.remove(&r);
+                    self.t.withdraw(r);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// A verb of the pane's.
@@ -596,7 +693,12 @@ impl Pane {
                 }
             }
         };
-        let Some(a) = self.agents.get(&key) else { return Ok(true) };
+        self.decide_for(word, &key)
+    }
+
+    /// The answer, for the agent named.
+    fn decide_for(&mut self, word: &str, key: &str) -> apex_tool::Result<bool> {
+        let Some(a) = self.agents.get(key) else { return Ok(true) };
         let (Some(call), State::Asking) = (a.asking.clone(), a.state) else {
             self.t.errors(None, &format!("{word}: {} {} is not asking anything\n", a.kind, a.short()))?;
             return Ok(true);
@@ -730,6 +832,12 @@ impl Pane {
     /// it always shows the latest answer whole.
     fn preview_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
         let Some(key) = self.meant("Preview", args, at)? else { return Ok(!args.trim().is_empty()) };
+        self.preview_for(&key)
+    }
+
+    /// The page for the agent named, or closed again.
+    fn preview_for(&mut self, key: &str) -> apex_tool::Result<bool> {
+        let key = key.to_string();
         if let Some((&w, _)) = self.pages.iter().find(|(_, s)| **s == key) {
             let _ = self.t.delete(w);
             self.pages.remove(&w);
@@ -765,6 +873,12 @@ impl Pane {
     /// and it is written afresh.
     fn changes_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
         let Some(key) = self.meant("Changes", args, at)? else { return Ok(!args.trim().is_empty()) };
+        self.changes_for(&key)
+    }
+
+    /// The changes of the agent named, written afresh.
+    fn changes_for(&mut self, key: &str) -> apex_tool::Result<bool> {
+        let key = key.to_string();
         let Some(a) = self.agents.get(&key).cloned() else { return Ok(true) };
         let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
         let cwd = Path::new(&a.cwd);

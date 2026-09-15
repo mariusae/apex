@@ -290,6 +290,15 @@ impl Tool {
         Ok(Tool { remote, watched: BTreeSet::new(), ours: BTreeMap::new(), events: VecDeque::new(), own: VecDeque::new() })
     }
 
+    /// The session's id, and its label: what `apexsession` and
+    /// `apexsessionlabel` say in a command the session runs, so a tool
+    /// can tell whether a window a record names is one of this
+    /// session's and offer verbs on it.
+    pub fn session(&self) -> (String, String) {
+        let meta = &self.remote.node.state.meta;
+        (meta.id.clone(), meta.label.clone())
+    }
+
     /// The attachment's name.
     pub fn name(&self) -> String {
         self.remote.node.state.meta.attachments.get(&self.remote.attachment()).map(|a| a.name.clone()).unwrap_or_default()
