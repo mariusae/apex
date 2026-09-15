@@ -15,6 +15,7 @@ surface.
     apex-agent install claude   # or one of them
     apex-agent                  # the pane, DIR/-agents
     apex-agent -all             # every agent, not only those under DIR
+    apex-agent -s               # only the agents started in this apex session
     apex-agent -quiet           # no notes in +Errors
     apex-agent -thoughts        # transcripts show the agents' thinking
     apex-agent uninstall
@@ -108,6 +109,9 @@ and `Start claude` there is a verb to B2.
 The pane's name is its filter: `DIR/-agents` shows the agents under
 `DIR`, and a last line counts the rest (`– 2 elsewhere: a pane in ~
 shows all`); a pane in the home directory, or `-all`, shows everything.
+`-s` narrows it instead to the agents started in the apex session the
+pane was launched from, wherever their directories are, the last line
+counting those in other sessions.
 
 Every verb below takes the agent dot is in, or the only one there is,
 or the one named after it by its id (`Open 0b1c`), its kind (`Goto

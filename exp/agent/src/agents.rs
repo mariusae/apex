@@ -384,20 +384,28 @@ pub fn shown_dir(dir: &str, home: Option<&str>) -> String {
 /// doing about it, wanting, or last said; and under that a line a
 /// subagent, with what each is doing. The pane's name is its filter:
 /// with `under` given, only agents in that directory are blocks, and
-/// the last line counts the rest. With no agents the first line is a
-/// guide: `Start claude` and `Start codex` are verbs, to be B2'd there.
-pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>, under_dir: Option<&str>) -> (String, Vec<(String, String)>, String) {
-    let (here, elsewhere): (Vec<&Agent>, Vec<&Agent>) = agents.iter().partition(|a| under_dir.is_none_or(|d| under(&a.cwd, d)));
+/// the last line counts the rest; with `session` given (`-s`), only
+/// agents started in that apex session are. With no agents the first
+/// line is a guide: `Start claude` and `Start codex` are verbs, to be
+/// B2'd there.
+pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>, under_dir: Option<&str>, session: Option<&str>) -> (String, Vec<(String, String)>, String) {
+    let (here, elsewhere): (Vec<&Agent>, Vec<&Agent>) = agents.iter().partition(|a| match session {
+        Some(s) => a.apex.as_deref() == Some(s),
+        None => under_dir.is_none_or(|d| under(&a.cwd, d)),
+    });
     let header = match (here.len(), elsewhere.len()) {
         (0, 0) => "– no agents yet: Start claude, Start codex, or `apex-agent install` first\n".to_string(),
+        (0, _) if session.is_some() => "– no agents in this session\n".to_string(),
         (0, _) => "– no agents here\n".to_string(),
         (1, _) => "– 1 agent\n".to_string(),
         (n, _) => format!("– {n} agents\n"),
     };
-    let footer = match elsewhere.len() {
-        0 => String::new(),
-        1 => "– 1 elsewhere: a pane in ~ shows all\n".to_string(),
-        n => format!("– {n} elsewhere: a pane in ~ shows all\n"),
+    let footer = match (elsewhere.len(), session.is_some()) {
+        (0, _) => String::new(),
+        (1, true) => "– 1 in another session: -all shows all\n".to_string(),
+        (n, true) => format!("– {n} in other sessions: -all shows all\n"),
+        (1, false) => "– 1 elsewhere: a pane in ~ shows all\n".to_string(),
+        (n, false) => format!("– {n} elsewhere: a pane in ~ shows all\n"),
     };
     let mut blocks = Vec::new();
     for a in here {
@@ -473,7 +481,7 @@ mod tests {
         ag.apply(&Event { text: Some("build an experimental tool, apex-agent\n\nit should use hooks".into()), ..ev("0b1c1425-aaaa", "UserPromptSubmit", 2000) });
         ag.apply(&Event { call: Some("t1".into()), title: Some("Bash: Build it".into()), ..ev("0b1c1425-aaaa", "PreToolUse", 3000) });
         ag.apply(&Event { call: Some("t2".into()), title: Some("Read: src/main.rs".into()), ..ev("0b1c1425-aaaa", "PreToolUse", 3100) });
-        let (h, b, _) = pane(&ag.ordered(), 4000, Some("/home/me"), None);
+        let (h, b, _) = pane(&ag.ordered(), 4000, Some("/home/me"), None, None);
         assert_eq!(h, "– 1 agent\n");
         // a prompt of many lines is its first, and says there is more
         assert_eq!(b[0].1, "▶ claude  ~/src/apex  0b1c1425\n  build an experimental tool, apex-agent…\n  ▶ Read: src/main.rs\n");
@@ -485,7 +493,7 @@ mod tests {
         // a permission wanted goes to the head of the list, over one working
         ag.apply(&Event { text: Some("port the rc shell".into()), ..ev("9e21ab77-bbbb", "UserPromptSubmit", 5000) });
         ag.apply(&Event { call: Some("t3".into()), title: Some("Bash: Remove the build directory".into()), ..ev("0b1c1425-aaaa", "PermissionRequest", 6000) });
-        let (h, b, _) = pane(&ag.ordered(), 6000 + 150_000, Some("/home/me"), None);
+        let (h, b, _) = pane(&ag.ordered(), 6000 + 150_000, Some("/home/me"), None, None);
         assert_eq!(h, "– 2 agents\n");
         assert_eq!(b[0].0, "0b1c1425-aaaa");
         assert_eq!(b[0].1, "? claude  ~/src/apex  0b1c1425  2m\n  build an experimental tool, apex-agent…\n  ? Bash: Remove the build directory  Allow Deny Ask\n");
@@ -500,7 +508,7 @@ mod tests {
         assert_eq!(ag.get("0b1c1425-aaaa").unwrap().state, State::Working);
         // the turn ends: its last word is the line, and it sits after the one still working
         ag.apply(&Event { text: Some("Done: the tool is built.\n\nMore below.".into()), ..ev("0b1c1425-aaaa", "Stop", 8000) });
-        let (_, b, _) = pane(&ag.ordered(), 8000, Some("/home/me"), None);
+        let (_, b, _) = pane(&ag.ordered(), 8000, Some("/home/me"), None, None);
         assert_eq!(b[0].1, "~ claude  ~/src/apex  0b1c1425\n  build an experimental tool, apex-agent…\n  • Done: the tool is built.…\n");
         // the exchange is kept whole for the page, and stands through the next turn
         let x = ag.get("0b1c1425-aaaa").unwrap().exchange.clone().unwrap();
@@ -513,15 +521,21 @@ mod tests {
         ag.apply(&Event { sub: Some("a1".into()), call: Some("t9".into()), title: Some("Grep: foo".into()), ..ev("9e21ab77-bbbb", "PreToolUse", 9100) });
         let a = ag.get("9e21ab77-bbbb").unwrap();
         assert_eq!((a.subagents, a.doing()), (1, None));
-        let (_, b, _) = pane(&ag.ordered(), 9100, Some("/home/me"), None);
+        let (_, b, _) = pane(&ag.ordered(), 9100, Some("/home/me"), None, None);
         assert_eq!(b[1].1, "▶ claude  ~/src/apex  9e21ab77  1 subagent\n  port the rc shell\n    ▶ Explore: Grep: foo\n");
         ag.apply(&Event { sub: Some("a1".into()), ..ev("9e21ab77-bbbb", "SubagentStop", 9200) });
         assert!(ag.get("9e21ab77-bbbb").unwrap().subs.is_empty());
         // the pane's name is its filter
-        let (h, b, f) = pane(&ag.ordered(), 9200, Some("/home/me"), Some("/home/me/src/apex"));
+        let (h, b, f) = pane(&ag.ordered(), 9200, Some("/home/me"), Some("/home/me/src/apex"), None);
         assert_eq!((h.as_str(), b.len(), f.as_str()), ("– 2 agents\n", 2, ""));
-        let (h, b, f) = pane(&ag.ordered(), 9200, Some("/home/me"), Some("/home/me/src/cmd"));
+        let (h, b, f) = pane(&ag.ordered(), 9200, Some("/home/me"), Some("/home/me/src/cmd"), None);
         assert_eq!((h.as_str(), b.len(), f.as_str()), ("– no agents here\n", 0, "– 2 elsewhere: a pane in ~ shows all\n"));
+        // -s: the agents started in this apex session, wherever they are
+        ag.apply(&Event { apex: Some("sess-1".into()), win: Some(7), ..ev("0b1c1425-aaaa", "PreToolUse", 9300) });
+        let (h, b, f) = pane(&ag.ordered(), 9300, Some("/home/me"), Some("/home/me/src/cmd"), Some("sess-1"));
+        assert_eq!((h.as_str(), b.len(), f.as_str()), ("– 1 agent\n", 1, "– 1 in another session: -all shows all\n"));
+        let (h, b, f) = pane(&ag.ordered(), 9300, Some("/home/me"), None, Some("sess-2"));
+        assert_eq!((h.as_str(), b.len(), f.as_str()), ("– no agents in this session\n", 0, "– 2 in other sessions: -all shows all\n"));
         assert_eq!(ag.by_id("0b1c").map(|a| a.session.as_str()), Some("0b1c1425-aaaa"));
         assert!(ag.by_id("zz").is_none());
         // gone

@@ -4,7 +4,7 @@
 //! agents offer, and beside it, for any of them, its transcript, its
 //! last answer as a page, its changes as a diff, and a way to it.
 //!
-//!     apex-agent [-cwd DIR] [-thoughts] [-all] [-quiet]   the pane, DIR/-agents
+//!     apex-agent [-cwd DIR] [-thoughts] [-all|-s] [-quiet]   the pane, DIR/-agents
 //!     apex-agent install [claude|codex]...  put the hooks in (both, by default)
 //!     apex-agent uninstall [claude|codex]...
 //!     apex-agent ls                         the pane, as text
@@ -40,7 +40,7 @@ use apex_agent::event::{self, Tail};
 use apex_agent::{hook, install, win};
 
 fn usage() -> ! {
-    eprintln!("usage: apex-agent [-cwd DIR] [-thoughts] [-all] [-quiet]");
+    eprintln!("usage: apex-agent [-cwd DIR] [-thoughts] [-all|-s] [-quiet]");
     eprintln!("       apex-agent install|uninstall [claude|codex]...");
     eprintln!("       apex-agent ls | wait ID | events [-all]");
     eprintln!("       apex-agent hook claude|codex");
@@ -88,7 +88,7 @@ fn main() {
         Some("ls") => {
             let agents = read_all(&event::dir());
             let home = std::env::var("HOME").ok();
-            let (header, blocks, footer) = agents::pane(&agents.ordered(), event::now_ms(), home.as_deref(), None);
+            let (header, blocks, footer) = agents::pane(&agents.ordered(), event::now_ms(), home.as_deref(), None, None);
             let (text, _) = agents::pane_text(&header, &blocks, &footer);
             print!("{text}");
         }
@@ -121,6 +121,7 @@ fn parse_pane(args: &[String]) -> win::Opts {
             }
             "-thoughts" | "--thoughts" => opts.thoughts = true,
             "-all" | "--all" => opts.all = true,
+            "-s" | "-session" | "--session" => opts.session_only = true,
             "-quiet" | "--quiet" => opts.quiet = true,
             _ => usage(),
         }

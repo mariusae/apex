@@ -48,6 +48,8 @@ pub struct Opts {
     pub thoughts: bool,
     /// Every agent, wherever it is, rather than those under `cwd`.
     pub all: bool,
+    /// Only the agents started in this apex session (`-s`).
+    pub session_only: bool,
     /// No notes in +Errors when an agent asks or fails.
     pub quiet: bool,
     /// Where the agents keep their sessions: `~/.claude`, `~/.codex`.
@@ -58,7 +60,7 @@ pub struct Opts {
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex") }
+        Opts { cwd, dir, thoughts: false, all: false, session_only: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex") }
     }
 }
 
@@ -519,7 +521,8 @@ impl Pane {
     fn render(&mut self) -> apex_tool::Result<()> {
         let now = event::now_ms();
         let under = self.under();
-        let (header, blocks, footer) = agents::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref());
+        let session = (self.opts.session_only && !self.opts.all).then_some(self.session.as_str());
+        let (header, blocks, footer) = agents::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref(), session);
         let same_keys = header == self.header && footer == self.footer && blocks.len() == self.blocks.len() && blocks.iter().zip(&self.blocks).all(|(a, b)| a.0 == b.0);
         if same_keys {
             // last first, so that what comes before keeps its offsets
