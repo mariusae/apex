@@ -1007,3 +1007,50 @@ fn focus_reaches_programs_that_asked_for_it() {
     server.term_focus(t, true);
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[O^[[I")), "{}", grid_text(&node));
 }
+
+#[test]
+fn b2_in_a_terminal_types_the_text_to_the_program_there() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    server.close_orphan_terms(&mut log, &node);
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !rows(n).trim().is_empty()), "a prompt");
+    // a word swept and B2'd goes to the shell, not to a shell of its own
+    node.exec(&mut log, ExecCtx::Window(w), "echo from-b2").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    // the shell ran it: the output stands on a line of its own, which the
+    // echo of what was typed never does
+    let ran = |n: &Node| rows(n).lines().any(|l| l.trim() == "from-b2");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, ran), "grid:\n{}", rows(&node));
+    // and nothing was run beside it: no shell of its own, no +Errors
+    assert!(errors_text(&node).is_empty(), "{}", errors_text(&node));
+    // a verb offered here is still the rules': it is not typed
+    let rule = PlumbRule {
+        verb: "Zap".into(),
+        owner: None,
+        unlisted: false,
+        text: None,
+        file: None,
+        kind: Some(WinKind::Term),
+        isfile: None,
+        isdir: None,
+        action: RuleAction::Tool("zapper".into()),
+        win: None,
+        to: None,
+    };
+    let (_, e) = log.install_rule(SERVER, 0, rule);
+    node.state.apply(Shard::Meta, &e).unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "Zap").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert_eq!(server.take_plumb_starts().len(), 1, "the rule takes Zap");
+    assert!(!rows(&node).contains("Zap"), "a verb is not typed to the shell: {}", rows(&node));
+    // Send types the snarf buffer, which likewise runs (acme's sendx)
+    node.append(&mut log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: "echo from-send".into() })).unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "Send").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let sent = |n: &Node| rows(n).lines().any(|l| l.trim() == "from-send");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, sent), "grid:\n{}", rows(&node));
+}

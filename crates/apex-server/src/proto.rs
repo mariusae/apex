@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 23;
+pub const PROTOCOL: u32 = 24;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -77,6 +77,9 @@ pub enum ClientMsg {
     DeleteShard { shard: Shard },
     TermKey { term: TermId, key: TermKey },
     TermPaste { term: TermId, text: String },
+    /// Text typed into a terminal (`Send`, B2 on its text): newlines are
+    /// Return and nothing is bracketed, so what is sent runs.
+    TermType { term: TermId, text: String },
     TermResize { term: TermId, cols: u16, rows: u16 },
     /// What the client shows: sent on attach and whenever it changes
     /// (the theme), for what is not presentation alone. The terminal's

@@ -631,6 +631,7 @@ impl Daemon {
             }
             ClientMsg::TermKey { term, key } => s.server.term_key(&mut s.log, term, &key),
             ClientMsg::TermPaste { term, text } => s.server.term_paste(&mut s.log, term, &text),
+            ClientMsg::TermType { term, text } => s.server.term_type(&mut s.log, term, &text),
             ClientMsg::TermText { term, p0, p1 } => {
                 if let Some(p) = s.server.term_text(term, p0, p1) {
                     props.push(p);

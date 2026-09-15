@@ -466,6 +466,14 @@ impl TermHost {
         }
     }
 
+    /// The text as if it were typed: newlines are Return, and nothing is
+    /// bracketed, so what is sent runs. A paste is the other thing (a
+    /// shell that asked for bracketed paste holds it on the line to be
+    /// read), and `Send` and B2 are not pastes: they are typing.
+    pub fn type_in(&self, text: &str) {
+        self.write(text.replace('\n', "\r").as_bytes());
+    }
+
     /// Encode a keystroke xterm-style and send it.
     pub fn key(&self, k: &TermKey) {
         let out = encode_key(k, self.mode().contains(TermMode::APP_CURSOR));

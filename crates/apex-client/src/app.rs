@@ -1776,6 +1776,15 @@ impl Acme {
         }
     }
 
+    /// Type text into a terminal: what is sent runs, where a paste would
+    /// be held on the line by a shell that asked for bracketed paste.
+    fn term_type(&mut self, t: TermId, text: String) {
+        match &mut self.backend {
+            Backend::Local(server) => server.term_type(&mut self.log, t, &text),
+            Backend::Remote(link) => link.send(&ClientMsg::TermType { term: t, text }),
+        }
+    }
+
     fn term_paste(&mut self, t: TermId, text: String) {
         match &mut self.backend {
             Backend::Local(server) => server.term_paste(&mut self.log, t, &text),
@@ -2271,12 +2280,18 @@ impl Acme {
                 return;
             }
         }
-        if let Some((w, b, cell, _)) = self.mouse.term_sweep {
+        if let Some((w, b, cell, press)) = self.mouse.term_sweep {
             if b == button {
                 self.mouse.term_sweep = None;
                 let hl = self.term_hl.take();
                 let swept = hl.filter(|(_, _, p0, p1)| p0 != p1).and_then(|(_, _, p0, p1)| self.term_grid_text(w, p0, p1));
-                let text = match (swept, button) {
+                // acme's execute: B2 inside the selection takes the
+                // selection, not the word under the pointer
+                let selected = match (button, self.term_sel) {
+                    (MouseButton::Middle, Some((sw, a, b))) if sw == w && in_selection(a, b, press) => self.term_grid_text(w, a, b),
+                    _ => None,
+                };
+                let text = match (swept.or(selected), button) {
                     (Some(t), _) => Some(t),
                     (None, MouseButton::Middle) => self.term_word(w, cell.0, cell.1, is_exec_char),
                     // B3 on an OSC 8 link plumbs the link, not its text;
@@ -3421,7 +3436,7 @@ impl Acme {
                             if !text.ends_with('\n') {
                                 text.push('\n');
                             }
-                            self.term_paste(t, text);
+                            self.term_type(t, text);
                             self.after();
                             return;
                         }
@@ -3533,6 +3548,16 @@ pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
     }
 }
 
+/// Is the cell `p` within the selection `a`..`b` (either way round)?
+/// Cells are (column, line), and lines order before columns.
+fn in_selection(a: (usize, u64), b: (usize, u64), p: (usize, u64)) -> bool {
+    if a == b {
+        return false;
+    }
+    let (lo, hi) = if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
+    (lo.1, lo.0) <= (p.1, p.0) && (p.1, p.0) <= (hi.1, hi.0)
+}
+
 /// Where a pulsing handle is this instant: 0 at its own colour, 1 at
 /// pale, back and forth over a second and a half.
 fn breath() -> f32 {
@@ -3607,4 +3632,27 @@ fn identified(url: &SessionUrl, node: &Node) -> SessionUrl {
         u.session = label.clone();
     }
     u
+}
+
+#[cfg(test)]
+mod term_selection_tests {
+    use super::in_selection;
+
+    #[test]
+    fn b2_lands_inside_a_terminal_selection_or_it_does_not() {
+        // a selection over two lines: from line 3 column 5 to line 4 column 2
+        let (a, b) = ((5, 3u64), (2, 4u64));
+        assert!(in_selection(a, b, (5, 3)), "its first cell");
+        assert!(in_selection(a, b, (9, 3)), "later on the first line");
+        assert!(in_selection(a, b, (0, 4)), "the start of the last line");
+        assert!(in_selection(a, b, (2, 4)), "its last cell");
+        assert!(!in_selection(a, b, (4, 3)), "before it on the first line");
+        assert!(!in_selection(a, b, (3, 4)), "after it on the last line");
+        assert!(!in_selection(a, b, (7, 2)), "a line above");
+        assert!(!in_selection(a, b, (7, 5)), "a line below");
+        // swept the other way round, the same selection
+        assert!(in_selection(b, a, (9, 3)));
+        // nothing selected: a click is never inside it
+        assert!(!in_selection(a, a, (5, 3)));
+    }
 }

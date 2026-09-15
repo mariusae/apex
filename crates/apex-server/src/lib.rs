@@ -397,6 +397,17 @@ impl Server {
         }
     }
 
+    /// Type text into a terminal, as `Send` and B2 do: what is sent runs.
+    pub fn term_type(&mut self, log: &mut Log, id: TermId, text: &str) {
+        if let Some(h) = self.terms.get_mut(&id) {
+            let scrolled = h.scroll_to_bottom();
+            h.type_in(text);
+            if scrolled {
+                self.publish_term(log, id);
+            }
+        }
+    }
+
     pub fn term_paste(&mut self, log: &mut Log, id: TermId, text: &str) {
         if let Some(h) = self.terms.get_mut(&id) {
             let scrolled = h.scroll_to_bottom();
@@ -907,7 +918,7 @@ impl Server {
                 if !text.ends_with('\n') {
                     text.push('\n');
                 }
-                self.term_paste(log, t, &text);
+                self.term_type(log, t, &text);
             }
             "Newweb" => {
                 // acme's word for a web window: on the URL given
@@ -922,6 +933,16 @@ impl Server {
                 if let Some(req) = self.verb_request(view, ctx, seq, text) {
                     self.plumb_starts.push(req);
                     return Ok(None);
+                }
+                // in a terminal, a word nothing else took is typed to the
+                // program there, as win does with B2 on an old command
+                // line: the window already has a shell, and running a
+                // second one beside it is never what was meant
+                if let Some(Body::Term(t)) = win.and_then(|w| view.state.window(w).ok()).map(|x| x.body) {
+                    let mut text = text.trim_end_matches('\n').to_string();
+                    text.push('\n');
+                    self.term_type(log, t, &text);
+                    return Ok(Some(props));
                 }
                 // anything else is a shell command; output goes to +Errors
                 let env = self.command_env(view, ctx);

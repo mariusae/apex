@@ -1204,7 +1204,17 @@ sweep, B1+B3 (or command) types the clipboard into the shell, which
 the snarf buffer gets too. A terminal's tag has `Send`, win's: the text
 swept with B1, else the snarf buffer, typed into the shell with a
 newline (the client sends a visible selection itself; the server sends
-the snarf buffer). A terminal scrolled back stays on what it shows
+the snarf buffer). *Typed*, not pasted: newlines go as Return and
+nothing is bracketed (`TermHost::type_in`, `ClientMsg::TermType`), so
+what is sent runs. A shell that asked for bracketed paste holds a paste
+on the line to be read, which is right for Paste and wrong for Send,
+whose whole purpose is to hand the program its input. B2 in a terminal
+is the same by another route: a word, or the selection when the click
+lands inside one (acme's `execute`), goes to the program there rather
+than to a shell of its own — win's rule for an old command line, and
+the window already has a shell. Built-ins and the verbs of rules are
+still taken first, so `Clear` and `Snarfout` mean what they say; only a
+word nothing else took is typed. A terminal scrolled back stays on what it shows
 while output goes on below, as win does, until a key or paste brings
 it back to the live screen. The wheel over a terminal goes to the program
 when it asked for the mouse (DECSET 1000/1002/1003: wheel buttons 64
