@@ -1,7 +1,9 @@
-//! The windows: the pane, `DIR/-agents`, with a block an agent, and a
-//! transcript window for each one opened, `AGENTDIR/-claude+ID`, named
-//! for the agent's own directory so that a `path:line` in it is B3'd
-//! from where the agent worked. Both are the tool's own (`set_owner`):
+//! The windows: the pane, `DIR/-agents`, with a block an agent, and
+//! beside it what each verb opens -- a transcript window,
+//! `AGENTDIR/-claude+ID`, named for the agent's own directory so that a
+//! `path:line` in it is B3'd from where the agent worked; its page,
+//! `+Preview`; its changes, `+diff`, at the root of its repository; and
+//! the pane's own `+history`. All are the tool's own (`set_owner`):
 //! what is in them is the agents' doing and not a file's contents.
 //!
 //! Nothing here waits on anything: the logs' directory and each open
@@ -11,6 +13,11 @@
 //! read and written; the window's events are taken in between. A slow
 //! pass every few seconds asks after the agents' processes and catches
 //! anything a watch let by.
+//!
+//! What the pane says back to an agent goes the way apex already has:
+//! a decision is an event in the agent's log, which its hook is
+//! waiting to read; a prompt is typed into the agent's terminal by
+//! `apex term send`; an agent is started by `Newterm`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -22,14 +29,30 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
 use crate::agents::{self, Agents, State};
 use crate::event::{self, Tail};
+use crate::history::{self, Past};
 use crate::page;
 use crate::transcript::{self, Op, Parser, Writer};
+use crate::vcs;
 
 pub struct Opts {
     pub cwd: PathBuf,
     /// Where the logs are.
     pub dir: PathBuf,
     pub thoughts: bool,
+    /// Every agent, wherever it is, rather than those under `cwd`.
+    pub all: bool,
+    /// No notes in +Errors when an agent asks or fails.
+    pub quiet: bool,
+    /// Where the agents keep their sessions: `~/.claude`, `~/.codex`.
+    pub claude_home: PathBuf,
+    pub codex_home: PathBuf,
+}
+
+impl Opts {
+    pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
+        let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
+        Opts { cwd, dir, thoughts: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex") }
+    }
 }
 
 /// How often the slow pass runs: the agents' processes asked after,
@@ -39,6 +62,14 @@ const SLOW: Duration = Duration::from_secs(5);
 /// How often the pane is written again with nothing new heard: the
 /// minutes an agent has been quiet.
 const MINUTES: Duration = Duration::from_secs(15);
+
+/// The verbs in the pane's tools menu, in the order they are reached
+/// for. The rest are unlisted: two of the three that answer a question
+/// are written into the block to be B2'd where they stand (`Ask` is
+/// listed, being the way to hand a question back with nothing to
+/// click), and `Resume` means nothing without an id.
+const VERBS: [&str; 8] = ["Open", "Goto", "Preview", "Changes", "Send", "Start", "History", "Ask"];
+const UNLISTED: [&str; 3] = ["Allow", "Deny", "Resume"];
 
 /// A transcript window.
 struct Detail {
@@ -50,6 +81,8 @@ struct Detail {
     wr: Writer,
     /// What we last told the window about the work behind it.
     pulsing: bool,
+    /// `Send` in its tag: what is typed after the end is the prompt.
+    send: RuleId,
 }
 
 pub struct Pane {
@@ -59,17 +92,26 @@ pub struct Pane {
     agents: Agents,
     /// Each session's log, read as it grows.
     logs: HashMap<String, Tail>,
-    /// What the window says: the header, the blocks and where they start.
+    /// What the window says: the header, the blocks and where they
+    /// start, the footer.
     header: String,
     blocks: Vec<(String, String)>,
     starts: Vec<usize>,
+    footer: String,
     details: HashMap<WindowId, Detail>,
     /// The pages open, each showing an agent's last exchange.
     pages: HashMap<WindowId, String>,
-    open: RuleId,
-    goto: RuleId,
-    preview: RuleId,
+    /// The diff windows open, by agent.
+    diffs: HashMap<WindowId, String>,
+    /// The history window, while `History` has one open, and the
+    /// sessions it last listed, by id, which is what an id B3'd
+    /// anywhere is looked up in.
+    hist: Option<WindowId>,
+    past: HashMap<String, Past>,
+    verbs: HashMap<RuleId, &'static str>,
     look: RuleId,
+    /// B3 on a session's id anywhere: its transcript.
+    look_any: RuleId,
     pulsing: bool,
     /// Whether we have written the pane since we last said it was
     /// clean.
@@ -82,6 +124,9 @@ pub struct Pane {
     watcher: Option<RecommendedWatcher>,
     woken: mpsc::Receiver<()>,
     watched: BTreeMap<PathBuf, usize>,
+    /// Our presence file, which says to the hooks that there is a pane
+    /// to ask.
+    presence: PathBuf,
 }
 
 impl Pane {
@@ -96,13 +141,21 @@ impl Pane {
         let name = format!("{}/-agents", opts.cwd.display().to_string().trim_end_matches('/'));
         let w = t.new_window(&name)?;
         let _ = t.set_owner(w, true);
-        let _ = t.set_tag(w, "Look Open Goto Preview");
-        // Open, Goto and Preview with dot in a block, or with the agent
-        // named after them; B3 anywhere in a block
-        let open = t.offer(Rule::verb("Open").window(w))?;
-        let goto = t.offer(Rule::verb("Goto").window(w))?;
-        let preview = t.offer(Rule::verb("Preview").window(w))?;
+        let _ = t.set_tag(w, &format!("Look {}", VERBS.join(" ")));
+        // the verbs, with dot in a block or the agent named after them;
+        // B3 anywhere in a block; and B3 on a session's id anywhere
+        let mut verbs = HashMap::new();
+        for v in VERBS {
+            verbs.insert(t.offer(Rule::verb(v).window(w))?, v);
+        }
+        for v in UNLISTED {
+            verbs.insert(t.offer(Rule::verb(v).window(w).unlisted())?, v);
+        }
         let look = t.offer(Rule::plumb().window(w).priority(10))?;
+        // a hex word with the shape of an id, wherever it is: one that
+        // names no session of ours is handed back, and B3 does what it
+        // always does with it
+        let look_any = t.offer(Rule::plumb().text(r"[0-9a-fA-F]{6,}(-[0-9a-fA-F]{4,})*").priority(-1))?;
         let home = std::env::var("HOME").ok();
         // a change under a watched directory wakes the loop; what it
         // was is not said, since looking is cheap and the watch is
@@ -116,10 +169,13 @@ impl Pane {
             }
         })
         .ok();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), details: HashMap::new(), pages: HashMap::new(), open, goto, preview, look, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new() };
         // the directory must be there to be watched: a hook makes it
-        // otherwise, and the watch would miss the making
-        let _ = std::fs::create_dir_all(&pane.opts.dir);
+        // otherwise, and the watch would miss the making. And we say we
+        // are here, for the hooks that have a question
+        let _ = std::fs::create_dir_all(event::panes_dir(&opts.dir));
+        let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
+        let _ = std::fs::write(&presence, b"");
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -137,6 +193,7 @@ impl Pane {
                 if slow {
                     self.last_slow = Instant::now();
                     self.check_alive();
+                    let _ = std::fs::write(&self.presence, b"");
                 }
                 // the transcripts first, so that a hook speaking of a
                 // call finds its line already there
@@ -153,7 +210,12 @@ impl Pane {
                 Some(Event::Deleted { window }) if window == self.w => return Ok(()),
                 Some(Event::Deleted { window }) => {
                     self.pages.remove(&window);
+                    self.diffs.remove(&window);
+                    if self.hist == Some(window) {
+                        self.hist = None;
+                    }
                     if let Some(d) = self.details.remove(&window) {
+                        self.t.withdraw(d.send);
                         if let Some(dir) = d.tail.as_ref().and_then(|t| t.path.parent()).map(Path::to_path_buf) {
                             self.unwatch(&dir);
                         }
@@ -165,21 +227,35 @@ impl Pane {
                     }
                 }
                 Some(Event::Plumb(p)) => {
-                    let taken = if p.rule == self.open {
-                        self.open_verb(&p.text, p.at)?
-                    } else if p.rule == self.goto {
-                        self.goto_verb(&p.text, p.at)?
-                    } else if p.rule == self.preview {
-                        self.preview_verb(&p.text, p.at)?
-                    } else if p.rule == self.look {
-                        self.open_at(p.sel.or(p.at))?
-                    } else {
-                        false
+                    let taken = match self.verbs.get(&p.rule).copied() {
+                        Some(v) => self.verb(v, &p.text, p.at)?,
+                        None if p.rule == self.look => self.open_at(p.sel.or(p.at))?,
+                        None if p.rule == self.look_any => self.open_id(&p.text)?,
+                        None => match p.window.and_then(|w| self.details.get(&w).map(|d| (d.send, w))) {
+                            Some((send, w)) if send == p.rule => self.send_from_detail(w, &p.text)?,
+                            _ => false,
+                        },
                     };
                     self.t.answer(&p, taken)?;
                 }
                 Some(_) => {}
             }
+        }
+    }
+
+    /// A verb of the pane's.
+    fn verb(&mut self, v: &str, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        match v {
+            "Open" => self.open_verb(args, at),
+            "Goto" => self.goto_verb(args, at),
+            "Preview" => self.preview_verb(args, at),
+            "Changes" => self.changes_verb(args, at),
+            "Send" => self.send_verb(args, at),
+            "Start" => self.start_verb(args),
+            "Resume" => self.resume_verb(args),
+            "History" => self.toggle_history(),
+            "Allow" | "Deny" | "Ask" => self.decide(v, at),
+            _ => Ok(false),
         }
     }
 
@@ -216,6 +292,9 @@ impl Pane {
         let mut seen = Vec::new();
         for e in rd.flatten() {
             let path = e.path();
+            if !path.is_file() {
+                continue;
+            }
             let Some(session) = event::session_of(&path) else { continue };
             seen.push(session.clone());
             let tail = self.logs.entry(session.clone()).or_insert_with(|| Tail::new(path));
@@ -227,8 +306,9 @@ impl Pane {
                 if std::env::var_os("APEX_AGENT_DEBUG").is_some() {
                     eprintln!("agents: {} {} {:?}", ev.session, ev.event, ev.title);
                 }
+                let was = self.agents.get(&ev.session).map(|a| a.state);
                 self.agents.apply(&ev);
-                self.heard(&ev)?;
+                self.heard(&ev, was)?;
             }
         }
         // a log taken away is an agent gone
@@ -241,16 +321,33 @@ impl Pane {
     }
 
     /// A hook's word about a call, in the transcript window when one is
-    /// open: running, wanted, refused. A turn's end, in the page.
-    fn heard(&mut self, ev: &event::Event) -> apex_tool::Result<()> {
+    /// open: running, wanted, refused. A turn's end, in the page. An
+    /// agent come to want you, or to grief, in +Errors, where its id
+    /// is B3'd for the transcript.
+    fn heard(&mut self, ev: &event::Event, was: Option<State>) -> apex_tool::Result<()> {
         if ev.event == "Stop" {
             self.show_page(&ev.session)?;
+        }
+        if !self.opts.quiet {
+            if let Some(a) = self.agents.get(&ev.session) {
+                let note = match (was, a.state) {
+                    (Some(State::Asking), State::Asking) | (Some(State::Failed), State::Failed) => None,
+                    (_, State::Asking) => Some(format!("{} {} asks: {}\n", a.kind, a.short(), a.asked.as_deref().map(transcript::brief).unwrap_or_default())),
+                    (_, State::Failed) => Some(format!("{} {} failed: {}\n", a.kind, a.short(), a.why.as_deref().unwrap_or("the turn failed"))),
+                    _ => None,
+                };
+                if let Some(n) = note {
+                    self.t.errors(None, &n)?;
+                }
+            }
         }
         let Some(d) = self.details.values_mut().find(|d| d.session == ev.session) else { return Ok(()) };
         let glyph = match ev.event.as_str() {
             "PreToolUse" => Some("▶"),
             "PermissionRequest" => Some("?"),
             "PermissionDenied" | "PostToolUseFailure" => Some("✗"),
+            "Decision" if ev.kind.as_deref() == Some("deny") => Some("✗"),
+            "Decision" if ev.kind.as_deref() == Some("allow") => Some("▶"),
             _ => None,
         };
         if let (Some(id), Some(g)) = (&ev.call, glyph) {
@@ -296,8 +393,7 @@ impl Pane {
                 continue;
             }
             if let Some(pid) = a.pid {
-                // SAFETY: signal 0 delivers nothing; it asks whether the process is there
-                if unsafe { libc::kill(pid as i32, 0) } != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                if !event::alive(pid as i32) {
                     a.state = State::Ended;
                 }
             }
@@ -306,13 +402,28 @@ impl Pane {
 
     // ---- the pane ----
 
+    /// The directory the pane's name filters by, unless `-all`.
+    fn under(&self) -> Option<String> {
+        if self.opts.all {
+            return None;
+        }
+        let d = self.opts.cwd.display().to_string();
+        let home = self.home.as_deref().unwrap_or("");
+        // a pane in the home directory, or the root, is one of everything
+        if d.trim_end_matches('/') == home.trim_end_matches('/') || d == "/" {
+            return None;
+        }
+        Some(d)
+    }
+
     /// The pane as it should read now, written where it differs: a block
     /// that changed is written in place, and the whole only when the
     /// blocks are not the ones they were, in the order they were.
     fn render(&mut self) -> apex_tool::Result<()> {
         let now = event::now_ms();
-        let (header, blocks) = agents::pane(&self.agents.ordered(), now, self.home.as_deref());
-        let same_keys = header == self.header && blocks.len() == self.blocks.len() && blocks.iter().zip(&self.blocks).all(|(a, b)| a.0 == b.0);
+        let under = self.under();
+        let (header, blocks, footer) = agents::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref());
+        let same_keys = header == self.header && footer == self.footer && blocks.len() == self.blocks.len() && blocks.iter().zip(&self.blocks).all(|(a, b)| a.0 == b.0);
         if same_keys {
             // last first, so that what comes before keeps its offsets
             for i in (0..blocks.len()).rev() {
@@ -323,14 +434,15 @@ impl Pane {
                 }
             }
         } else {
-            let (text, _) = agents::pane_text(&header, &blocks);
+            let (text, _) = agents::pane_text(&header, &blocks, &footer);
             self.t.replace(self.w, 0, END, &text)?;
             self.dirty = true;
         }
-        let (_, starts) = agents::pane_text(&header, &blocks);
+        let (_, starts) = agents::pane_text(&header, &blocks, &footer);
         self.header = header;
         self.blocks = blocks;
         self.starts = starts;
+        self.footer = footer;
         self.last_render = Instant::now();
         // the handle pulses while any agent works, as the agent's own
         // window would
@@ -380,6 +492,22 @@ impl Pane {
         let Some(key) = self.block_at(r.q0).map(String::from) else { return Ok(false) };
         self.open_detail(&key)?;
         Ok(true)
+    }
+
+    /// B3 on an id anywhere: an agent's transcript, or a past
+    /// session's. A word that names neither is handed back.
+    fn open_id(&mut self, text: &str) -> apex_tool::Result<bool> {
+        let want = text.trim();
+        if let Some(key) = self.agents.by_id(want).map(|a| a.session.clone()) {
+            self.open_detail(&key)?;
+            return Ok(true);
+        }
+        let hits: Vec<Past> = self.past.values().filter(|p| p.id.starts_with(want)).cloned().collect();
+        if let [one] = hits.as_slice() {
+            self.open_past(one.clone())?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// The agent a verb means: with words after it, the one whose id
@@ -443,6 +571,157 @@ impl Pane {
         Ok(true)
     }
 
+    // ---- answering ----
+
+    /// `Allow`, `Deny`, `Ask`: the pane's answer to the question an
+    /// agent is asking, written into its log as a `Decision`, which is
+    /// the record of it and what the hook, waiting, reads. `Ask` hands
+    /// the question to the agent's own prompt. With dot outside any
+    /// block, the one agent asking is meant.
+    fn decide(&mut self, word: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        let key = match at.and_then(|r| self.block_at(r.q0).map(String::from)) {
+            Some(k) => k,
+            None => {
+                let asking: Vec<String> = self.agents.ordered().into_iter().filter(|a| a.state == State::Asking && a.decided.is_none()).map(|a| a.session.clone()).collect();
+                match asking.as_slice() {
+                    [one] => one.clone(),
+                    [] => {
+                        self.t.errors(None, &format!("{word}: no agent is asking\n"))?;
+                        return Ok(true);
+                    }
+                    _ => {
+                        self.t.errors(None, &format!("{word}: which? B2 it in the agent's block\n"))?;
+                        return Ok(true);
+                    }
+                }
+            }
+        };
+        let Some(a) = self.agents.get(&key) else { return Ok(true) };
+        let (Some(call), State::Asking) = (a.asking.clone(), a.state) else {
+            self.t.errors(None, &format!("{word}: {} {} is not asking anything\n", a.kind, a.short()))?;
+            return Ok(true);
+        };
+        let ev = event::Event { ms: event::now_ms(), agent: a.kind.clone(), event: "Decision".into(), session: a.session.clone(), call: Some(call), kind: Some(word.to_ascii_lowercase()), ..event::Event::default() };
+        if let Err(e) = event::append(&self.opts.dir, &ev) {
+            self.t.errors(None, &format!("{word}: {e}\n"))?;
+        }
+        Ok(true)
+    }
+
+    // ---- starting and sending ----
+
+    /// `Start [claude|codex] [DIR]`: the agent in a new terminal
+    /// beside the pane, in the pane's directory or the one named, which
+    /// the hooks then pick up. `Newterm` is what apex starts terminals
+    /// with, so that is what this is.
+    fn start_verb(&mut self, args: &str) -> apex_tool::Result<bool> {
+        let words: Vec<&str> = args.split_whitespace().collect();
+        let (agent, dir) = match words.as_slice() {
+            [] => ("claude", None),
+            [a] if crate::install::AGENTS.contains(a) => (*a, None),
+            [d] => ("claude", Some(*d)),
+            [a, d] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
+            [d, a] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
+            _ => {
+                self.t.errors(None, "Start: usage: Start [claude|codex] [DIR]\n")?;
+                return Ok(true);
+            }
+        };
+        self.start_agent(agent, dir, "")
+    }
+
+    /// `Resume ID`: the session taken up again, in a new terminal in
+    /// the directory it was had in; the agent replays it there.
+    fn resume_verb(&mut self, args: &str) -> apex_tool::Result<bool> {
+        let want = args.trim();
+        if want.is_empty() {
+            self.t.errors(None, "Resume: which? Resume ID, from History\n")?;
+            return Ok(true);
+        }
+        let hits: Vec<Past> = self.past.values().filter(|p| p.id.starts_with(want)).cloned().collect();
+        let Some(p) = hits.first() else {
+            self.t.errors(None, &format!("Resume {want}: no such session in the history; History lists them\n"))?;
+            return Ok(true);
+        };
+        let (kind, cwd, id) = (p.kind.clone(), p.cwd.clone(), p.id.clone());
+        let extra = match kind.as_str() {
+            "codex" => format!("resume {id}"),
+            _ => format!("--resume {id}"),
+        };
+        self.start_agent(&kind, Some(&cwd), &extra)
+    }
+
+    /// A terminal running `agent` in `dir`, by Newterm from the pane's
+    /// window; a directory not the pane's is gone to first.
+    fn start_agent(&mut self, agent: &str, dir: Option<&str>, extra: &str) -> apex_tool::Result<bool> {
+        let here = self.opts.cwd.display().to_string();
+        let dir = match dir {
+            Some(d) if d.starts_with('/') => d.to_string(),
+            Some(d) if d.starts_with("~/") => format!("{}/{}", self.home.as_deref().unwrap_or(""), &d[2..]),
+            Some(d) => format!("{}/{d}", here.trim_end_matches('/')),
+            None => here.clone(),
+        };
+        let cmd = if extra.is_empty() { agent.to_string() } else { format!("{agent} {extra}") };
+        let text = if dir.trim_end_matches('/') == here.trim_end_matches('/') { format!("Newterm {cmd}") } else { format!("Newterm cd '{}' && exec {cmd}", dir.replace('\'', "'\\''")) };
+        self.t.exec_in(Some(self.w), &text)?;
+        Ok(true)
+    }
+
+    /// `Send TEXT` in the pane: typed into the agent's terminal, Enter
+    /// after it, by `apex term send`, which reaches a terminal in any
+    /// session. With no text, the snarf buffer is not ours to read:
+    /// +Errors says to say it.
+    fn send_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        // the agent first, when the first word names one and more follows
+        let (target, text) = match args.split_once(char::is_whitespace) {
+            Some((first, rest)) if self.agents.by_id(first).is_some() || crate::install::AGENTS.contains(&first) => (first, rest.trim()),
+            _ => ("", args.trim()),
+        };
+        if text.is_empty() {
+            self.t.errors(None, "Send: say what to send: Send TEXT, or type it under the transcript and Send there\n")?;
+            return Ok(true);
+        }
+        let Some(key) = self.meant("Send", target, at)? else { return Ok(true) };
+        self.send_to(&key, text)
+    }
+
+    /// `Send` in a transcript window: what is typed after the end of
+    /// the transcript is the prompt, or the words after `Send`. What
+    /// was typed is taken away, since it comes back as the agent's
+    /// record of it.
+    fn send_from_detail(&mut self, w: WindowId, args: &str) -> apex_tool::Result<bool> {
+        let Some(d) = self.details.get(&w) else { return Ok(false) };
+        let (session, end) = (d.session.clone(), d.wr.len);
+        let draft: String = self.t.read(w)?.chars().skip(end).collect();
+        let text = if args.trim().is_empty() { draft.trim().to_string() } else { args.trim().to_string() };
+        if text.is_empty() {
+            self.t.errors(None, "Send: type the prompt after the end of the transcript, or say it: Send TEXT\n")?;
+            return Ok(true);
+        }
+        if self.send_to(&session, &text)? && args.trim().is_empty() {
+            self.t.replace(w, end, END, "")?;
+            let _ = self.t.select(w, end, end);
+        }
+        Ok(true)
+    }
+
+    /// Text into the agent's terminal; whether it went.
+    fn send_to(&mut self, key: &str, text: &str) -> apex_tool::Result<bool> {
+        let Some(a) = self.agents.get(key) else { return Ok(false) };
+        let (kind, short) = (a.kind.clone(), a.short());
+        let (Some(session), Some(win)) = (a.apex.clone(), a.win) else {
+            self.t.errors(None, &format!("Send: {kind} {short} was not started in an apex terminal; there is nowhere to type\n"))?;
+            return Ok(false);
+        };
+        match term_send(&session, win, text) {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                self.t.errors(None, &format!("Send: {e}\n"))?;
+                Ok(false)
+            }
+        }
+    }
+
     // ---- the pages ----
 
     /// `Preview`: the agent's last exchange as a page beside the pane,
@@ -476,35 +755,98 @@ impl Pane {
         self.t.replace(w, 0, END, &html)
     }
 
+    // ---- the changes ----
+
+    /// `Changes`: what the agent's repository says has changed since
+    /// the session began -- the status, then the diff, each hunk's
+    /// header followed by the `path:line` it lands at -- in a window at
+    /// the root of the repository, `ROOT/-claude+ID+diff`, so that the
+    /// paths in it are B3'd from where they are relative to. Again,
+    /// and it is written afresh.
+    fn changes_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
+        let Some(key) = self.meant("Changes", args, at)? else { return Ok(!args.trim().is_empty()) };
+        let Some(a) = self.agents.get(&key).cloned() else { return Ok(true) };
+        let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
+        let cwd = Path::new(&a.cwd);
+        let root = vcs::repo(cwd).map(|r| r.root).unwrap_or_else(|| cwd.to_path_buf());
+        let since = match &a.rev {
+            Some(r) => format!("since the session began ({})", r.chars().take(12).collect::<String>()),
+            None => "since the last commit (where the session began was not recorded)".to_string(),
+        };
+        let body = match vcs::changes(cwd, a.rev.as_deref()) {
+            Ok(text) => format!("– changes in {} {since}\n\n{text}", root.display()),
+            Err(e) => format!("– {e}\n"),
+        };
+        let w = match self.diffs.iter().find(|(_, s)| **s == key).map(|(w, _)| *w) {
+            Some(w) => w,
+            None => {
+                let name = format!("{}/-{kind}+{}+diff", root.display().to_string().trim_end_matches('/'), a.short());
+                let w = self.t.new_window(&name)?;
+                let _ = self.t.set_owner(w, true);
+                let _ = self.t.set_live(w, true);
+                let _ = self.t.set_tag(w, "Look Changes");
+                let again = self.t.offer(Rule::verb("Changes").window(w))?;
+                self.verbs.insert(again, "Changes");
+                self.diffs.insert(w, key.clone());
+                w
+            }
+        };
+        self.t.replace(w, 0, END, &body)?;
+        let _ = self.t.select(w, 0, 0);
+        let _ = self.t.set_clean(w);
+        Ok(true)
+    }
+
+    // ---- the history ----
+
+    /// `History`: the sessions the pane's directory has had, newest
+    /// first, in `DIR/-agents+history`; again, to close it. B3 on an id
+    /// there (or anywhere) opens the transcript; `Resume ID` takes the
+    /// session up.
+    fn toggle_history(&mut self) -> apex_tool::Result<bool> {
+        if let Some(w) = self.hist.take() {
+            let _ = self.t.delete(w);
+            return Ok(true);
+        }
+        let dir = self.opts.cwd.display().to_string();
+        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &dir);
+        let text = history::listing(&dir, &past, history::now());
+        self.past = past.into_iter().map(|p| (p.id.clone(), p)).collect();
+        let name = format!("{}/-agents+history", dir.trim_end_matches('/'));
+        let w = self.t.new_window(&name)?;
+        let _ = self.t.set_owner(w, true);
+        let _ = self.t.set_tag(w, "Look Resume");
+        let resume = self.t.offer(Rule::verb("Resume").window(w).unlisted())?;
+        self.verbs.insert(resume, "Resume");
+        self.t.replace(w, 0, END, &text)?;
+        let _ = self.t.set_clean(w);
+        self.hist = Some(w);
+        Ok(true)
+    }
+
     // ---- the transcripts ----
 
-    /// The agent's transcript in a window of its own, or the one it has
-    /// brought forward.
-    fn open_detail(&mut self, session: &str) -> apex_tool::Result<()> {
-        if let Some(d) = self.details.values().find(|d| d.session == session) {
-            let w = d.w;
-            if let Some(name) = self.t.window_name(w) {
-                let _ = self.t.open(&name, None);
-            }
-            return Ok(());
-        }
-        let Some(a) = self.agents.get(session).cloned() else { return Ok(()) };
-        let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
-        let name = format!("{}/-{kind}+{}", a.cwd.trim_end_matches('/'), a.short());
+    /// A window for a transcript, live or past.
+    #[allow(clippy::too_many_arguments)]
+    fn detail_window(&mut self, session: &str, kind: &str, cwd: &str, short: &str, transcript: Option<&Path>, note: Option<String>, running: &[(String, String)], asking: Option<&str>) -> apex_tool::Result<()> {
+        let kind = if kind.is_empty() { "agent" } else { kind };
+        let name = format!("{}/-{kind}+{short}", cwd.trim_end_matches('/'));
         let w = self.t.new_window(&name)?;
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_live(w, true);
-        let _ = self.t.set_tag(w, "Look");
+        // Enter does not send here (a prompt is as many lines as it
+        // wants), so the verb that does is in the tag
+        let _ = self.t.set_tag(w, "Look Send");
+        let send = self.t.offer(Rule::verb("Send").window(w))?;
         self.t.watch(w)?;
         let mut wr = Writer::new();
-        let mut parser = transcript::parser(&a.kind, &a.cwd, self.opts.thoughts);
-        let tail = match transcript::transcript_path(a.transcript.as_deref()) {
-            Some(p) => Some(Tail::new(p.to_path_buf())),
-            None => None,
-        };
-        let mut tail = tail;
+        let mut parser = transcript::parser(kind, cwd, self.opts.thoughts);
+        let mut tail = transcript.map(|p| Tail::new(p.to_path_buf()));
         if let Some(dir) = tail.as_ref().and_then(|t| t.path.parent()).map(Path::to_path_buf) {
             self.watch(&dir);
+        }
+        if let Some(n) = note {
+            wr.item(&transcript::Item::Note(n));
         }
         match &mut tail {
             Some(t) => {
@@ -523,10 +865,10 @@ impl Pane {
         }
         // what the hooks have said of the calls going: the transcript
         // knows nothing of a call's running or being asked about
-        for (id, _) in &a.running {
+        for (id, _) in running {
             wr.glyph(id, "▶");
         }
-        if let (State::Asking, Some(id)) = (a.state, &a.asking) {
+        if let Some(id) = asking {
             wr.glyph(id, "?");
         }
         // the whole of it at once, and the dot at the end so that what
@@ -534,13 +876,46 @@ impl Pane {
         self.t.replace(w, 0, END, &wr.text)?;
         let _ = self.t.select(w, wr.len, wr.len);
         let _ = self.t.set_clean(w);
-        self.details.insert(w, Detail { session: session.to_string(), w, tail, parser, wr, pulsing: false });
+        self.details.insert(w, Detail { session: session.to_string(), w, tail, parser, wr, pulsing: false, send });
         Ok(())
+    }
+
+    /// The agent's transcript in a window of its own, or the one it has
+    /// brought forward.
+    fn open_detail(&mut self, session: &str) -> apex_tool::Result<()> {
+        if let Some(d) = self.details.values().find(|d| d.session == session) {
+            let w = d.w;
+            if let Some(name) = self.t.window_name(w) {
+                let _ = self.t.open(&name, None);
+            }
+            return Ok(());
+        }
+        let Some(a) = self.agents.get(session).cloned() else { return Ok(()) };
+        let asking = match (a.state, a.asking.as_deref()) {
+            (State::Asking, Some(id)) => Some(id),
+            _ => None,
+        };
+        self.detail_window(session, &a.kind, &a.cwd, &a.short(), transcript::transcript_path(a.transcript.as_deref()), None, &a.running, asking)
+    }
+
+    /// A past session's transcript: the same window, read from the
+    /// agent's record, with a word at the top saying it is over.
+    fn open_past(&mut self, p: Past) -> apex_tool::Result<()> {
+        if let Some(d) = self.details.values().find(|d| d.session == p.id) {
+            let w = d.w;
+            if let Some(name) = self.t.window_name(w) {
+                let _ = self.t.open(&name, None);
+            }
+            return Ok(());
+        }
+        let short: String = p.id.chars().take(8).collect();
+        let when = history::when(p.when, history::now());
+        self.detail_window(&p.id, &p.kind, &p.cwd, &short, Some(&p.path), Some(format!("a past session, last worked in {when}; Resume {short} takes it up")), &[], None)
     }
 
     /// What the transcripts say that they did not last time.
     fn tick_details(&mut self) -> apex_tool::Result<()> {
-        let mut todo: Vec<(WindowId, Vec<Op>)> = Vec::new();
+        let mut todo: Vec<(WindowId, Vec<Op>, usize)> = Vec::new();
         for d in self.details.values_mut() {
             let Some(t) = &mut d.tail else { continue };
             let lines = t.lines();
@@ -553,15 +928,25 @@ impl Pane {
                     ops.extend(d.wr.item(&it));
                 }
             }
-            todo.push((d.w, ops));
+            todo.push((d.w, ops, d.wr.len));
         }
-        for (w, ops) in todo {
+        for (w, ops, len) in todo {
             for op in ops {
                 apply(&mut self.t, w, op)?;
             }
-            let _ = self.t.set_clean(w);
+            // clean, unless a prompt is being typed under it: that is
+            // theirs, and not acted on, which is what dirty means
+            if self.t.read(w)?.chars().count() <= len {
+                let _ = self.t.set_clean(w);
+            }
         }
         Ok(())
+    }
+}
+
+impl Drop for Pane {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.presence);
     }
 }
 
@@ -576,15 +961,38 @@ fn is_change(kind: &notify::EventKind) -> bool {
     }
 }
 
-/// One change to a transcript window. Text goes at the end with the dot
-/// following it, as a win's output does; a glyph is written over in
-/// place and moves nothing.
+/// One change to a transcript window. Text goes at the end of the
+/// transcript with the dot following it, as a win's output does, and
+/// before any draft typed after it; a glyph is written over in place
+/// and moves nothing.
 fn apply(t: &mut Tool, w: WindowId, op: Op) -> apex_tool::Result<()> {
     match op {
-        Op::Append(text) => {
-            let len = t.read(w)?.chars().count();
-            t.insert_following(w, len, &text)
-        }
+        Op::Append { at, text } => t.insert_following(w, at, &text),
         Op::Glyph { at, glyph } => t.replace(w, at, at + 1, glyph),
     }
+}
+
+/// The `apex` command: on PATH, else beside this program, else where a
+/// remote install puts it.
+pub fn apex_bin() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join("apex")).find(|p| p.is_file())) {
+        return Some(p);
+    }
+    if let Some(p) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("apex"))).filter(|p| p.is_file()) {
+        return Some(p);
+    }
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".apex/bin/apex")).filter(|p| p.is_file())
+}
+
+/// Text typed into the terminal `win` of `session`, Enter after it:
+/// `apex term send`, which finds the session by its id and the terminal
+/// by its window.
+pub fn term_send(session: &str, win: u64, text: &str) -> Result<(), String> {
+    let apex = apex_bin().ok_or("no apex command to type with: put apex on PATH")?;
+    let out = std::process::Command::new(&apex).arg(format!("-session={session}")).args(["term", "send", &win.to_string(), &format!("{text}\n")]).output().map_err(|e| format!("{}: {e}", apex.display()))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if err.is_empty() { format!("apex term send: {}", out.status) } else { err });
+    }
+    Ok(())
 }

@@ -6,11 +6,16 @@
 
 use std::io::Read;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::event::{self, Event};
+use crate::event::{self, Event, Tail};
 use crate::transcript::call_title;
+
+/// How long a permission request waits on the pane for an answer
+/// before it is left to the agent's own prompt.
+const WAIT: Duration = Duration::from_secs(90);
 
 pub fn run(agent: &str) -> i32 {
     let mut input = String::new();
@@ -23,13 +28,58 @@ pub fn run(agent: &str) -> i32 {
     let dir = event::dir();
     // the process is looked for once: when the session starts, or when
     // nothing has been written of it yet (the viewer may have cleaned
-    // the log away, or the hooks may have been put in mid-session)
+    // the log away, or the hooks may have been put in mid-session);
+    // and so is where the repository stands
     if ev.event == "SessionStart" || !event::log_path(&dir, &ev.session).exists() {
         ev.pid = agent_pid(agent);
         (ev.apex, ev.win) = here(std::env::var("apexsession").ok().as_deref(), std::env::var("winid").ok().as_deref());
+        if !ev.cwd.is_empty() {
+            ev.rev = crate::vcs::head(Path::new(&ev.cwd));
+        }
     }
+    let log = event::log_path(&dir, &ev.session);
+    // a question is asked of the pane, when there is one: the answer
+    // comes back as a `Decision` event in the log, and is the agent's
+    // decision. None in time, or `ask`, and the agent's own prompt has it
+    let from = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
     let _ = event::append(&dir, &ev);
+    if ev.event == "PermissionRequest" && event::pane_present(&dir) {
+        if let Some(call) = ev.call.as_deref() {
+            if let Some(d) = await_decision(&log, from, call, WAIT) {
+                println!("{}", decision_json(&d));
+            }
+        }
+    }
     0
+}
+
+/// Wait for a `Decision` event about `call` to land in the log after
+/// `from`; the pane's word, `allow` or `deny`. `None` when it is `ask`
+/// (the terminal's prompt is wanted) or none comes in time.
+pub fn await_decision(log: &Path, from: u64, call: &str, wait: Duration) -> Option<String> {
+    let mut tail = Tail::new(log.to_path_buf());
+    tail.read = from;
+    let deadline = Instant::now() + wait;
+    loop {
+        for e in event::events(&tail.lines()) {
+            if e.event == "Decision" && e.call.as_deref() == Some(call) {
+                return match e.kind.as_deref() {
+                    Some(d @ ("allow" | "deny")) => Some(d.to_string()),
+                    _ => None,
+                };
+            }
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// What the agent is told: Claude Code's shape for a permission
+/// decision, which Codex shares.
+pub fn decision_json(behavior: &str) -> String {
+    serde_json::json!({ "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": behavior, "message": format!("{behavior}ed in apex") } } }).to_string()
 }
 
 /// The event as the log keeps it: the fields every hook has, and the
@@ -67,6 +117,7 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
         pid: None,
         apex: None,
         win: None,
+        rev: None,
         sub: s("agent_id"),
         tool,
         call: s("tool_use_id"),
@@ -175,6 +226,26 @@ mod tests {
         assert_eq!(here(Some("9e21ab77-x"), Some("0")), (Some("9e21ab77-x".into()), None));
         assert_eq!(here(None, None), (None, None));
         assert_eq!(here(Some(""), Some("x")), (None, None));
+    }
+
+    #[test]
+    fn a_decision_in_the_log_answers_the_question() {
+        let dir = std::env::temp_dir().join(format!("apex-agent-decide-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ev = |event: &str, call: &str, kind: Option<&str>| Event { ms: 1, agent: "claude".into(), event: event.into(), session: "s".into(), call: Some(call.into()), kind: kind.map(String::from), ..Event::default() };
+        event::append(&dir, &ev("PermissionRequest", "t1", None)).unwrap();
+        let log = event::log_path(&dir, "s");
+        let from = std::fs::metadata(&log).unwrap().len();
+        // nothing said: none, once the wait is up
+        assert_eq!(await_decision(&log, from, "t1", Duration::from_millis(50)), None);
+        // another call's answer is not this one's; then this one's comes
+        event::append(&dir, &ev("Decision", "t0", Some("deny"))).unwrap();
+        event::append(&dir, &ev("Decision", "t1", Some("allow"))).unwrap();
+        assert_eq!(await_decision(&log, from, "t1", Duration::from_millis(50)), Some("allow".into()));
+        event::append(&dir, &ev("Decision", "t2", Some("ask"))).unwrap();
+        assert_eq!(await_decision(&log, from, "t2", Duration::from_millis(50)), None);
+        assert!(decision_json("allow").contains("\"behavior\":\"allow\""));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

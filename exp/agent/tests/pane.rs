@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use apex_agent::event::{self, Event};
+use apex_agent::hook;
 use apex_agent::win::{Opts, Pane};
 use apex_core::*;
 use apex_server::daemon::Daemon;
@@ -80,7 +81,23 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let _ = std::fs::remove_dir_all(&tmp);
     let logs = tmp.join("agents");
     let proj = tmp.join("proj");
-    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::create_dir_all(proj.join("src")).unwrap();
+    // the agent's directory is a git repository, for Changes
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git").args(args).current_dir(&proj).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    git(&["init", "-q"]);
+    std::fs::write(proj.join("src/a.rs"), "a\nb\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "one"]);
+    let rev = git(&["rev-parse", "HEAD"]);
+    // and the directory has had a session before, for History
+    let claude_home = tmp.join("claude-home");
+    let past_dir = claude_home.join("projects").join(apex_agent::history::claude_project(&tmp.display().to_string()));
+    std::fs::create_dir_all(&past_dir).unwrap();
+    std::fs::write(past_dir.join("deadbeef-1111.jsonl"), "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"an old prompt\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"an old answer\"}]}}\n").unwrap();
     let transcript = tmp.join("0b1c1425-aaaa.jsonl");
     std::fs::write(
         &transcript,
@@ -91,14 +108,14 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     )
     .unwrap();
     let ev = |event: &str| Event { ms: event::now_ms(), agent: "claude".into(), event: event.into(), session: "0b1c1425-aaaa".into(), cwd: proj.display().to_string(), transcript: Some(transcript.display().to_string()), ..Event::default() };
-    event::append(&logs, &Event { kind: Some("startup".into()), ..ev("SessionStart") }).unwrap();
+    event::append(&logs, &Event { kind: Some("startup".into()), rev: Some(rev.clone()), ..ev("SessionStart") }).unwrap();
     event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
     event::append(&logs, &Event { call: Some("t1".into()), tool: Some("Read".into()), title: Some("Read: /etc/hosts".into()), ..ev("PreToolUse") }).unwrap();
 
     let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
     // the page's converter: the markdown itself, so the test can read it
     t.set("Preview.md", "cat");
-    let pane = Pane::start(t, Opts { cwd: tmp.clone(), dir: logs.clone(), thoughts: false }).unwrap();
+    let pane = Pane::start(t, Opts { all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
         let r = pane.serve();
@@ -180,14 +197,61 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
         said = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
     }
     assert!(said.contains("Goto 0b1c1425: claude was not started in an apex window"), "{said:?}");
+    // a question: the block offers the words that answer it, +Errors
+    // says who asks, and the hook waits on the log for the answer
+    event::append(&logs, &Event { apex: Some("main".into()), win: Some(1), call: Some("t7".into()), title: Some("Bash: Remove the build directory".into()), ..ev("PermissionRequest") }).unwrap();
+    let text = wait_text(&mut c, &pane_name, |t| t.contains("\n? claude"));
+    assert!(text.contains("  ? Bash: Remove the build directory  Allow Deny Ask\n"), "{text}");
+    let errs = wait_text(&mut c, "+Errors", |t| t.contains("asks:"));
+    assert!(errs.contains("claude 0b1c1425 asks: Bash: Remove the build directory\n"), "{errs:?}");
+    let from = std::fs::metadata(event::log_path(&logs, "0b1c1425-aaaa")).unwrap().len();
+    let log = event::log_path(&logs, "0b1c1425-aaaa");
+    let asked = std::thread::spawn(move || hook::await_decision(&log, from, "t7", Duration::from_secs(5)));
+    let at = text.chars().collect::<Vec<char>>().windows(5).position(|w| w.iter().collect::<String>() == "Allow").unwrap();
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Allow".into() }, Duration::from_secs(5)).unwrap();
+    assert_eq!(asked.join().unwrap(), Some("allow".to_string()));
+    let text = wait_text(&mut c, &pane_name, |t| t.contains("\n▶ claude"));
+    assert!(!text.contains("Allow Deny Ask"), "{text}");
+    event::append(&logs, &Event { call: Some("t7".into()), ..ev("PostToolUse") }).unwrap();
+    event::append(&logs, &Event { text: Some("Removed.".into()), ..ev("Stop") }).unwrap();
+    wait_text(&mut c, &pane_name, |t| t.contains("Removed."));
+
+    // Changes: the repository's diff since the session began, in a
+    // window at its root, each hunk saying where it lands
+    std::fs::write(proj.join("src/a.rs"), "a\nB\nb\n").unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Changes 0b1c".into() }, Duration::from_secs(5)).unwrap();
+    let diff_name = format!("{}/-claude+0b1c1425+diff", proj.display());
+    let text = wait_text(&mut c, &diff_name, |t| t.contains("@@"));
+    assert!(text.starts_with(&format!("– changes in {} since the session began ({})\n\n M src/a.rs\n\n", proj.display(), &rev[..12])), "{text}");
+    assert!(text.contains("+++ src/a.rs\n@@ -1,2 +1,3 @@  src/a.rs:1\n"), "{text}");
+
+    // History: the directory's past sessions; B3 on an id opens its transcript
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "History".into() }, Duration::from_secs(5)).unwrap();
+    let hist_name = format!("{}/-agents+history", tmp.display());
+    let text = wait_text(&mut c, &hist_name, |t| t.contains("deadbeef-1111"));
+    assert!(text.contains("  deadbeef-1111  "), "{text}");
+    assert!(text.contains("  claude  an old prompt\n"), "{text}");
+    let hw = window_named(&c, &hist_name).unwrap();
+    let hb = c.node.state.window(hw).unwrap().body_buffer().unwrap();
+    let at = text.chars().collect::<Vec<char>>().windows(8).position(|x| x.iter().collect::<String>() == "deadbeef").unwrap();
+    let span = Span { buffer: hb, q0: at, q1: at + 8 };
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(hw), text: "deadbeef".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
+    let past_name = format!("{}/-claude+deadbeef", tmp.display());
+    let text = wait_text(&mut c, &past_name, |t| t.contains("old answer"));
+    assert!(text.starts_with("– a past session, last worked in "), "{text}");
+    assert!(text.ends_with("~\n\nan old prompt\n\n• an old answer\n"), "{text}");
+
     // told where it was started, Goto has somewhere to go, and says nothing
-    event::append(&logs, &Event { apex: Some("main".into()), win: Some(1), ..ev("PermissionRequest") }).unwrap();
-    wait_text(&mut c, &pane_name, |t| t.contains("\n? claude"));
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Goto 0b1c".into() }, Duration::from_secs(5)).unwrap();
     std::thread::sleep(Duration::from_millis(300));
     let _ = c.step(Duration::from_millis(20));
     let said: String = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
     assert_eq!(said.matches("Goto").count(), 1, "{said:?}");
+    // Send with nothing to type into is said too; with somewhere, it wants apex
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Send 0b1c hello".into() }, Duration::from_secs(5)).unwrap();
+    let said = wait_text(&mut c, "+Errors", |t| t.contains("Send:"));
+    assert!(said.contains("Send: ") && (said.contains("apex term send") || said.contains("no apex command") || said.contains("session")), "{said:?}");
 
     // the session ends: the block goes, the log with it, and the
     // transcript window says so and stays

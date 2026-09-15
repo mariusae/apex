@@ -1,11 +1,15 @@
 //! apex-agent: an experiment. One window that says what every agent is
 //! doing -- every Claude Code and Codex on the machine, whichever
 //! terminal or editor it was started from -- fed by the hooks those
-//! agents offer, and a transcript window for any of them, B3'd open.
+//! agents offer, and beside it, for any of them, its transcript, its
+//! last answer as a page, its changes as a diff, and a way to it.
 //!
-//!     apex-agent [-cwd DIR] [-thoughts]     the pane, DIR/-agents
+//!     apex-agent [-cwd DIR] [-thoughts] [-all] [-quiet]   the pane, DIR/-agents
 //!     apex-agent install [claude|codex]...  put the hooks in (both, by default)
 //!     apex-agent uninstall [claude|codex]...
+//!     apex-agent ls                         the pane, as text
+//!     apex-agent wait ID                    until the agent's turn ends; the exit status is its state
+//!     apex-agent events [-all]              the events as they come, a line each
 //!     apex-agent hook claude|codex          what the agents run; not for typing
 //!
 //! The hook is this same program: each event the agent has is one line
@@ -14,20 +18,30 @@
 //! is lost when the pane is not. The pane is a block an agent, in the
 //! order they want attention: `?` a permission or a question waiting on
 //! you, `✗` a turn that failed, `~` a turn over and the next prompt
-//! yours, `▶` at work. B3 anywhere in a block (or `Open`) opens the
-//! agent's transcript beside it, named for the agent's own directory,
-//! and read from the agent's own record as it grows; `Preview` a page
-//! with the last exchange it finished, written afresh as each turn
-//! ends; `Goto` goes to the agent itself, the window it was started
-//! in, in whatever session that was.
+//! yours, `▶` at work. A question is answered where it stands, `Allow
+//! Deny Ask`, and the hook that asked it reads the answer from the
+//! log. B3 anywhere in a block (or `Open`) opens the agent's
+//! transcript beside it, named for the agent's own directory, and read
+//! from the agent's own record as it grows; `Preview` a page with the
+//! last exchange it finished, written afresh as each turn ends;
+//! `Changes` its repository's diff since the session began; `Goto`
+//! goes to the agent itself, the window it was started in, in whatever
+//! session that was; `Send TEXT` types into that window; `Start` and
+//! `Resume` make terminals running agents; `History` lists the
+//! directory's past sessions. `ls`, `wait` and `events` are the same
+//! logs as text, for scripts.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
-use apex_agent::{event, hook, install, win};
+use apex_agent::agents::{self, Agents, State};
+use apex_agent::event::{self, Tail};
+use apex_agent::{hook, install, win};
 
 fn usage() -> ! {
-    eprintln!("usage: apex-agent [-cwd DIR] [-thoughts]");
+    eprintln!("usage: apex-agent [-cwd DIR] [-thoughts] [-all] [-quiet]");
     eprintln!("       apex-agent install|uninstall [claude|codex]...");
+    eprintln!("       apex-agent ls | wait ID | events [-all]");
     eprintln!("       apex-agent hook claude|codex");
     std::process::exit(2);
 }
@@ -70,6 +84,21 @@ fn main() {
                 }
             }
         }
+        Some("ls") => {
+            let agents = read_all(&event::dir());
+            let home = std::env::var("HOME").ok();
+            let (header, blocks, footer) = agents::pane(&agents.ordered(), event::now_ms(), home.as_deref(), None);
+            let (text, _) = agents::pane_text(&header, &blocks, &footer);
+            print!("{text}");
+        }
+        Some("wait") => {
+            let id = args.get(1).map(String::as_str).unwrap_or_else(|| usage());
+            std::process::exit(wait(&event::dir(), id));
+        }
+        Some("events") => {
+            let all = args.iter().skip(1).any(|a| a == "-all" || a == "--all");
+            events(&event::dir(), all);
+        }
         _ => {
             let opts = parse_pane(&args);
             if let Err(e) = win::Pane::run(opts) {
@@ -81,7 +110,7 @@ fn main() {
 }
 
 fn parse_pane(args: &[String]) -> win::Opts {
-    let mut opts = win::Opts { cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")), dir: event::dir(), thoughts: false };
+    let mut opts = win::Opts::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")), event::dir());
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -90,8 +119,105 @@ fn parse_pane(args: &[String]) -> win::Opts {
                 opts.cwd = if d.is_absolute() { d } else { opts.cwd.join(d) };
             }
             "-thoughts" | "--thoughts" => opts.thoughts = true,
+            "-all" | "--all" => opts.all = true,
+            "-quiet" | "--quiet" => opts.quiet = true,
             _ => usage(),
         }
     }
     opts
+}
+
+/// Every session's log, read whole: the agents as they stand.
+fn read_all(dir: &std::path::Path) -> Agents {
+    let mut agents = Agents::default();
+    let Ok(rd) = std::fs::read_dir(dir) else { return agents };
+    let mut paths: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file() && event::session_of(p).is_some()).collect();
+    paths.sort();
+    for p in paths {
+        let mut t = Tail::new(p);
+        for ev in event::events(&t.lines()) {
+            agents.apply(&ev);
+        }
+    }
+    agents
+}
+
+/// `apex-agent wait ID`: until the agent named (by its id, a prefix of
+/// it, or its kind when there is one such) is no longer working. The
+/// exit status is its state: 0 its turn is over and the next prompt is
+/// yours, 1 it is asking something, 2 the turn failed, 3 it is gone, 4
+/// no such agent. What a script chains on.
+fn wait(dir: &std::path::Path, id: &str) -> i32 {
+    let find = |agents: &Agents| -> Option<String> {
+        if let Some(a) = agents.by_id(id) {
+            return Some(a.session.clone());
+        }
+        let kinds: Vec<&agents::Agent> = agents.ordered().into_iter().filter(|a| a.kind == id).collect();
+        match kinds.as_slice() {
+            [one] => Some(one.session.clone()),
+            _ => None,
+        }
+    };
+    let agents = read_all(dir);
+    let Some(session) = find(&agents) else {
+        eprintln!("apex-agent: wait {id}: no such agent");
+        return 4;
+    };
+    let mut log = Tail::new(event::log_path(dir, &session));
+    let mut agent = agents::Agent::new(&session);
+    for ev in event::events(&log.lines()) {
+        agent.apply(&ev);
+    }
+    loop {
+        match agent.state {
+            State::Idle => return 0,
+            State::Asking => return 1,
+            State::Failed => return 2,
+            State::Ended => return 3,
+            State::Working | State::Starting => {}
+        }
+        if !log.path.exists() || agent.pid.is_some_and(|p| !event::alive(p as i32)) {
+            return 3;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        for ev in event::events(&log.lines()) {
+            agent.apply(&ev);
+        }
+    }
+}
+
+/// `apex-agent events`: the events as they land, a line each -- when,
+/// the session, the agent, what happened, and the words for it -- from
+/// now, or from the start of every log with `-all`. Until killed.
+fn events(dir: &std::path::Path, all: bool) {
+    use std::collections::HashMap;
+    use std::io::Write;
+    let mut tails: HashMap<String, Tail> = HashMap::new();
+    let mut first = true;
+    let out = std::io::stdout();
+    loop {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            let mut paths: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file() && event::session_of(p).is_some()).collect();
+            paths.sort();
+            for p in paths {
+                let session = event::session_of(&p).unwrap_or_default();
+                let t = tails.entry(session).or_insert_with(|| {
+                    let mut t = Tail::new(p.clone());
+                    if first && !all {
+                        t.read = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                    }
+                    t
+                });
+                for ev in event::events(&t.lines()) {
+                    let what = ev.title.as_deref().or(ev.kind.as_deref()).or(ev.text.as_deref()).map(apex_agent::transcript::brief).unwrap_or_default();
+                    let mut o = out.lock();
+                    if writeln!(o, "{}\t{}\t{}\t{}\t{}", ev.ms, ev.session.chars().take(8).collect::<String>(), ev.agent, ev.event, what).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+        first = false;
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }

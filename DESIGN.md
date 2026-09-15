@@ -2003,7 +2003,20 @@ hook carries the agent's last word whole.
 `Goto` goes to the agent itself: the hook keeps the `apexsession` and
 `winid` apex put in the environment of the command that started it,
 and `Tool::switch` takes the pane's UI to that window, in that session,
-so the pane is a way straight to any agent from anywhere. What the
+so the pane is a way straight to any agent from anywhere. What the pane
+says back to an agent goes the way apex already has: a permission is
+answered where it stands (`Allow Deny Ask`, written into the block),
+the answer is a `Decision` event in the agent's own log, and the hook
+that asked, having seen a pane's presence file, waits on the log and
+hands the decision to the agent; a prompt is `apex term send` into the
+agent's terminal; an agent is `Newterm claude`; its changes since the
+session began are its repository's own diff (git, sapling, mercurial),
+in a window at the repository's root with each hunk located as
+`path:line`; the directory's past sessions are listed as apex-acp's
+`Resume` lists them, and an id B3'd anywhere opens a transcript by a
+plumbing rule the tool offers. The same logs read as text: `ls`,
+`wait` (the agent's state as the exit status) and `events`, for
+scripts to chain on. What the
 spike says back: the hooks carry the call's id, so a call's status
 can be written over in place in a transcript the agent itself keeps;
 and the same offsets-by-hand that apex-acp keeps are kept here too, a

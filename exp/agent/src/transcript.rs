@@ -219,10 +219,11 @@ pub fn brief(title: &str) -> String {
 
 // ---- writing it --------------------------------------------------------------
 
-/// A change to the window: text at the end, or a glyph written over.
+/// A change to the window: text at the end of the transcript (before
+/// any draft typed after it), or a glyph written over.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Op {
-    Append(String),
+    Append { at: usize, text: String },
     Glyph { at: usize, glyph: &'static str },
 }
 
@@ -253,13 +254,14 @@ impl Writer {
         if s.is_empty() {
             return;
         }
+        let at = self.len;
         self.text.push_str(s);
         self.len += s.chars().count();
         self.blank = s.ends_with("\n\n") || (s == "\n" && self.col0);
         self.col0 = s.ends_with('\n');
         match ops.last_mut() {
-            Some(Op::Append(t)) => t.push_str(s),
-            _ => ops.push(Op::Append(s.to_string())),
+            Some(Op::Append { text, .. }) => text.push_str(s),
+            _ => ops.push(Op::Append { at, text: s.to_string() }),
         }
     }
 
@@ -364,10 +366,15 @@ impl Writer {
     }
 
     /// Someone else replaced `nd` characters at `q0` with `ni`: what we
-    /// remember moves along.
+    /// remember moves along. An edit at or past the end is a draft
+    /// being typed, which is theirs: the transcript ends where it did,
+    /// and what is written next goes in before the draft.
     pub fn shift(&mut self, q0: usize, nd: usize, ni: usize) {
         let q1 = q0 + nd;
-        self.len = (self.len + ni).saturating_sub(nd);
+        if q0 >= self.len {
+            return;
+        }
+        self.len = if q1 <= self.len { self.len + ni - nd } else { q0 + ni };
         self.anchors.retain(|_, p| {
             if *p < q0 {
                 true
@@ -678,7 +685,7 @@ mod tests {
         assert!(ops.iter().any(|o| matches!(o, Op::Glyph { glyph: "✓", .. })), "{ops:?}");
         // the appended text, put together, is the text
         let appended: String = ops.iter().filter_map(|o| match o {
-            Op::Append(t) => Some(t.replace('✓', "⋯")),
+            Op::Append { text, .. } => Some(text.replace('✓', "⋯")),
             _ => None,
         }).collect();
         assert_eq!(appended, w.text.replace('✓', "⋯"));
@@ -689,12 +696,18 @@ mod tests {
         let mut w = Writer::new();
         assert_eq!(w.glyph("t1", "▶"), None);
         let ops = w.item(&Item::Call { id: "t1".into(), title: "Bash: ls".into(), detail: vec![] });
-        assert_eq!(ops, vec![Op::Append("▶ Bash: ls\n".into())]);
+        assert_eq!(ops, vec![Op::Append { at: 0, text: "▶ Bash: ls\n".into() }]);
         assert_eq!(w.glyph("t1", "?"), Some(Op::Glyph { at: 0, glyph: "?" }));
         assert_eq!(w.text, "? Bash: ls\n");
         // an edit before it by someone else moves the anchor
         w.shift(0, 0, 3);
         assert_eq!(w.glyph("t1", "✗"), Some(Op::Glyph { at: 3, glyph: "✗" }));
+        assert_eq!(w.len, 14);
+        // a draft typed at the end is not the transcript's: it ends where it did
+        w.shift(14, 0, 5);
+        assert_eq!(w.len, 14);
+        let ops = w.item(&Item::Agent("hi".into()));
+        assert_eq!(ops, vec![Op::Append { at: 14, text: "• hi\n".into() }]);
     }
 
     #[test]

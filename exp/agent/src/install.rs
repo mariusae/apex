@@ -114,7 +114,10 @@ fn settle(file: &Path, events: &[&str], cmd: Option<&str>) -> Result<bool, Strin
         for ev in events {
             let groups = hooks.entry(*ev).or_insert_with(|| json!([]));
             if let Some(groups) = groups.as_array_mut() {
-                groups.push(json!({ "hooks": [{ "type": "command", "command": cmd, "timeout": 5 }] }));
+                // a question may wait on the pane for an answer; the
+                // rest are a line written and done
+                let timeout = if *ev == "PermissionRequest" { 120 } else { 5 };
+                groups.push(json!({ "hooks": [{ "type": "command", "command": cmd, "timeout": timeout }] }));
             }
         }
     }

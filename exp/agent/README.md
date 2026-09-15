@@ -2,8 +2,9 @@
 
 One window that says what every agent on the machine is doing -- each
 Claude Code and Codex, whichever terminal or editor it was started from
--- and a transcript window for any of them, B3'd open. It is fed by the
-hooks those agents offer and written against the public tool API
+-- and beside it, for any of them, its transcript, its last answer as a
+page, its changes as a diff, and a way to it. It is fed by the hooks
+those agents offer and written against the public tool API
 (`apex-tool`) only, as `apex-acp` is; it is not part of the supported
 surface.
 
@@ -13,8 +14,14 @@ surface.
     apex-agent install          # the hooks, for claude and codex both
     apex-agent install claude   # or one of them
     apex-agent                  # the pane, DIR/-agents
+    apex-agent -all             # every agent, not only those under DIR
+    apex-agent -quiet           # no notes in +Errors
     apex-agent -thoughts        # transcripts show the agents' thinking
     apex-agent uninstall
+
+    apex-agent ls               # the pane, as text
+    apex-agent wait ID          # until the agent's turn ends; exits with its state
+    apex-agent events [-all]    # the events as they come, a line each
 
 `install` writes the hooks into `~/.claude/settings.json` and
 `~/.codex/hooks.json`, naming this binary by its full path; everything
@@ -36,8 +43,9 @@ appends one line to `~/.apex/agents/SESSION.jsonl` and exits: what
 happened, when, which tool and what the call was in words, the prompt
 or the last message when the event carries one (those two kept whole,
 within reason, since the page shows them), and, once, the agent's
-process and the apex session and window it was started in. The agent's input is
-not kept -- a `Write`'s input is the file -- so a log stays small.
+process, the apex session and window it was started in, and where its
+repository stood. The agent's input is not kept -- a `Write`'s input is
+the file -- so a log stays small.
 
 The pane reads those logs, and nothing else: no socket, no daemon.
 Nothing need be running when an agent starts, nothing is lost when the
@@ -54,17 +62,24 @@ the agent's process, found once when the session starts, is asked
 after on that same pass and a session whose process is gone goes the
 same way.
 
+What the pane says back to an agent goes the way apex already has. A
+decision on a permission is an event in the agent's log, which the hook
+that asked is waiting to read. A prompt is typed into the agent's
+terminal by `apex term send`. An agent is started by `Newterm`. Nothing
+is added to the agents, and nothing to apex.
+
 ## The pane
 
     – 2 agents
 
     ? claude  ~/src/apex  0b1c1425  2m
       build an experimental tool, apex-agent…
-      ? Bash: Remove the build directory
+      ? Bash: Remove the build directory  Allow Deny Ask
 
-    ▶ codex  ~/src/cmd  9e21ab77
+    ▶ codex  ~/src/cmd  9e21ab77  1 subagent
       port the rc shell
       ▶ shell: cargo test
+        ▶ Explore: Grep: fn main in src
 
 A block an agent. The margin is its state, so a glance down the column
 finds the one that wants you, and the blocks come in that order:
@@ -83,43 +98,74 @@ second is what it was asked, cut to one line. The third is what it is
 doing about it -- the tool call going, in the agent's own words for it
 (`Bash: Build and test`) or the thing itself (`Edit: src/main.rs`) --
 or the call it is asking leave for, or its last word on the turn, or
-why the turn failed. A block that changes is written in place. The
-window's handle pulses while any agent works, and the window is clean
-while none does: what it says is whole and nothing is going on behind
-it. The first line is apex's own, `–`, and says how many.
+why the turn failed. Under that, a line a subagent, with what each is
+doing. A block that changes is written in place. The window's handle
+pulses while any agent works, and the window is clean while none does:
+what it says is whole and nothing is going on behind it. The first line
+is apex's own, `–`, and says how many; with no agents it is a guide,
+and `Start claude` there is a verb to B2.
 
-B3 anywhere in a block opens the agent's transcript beside the pane, as
-does `Open` with dot in it, or `Open ID` (or `Open claude`, when there
-is one). B3 outside any block is handed back and does what it always
-does.
+The pane's name is its filter: `DIR/-agents` shows the agents under
+`DIR`, and a last line counts the rest (`– 2 elsewhere: a pane in ~
+shows all`); a pane in the home directory, or `-all`, shows everything.
 
-`Preview`, the same way, opens a page beside the pane with the last
-exchange the agent finished, rendered as apex-acp's `Preview` renders
-its own: what was asked, quoted, and then the answer -- the agent's
-last word on the turn, not the running commentary on the way to it,
-which the transcript has. It is written afresh as each turn ends, so it
-always shows the latest answer whole, and holds still while the next
-one is being made. `Preview` again closes it. The page is
-`AGENTDIR/-claude+ID+Preview`, and goes through the converter the
-session names for markdown (`Preview.md`, `apex md` unless a setting
-says otherwise), so it looks like every other preview.
+Every verb below takes the agent dot is in, or the only one there is,
+or the one named after it by its id (`Open 0b1c`), its kind (`Goto
+codex`, when there is one) or its directory. Outside any block with
+several to choose from, `+Errors` says so.
 
-`Goto`, the same way, goes to the agent itself: the window it was
-started in, in whatever apex session that was -- apex puts
-`apexsession` and `winid` in a command's environment, the agent passes
-them on to its hooks, and the hook keeps them -- so the pane is a way
-straight to any agent, wherever it is. One started outside apex has
-nowhere to go to, and `+Errors` says so.
+## Answering
+
+A question is answered where it stands: `Allow`, `Deny` and `Ask` are
+verbs, written into the block to be B2'd there. The answer is written
+into the agent's log as a `Decision`, the record of it, and the hook
+that asked -- which has been waiting, up to a minute and a half, since
+it saw a pane was there -- reads it and tells the agent. `Ask` hands
+the question to the agent's own prompt, as does saying nothing in time.
+With no pane running a hook does not wait at all, so an agent is never
+held up by a pane that is not there. Until the answer is in, the agent's
+terminal shows the hook running and no prompt: the pane is where the
+question is.
+
+When an agent comes to ask, or its turn fails, a line in the session's
+`+Errors` says which and what (`claude 0b1c1425 asks: Bash: rm -rf
+target`); B3 on the id there opens the transcript. `-quiet` leaves
+`+Errors` alone.
+
+## Reaching the agent
+
+`Goto` goes to the agent itself: the window it was started in, in
+whatever apex session that was -- apex puts `apexsession` and `winid`
+in a command's environment, the agent passes them on to its hooks, and
+the hook keeps them -- so the pane is a way straight to any agent,
+wherever it is. One started outside apex has nowhere to go to, and
+`+Errors` says so.
+
+`Send TEXT` types the text into that window, Enter after it, by `apex
+term send`, which reaches a terminal in any session: `Send 0b1c now run
+the tests`, or `Send now run the tests` with dot in the block. In a
+transcript window `Send` in the tag sends what is typed after the end
+of the transcript, as apex-acp's window does, and takes it away again,
+since it comes back as the agent's own record of it. `apex` must be on
+PATH, which in an apex terminal it is.
+
+`Start [claude|codex] [DIR]` makes a terminal beside the pane running
+the agent, in the pane's directory or the one named, by `Newterm`; the
+hooks pick it up from there. `Resume ID` does the same with a past
+session, in the directory it was had in, so the agent replays it there.
 
 ## The transcript
 
 `AGENTDIR/-claude+0b1c1425`: named for the agent's own directory, so a
 `path:line` in it is B3'd from where the agent worked, and for the
 agent after a `-` as apex-acp's window is, with the id after a `+` so
-two agents in one directory have windows of their own. It is read from
-the agent's own record (Claude Code's `~/.claude/projects/.../SESSION.jsonl`,
-Codex's rollout) as that grows, and reads as apex-acp's transcript
-window does:
+two agents in one directory have windows of their own. B3 anywhere in a
+block opens it, as does `Open`; so does B3 on a session's id wherever
+it is written -- a terminal, a commit message, `+Errors` -- a hex word
+that names no session of ours being handed back to what B3 always
+does. It is read from the agent's own record (Claude Code's
+`~/.claude/projects/.../SESSION.jsonl`, Codex's rollout) as that grows,
+and reads as apex-acp's transcript window does:
 
     ~
 
@@ -139,14 +185,67 @@ its steps -- and then the result, cut to a dozen lines. `–` is apex
 itself: an API error, or that the agent is gone. `-thoughts` shows the
 agent's thinking as `  ·` lines. The window follows its own output as a
 win does, so scrolling back to read something holds it still, and its
-handle pulses while the agent works.
+handle pulses while the agent works. What is typed after the end is a
+draft, and stays yours while the transcript goes on above it.
 
-Subagents' doings are not in the transcript; the pane counts them.
+Subagents' doings are not in the transcript; the pane shows them.
+
+## The page
+
+`Preview` opens a page beside the pane with the last exchange the
+agent finished, rendered as apex-acp's `Preview` renders its own: what
+was asked, quoted, and then the answer -- the agent's last word on the
+turn, not the running commentary on the way to it, which the
+transcript has. It is written afresh as each turn ends, so it always
+shows the latest answer whole, and holds still while the next one is
+being made. `Preview` again closes it. The page is
+`AGENTDIR/-claude+ID+Preview`, and goes through the converter the
+session names for markdown (`Preview.md`, `apex md` unless a setting
+says otherwise), so it looks like every other preview.
+
+## The changes
+
+`Changes` opens `ROOT/-claude+ID+diff`, at the root of the agent's
+repository, with what the repository says has changed since the session
+began: the status, a line a file, and then the diff, each hunk's header
+followed by the `path:line` it lands at, which B3 opens. The hook
+recorded where the repository stood when the session started, so
+commits the agent made since are in it, not only what is uncommitted;
+with nothing recorded, it is since the last commit. Git, Sapling and
+Mercurial are known by the directory at their root and asked in their
+own words (`git diff --no-prefix`, `sl diff --noprefix`, `hg diff
+--noprefix`). `Changes` again writes it afresh, in the diff window too.
+
+## The history
+
+`History` opens `DIR/-agents+history` with the sessions the pane's
+directory has had, newest first, as apex-acp's `Resume` lists them:
+
+    – sessions in /Users/me/src/apex, newest first; B3 an id for its transcript, Resume ID to take it up
+
+      0b1c1425-a679-4e30-a289-4d0d2f2d47c4  3:45PM      claude  build an experimental tool, apex-agent…
+      9e21ab77-0049-41a2-b614-f7ad8a71fb56  Tue11:14AM  codex   port the rc shell
+
+The time is at the resolution that tells it apart. B3 on an id opens the
+transcript, read from the record on disk, with a word at the top saying
+it is a past session; `Resume ID` takes it up again in a new terminal.
+`History` again closes the listing.
+
+## As text
+
+The same logs are there for scripts. `apex-agent ls` prints the pane.
+`apex-agent wait ID` (an id, a prefix, or a kind when there is one)
+returns when the agent is no longer working, with its state as the exit
+status: 0 its turn is over, 1 it is asking something, 2 the turn
+failed, 3 it is gone, 4 no such agent -- so `apex-agent wait 0b1c &&
+apex-agent events` chains. `apex-agent events` prints each event as it
+lands, tab-separated: when, the session, the agent, what happened, and
+the words for it; `-all` starts from the beginning of every log.
 
 ## Not done
 
 Codex is read from its documented formats and not against a running
-one. Nothing here talks back to an agent: a permission is answered
-where it was asked. Sessions the hooks were installed after are not
-seen until they are started again; the transcripts on disk could be
-listed, as `Resume` does in apex-acp, but are not.
+one, its permission decision included. Sapling and Mercurial are asked
+in the words their documentation gives and not against a running one
+either. Sessions the hooks were installed after are not seen until they
+are started again.

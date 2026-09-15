@@ -37,6 +37,10 @@ pub struct Event {
     pub apex: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub win: Option<u64>,
+    /// Where the repository stood when the session began, in its own
+    /// words (a commit), so that `Changes` can say what happened since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rev: Option<String>,
     /// Set when the hook fired inside a subagent: which one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
@@ -74,6 +78,35 @@ pub fn dir() -> PathBuf {
 pub fn log_path(dir: &Path, session: &str) -> PathBuf {
     let safe: String = session.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
     dir.join(format!("{safe}.jsonl"))
+}
+
+/// Where the panes say they are: a file a pane, named by its process,
+/// under the logs. A hook that has a question looks here before it
+/// waits for an answer, since with no pane there is nobody to give one.
+pub fn panes_dir(dir: &Path) -> PathBuf {
+    dir.join("panes")
+}
+
+/// Whether a pane is there to answer: a presence file whose process is
+/// alive. Dead ones are cleaned away as they are found.
+pub fn pane_present(dir: &Path) -> bool {
+    let Ok(rd) = std::fs::read_dir(panes_dir(dir)) else { return false };
+    let mut present = false;
+    for e in rd.flatten() {
+        let alive = e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()).is_some_and(alive);
+        if alive {
+            present = true;
+        } else {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+    present
+}
+
+/// Whether a process is there.
+pub fn alive(pid: i32) -> bool {
+    // SAFETY: signal 0 delivers nothing; it asks whether the process is there
+    unsafe { libc::kill(pid, 0) == 0 || *libc::__error() != libc::ESRCH }
 }
 
 /// The session a log file is of, from its name.

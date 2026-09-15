@@ -33,6 +33,14 @@ pub struct Exchange {
     pub said: String,
 }
 
+/// A subagent out on the agent's behalf: what kind, and the call it
+/// is making.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Sub {
+    pub kind: String,
+    pub running: Vec<(String, String)>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Agent {
     pub session: String,
@@ -44,6 +52,8 @@ pub struct Agent {
     /// The apex session and window it was started in, when it was.
     pub apex: Option<String>,
     pub win: Option<u64>,
+    /// Where its repository stood when the session began.
+    pub rev: Option<String>,
     pub started: i64,
     /// When it last said anything, in milliseconds.
     pub last: i64,
@@ -64,12 +74,17 @@ pub struct Agent {
     /// Why the turn failed.
     pub why: Option<String>,
     pub subagents: usize,
+    /// The subagents out, by id, with what each is doing.
+    pub subs: BTreeMap<String, Sub>,
+    /// What the pane decided about the call it is asking for, once it
+    /// has: `allow`, `deny`, or `ask` (the terminal's prompt has it).
+    pub decided: Option<String>,
     pub mode: Option<String>,
 }
 
 impl Agent {
     pub fn new(session: &str) -> Agent {
-        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, why: None, subagents: 0, mode: None }
+        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, rev: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, why: None, subagents: 0, subs: BTreeMap::new(), decided: None, mode: None }
     }
 
     /// Enough of the id to tell it apart, and to B3.
@@ -101,19 +116,43 @@ impl Agent {
         if e.mode.is_some() {
             self.mode = e.mode.clone();
         }
+        if e.rev.is_some() {
+            self.rev = e.rev.clone();
+        }
         match e.event.as_str() {
             "SubagentStart" => {
                 self.subagents += 1;
+                if let Some(id) = &e.sub {
+                    self.subs.insert(id.clone(), Sub { kind: e.kind.clone().unwrap_or_default(), running: Vec::new() });
+                }
                 return;
             }
             "SubagentStop" => {
                 self.subagents = self.subagents.saturating_sub(1);
+                if let Some(id) = &e.sub {
+                    self.subs.remove(id);
+                }
                 return;
             }
             _ => {}
         }
-        // a subagent's calls are its own: they are counted, not shown
-        if e.sub.is_some() {
+        // a subagent's calls are its own, shown under it
+        if let Some(id) = &e.sub {
+            let sub = self.subs.entry(id.clone()).or_insert_with(|| Sub { kind: e.kind.clone().unwrap_or_default(), running: Vec::new() });
+            match e.event.as_str() {
+                "PreToolUse" => {
+                    if let (Some(c), Some(t)) = (&e.call, &e.title) {
+                        sub.running.retain(|(i, _)| i != c);
+                        sub.running.push((c.clone(), t.clone()));
+                    }
+                }
+                "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
+                    if let Some(c) = &e.call {
+                        sub.running.retain(|(i, _)| i != c);
+                    }
+                }
+                _ => {}
+            }
             return;
         }
         match e.event.as_str() {
@@ -145,6 +184,21 @@ impl Agent {
                 self.state = State::Asking;
                 self.asked = e.title.clone();
                 self.asking = e.call.clone();
+                self.decided = None;
+            }
+            // the pane's answer, written into the log as the record of it
+            "Decision" if e.call.is_some() && e.call == self.asking => {
+                self.decided = e.kind.clone();
+                match e.kind.as_deref() {
+                    Some("allow") => self.state = State::Working,
+                    Some("deny") => {
+                        self.state = State::Working;
+                        if let Some(id) = &e.call {
+                            self.running.retain(|(i, _)| i != id);
+                        }
+                    }
+                    _ => {}
+                }
             }
             "PermissionDenied" | "PostToolUse" | "PostToolUseFailure" => {
                 self.state = State::Working;
@@ -217,10 +271,16 @@ impl Agent {
 
     /// The line under the prompt: what it is doing, what it wants, or
     /// what it last said, as its state has it. None when there is
-    /// nothing to say.
+    /// nothing to say. A question not yet answered offers the words
+    /// that answer it, to be B2'd where they stand; one handed to the
+    /// terminal says so.
     pub fn doing(&self) -> Option<String> {
         match self.state {
-            State::Asking => self.asked.as_deref().map(|a| format!("? {}", brief(a))),
+            State::Asking => self.asked.as_deref().map(|a| match self.decided.as_deref() {
+                None => format!("? {}  Allow Deny Ask", brief(a)),
+                Some("ask") => format!("? {}  asked at the terminal", brief(a)),
+                Some(d) => format!("? {}  {d}", brief(a)),
+            }),
             State::Working | State::Starting => self.running.last().map(|(_, t)| format!("▶ {}", brief(t))),
             State::Idle => self.said.as_deref().map(|s| format!("• {}", brief(s))),
             State::Failed => Some(format!("✗ {}", self.why.as_deref().unwrap_or("the turn failed"))),
@@ -261,6 +321,22 @@ impl Agents {
     pub fn working(&self) -> bool {
         self.map.values().any(|a| a.state == State::Working)
     }
+
+    /// The agent an id names: the whole of it, or a prefix that names
+    /// one and no other.
+    pub fn by_id(&self, id: &str) -> Option<&Agent> {
+        let hits: Vec<&Agent> = self.map.values().filter(|a| a.session.starts_with(id)).collect();
+        match hits.as_slice() {
+            [one] => Some(one),
+            _ => None,
+        }
+    }
+}
+
+/// Whether `cwd` is `dir` or under it.
+pub fn under(cwd: &str, dir: &str) -> bool {
+    let dir = dir.trim_end_matches('/');
+    dir.is_empty() || cwd == dir || cwd.strip_prefix(dir).is_some_and(|r| r.starts_with('/'))
 }
 
 /// How long since `then`, coarsely: nothing under a minute, since that
@@ -305,15 +381,26 @@ pub fn shown_dir(dir: &str, home: Option<&str>) -> String {
 /// The first line is apex's own (`–`); each block's margin is the
 /// agent's state, its first line the agent, where, its id, and how long
 /// it has been quiet; its second what it was asked; its third what it is
-/// doing about it, wanting, or last said.
-pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>) -> (String, Vec<(String, String)>) {
-    let header = match agents.len() {
-        0 => "– no agents yet: `apex-agent install` puts the hooks in, and a claude or codex started after that shows here\n".to_string(),
-        1 => "– 1 agent\n".to_string(),
-        n => format!("– {n} agents\n"),
+/// doing about it, wanting, or last said; and under that a line a
+/// subagent, with what each is doing. The pane's name is its filter:
+/// with `under` given, only agents in that directory are blocks, and
+/// the last line counts the rest. With no agents the first line is a
+/// guide: `Start claude` and `Start codex` are verbs, to be B2'd there.
+pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>, under_dir: Option<&str>) -> (String, Vec<(String, String)>, String) {
+    let (here, elsewhere): (Vec<&Agent>, Vec<&Agent>) = agents.iter().partition(|a| under_dir.is_none_or(|d| under(&a.cwd, d)));
+    let header = match (here.len(), elsewhere.len()) {
+        (0, 0) => "– no agents yet: Start claude, Start codex, or `apex-agent install` first\n".to_string(),
+        (0, _) => "– no agents here\n".to_string(),
+        (1, _) => "– 1 agent\n".to_string(),
+        (n, _) => format!("– {n} agents\n"),
+    };
+    let footer = match elsewhere.len() {
+        0 => String::new(),
+        1 => "– 1 elsewhere: a pane in ~ shows all\n".to_string(),
+        n => format!("– {n} elsewhere: a pane in ~ shows all\n"),
     };
     let mut blocks = Vec::new();
-    for a in agents {
+    for a in here {
         let mut b = format!("{} {}  {}  {}", a.glyph(), if a.kind.is_empty() { "agent" } else { &a.kind }, shown_dir(&a.cwd, home), a.short());
         let since = ago(a.last, now);
         if !since.is_empty() {
@@ -334,15 +421,23 @@ pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>) -> (String, Vec<(St
         if let Some(d) = a.doing() {
             b.push_str(&format!("  {d}\n"));
         }
+        for s in a.subs.values() {
+            let kind = if s.kind.is_empty() { "subagent" } else { &s.kind };
+            match s.running.last() {
+                Some((_, t)) => b.push_str(&format!("    ▶ {kind}: {}\n", brief(t))),
+                None => b.push_str(&format!("    ⋯ {kind}\n")),
+            }
+        }
         blocks.push((a.session.clone(), b));
     }
-    (header, blocks)
+    (header, blocks, footer)
 }
 
 /// The whole text of the pane, and where each block starts in it (in
 /// characters): the header, a blank line, then the blocks set off from
-/// one another by a blank line.
-pub fn pane_text(header: &str, blocks: &[(String, String)]) -> (String, Vec<usize>) {
+/// one another by a blank line, and the footer, when there is one, set
+/// off the same way.
+pub fn pane_text(header: &str, blocks: &[(String, String)], footer: &str) -> (String, Vec<usize>) {
     let mut text = header.to_string();
     text.push('\n');
     let mut starts = Vec::new();
@@ -352,6 +447,12 @@ pub fn pane_text(header: &str, blocks: &[(String, String)]) -> (String, Vec<usiz
         }
         starts.push(text.chars().count());
         text.push_str(b);
+    }
+    if !footer.is_empty() {
+        if !blocks.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(footer);
     }
     (text, starts)
 }
@@ -372,7 +473,7 @@ mod tests {
         ag.apply(&Event { text: Some("build an experimental tool, apex-agent\n\nit should use hooks".into()), ..ev("0b1c1425-aaaa", "UserPromptSubmit", 2000) });
         ag.apply(&Event { call: Some("t1".into()), title: Some("Bash: Build it".into()), ..ev("0b1c1425-aaaa", "PreToolUse", 3000) });
         ag.apply(&Event { call: Some("t2".into()), title: Some("Read: src/main.rs".into()), ..ev("0b1c1425-aaaa", "PreToolUse", 3100) });
-        let (h, b) = pane(&ag.ordered(), 4000, Some("/home/me"));
+        let (h, b, _) = pane(&ag.ordered(), 4000, Some("/home/me"), None);
         assert_eq!(h, "– 1 agent\n");
         // a prompt of many lines is its first, and says there is more
         assert_eq!(b[0].1, "▶ claude  ~/src/apex  0b1c1425\n  build an experimental tool, apex-agent…\n  ▶ Read: src/main.rs\n");
@@ -384,17 +485,22 @@ mod tests {
         // a permission wanted goes to the head of the list, over one working
         ag.apply(&Event { text: Some("port the rc shell".into()), ..ev("9e21ab77-bbbb", "UserPromptSubmit", 5000) });
         ag.apply(&Event { call: Some("t3".into()), title: Some("Bash: Remove the build directory".into()), ..ev("0b1c1425-aaaa", "PermissionRequest", 6000) });
-        let (h, b) = pane(&ag.ordered(), 6000 + 150_000, Some("/home/me"));
+        let (h, b, _) = pane(&ag.ordered(), 6000 + 150_000, Some("/home/me"), None);
         assert_eq!(h, "– 2 agents\n");
         assert_eq!(b[0].0, "0b1c1425-aaaa");
-        assert_eq!(b[0].1, "? claude  ~/src/apex  0b1c1425  2m\n  build an experimental tool, apex-agent…\n  ? Bash: Remove the build directory\n");
+        assert_eq!(b[0].1, "? claude  ~/src/apex  0b1c1425  2m\n  build an experimental tool, apex-agent…\n  ? Bash: Remove the build directory  Allow Deny Ask\n");
+        // the pane's answer is an event, and the line says it
+        ag.apply(&Event { call: Some("t3".into()), kind: Some("ask".into()), ..ev("0b1c1425-aaaa", "Decision", 6500) });
+        assert_eq!(ag.get("0b1c1425-aaaa").unwrap().doing().as_deref(), Some("? Bash: Remove the build directory  asked at the terminal"));
+        ag.apply(&Event { call: Some("t3".into()), kind: Some("allow".into()), ..ev("0b1c1425-aaaa", "Decision", 6600) });
+        assert_eq!(ag.get("0b1c1425-aaaa").unwrap().state, State::Working);
         assert_eq!(b[1].1, "▶ claude  ~/src/apex  9e21ab77  2m\n  port the rc shell\n");
         // allowed and run: working again
         ag.apply(&Event { call: Some("t3".into()), ..ev("0b1c1425-aaaa", "PostToolUse", 7000) });
         assert_eq!(ag.get("0b1c1425-aaaa").unwrap().state, State::Working);
         // the turn ends: its last word is the line, and it sits after the one still working
         ag.apply(&Event { text: Some("Done: the tool is built.\n\nMore below.".into()), ..ev("0b1c1425-aaaa", "Stop", 8000) });
-        let (_, b) = pane(&ag.ordered(), 8000, Some("/home/me"));
+        let (_, b, _) = pane(&ag.ordered(), 8000, Some("/home/me"), None);
         assert_eq!(b[0].1, "~ claude  ~/src/apex  0b1c1425\n  build an experimental tool, apex-agent…\n  • Done: the tool is built.…\n");
         // the exchange is kept whole for the page, and stands through the next turn
         let x = ag.get("0b1c1425-aaaa").unwrap().exchange.clone().unwrap();
@@ -402,13 +508,22 @@ mod tests {
         ag.apply(&Event { text: Some("and now?".into()), ..ev("0b1c1425-aaaa", "UserPromptSubmit", 8500) });
         assert_eq!(ag.get("0b1c1425-aaaa").unwrap().exchange.as_ref().map(|x| x.said.as_str()), Some("Done: the tool is built.\n\nMore below."));
         assert_eq!(b[1].0, "9e21ab77-bbbb");
-        // subagents are counted and their calls are not the line
+        // subagents are counted, and each is a line of its own under the block
         ag.apply(&Event { sub: Some("a1".into()), kind: Some("Explore".into()), ..ev("9e21ab77-bbbb", "SubagentStart", 9000) });
         ag.apply(&Event { sub: Some("a1".into()), call: Some("t9".into()), title: Some("Grep: foo".into()), ..ev("9e21ab77-bbbb", "PreToolUse", 9100) });
         let a = ag.get("9e21ab77-bbbb").unwrap();
         assert_eq!((a.subagents, a.doing()), (1, None));
-        let (_, b) = pane(&ag.ordered(), 9100, Some("/home/me"));
-        assert!(b[1].1.starts_with("▶ claude  ~/src/apex  9e21ab77  1 subagent\n"), "{}", b[1].1);
+        let (_, b, _) = pane(&ag.ordered(), 9100, Some("/home/me"), None);
+        assert_eq!(b[1].1, "▶ claude  ~/src/apex  9e21ab77  1 subagent\n  port the rc shell\n    ▶ Explore: Grep: foo\n");
+        ag.apply(&Event { sub: Some("a1".into()), ..ev("9e21ab77-bbbb", "SubagentStop", 9200) });
+        assert!(ag.get("9e21ab77-bbbb").unwrap().subs.is_empty());
+        // the pane's name is its filter
+        let (h, b, f) = pane(&ag.ordered(), 9200, Some("/home/me"), Some("/home/me/src/apex"));
+        assert_eq!((h.as_str(), b.len(), f.as_str()), ("– 2 agents\n", 2, ""));
+        let (h, b, f) = pane(&ag.ordered(), 9200, Some("/home/me"), Some("/home/me/src/cmd"));
+        assert_eq!((h.as_str(), b.len(), f.as_str()), ("– no agents here\n", 0, "– 2 elsewhere: a pane in ~ shows all\n"));
+        assert_eq!(ag.by_id("0b1c").map(|a| a.session.as_str()), Some("0b1c1425-aaaa"));
+        assert!(ag.by_id("zz").is_none());
         // gone
         ag.apply(&ev("9e21ab77-bbbb", "SessionEnd", 9500));
         assert_eq!(ag.ordered().len(), 1);
@@ -419,11 +534,14 @@ mod tests {
     #[test]
     fn the_pane_text_knows_where_its_blocks_start() {
         let blocks = vec![("a".to_string(), "▶ a\n  one\n".to_string()), ("b".to_string(), "~ b\n".to_string())];
-        let (text, starts) = pane_text("– 2 agents\n", &blocks);
+        let (text, starts) = pane_text("– 2 agents\n", &blocks, "");
         assert_eq!(text, "– 2 agents\n\n▶ a\n  one\n\n~ b\n");
         assert_eq!(starts, vec![12, 23]);
         assert_eq!(text.chars().nth(12), Some('▶'));
         assert_eq!(text.chars().nth(23), Some('~'));
+        let (text, _) = pane_text("– 1 agent\n", &blocks[..1], "– 1 elsewhere\n");
+        assert_eq!(text, "– 1 agent\n\n▶ a\n  one\n\n– 1 elsewhere\n");
+        assert!(under("/a/b", "/a") && under("/a", "/a") && !under("/ab", "/a") && under("/x", ""));
     }
 
     #[test]
