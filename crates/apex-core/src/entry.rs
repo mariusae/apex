@@ -169,7 +169,14 @@ pub enum LayoutOp {
     /// The whole tiling after an acme layout operation (§tiling): the
     /// row's rectangle and every column with its windows, in order, with
     /// their rectangles. The leader computes it; replicas just take it.
-    Arrange { r: crate::tiling::Rect, cols: Vec<crate::state::Column> },
+    /// `full` is the column grown to the whole row (B3 on its box), when
+    /// one is: the others are hidden, their rectangles stale.
+    Arrange {
+        r: crate::tiling::Rect,
+        cols: Vec<crate::state::Column>,
+        #[serde(default)]
+        full: Option<ColumnId>,
+    },
     /// The snarf buffer (acme's is global; the client mirrors the system clipboard).
     Snarf { text: String },
     /// A jump (`Goto`): where it left from goes on the back stack, and

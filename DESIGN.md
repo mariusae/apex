@@ -1555,6 +1555,35 @@ drag, and to the selection when an already open file is plumbed. macOS
 gives no mouse event for a warp, so the client remembers where it put the
 pointer for keyboard routing until the mouse really moves.
 
+*Columns grown as windows are (apex's, acme has none).* A click on a
+column's box does to the row what a click on a window's box does to its
+column: `rowgrow`, `colgrow` turned on its side, called by `rowdragcol`
+for a press and release under five pixels apart, as `coldragwin` calls
+`colgrow`. Button 1 widens the column by half again, or a fifth of the
+row if that is more, taking from the columns beside it, nearest first,
+right then left, each giving at most half of what it has beyond a strip.
+Button 2 makes it as wide as can be and every other column a **strip**:
+`STRIP` wide, the box's width and a border's, which is a squeezed window's
+tag turned on its side -- its box at the top and its windows' boxes down
+it, each still showing dirty, live or working, and nothing else. A strip
+has no room for text, so the tiling gives its windows one-line tags
+whatever the text would wrap to, and the client draws no text, body,
+terminal or page there: nothing is laid out in no width, a terminal is not
+shrunk to one column, and what a view would scroll to waits until the
+column is wide again. Button 3 gives the column the whole row and hides
+the others, the row's `safe`: `Layout::full`, carried in `Arrange` like the
+rest of the tiling, with the hidden columns' rectangles left stale as
+acme leaves obscured windows'. Nothing draws, finds (`rowwhichcol`) or
+places a window in a hidden column: a window meant for one lands in the
+full column. A click on the full column's box lays the row out again with
+the others back as strips -- acme's windows come back as tags after one
+took the column -- and each strip's box widens it a step at a time.
+Anything else that changes the row first lays a hidden row out so
+(`rowadd`, `rowclose`, a drag), except a resize of the OS window, which
+simply gives the full column the new row. `rowadd`'s 40% of the last
+column comes from the widest column instead when the last is too narrow
+to give, which a strip always is.
+
 A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column
 (`init_session` returns it, as acme loads into `row.col[ncol-1]`).

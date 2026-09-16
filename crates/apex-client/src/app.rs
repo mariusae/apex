@@ -1886,6 +1886,34 @@ impl Acme {
             _ => (false, false, false, false, None),
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
+        // a tag in a strip (a column squeezed by B2 on another's box) is its
+        // box alone: no text laid out in no width, and nothing it would
+        // scroll to is taken, so it is still wanted when the column is wide
+        let layout = &self.node.state.layout;
+        let column = match view {
+            ViewId::ColTag(c) => layout.column(c),
+            ViewId::Tag(w) | ViewId::Body(w) => layout.column_of(w).and_then(|c| layout.column(c)),
+            ViewId::Top => None,
+        };
+        if column.is_some_and(|c| tiling::is_strip(c.r)) {
+            return Some(Source {
+                kind: Kind::of(view),
+                mono,
+                dirty,
+                stale,
+                live,
+                pulse,
+                unsynced: false,
+                fenced: false,
+                notified: false,
+                text: apex_core::text::Text::new(""),
+                sel: (0, 0),
+                origin: 0,
+                hl: None,
+                want_visible: false,
+                show_at: None,
+            });
+        }
         Some(Source {
             kind: Kind::of(view),
             mono,
@@ -2338,7 +2366,7 @@ impl Acme {
                 let (op, p) = (self.row_pt(start), self.row_pt(e.position));
                 let r = match bt {
                     BoxTarget::Win(w) => self.node.drag_window(&mut self.log, w, but, op, p),
-                    BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, op, p),
+                    BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, but, op, p),
                 };
                 if let Err(err) = r {
                     eprintln!("layout: {err}");

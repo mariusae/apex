@@ -231,7 +231,7 @@ impl Node {
 
     /// Append the whole tiling as it now stands in `l`.
     fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone() }))?;
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full }))?;
         Ok(())
     }
 
@@ -506,6 +506,12 @@ impl Node {
     /// Put a (new) window into a column (acme's `coladd`) and record the
     /// mouse warp acme makes: near the layout box, in the body.
     fn place(&mut self, log: &mut Log, col: ColumnId, w: WindowId, y: Option<i32>) -> Result<()> {
+        // a column hidden behind one grown to the whole row: the window
+        // goes where it can be seen, at no height meant for another column
+        let (col, y) = match self.state.layout.full {
+            Some(f) if f != col => (f, None),
+            _ => (col, y),
+        };
         let ci = self.column_index(col)?;
         let mut l = self.state.layout.clone();
         tiling::coladd(&mut l, ci, tiling::Adding::New(w), y, &*self.tiling);
@@ -572,10 +578,10 @@ impl Node {
     }
 
     /// acme's `rowdragcol`: a column's layout box dragged from `op` to `p`.
-    pub fn drag_column(&mut self, log: &mut Log, col: ColumnId, op: (i32, i32), p: (i32, i32)) -> Result<()> {
+    pub fn drag_column(&mut self, log: &mut Log, col: ColumnId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
         let ci = self.column_index(col)?;
         let mut l = self.state.layout.clone();
-        let warp = tiling::rowdragcol(&mut l, ci, op, p, &*self.tiling);
+        let warp = tiling::rowdragcol(&mut l, ci, but, op, p, &*self.tiling);
         if l != self.state.layout {
             self.arrange(log, &l)?;
         }

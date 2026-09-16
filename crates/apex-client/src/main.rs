@@ -181,7 +181,16 @@ impl Render for Acme {
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
-        for col in &l.cols {
+        for (ci, col) in l.cols.iter().enumerate() {
+            // hidden behind a column grown to the whole row (B3 on its box)
+            if !l.shows(ci) {
+                continue;
+            }
+            // squeezed to a strip (B2 on another column's box): its box and
+            // its windows' boxes down it, tags without text, bodies without
+            // anything in them -- no text to wrap into a strip's width, no
+            // terminal to shrink to one column, no page to squeeze
+            let strip = apex_core::tiling::is_strip(col.r);
             // acme's colinit: the column is white where no window is, the
             // tail below its last window (or its tag and the border under
             // it); everywhere else the black root is the borders between
@@ -231,7 +240,9 @@ impl Render for Acme {
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
                 area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()));
-                if s.body.dy() > 0 {
+                if s.body.dy() > 0 && strip {
+                    area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
+                } else if s.body.dy() > 0 {
                     let body = match win.body {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),

@@ -242,12 +242,12 @@ fn dragging_a_column_box_resizes_against_its_left_neighbour() {
     let mut l = row();
     rowadd(&mut l, AddingCol::New { id: ColumnId(2), tag: BufferId(2) }, None, &info());
     let op = (l.cols[1].r.x0 + 6, 30);
-    let warp = rowdragcol(&mut l, 1, op, (300, 30), &info());
+    let warp = rowdragcol(&mut l, 1, 1, op, (300, 30), &info());
     assert_eq!(warp, Some(Warp::ColButton(ColumnId(2))));
     assert_eq!(l.cols[0].r.x1, 300);
     assert_eq!(l.cols[1].r.x0, 300 + BORDER);
     // never narrower than 80 + Scrollwid
-    rowdragcol(&mut l, 1, (302, 30), (10, 30), &info());
+    rowdragcol(&mut l, 1, 1, (302, 30), (10, 30), &info());
     assert_eq!(l.cols[0].r.x1, 80 + SCROLLWID);
 }
 
@@ -337,4 +337,123 @@ fn resizing_back_and_forth_keeps_the_windows_proportions() {
     for (i, (a, b)) in before.iter().zip(after.iter()).enumerate() {
         assert!((a - b).abs() <= FONT, "window {i}: {a} -> {b} after 200 resizes; all {before:?} -> {after:?}");
     }
+}
+
+// ---- columns grown as windows are, on their side -------------------------------
+
+/// A row of three columns, each with a window.
+fn three() -> Layout {
+    let mut l = row();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(2), tag: BufferId(2) }, None, &info()).unwrap();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(3), tag: BufferId(3) }, None, &info()).unwrap();
+    for ci in 0..3 {
+        add(&mut l, ci, 10 + ci as u64, None);
+    }
+    l
+}
+
+fn widths(l: &Layout) -> Vec<i32> {
+    l.cols.iter().map(|c| c.r.dx()).collect()
+}
+
+/// Columns laid out across the row with a border between each and
+/// nothing lost at either edge, their windows as wide as they are.
+fn tiles(l: &Layout) {
+    let n = l.cols.len();
+    assert_eq!(l.cols[0].r.x0, l.r.x0, "{:?}", widths(l));
+    assert_eq!(l.cols[n - 1].r.x1, l.r.x1, "{:?}", widths(l));
+    for i in 1..n {
+        assert_eq!(l.cols[i].r.x0, l.cols[i - 1].r.x1 + BORDER, "{:?}", widths(l));
+    }
+    for c in &l.cols {
+        for s in &c.wins {
+            assert_eq!((s.r.x0, s.r.x1), (c.r.x0, c.r.x1));
+        }
+    }
+}
+
+#[test]
+fn button_1_on_a_columns_box_widens_it_at_its_neighbours_expense() {
+    let mut l = three();
+    tiles(&l);
+    let before = widths(&l);
+    rowgrow(&mut l, 1, 1, &info());
+    tiles(&l);
+    let after = widths(&l);
+    assert!(after[1] > before[1], "{before:?} -> {after:?}");
+    assert!(after[0] <= before[0] && after[2] <= before[2], "{before:?} -> {after:?}");
+    assert_eq!(l.full, None);
+}
+
+#[test]
+fn button_2_makes_a_column_as_wide_as_can_be_and_the_others_strips() {
+    let mut l = three();
+    rowgrow(&mut l, 1, 2, &info());
+    tiles(&l);
+    assert_eq!(widths(&l), vec![STRIP, 1000 - 2 * STRIP - 2 * BORDER, STRIP]);
+    // a strip is its box: its windows' tags are a line each
+    assert!(is_strip(l.cols[0].r));
+    assert!(l.cols[0].wins.iter().all(|s| s.taglines == 1));
+    // and a click on a strip's box brings it back a way
+    rowgrow(&mut l, 0, 1, &info());
+    tiles(&l);
+    assert!(l.cols[0].r.dx() > STRIP + 100, "{:?}", widths(&l));
+}
+
+#[test]
+fn button_3_gives_a_column_the_row_and_a_click_on_its_box_brings_the_others_back_as_strips() {
+    let mut l = three();
+    let id = l.cols[1].id;
+    rowgrow(&mut l, 1, 3, &info());
+    assert_eq!(l.full, Some(id));
+    assert_eq!((l.cols[1].r.x0, l.cols[1].r.x1), (0, 1000));
+    assert!(l.shows(1) && !l.shows(0) && !l.shows(2));
+    // the hidden columns are not there to be found, stale as they are
+    assert_eq!(rowwhichcol(&l, (5, 300)), Some(1));
+    assert_eq!(rowwhichcol(&l, (995, 300)), Some(1));
+    // clicked again, with button 1: the others come back as strips
+    rowgrow(&mut l, 1, 1, &info());
+    assert_eq!(l.full, None);
+    tiles(&l);
+    assert_eq!(widths(&l), vec![STRIP, 1000 - 2 * STRIP - 2 * BORDER, STRIP]);
+}
+
+#[test]
+fn a_click_on_a_columns_box_grows_it_and_a_drag_still_moves_it() {
+    let mut l = three();
+    let id = l.cols[2].id;
+    let x = l.cols[2].r.x0 + 3;
+    let before = widths(&l);
+    // a click: under five pixels of movement
+    assert_eq!(rowdragcol(&mut l, 2, 1, (x, 30), (x + 2, 31), &info()), Some(Warp::ColButton(id)));
+    assert!(widths(&l)[2] > before[2]);
+    // B3 then a drag: the row comes back before the box is moved
+    rowdragcol(&mut l, 2, 3, (x, 30), (x, 30), &info());
+    assert_eq!(l.full, Some(id));
+    rowdragcol(&mut l, 2, 1, (3, 30), (600, 30), &info());
+    assert_eq!(l.full, None);
+    tiles(&l);
+}
+
+#[test]
+fn a_row_with_a_full_column_resizes_it_and_lays_out_before_it_adds_or_closes() {
+    let mut l = three();
+    let id = l.cols[0].id;
+    rowgrow(&mut l, 0, 3, &info());
+    // the window grows: the full column is the row still
+    rowresize(&mut l, Rect::new(0, 0, 1400, 900), &info());
+    assert_eq!(l.full, Some(id));
+    assert_eq!((l.cols[0].r.x0, l.cols[0].r.x1, l.cols[0].r.y1), (0, 1400, 900));
+    // a new column: the row comes back first, and since the last column is
+    // a strip with nothing to give, the widest gives
+    let at = rowadd(&mut l, AddingCol::New { id: ColumnId(4), tag: BufferId(4) }, None, &info());
+    assert_eq!(at, Some(1));
+    assert_eq!(l.full, None);
+    tiles(&l);
+    assert!(l.cols[1].r.dx() > STRIP && l.cols[0].r.dx() > STRIP, "{:?}", widths(&l));
+    // closing one, from a hidden row too
+    rowgrow(&mut l, 0, 3, &info());
+    rowclose(&mut l, 3, &info());
+    assert_eq!(l.full, None);
+    tiles(&l);
 }

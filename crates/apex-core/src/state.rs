@@ -136,9 +136,29 @@ pub struct Layout {
     /// left from (`Fwd`).
     pub nav_back: Vec<Loc>,
     pub nav_forward: Vec<Loc>,
+    /// The column grown to the whole row (B3 on its box), when one is:
+    /// the row's `safe`, as a column's is for its windows. The others are
+    /// hidden and their rectangles go stale, until a click on its box
+    /// lays the row out again.
+    #[serde(default)]
+    pub full: Option<ColumnId>,
 }
 
 impl Layout {
+    /// Whether column `ci` is on screen: every one is, unless another has
+    /// been grown to the whole row.
+    pub fn shows(&self, ci: usize) -> bool {
+        match self.full {
+            Some(f) => self.cols.get(ci).is_some_and(|c| c.id == f),
+            None => ci < self.cols.len(),
+        }
+    }
+
+    /// The index of the column grown to the whole row, when one is.
+    pub fn full_index(&self) -> Option<usize> {
+        self.full.and_then(|f| self.column_index(f))
+    }
+
     pub fn column_of(&self, w: WindowId) -> Option<ColumnId> {
         self.cols.iter().find(|c| c.wins.iter().any(|s| s.window == w)).map(|c| c.id)
     }
@@ -434,7 +454,7 @@ impl State {
                 l.top = Some(*top);
                 l.r = *r;
             }
-            LayoutOp::Arrange { r, cols } => {
+            LayoutOp::Arrange { r, cols, full } => {
                 // a window may sit in one place only
                 let mut seen = std::collections::BTreeSet::new();
                 for c in cols {
@@ -446,6 +466,7 @@ impl State {
                 }
                 l.r = *r;
                 l.cols = cols.clone();
+                l.full = full.filter(|f| cols.iter().any(|c| c.id == *f));
             }
             LayoutOp::Snarf { text } => l.snarf = text.clone(),
             LayoutOp::Visit { from, to } => {
@@ -644,6 +665,7 @@ impl State {
         h.update(b"layout");
         h.update(&self.layout.top.map(|b| b.0).unwrap_or(0).to_le_bytes());
         h.update(&postcard::to_stdvec(&self.layout.r).unwrap_or_default());
+        h.update(&self.layout.full.map(|c| c.0).unwrap_or(0).to_le_bytes());
         for c in &self.layout.cols {
             h.update(&c.id.0.to_le_bytes());
             h.update(&c.tag.0.to_le_bytes());

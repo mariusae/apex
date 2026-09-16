@@ -21,6 +21,15 @@ use crate::state::{Column, Layout, Slot};
 pub const BORDER: i32 = 2;
 /// acme's `Scrollwid`: the layout box and scrollbar width.
 pub const SCROLLWID: i32 = 12;
+/// A column squeezed as far as it goes (B2 on another column's box): its
+/// box, and its windows' boxes down it, with no room for any text. The
+/// width acme's windows squeezed to their tags have, turned on its side.
+pub const STRIP: i32 = SCROLLWID + BORDER;
+
+/// Whether a column (or a window in one) is a strip: too narrow for text.
+pub fn is_strip(r: Rect) -> bool {
+    r.dx() <= STRIP
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Hash)]
 pub struct Rect {
@@ -179,7 +188,9 @@ fn winresize_in(l: &mut Layout, ci: usize, wi: usize, r: Rect, keepextra: bool, 
     let id = l.cols[ci].wins[wi].window;
     // wintaglines: the tag laid out in all of r tells how many lines fit
     let tag_maxlines = (r.dy() / font).max(0);
-    let taglines = info.taglines(id, r.dx(), tag_maxlines).max(0);
+    // in a strip the tag is its box: one line, whatever its text would
+    // wrap to (the text is not drawn there to be measured)
+    let taglines = if is_strip(r) { tag_maxlines.min(1) } else { info.taglines(id, r.dx(), tag_maxlines).max(0) };
     let y = (r.y0 + taglines * font).min(r.y1.max(r.y0));
     let bf = info.body_font_height(id).max(1);
     let mut body = r;
@@ -644,7 +655,8 @@ pub fn newwindow_y(l: &Layout, ci: usize, from: Option<WindowId>, info: &dyn Inf
 
 /// The column under a point, if any.
 pub fn rowwhichcol(l: &Layout, p: (i32, i32)) -> Option<usize> {
-    l.cols.iter().position(|c| c.r.contains(p.0, p.1))
+    // a hidden column's rectangle is stale, and may lie under the full one
+    (0..l.cols.len()).find(|&i| l.shows(i) && l.cols[i].r.contains(p.0, p.1))
 }
 
 /// A column being added.
@@ -656,14 +668,20 @@ pub enum AddingCol {
 /// acme's `rowadd`: a column at `x`, or with no `x`, taking 40% of the
 /// last column. `None` if the column it would split is too narrow.
 pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> Option<usize> {
+    reveal(l, info);
     let font = info.font_height().max(1);
     let mut r = l.r;
     r.y0 = l.r.y0 + font + BORDER;
     let mut x = x.unwrap_or(r.x0 - 1);
     let n = l.cols.len();
     if x < r.x0 && n > 0 {
-        // steal 40% of last column by default
-        let d = &l.cols[n - 1];
+        // steal 40% of last column by default; a strip has nothing to
+        // give, and there the widest column gives instead
+        let mut di = n - 1;
+        if l.cols[di].r.dx() < 100 {
+            di = (0..n).max_by_key(|&j| l.cols[j].r.dx()).unwrap_or(di);
+        }
+        let d = &l.cols[di];
         x = d.r.x0 + 3 * d.r.dx() / 5;
     }
     // look for column we'll land on
@@ -710,6 +728,15 @@ pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> 
 /// proportions.
 pub fn rowresize(l: &mut Layout, r: Rect, info: &dyn Info) {
     let font = info.font_height().max(1);
+    if let Some(fi) = l.full_index() {
+        // the full column is the row; the hidden ones are laid out afresh
+        // when they come back, so their stale rectangles can stay so
+        l.r = r;
+        let mut cr = r;
+        cr.y0 += font + BORDER;
+        colresize(l, fi, cr, info);
+        return;
+    }
     let or = l.r;
     let deltax = r.x0 - or.x0;
     l.r = r;
@@ -738,6 +765,7 @@ pub fn rowresize(l: &mut Layout, r: Rect, info: &dyn Info) {
 /// acme's `rowclose` without the freeing: take column `ci` out, giving
 /// its width to a neighbour.
 pub fn rowclose(l: &mut Layout, ci: usize, info: &dyn Info) -> Column {
+    reveal(l, info);
     let c = l.cols.remove(ci);
     let mut r = c.r;
     let n = l.cols.len();
@@ -759,15 +787,104 @@ pub fn rowclose(l: &mut Layout, ci: usize, info: &dyn Info) -> Column {
     c
 }
 
+/// `colgrow` turned on its side: a click on column `ci`'s box does to the
+/// row what a click on a window's box does to its column (acme has no
+/// such). Button 1 widens it by half again, or a fifth of the row if that
+/// is more, taking from the columns beside it, nearest first, right then
+/// left, each giving at most half of what it has beyond a strip. Button 2
+/// makes it as wide as can be, every other column a strip. Button 3 gives
+/// it the whole row and hides the others (`Layout::full`), until a click
+/// on its box lays the row out again with the others back as strips --
+/// as acme's windows come back as tags after a window took the column.
+pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
+    let n = l.cols.len();
+    if ci >= n {
+        return;
+    }
+    let row = l.r;
+    if but == 3 {
+        l.full = Some(l.cols[ci].id);
+        let mut r = l.cols[ci].r;
+        r.x0 = row.x0;
+        r.x1 = row.x1;
+        colresize(l, ci, r, info);
+        return;
+    }
+    // the width the columns share, the borders between them taken out
+    let total = (row.dx() - (n as i32 - 1) * BORDER).max(0);
+    // each column's width now: out of a hidden row, the full one has it all
+    let w0: Vec<i32> = match l.full_index() {
+        Some(fi) => (0..n).map(|j| if j == fi { total } else { 0 }).collect(),
+        None => l.cols.iter().map(|c| c.r.dx().max(0)).collect(),
+    };
+    l.full = None;
+    let mut w = w0;
+    let most = (total - (n as i32 - 1) * STRIP).max(STRIP);
+    if but == 2 {
+        w.iter_mut().for_each(|x| *x = STRIP);
+        w[ci] = most;
+    } else {
+        let mine = w[ci];
+        let mut dw = (mine / 2).max(row.dx() / 5).min(most - mine).max(0);
+        let give = |w: &mut Vec<i32>, j: usize, dw: &mut i32| {
+            let spare = (w[j] - STRIP).max(0);
+            let take = (*dw).min((spare + 1) / 2);
+            w[j] -= take;
+            w[ci] += take;
+            *dw -= take;
+        };
+        for k in 1..n {
+            if ci + k < n {
+                give(&mut w, ci + k, &mut dw);
+            }
+            if k <= ci {
+                give(&mut w, ci - k, &mut dw);
+            }
+        }
+    }
+    // no column narrower than a strip; what one lacks, the grown one pays
+    for j in 0..n {
+        if j != ci && w[j] < STRIP {
+            w[ci] -= STRIP - w[j];
+            w[j] = STRIP;
+        }
+    }
+    w[ci] = w[ci].max(STRIP);
+    // left to right, a border between; the last column ends at the row's edge
+    let mut x = row.x0;
+    for (j, width) in w.iter().enumerate() {
+        let mut r = l.cols[j].r;
+        r.x0 = x;
+        r.x1 = if j == n - 1 { row.x1 } else { x + width };
+        colresize(l, j, r, info);
+        x = r.x1 + BORDER;
+    }
+}
+
+/// A row with a column grown to the whole of it, laid out again with the
+/// others back as strips: what a click on that column's box does, and
+/// what anything else that changes the row does first, so it never works
+/// on the hidden columns' stale rectangles.
+fn reveal(l: &mut Layout, info: &dyn Info) {
+    if let Some(fi) = l.full_index() {
+        rowgrow(l, fi, 1, info);
+    }
+    l.full = None;
+}
+
 /// acme's `rowdragcol`: the layout box of column `ci` was dragged from
 /// `op` to `p`: move it past its neighbours, or resize against the
 /// column to its left.
-pub fn rowdragcol(l: &mut Layout, ci: usize, op: (i32, i32), p: (i32, i32), info: &dyn Info) -> Option<Warp> {
+pub fn rowdragcol(l: &mut Layout, ci: usize, but: i32, op: (i32, i32), p: (i32, i32), info: &dyn Info) -> Option<Warp> {
     let n = l.cols.len();
     let id = l.cols[ci].id;
     if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
-        return None;
+        // a click, not a drag: the column grows, as a window's box does
+        rowgrow(l, ci, but, info);
+        return Some(Warp::ColButton(id));
     }
+    // dragged out of a hidden row: the row comes back first
+    reveal(l, info);
     let cr = l.cols[ci].r;
     if (ci > 0 && p.0 < l.cols[ci - 1].r.x0) || (ci < n - 1 && p.0 > cr.x1) {
         // shuffle

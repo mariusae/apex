@@ -602,3 +602,27 @@ fn notifications_queue_one_a_tool_and_go_with_it() {
     // and a follower replaying the log agrees
     assert_eq!(follower(&log).state.meta.notifications, node.state.meta.notifications);
 }
+
+#[test]
+fn a_column_given_the_whole_row_is_replicated_and_new_windows_land_in_it() {
+    let (mut log, mut node, _) = session();
+    let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
+    assert!(cols.len() >= 2, "a session starts with columns to hide");
+    let (first, second) = (cols[0], cols[1]);
+    let r = node.state.layout.cols[0].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    // B3 on the first column's box: the row is it, and a follower agrees
+    node.drag_column(&mut log, first, 3, at, at).unwrap();
+    assert_eq!(node.state.layout.full, Some(first));
+    assert_eq!((node.state.layout.cols[0].r.x0, node.state.layout.cols[0].r.x1), (node.state.layout.r.x0, node.state.layout.r.x1));
+    assert_eq!(follower(&log).state.layout.full, Some(first));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+    // a window meant for the hidden column lands where it can be seen
+    let w = node.new_window(&mut log, second, "/tmp/meant-for-the-hidden-column", "").unwrap();
+    assert_eq!(node.state.layout.column_of(w), Some(first));
+    // B1 on the box again: the others come back, as strips
+    node.drag_column(&mut log, first, 1, at, at).unwrap();
+    assert_eq!(node.state.layout.full, None);
+    assert!(tiling::is_strip(node.state.layout.cols[1].r), "{:?}", node.state.layout.cols[1].r);
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+}
