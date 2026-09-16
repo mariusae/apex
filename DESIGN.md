@@ -1607,7 +1607,10 @@ undoing the collapse that made it: a column that took a collapsed
 neighbour's width and then collapsed itself remembers the sum, and hands
 the neighbour's part back when the neighbour returns, so undoing a
 stack of collapses returns the row to how it was, as far as the columns
-beside it have the room to give.
+beside it have the room to give. A click on the box of a window in a
+strip is a click on the column's box as well: the column comes back, and
+the window grows in it by the button used, as it would in a column with
+room (`coldragwin`, before its `colgrow`).
 
 A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column

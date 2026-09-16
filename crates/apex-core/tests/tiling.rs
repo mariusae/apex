@@ -557,3 +557,28 @@ fn strips_left_by_button_2_or_3_come_back_at_the_widths_they_had() {
     tiles(&l);
     assert!(near(l.cols[0].r.dx(), before[0]), "{before:?} -> {:?}", widths(&l));
 }
+
+#[test]
+fn a_click_on_a_windows_box_in_a_strip_brings_the_column_back_and_grows_the_window() {
+    let (mut l, before) = four();
+    // a second window in the first column, then the column collapsed
+    add(&mut l, 0, 20, None);
+    assert_eq!(l.cols[0].wins.len(), 2);
+    rowgrow(&mut l, 0, 4, &info());
+    assert!(is_strip(l.cols[0].r));
+    // B2 on the second window's box: the column is back at its width, and
+    // the window is as big as it can be, the other down to its tag
+    let s = l.cols[0].wins[1].r;
+    let at = (s.x0 + 3, s.y0 + 3);
+    assert_eq!(coldragwin(&mut l, 0, 1, 2, at, at, &info()), Some(Warp::WinButton(WindowId(20))));
+    tiles(&l);
+    assert!(near(l.cols[0].r.dx(), before[0]), "{before:?} -> {:?}", widths(&l));
+    let (top, grown) = (l.cols[0].wins[0], l.cols[0].wins[1]);
+    assert_eq!(top.r.dy(), FONT, "the other window is its tag");
+    assert!(grown.r.dy() > 600, "{:?}", grown.r);
+    // a window's box in a column with room still just grows the window
+    let widths_now = widths(&l);
+    let s = l.cols[2].wins[0].r;
+    coldragwin(&mut l, 2, 0, 1, (s.x0 + 3, s.y0 + 3), (s.x0 + 3, s.y0 + 3), &info());
+    assert_eq!(widths(&l), widths_now);
+}

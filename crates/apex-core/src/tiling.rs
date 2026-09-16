@@ -559,6 +559,11 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
     let w = l.cols[ci].wins[wi].window;
     let (mut px, py) = p;
     if (px - op.0).abs() < 5 && (py - op.1).abs() < 5 {
+        // a window in a strip: the click is on the column's box too, which
+        // brings the column back, and the window grows in it as it comes
+        if is_strip(l.cols[ci].r) {
+            rowgrow(l, ci, 1, info);
+        }
         colgrow(l, ci, wi, but, info);
         return Some(Warp::WinButton(w));
     }
