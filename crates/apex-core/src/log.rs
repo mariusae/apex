@@ -306,6 +306,16 @@ impl Log {
         self.push_meta(MetaOp::Unset { owner, key: key.to_string() })
     }
 
+    /// Raise `attachment`'s notification, pointing at `origin`.
+    pub fn notify(&mut self, attachment: AttachmentId, origin: Option<WindowId>) -> Entry {
+        self.push_meta(MetaOp::Notify { attachment, origin })
+    }
+
+    /// Lower `attachment`'s notification.
+    pub fn unnotify(&mut self, attachment: AttachmentId) -> Entry {
+        self.push_meta(MetaOp::Unnotify { attachment })
+    }
+
     /// Ask the holder of `shard` to hand over to `to`.
     pub fn request(&mut self, shard: Shard, to: AttachmentId) -> Result<Entry, LogError> {
         if shard.is_pinned() {

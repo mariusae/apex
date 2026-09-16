@@ -274,6 +274,9 @@ pub struct Source {
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
     pub fenced: bool,
+    /// The session has notifications waiting: the top row's square says
+    /// so, and a click on it takes the oldest.
+    pub notified: bool,
     pub text: Text,
     pub sel: (usize, usize),
     pub origin: usize,
@@ -305,6 +308,7 @@ pub struct Prepaint {
     pulse: Option<f32>,
     unsynced: bool,
     fenced: bool,
+    notified: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -548,6 +552,7 @@ impl Element for TextElement {
                 pulse: src.pulse,
                 unsynced: src.unsynced,
                 fenced: src.fenced,
+                notified: src.notified,
             })
         })
     }
@@ -627,13 +632,24 @@ impl Element for TextElement {
                     layout_box = Some(b);
                 }
                 Kind::Top => {
-                    // the upper-left square: filled when this client has
-                    // lost its leases and only watches
+                    // the upper-left square, the session's own: filled when
+                    // this client has lost its leases and only watches, and
+                    // else when a tool has asked for the user; clicked then,
+                    // it takes the oldest notification
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
                     window.paint_quad(fill(b, pal.border));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
-                    window.paint_quad(fill(inner, if pp.fenced { rgb(crate::theme::theme().fenced) } else { pal.bg }));
+                    let th = crate::theme::theme();
+                    let fillc = if pp.fenced {
+                        rgb(th.fenced)
+                    } else if pp.notified {
+                        rgb(th.notified)
+                    } else {
+                        pal.bg
+                    };
+                    window.paint_quad(fill(inner, fillc));
+                    layout_box = Some(b);
                 }
             }
 

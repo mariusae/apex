@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 25;
+pub const PROTOCOL: u32 = 26;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -146,6 +146,13 @@ pub enum ClientMsg {
     /// A setting: the session's, or `attachment`'s (an attach script
     /// names the attaching client through `$apexattachment`).
     Set { key: String, value: String, attachment: Option<AttachmentId> },
+    /// Raise this attachment's notification (`MetaOp::Notify`), about the
+    /// window `origin` when there is one: the session's handle shows it,
+    /// and a click on the handle takes the user there.
+    Notify { origin: Option<WindowId> },
+    /// Lower a notification: this attachment's own (`None`), or, from a
+    /// UI, the one `attachment` raised -- the user dismissing it.
+    Unnotify { attachment: Option<AttachmentId> },
     /// The commands the server is running (`Ps` answers), and ending them
     /// by name or pid (acme's Kill; `Ps` answers with what is left).
     Ps,

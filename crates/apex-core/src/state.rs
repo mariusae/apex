@@ -217,6 +217,20 @@ pub struct Meta {
     /// Settings by owner: the session's under `SERVER`, an attachment's
     /// under its id (gone when it detaches).
     pub settings: BTreeMap<AttachmentId, BTreeMap<String, String>>,
+    /// The session's notifications, oldest first: at most one a tool,
+    /// gone when it retracts it, when the user dismisses it, or when the
+    /// tool detaches. The session's handle shows whether there are any.
+    #[serde(default)]
+    pub notifications: Vec<Notification>,
+}
+
+/// A tool's flag raised for the user (`MetaOp::Notify`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Notification {
+    /// The attachment that raised it.
+    pub by: AttachmentId,
+    /// The window it is about, if any: where dismissing it takes the user.
+    pub origin: Option<WindowId>,
 }
 
 impl Meta {
@@ -546,6 +560,7 @@ impl State {
             MetaOp::Detach { attachment } => {
                 m.attachments.remove(attachment);
                 m.settings.remove(attachment);
+                m.notifications.retain(|n| n.by != *attachment);
             }
             MetaOp::LeaseRequest { shard, to } => {
                 let l = m.leases.get_mut(shard).ok_or_else(|| ApplyError::Missing(format!("lease {shard}")))?;
@@ -572,6 +587,11 @@ impl State {
             MetaOp::Set { owner, key, value } => {
                 m.settings.entry(*owner).or_default().insert(key.clone(), value.clone());
             }
+            MetaOp::Notify { attachment, origin } => match m.notifications.iter_mut().find(|n| n.by == *attachment) {
+                Some(n) => n.origin = *origin,
+                None => m.notifications.push(Notification { by: *attachment, origin: *origin }),
+            },
+            MetaOp::Unnotify { attachment } => m.notifications.retain(|n| n.by != *attachment),
             MetaOp::Unset { owner, key } => {
                 if let Some(s) = m.settings.get_mut(owner) {
                     s.remove(key);

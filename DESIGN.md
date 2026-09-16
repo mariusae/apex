@@ -220,6 +220,34 @@ at the top-left of the top row fills red, the session's tab in the
 title bar fades into the strip (its name greyed, "fenced" after it),
 and the window title says another client leads.
 
+*As built, notifications:* the same square is the session's, and is
+otherwise inert, so it is where a tool asks for the user: an agent ready
+for more, a build done. A notification is a flag in the metalog
+(`MetaOp::Notify{attachment, origin}`, `Unnotify{attachment}`), kept in
+`Meta::notifications` oldest first: one a attachment, so a tool raising
+its flag again keeps its place in the queue and only moves where it
+points; `origin` is the window it is about, if any. It goes when the tool
+retracts it, when the user dismisses it, and when the tool detaches (the
+`Detach` entry takes it, as it takes the attachment's settings), so a
+tool that dies leaves nothing waiting. On the wire, `ClientMsg::Notify
+{origin}` raises the sender's own flag and `Unnotify{attachment}` lowers
+one: a tool its own, only a UI another's, since dismissing is the user's.
+While any is raised the square fills with the notification colour --
+azure `0080FF` on light, ice `7DF9FF` on dark, each chosen under the
+deuteranopia simulation against every handle colour, border and
+highlight it can sit beside, where it is further from its nearest
+neighbour than any other candidate (the dirty navy on light, the tag
+border on dark) -- unless the client is fenced, whose red wins. A click
+on the square takes the oldest: it is dismissed, and when its window is
+still here the window is revealed and the pointer landed on it, as a new
+window is; the next click takes the next, and when none is left the
+square is the tag's colour again. The session's tab takes the same
+colour, its text dark on it, so a session wanting the user shows from
+any other tab; a parked session's entries arrive off the window, so each
+window looks at its tabs' queues on its tick and draws the strip again
+when that changes. `apex notify [-win=WIN]` raises one from a script and
+waits until it is dismissed.
+
 While an attachment holds entries the server has not acknowledged, the
 affected buffers are **unsynced** — a state distinct from dirty (§9), shown
 in the tag box in its own colour. It clears when the attachment resumes
@@ -905,8 +933,10 @@ wire or the replicated state showing through: `Tool::attach(name)`,
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window new_page open read replace append insert_following select
 selection show show_line line rename tag set_tag set_clean set_owner
-set_live set_working delete exec exec_in errors watch unwatch set
-setting`. `tag`/`set_tag` are the
+set_live set_working notify unnotify notified delete exec exec_in errors
+watch unwatch set setting`. `notify(origin)` asks for the user's
+attention (§4.1, notifications) and `notified` says whether the flag is
+still up, false once the user has dismissed it. `tag`/`set_tag` are the
 user's half of a window's tag, what follows `|`: the words before it
 are apex's own and stay the leader's business. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text

@@ -568,3 +568,37 @@ fn a_name_with_a_bar_does_not_grow_the_tag() {
     assert_eq!(tag(&node), once, "the tag grew");
     assert!(once.starts_with("/tmp/proj/a|b.txt Del Snarf |"), "{once}");
 }
+
+#[test]
+fn notifications_queue_one_a_tool_and_go_with_it() {
+    let (mut log, mut node, col) = session();
+    let (agent, _) = log.attach(AttachmentKind::Tool, "agent");
+    let (build, _) = log.attach(AttachmentKind::Tool, "build");
+    let w = node.new_window(&mut log, col, "/tmp/agent-notes", "").unwrap();
+    node.catch_up(&log).unwrap();
+    let flags = |n: &Node| n.state.meta.notifications.iter().map(|x| (x.by, x.origin)).collect::<Vec<_>>();
+
+    // raised in order, oldest first
+    log.notify(agent, Some(w));
+    log.notify(build, None);
+    node.catch_up(&log).unwrap();
+    assert_eq!(flags(&node), vec![(agent, Some(w)), (build, None)]);
+    // one flag a tool: raised again, it keeps its place and points anew
+    log.notify(agent, None);
+    node.catch_up(&log).unwrap();
+    assert_eq!(flags(&node), vec![(agent, None), (build, None)]);
+    // retracted, or dismissed: the rest keep their order
+    log.unnotify(agent);
+    node.catch_up(&log).unwrap();
+    assert_eq!(flags(&node), vec![(build, None)]);
+    // lowering a flag that is not raised is nothing
+    log.unnotify(agent);
+    node.catch_up(&log).unwrap();
+    assert_eq!(flags(&node), vec![(build, None)]);
+    // a tool that goes takes its flag with it
+    log.detach(build);
+    node.catch_up(&log).unwrap();
+    assert!(flags(&node).is_empty());
+    // and a follower replaying the log agrees
+    assert_eq!(follower(&log).state.meta.notifications, node.state.meta.notifications);
+}

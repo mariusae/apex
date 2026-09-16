@@ -660,6 +660,32 @@ impl Tool {
         Ok(())
     }
 
+    /// Ask for the user's attention: an agent ready for more, a build
+    /// done. The session's handle (the square at the top left) takes the
+    /// notification colour, and so does its tab in the app; clicking the
+    /// handle dismisses the oldest notification and, when it names a
+    /// window, takes the user there. A tool has one notification at a
+    /// time: raising it again keeps its place in the queue and points it
+    /// at `origin` instead. It goes when the tool retracts it
+    /// (`unnotify`), when the user dismisses it, or when the tool detaches.
+    pub fn notify(&mut self, origin: Option<WindowId>) -> Result<()> {
+        self.remote.send(&ClientMsg::Notify { origin });
+        Ok(())
+    }
+
+    /// Retract the tool's notification, if it has one raised.
+    pub fn unnotify(&mut self) -> Result<()> {
+        self.remote.send(&ClientMsg::Unnotify { attachment: None });
+        Ok(())
+    }
+
+    /// Whether the tool's notification is still raised: false once it has
+    /// been retracted or the user has dismissed it.
+    pub fn notified(&self) -> bool {
+        let me = self.remote.attachment();
+        self.remote.node.state.meta.notifications.iter().any(|n| n.by == me)
+    }
+
     /// Say that the tool is working on something behind the window: its
     /// handle pulses until this is turned off, or until the tool
     /// detaches. For work with nothing to show while it lasts (an agent

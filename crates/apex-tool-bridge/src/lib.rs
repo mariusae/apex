@@ -20,6 +20,11 @@
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
 //! - `rename {window, name}`, `live {window, on}`, `working {window, on}`, `delete {window}`
+//! - `notify {window?}`: the user's attention asked for, about a window
+//!   when one is named (the session's handle and tab take the colour; a
+//!   click on the handle dismisses it and goes there); `unnotify` retracts
+//!   it; `notified` → `on`: whether it is still raised (false once the
+//!   user has dismissed it)
 //! - `tag {window}` → `text`, `settag {window, text}`: the user's half of
 //!   the window's tag, what follows `|` (the words before it are apex's)
 //! - `page {name, html}` → `window` (a window showing HTML as a page;
@@ -221,6 +226,16 @@ impl Bridge {
                 self.tool.set_tag(window(v)?, v["text"].as_str().ok_or("text")?).map_err(e)?;
                 Ok(json!({}))
             }
+            "notify" => {
+                let w = if v["window"].is_null() { None } else { Some(window(v)?) };
+                self.tool.notify(w).map_err(e)?;
+                Ok(json!({}))
+            }
+            "unnotify" => {
+                self.tool.unnotify().map_err(e)?;
+                Ok(json!({}))
+            }
+            "notified" => Ok(json!({ "on": self.tool.notified() })),
             "working" => {
                 self.tool.set_working(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))

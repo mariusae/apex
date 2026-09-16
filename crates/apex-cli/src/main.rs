@@ -322,6 +322,16 @@ until the file's window is deleted, and exits. Terminals and commands
 have EDITOR set to apex-editor, a link to the apex binary beside it that
 does the same (one word, since zsh and rc do not split $EDITOR into
 words), unless the profile says otherwise." },
+    Cmd { name: "notify", usage: "apex notify [-win=WIN]", short: "ask for the user's attention, and wait until it is given", flags: &[flag("win", "the window the notification is about (an id, or a name): where dismissing it takes the user")], run: notify_cmd, long: "\
+Notify raises a notification in the session and waits until the user
+dismisses it: the square at the top left takes the notification colour,
+and so does the session's tab in the app. A click on the square takes the
+oldest notification, and when it names a window (-win), the window is
+brought on screen and the pointer taken to it. It exits 0 when dismissed;
+interrupted, it exits and its notification goes with it, as a tool's does
+when it detaches. For scripts that want someone to look:
+
+\tmake test; apex notify -win=$winid" },
     Cmd { name: "env", usage: "apex env [-import] [KEY=VALUE...]", short: "the session's environment", flags: &[switch("import", "this environment's changes become the session's")], run: env_cmd, long: "\
 Env sets variables in the session's environment: what every terminal and
 command started from then on gets, beyond the daemon's own. With no
@@ -1356,6 +1366,30 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     wait(&mut c, |r| open(r)).map_err(|_| format!("{file}: not opened"))?;
     loop {
         if !open(&c) {
+            return Ok(());
+        }
+        match c.step(Duration::from_millis(100)) {
+            Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(_) => return Err("connection closed".into()),
+        }
+    }
+}
+
+fn notify_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    if !p.args.is_empty() {
+        return Err("usage".into());
+    }
+    let mut c = tool(ctx)?;
+    let origin = match p.get("win") {
+        Some(spec) => Some(find_window(&c, spec)?),
+        None => None,
+    };
+    let me = c.attachment();
+    c.send(&ClientMsg::Notify { origin });
+    let raised = |r: &Remote| r.node.state.meta.notifications.iter().any(|n| n.by == me);
+    wait(&mut c, |r| raised(r)).map_err(|_| "notify: not raised".to_string())?;
+    loop {
+        if !raised(&c) {
             return Ok(());
         }
         match c.step(Duration::from_millis(100)) {

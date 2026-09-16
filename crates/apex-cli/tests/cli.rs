@@ -1142,3 +1142,33 @@ fn sessions_have_an_identity_and_labels_for_people() {
     ok(&sock, &["end-session", "-f", &side]);
     assert_eq!(labels(&ok(&sock, &["ls"])), vec!["renamed"]);
 }
+
+#[test]
+fn notify_waits_until_the_user_dismisses_it() {
+    let sock = daemon();
+    let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
+    let col = ui.node.state.layout.cols.first().map(|c| c.id).unwrap();
+    let w = ui.propose(apex_server::Proposal::NewWindow { col, name: "/tmp/notify-origin".into() }, Duration::from_secs(5)).unwrap().unwrap();
+    let s2 = sock.clone();
+    let wid = w.0.to_string();
+    let child = std::thread::spawn(move || apex(&s2, &["notify", &format!("-win={wid}")]));
+    // raised, about that window
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ui.node.state.meta.notifications.is_empty() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    let n = *ui.node.state.meta.notifications.first().expect("a notification");
+    assert_eq!(n.origin, Some(w));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!child.is_finished(), "notify returned before it was dismissed");
+    // the user dismisses it: notify returns, successfully
+    ui.send(&apex_server::proto::ClientMsg::Unnotify { attachment: Some(n.by) });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !child.is_finished() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    let (success, _, err) = child.join().unwrap();
+    assert!(success, "{err}");
+    let _ = ui.step(Duration::from_millis(100));
+    assert!(ui.node.state.meta.notifications.is_empty());
+}

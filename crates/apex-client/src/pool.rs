@@ -244,6 +244,11 @@ impl Pool {
         Some((p.link.ack_ms, p.link.last_pong.map(|t| t.elapsed())))
     }
 
+    /// Whether a parked session has notifications waiting, for its tab.
+    pub fn notified(cx: &App, url: &SessionUrl) -> bool {
+        cx.try_global::<Pool>().and_then(|pool| pool.parked.values().find(|p| p.url == *url)).is_some_and(|p| !p.node.state.meta.notifications.is_empty())
+    }
+
     /// The theme changed: every parked link tells its daemon the colours
     /// too, so a session shown later is right from the start.
     pub fn send_config(cx: &mut App) {

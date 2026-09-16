@@ -248,6 +248,8 @@ pub struct Acme {
     pub menu: Option<menu::Menu>,
     /// What the menu ran last: it opens on that item.
     menu_last: Option<String>,
+    /// The tabs last seen with notifications waiting (`tabs_tick`).
+    notified_tabs: Vec<SessionUrl>,
     /// Snarfouts waiting for a terminal's text: (ask id, terminal).
     snarfouts: Vec<(u64, TermId)>,
     /// Previews of remote files waiting for their first bytes: (ask id,
@@ -1248,6 +1250,9 @@ impl Acme {
                                 if acme.strip_tick(window) {
                                     cx.notify();
                                 }
+                                if acme.tabs_tick(cx) {
+                                    cx.notify();
+                                }
                             }
                         });
                     }
@@ -1316,6 +1321,7 @@ impl Acme {
             chooser: false,
             menu: None,
             menu_last: None,
+            notified_tabs: Vec::new(),
             snarfouts: Vec::new(),
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
@@ -1374,6 +1380,59 @@ impl Acme {
 
     /// Has this client lost its leases (another UI attached and took
     /// them)? The mirror log follows the metalog, so it knows.
+    /// The oldest notification in this session, which the top left square
+    /// is showing and a click on it takes.
+    pub fn notification_head(&self) -> Option<apex_core::state::Notification> {
+        self.node.state.meta.notifications.first().copied()
+    }
+
+    /// Whether the session a tab names has notifications waiting: this
+    /// window's own, a parked one's, or one another window is showing. (Our
+    /// own window, mid-update, reads as not found and is passed over.)
+    pub fn tab_notified(&self, url: &SessionUrl, cx: &gpui::App) -> bool {
+        if *url == self.url {
+            return self.notification_head().is_some();
+        }
+        if crate::pool::Pool::notified(cx, url) {
+            return true;
+        }
+        cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()).filter_map(|h| h.read(cx).ok()).any(|a| a.url == *url && a.notification_head().is_some())
+    }
+
+    /// Every tick: the tabs whose sessions want the user, when that changed
+    /// since the last look. A parked session's entries arrive off this
+    /// window, so nothing else would draw its tab again.
+    pub fn tabs_tick(&mut self, cx: &gpui::App) -> bool {
+        let now: Vec<SessionUrl> = crate::pool::Pool::tabs(cx, &self.url).into_iter().filter(|u| self.tab_notified(u, cx)).collect();
+        if now == self.notified_tabs {
+            return false;
+        }
+        self.notified_tabs = now;
+        true
+    }
+
+    /// The session's square clicked while a tool wants the user: the
+    /// oldest notification is dismissed, and when it names a window that
+    /// is still here, the window is brought on screen and the pointer
+    /// taken to it, as a new window is landed on. The next click takes the
+    /// next; once there are none the square is the tag's colour again.
+    fn take_notification(&mut self, cx: &mut Context<Self>) {
+        let Some(n) = self.notification_head() else { return };
+        match &mut self.backend {
+            Backend::Remote(link) => link.send(&ClientMsg::Unnotify { attachment: Some(n.by) }),
+            Backend::Local(_) => {
+                self.log.unnotify(n.by);
+                let _ = self.node.catch_up(&self.log);
+            }
+        }
+        if let Some(w) = n.origin.filter(|w| self.node.state.window(*w).is_ok()) {
+            self.show(w);
+            self.node.warp = Some(Warp::NewWindow(w));
+        }
+        self.after();
+        cx.notify();
+    }
+
     pub fn fenced(&self) -> bool {
         matches!(self.backend, Backend::Remote(_))
             && self.log.lease(Shard::Layout).is_some_and(|l| l.holder != self.node.attachment || l.released.is_some())
@@ -1836,6 +1895,7 @@ impl Acme {
             pulse,
             unsynced: false,
             fenced: self.fenced(),
+            notified: view == ViewId::Top && self.notification_head().is_some(),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
@@ -1988,6 +2048,14 @@ impl Acme {
         // a click in a tag commits the name typed there (acme's wincommit)
         if let Target::View(ViewId::Tag(w)) = target {
             let _ = self.node.commit_tag(&mut self.log, w);
+        }
+        // the session's own square, while a tool wants the user: the oldest
+        // notification is taken, and the pointer goes where it points
+        if let (Target::View(ViewId::Top), Region::LayoutBox, MouseButton::Left) = (target, region, button) {
+            if self.notification_head().is_some() {
+                self.take_notification(cx);
+                return;
+            }
         }
         // a layout box: acme's coldragwin/rowdragcol wait for the release
         if let (Target::View(v), Region::LayoutBox) = (target, region) {

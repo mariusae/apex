@@ -38,6 +38,13 @@ pub struct Theme {
     pub live: u32,
     pub stale: u32,
     pub fenced: u32,
+    /// The session wants the user (a tool raised a notification): the
+    /// top left square, and the session's tab. Chosen under a deuteranopia
+    /// simulation to stand apart from every handle colour, border and
+    /// highlight it can sit beside (azure on light, ice on dark).
+    pub notified: u32,
+    /// Text on a notified tab, which takes the notification colour.
+    pub tab_notified_text: u32,
     pub exec_hl: u32,
     pub look_hl: u32,
     /// What the terminal's cursor tints its cell towards.
@@ -98,6 +105,8 @@ pub const LIGHT: Theme = Theme {
     live: 0xB24073,
     stale: 0xFFD700,
     fenced: 0xAA0000,
+    notified: 0x0080FF,
+    tab_notified_text: 0x000000,
     exec_hl: 0xAA0000,
     look_hl: 0x006600,
     cursor_tint_to: 0x000000,
@@ -157,6 +166,8 @@ pub const DARK: Theme = Theme {
     live: 0xC8508A,
     stale: 0xFFD700,
     fenced: 0xFF3030,
+    notified: 0x7DF9FF,
+    tab_notified_text: 0x0A1A1C,
     exec_hl: 0xB02020,
     look_hl: 0x2E8B2E,
     cursor_tint_to: 0xFFFFFF,
