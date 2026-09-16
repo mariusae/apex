@@ -1033,7 +1033,14 @@ and typing run kept from the buffer's entry stream (our own inserts told
 apart by a queue of what we proposed), echo cancelled, ^C/DEL/^D as win
 reads them, raw mode when echo is off; `Win` in the top tag runs it as a
 command named Win. Unbound control keys are inserted as acme inserts
-them, which is what lets win see ^D. The rules that make the window
+them, which is what lets win see ^D. Fn-backspace is plan9port's DEL:
+devdraw maps the Mac's forward delete (`NSDeleteFunctionKey`) to `Kdel`,
+0x7F, which acme's `texttype` has no case for and so types into the
+window like any key, and win reads a single typed 0x7F as the interrupt
+(removed from the window, the pty's interrupt character written, the
+typing dropped). The client does the same in the body of a live window,
+the kind a process keeps; anywhere else fn-backspace stays the Mac's
+forward delete, since a DEL typed into a file is only a hazard. The rules that make the window
 win's are the window's own (`-win=ID`, an id never reused), so the
 shell renaming it (`awd` on cd) changes nothing and two wins never
 overlap; Home and End are acme's

@@ -11,7 +11,9 @@ use apex_server::remote::Remote;
 use apex_server::Proposal;
 
 fn daemon() -> PathBuf {
-    let path = std::env::temp_dir().join(format!("apex-win-{}.sock", std::process::id()));
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("apex-win-{}-{n}.sock", std::process::id()));
     let p = path.clone();
     std::thread::spawn(move || Daemon::run_with(&p, "main", None).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -88,4 +90,39 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "echo win-$((6*7))".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).matches("win-42\n").count() == 3), "output:\n{}", text(&c.node));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn del_typed_in_the_window_interrupts_what_the_shell_runs() {
+    // fn-backspace: devdraw's Kdel, 0x7F, which acme types into the window
+    // like any other key and plan9port's win takes for the interrupt
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-win-del-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (s2, d2) = (sock.clone(), dir.clone());
+    std::thread::spawn(move || {
+        let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
+    });
+    let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
+    let name = format!("{}/-sh", dir.display());
+    assert!(until(&mut c, |n| n.state.windows.keys().any(|w| n.window_name(*w) == name)), "win's window");
+    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w) == name).unwrap();
+    let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
+    let text = |n: &Node| n.state.buffer(b).map(|x| x.text.to_string()).unwrap_or_default();
+    assert!(until(&mut c, |n| text(n).ends_with("$ ")), "prompt:\n{}", text(&c.node));
+    let mut typing = |c: &mut Remote, s: &str| {
+        let end = c.node.state.buffer(b).unwrap().text.len();
+        let version = c.node.state.buffer(b).unwrap().version;
+        c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: end, q1: end, text: s.into() }, Duration::from_secs(5)).unwrap();
+    };
+    // something slow, which says so when it is interrupted
+    typing(&mut c, "trap 'echo got-interrupted' INT; sleep 30; echo slept-through\n");
+    std::thread::sleep(Duration::from_millis(500));
+    let started = Instant::now();
+    // DEL, typed at the end, as the key is typed
+    typing(&mut c, "\u{7f}");
+    assert!(until(&mut c, |n| text(n).contains("got-interrupted")), "not interrupted:\n{}", text(&c.node));
+    assert!(started.elapsed() < Duration::from_secs(10), "the sleep ran its course");
+    // and the DEL itself does not stay in the window
+    assert!(until(&mut c, |n| !text(n).contains('\u{7f}')), "DEL left in the text:\n{:?}", text(&c.node));
 }

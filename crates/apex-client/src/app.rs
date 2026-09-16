@@ -3554,7 +3554,16 @@ impl Acme {
                     let _ = self.node.erase(&mut self.log, v, Erase::Char);
                 }
                 "delete" => {
-                    let _ = self.node.delete_forward(&mut self.log, v);
+                    // fn-backspace is plan9port's Kdel, DEL, which acme types
+                    // like any key and win takes for the interrupt: in the
+                    // body of a window a process keeps, typed as DEL, so
+                    // win interrupts what runs; elsewhere the Mac's forward
+                    // delete, since DEL typed into a file is only a hazard
+                    if matches!(v, ViewId::Body(w) if self.node.window_live(w)) {
+                        self.type_text(v, "\u{7f}");
+                    } else {
+                        let _ = self.node.delete_forward(&mut self.log, v);
+                    }
                 }
                 "enter" => {
                     // acme -a, always: the new line starts with the whitespace
