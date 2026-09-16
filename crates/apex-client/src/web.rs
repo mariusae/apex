@@ -49,6 +49,10 @@ pub enum WebEvent {
     /// A code block's copy handle was clicked: its text, for the snarf
     /// buffer and the clipboard.
     Copy(String),
+    /// Where the page is scrolled, as the scrollbar beside it shows it:
+    /// how far down (`top`), how long the page is, and how much shows,
+    /// in CSS pixels.
+    Scroll { top: f64, height: f64, view: f64 },
 }
 
 /// The theme, as a page rendered from a buffer sees it: the editor's
@@ -112,6 +116,9 @@ pub struct WebHost {
     /// Watch streams on the host files this page fetched, by path.
     watches: Arc<Mutex<HashMap<String, u32>>>,
     plane: Option<IoPlane>,
+    /// Where the page last said it was scrolled: top, length, and how much
+    /// shows, for the scrollbar beside it.
+    scroll: Option<(f64, f64, f64)>,
 }
 
 impl Drop for WebHost {
@@ -129,6 +136,50 @@ impl Drop for WebHost {
 /// Run in every page: the CSS cursor of the element under the pointer,
 /// reported when it changes. `auto` is read as WebKit would: a hand
 /// within a link, a beam in a text field, the arrow elsewhere.
+/// The thumb for a page scrolled `top` down a page `height` long with
+/// `view` of it showing: the part of the bar, 0 to 1, the view covers.
+/// All of the bar before the page has said, or when it all shows.
+fn thumb_of(scroll: Option<(f64, f64, f64)>) -> (f32, f32) {
+    match scroll {
+        Some((top, height, view)) if height > view && height > 0. => {
+            let t0 = (top / height).clamp(0., 1.) as f32;
+            let t1 = ((top + view) / height).clamp(0., 1.) as f32;
+            (t0, t1)
+        }
+        _ => (0., 1.),
+    }
+}
+
+/// acme's scrollbar for a page (WEB.md §2.2): the page's own is hidden,
+/// in a constructed stylesheet a page's morph cannot take out, and where
+/// the page is scrolled is said whenever that or its length changes, once
+/// a frame, for the scrollbar drawn beside the view.
+const SCROLL_SCRIPT: &str = r#"(function () {
+  if (window.__apexScroll) return;
+  window.__apexScroll = true;
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync('html, body { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }');
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  } catch (e) {}
+  let asked = false, last = '';
+  function say() {
+    asked = false;
+    const e = document.scrollingElement || document.documentElement;
+    const now = Math.round(e.scrollTop) + ',' + Math.round(e.scrollHeight) + ',' + Math.round(e.clientHeight);
+    if (now !== last) { last = now; try { window.ipc.postMessage('scroll:' + now); } catch (x) {} }
+  }
+  function soon() { if (!asked) { asked = true; requestAnimationFrame(say); } }
+  addEventListener('scroll', soon, { passive: true, capture: true });
+  addEventListener('resize', soon);
+  addEventListener('load', soon);
+  function watch() {
+    try { new ResizeObserver(soon).observe(document.documentElement); } catch (x) {}
+    soon();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
+})();"#;
+
 const CURSOR_SCRIPT: &str = r#"(function () {
   let last = '';
   function say(c) { if (c !== last) { last = c; try { window.ipc.postMessage('cursor:' + c); } catch (e) {} } }
@@ -434,8 +485,17 @@ impl Webs {
             })
             // the cursor the page wants under the pointer, as it changes
             .with_initialization_script(CURSOR_SCRIPT)
+            .with_initialization_script(SCROLL_SCRIPT)
             .with_ipc_handler(move |req| {
-                if let Some(c) = req.body().strip_prefix("cursor:") {
+                if let Some(rest) = req.body().strip_prefix("scroll:") {
+                    let n: Vec<f64> = rest.split(',').filter_map(|x| x.parse().ok()).collect();
+                    if let [top, height, view] = n[..] {
+                        let _ = tx4.send((w, WebEvent::Scroll { top, height, view }));
+                        if let Some(k) = &wake4 {
+                            k();
+                        }
+                    }
+                } else if let Some(c) = req.body().strip_prefix("cursor:") {
                     let _ = tx4.send((w, WebEvent::Cursor(c.to_string())));
                     if let Some(k) = &wake4 {
                         k();
@@ -529,7 +589,7 @@ impl Webs {
             Ok(view) => {
                 let _ = view.set_visible(visible);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone() });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone(), scroll: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -593,6 +653,35 @@ impl Webs {
     /// The cursor a page last asked for (the arrow until it says).
     pub fn cursor(&self, w: WindowId) -> gpui::CursorStyle {
         self.cursors.get(&w).copied().unwrap_or(gpui::CursorStyle::Arrow)
+    }
+
+    /// The page said where it is scrolled.
+    pub fn set_scroll(&mut self, w: WindowId, top: f64, height: f64, view: f64) {
+        if let Some(h) = self.hosts.get_mut(&w) {
+            h.scroll = Some((top, height, view));
+        }
+    }
+
+    /// Where the page is scrolled, as a thumb: the part of the scrollbar
+    /// (0 to 1, top and bottom) the view covers. All of it before the
+    /// page has said, or when it is no longer than the view.
+    pub fn thumb(&self, w: WindowId) -> (f32, f32) {
+        thumb_of(self.hosts.get(&w).and_then(|h| h.scroll))
+    }
+
+    /// The page scrolled by `dy` CSS pixels (down when positive).
+    pub fn scroll_by(&self, w: WindowId, dy: f64) {
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("(document.scrollingElement || document.documentElement).scrollBy(0, {dy});"));
+        }
+    }
+
+    /// The page scrolled so that `frac` (0 to 1) of the way down it is at
+    /// the top: acme's B2 in a scrollbar.
+    pub fn scroll_to_fraction(&self, w: WindowId, frac: f64) {
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("(function(){{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {frac} * e.scrollHeight);}})();"));
+        }
     }
 
     pub fn set_loading(&mut self, w: WindowId, on: bool) {
@@ -1013,6 +1102,20 @@ fn respond(responder: wry::RequestAsyncResponder, status: u16, mime: &str, body:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pages_thumb_is_the_part_of_it_that_shows() {
+        // not said yet, or all of it showing: the whole bar
+        assert_eq!(thumb_of(None), (0., 1.));
+        assert_eq!(thumb_of(Some((0., 500., 800.))), (0., 1.));
+        // a page four views long, at the top, then halfway, then at the end
+        assert_eq!(thumb_of(Some((0., 4000., 1000.))), (0., 0.25));
+        assert_eq!(thumb_of(Some((2000., 4000., 1000.))), (0.5, 0.75));
+        assert_eq!(thumb_of(Some((3000., 4000., 1000.))), (0.75, 1.));
+        // overscrolled (a bounce past either end) stays in the bar
+        assert_eq!(thumb_of(Some((-50., 4000., 1000.))), (0., 0.2375));
+        assert_eq!(thumb_of(Some((3100., 4000., 1000.))), (0.775, 1.));
+    }
 
     #[test]
     fn file_links_with_a_line_open_the_file_there() {

@@ -245,6 +245,27 @@ gets a copy handle, a button the client's script adds (on re-renders
 too): clicking it sends the block's text over the page's IPC
 (`copy:`), into the snarf buffer and onto the clipboard.
 
+*The scrollbar:* a page's is acme's, where a text window's is and as
+wide (`SCROLLWID`), drawn by the client in a strip left of the view in
+the text window's colours, the body's border for the bar and its paper
+for the thumb. The page's own is hidden, horizontal included, by a
+stylesheet a script on every page adopts (`scrollbar-width: none` and
+`::-webkit-scrollbar`), a constructed one rather than a `<style>`
+element, so re-rendering a buffer's page, which morphs the document
+head and all, cannot take it out. The same script says where the page
+is, once a frame when that or the page's length changes (scroll,
+resize, load, and a `ResizeObserver` on the document): `scroll:top,
+height,view` over the IPC, in CSS pixels, from which the thumb is the
+part of the bar the view covers. The bar takes acme's buttons, repeating
+while held as a text window's does: B1 takes the page back by as far as
+the pointer is down the bar, B3 forward by as much (what is at the
+pointer comes to the top), B2 to as far down the page as the pointer is
+down the bar; the wheel over the bar scrolls the page. Clicks go to the
+page as `scrollBy` and `scrollTo` on its scrolling element. A page that
+scrolls an element of its own inside a fixed document (some web apps
+do) shows a full thumb, and the bar does not move it; its content still
+scrolls under the wheel as before.
+
 *Spike (stage 3), done:* a `wry` 0.56 child view built with
 `build_as_child` on gpui's `Window` (which implements
 `HasWindowHandle`) sits exactly at the rectangle gpui gives, in logical

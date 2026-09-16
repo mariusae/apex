@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui::{
-    point, px, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
+    point, px, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Window,
 };
 
@@ -147,12 +147,16 @@ enum Region {
     LayoutBox,
     Term(usize, usize),
     TermScrollbar,
+    /// The scrollbar drawn beside a page (a web window, a preview).
+    WebScrollbar,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Target {
     View(ViewId),
     Term(WindowId, TermId),
+    /// A page's window, where apex draws on it: its scrollbar.
+    Web(WindowId),
 }
 
 impl Target {
@@ -160,7 +164,7 @@ impl Target {
     fn window(self) -> Option<WindowId> {
         match self {
             Target::View(v) => v.window(),
-            Target::Term(w, _) => Some(w),
+            Target::Term(w, _) | Target::Web(w) => Some(w),
         }
     }
 }
@@ -291,6 +295,8 @@ pub struct Acme {
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
+    /// Where each page's scrollbar was drawn this frame, beside its view.
+    pub web_bars: HashMap<WindowId, Bounds<Pixels>>,
     /// The native views of web windows (WEB.md §2).
     pub webs: Webs,
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
@@ -428,6 +434,7 @@ impl Acme {
         self.webs = Webs::new(None, None);
         self.layouts.clear();
         self.term_layouts.clear();
+        self.web_bars.clear();
         self.hl = None;
         self.mouse = Mouse::default();
         self.want_visible.clear();
@@ -1074,6 +1081,7 @@ impl Acme {
         self.chooser = false;
         self.layouts.clear();
         self.term_layouts.clear();
+        self.web_bars.clear();
         self.webs = Webs::new(self.io_plane(), self.wake.clone());
         self.hl = None;
         self.mouse = Mouse::default();
@@ -1358,6 +1366,7 @@ impl Acme {
             focus: cx.focus_handle(),
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
+            web_bars: HashMap::new(),
             webs: Webs::new(None, None),
             hl: None,
             mouse: Mouse::default(),
@@ -2060,6 +2069,9 @@ impl Acme {
     // ---- hit testing ---------------------------------------------------------
 
     fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
+        if let Some((w, _)) = self.web_bars.iter().find(|(_, b)| b.contains(&pos)) {
+            return Some((Target::Web(*w), Region::WebScrollbar));
+        }
         for (w, l) in &self.term_layouts {
             if !l.bounds.contains(&pos) {
                 continue;
@@ -2165,7 +2177,7 @@ impl Acme {
             }
             let at = match self.locate(e.position) {
                 Some((Target::View(v), _)) => v.window(),
-                Some((Target::Term(w, _), _)) => Some(w),
+                Some((Target::Term(w, _), _)) | Some((Target::Web(w), _)) => Some(w),
                 None => None,
             };
             if let Some(w) = at {
@@ -2212,6 +2224,8 @@ impl Acme {
             }
         }
         match (target, button) {
+            (Target::Web(w), b @ (MouseButton::Left | MouseButton::Middle | MouseButton::Right)) => self.start_scrolling(Target::Web(w), b, e.position, window, cx),
+            (Target::Web(_), _) => {}
             (Target::View(_), MouseButton::Left) if self.mouse.b2.is_some() => {
                 // acme's textselect2: button 1 while 2 is down makes the
                 // last selection the command's argument
@@ -2751,11 +2765,16 @@ impl Acme {
                 let Some(l) = self.term_layouts.get(&w) else { return false };
                 (l.bounds, point(l.bounds.left() + px(SCROLLWID as f32 / 2.), y))
             }
+            Target::Web(w) => {
+                let Some(b) = self.web_bars.get(&w).copied() else { return false };
+                (b, point(b.left() + px(SCROLLWID as f32 / 2.), y))
+            }
         };
         let y = y.clamp(bounds.top(), bounds.bottom());
         match target {
             Target::View(v) => self.scrollbar_click(v, point(pos.x, y), dir),
             Target::Term(w, t) => self.term_scrollbar_click(w, t, point(pos.x, y), dir),
+            Target::Web(w) => self.web_scrollbar_click(w, point(pos.x, y), dir),
         }
         let at = point(pos.x, y);
         crate::warp::move_to(window, at);
@@ -2994,6 +3013,8 @@ impl Acme {
                     self.clips.push(text);
                     self.after();
                 }
+                // where the page is scrolled, for its scrollbar
+                WebEvent::Scroll { top, height, view } => self.webs.set_scroll(w, top, height, view),
                 // the page's cursor: set now, if the pointer is on that page
                 WebEvent::Cursor(css) => {
                     self.webs.set_cursor(w, &css);
@@ -3164,6 +3185,22 @@ impl Acme {
         }
     }
 
+    /// acme's scrollbar on a page: button 1 takes the page back by as
+    /// far as the pointer is down the bar, button 3 forward by as much
+    /// (what is at the pointer comes to the top), button 2 to the part of
+    /// the page as far down as the pointer is down the bar.
+    fn web_scrollbar_click(&mut self, w: WindowId, pos: Point<Pixels>, dir: i64) {
+        let Some(b) = self.web_bars.get(&w).copied() else { return };
+        let down = f64::from(f32::from(pos.y - b.top()));
+        // at least a line, as acme scrolls at least one
+        let step = down.max(16.);
+        match dir {
+            -1 => self.webs.scroll_by(w, -step),
+            1 => self.webs.scroll_by(w, step),
+            _ => self.webs.scroll_to_fraction(w, (down / f64::from(f32::from(b.size.height)).max(1.)).clamp(0., 1.)),
+        }
+    }
+
     fn term_scrollbar_click(&mut self, w: WindowId, t: TermId, pos: Point<Pixels>, dir: i64) {
         let Some(l) = self.term_layouts.get(&w) else { return };
         let frac = ((pos.y - l.bounds.top()) / l.bounds.size.height).clamp(0., 1.);
@@ -3177,9 +3214,18 @@ impl Acme {
             return;
         }
         let Some((target, region)) = self.locate(e.position) else { return };
+        if let Target::Web(w) = target {
+            let dy = match e.delta {
+                ScrollDelta::Lines(p) => -f64::from(f32::from(p.y)) * 40.,
+                ScrollDelta::Pixels(p) => -f64::from(f32::from(p.y)),
+            };
+            self.webs.scroll_by(w, dy);
+            return;
+        }
         let lh = match target {
             Target::Term(w, _) => self.term_layouts.get(&w).map(|l| l.line_height),
             Target::View(v) => self.layouts.get(&v).map(|l| l.line_height),
+            Target::Web(_) => None,
         };
         let Some(lh) = lh else { return };
         let lines = match e.delta {
@@ -3207,6 +3253,7 @@ impl Acme {
                 };
                 self.term_wheel(t, n as isize, at);
             }
+            Target::Web(_) => {}
         }
         cx.notify();
     }
@@ -3241,11 +3288,12 @@ impl Acme {
             return;
         }
         let target = match self.locate(self.pointer(window)) {
-            Some((t, _)) => t,
-            None => match self.node.seltext {
+            // a page's scrollbar holds no text: the last selected does
+            Some((Target::Web(_), _)) | None => match self.node.seltext {
                 Some(v) => Target::View(v),
                 None => return,
             },
+            Some((t, _)) => t,
         };
         // a key in a window attends to it: its notification goes
         if let Some(w) = target.window() {
@@ -3271,6 +3319,7 @@ impl Acme {
                 }
                 self.text_key(v, ks, cx)
             }
+            Target::Web(_) => {} // not reached: a page's scrollbar takes no keys
         }
         cx.notify();
     }
@@ -3284,7 +3333,7 @@ impl Acme {
         }
         match self.locate(pos) {
             Some((Target::View(v), _)) => v.window().or_else(|| self.node.seltext.and_then(|s| s.window())),
-            Some((Target::Term(w, _), _)) => Some(w),
+            Some((Target::Term(w, _), _)) | Some((Target::Web(w), _)) => Some(w),
             None => self.node.seltext.and_then(|s| s.window()),
         }
     }
@@ -3352,11 +3401,12 @@ impl Acme {
             }
         }
         let target = match self.locate(self.pointer(window)) {
-            Some((t, _)) => t,
-            None => match self.node.seltext {
+            // a page's scrollbar holds no text: the last selected does
+            Some((Target::Web(_), _)) | None => match self.node.seltext {
                 Some(v) => Target::View(v),
                 None => return,
             },
+            Some((t, _)) => t,
         };
         match target {
             Target::Term(w, t) => match what {
@@ -3374,6 +3424,7 @@ impl Acme {
                 }
                 _ => {}
             },
+            Target::Web(_) => {} // not reached: a page's scrollbar holds no text
             Target::View(v) => {
                 match what {
                     "undo" => {

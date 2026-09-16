@@ -259,18 +259,44 @@ impl Render for Acme {
                             // menu) has the native view hidden, else the
                             // root's black would
                             let paper = if matches!(win.body, Body::Html(_)) { t.body_bg } else { t.column };
+                            // acme's scrollbar, where a text window has it and
+                            // as wide, drawn as it draws one: the page's own is
+                            // hidden, and this one moves the page (WEB.md §2.2)
+                            let me_bar = me.clone();
+                            let (bar_bg, thumb_bg) = (t.body_border, t.body_bg);
+                            let sw = crate::text_element::SCROLLWID;
+                            let bar = canvas(
+                                move |bounds, _, cx| {
+                                    me_bar.update(cx, |acme, _| {
+                                        acme.web_bars.insert(w, bounds);
+                                        acme.webs.thumb(w)
+                                    })
+                                },
+                                move |bounds, (t0, t1), window, _| {
+                                    window.paint_quad(gpui::fill(bounds, gpui::rgb(bar_bg)));
+                                    let h = bounds.size.height;
+                                    let thumb = Bounds::new(gpui::point(bounds.left(), bounds.top() + h * t0), size(px(sw - 1.), (h * (t1 - t0)).max(px(2.))));
+                                    window.paint_quad(gpui::fill(thumb, gpui::rgb(thumb_bg)));
+                                },
+                            )
+                            .w(px(sw))
+                            .h_full();
                             div()
                                 .size_full()
+                                .flex()
+                                .flex_row()
                                 .bg(gpui::rgb(paper))
-                                .cursor(cursor::NATIVE_CURSOR)
+                                .child(bar)
                                 .child(
-                                    canvas(
-                                        move |bounds, window, cx| {
-                                            me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
-                                        },
-                                        |_, _, _, _| {},
-                                    )
-                                    .size_full(),
+                                    div().flex_1().h_full().cursor(cursor::NATIVE_CURSOR).child(
+                                        canvas(
+                                            move |bounds, window, cx| {
+                                                me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
+                                            },
+                                            |_, _, _, _| {},
+                                        )
+                                        .size_full(),
+                                    ),
                                 )
                                 .into_any_element()
                         }
