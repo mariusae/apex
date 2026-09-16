@@ -306,14 +306,14 @@ impl Log {
         self.push_meta(MetaOp::Unset { owner, key: key.to_string() })
     }
 
-    /// Raise `attachment`'s notification, pointing at `origin`.
-    pub fn notify(&mut self, attachment: AttachmentId, origin: Option<WindowId>) -> Entry {
-        self.push_meta(MetaOp::Notify { attachment, origin })
+    /// Raise a notification on `window`, on `attachment`'s behalf.
+    pub fn notify(&mut self, attachment: AttachmentId, window: WindowId) -> Entry {
+        self.push_meta(MetaOp::Notify { attachment, window })
     }
 
-    /// Lower `attachment`'s notification.
-    pub fn unnotify(&mut self, attachment: AttachmentId) -> Entry {
-        self.push_meta(MetaOp::Unnotify { attachment })
+    /// Lower `window`'s notification.
+    pub fn unnotify(&mut self, window: WindowId) -> Entry {
+        self.push_meta(MetaOp::Unnotify { window })
     }
 
     /// Ask the holder of `shard` to hand over to `to`.

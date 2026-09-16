@@ -221,32 +221,58 @@ title bar fades into the strip (its name greyed, "fenced" after it),
 and the window title says another client leads.
 
 *As built, notifications:* the same square is the session's, and is
-otherwise inert, so it is where a tool asks for the user: an agent ready
-for more, a build done. A notification is a flag in the metalog
-(`MetaOp::Notify{attachment, origin}`, `Unnotify{attachment}`), kept in
-`Meta::notifications` oldest first: one a attachment, so a tool raising
-its flag again keeps its place in the queue and only moves where it
-points; `origin` is the window it is about, if any. It goes when the tool
-retracts it, when the user dismisses it, and when the tool detaches (the
-`Detach` entry takes it, as it takes the attachment's settings), so a
-tool that dies leaves nothing waiting. On the wire, `ClientMsg::Notify
-{origin}` raises the sender's own flag and `Unnotify{attachment}` lowers
-one: a tool its own, only a UI another's, since dismissing is the user's.
-While any is raised the square fills with the notification colour --
-azure `0080FF` on light, ice `7DF9FF` on dark, each chosen under the
-deuteranopia simulation against every handle colour, border and
-highlight it can sit beside, where it is further from its nearest
-neighbour than any other candidate (the dirty navy on light, the tag
-border on dark) -- unless the client is fenced, whose red wins. A click
-on the square takes the oldest: it is dismissed, and when its window is
-still here the window is revealed and the pointer landed on it, as a new
-window is; the next click takes the next, and when none is left the
+otherwise inert, so it is where the session says a tool is asking for
+the user: an agent ready for more, a build done. A notification is a
+window's -- the one it is about, where taking it goes -- so notified is
+a window state beside dirty, live and the rest, and the session is
+notified while any of its windows is. It is kept in the metalog
+(`MetaOp::Notify{attachment, window}`, `Unnotify{window}`), in
+`Meta::notifications` oldest first: one a window, so a window notified
+again keeps its place in the queue. Kept there and not in the window's
+shard, the daemon orders it and no lease is involved; one whose window
+has gone counts for nothing (`Node::notifications`,
+`window_notified`). It goes when the tool retracts it, when the user
+attends to it, when its window goes, and when the tool that raised it
+detaches (the `Detach` entry takes it, as it takes the attachment's
+settings), so a tool that dies leaves nothing waiting. On the wire,
+`ClientMsg::Notify{window}` raises one and `Unnotify{window}` lowers
+one: a tool only what it raised, a UI any, since attending is the
+user's. The user attends to a window by taking its notification from
+the square, by a click or a key in it (B4's menu too), or by already
+being in it when the notification comes. Being in a window is the
+client's own business, never the daemon's: the window is active while
+the pointer, which the keyboard follows, is on it and apex is in front.
+A client catching up dismisses a notification that has come to its
+active window at once and never draws it, telling one that came from
+one already there by the entry that raised it (`Notification::at`);
+the tool still sees it raised and lowered, as it would any the user
+attended to. Coming to a window that is already notified is not
+attending to it: that one stays.
+
+A notified window's handle takes the notification colour for its frame
+and draws its state -- the colour it would fill with, pulse and all, or
+the notification colour when it has none -- as a circle inside it, so
+the shape says it where the colour may not and dirty or live still
+shows. While any window is notified the session's square fills with the
+notification colour -- azure `0080FF` on light, ice `7DF9FF` on dark,
+each chosen under the deuteranopia simulation against every handle
+colour, border and highlight it can sit beside, where it is further from
+its nearest neighbour than any other candidate (the dirty navy on light,
+the tag border on dark) -- unless the client is fenced, whose red wins.
+A click on the square takes the oldest: the window is revealed and the
+pointer landed on it, as a new window is, and its notification
+dismissed; the next click takes the next, and when none is left the
 square is the tag's colour again. The session's tab takes the same
 colour, its text dark on it, so a session wanting the user shows from
 any other tab; a parked session's entries arrive off the window, so each
 window looks at its tabs' queues on its tick and draws the strip again
-when that changes. `apex notify [-win=WIN]` raises one from a script and
-waits until it is dismissed.
+when that changes. With no window of the app's in front, a notification
+coming to any session it has open, shown or parked, bounces the dock
+icon once (`requestUserAttention`, informational): each tick compares
+every session's notifications, by `at`, with the last tick's, and a
+session seen for the first time brings no bounce for what it already
+had. `apex notify [-win=WIN]` notifies a window, `$winid`
+by default, from a script and waits until the user attends to it.
 
 While an attachment holds entries the server has not acknowledged, the
 affected buffers are **unsynced** — a state distinct from dirty (§9), shown
@@ -934,9 +960,9 @@ session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window new_page open read replace append insert_following select
 selection show show_line line rename tag set_tag set_clean set_owner
 set_live set_working notify unnotify notified alive delete exec exec_in
-errors watch unwatch set setting`. `notify(origin)` asks for the user's
-attention (§4.1, notifications) and `notified` says whether the flag is
-still up, false once the user has dismissed it; `alive` says whether the
+errors watch unwatch set setting`. `notify(w)` asks for the user's
+attention about a window (§4.1, notifications) and `notified(w)` says
+whether the window still is, false once the user has attended to it; `alive` says whether the
 session is, which is how a tool with no window of its own -- one that
 only offers verbs on others' windows, or only raises notifications --
 knows it is over. `tag`/`set_tag` are the
@@ -2098,15 +2124,14 @@ by, and an agent whose process is gone (found once, asked after with
 It has no window of its own by default: what it offers, it offers on
 the windows the agents are already in, and what it says, it says with a
 notification. An agent that wants the user -- its turn over and the
-next prompt theirs, a permission to answer, a turn that failed --
-raises one pointing at the terminal it runs in, so the session's square
-(§4.1) fills and a click goes to that agent, one agent a click; it is
-lowered as the agent goes back to work. A notification is one an
-attachment, so each agent's is raised by an attachment of its own,
-named for the agent (`claude 0b1c1425`): raising is attaching and
-lowering is letting go, which also means that apex-agent dying leaves
-none waiting. One the user has taken is not raised again until the
-agent has been back to work and come to want something afresh.  A tool
+next prompt theirs, a permission to answer, a turn that failed -- has
+the terminal it runs in notified, so the window's handle and the
+session's square (§4.1) say so and a click on the square goes to that
+agent, one agent a click; it is lowered as the agent goes back to work.
+The notifications are apex-agent's, so it dying leaves none waiting.
+One the user has attended to is not raised again until the agent has
+been back to work and come to want something afresh. An agent with no
+terminal in this session has no notification.  A tool
 with no window of its own cannot tell it is over by its window going,
 so `Tool::alive` says whether the session is.
 

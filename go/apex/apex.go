@@ -297,37 +297,6 @@ func (t *Tool) Open(name string, line int) (*Window, error) {
 	return &Window{ID: r.Window, t: t}, nil
 }
 
-// Notify asks for the user's attention: the session's handle and its tab
-// take the notification colour, and a click on the handle dismisses it and,
-// when origin is not nil, takes the user to that window. A tool has one
-// notification at a time; raising it again keeps its place in the queue
-// and points it at origin instead. It goes when the tool retracts it, when
-// the user dismisses it, or when the tool detaches.
-func (t *Tool) Notify(origin *Window) error {
-	args := map[string]any{}
-	if origin != nil {
-		args["window"] = origin.ID
-	}
-	return t.call("notify", args, nil)
-}
-
-// Unnotify retracts the tool's notification, if it has one raised.
-func (t *Tool) Unnotify() error {
-	return t.call("unnotify", map[string]any{}, nil)
-}
-
-// Notified reports whether the tool's notification is still raised: false
-// once it has been retracted or the user has dismissed it.
-func (t *Tool) Notified() (bool, error) {
-	var r struct {
-		On bool `json:"on"`
-	}
-	if err := t.call("notified", map[string]any{}, &r); err != nil {
-		return false, err
-	}
-	return r.On, nil
-}
-
 // Exec runs text as a command in the session, as B2 on it in the top
 // row would: a builtin (Newcol, Exit), or a shell command on the host.
 func (t *Tool) Exec(text string) error {
@@ -472,6 +441,35 @@ func (w *Window) SetTag(text string) error {
 // its handle pulses until it is turned off, or until the tool detaches.
 func (w *Window) SetWorking(on bool) error {
 	return w.t.call("working", map[string]any{"window": w.ID, "on": on}, nil)
+}
+
+// Notify asks for the user's attention about the window: its handle shows
+// it, the session's handle and its tab take the notification colour, and a
+// click on the session's handle takes the user to the oldest notified
+// window. A window has one notification at a time; raising it again keeps
+// its place in the queue. It goes when the tool retracts it, when the user
+// takes it or uses the window, when the window goes, or when the tool
+// detaches.
+func (w *Window) Notify() error {
+	return w.t.call("notify", map[string]any{"window": w.ID}, nil)
+}
+
+// Unnotify retracts the window's notification, if this tool raised one.
+func (w *Window) Unnotify() error {
+	return w.t.call("unnotify", map[string]any{"window": w.ID}, nil)
+}
+
+// Notified reports whether the window is still notified: false once the
+// notification has been retracted, or the user has taken it or used the
+// window.
+func (w *Window) Notified() (bool, error) {
+	var r struct {
+		On bool `json:"on"`
+	}
+	if err := w.t.call("notified", map[string]any{"window": w.ID}, &r); err != nil {
+		return false, err
+	}
+	return r.On, nil
 }
 
 // SetLive marks the window as having this tool behind it: its handle

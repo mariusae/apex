@@ -406,11 +406,12 @@ pub enum MetaOp {
     /// with it. A client reads its own, then the session's.
     Set { owner: AttachmentId, key: String, value: String },
     Unset { owner: AttachmentId, key: String },
-    /// A tool wants the user's attention (an agent ready for more, a
-    /// build done): its flag raised, pointing at `origin` when that says
-    /// where to look. One flag an attachment; raised again, it keeps its
-    /// place in the queue and points where it now says.
-    Notify { attachment: AttachmentId, origin: Option<WindowId> },
-    /// That flag lowered: retracted by the tool, or dismissed by the user.
-    Unnotify { attachment: AttachmentId },
+    /// A tool wants the user's attention about a window (an agent ready
+    /// for more, a build done): the window is notified, and the session is
+    /// while any of its windows is. One notification a window; raised
+    /// again, it keeps its place in the queue.
+    Notify { attachment: AttachmentId, window: WindowId },
+    /// The window's notification lowered: retracted by the tool, or
+    /// dismissed by the user (taken, or the window used).
+    Unnotify { window: WindowId },
 }

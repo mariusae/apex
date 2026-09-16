@@ -27,11 +27,10 @@
 //! the terminal's own tools menu while the agent runs, and `Allow
 //! Deny Ask` while it asks -- so the agent's window is the place to
 //! answer it from, as apex-acp's is, with nothing added to the agent.
-//! An agent that wants you raises a notification of its own pointing at
-//! that window, so the session's square says someone is waiting and a
-//! click goes to them; it is lowered as soon as the agent is back at
-//! work. A notification is one an attachment, so each agent's is raised
-//! by an attachment of its own, named for the agent.
+//! An agent that wants you has its window notified, so the window's
+//! handle and the session's square say someone is waiting and a click
+//! on the square goes to them; it is lowered as soon as the agent is
+//! back at work.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -63,15 +62,12 @@ pub struct Opts {
     /// Where the agents keep their sessions: `~/.claude`, `~/.codex`.
     pub claude_home: PathBuf,
     pub codex_home: PathBuf,
-    /// The daemon the notifications attach to, when it is not the one
-    /// this program finds for itself: the tests'.
-    pub socket: Option<PathBuf>,
 }
 
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), socket: None }
+        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex") }
     }
 }
 
@@ -167,17 +163,15 @@ struct Target {
     asking: Vec<RuleId>,
 }
 
-/// The notification raised for one agent. A notification is one an
-/// attachment, so each agent's is raised by an attachment of its own,
-/// named for the agent: that is what the queue holds, and what
-/// detaching takes away.
+/// The notification raised for one agent, on its window.
 struct Flag {
-    t: Tool,
-    /// The window it points at, so that an agent moving to another --
-    /// or coming to have one at all -- re-points it.
-    origin: Option<WindowId>,
-    /// The user has taken it. It is not raised again until the agent
-    /// has gone back to work and come to want something afresh.
+    window: WindowId,
+    /// It has been seen raised: until then, not seeing it is the daemon
+    /// not having said so yet, and not the user having taken it.
+    raised: bool,
+    /// The user has taken it, or used the window. It is not raised again
+    /// until the agent has gone back to work and come to want something
+    /// afresh.
     dismissed: bool,
 }
 
@@ -384,67 +378,50 @@ impl Pane {
 
     // ---- the notifications ----
 
-    /// A flag raised for each agent that wants you -- its turn over and
+    /// A notification for each agent that wants you -- its turn over and
     /// the next prompt yours, a question of its own to answer, or a turn
-    /// that failed -- pointing at the window the agent runs in, so that
-    /// the session's square says someone is waiting and clicking it
-    /// takes you to them, one agent a click. Lowered as soon as the
-    /// agent leaves that state: back at work, or gone.
+    /// that failed -- on the window the agent runs in, so that its handle
+    /// and the session's square say someone is waiting and clicking the
+    /// square takes you to them, one agent a click. Lowered as soon as
+    /// the agent leaves that state: back at work, or gone. An agent with
+    /// no window here (one elsewhere, with `-all`) has none.
     ///
-    /// A notification is one an attachment, so each agent's is raised by
-    /// an attachment of its own, named for the agent; letting it go
-    /// lowers the flag, and a tool that dies leaves none waiting. One
-    /// the user has taken is not raised again until the agent has been
-    /// back to work, which is what `dismissed` remembers.
+    /// The notifications are this tool's, so it dying leaves none
+    /// waiting. One the user has taken, or whose window they used, is
+    /// not raised again until the agent has been back to work, which is
+    /// what `dismissed` remembers.
     fn sync_flags(&mut self) {
         if self.session.is_empty() {
             return;
         }
         let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
         let mine = self.session.clone();
-        let here = |a: &agents::Agent| a.apex.as_deref() == Some(mine.as_str());
-        let want: Vec<(String, String, Option<WindowId>)> = self
+        let want: Vec<(String, WindowId)> = self
             .agents
             .ordered()
             .iter()
             .filter(|a| matches!(a.state, State::Idle | State::Asking | State::Failed))
-            .filter(|a| self.opts.all || here(a))
-            .map(|a| {
-                // where to look: the agent's own window, when it is one
-                // of ours and still here. An agent elsewhere has none to
-                // point at, and its flag only says that it wants you
-                let origin = a.win.map(WindowId).filter(|w| here(a) && windows.contains(w));
-                (a.session.clone(), format!("{} {}", if a.kind.is_empty() { "agent" } else { &a.kind }, a.short()), origin)
-            })
+            .filter(|a| a.apex.as_deref() == Some(mine.as_str()))
+            .filter_map(|a| Some((a.session.clone(), a.win.map(WindowId).filter(|w| windows.contains(w))?)))
             .collect();
-        // back at work, or gone: the flag goes with the attachment
-        let stale: Vec<String> = self.flags.keys().filter(|s| !want.iter().any(|(k, _, _)| k == *s)).cloned().collect();
+        // back at work, gone, or moved: the notification goes
+        let stale: Vec<String> = self.flags.iter().filter(|(s, f)| !want.iter().any(|(k, w)| k == *s && *w == f.window)).map(|(s, _)| s.clone()).collect();
         for s in stale {
-            if let Some(mut f) = self.flags.remove(&s) {
-                let _ = f.t.unnotify();
+            if let Some(f) = self.flags.remove(&s) {
+                let _ = self.t.unnotify(f.window);
             }
         }
-        let socket = self.opts.socket.clone().unwrap_or_else(|| self.t.socket());
-        for (key, name, origin) in want {
+        for (key, w) in want {
             match self.flags.get_mut(&key) {
+                Some(f) if f.dismissed => {}
                 Some(f) => {
-                    // what the daemon has said since we last looked, so
-                    // that a flag the user has taken is known to be gone
-                    while matches!(f.t.next_event(Some(Duration::ZERO)), Ok(Some(_))) {}
-                    if f.dismissed {
-                        continue;
-                    }
-                    if !f.t.notified() {
-                        f.dismissed = true;
-                    } else if f.origin != origin {
-                        f.origin = origin;
-                        let _ = f.t.notify(origin);
-                    }
+                    let on = self.t.notified(w);
+                    f.dismissed = f.raised && !on;
+                    f.raised |= on;
                 }
                 None => {
-                    let Ok(mut t) = Tool::attach_to(&socket, &mine, &name) else { continue };
-                    let _ = t.notify(origin);
-                    self.flags.insert(key, Flag { t, origin, dismissed: false });
+                    let _ = self.t.notify(w);
+                    self.flags.insert(key, Flag { window: w, raised: false, dismissed: false });
                 }
             }
         }

@@ -711,28 +711,27 @@ impl Daemon {
                 let e = s.log.set(owner, &key, &value);
                 let _ = s.view.state.apply(Shard::Meta, &e);
             }
-            ClientMsg::Notify { origin } => {
+            ClientMsg::Notify { window } => {
                 let Some(me) = self.conns.get(&id).and_then(|c| c.attachment) else { return };
-                let e = s.log.notify(me, origin);
+                if s.view.state.window(window).is_err() {
+                    self.send(id, ServerMsg::Error { text: format!("notify: no window {window}") });
+                    return;
+                }
+                let e = s.log.notify(me, window);
                 let _ = s.view.state.apply(Shard::Meta, &e);
             }
-            ClientMsg::Unnotify { attachment } => {
+            ClientMsg::Unnotify { window } => {
                 let Some(conn) = self.conns.get(&id) else { return };
                 let Some(me) = conn.attachment else { return };
-                // a tool lowers its own flag; only the user, through a UI,
-                // lowers another's
-                let whose = match attachment {
-                    None => me,
-                    Some(a) if a == me || conn.kind == AttachmentKind::Ui => a,
-                    Some(a) => {
-                        self.send(id, ServerMsg::Error { text: format!("unnotify: {a}'s notification is not this tool's to lower") });
-                        return;
-                    }
-                };
-                if s.view.state.meta.notifications.iter().any(|n| n.by == whose) {
-                    let e = s.log.unnotify(whose);
-                    let _ = s.view.state.apply(Shard::Meta, &e);
+                let Some(n) = s.view.state.meta.notifications.iter().find(|n| n.window == window) else { return };
+                // a tool lowers what it raised; only the user, through a
+                // UI, lowers another's
+                if n.by != me && conn.kind != AttachmentKind::Ui {
+                    self.send(id, ServerMsg::Error { text: format!("unnotify: window {window}'s notification is not this tool's to lower") });
+                    return;
                 }
+                let e = s.log.unnotify(window);
+                let _ = s.view.state.apply(Shard::Meta, &e);
             }
             ClientMsg::Ps => {
                 let procs = s.server.processes();

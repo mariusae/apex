@@ -329,13 +329,14 @@ fn a_tool_takes_a_word_apex_knows_and_can_hand_it_back() {
 }
 
 #[test]
-fn a_tool_asks_for_attention_and_the_user_or_the_tool_lowers_it() {
+fn a_tool_asks_for_attention_on_a_window_and_the_user_or_the_tool_lowers_it() {
     let sock = daemon();
     let mut agent = Tool::attach_to(&sock, "main", "agent").unwrap();
     let mut build = Tool::attach_to(&sock, "main", "build").unwrap();
     let w = agent.new_window("/tmp/agent-waiting").unwrap();
+    let v = build.new_window("/tmp/build-waiting").unwrap();
     let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
-    let queue = |r: &Remote| r.node.state.meta.notifications.iter().map(|n| (r.node.state.meta.attachments.get(&n.by).map(|a| a.name.clone()).unwrap_or_default(), n.origin)).collect::<Vec<_>>();
+    let queue = |r: &Remote| r.node.notifications().map(|n| (r.node.state.meta.attachments.get(&n.by).map(|a| a.name.clone()).unwrap_or_default(), n.window)).collect::<Vec<_>>();
     let settle = |r: &mut Remote, want: &dyn Fn(&Remote) -> bool| {
         let deadline = Instant::now() + Duration::from_secs(5);
         while !want(r) && Instant::now() < deadline {
@@ -343,45 +344,44 @@ fn a_tool_asks_for_attention_and_the_user_or_the_tool_lowers_it() {
         }
     };
 
-    // raised, oldest first, one pointing at a window
-    agent.notify(Some(w)).unwrap();
+    // raised on windows, oldest first
+    agent.notify(w).unwrap();
     settle(&mut ui, &|r| queue(r).len() == 1);
-    build.notify(None).unwrap();
+    build.notify(v).unwrap();
     settle(&mut ui, &|r| queue(r).len() == 2);
-    assert_eq!(queue(&ui), vec![("agent".to_string(), Some(w)), ("build".to_string(), None)]);
+    assert_eq!(queue(&ui), vec![("agent".to_string(), w), ("build".to_string(), v)]);
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !agent.notified() && Instant::now() < deadline {
+    while !agent.notified(w) && Instant::now() < deadline {
         let _ = agent.next_event(Some(Duration::from_millis(20)));
     }
-    assert!(agent.notified());
+    assert!(agent.notified(w));
 
     // a tool may not lower another's
     let mut meddler = Remote::connect_as(&sock, "main", "meddler", AttachmentKind::Tool).unwrap();
-    let agent_id = ui.node.state.meta.notifications[0].by;
-    meddler.send(&apex_server::proto::ClientMsg::Unnotify { attachment: Some(agent_id) });
+    meddler.send(&apex_server::proto::ClientMsg::Unnotify { window: w });
     std::thread::sleep(Duration::from_millis(300));
     let _ = ui.step(Duration::from_millis(50));
     assert_eq!(queue(&ui).len(), 2, "a tool cannot dismiss another's notification");
 
-    // the user dismisses the oldest; the tool sees it is gone
-    ui.send(&apex_server::proto::ClientMsg::Unnotify { attachment: Some(agent_id) });
+    // the user takes the oldest; the tool sees it is gone
+    ui.send(&apex_server::proto::ClientMsg::Unnotify { window: w });
     settle(&mut ui, &|r| queue(r).len() == 1);
-    assert_eq!(queue(&ui), vec![("build".to_string(), None)]);
+    assert_eq!(queue(&ui), vec![("build".to_string(), v)]);
     let deadline = Instant::now() + Duration::from_secs(5);
-    while agent.notified() && Instant::now() < deadline {
+    while agent.notified(w) && Instant::now() < deadline {
         let _ = agent.next_event(Some(Duration::from_millis(20)));
     }
-    assert!(!agent.notified(), "dismissed");
+    assert!(!agent.notified(w), "dismissed");
 
     // a tool retracts its own
-    build.unnotify().unwrap();
+    build.unnotify(v).unwrap();
     settle(&mut ui, &|r| queue(r).is_empty());
     assert!(queue(&ui).is_empty());
 
-    // and a tool that goes takes its flag with it
-    agent.notify(None).unwrap();
+    // and a tool that goes takes its notification with it
+    agent.notify(v).unwrap();
     settle(&mut ui, &|r| queue(r).len() == 1);
     drop(agent);
     settle(&mut ui, &|r| queue(r).is_empty());
-    assert!(queue(&ui).is_empty(), "the flag goes with the tool");
+    assert!(queue(&ui).is_empty(), "the notification goes with the tool");
 }

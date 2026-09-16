@@ -27,8 +27,8 @@
 //! Ask` are there too, the answer going into the log for the hook that
 //! asked to read. An agent that wants you -- its turn over and the next
 //! prompt yours, a question to answer, a turn that failed -- raises a
-//! notification pointing at its terminal, so the session's square says
-//! someone is waiting and a click takes you to them, one agent a click;
+//! notification on its terminal, so the session's square says someone
+//! is waiting and a click takes you to them, one agent a click;
 //! it goes as soon as the agent is back at work.
 //!
 //! `-a` adds the overview window, `DIR/-agents`, a block an agent in

@@ -115,7 +115,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
     // the page's converter: the markdown itself, so the test can read it
     t.set("Preview.md", "cat");
-    let pane = Pane::start(t, Opts { pane: true, all: true, socket: Some(sock.clone()), claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    let pane = Pane::start(t, Opts { pane: true, all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
         let r = pane.serve();
@@ -322,12 +322,12 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
 }
 
 /// Every notification raised, in the queue's order: who raised it, and
-/// the window it points at.
-fn flags(c: &Remote) -> Vec<(String, Option<WindowId>)> {
-    c.node.state.meta.notifications.iter().map(|n| (c.node.state.meta.attachments.get(&n.by).map(|a| a.name.clone()).unwrap_or_default(), n.origin)).collect()
+/// the window it is on.
+fn flags(c: &Remote) -> Vec<(String, WindowId)> {
+    c.node.notifications().map(|n| (c.node.state.meta.attachments.get(&n.by).map(|a| a.name.clone()).unwrap_or_default(), n.window)).collect()
 }
 
-fn wait_flags(c: &mut Remote, ok: impl Fn(&[(String, Option<WindowId>)]) -> bool) -> Vec<(String, Option<WindowId>)> {
+fn wait_flags(c: &mut Remote, ok: impl Fn(&[(String, WindowId)]) -> bool) -> Vec<(String, WindowId)> {
     let deadline = Instant::now() + Duration::from_secs(8);
     let mut last = Vec::new();
     while Instant::now() < deadline {
@@ -342,8 +342,8 @@ fn wait_flags(c: &mut Remote, ok: impl Fn(&[(String, Option<WindowId>)]) -> bool
 
 /// Without `-a` there is no window of apex-agent's own: it serves the
 /// session's terminals, and says an agent wants you with a
-/// notification pointing at the terminal it runs in, one an agent,
-/// raised as the turn ends and lowered as the next one begins.
+/// notification on the terminal it runs in, one an agent, raised as
+/// the turn ends and lowered as the next one begins.
 #[test]
 fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     let sock = daemon();
@@ -374,7 +374,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
 
     let t = Tool::attach_to(&sock, "main", "agents").unwrap();
-    let pane = Pane::start(t, Opts { socket: Some(sock.clone()), claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    let pane = Pane::start(t, Opts { claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     // it is served until the session is over, which the test does not
     // wait for: nothing to Del, and nothing to join
     std::thread::spawn(move || {
@@ -397,9 +397,9 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     // at work, it wants nothing
     assert_eq!(flags(&c), Vec::new());
 
-    // the turn ends: it wants you, and the flag points at its terminal
+    // the turn ends: it wants you, and its terminal is notified
     event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
-    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("claude 0b1c1425".to_string(), Some(tw))]);
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agents".to_string(), tw)]);
 
     // the next turn begins: the flag goes
     event::append(&logs, &Event { text: Some("and /etc/passwd?".into()), ..ev("UserPromptSubmit") }).unwrap();
@@ -407,7 +407,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
 
     // a question is wanting you too, and so is a turn that failed
     event::append(&logs, &Event { call: Some("t7".into()), title: Some("Bash: rm -rf target".into()), ..ev("PermissionRequest") }).unwrap();
-    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("claude 0b1c1425".to_string(), Some(tw))]);
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agents".to_string(), tw)]);
 
     // the user takes it: it is not raised again while the agent goes on
     // wanting the same thing
@@ -416,8 +416,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     while ui.node.state.meta.notifications.is_empty() && Instant::now() < deadline {
         let _ = ui.step(Duration::from_millis(20));
     }
-    let by = ui.node.state.meta.notifications[0].by;
-    ui.send(&ClientMsg::Unnotify { attachment: Some(by) });
+    ui.send(&ClientMsg::Unnotify { window: tw });
     wait_flags(&mut c, |f| f.is_empty());
     event::append(&logs, &Event { call: Some("t7".into()), kind: Some("deny".into()), ..ev("Decision") }).unwrap();
     std::thread::sleep(Duration::from_secs(1));
@@ -427,7 +426,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     // back to work, and wanting you afresh: raised again
     event::append(&logs, &Event { call: Some("t7".into()), ..ev("PostToolUse") }).unwrap();
     event::append(&logs, &Event { text: Some("Left it.".into()), ..ev("Stop") }).unwrap();
-    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("claude 0b1c1425".to_string(), Some(tw))]);
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agents".to_string(), tw)]);
 
     // the agent goes, and so does its flag
     event::append(&logs, &ev("SessionEnd")).unwrap();

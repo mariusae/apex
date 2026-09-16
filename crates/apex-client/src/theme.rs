@@ -38,7 +38,8 @@ pub struct Theme {
     pub live: u32,
     pub stale: u32,
     pub fenced: u32,
-    /// The session wants the user (a tool raised a notification): the
+    /// A window wants the user (a tool raised a notification): its handle's
+    /// frame and circle, and while any window does, the session's
     /// top left square, and the session's tab. Chosen under a deuteranopia
     /// simulation to stand apart from every handle colour, border and
     /// highlight it can sit beside (azure on light, ice on dark).

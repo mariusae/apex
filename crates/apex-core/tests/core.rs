@@ -570,35 +570,55 @@ fn a_name_with_a_bar_does_not_grow_the_tag() {
 }
 
 #[test]
-fn notifications_queue_one_a_tool_and_go_with_it() {
+fn notifications_are_a_windows_and_go_with_it() {
     let (mut log, mut node, col) = session();
     let (agent, _) = log.attach(AttachmentKind::Tool, "agent");
     let (build, _) = log.attach(AttachmentKind::Tool, "build");
     let w = node.new_window(&mut log, col, "/tmp/agent-notes", "").unwrap();
+    let v = node.new_window(&mut log, col, "/tmp/build-notes", "").unwrap();
+    let x = node.new_window(&mut log, col, "/tmp/other-notes", "").unwrap();
     node.catch_up(&log).unwrap();
-    let flags = |n: &Node| n.state.meta.notifications.iter().map(|x| (x.by, x.origin)).collect::<Vec<_>>();
+    let flags = |n: &Node| n.notifications().map(|x| (x.window, x.by)).collect::<Vec<_>>();
 
     // raised in order, oldest first
-    log.notify(agent, Some(w));
-    log.notify(build, None);
+    log.notify(agent, w);
+    log.notify(build, v);
+    log.notify(build, x);
     node.catch_up(&log).unwrap();
-    assert_eq!(flags(&node), vec![(agent, Some(w)), (build, None)]);
-    // one flag a tool: raised again, it keeps its place and points anew
-    log.notify(agent, None);
+    assert_eq!(flags(&node), vec![(w, agent), (v, build), (x, build)]);
+    assert!(node.window_notified(w) && node.window_notified(v));
+    // one a window: raised again, it keeps its place, and is the same one
+    let at = |n: &Node, w| n.notifications().find(|x| x.window == w).map(|x| x.at);
+    let first = at(&node, w);
+    log.notify(build, w);
     node.catch_up(&log).unwrap();
-    assert_eq!(flags(&node), vec![(agent, None), (build, None)]);
-    // retracted, or dismissed: the rest keep their order
-    log.unnotify(agent);
+    assert_eq!(flags(&node), vec![(w, build), (v, build), (x, build)]);
+    assert_eq!(at(&node, w), first);
+    // lowered, retracted or dismissed: the rest keep their order
+    log.unnotify(v);
     node.catch_up(&log).unwrap();
-    assert_eq!(flags(&node), vec![(build, None)]);
-    // lowering a flag that is not raised is nothing
-    log.unnotify(agent);
+    assert_eq!(flags(&node), vec![(w, build), (x, build)]);
+    assert!(!node.window_notified(v));
+    // lowered and raised, it is another
+    let before = at(&node, x);
+    assert!(before.is_some());
+    log.unnotify(x);
+    log.notify(build, x);
     node.catch_up(&log).unwrap();
-    assert_eq!(flags(&node), vec![(build, None)]);
-    // a tool that goes takes its flag with it
+    assert!(at(&node, x).is_some_and(|a| Some(a) != before));
+    // lowering a window that is not notified is nothing
+    log.unnotify(v);
+    node.catch_up(&log).unwrap();
+    assert_eq!(flags(&node), vec![(w, build), (x, build)]);
+    // a window that goes takes its notification with it
+    node.delete_window(&mut log, x).unwrap();
+    node.catch_up(&log).unwrap();
+    assert_eq!(flags(&node), vec![(w, build)]);
+    // a tool that goes takes those it raised with it
+    log.notify(agent, v);
     log.detach(build);
     node.catch_up(&log).unwrap();
-    assert!(flags(&node).is_empty());
+    assert_eq!(flags(&node), vec![(v, agent)]);
     // and a follower replaying the log agrees
     assert_eq!(follower(&log).state.meta.notifications, node.state.meta.notifications);
 }

@@ -660,30 +660,30 @@ impl Tool {
         Ok(())
     }
 
-    /// Ask for the user's attention: an agent ready for more, a build
-    /// done. The session's handle (the square at the top left) takes the
-    /// notification colour, and so does its tab in the app; clicking the
-    /// handle dismisses the oldest notification and, when it names a
-    /// window, takes the user there. A tool has one notification at a
-    /// time: raising it again keeps its place in the queue and points it
-    /// at `origin` instead. It goes when the tool retracts it
-    /// (`unnotify`), when the user dismisses it, or when the tool detaches.
-    pub fn notify(&mut self, origin: Option<WindowId>) -> Result<()> {
-        self.remote.send(&ClientMsg::Notify { origin });
+    /// Ask for the user's attention about a window: an agent ready for
+    /// more, a build done. The window is notified, which its handle shows;
+    /// while any window is, the session's handle (the square at the top
+    /// left) and its tab in the app take the notification colour, and a
+    /// click on the session's handle takes the user to the oldest. A
+    /// window has one notification at a time: raised again, it keeps its
+    /// place in the queue. It goes when the tool retracts it (`unnotify`),
+    /// when the user takes it or uses the window (a click or a key in it),
+    /// when the window goes, or when the tool detaches.
+    pub fn notify(&mut self, w: WindowId) -> Result<()> {
+        self.remote.send(&ClientMsg::Notify { window: w });
         Ok(())
     }
 
-    /// Retract the tool's notification, if it has one raised.
-    pub fn unnotify(&mut self) -> Result<()> {
-        self.remote.send(&ClientMsg::Unnotify { attachment: None });
+    /// Retract the window's notification, if this tool raised one.
+    pub fn unnotify(&mut self, w: WindowId) -> Result<()> {
+        self.remote.send(&ClientMsg::Unnotify { window: w });
         Ok(())
     }
 
-    /// Whether the tool's notification is still raised: false once it has
-    /// been retracted or the user has dismissed it.
-    pub fn notified(&self) -> bool {
-        let me = self.remote.attachment();
-        self.remote.node.state.meta.notifications.iter().any(|n| n.by == me)
+    /// Whether the window is still notified: false once the notification
+    /// has been retracted, or the user has taken it or used the window.
+    pub fn notified(&self, w: WindowId) -> bool {
+        self.remote.node.window_notified(w)
     }
 
     /// Whether the session is still there, taking in whatever the link

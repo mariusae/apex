@@ -155,6 +155,16 @@ enum Target {
     Term(WindowId, TermId),
 }
 
+impl Target {
+    /// The window this is part of, if any (not the session's own row).
+    fn window(self) -> Option<WindowId> {
+        match self {
+            Target::View(v) => v.window(),
+            Target::Term(w, _) => Some(w),
+        }
+    }
+}
+
 /// Where the server is.
 pub enum Backend {
     /// In this process, sharing the log.
@@ -250,6 +260,15 @@ pub struct Acme {
     menu_last: Option<String>,
     /// The tabs last seen with notifications waiting (`tabs_tick`).
     notified_tabs: Vec<SessionUrl>,
+    /// The window under the pointer, which has the keyboard while the app
+    /// is in front (`active_window`).
+    win_under_pointer: Option<WindowId>,
+    /// The notification the active window had when it became active, by
+    /// the entry that raised it: it was there first, and stays.
+    entered: Option<apex_core::Seq>,
+    /// Notifications that came to the active window, dismissed as they
+    /// came and never drawn, until the dismissal comes back.
+    suppressed: std::collections::HashSet<apex_core::Seq>,
     /// Snarfouts waiting for a terminal's text: (ask id, terminal).
     snarfouts: Vec<(u64, TermId)>,
     /// Previews of remote files waiting for their first bytes: (ask id,
@@ -651,6 +670,9 @@ impl Acme {
         self.live = p.live;
         self.snarfouts = p.snarfouts;
         self.pending_goto = p.pending_goto;
+        self.win_under_pointer = None;
+        self.entered = None;
+        self.suppressed.clear();
         self.socket = Some(apex_server::daemon::default_socket());
         self.chooser = false;
         self.webs = Webs::new(self.io_plane(), self.wake.clone());
@@ -1257,6 +1279,7 @@ impl Acme {
                         });
                     }
                 }
+                crate::attention::tick(cx);
                 alive || this.upgrade().is_some()
             });
             if !alive {
@@ -1322,6 +1345,9 @@ impl Acme {
             menu: None,
             menu_last: None,
             notified_tabs: Vec::new(),
+            win_under_pointer: None,
+            entered: None,
+            suppressed: std::collections::HashSet::new(),
             snarfouts: Vec::new(),
             previews: Vec::new(),
             live: std::collections::HashMap::new(),
@@ -1375,6 +1401,7 @@ impl Acme {
         if let Err(e) = self.node.catch_up(&self.log) {
             eprintln!("catch up: {e}");
         }
+        self.suppress_arrivals();
         self.take_warp();
     }
 
@@ -1383,7 +1410,7 @@ impl Acme {
     /// The oldest notification in this session, which the top left square
     /// is showing and a click on it takes.
     pub fn notification_head(&self) -> Option<apex_core::state::Notification> {
-        self.node.state.meta.notifications.first().copied()
+        self.shown_notifications().next().copied()
     }
 
     /// Whether the session a tab names has notifications waiting: this
@@ -1412,25 +1439,83 @@ impl Acme {
     }
 
     /// The session's square clicked while a tool wants the user: the
-    /// oldest notification is dismissed, and when it names a window that
-    /// is still here, the window is brought on screen and the pointer
-    /// taken to it, as a new window is landed on. The next click takes the
-    /// next; once there are none the square is the tag's colour again.
+    /// oldest notified window is brought on screen and the pointer taken
+    /// to it, as a new window is landed on, and its notification is
+    /// dismissed. The next click takes the next; once there are none the
+    /// square is the tag's colour again.
     fn take_notification(&mut self, cx: &mut Context<Self>) {
         let Some(n) = self.notification_head() else { return };
+        let _ = self.dismiss(n.window);
+        self.show(n.window);
+        self.node.warp = Some(Warp::NewWindow(n.window));
+        self.after();
+        cx.notify();
+    }
+
+    /// The user has attended to a window: its notification, if it has
+    /// one, is lowered. Taking it from the session's square does, and so
+    /// does a click or a key in the window.
+    fn dismiss(&mut self, w: WindowId) -> bool {
+        if !self.node.window_notified(w) {
+            return false;
+        }
         match &mut self.backend {
-            Backend::Remote(link) => link.send(&ClientMsg::Unnotify { attachment: Some(n.by) }),
+            Backend::Remote(link) => link.send(&ClientMsg::Unnotify { window: w }),
             Backend::Local(_) => {
-                self.log.unnotify(n.by);
+                self.log.unnotify(w);
                 let _ = self.node.catch_up(&self.log);
             }
         }
-        if let Some(w) = n.origin.filter(|w| self.node.state.window(*w).is_ok()) {
-            self.show(w);
-            self.node.warp = Some(Warp::NewWindow(w));
+        true
+    }
+
+    /// A click or a key in a window: its notification, if any, dismissed.
+    fn attend(&mut self, w: WindowId) {
+        if self.dismiss(w) {
+            self.after();
         }
-        self.after();
-        cx.notify();
+    }
+
+    /// Is this window in front?
+    pub fn app_active(&self) -> bool {
+        self.app_active
+    }
+
+    /// The window the user is in: the one under the pointer, which has
+    /// the keyboard, while this window is in front.
+    fn active_window(&self) -> Option<WindowId> {
+        self.win_under_pointer.filter(|_| self.app_active)
+    }
+
+    /// The pointer or the app's activation moved: a window that becomes
+    /// active keeps the notification it had, since coming to a window is
+    /// not attending to it. (Before `term_focus_now`, which takes the
+    /// activation.)
+    fn note_active(&mut self, under: Option<WindowId>, active: bool) {
+        let now = under.filter(|_| active);
+        if now != self.active_window() {
+            self.entered = now.and_then(|w| self.node.notifications().find(|n| n.window == w)).map(|n| n.at);
+        }
+        self.win_under_pointer = under;
+    }
+
+    /// After catching up: a notification that has come to the active
+    /// window is attended to already, so it is dismissed at once and never
+    /// drawn.
+    fn suppress_arrivals(&mut self) {
+        self.suppressed.retain(|at| self.node.state.meta.notifications.iter().any(|n| n.at == *at));
+        let Some(w) = self.active_window() else { return };
+        let Some(n) = self.node.notifications().find(|n| n.window == w).copied() else { return };
+        if Some(n.at) == self.entered || !self.suppressed.insert(n.at) {
+            return;
+        }
+        let _ = self.dismiss(w);
+    }
+
+    /// The notifications this window shows: the session's, less those
+    /// dismissed as they came.
+    fn shown_notifications(&self) -> impl Iterator<Item = &apex_core::state::Notification> {
+        self.node.notifications().filter(|n| !self.suppressed.contains(&n.at))
     }
 
     pub fn fenced(&self) -> bool {
@@ -1562,6 +1647,12 @@ impl Acme {
         self.web_events();
         if !self.overlay_up() {
             self.webs.focus_tick(window);
+        }
+        // a page keeps the pointer's moves to itself: the window it is in
+        // is the active one while the pointer is over it
+        if let Some(w) = crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)) {
+            let active = self.app_active;
+            self.note_active(Some(w), active);
         }
         // the pointer over a page: the page's cursor, set by us (WebKit's
         // own never shows inside this window), when it changed
@@ -1885,6 +1976,13 @@ impl Acme {
             }
             _ => (false, false, false, false, None),
         };
+        // the session's square while any window is notified, and a window's
+        // handle while it is
+        let notified = match view {
+            ViewId::Top => self.notification_head().is_some(),
+            ViewId::Tag(w) => self.shown_notifications().any(|n| n.window == w),
+            _ => false,
+        };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         // a tag in a strip (a column squeezed by B2 on another's box) is its
         // box alone: no text laid out in no width, and nothing it would
@@ -1905,7 +2003,7 @@ impl Acme {
                 pulse,
                 unsynced: false,
                 fenced: false,
-                notified: false,
+                notified,
                 text: apex_core::text::Text::new(""),
                 sel: (0, 0),
                 origin: 0,
@@ -1923,7 +2021,7 @@ impl Acme {
             pulse,
             unsynced: false,
             fenced: self.fenced(),
-            notified: view == ViewId::Top && self.notification_head().is_some(),
+            notified,
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
@@ -2071,6 +2169,7 @@ impl Acme {
                 None => None,
             };
             if let Some(w) = at {
+                self.attend(w);
                 self.menu_open(w, e.position, window);
             }
             cx.notify();
@@ -2081,6 +2180,10 @@ impl Acme {
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
         let Some((target, region)) = self.locate(e.position) else { return };
+        // a click in a window attends to it: its notification goes
+        if let Some(w) = target.window() {
+            self.attend(w);
+        }
         // a click in a tag commits the name typed there (acme's wincommit)
         if let Target::View(ViewId::Tag(w)) = target {
             let _ = self.node.commit_tag(&mut self.log, w);
@@ -2259,12 +2362,14 @@ impl Acme {
             self.pointer = None;
         }
         self.last_mouse = pos;
-        // the terminal under the pointer has the keyboard
-        let under = match self.locate(pos) {
-            Some((Target::Term(_, t), _)) => Some(t),
+        // the terminal under the pointer has the keyboard, and the window
+        let at = self.locate(pos).map(|(t, _)| t);
+        let under = match at {
+            Some(Target::Term(_, t)) => Some(t),
             _ => None,
         };
         let active = self.app_active;
+        self.note_active(at.and_then(|t| t.window()), active);
         self.term_focus_now(under, active);
         let mut changed = false;
         if let Some((_, _, y)) = self.mouse.scrolling.as_mut() {
@@ -3142,6 +3247,10 @@ impl Acme {
                 None => return,
             },
         };
+        // a key in a window attends to it: its notification goes
+        if let Some(w) = target.window() {
+            self.attend(w);
+        }
         let ks = &e.keystroke;
         let m = ks.modifiers;
         match target {
@@ -3215,6 +3324,7 @@ impl Acme {
         // the terminal under the pointer loses the keyboard with the app,
         // and has it back with it
         let under = self.term_under_pointer;
+        self.note_active(self.win_under_pointer, active);
         self.term_focus_now(under, active);
         if !active || self.last_mouse == Point::default() || crate::warp::button_down() {
             return;

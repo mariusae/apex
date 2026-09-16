@@ -12,6 +12,7 @@
 //! prototype's way.
 
 mod app;
+mod attention;
 mod cursor;
 mod field;
 mod finder;

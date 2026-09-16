@@ -1158,11 +1158,11 @@ fn notify_waits_until_the_user_dismisses_it() {
         let _ = ui.step(Duration::from_millis(20));
     }
     let n = *ui.node.state.meta.notifications.first().expect("a notification");
-    assert_eq!(n.origin, Some(w));
+    assert_eq!(n.window, w);
     std::thread::sleep(Duration::from_millis(300));
     assert!(!child.is_finished(), "notify returned before it was dismissed");
-    // the user dismisses it: notify returns, successfully
-    ui.send(&apex_server::proto::ClientMsg::Unnotify { attachment: Some(n.by) });
+    // the user takes it: notify returns, successfully
+    ui.send(&apex_server::proto::ClientMsg::Unnotify { window: n.window });
     let deadline = Instant::now() + Duration::from_secs(5);
     while !child.is_finished() && Instant::now() < deadline {
         let _ = ui.step(Duration::from_millis(20));

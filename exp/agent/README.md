@@ -73,24 +73,23 @@ is added to the agents, and nothing to apex.
 
 ## Notifications
 
-An agent that wants you raises a notification of its own: the turn is
-over and the next prompt is yours, it is asking a permission, or the
-turn failed. The session's square at the top left fills with the
-notification colour, and so does its tab, so a session with an agent
-waiting shows from any other; a click on the square takes the oldest,
-dismisses it and goes to the window that agent runs in. The next click
-takes the next, one agent a click. A notification is lowered as soon as
-the agent leaves that state -- back at work, or gone -- and one you
-have taken is not raised again until the agent has been back to work
-and come to want something afresh.
+An agent that wants you has its terminal notified: the turn is over
+and the next prompt is yours, it is asking a permission, or the turn
+failed. The terminal's handle shows it, a circle in a frame of the
+notification colour; the session's square at the top left fills with
+that colour, and so does its tab, so a session with an agent waiting
+shows from any other. A click on the square goes to the terminal of the
+agent that has waited longest and dismisses its notification; the next
+click takes the next, one agent a click. Clicking or typing in the
+terminal dismisses it too, and one raised while you are already in the
+terminal, with apex in front, is dismissed at once.
 
-A notification is one an attachment, so each agent's is raised by an
-attachment of its own, named for the agent (`claude 0b1c1425`, which is
-what `apex ps` shows): raising it is attaching and lowering it is
-letting go, so apex-agent dying leaves none waiting. Without `-all`
-these are the agents of this session; with it, every agent on the
-machine, and one running outside this session has no window to point
-at, so its notification only says that it wants you.
+A notification is lowered as soon as the agent leaves that state --
+back at work, or gone -- and one you have dismissed is not raised again
+until the agent has been back to work and come to want something
+afresh. The notifications are apex-agent's, so it dying leaves none
+waiting. An agent with no terminal in this session -- one of those
+`-all` adds -- has none.
 
 ## The overview window (`-a`)
 

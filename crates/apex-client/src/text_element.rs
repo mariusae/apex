@@ -274,8 +274,9 @@ pub struct Source {
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
     pub fenced: bool,
-    /// The session has notifications waiting: the top row's square says
-    /// so, and a click on it takes the oldest.
+    /// Notified: for the top row, some window in the session is (its
+    /// square says so, and a click on it takes the oldest); for a window's
+    /// tag, that window is (its handle says so).
     pub notified: bool,
     pub text: Text,
     pub sel: (usize, usize),
@@ -591,11 +592,12 @@ impl Element for TextElement {
                     scrollbar = Some(sb);
                 }
                 Kind::WinTag => {
+                    let th = crate::theme::theme();
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
-                    window.paint_quad(fill(b, pal.border));
+                    // notified: the frame takes the notification colour
+                    window.paint_quad(fill(b, if pp.notified { rgb(th.notified) } else { pal.border }));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
-                    let th = crate::theme::theme();
                     // what the handle says when nothing is going on
                     let resting = if pp.unsynced {
                         Some(th.unsynced)
@@ -616,7 +618,18 @@ impl Element for TextElement {
                         (None, Some(c)) => rgb(c),
                         (None, None) => pal.bg,
                     };
-                    window.paint_quad(fill(inner, fillc));
+                    if pp.notified {
+                        // and what it says is a circle inside it, the shape
+                        // saying so where the colour may not: the state's
+                        // colour, or the notification's when it has none
+                        window.paint_quad(fill(inner, pal.bg));
+                        let d = inner.size.width.min(inner.size.height);
+                        let c = Bounds::new(point(inner.left() + (inner.size.width - d) / 2., inner.top() + (inner.size.height - d) / 2.), size(d, d));
+                        let cc = if pp.pulse.is_none() && resting.is_none() { rgb(th.notified) } else { fillc };
+                        window.paint_quad(fill(c, cc).corner_radii(d / 2.));
+                    } else {
+                        window.paint_quad(fill(inner, fillc));
+                    }
                     window.paint_quad(fill(
                         // acme's line between tag and body is one device
                         // pixel, unscaled (wind.c: r1.max.y = r1.min.y+1);

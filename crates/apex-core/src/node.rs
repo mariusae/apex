@@ -691,6 +691,18 @@ impl Node {
         win.working.is_some_and(|a| self.state.meta.attachments.contains_key(&a))
     }
 
+    /// The session's notifications, oldest first, of the windows still
+    /// here: a window's goes with it.
+    pub fn notifications(&self) -> impl Iterator<Item = &crate::state::Notification> {
+        self.state.meta.notifications.iter().filter(|n| self.state.windows.contains_key(&n.window))
+    }
+
+    /// Is the window notified: has a tool asked for the user about it, and
+    /// the user not yet taken it or used the window?
+    pub fn window_notified(&self, w: WindowId) -> bool {
+        self.notifications().any(|n| n.window == w)
+    }
+
     /// What kind of window this is, for plumbing rules.
     pub fn window_kind(&self, window: WindowId) -> WinKind {
         let Ok(w) = self.state.window(window) else { return WinKind::File };

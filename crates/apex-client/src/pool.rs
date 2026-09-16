@@ -246,7 +246,12 @@ impl Pool {
 
     /// Whether a parked session has notifications waiting, for its tab.
     pub fn notified(cx: &App, url: &SessionUrl) -> bool {
-        cx.try_global::<Pool>().and_then(|pool| pool.parked.values().find(|p| p.url == *url)).is_some_and(|p| !p.node.state.meta.notifications.is_empty())
+        cx.try_global::<Pool>().and_then(|pool| pool.parked.values().find(|p| p.url == *url)).is_some_and(|p| p.node.notifications().next().is_some())
+    }
+
+    /// Each parked session's notifications, by the entry that raised each.
+    pub fn notifications(cx: &App) -> Vec<(SessionUrl, std::collections::HashSet<Seq>)> {
+        cx.try_global::<Pool>().map(|pool| pool.parked.values().map(|p| (p.url.clone(), p.node.notifications().map(|n| n.at).collect())).collect()).unwrap_or_default()
     }
 
     /// The theme changed: every parked link tells its daemon the colours

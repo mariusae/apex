@@ -242,20 +242,25 @@ pub struct Meta {
     /// Settings by owner: the session's under `SERVER`, an attachment's
     /// under its id (gone when it detaches).
     pub settings: BTreeMap<AttachmentId, BTreeMap<String, String>>,
-    /// The session's notifications, oldest first: at most one a tool,
-    /// gone when it retracts it, when the user dismisses it, or when the
-    /// tool detaches. The session's handle shows whether there are any.
+    /// The session's notifications, oldest first: at most one a window,
+    /// gone when the tool retracts it, when the user dismisses it, or when
+    /// the tool that raised it detaches. One whose window has gone counts
+    /// for nothing (`Node::notifications`). A window is notified while it
+    /// has one, and the session while any window is.
     #[serde(default)]
     pub notifications: Vec<Notification>,
 }
 
-/// A tool's flag raised for the user (`MetaOp::Notify`).
+/// A window's flag raised for the user (`MetaOp::Notify`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Notification {
-    /// The attachment that raised it.
+    /// The window it is about: where taking it brings the user.
+    pub window: WindowId,
+    /// The attachment that raised it, whose detaching lowers it.
     pub by: AttachmentId,
-    /// The window it is about, if any: where dismissing it takes the user.
-    pub origin: Option<WindowId>,
+    /// The metalog entry that first raised it: raised again, it is the
+    /// same notification; lowered and raised, another.
+    pub at: Seq,
 }
 
 impl Meta {
@@ -329,7 +334,7 @@ impl State {
     /// server's entry arrives). Does not advance any sequence.
     pub fn apply_unsequenced(&mut self, e: &Entry) -> Result<Applied, ApplyError> {
         match &e.op {
-            Op::Meta(m) => self.apply_meta(m),
+            Op::Meta(m) => self.apply_meta(m, e.seq),
             _ => Err(ApplyError::WrongShard { shard: Shard::Meta, op: format!("{:?}", e.op) }),
         }
     }
@@ -348,7 +353,7 @@ impl State {
             (Op::Window(op), Shard::Window(id)) => self.apply_window(id, op, e.seq)?,
             (Op::Layout(op), Shard::Layout) => self.apply_layout(op, e.seq)?,
             (Op::Term(op), Shard::Term(id)) => self.apply_term(id, op)?,
-            (Op::Meta(op), Shard::Meta) => self.apply_meta(op)?,
+            (Op::Meta(op), Shard::Meta) => self.apply_meta(op, e.seq)?,
             _ => unreachable!("fits() checked"),
         };
         self.applied.insert(shard, e.seq);
@@ -552,7 +557,7 @@ impl State {
         Ok(Applied::Ok)
     }
 
-    fn apply_meta(&mut self, op: &MetaOp) -> Result<Applied, ApplyError> {
+    fn apply_meta(&mut self, op: &MetaOp, seq: Seq) -> Result<Applied, ApplyError> {
         let m = &mut self.meta;
         match op {
             MetaOp::Init => {}
@@ -613,11 +618,11 @@ impl State {
             MetaOp::Set { owner, key, value } => {
                 m.settings.entry(*owner).or_default().insert(key.clone(), value.clone());
             }
-            MetaOp::Notify { attachment, origin } => match m.notifications.iter_mut().find(|n| n.by == *attachment) {
-                Some(n) => n.origin = *origin,
-                None => m.notifications.push(Notification { by: *attachment, origin: *origin }),
+            MetaOp::Notify { attachment, window } => match m.notifications.iter_mut().find(|n| n.window == *window) {
+                Some(n) => n.by = *attachment,
+                None => m.notifications.push(Notification { window: *window, by: *attachment, at: seq }),
             },
-            MetaOp::Unnotify { attachment } => m.notifications.retain(|n| n.by != *attachment),
+            MetaOp::Unnotify { window } => m.notifications.retain(|n| n.window != *window),
             MetaOp::Unset { owner, key } => {
                 if let Some(s) = m.settings.get_mut(owner) {
                     s.remove(key);
