@@ -287,6 +287,12 @@ impl Server {
             return Err(format!("{name}: modified since last read"));
         }
         self.put_warned.remove(&b);
+        // acme's trimspaces: autoindent is the leading cause of blanks at
+        // the ends of lines, so Put in an autoindent window writes the
+        // text without them, and the buffer loses them too, as an undo
+        // step of its own
+        let autoindent = view.state.window(w).map(|x| x.autoindent).unwrap_or(false);
+        let (text, runs) = if autoindent { apex_core::text::trim_trailing_blanks(&text) } else { (text, Vec::new()) };
         std::fs::write(&name, &text).map_err(|e| format!("{name}: {e}"))?;
         let hash = Text::new(&text).content_hash();
         self.watches.written.insert(PathBuf::from(&name), hash.clone());
@@ -294,7 +300,7 @@ impl Server {
         if renamed {
             out.push(Proposal::Rename { buffer: b, window: w, name });
         }
-        out.push(Proposal::Clean { buffer: b, version, hash: Some(hash) });
+        out.push(if runs.is_empty() { Proposal::Clean { buffer: b, version, hash: Some(hash) } } else { Proposal::PutTrimmed { buffer: b, version, runs, hash } });
         Ok(out)
     }
 

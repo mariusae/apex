@@ -517,6 +517,7 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Live{window, by?}                                    a process behind a window
   Working{window, by?}                                 work going on behind a window
   Builtin{ctx, text}                                   a word's own meaning, the rules already asked
+  PutTrimmed{buffer, version, runs, hash}              Put's trim: blanks deleted as one undo step, then clean
   Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
   OpenWeb{col, url} · WebNavigate{window, url}         a web window; its page moved (WEB.md §2)
 ```
@@ -1595,7 +1596,16 @@ small unnamed window never whines); the tag's words `Undo Redo Put Get`
 coming and going as acme's `winsettag1`; `Newcol` making an empty window;
 the last column being deletable, `New` making a column when there is none;
 `Look` searching the last-selected text (`seltext`), wrapping, and moving
-the mouse to the match; `Tab`, `Indent on|off` (autoindent), `ID`; Up and
+the mouse to the match; `Tab`, `Indent on|off` (autoindent, on in every
+new window, as acme started with `-a`), `ID`; Put in an autoindent window
+trimming the blanks at the ends of lines and at the end of the text
+(plan9port 1617427, acme's `trimspaces`), since autoindent is the leading
+cause of them: the file is written without them, and the buffer loses
+them as an undo step of its own (`Proposal::PutTrimmed`, the runs deleted
+from the end back under one group, then `Clean` at the version that
+leaves), so the first Undo after Put brings them all back -- only spaces
+and tabs before a newline or the end, so a CRLF file keeps its blanks and
+`Indent off` keeps everything; Up and
 Down in a tag shrinking it to one line and expanding it; Up/Down scrolling
 a third of the window and PageUp/PageDown two thirds; Home and End; the
 erase keys; over web and preview bodies the page's own pointer: WebKit

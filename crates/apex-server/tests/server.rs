@@ -1054,3 +1054,53 @@ fn b2_in_a_terminal_types_the_text_to_the_program_there() {
     let sent = |n: &Node| rows(n).lines().any(|l| l.trim() == "from-send");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, sent), "grid:\n{}", rows(&node));
 }
+
+#[test]
+fn put_in_an_autoindent_window_trims_blanks_and_one_undo_brings_them_back() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-trim-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("f.txt");
+    std::fs::write(&path, "").unwrap();
+    let w = open(&server, &mut log, &mut node, col, &dir, "f.txt");
+    // autoindent is the default: a new window has it
+    assert!(node.state.window(w).unwrap().autoindent, "autoindent is on by default");
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    let blanks = "fn main() {  \n\tlet x = 1;\t\n    \n}  ";
+    node.replace_text(&mut log, b, 0, 0, blanks).unwrap();
+    // typing then Put: the file has no blanks at the ends of its lines
+    node.exec(&mut log, ExecCtx::Window(w), "Put").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let trimmed = "fn main() {\n\tlet x = 1;\n\n}";
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), trimmed);
+    // and nor does the buffer, which is clean: it is what is on disk
+    assert_eq!(body_text(&node, w), trimmed);
+    assert!(!node.state.buffer(b).unwrap().dirty(), "clean after Put");
+    // the first Undo after Put brings every blank back at once, and the
+    // window is dirty again, since the file does not have them
+    node.exec(&mut log, ExecCtx::Window(w), "Undo").unwrap();
+    assert_eq!(body_text(&node, w), blanks);
+    assert!(node.state.buffer(b).unwrap().dirty(), "dirty once the blanks are back");
+    // the next Undo is the typing itself
+    node.exec(&mut log, ExecCtx::Window(w), "Undo").unwrap();
+    assert_eq!(body_text(&node, w), "");
+
+    // Indent off: Put writes what is there, blanks and all
+    node.exec(&mut log, ExecCtx::Window(w), "Indent off").unwrap();
+    node.replace_text(&mut log, b, 0, 0, "keep  \n").unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "Put").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep  \n");
+    assert_eq!(body_text(&node, w), "keep  \n");
+    assert!(!node.state.buffer(b).unwrap().dirty());
+
+    // nothing to trim: Put is as it always was, one Clean and no undo step
+    node.exec(&mut log, ExecCtx::Window(w), "Indent on").unwrap();
+    node.replace_text(&mut log, b, 0, 7, "tidy\n").unwrap();
+    let undos = node.state.buffer(b).unwrap().undo.len();
+    node.exec(&mut log, ExecCtx::Window(w), "Put").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "tidy\n");
+    assert_eq!(node.state.buffer(b).unwrap().undo.len(), undos, "no step added when nothing was trimmed");
+    let _ = std::fs::remove_dir_all(&dir);
+}

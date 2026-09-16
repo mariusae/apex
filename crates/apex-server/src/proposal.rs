@@ -87,6 +87,12 @@ pub enum Proposal {
     /// Work is going on behind a window: its handle pulses while it is
     /// so. `by` is the attachment that keeps it (`None` ends it).
     Working { window: WindowId, by: Option<AttachmentId> },
+    /// Put in an autoindent window (acme's `trimspaces`): the file on
+    /// disk is the buffer at `version` without the blanks at the ends of
+    /// its lines. The leader deletes those `runs` (from the end backwards)
+    /// as one undo step and marks the buffer clean at the version that
+    /// leaves; a buffer that moved on meanwhile is left as it is, dirty.
+    PutTrimmed { buffer: BufferId, version: Version, runs: Vec<(usize, usize)>, hash: String },
     /// Apex's own meaning of a word, performed without asking the rules:
     /// where a word a tool had claimed falls through when the tool
     /// declines it (§6.2). Never resolved again, so a tool cannot loop.
@@ -292,6 +298,17 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.gotos.push(loc);
             }
             Ok(w)
+        }
+        Proposal::PutTrimmed { buffer, version, runs, hash } => {
+            if node.state.buffer(buffer)?.version != version {
+                // typed into while the file was written: what is on disk
+                // is no longer what the buffer holds, so it stays dirty
+                return Ok(None);
+            }
+            node.delete_runs(log, buffer, &runs)?;
+            let version = node.state.buffer(buffer)?.version;
+            node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Clean { version, disk_hash: Some(hash) }))?;
+            Ok(None)
         }
         Proposal::Builtin { ctx, text } => {
             node.run_builtin(log, ctx, &text)?;

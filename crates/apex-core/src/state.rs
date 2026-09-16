@@ -49,7 +49,9 @@ pub struct Window {
     pub tag: BufferId,
     pub body: Body,
     pub mono: bool,
-    /// acme's `tabstop` (default 4) and `autoindent`.
+    /// acme's `tabstop` (default 4) and `autoindent`, which is on unless
+    /// `Indent off` says otherwise (acme's `-a`, always): Enter copies the
+    /// line's leading blanks, and Put trims the trailing ones.
     pub tabstop: u32,
     pub autoindent: bool,
     /// acme's `tagexpand`: false after Up in the tag, true after Down.
@@ -379,7 +381,7 @@ impl State {
                 if self.windows.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("window {id}")));
                 }
-                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: false, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None });
+                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None });
             }
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),

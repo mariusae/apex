@@ -128,3 +128,84 @@ impl<'de> Deserialize<'de> for Text {
         Ok(Text::new(&s))
     }
 }
+
+/// acme's `trimspaces` (plan9port 1617427, Put in autoindent mode): the
+/// blanks -- spaces and tabs -- at the end of every line, and at the end
+/// of the text, which autoindent is the leading cause of. Returns the
+/// text without them and the runs removed, as character ranges
+/// `[q0, q1)` from the end of the text backwards, so deleting them in
+/// that order leaves every earlier offset where it was. Blanks before
+/// anything but a newline or the end are left alone, and so is a `\r`:
+/// only what really ends a line is trimmed.
+pub fn trim_trailing_blanks(text: &str) -> (String, Vec<(usize, usize)>) {
+    let chars: Vec<char> = text.chars().collect();
+    let blank = |c: char| c == ' ' || c == '\t';
+    let mut runs = Vec::new();
+    // where a run of blanks being walked back over would end: the end of
+    // the text to begin with, then each newline; None inside a line
+    let mut end = Some(chars.len());
+    let mut i = chars.len();
+    loop {
+        if i == 0 || !blank(chars[i - 1]) {
+            if let Some(e) = end {
+                if i < e {
+                    runs.push((i, e));
+                }
+            }
+            if i == 0 {
+                break;
+            }
+            end = (chars[i - 1] == '\n').then_some(i - 1);
+        }
+        i -= 1;
+    }
+    if runs.is_empty() {
+        return (text.to_string(), runs);
+    }
+    let mut keep = vec![true; chars.len()];
+    for &(q0, q1) in &runs {
+        keep[q0..q1].iter_mut().for_each(|k| *k = false);
+    }
+    let trimmed = chars.iter().zip(keep).filter(|(_, k)| *k).map(|(c, _)| *c).collect();
+    (trimmed, runs)
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::trim_trailing_blanks;
+
+    fn trim(s: &str) -> String {
+        trim_trailing_blanks(s).0
+    }
+
+    #[test]
+    fn blanks_at_the_ends_of_lines_go_and_nothing_else_does() {
+        assert_eq!(trim("a  \nb\t\n"), "a\nb\n");
+        assert_eq!(trim("a \t \nb"), "a\nb");
+        // interior blanks, and leading ones, are the line's own
+        assert_eq!(trim("  a  b\n\tc\n"), "  a  b\n\tc\n");
+        // a line of nothing but blanks, first, last and between
+        assert_eq!(trim("   \nx\n \t\ny\n  "), "\nx\n\ny\n");
+        // the end of the text is the end of a line too
+        assert_eq!(trim("x   "), "x");
+        assert_eq!(trim("   "), "");
+        // a carriage return ends nothing: CRLF files keep their blanks
+        assert_eq!(trim("a  \r\n"), "a  \r\n");
+        // nothing to do
+        assert_eq!(trim(""), "");
+        assert_eq!(trim("a\nb\n"), "a\nb\n");
+        // characters, not bytes
+        assert_eq!(trim("é  \nñ\t"), "é\nñ");
+    }
+
+    #[test]
+    fn the_runs_come_from_the_end_so_deleting_in_order_keeps_offsets() {
+        let (out, runs) = trim_trailing_blanks("a  \nb\t\nc");
+        assert_eq!(runs, vec![(5, 6), (1, 3)]);
+        let mut chars: Vec<char> = "a  \nb\t\nc".chars().collect();
+        for (q0, q1) in runs {
+            chars.drain(q0..q1);
+        }
+        assert_eq!(chars.into_iter().collect::<String>(), out);
+    }
+}

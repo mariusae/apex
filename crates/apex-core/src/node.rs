@@ -625,6 +625,18 @@ impl Node {
     /// Replace `nd` characters at `q0` with `text`, as a write to acme's
     /// `data` file does: the edit alone, every view's dot left where the
     /// edit leaves it, nothing selected.
+    /// Delete the runs `[q0, q1)`, given from the end of the text backwards,
+    /// as one undo step: what Put's trim does to an autoindent window, so
+    /// the first Undo after a Put brings every blank back at once.
+    pub fn delete_runs(&mut self, log: &mut Log, buffer: BufferId, runs: &[(usize, usize)]) -> Result<()> {
+        self.end_typing();
+        let group = self.new_group();
+        for &(q0, q1) in runs {
+            self.edit_op(log, buffer, q0, q1.saturating_sub(q0), "", group)?;
+        }
+        Ok(())
+    }
+
     pub fn replace_text(&mut self, log: &mut Log, buffer: BufferId, q0: usize, nd: usize, text: &str) -> Result<()> {
         self.end_typing();
         let group = self.new_group();
