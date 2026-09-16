@@ -1,10 +1,12 @@
-//! The windows: the pane, `DIR/-agents`, with a block an agent, and
-//! beside it what each verb opens -- a transcript window,
+//! The windows: what each verb opens -- a transcript window,
 //! `AGENTDIR/-claude+ID`, named for the agent's own directory so that a
 //! `path:line` in it is B3'd from where the agent worked; its page,
-//! `+Preview`; its changes, `+diff`, at the root of its repository; and
-//! the pane's own `+history`. All are the tool's own (`set_owner`):
-//! what is in them is the agents' doing and not a file's contents.
+//! `+Preview`; its changes, `+diff`, at the root of its repository --
+//! and, with `-a`, the pane, `DIR/-agents`, with a block an agent, and
+//! its own `+history`. All are the tool's own (`set_owner`): what is in
+//! them is the agents' doing and not a file's contents. Without `-a`
+//! there is no pane, and the tool's whole face is the verbs it offers
+//! on the agents' own windows and the notifications it raises for them.
 //!
 //! Nothing here waits on anything: the logs' directory and each open
 //! transcript's are watched (directories, not files, as the server's
@@ -20,11 +22,16 @@
 //! `apex term send`; an agent is started by `Newterm`.
 //!
 //! An agent running in a terminal of this very session is known by
-//! the session and window its hooks recorded, and the pane offers its
+//! the session and window its hooks recorded, and the tool offers its
 //! verbs on that window too -- `Transcript`, `Preview`, `Changes` in
 //! the terminal's own tools menu while the agent runs, and `Allow
 //! Deny Ask` while it asks -- so the agent's window is the place to
 //! answer it from, as apex-acp's is, with nothing added to the agent.
+//! An agent that wants you raises a notification of its own pointing at
+//! that window, so the session's square says someone is waiting and a
+//! click goes to them; it is lowered as soon as the agent is back at
+//! work. A notification is one an attachment, so each agent's is raised
+//! by an attachment of its own, named for the agent.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -46,21 +53,25 @@ pub struct Opts {
     /// Where the logs are.
     pub dir: PathBuf,
     pub thoughts: bool,
-    /// Every agent, wherever it is, rather than those under `cwd`.
+    /// The overview window, `DIR/-agents` (`-a`). Without it apex-agent
+    /// has no window of its own.
+    pub pane: bool,
+    /// Every agent, wherever it is, rather than this session's (`-all`).
     pub all: bool,
-    /// Only the agents started in this apex session (`-s`).
-    pub session_only: bool,
     /// No notes in +Errors when an agent asks or fails.
     pub quiet: bool,
     /// Where the agents keep their sessions: `~/.claude`, `~/.codex`.
     pub claude_home: PathBuf,
     pub codex_home: PathBuf,
+    /// The daemon the notifications attach to, when it is not the one
+    /// this program finds for itself: the tests'.
+    pub socket: Option<PathBuf>,
 }
 
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, all: false, session_only: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex") }
+        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), socket: None }
     }
 }
 
@@ -96,7 +107,8 @@ struct Detail {
 
 pub struct Pane {
     t: Tool,
-    w: WindowId,
+    /// The overview window, when `-a` asked for one.
+    w: Option<WindowId>,
     opts: Opts,
     agents: Agents,
     /// Each session's log, read as it grows.
@@ -118,7 +130,8 @@ pub struct Pane {
     hist: Option<WindowId>,
     past: HashMap<String, Past>,
     verbs: HashMap<RuleId, &'static str>,
-    look: RuleId,
+    /// B3 anywhere in a block of the pane's, when there is a pane.
+    look: Option<RuleId>,
     /// B3 on a session's id anywhere: its transcript.
     look_any: RuleId,
     pulsing: bool,
@@ -142,6 +155,9 @@ pub struct Pane {
     /// on each: the ones for as long as the agent runs, and the ones
     /// for as long as it asks.
     targets: HashMap<WindowId, Target>,
+    /// The notification raised for each agent that wants you, by the
+    /// agent's session.
+    flags: HashMap<String, Flag>,
 }
 
 /// An agent's terminal in this session, and what is offered on it.
@@ -151,34 +167,55 @@ struct Target {
     asking: Vec<RuleId>,
 }
 
+/// The notification raised for one agent. A notification is one an
+/// attachment, so each agent's is raised by an attachment of its own,
+/// named for the agent: that is what the queue holds, and what
+/// detaching takes away.
+struct Flag {
+    t: Tool,
+    /// The window it points at, so that an agent moving to another --
+    /// or coming to have one at all -- re-points it.
+    origin: Option<WindowId>,
+    /// The user has taken it. It is not raised again until the agent
+    /// has gone back to work and come to want something afresh.
+    dismissed: bool,
+}
+
 /// The verbs on an agent's own window: the transcript, named as
 /// apex-acp names its own; the page; the changes.
 const TARGET_VERBS: [&str; 3] = ["Transcript", "Preview", "Changes"];
 const ASKING_VERBS: [&str; 3] = ["Allow", "Deny", "Ask"];
 
 impl Pane {
-    /// The pane in the session this program was started in.
+    /// The tool in the session this program was started in.
     pub fn run(opts: Opts) -> apex_tool::Result<()> {
         let t = Tool::attach("agents")?;
         Pane::start(t, opts)?.serve()
     }
 
-    /// The pane, made and written once; `serve` keeps it.
+    /// The tool, its windows made and written once; `serve` keeps it.
     pub fn start(mut t: Tool, opts: Opts) -> apex_tool::Result<Pane> {
-        let name = format!("{}/-agents", opts.cwd.display().to_string().trim_end_matches('/'));
-        let w = t.new_window(&name)?;
-        let _ = t.set_owner(w, true);
-        let _ = t.set_tag(w, &format!("Look {}", VERBS.join(" ")));
-        // the verbs, with dot in a block or the agent named after them;
-        // B3 anywhere in a block; and B3 on a session's id anywhere
         let mut verbs = HashMap::new();
-        for v in VERBS {
-            verbs.insert(t.offer(Rule::verb(v).window(w))?, v);
-        }
-        for v in UNLISTED {
-            verbs.insert(t.offer(Rule::verb(v).window(w).unlisted())?, v);
-        }
-        let look = t.offer(Rule::plumb().window(w).priority(10))?;
+        // the overview window, with `-a`, and the verbs that mean
+        // something only in it: each with dot in a block or the agent
+        // named after it, and B3 anywhere in a block. Without it the
+        // tool has no window of its own, and what it offers is offered
+        // on the agents' own windows instead
+        let (w, look) = if opts.pane {
+            let name = format!("{}/-agents", opts.cwd.display().to_string().trim_end_matches('/'));
+            let w = t.new_window(&name)?;
+            let _ = t.set_owner(w, true);
+            let _ = t.set_tag(w, &format!("Look {}", VERBS.join(" ")));
+            for v in VERBS {
+                verbs.insert(t.offer(Rule::verb(v).window(w))?, v);
+            }
+            for v in UNLISTED {
+                verbs.insert(t.offer(Rule::verb(v).window(w).unlisted())?, v);
+            }
+            (Some(w), Some(t.offer(Rule::plumb().window(w).priority(10))?))
+        } else {
+            (None, None)
+        };
         // a hex word with the shape of an id, wherever it is: one that
         // names no session of ours is handed back, and B3 does what it
         // always does with it
@@ -203,7 +240,7 @@ impl Pane {
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
         let (session, _) = t.session();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), flags: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -212,7 +249,8 @@ impl Pane {
         Ok(pane)
     }
 
-    /// Until the pane is deleted, or the session is over.
+    /// Until the pane is deleted, or -- with no pane of our own -- the
+    /// session is over.
     pub fn serve(&mut self) -> apex_tool::Result<()> {
         loop {
             let woken = self.woken.try_iter().count() > 0;
@@ -230,13 +268,15 @@ impl Pane {
                 self.sweep();
                 self.render()?;
                 self.sync_targets()?;
+                self.sync_flags();
             } else if self.last_render.elapsed() >= MINUTES {
                 self.render()?;
             }
             match self.t.next_event(Some(Duration::from_millis(20)))? {
-                None if !self.t.windows().iter().any(|x| x.id == self.w) => return Ok(()),
+                None if self.w.is_some_and(|w| !self.t.windows().iter().any(|x| x.id == w)) => return Ok(()),
+                None if self.w.is_none() && !self.t.alive() => return Ok(()),
                 None => {}
-                Some(Event::Deleted { window }) if window == self.w => return Ok(()),
+                Some(Event::Deleted { window }) if Some(window) == self.w => return Ok(()),
                 Some(Event::Deleted { window }) => {
                     self.pages.remove(&window);
                     self.diffs.remove(&window);
@@ -261,7 +301,7 @@ impl Pane {
                     let taken = match (self.verbs.get(&p.rule).copied(), target) {
                         (Some(v), Some(key)) => self.verb_for(v, &key)?,
                         (Some(v), None) => self.verb(v, &p.text, p.at)?,
-                        (None, _) if p.rule == self.look => self.open_at(p.sel.or(p.at))?,
+                        (None, _) if Some(p.rule) == self.look => self.open_at(p.sel.or(p.at))?,
                         (None, _) if p.rule == self.look_any => self.open_id(&p.text)?,
                         (None, _) => match p.window.and_then(|w| self.details.get(&w).map(|d| (d.send, w))) {
                             Some((send, w)) if send == p.rule => self.send_from_detail(w, &p.text)?,
@@ -303,7 +343,7 @@ impl Pane {
             .iter()
             .filter(|a| a.apex.as_deref() == Some(self.session.as_str()) && !self.session.is_empty())
             .filter_map(|a| a.win.map(|w| (WindowId(w), a.session.clone(), a.state == State::Asking && a.decided.is_none())))
-            .filter(|(w, _, _)| windows.contains(w) && *w != self.w)
+            .filter(|(w, _, _)| windows.contains(w) && Some(*w) != self.w)
             .collect();
         // gone: the window, or the agent, or another agent in its place
         let stale: Vec<WindowId> = self.targets.iter().filter(|(w, t)| !want.iter().any(|(ww, s, _)| ww == *w && *s == t.session)).map(|(w, _)| *w).collect();
@@ -340,6 +380,74 @@ impl Pane {
             }
         }
         Ok(())
+    }
+
+    // ---- the notifications ----
+
+    /// A flag raised for each agent that wants you -- its turn over and
+    /// the next prompt yours, a question of its own to answer, or a turn
+    /// that failed -- pointing at the window the agent runs in, so that
+    /// the session's square says someone is waiting and clicking it
+    /// takes you to them, one agent a click. Lowered as soon as the
+    /// agent leaves that state: back at work, or gone.
+    ///
+    /// A notification is one an attachment, so each agent's is raised by
+    /// an attachment of its own, named for the agent; letting it go
+    /// lowers the flag, and a tool that dies leaves none waiting. One
+    /// the user has taken is not raised again until the agent has been
+    /// back to work, which is what `dismissed` remembers.
+    fn sync_flags(&mut self) {
+        if self.session.is_empty() {
+            return;
+        }
+        let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
+        let mine = self.session.clone();
+        let here = |a: &agents::Agent| a.apex.as_deref() == Some(mine.as_str());
+        let want: Vec<(String, String, Option<WindowId>)> = self
+            .agents
+            .ordered()
+            .iter()
+            .filter(|a| matches!(a.state, State::Idle | State::Asking | State::Failed))
+            .filter(|a| self.opts.all || here(a))
+            .map(|a| {
+                // where to look: the agent's own window, when it is one
+                // of ours and still here. An agent elsewhere has none to
+                // point at, and its flag only says that it wants you
+                let origin = a.win.map(WindowId).filter(|w| here(a) && windows.contains(w));
+                (a.session.clone(), format!("{} {}", if a.kind.is_empty() { "agent" } else { &a.kind }, a.short()), origin)
+            })
+            .collect();
+        // back at work, or gone: the flag goes with the attachment
+        let stale: Vec<String> = self.flags.keys().filter(|s| !want.iter().any(|(k, _, _)| k == *s)).cloned().collect();
+        for s in stale {
+            if let Some(mut f) = self.flags.remove(&s) {
+                let _ = f.t.unnotify();
+            }
+        }
+        let socket = self.opts.socket.clone().unwrap_or_else(|| self.t.socket());
+        for (key, name, origin) in want {
+            match self.flags.get_mut(&key) {
+                Some(f) => {
+                    // what the daemon has said since we last looked, so
+                    // that a flag the user has taken is known to be gone
+                    while matches!(f.t.next_event(Some(Duration::ZERO)), Ok(Some(_))) {}
+                    if f.dismissed {
+                        continue;
+                    }
+                    if !f.t.notified() {
+                        f.dismissed = true;
+                    } else if f.origin != origin {
+                        f.origin = origin;
+                        let _ = f.t.notify(origin);
+                    }
+                }
+                None => {
+                    let Ok(mut t) = Tool::attach_to(&socket, &mine, &name) else { continue };
+                    let _ = t.notify(origin);
+                    self.flags.insert(key, Flag { t, origin, dismissed: false });
+                }
+            }
+        }
     }
 
     /// A verb of the pane's.
@@ -515,51 +623,14 @@ impl Pane {
         Some(d)
     }
 
-    /// The pane as it should read now, written where it differs: a block
-    /// that changed is written in place, and the whole only when the
-    /// blocks are not the ones they were, in the order they were.
+    /// What the windows should say now: the pane, when there is one,
+    /// and the pulse of each transcript whose agent is at work.
     fn render(&mut self) -> apex_tool::Result<()> {
-        let now = event::now_ms();
-        let under = self.under();
-        let session = (self.opts.session_only && !self.opts.all).then_some(self.session.as_str());
-        let (header, blocks, footer) = agents::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref(), session);
-        let same_keys = header == self.header && footer == self.footer && blocks.len() == self.blocks.len() && blocks.iter().zip(&self.blocks).all(|(a, b)| a.0 == b.0);
-        if same_keys {
-            // last first, so that what comes before keeps its offsets
-            for i in (0..blocks.len()).rev() {
-                if blocks[i].1 != self.blocks[i].1 {
-                    let (q0, q1) = (self.starts[i], self.starts[i] + self.blocks[i].1.chars().count());
-                    self.t.replace(self.w, q0, q1, &blocks[i].1)?;
-                    self.dirty = true;
-                }
-            }
-        } else {
-            let (text, _) = agents::pane_text(&header, &blocks, &footer);
-            self.t.replace(self.w, 0, END, &text)?;
-            self.dirty = true;
-        }
-        let (_, starts) = agents::pane_text(&header, &blocks, &footer);
-        self.header = header;
-        self.blocks = blocks;
-        self.starts = starts;
-        self.footer = footer;
         self.last_render = Instant::now();
-        // the handle pulses while any agent works, as the agent's own
-        // window would
-        let working = self.agents.working();
-        if working != self.pulsing {
-            self.pulsing = working;
-            let _ = self.t.set_working(self.w, working);
+        if let Some(w) = self.w {
+            self.render_pane(w)?;
         }
-        // and is clean while none does: what it says is whole, and
-        // nothing is going on behind it. Written while agents work, it
-        // is dirty as any window a program is writing is, and the
-        // pulse says why
-        if !working && self.dirty {
-            self.dirty = false;
-            let _ = self.t.set_clean(self.w);
-        }
-        // and each transcript's, while its agent does
+        // each transcript's handle pulses while its agent works
         let mut pulse = Vec::new();
         for d in self.details.values_mut() {
             let on = self.agents.get(&d.session).is_some_and(|a| a.state == State::Working);
@@ -570,6 +641,54 @@ impl Pane {
         }
         for (w, on) in pulse {
             let _ = self.t.set_working(w, on);
+        }
+        Ok(())
+    }
+
+    /// The pane as it should read now, written where it differs: a block
+    /// that changed is written in place, and the whole only when the
+    /// blocks are not the ones they were, in the order they were.
+    fn render_pane(&mut self, w: WindowId) -> apex_tool::Result<()> {
+        let now = event::now_ms();
+        let under = self.under();
+        // this session's agents, unless `-all`; and, outside a session
+        // of apex's, those under the directory the pane is named for
+        let session = (!self.opts.all && !self.session.is_empty()).then_some(self.session.as_str());
+        let (header, blocks, footer) = agents::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref(), session);
+        let same_keys = header == self.header && footer == self.footer && blocks.len() == self.blocks.len() && blocks.iter().zip(&self.blocks).all(|(a, b)| a.0 == b.0);
+        if same_keys {
+            // last first, so that what comes before keeps its offsets
+            for i in (0..blocks.len()).rev() {
+                if blocks[i].1 != self.blocks[i].1 {
+                    let (q0, q1) = (self.starts[i], self.starts[i] + self.blocks[i].1.chars().count());
+                    self.t.replace(w, q0, q1, &blocks[i].1)?;
+                    self.dirty = true;
+                }
+            }
+        } else {
+            let (text, _) = agents::pane_text(&header, &blocks, &footer);
+            self.t.replace(w, 0, END, &text)?;
+            self.dirty = true;
+        }
+        let (_, starts) = agents::pane_text(&header, &blocks, &footer);
+        self.header = header;
+        self.blocks = blocks;
+        self.starts = starts;
+        self.footer = footer;
+        // the handle pulses while any agent works, as the agent's own
+        // window would
+        let working = self.agents.working();
+        if working != self.pulsing {
+            self.pulsing = working;
+            let _ = self.t.set_working(w, working);
+        }
+        // and is clean while none does: what it says is whole, and
+        // nothing is going on behind it. Written while agents work, it
+        // is dirty as any window a program is writing is, and the
+        // pulse says why
+        if !working && self.dirty {
+            self.dirty = false;
+            let _ = self.t.set_clean(w);
         }
         Ok(())
     }
@@ -768,7 +887,7 @@ impl Pane {
         };
         let cmd = if extra.is_empty() { agent.to_string() } else { format!("{agent} {extra}") };
         let text = if dir.trim_end_matches('/') == here.trim_end_matches('/') { format!("Newterm {cmd}") } else { format!("Newterm cd '{}' && exec {cmd}", dir.replace('\'', "'\\''")) };
-        self.t.exec_in(Some(self.w), &text)?;
+        self.t.exec_in(self.w, &text)?;
         Ok(true)
     }
 

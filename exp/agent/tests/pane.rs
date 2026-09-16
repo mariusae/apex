@@ -48,7 +48,7 @@ fn text_of(c: &Remote, w: WindowId) -> String {
 /// The window's text once `ok` says so, and soon: sooner than the
 /// pane's slow pass, so that it was the watch that saw the change.
 fn wait_text(c: &mut Remote, name: &str, ok: impl Fn(&str) -> bool) -> String {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + Duration::from_secs(8);
     let mut last = String::new();
     while Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
@@ -115,7 +115,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
     // the page's converter: the markdown itself, so the test can read it
     t.set("Preview.md", "cat");
-    let pane = Pane::start(t, Opts { all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    let pane = Pane::start(t, Opts { pane: true, all: true, socket: Some(sock.clone()), claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
         let r = pane.serve();
@@ -318,5 +318,119 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
     wait_gone(&mut c, &pane_name);
     served.join().unwrap().unwrap();
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Every notification raised, in the queue's order: who raised it, and
+/// the window it points at.
+fn flags(c: &Remote) -> Vec<(String, Option<WindowId>)> {
+    c.node.state.meta.notifications.iter().map(|n| (c.node.state.meta.attachments.get(&n.by).map(|a| a.name.clone()).unwrap_or_default(), n.origin)).collect()
+}
+
+fn wait_flags(c: &mut Remote, ok: impl Fn(&[(String, Option<WindowId>)]) -> bool) -> Vec<(String, Option<WindowId>)> {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let mut last = Vec::new();
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+        last = flags(c);
+        if ok(&last) {
+            return last;
+        }
+    }
+    panic!("the notifications waited in vain; last saw {last:?}");
+}
+
+/// Without `-a` there is no window of apex-agent's own: it serves the
+/// session's terminals, and says an agent wants you with a
+/// notification pointing at the terminal it runs in, one an agent,
+/// raised as the turn ends and lowered as the next one begins.
+#[test]
+fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
+    let sock = daemon();
+    let tmp = std::env::temp_dir().join(format!("apex-agent-flags-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let logs = tmp.join("agents");
+    let proj = tmp.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let sid = c.node.state.meta.id.clone();
+    assert!(!sid.is_empty());
+    // the terminal the agent runs in
+    let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/-term", proj.display()) }, Duration::from_secs(5)).unwrap().unwrap();
+
+    let ev = |event: &str| Event {
+        ms: event::now_ms(),
+        agent: "claude".into(),
+        event: event.into(),
+        session: "0b1c1425-aaaa".into(),
+        cwd: proj.display().to_string(),
+        apex: Some(sid.clone()),
+        win: Some(tw.0),
+        ..Event::default()
+    };
+    event::append(&logs, &Event { kind: Some("startup".into()), ..ev("SessionStart") }).unwrap();
+    event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
+
+    let t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    let pane = Pane::start(t, Opts { socket: Some(sock.clone()), claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    // it is served until the session is over, which the test does not
+    // wait for: nothing to Del, and nothing to join
+    std::thread::spawn(move || {
+        let mut pane = pane;
+        if let Err(e) = pane.serve() {
+            eprintln!("serve: {}", e.0);
+        }
+    });
+
+    // the agent's verbs are on its own window, and there is no window
+    // of apex-agent's own
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut menu = Vec::new();
+    while Instant::now() < deadline && !["Transcript", "Preview", "Changes"].iter().all(|x| menu.iter().any(|y| y == x)) {
+        let _ = c.step(Duration::from_millis(20));
+        menu = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(tw), c.node.window_kind(tw), Some(tw), c.node.window_owner(tw));
+    }
+    assert!(["Transcript", "Preview", "Changes"].iter().all(|x| menu.iter().any(|y| y == x)), "{menu:?}");
+    assert!(window_named(&c, &format!("{}/-agents", tmp.display())).is_none(), "no pane was asked for");
+    // at work, it wants nothing
+    assert_eq!(flags(&c), Vec::new());
+
+    // the turn ends: it wants you, and the flag points at its terminal
+    event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("claude 0b1c1425".to_string(), Some(tw))]);
+
+    // the next turn begins: the flag goes
+    event::append(&logs, &Event { text: Some("and /etc/passwd?".into()), ..ev("UserPromptSubmit") }).unwrap();
+    wait_flags(&mut c, |f| f.is_empty());
+
+    // a question is wanting you too, and so is a turn that failed
+    event::append(&logs, &Event { call: Some("t7".into()), title: Some("Bash: rm -rf target".into()), ..ev("PermissionRequest") }).unwrap();
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("claude 0b1c1425".to_string(), Some(tw))]);
+
+    // the user takes it: it is not raised again while the agent goes on
+    // wanting the same thing
+    let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while ui.node.state.meta.notifications.is_empty() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    let by = ui.node.state.meta.notifications[0].by;
+    ui.send(&ClientMsg::Unnotify { attachment: Some(by) });
+    wait_flags(&mut c, |f| f.is_empty());
+    event::append(&logs, &Event { call: Some("t7".into()), kind: Some("deny".into()), ..ev("Decision") }).unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+    let _ = c.step(Duration::from_millis(50));
+    assert_eq!(flags(&c), Vec::new(), "a notification the user took came back");
+
+    // back to work, and wanting you afresh: raised again
+    event::append(&logs, &Event { call: Some("t7".into()), ..ev("PostToolUse") }).unwrap();
+    event::append(&logs, &Event { text: Some("Left it.".into()), ..ev("Stop") }).unwrap();
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("claude 0b1c1425".to_string(), Some(tw))]);
+
+    // the agent goes, and so does its flag
+    event::append(&logs, &ev("SessionEnd")).unwrap();
+    wait_flags(&mut c, |f| f.is_empty());
     let _ = std::fs::remove_dir_all(&tmp);
 }

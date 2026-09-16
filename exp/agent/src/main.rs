@@ -1,35 +1,49 @@
-//! apex-agent: an experiment. One window that says what every agent is
-//! doing -- every Claude Code and Codex on the machine, whichever
-//! terminal or editor it was started from -- fed by the hooks those
-//! agents offer, and beside it, for any of them, its transcript, its
-//! last answer as a page, its changes as a diff, and a way to it.
+//! apex-agent: an experiment. What every agent in the session is
+//! doing -- every Claude Code and Codex started in one of its terminals
+//! -- fed by the hooks those agents offer, and for any of them its
+//! transcript, its last answer as a page, its changes as a diff.
 //!
-//!     apex-agent [-cwd DIR] [-thoughts] [-all|-s] [-quiet]   the pane, DIR/-agents
+//!     apex-agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]
 //!     apex-agent install [claude|codex]...  put the hooks in (both, by default)
 //!     apex-agent uninstall [claude|codex]...
-//!     apex-agent ls                         the pane, as text
+//!     apex-agent ls                         every agent, as text
 //!     apex-agent wait ID                    until the agent's turn ends; the exit status is its state
 //!     apex-agent events [-all]              the events as they come, a line each
 //!     apex-agent hook claude|codex          what the agents run; not for typing
 //!
 //! The hook is this same program: each event the agent has is one line
-//! appended to `~/.apex/agents/SESSION.jsonl`, and the pane reads those
-//! logs, so nothing need be running when an agent starts and nothing
-//! is lost when the pane is not. The pane is a block an agent, in the
-//! order they want attention: `?` a permission or a question waiting on
-//! you, `✗` a turn that failed, `~` a turn over and the next prompt
-//! yours, `▶` at work. A question is answered where it stands, `Allow
-//! Deny Ask`, and the hook that asked it reads the answer from the
-//! log. B3 anywhere in a block (or `Open`) opens the agent's
-//! transcript beside it, named for the agent's own directory, and read
-//! from the agent's own record as it grows; `Preview` a page with the
-//! last exchange it finished, written afresh as each turn ends;
-//! `Changes` its repository's diff since the session began; `Goto`
-//! goes to the agent itself, the window it was started in, in whatever
-//! session that was; `Send TEXT` types into that window; `Start` and
-//! `Resume` make terminals running agents; `History` lists the
-//! directory's past sessions. An agent in a terminal of the pane's own
-//! session has these verbs on its window too. `ls`, `wait` and
+//! appended to `~/.apex/agents/SESSION.jsonl`, and apex-agent reads
+//! those logs, so nothing need be running when an agent starts and
+//! nothing is lost when it is not.
+//!
+//! It has no window of its own by default: its job is the terminals of
+//! its own session that are running agents, and what it does with them
+//! it does on their windows. While an agent runs, `Transcript`,
+//! `Preview` and `Changes` are in its terminal's tools menu -- the
+//! transcript, named for the agent's own directory and read from the
+//! agent's own record as it grows; a page with the last exchange it
+//! finished, written afresh as each turn ends; its repository's diff
+//! since the session began -- and while it asks something, `Allow Deny
+//! Ask` are there too, the answer going into the log for the hook that
+//! asked to read. An agent that wants you -- its turn over and the next
+//! prompt yours, a question to answer, a turn that failed -- raises a
+//! notification pointing at its terminal, so the session's square says
+//! someone is waiting and a click takes you to them, one agent a click;
+//! it goes as soon as the agent is back at work.
+//!
+//! `-a` adds the overview window, `DIR/-agents`, a block an agent in
+//! the order they want attention: `?` a permission or a question
+//! waiting on you, `✗` a turn that failed, `~` a turn over and the next
+//! prompt yours, `▶` at work. A question is answered where it stands,
+//! `Allow Deny Ask`. B3 anywhere in a block (or `Open`) opens the
+//! agent's transcript beside it; `Preview` its page; `Changes` its
+//! diff; `Goto` goes to the agent itself, the window it was started in,
+//! in whatever session that was; `Send TEXT` types into that window;
+//! `Start` and `Resume` make terminals running agents; `History` lists
+//! the directory's past sessions.
+//!
+//! `-all` widens both from this session to every agent on the machine,
+//! whichever terminal or editor it was started from. `ls`, `wait` and
 //! `events` are the same logs as text, for scripts.
 
 use std::path::PathBuf;
@@ -40,7 +54,7 @@ use apex_agent::event::{self, Tail};
 use apex_agent::{hook, install, win};
 
 fn usage() -> ! {
-    eprintln!("usage: apex-agent [-cwd DIR] [-thoughts] [-all|-s] [-quiet]");
+    eprintln!("usage: apex-agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]");
     eprintln!("       apex-agent install|uninstall [claude|codex]...");
     eprintln!("       apex-agent ls | wait ID | events [-all]");
     eprintln!("       apex-agent hook claude|codex");
@@ -119,9 +133,9 @@ fn parse_pane(args: &[String]) -> win::Opts {
                 let d = PathBuf::from(it.next().unwrap_or_else(|| usage()));
                 opts.cwd = if d.is_absolute() { d } else { opts.cwd.join(d) };
             }
+            "-a" | "--a" => opts.pane = true,
             "-thoughts" | "--thoughts" => opts.thoughts = true,
             "-all" | "--all" => opts.all = true,
-            "-s" | "-session" | "--session" => opts.session_only = true,
             "-quiet" | "--quiet" => opts.quiet = true,
             _ => usage(),
         }

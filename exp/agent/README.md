@@ -1,9 +1,9 @@
 # apex-agent (experimental)
 
-One window that says what every agent on the machine is doing -- each
-Claude Code and Codex, whichever terminal or editor it was started from
--- and beside it, for any of them, its transcript, its last answer as a
-page, its changes as a diff, and a way to it. It is fed by the hooks
+Serves the terminals of an apex session that are running agents --
+Claude Code and Codex -- so that each of them has its transcript, its
+last answer as a page and its changes as a diff on its own window, and
+says with a notification when one wants you. It is fed by the hooks
 those agents offer and written against the public tool API
 (`apex-tool`) only, as `apex-acp` is; it is not part of the supported
 surface.
@@ -13,14 +13,14 @@ surface.
     cargo build -p apex-agent
     apex-agent install          # the hooks, for claude and codex both
     apex-agent install claude   # or one of them
-    apex-agent                  # the pane, DIR/-agents
-    apex-agent -all             # every agent, not only those under DIR
-    apex-agent -s               # only the agents started in this apex session
+    apex-agent                  # this session's agents; no window of its own
+    apex-agent -a               # and the overview window, DIR/-agents
+    apex-agent -all             # every agent on the machine, not only this session's
     apex-agent -quiet           # no notes in +Errors
     apex-agent -thoughts        # transcripts show the agents' thinking
     apex-agent uninstall
 
-    apex-agent ls               # the pane, as text
+    apex-agent ls               # every agent, as text
     apex-agent wait ID          # until the agent's turn ends; exits with its state
     apex-agent events [-all]    # the events as they come, a line each
 
@@ -34,7 +34,9 @@ an older one wants `codex_hooks = true` under `[features]` in
 `~/.codex/config.toml`.
 
 Run `apex-agent` from an apex terminal or B2 it in a window: it attaches
-to the session it was started in and makes the window `DIR/-agents`.
+to the session it was started in, and from then on the agents in that
+session's terminals have its verbs on their own windows. It has no
+window of its own unless `-a` asks for the overview one, `DIR/-agents`.
 
 ## How it works
 
@@ -48,10 +50,10 @@ process, the apex session and window it was started in, and where its
 repository stood. The agent's input is not kept -- a `Write`'s input is
 the file -- so a log stays small.
 
-The pane reads those logs, and nothing else: no socket, no daemon.
-Nothing need be running when an agent starts, nothing is lost when the
-pane is not, a pane started late sees what came before it, and two
-panes see the same. The logs' directory is watched (FSEvents on a Mac,
+apex-agent reads those logs, and nothing else: no socket, no daemon.
+Nothing need be running when an agent starts, nothing is lost when it
+is not, one started late sees what came before it, and two see the
+same. The logs' directory is watched (FSEvents on a Mac,
 inotify on Linux, through the `notify` crate the server's own watcher
 uses), and so is the directory of every transcript open, so a line is
 read the moment it lands; directories rather than files, since a file
@@ -63,13 +65,34 @@ the agent's process, found once when the session starts, is asked
 after on that same pass and a session whose process is gone goes the
 same way.
 
-What the pane says back to an agent goes the way apex already has. A
+What apex-agent says back to an agent goes the way apex already has. A
 decision on a permission is an event in the agent's log, which the hook
 that asked is waiting to read. A prompt is typed into the agent's
 terminal by `apex term send`. An agent is started by `Newterm`. Nothing
 is added to the agents, and nothing to apex.
 
-## The pane
+## Notifications
+
+An agent that wants you raises a notification of its own: the turn is
+over and the next prompt is yours, it is asking a permission, or the
+turn failed. The session's square at the top left fills with the
+notification colour, and so does its tab, so a session with an agent
+waiting shows from any other; a click on the square takes the oldest,
+dismisses it and goes to the window that agent runs in. The next click
+takes the next, one agent a click. A notification is lowered as soon as
+the agent leaves that state -- back at work, or gone -- and one you
+have taken is not raised again until the agent has been back to work
+and come to want something afresh.
+
+A notification is one an attachment, so each agent's is raised by an
+attachment of its own, named for the agent (`claude 0b1c1425`, which is
+what `apex ps` shows): raising it is attaching and lowering it is
+letting go, so apex-agent dying leaves none waiting. Without `-all`
+these are the agents of this session; with it, every agent on the
+machine, and one running outside this session has no window to point
+at, so its notification only says that it wants you.
+
+## The overview window (`-a`)
 
     – 2 agents
 
@@ -106,12 +129,12 @@ what it says is whole and nothing is going on behind it. The first line
 is apex's own, `–`, and says how many; with no agents it is a guide,
 and `Start claude` there is a verb to B2.
 
-The pane's name is its filter: `DIR/-agents` shows the agents under
-`DIR`, and a last line counts the rest (`– 2 elsewhere: a pane in ~
-shows all`); a pane in the home directory, or `-all`, shows everything.
-`-s` narrows it instead to the agents started in the apex session the
-pane was launched from, wherever their directories are, the last line
-counting those in other sessions.
+The pane shows the agents started in the apex session it was launched
+from, wherever their directories are, and a last line counts the rest
+(`– 2 in other sessions: -all shows all`); `-all` shows every agent on
+the machine. Outside an apex session there is none to narrow to, and
+the pane's name is its filter instead: `DIR/-agents` shows the agents
+under `DIR`.
 
 Every verb below takes the agent dot is in, or the only one there is,
 or the one named after it by its id (`Open 0b1c`), its kind (`Goto
@@ -120,16 +143,16 @@ several to choose from, `+Errors` says so.
 
 ## Answering
 
-A question is answered where it stands: `Allow`, `Deny` and `Ask` are
-verbs, written into the block to be B2'd there. The answer is written
-into the agent's log as a `Decision`, the record of it, and the hook
-that asked -- which has been waiting, up to a minute and a half, since
-it saw a pane was there -- reads it and tells the agent. `Ask` hands
-the question to the agent's own prompt, as does saying nothing in time.
-With no pane running a hook does not wait at all, so an agent is never
-held up by a pane that is not there. Until the answer is in, the agent's
-terminal shows the hook running and no prompt: the pane is where the
-question is.
+`Allow`, `Deny` and `Ask` are verbs, in the agent's own window while it
+asks and, in the pane, written into its block to be B2'd where they
+stand. The answer is written into the agent's log as a `Decision`, the
+record of it, and the hook that asked -- which has been waiting, up to a
+minute and a half, since it saw apex-agent was there -- reads it and
+tells the agent. `Ask` hands the question to the agent's own prompt, as
+does saying nothing in time. With no apex-agent running a hook does not
+wait at all, so an agent is never held up by one that is not there.
+Until the answer is in, the agent's terminal shows the hook running and
+no prompt: the notification is what says where the question is.
 
 When an agent comes to ask, or its turn fails, a line in the session's
 `+Errors` says which and what (`claude 0b1c1425 asks: Bash: rm -rf
@@ -142,8 +165,9 @@ target`); B3 on the id there opens the transcript. `-quiet` leaves
 whatever apex session that was -- apex puts `apexsession` and `winid`
 in a command's environment, the agent passes them on to its hooks, and
 the hook keeps them -- so the pane is a way straight to any agent,
-wherever it is. One started outside apex has nowhere to go to, and
-`+Errors` says so.
+wherever it is; a notification is the same way to one of this session's.
+An agent started outside apex has nowhere to go to, and `+Errors` says
+so.
 
 `Send TEXT` types the text into that window, Enter after it, by `apex
 term send`, which reaches a terminal in any session: `Send 0b1c now run
@@ -160,14 +184,15 @@ session, in the directory it was had in, so the agent replays it there.
 
 ## In the agent's own window
 
-An agent running in a terminal of the pane's own session is known by
-the session and window its hooks recorded, and the pane offers its
-verbs on that window too: `Transcript`, `Preview` and `Changes` in the
-terminal's tools menu for as long as the agent runs, and `Allow`,
-`Deny` and `Ask` for as long as it asks -- so the agent's window is the
-place to answer it from, as apex-acp's is, with nothing added to the
-agent. The verbs go when the agent does. A rule may name a window
-(`Rule::verb("Preview").window(w)`), which is all this is.
+An agent running in a terminal of apex-agent's own session is known by
+the session and window its hooks recorded, and its verbs are offered on
+that window: `Transcript`, `Preview` and `Changes` in the terminal's
+tools menu for as long as the agent runs, and `Allow`, `Deny` and `Ask`
+for as long as it asks -- so the agent's window is the place to answer
+it from, as apex-acp's is, with nothing added to the agent. The verbs go
+when the agent does. A rule may name a window
+(`Rule::verb("Preview").window(w)`), which is all this is. Without `-a`
+this and the notifications are the whole of apex-agent's face.
 
 ## The transcript
 
@@ -203,12 +228,12 @@ win does, so scrolling back to read something holds it still, and its
 handle pulses while the agent works. What is typed after the end is a
 draft, and stays yours while the transcript goes on above it.
 
-Subagents' doings are not in the transcript; the pane shows them.
+Subagents' doings are not in the transcript; the pane, with `-a`, shows
+them.
 
 ## The page
 
-`Preview` opens a page beside the pane with the last exchange the
-agent finished, rendered as apex-acp's `Preview` renders its own: what
+`Preview` opens a page with the last exchange the agent finished, rendered as apex-acp's `Preview` renders its own: what
 was asked, quoted, and then the answer -- the agent's last word on the
 turn, not the running commentary on the way to it, which the
 transcript has. It is written afresh as each turn ends, so it always
@@ -233,8 +258,8 @@ own words (`git diff --no-prefix`, `sl diff --noprefix`, `hg diff
 
 ## The history
 
-`History` opens `DIR/-agents+history` with the sessions the pane's
-directory has had, newest first, as apex-acp's `Resume` lists them:
+`History` is a verb of the pane's (`-a`). It opens
+`DIR/-agents+history` with the sessions that directory has had, newest first, as apex-acp's `Resume` lists them:
 
     – sessions in /Users/me/src/apex, newest first; B3 an id for its transcript, Resume ID to take it up
 
@@ -248,7 +273,8 @@ it is a past session; `Resume ID` takes it up again in a new terminal.
 
 ## As text
 
-The same logs are there for scripts. `apex-agent ls` prints the pane.
+The same logs are there for scripts. `apex-agent ls` prints every agent
+as the pane would.
 `apex-agent wait ID` (an id, a prefix, or a kind when there is one)
 returns when the agent is no longer working, with its state as the exit
 status: 0 its turn is over, 1 it is asking something, 2 the turn

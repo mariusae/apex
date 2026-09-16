@@ -933,10 +933,13 @@ wire or the replicated state showing through: `Tool::attach(name)`,
 session is over), `answer(plumb, taken)`, `offer(Rule)`/`withdraw`,
 `new_window new_page open read replace append insert_following select
 selection show show_line line rename tag set_tag set_clean set_owner
-set_live set_working notify unnotify notified delete exec exec_in errors
-watch unwatch set setting`. `notify(origin)` asks for the user's
+set_live set_working notify unnotify notified alive delete exec exec_in
+errors watch unwatch set setting`. `notify(origin)` asks for the user's
 attention (§4.1, notifications) and `notified` says whether the flag is
-still up, false once the user has dismissed it. `tag`/`set_tag` are the
+still up, false once the user has dismissed it; `alive` says whether the
+session is, which is how a tool with no window of its own -- one that
+only offers verbs on others' windows, or only raises notifications --
+knows it is over. `tag`/`set_tag` are the
 user's half of a window's tag, what follows `|`: the words before it
 are apex's own and stay the leader's business. `new_page` makes a window whose body is
 HTML, shown as a page: a tool with something to show that is not text
@@ -2053,19 +2056,36 @@ short of what the experiment needed.
 
 ### Exploration: a pane of agents
 
-`exp/agent` is a second spike on the same API: `apex-agent`, one
-window that says what every agent on the machine is doing, fed by the
+`exp/agent` is a second spike on the same API: `apex-agent`, which says
+what every agent in the session is doing, fed by the
 hooks Claude Code and Codex offer rather than by a protocol of our own.
 `apex-agent install` puts the hooks in; each one is `apex-agent hook
 AGENT`, which appends a line to `~/.apex/agents/SESSION.jsonl` and
-exits. The pane reads the logs and nothing else -- no socket, no
-daemon -- so nothing need be running when an agent starts, a pane
+exits. It reads the logs and nothing else -- no socket, no
+daemon -- so nothing need be running when an agent starts, one
 started late sees what came before it, and two see the same; the logs'
 directory and each open transcript's are watched with `notify` as §9
 watches files, a slow pass every few seconds catches what a watch let
 by, and an agent whose process is gone (found once, asked after with
 `kill(pid, 0)` on that pass) goes the way of one that said
-`SessionEnd`. The window is `DIR/-agents`, a block an agent, the
+`SessionEnd`.
+
+It has no window of its own by default: what it offers, it offers on
+the windows the agents are already in, and what it says, it says with a
+notification. An agent that wants the user -- its turn over and the
+next prompt theirs, a permission to answer, a turn that failed --
+raises one pointing at the terminal it runs in, so the session's square
+(§4.1) fills and a click goes to that agent, one agent a click; it is
+lowered as the agent goes back to work. A notification is one an
+attachment, so each agent's is raised by an attachment of its own,
+named for the agent (`claude 0b1c1425`): raising is attaching and
+lowering is letting go, which also means that apex-agent dying leaves
+none waiting. One the user has taken is not raised again until the
+agent has been back to work and come to want something afresh.  A tool
+with no window of its own cannot tell it is over by its window going,
+so `Tool::alive` says whether the session is.
+
+`-a` adds the overview window, `DIR/-agents`, a block an agent, the
 margin its state in the order they want attention -- `?` asking, `✗`
 failed, `~` your turn, `▶` at work -- with what it was asked and what
 it is doing about it under, the tool call in the agent's own words as
@@ -2093,12 +2113,14 @@ session began are its repository's own diff (git, sapling, mercurial),
 in a window at the repository's root with each hunk located as
 `path:line`; the directory's past sessions are listed as apex-acp's
 `Resume` lists them, and an id B3'd anywhere opens a transcript by a
-plumbing rule the tool offers. An agent in a terminal of the pane's own
+plumbing rule the tool offers. An agent in a terminal of apex-agent's own
 session (the recorded `apexsession` is this one's, which
-`Tool::session` says) has the verbs offered on its window too, by
+`Tool::session` says) has the verbs offered on its window, by
 rules naming it -- `Transcript`, `Preview`, `Changes` while it runs,
 `Allow Deny Ask` while it asks -- so the agent's own window answers it,
-as apex-acp's does. The same logs read as text: `ls`,
+as apex-acp's does; that, and the notifications, are the whole of it
+without `-a`. Both are the session's agents, `-all` every agent on the
+machine, whichever terminal or editor it was started from. The same logs read as text: `ls`,
 `wait` (the agent's state as the exit status) and `events`, for
 scripts to chain on. What the
 spike says back: the hooks carry the call's id, so a call's status

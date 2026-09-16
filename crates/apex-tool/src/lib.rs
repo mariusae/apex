@@ -686,6 +686,15 @@ impl Tool {
         self.remote.node.state.meta.notifications.iter().any(|n| n.by == me)
     }
 
+    /// Whether the session is still there, taking in whatever the link
+    /// has brought: false once it has ended. A tool with a window of its
+    /// own knows it is over when the window goes; one with none -- a tool
+    /// that only offers verbs on other windows, or only raises a
+    /// notification -- asks this.
+    pub fn alive(&mut self) -> bool {
+        self.drain()
+    }
+
     /// Say that the tool is working on something behind the window: its
     /// handle pulses until this is turned off, or until the tool
     /// detaches. For work with nothing to show while it lasts (an agent
