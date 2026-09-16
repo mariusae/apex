@@ -121,6 +121,11 @@ pub struct Column {
     pub r: Rect,
     pub safe: bool,
     pub wins: Vec<Slot>,
+    /// The width it had when it last became a strip (collapsed by B4,
+    /// squeezed by B2, hidden by B3), as a share of the row in parts per
+    /// million: what bringing it back gives it. Zero when there is none.
+    #[serde(default)]
+    pub restore: i32,
 }
 
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
@@ -669,7 +674,7 @@ impl State {
         for c in &self.layout.cols {
             h.update(&c.id.0.to_le_bytes());
             h.update(&c.tag.0.to_le_bytes());
-            h.update(&postcard::to_stdvec(&(c.r, c.safe)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(c.r, c.safe, c.restore)).unwrap_or_default());
             for s in &c.wins {
                 h.update(&postcard::to_stdvec(s).unwrap_or_default());
             }

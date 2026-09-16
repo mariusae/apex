@@ -1580,12 +1580,34 @@ acme leaves obscured windows'. Nothing draws, finds (`rowwhichcol`) or
 places a window in a hidden column: a window meant for one lands in the
 full column. A click on the full column's box lays the row out again with
 the others back as strips -- acme's windows come back as tags after one
-took the column -- and each strip's box widens it a step at a time.
+took the column.
 Anything else that changes the row first lays a hidden row out so
 (`rowadd`, `rowclose`, a drag), except a resize of the OS window, which
 simply gives the full column the new row. `rowadd`'s 40% of the last
 column comes from the widest column instead when the last is too narrow
 to give, which a strip always is.
+
+*Collapsing a column into its side.* B4 on a column's box (shift-click on
+a laptop; a column has no tools menu for B4 to open) collapses the
+outermost column that is not a strip, on either side, into that side's
+strips. It is next to them already, so it becomes a strip where it
+stands and nothing moves; its width goes to the next column in with
+room. B4 on a column between two with room does nothing, nor on the last
+column with room, since the row needs one. Strips therefore gather at
+the two edges, which is also where B2 leaves them. B4 on a strip brings
+it back, and so does B1, the one way back: a strip remembers the width
+it had when it became one (`Column::restore`, a share of the row in parts
+per million, so a resized window gives it the same part of the row) --
+collapsed by B4, squeezed by B2, or hidden by B3 -- and returns to it,
+taken from the columns with room nearest it, each keeping 80 pixels and a
+box for its text. Bringing back an outer strip brings back every strip
+between it and the columns with room too, so no strip is left stranded
+between two columns that have it. They return innermost first, each
+undoing the collapse that made it: a column that took a collapsed
+neighbour's width and then collapsed itself remembers the sum, and hands
+the neighbour's part back when the neighbour returns, so undoing a
+stack of collapses returns the row to how it was, as far as the columns
+beside it have the room to give.
 
 A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column

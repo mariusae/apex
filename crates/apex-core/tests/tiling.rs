@@ -295,7 +295,7 @@ fn arrange_entries_replay_identically() {
     f.catch_up(&log).unwrap();
     assert_eq!(f.state.hash(), n.state.hash());
     assert_eq!(f.state.layout, n.state.layout);
-    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0 }] };
+    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, restore: 0, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0 }] };
 }
 
 #[test]
@@ -456,4 +456,104 @@ fn a_row_with_a_full_column_resizes_it_and_lays_out_before_it_adds_or_closes() {
     rowclose(&mut l, 3, &info());
     assert_eq!(l.full, None);
     tiles(&l);
+}
+
+// ---- collapsing a column into its side, and bringing it back ------------------
+
+/// A row of four columns, each with a window, and their widths.
+fn four() -> (Layout, Vec<i32>) {
+    let mut l = three();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(4), tag: BufferId(4) }, None, &info()).unwrap();
+    add(&mut l, 3, 13, None);
+    let w = widths(&l);
+    (l, w)
+}
+
+fn near(a: i32, b: i32) -> bool {
+    (a - b).abs() <= 2
+}
+
+#[test]
+fn button_4_collapses_an_edge_column_into_its_side_and_stacks() {
+    let (mut l, before) = four();
+    assert!(before.iter().all(|&w| w > STRIP), "{before:?}");
+    // the leftmost: a strip where it was, its width to the next column in
+    rowgrow(&mut l, 0, 4, &info());
+    tiles(&l);
+    let w = widths(&l);
+    assert_eq!(w[0], STRIP);
+    assert_eq!(w[1], before[1] + before[0] - STRIP, "{before:?} -> {w:?}");
+    assert_eq!((w[2], w[3]), (before[2], before[3]));
+    // the next one in collapses onto it
+    rowgrow(&mut l, 1, 4, &info());
+    tiles(&l);
+    assert_eq!(&widths(&l)[..2], &[STRIP, STRIP]);
+    // and the rightmost into the right side
+    rowgrow(&mut l, 3, 4, &info());
+    tiles(&l);
+    let w = widths(&l);
+    assert_eq!((w[0], w[1], w[3]), (STRIP, STRIP, STRIP));
+    assert_eq!(w[2], 1000 - 3 * STRIP - 3 * BORDER, "{w:?}");
+    // the last column with room stays: the row needs one
+    rowgrow(&mut l, 2, 4, &info());
+    assert_eq!(widths(&l), w);
+}
+
+#[test]
+fn button_4_leaves_a_column_between_two_with_room_alone() {
+    let (mut l, before) = four();
+    rowgrow(&mut l, 1, 4, &info());
+    rowgrow(&mut l, 2, 4, &info());
+    assert_eq!(widths(&l), before);
+}
+
+#[test]
+fn a_collapsed_column_comes_back_at_the_width_it_had() {
+    let (mut l, before) = four();
+    rowgrow(&mut l, 0, 4, &info());
+    // B4 on the strip: back as it was, and so is the column that took it
+    rowgrow(&mut l, 0, 4, &info());
+    tiles(&l);
+    let w = widths(&l);
+    assert!(near(w[0], before[0]) && near(w[1], before[1]), "{before:?} -> {w:?}");
+    // B1 on a strip is the same way back
+    rowgrow(&mut l, 3, 4, &info());
+    rowgrow(&mut l, 3, 1, &info());
+    tiles(&l);
+    let w = widths(&l);
+    assert!(near(w[3], before[3]) && near(w[2], before[2]), "{before:?} -> {w:?}");
+}
+
+#[test]
+fn bringing_back_an_outer_strip_brings_the_strips_inside_it_too() {
+    let (mut l, before) = four();
+    rowgrow(&mut l, 0, 4, &info());
+    rowgrow(&mut l, 1, 4, &info());
+    // the outer of the two strips: both come back, so neither is left
+    // between two columns with room
+    rowgrow(&mut l, 0, 1, &info());
+    tiles(&l);
+    let w = widths(&l);
+    assert!(w.iter().all(|&x| x > STRIP), "{w:?}");
+    assert!(near(w[0], before[0]) && near(w[1], before[1]), "{before:?} -> {w:?}");
+}
+
+#[test]
+fn strips_left_by_button_2_or_3_come_back_at_the_widths_they_had() {
+    let (mut l, before) = four();
+    rowgrow(&mut l, 2, 2, &info());
+    for j in [0, 1, 3] {
+        assert_eq!(l.cols[j].r.dx(), STRIP);
+    }
+    rowgrow(&mut l, 3, 1, &info());
+    tiles(&l);
+    assert!(near(l.cols[3].r.dx(), before[3]), "{before:?} -> {:?}", widths(&l));
+    // B3, then the row back as strips: each strip remembers its column
+    let (mut l, before) = four();
+    rowgrow(&mut l, 1, 3, &info());
+    rowgrow(&mut l, 1, 1, &info());
+    assert_eq!(widths(&l)[0], STRIP);
+    rowgrow(&mut l, 0, 1, &info());
+    tiles(&l);
+    assert!(near(l.cols[0].r.dx(), before[0]), "{before:?} -> {:?}", widths(&l));
 }

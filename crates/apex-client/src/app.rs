@@ -2056,7 +2056,15 @@ impl Acme {
             return; // held open by its button; nothing else until it closes
         }
         if matches!(self.logical_button_peek(e), MouseButton::Navigate(_)) {
-            self.logical_button(e);
+            let button = self.logical_button(e);
+            // B4 on a column's box: the column collapses into its side, or a
+            // strip comes back, when the button comes up (a column has no
+            // tools menu)
+            if let Some((Target::View(ViewId::ColTag(c)), Region::LayoutBox)) = self.locate(e.position) {
+                self.mouse.box_drag = Some((BoxTarget::Col(c), button, e.position));
+                cx.notify();
+                return;
+            }
             let at = match self.locate(e.position) {
                 Some((Target::View(v), _)) => v.window(),
                 Some((Target::Term(w, _), _)) => Some(w),
@@ -2361,9 +2369,12 @@ impl Acme {
                 let but = match button {
                     MouseButton::Left => 1,
                     MouseButton::Middle => 2,
+                    MouseButton::Navigate(_) => 4,
                     _ => 3,
                 };
                 let (op, p) = (self.row_pt(start), self.row_pt(e.position));
+                // B4 is a click wherever it is let go: it never drags
+                let p = if but == 4 { op } else { p };
                 let r = match bt {
                     BoxTarget::Win(w) => self.node.drag_window(&mut self.log, w, but, op, p),
                     BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, but, op, p),

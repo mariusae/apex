@@ -625,4 +625,13 @@ fn a_column_given_the_whole_row_is_replicated_and_new_windows_land_in_it() {
     assert_eq!(node.state.layout.full, None);
     assert!(tiling::is_strip(node.state.layout.cols[1].r), "{:?}", node.state.layout.cols[1].r);
     assert_eq!(follower(&log).state.hash(), node.state.hash());
+    // the width each strip remembers is the session's, not the leader's
+    assert!(node.state.layout.cols[1].restore > 0);
+    assert_eq!(follower(&log).state.layout.cols[1].restore, node.state.layout.cols[1].restore);
+    // B4 on the strip's box brings it back, and a follower agrees on that too
+    let s = node.state.layout.cols[1].r;
+    let on = (s.x0 + 3, s.y0 + 3);
+    node.drag_column(&mut log, second, 4, on, on).unwrap();
+    assert!(!tiling::is_strip(node.state.layout.cols[1].r));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
 }

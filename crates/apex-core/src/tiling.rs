@@ -714,7 +714,7 @@ pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> 
     match c {
         AddingCol::New { id, tag } => {
             // colinit
-            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new() });
+            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new(), restore: 0 });
         }
         AddingCol::Existing(c) => {
             l.cols.insert(i, c);
@@ -802,7 +802,29 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
         return;
     }
     let row = l.r;
+    if but == 4 {
+        // collapsing works on a laid out row, and so does bringing back
+        reveal(l, info);
+        if is_strip(l.cols[ci].r) {
+            rowrestore(l, ci, info);
+        } else {
+            rowcollapse(l, ci, info);
+        }
+        return;
+    }
+    // button 1 on a strip brings it back, as B4 does: one way back, and
+    // no strip left between two columns with room
+    if but == 1 && l.full.is_none() && is_strip(l.cols[ci].r) && rowrestore(l, ci, info) {
+        return;
+    }
     if but == 3 {
+        // the widths the others had, to come back to
+        for j in 0..n {
+            if j != ci && l.full.is_none() && !is_strip(l.cols[j].r) {
+                let width = l.cols[j].r.dx();
+                remember(l, j, width);
+            }
+        }
         l.full = Some(l.cols[ci].id);
         let mut r = l.cols[ci].r;
         r.x0 = row.x0;
@@ -821,6 +843,11 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
     let mut w = w0;
     let most = (total - (n as i32 - 1) * STRIP).max(STRIP);
     if but == 2 {
+        for j in 0..n {
+            if j != ci && w[j] > STRIP {
+                remember(l, j, w[j]);
+            }
+        }
         w.iter_mut().for_each(|x| *x = STRIP);
         w[ci] = most;
     } else {
@@ -850,15 +877,120 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
         }
     }
     w[ci] = w[ci].max(STRIP);
-    // left to right, a border between; the last column ends at the row's edge
+    rowpack(l, &w, info);
+}
+
+/// The narrowest a column keeps for its text when it gives width to
+/// another, as a drag leaves it (`rowdragcol`).
+const MINCOL: i32 = 80 + SCROLLWID;
+
+/// The columns laid out left to right at widths `w`, a border between;
+/// the last ends at the row's edge.
+fn rowpack(l: &mut Layout, w: &[i32], info: &dyn Info) {
+    let n = l.cols.len();
+    let row = l.r;
     let mut x = row.x0;
-    for (j, width) in w.iter().enumerate() {
+    for (j, width) in w.iter().enumerate().take(n) {
         let mut r = l.cols[j].r;
         r.x0 = x;
         r.x1 = if j == n - 1 { row.x1 } else { x + width };
         colresize(l, j, r, info);
         x = r.x1 + BORDER;
     }
+}
+
+/// Column `j`, about to become a strip, `width` wide: remembered as a
+/// share of the row, so bringing it back gives it this width again (a
+/// share, so a resized window gives it the same part of the row).
+fn remember(l: &mut Layout, j: usize, width: i32) {
+    let row = l.r.dx() as i64;
+    if width > STRIP && row > 0 {
+        l.cols[j].restore = ((width as i64 * SHARE_UNIT + row / 2) / row) as i32;
+    }
+}
+
+/// B4 on a column's box: the outermost column that is not a strip, on
+/// either side, collapses into that side's strips in place -- it is next
+/// to them already, so nothing moves -- its width going to the next
+/// column in that has room. A column between two with room stays as it
+/// is, and so does the last column with room: the row needs one.
+fn rowcollapse(l: &mut Layout, ci: usize, info: &dyn Info) {
+    let n = l.cols.len();
+    let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
+    if wide.len() < 2 {
+        return;
+    }
+    let to = if ci == wide[0] {
+        wide[1]
+    } else if ci == wide[wide.len() - 1] {
+        wide[wide.len() - 2]
+    } else {
+        return;
+    };
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    remember(l, ci, w[ci]);
+    w[to] += w[ci] - STRIP;
+    w[ci] = STRIP;
+    rowpack(l, &w, info);
+}
+
+/// B4, or B1, on a strip: it comes back at the width it had, and so does
+/// every strip between it and the columns with room, so that no strip is
+/// ever left between two columns that have it. They come back innermost
+/// first, each undoing the collapse that made it: a column that took a
+/// collapsed neighbour's width and then collapsed itself remembers the
+/// sum, and hands the neighbour's part back when the neighbour returns.
+/// False when nothing came back: no column with room to give.
+fn rowrestore(l: &mut Layout, ci: usize, info: &dyn Info) -> bool {
+    let n = l.cols.len();
+    let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
+    let (Some(&first), Some(&last)) = (wide.first(), wide.last()) else { return false };
+    let order: Vec<usize> = if ci < first {
+        (ci..first).rev().collect()
+    } else if ci > last {
+        (last + 1..=ci).collect()
+    } else {
+        vec![ci] // between two with room, as an older layout may leave one
+    };
+    let mut any = false;
+    for j in order {
+        if !restore_one(l, j, info) {
+            break;
+        }
+        any = true;
+    }
+    any
+}
+
+/// One strip back at its remembered width (a fifth of the row when it
+/// has none), taken from the columns with room nearest it, each keeping
+/// enough for its text.
+fn restore_one(l: &mut Layout, j: usize, info: &dyn Info) -> bool {
+    let n = l.cols.len();
+    let mut givers: Vec<usize> = (0..n).filter(|&d| !is_strip(l.cols[d].r)).collect();
+    givers.sort_by_key(|&d| d.abs_diff(j));
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    let row = l.r.dx() as i64;
+    let had = match l.cols[j].restore {
+        s if s > 0 => ((s as i64 * row + SHARE_UNIT / 2) / SHARE_UNIT) as i32,
+        _ => (row / 5) as i32,
+    };
+    let want = (had - w[j]).max(0);
+    let spare: i32 = givers.iter().map(|&d| (w[d] - MINCOL).max(0)).sum();
+    let give = want.min(spare);
+    if give <= 0 {
+        return false;
+    }
+    w[j] += give;
+    let mut owe = give;
+    for &d in &givers {
+        let take = owe.min((w[d] - MINCOL).max(0));
+        w[d] -= take;
+        owe -= take;
+    }
+    l.cols[j].restore = 0;
+    rowpack(l, &w, info);
+    true
 }
 
 /// A row with a column grown to the whole of it, laid out again with the
