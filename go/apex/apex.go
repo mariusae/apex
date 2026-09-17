@@ -303,6 +303,12 @@ func (t *Tool) Exec(text string) error {
 	return t.call("exec", map[string]any{"text": text}, nil)
 }
 
+// Snarf puts text in the snarf buffer, where Paste and Send find it, and
+// on the clipboard of every UI on the session.
+func (t *Tool) Snarf(text string) error {
+	return t.call("snarf", map[string]any{"text": text}, nil)
+}
+
 // Errors appends text to the +Errors window of dir (the session's when
 // dir is empty), where tools say things.
 func (t *Tool) Errors(dir, text string) error {

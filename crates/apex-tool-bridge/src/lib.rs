@@ -30,6 +30,7 @@
 //! - `page {name, html}` → `window` (a window showing HTML as a page;
 //!   `write` on it rewrites the page)
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
+//! - `snarf {text}`: the snarf buffer, and the UIs' clipboards, set
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
 //! - `own {window, on?}`: the window is this tool's, so it is no file:
@@ -251,6 +252,10 @@ impl Bridge {
                 let text = v["text"].as_str().ok_or("text")?;
                 let w = if v["window"].is_null() { None } else { Some(window(v)?) };
                 self.tool.exec_in(w, text).map_err(e)?;
+                Ok(json!({}))
+            }
+            "snarf" => {
+                self.tool.snarf(v["text"].as_str().ok_or("text")?).map_err(e)?;
                 Ok(json!({}))
             }
             "errors" => {

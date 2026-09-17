@@ -775,6 +775,13 @@ impl Tool {
         Ok(())
     }
 
+    /// Put `text` in the snarf buffer, where Paste and Send find it, and
+    /// on the clipboard of every UI on the session.
+    pub fn snarf(&mut self, text: &str) -> Result<()> {
+        self.propose(Proposal::Snarf { text: text.to_string() })?;
+        Ok(())
+    }
+
     /// Report edits by others to the window's body as `Event::Edit`.
     pub fn watch(&mut self, w: WindowId) -> Result<()> {
         self.body_of(w)?;

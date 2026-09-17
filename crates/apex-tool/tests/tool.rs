@@ -385,3 +385,22 @@ fn a_tool_asks_for_attention_on_a_window_and_the_user_or_the_tool_lowers_it() {
     settle(&mut ui, &|r| queue(r).is_empty());
     assert!(queue(&ui).is_empty(), "the notification goes with the tool");
 }
+
+#[test]
+fn a_tools_snarf_is_the_snarf_buffer_and_the_uis_clipboard() {
+    let sock = daemon();
+    let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
+    // the UI leads, so the tool waits on it to apply
+    let at = sock.clone();
+    let copier = std::thread::spawn(move || Tool::attach_to(&at, "main", "copier").unwrap().snarf("src/a.rs:3:\nhello\n"));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while (ui.link.clips.is_empty() || ui.node.state.layout.snarf.is_empty()) && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    while !copier.is_finished() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    copier.join().unwrap().unwrap();
+    assert_eq!(ui.node.state.layout.snarf, "src/a.rs:3:\nhello\n");
+    assert_eq!(ui.link.clips, vec!["src/a.rs:3:\nhello\n".to_string()]);
+}

@@ -1266,6 +1266,9 @@ word would stop at `?`), less the punctuation closing a sentence. OSC
 52 (a program setting the clipboard: tmux, neovim, `apex snarf` from
 afar) goes into the snarf buffer as a `Snarf` proposal and, as
 `ServerMsg::Clipboard`, onto the clipboard of every UI on the session.
+A tool's `snarf` (`Tool::snarf`, the bridge's `snarf {text}`) is the
+same: a `Snarf` proposal, which the daemon, seeing it come from no UI,
+also sends to the UIs as `ServerMsg::Clipboard`.
 Chords in a terminal: B1+B2 (or option while B1 is held) copies the
 sweep, B1+B3 (or command) types the clipboard into the shell, which
 the snarf buffer gets too. A terminal's tag has `Send`, win's: the text

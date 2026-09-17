@@ -764,6 +764,18 @@ impl Daemon {
                 props.push(s.server.complete(view, at, &dir, &prefix));
             }
             ClientMsg::Propose { id: tool_id, proposal } => {
+                // a tool's snarf is the clipboard too, on every UI on the
+                // session, as a terminal's OSC 52 is (a UI's own snarf
+                // puts its clipboard itself)
+                if let Proposal::Snarf { text } = &proposal {
+                    let me = self.conns.get(&id).map(|c| (c.session, c.kind));
+                    if let Some((sid, _)) = me.filter(|(_, k)| *k != AttachmentKind::Ui) {
+                        let uis: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == sid && c.kind == AttachmentKind::Ui).map(|(id, _)| *id).collect();
+                        for ui in uis {
+                            self.send(ui, ServerMsg::Clipboard { text: text.clone() });
+                        }
+                    }
+                }
                 // a tool's proposal: hand it to the leader, remembering who
                 // waits for the answer
                 let pid = self.next_pending;
