@@ -1575,6 +1575,8 @@ impl Acme {
         let hovered: Option<(SessionUrl, gpui::Bounds<Pixels>)> = self
             .tab_hovered
             .as_ref()
+            // no card while a tab is held: it would hang in the drag's way
+            .filter(|_| self.tab_drag.is_none())
             .filter(|(_, since)| since.elapsed() >= CARD_DELAY)
             .and_then(|(u, _)| self.tab_bounds.borrow().iter().find(|(x, _)| x == u).map(|(_, b)| (u.clone(), *b)));
         // where each tab lands this frame, for a drag to reorder by
@@ -1654,6 +1656,10 @@ impl Acme {
                 // after a moment (`tab_hovered`, drawn below)
                 let url = u.clone();
                 tab = tab.on_hover(cx.listener(move |this, on: &bool, _, cx| {
+                    // a tab passed over while one is dragged is not rested on
+                    if this.tab_drag.is_some() {
+                        return;
+                    }
                     if *on {
                         if this.tab_hovered.as_ref().map(|(u, _)| u) != Some(&url) {
                             this.tab_hovered = Some((url.clone(), std::time::Instant::now()));
@@ -1682,6 +1688,9 @@ impl Acme {
                             .map(|(_, b)| (e.position.x - b.origin.x, b.size.width))
                             .unwrap_or((px(0.), px(80.)));
                         this.tab_drag = Some(TabDrag { url: url.clone(), current, start: e.position, pos: e.position, grab, width, moved: false });
+                        // held, not rested on: the card goes, and comes back
+                        // only for a pointer that comes to rest on a tab again
+                        this.tab_hovered = None;
                         cx.stop_propagation();
                     }),
                 );

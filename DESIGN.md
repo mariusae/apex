@@ -1387,7 +1387,9 @@ this one (detach, attach).
   fenced, disconnected; parked and when last heard from) and the round
   trips spelled out, the heartbeat's as "Ping" and a log append's
   acknowledgement as "Log" (the strip's "ms/ms" readout and the ⚡ are
-  gone: a fenced or disconnected tab shows it by fading). In full
+  gone: a fenced or disconnected tab shows it by fading). A tab held
+  shows no card, nor do tabs passed over while one is dragged; the card
+  comes back only when the pointer comes to rest on a tab again. In full
   screen the strip stays, with View ▸ Always Show Tabs in Full Screen
   (on by default, kept in `fullscreen-tabs`); off, it hides, and the
   pointer at the top brings it over the top of the layout as the menu
