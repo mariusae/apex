@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use gpui::{
-    point, px, Bounds, ClipboardItem, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
+    point, px, Bounds, ClipboardItem, TouchPhase, Context, FocusHandle, KeyDownEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, Window,
 };
 
@@ -159,6 +159,115 @@ enum Target {
     Web(WindowId),
 }
 
+/// A body's scroll between whole lines, and past its ends (`Acme::smooth`).
+#[derive(Clone, Copy, Debug)]
+struct Smooth {
+    /// The origin this is about: the session's first line. When that moves
+    /// by anything else (the scrollbar, a key, a jump, another client), this
+    /// is dropped and the body is at its line again.
+    origin: usize,
+    /// Pixels scrolled down into the first line, less than its height.
+    px: f32,
+    /// How far past an end the text is pulled: down past the start when
+    /// positive, up past the last line when negative. Springs back to 0
+    /// once no finger holds it.
+    over: f32,
+    /// A finger is on the trackpad: what it pulls past an end stays pulled.
+    finger: bool,
+}
+
+impl Smooth {
+    fn at(origin: usize) -> Smooth {
+        Smooth { origin, px: 0., over: 0., finger: false }
+    }
+
+    /// Scrolled `dy` pixels down (up when negative), `phase` saying what the
+    /// finger is doing, from `line` of `total`: the new scroll and the new
+    /// first line. `below` are the heights of the lines from the first down,
+    /// `above` of those above it nearest first (either short, a line is `lh`);
+    /// `h` is the view's height, which the rubber band never reaches.
+    #[allow(clippy::too_many_arguments)]
+    fn scroll(mut self, dy: f32, phase: TouchPhase, mut line: usize, total: usize, below: &[f32], above: &[f32], lh: f32, h: f32) -> (Smooth, usize) {
+        match phase {
+            TouchPhase::Started => self.finger = true,
+            TouchPhase::Ended | TouchPhase::Cancelled => self.finger = false,
+            TouchPhase::Moved => {}
+        }
+        // after the finger lifts it is the system's momentum: it pushes past
+        // an end only a little, and the spring wins as it fades
+        let give = if self.finger { 1. } else { 0.35 };
+        let mut d = dy;
+        // moving back towards the text: the pull goes first
+        if self.over > 0. && d > 0. || self.over < 0. && d < 0. {
+            let raw = unrubber(self.over, h);
+            let left = raw - d;
+            if left.signum() == raw.signum() && left != 0. {
+                self.over = rubber(left, h);
+                d = 0.;
+            } else {
+                self.over = 0.;
+                d = -left;
+            }
+        }
+        self.px += d;
+        // down, across whole lines, to the last line at the top
+        let mut k = 0;
+        while self.px > 0. && line + 1 < total {
+            let hk = below.get(k).copied().unwrap_or(lh).max(1.);
+            if self.px < hk {
+                break;
+            }
+            self.px -= hk;
+            line += 1;
+            k += 1;
+        }
+        if line + 1 >= total && self.px > 0. {
+            let past = self.px;
+            self.px = 0.;
+            self.over = rubber(unrubber(self.over, h) - past * give, h);
+        }
+        // up, across the lines above, to the start
+        let mut k = 0;
+        while self.px < 0. && line > 0 {
+            self.px += above.get(k).copied().unwrap_or(lh).max(1.);
+            line -= 1;
+            k += 1;
+        }
+        if self.px < 0. {
+            let past = -self.px;
+            self.px = 0.;
+            self.over = rubber(unrubber(self.over, h) + past * give, h);
+        }
+        (self, line)
+    }
+
+    /// One frame of the spring: what no finger holds goes a fifth of the way
+    /// back. False once there is nothing left to pull back.
+    fn settle(&mut self) -> bool {
+        if self.finger || self.over == 0. {
+            return false;
+        }
+        self.over *= 0.8;
+        if self.over.abs() < 0.5 {
+            self.over = 0.;
+            return false;
+        }
+        true
+    }
+}
+
+/// The rubber band past an end, as AppKit's: `raw` pixels of pull show as
+/// ever less the further it goes, never as much as `h`, the view's height.
+fn rubber(raw: f32, h: f32) -> f32 {
+    (1. - 1. / (raw.abs() * 0.55 / h + 1.)) * h * raw.signum()
+}
+
+/// `rubber`'s inverse: the pull an overscroll stands for.
+fn unrubber(over: f32, h: f32) -> f32 {
+    let x = (over.abs() / h).min(0.999);
+    (1. / (1. - x) - 1.) * h / 0.55 * over.signum()
+}
+
 impl Target {
     /// The window this is part of, if any (not the session's own row).
     fn window(self) -> Option<WindowId> {
@@ -264,6 +373,12 @@ pub struct Acme {
     menu_last: Option<String>,
     /// The tabs last seen with notifications waiting (`tabs_tick`).
     notified_tabs: Vec<SessionUrl>,
+    /// Bodies scrolled by the trackpad, as a native view scrolls: by the
+    /// pixel between whole lines, and past either end. Only this client's;
+    /// the origin line is what the session has.
+    smooth: HashMap<ViewId, Smooth>,
+    /// The spring pulling overscrolled bodies back is running.
+    springing: bool,
     /// The window under the pointer, which has the keyboard while the app
     /// is in front (`active_window`).
     win_under_pointer: Option<WindowId>,
@@ -1353,6 +1468,8 @@ impl Acme {
             menu: None,
             menu_last: None,
             notified_tabs: Vec::new(),
+            smooth: HashMap::new(),
+            springing: false,
             win_under_pointer: None,
             entered: None,
             suppressed: std::collections::HashSet::new(),
@@ -2004,6 +2121,17 @@ impl Acme {
             _ => false,
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
+        // a body scrolled by the pixel: moved up by its scroll into the first
+        // line, and down by any pull past the start; forgotten once the
+        // session's first line is not the one it was scrolled from
+        let (shift, smooth) = match self.smooth.get(&view).copied() {
+            Some(s) if s.origin == v.origin => (s.px - s.over, true),
+            Some(_) => {
+                self.smooth.remove(&view);
+                (0., false)
+            }
+            None => (0., false),
+        };
         // a tag in a strip (a column squeezed by B2 on another's box) is its
         // box alone: no text laid out in no width, and nothing it would
         // scroll to is taken, so it is still wanted when the column is wide
@@ -2015,6 +2143,8 @@ impl Acme {
         };
         if column.is_some_and(|c| tiling::is_strip(c.r)) {
             return Some(Source {
+                shift: 0.,
+                smooth: false,
                 kind: Kind::of(view),
                 mono,
                 dirty,
@@ -2033,6 +2163,8 @@ impl Acme {
             });
         }
         Some(Source {
+            shift,
+            smooth,
             kind: Kind::of(view),
             mono,
             dirty,
@@ -2123,6 +2255,74 @@ impl Acme {
     fn text_of(&self, view: ViewId) -> Option<Text> {
         let b = self.node.view_buffer(view).ok()?;
         Some(self.node.state.buffer(b).ok()?.text.clone())
+    }
+
+    /// A body scrolled `dy` pixels down (up when negative) under the
+    /// trackpad, as a native view scrolls: by the pixel, whole lines crossed
+    /// becoming the session's first line; carried on by the system's
+    /// momentum, which arrives as more of the same after the finger lifts;
+    /// and past either end -- the start, or the last line at the top, acme's
+    /// end -- against a rubber band that a finger holds and that springs back
+    /// once none does. A gesture moving back towards the text gives back
+    /// what it pulled first.
+    fn smooth_scroll(&mut self, v: ViewId, dy: f32, phase: TouchPhase, cx: &mut Context<Self>) {
+        let Some(t) = self.text_of(v) else { return };
+        let Ok(b) = self.node.view_buffer(v) else { return };
+        let origin = self.node.state.buffer(b).map(|b| b.view(v).origin).unwrap_or(0);
+        let Some(l) = self.layouts.get(&v) else { return };
+        let lh = f32::from(l.line_height).max(1.);
+        let h = f32::from(l.bounds.size.height).max(lh);
+        let below: Vec<f32> = l.lines.iter().map(|li| f32::from(li.height(l.line_height))).collect();
+        let above: Vec<f32> = l.above.iter().map(|x| f32::from(*x)).collect();
+        let s = match self.smooth.get(&v).copied() {
+            Some(s) if s.origin == origin => s,
+            _ => Smooth::at(origin),
+        };
+        let total = t.line_count().max(1);
+        let line = t.line_of(origin).min(total - 1);
+        let (mut s, line) = s.scroll(dy, phase, line, total, &below, &above, lh, h);
+        let at = t.line_start(line);
+        if at != origin {
+            self.set_origin(v, at);
+        }
+        s.origin = at;
+        let loose = !s.finger && s.over != 0.;
+        self.smooth.insert(v, s);
+        if loose {
+            self.spring(cx);
+        }
+        cx.notify();
+    }
+
+    /// Bodies pulled past an end with no finger on them go back, as a
+    /// native view's do: a little each frame, quickly at first.
+    fn spring(&mut self, cx: &mut Context<Self>) {
+        if self.springing {
+            return;
+        }
+        self.springing = true;
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(std::time::Duration::from_millis(16)).await;
+            let going = cx
+                .update(|cx| {
+                    this.update(cx, |acme, cx| {
+                        let mut any = false;
+                        for s in acme.smooth.values_mut() {
+                            any |= s.settle();
+                        }
+                        cx.notify();
+                        if !any {
+                            acme.springing = false;
+                        }
+                        any
+                    })
+                    .unwrap_or(false)
+                });
+            if !going {
+                break;
+            }
+        })
+        .detach();
     }
 
     fn scroll_by(&mut self, view: ViewId, delta: i64) {
@@ -3233,6 +3433,13 @@ impl Acme {
             self.webs.scroll_by(w, dy);
             return;
         }
+        // a body under the trackpad (a device that says how far, in pixels):
+        // scrolled as a native view is; a wheel that clicks by lines keeps
+        // acme's steps
+        if let (Target::View(v @ ViewId::Body(_)), ScrollDelta::Pixels(p)) = (target, e.delta) {
+            self.smooth_scroll(v, -f32::from(p.y), e.touch_phase, cx);
+            return;
+        }
         let lh = match target {
             Target::Term(w, _) => self.term_layouts.get(&w).map(|l| l.line_height),
             Target::View(v) => self.layouts.get(&v).map(|l| l.line_height),
@@ -3942,5 +4149,88 @@ mod term_selection_tests {
         assert!(in_selection(b, a, (9, 3)));
         // nothing selected: a click is never inside it
         assert!(!in_selection(a, a, (5, 3)));
+    }
+}
+
+#[cfg(test)]
+mod smooth_scroll_tests {
+    use super::{rubber, unrubber, Smooth};
+    use gpui::TouchPhase::{Ended, Moved, Started};
+
+    const LH: f32 = 17.;
+    const H: f32 = 600.;
+
+    #[test]
+    fn the_rubber_band_resists_more_the_further_it_goes_and_undoes_itself() {
+        assert_eq!(rubber(0., H), 0.);
+        let (a, b) = (rubber(100., H), rubber(200., H));
+        assert!(a < 100. && b < 200. && b - a < a, "{a} {b}");
+        assert!(rubber(1e6, H) < H);
+        assert!(rubber(-100., H) == -a);
+        for over in [1., 50., 200., 500.] {
+            assert!((rubber(unrubber(over, H), H) - over).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn scrolling_by_the_pixel_crosses_whole_lines_and_keeps_the_rest() {
+        let s = Smooth::at(0);
+        // 40 px down over lines of 17 and 34 (a wrapped one)
+        let (s, line) = s.scroll(40., Moved, 5, 100, &[17., 34.], &[], LH, H);
+        assert_eq!((line, s.px), (6, 23.));
+        // 30 px up: back across the line above, 17 high
+        let (s, line) = s.scroll(-30., Moved, line, 100, &[34.], &[17.], LH, H);
+        assert_eq!((line, s.px), (5, 10.));
+        assert_eq!(s.over, 0.);
+    }
+
+    #[test]
+    fn a_finger_pulls_past_the_start_and_the_spring_brings_it_back_when_it_lifts() {
+        let s = Smooth::at(0);
+        let (s, line) = s.scroll(-80., Started, 0, 100, &[], &[], LH, H);
+        assert_eq!((line, s.px), (0, 0.));
+        assert!(s.over > 0. && s.over < 80., "{}", s.over);
+        // held: the spring leaves it
+        let mut held = s;
+        assert!(!held.settle());
+        assert_eq!(held.over, s.over);
+        // let go: back to the start, frame by frame
+        let (mut s, _) = s.scroll(0., Ended, 0, 100, &[], &[], LH, H);
+        let mut frames = 0;
+        while s.settle() {
+            frames += 1;
+            assert!(frames < 100);
+        }
+        assert_eq!(s.over, 0.);
+        assert!(frames > 3, "it goes back over frames, not at once: {frames}");
+    }
+
+    #[test]
+    fn moving_back_gives_back_the_pull_before_the_text_moves() {
+        let s = Smooth::at(0);
+        let (s, _) = s.scroll(-80., Started, 0, 100, &[], &[], LH, H);
+        let pulled = s.over;
+        // a little back: only the pull shrinks
+        let (s, line) = s.scroll(10., Moved, 0, 100, &[17.], &[], LH, H);
+        assert!(s.over < pulled && s.over > 0.);
+        assert_eq!((line, s.px), (0, 0.));
+        // far back: the pull is gone and the rest scrolls the text
+        let (s, line) = s.scroll(400., Moved, 0, 100, &[17.; 40], &[], LH, H);
+        assert_eq!(s.over, 0.);
+        assert!(line > 0, "{line} {}", s.px);
+    }
+
+    #[test]
+    fn the_end_is_the_last_line_at_the_top_and_momentum_pushes_past_it_less() {
+        let s = Smooth::at(0);
+        // the finger: past the end by 50
+        let (held, line) = s.scroll(50., Started, 99, 100, &[17.], &[], LH, H);
+        assert_eq!(line, 99);
+        assert!(held.over < 0.);
+        // momentum (no finger), the same 50: pulled less far, and loose
+        let (flung, _) = Smooth::at(0).scroll(50., Moved, 99, 100, &[17.], &[], LH, H);
+        assert!(flung.over < 0. && flung.over > held.over, "{} {}", flung.over, held.over);
+        let mut flung = flung;
+        assert!(flung.settle());
     }
 }

@@ -1744,9 +1744,23 @@ is over a page gpui's cursor rect asks for a style behind which
 undo it (`APEX_CURSOR_DEBUG=1` logs every cursor set and by whom);
 double-click expansion with acme's
 `isalnum` (`_` and any
-rune above Latin-1 are word characters, ASCII punctuation is not); the
-wheel's fractions of a line carried over so a trackpad's small deltas
-add up; and the pointers: plan9port's big arrow always, the box while
+rune above Latin-1 are word characters, ASCII punctuation is not); a
+wheel that clicks by lines scrolling by lines, its fractions carried
+over; a text body under the trackpad scrolling as a native view does
+(`Acme::smooth_scroll`): by the pixel, carried on by the system's
+momentum, which gpui passes on as more deltas once the finger has
+lifted (its momentum phase is not given, so what follows a touch's
+end is taken for it), and past either end -- the start, or acme's end,
+the last line at the top -- against AppKit's rubber band, which a
+finger holds and which springs back once none does, momentum pushing
+past an end only a third as far so that the spring wins as it fades.
+Only whole lines crossed reach the session, as the view's origin, as
+they always did; the pixels between them and the pull past an end are
+this client's (`Smooth`), dropped whenever the origin moves by anything
+else (the scrollbar, a key, a jump, another client), and the body is
+laid out from them, with the lines a screen above measured while it is
+being scrolled so that scrolling up crosses them without a jump; and
+the pointers: plan9port's big arrow always, the box while
 a layout box is held. Also matching: the scrollbar scrolling
 continuously while a button is held, the pointer kept on the bar
 (`textscroll`: 200 ms, then every 80 ms, by the pointer's height in the

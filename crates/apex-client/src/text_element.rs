@@ -181,6 +181,10 @@ pub struct TextLayout {
     pub text_origin: Point<Pixels>,
     pub line_height: Pixels,
     pub lines: Vec<LineInfo>,
+    /// The heights of the lines above the first, nearest first, a screen of
+    /// them, while the view is being scrolled by the pixel: what scrolling
+    /// up past the first line crosses.
+    pub above: Vec<Pixels>,
     pub text_len: usize,
     pub total_lines: usize,
     pub first_line: usize,
@@ -259,6 +263,11 @@ fn expand(src: &str, start: usize) -> (String, Vec<usize>) {
 /// What the element needs from the app for one view.
 pub struct Source {
     pub kind: Kind,
+    /// A body scrolled by the pixel (the trackpad): how far its text is
+    /// moved up from its first line at the top, negative when pulled down
+    /// past the start; and whether to measure the lines above for it.
+    pub shift: f32,
+    pub smooth: bool,
     pub mono: bool,
     pub dirty: bool,
     /// Dirty, and the file (or directory) changed on disk since.
@@ -298,6 +307,7 @@ pub struct Prepaint {
     kind: Kind,
     fontspec: FontSpec,
     lines: Vec<LineInfo>,
+    above: Vec<Pixels>,
     text_len: usize,
     total_lines: usize,
     first_line: usize,
@@ -480,6 +490,7 @@ impl Element for TextElement {
             let fit = ((height / lh) as usize).max(1);
 
             let mut lines = Vec::new();
+            let mut above = Vec::new();
             let mut first = 0;
             if kind != Kind::Body {
                 // what acme's wintaglines asks: how many lines the tag wraps to
@@ -497,9 +508,11 @@ impl Element for TextElement {
                 acme.tag_need.insert(view, (wrapped, trailing));
             } else if kind == Kind::Body {
                 first = text.line_of(src.origin).min(total.saturating_sub(1));
+                // a view being brought somewhere is at its line, not between
+                let shift = if src.want_visible || src.show_at.is_some() { px(0.) } else { px(src.shift) };
                 for _pass in 0..2 {
                     lines.clear();
-                    let mut y = px(0.);
+                    let mut y = -shift;
                     let mut n = first;
                     while y < height {
                         let Some((s, e)) = text.line_range(n) else { break };
@@ -535,6 +548,18 @@ impl Element for TextElement {
                 if origin != src.origin || src.want_visible || src.show_at.is_some() {
                     acme.set_origin(view, origin);
                 }
+                if src.smooth {
+                    let mut up = px(0.);
+                    let mut n = first;
+                    while n > 0 && up < height {
+                        n -= 1;
+                        let Some((s, e)) = text.line_range(n) else { break };
+                        let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, None, wrap, px(0.));
+                        let lh_n = li.height(lh);
+                        up += lh_n;
+                        above.push(lh_n);
+                    }
+                }
             } else {
                 unreachable!()
             }
@@ -542,6 +567,7 @@ impl Element for TextElement {
                 kind,
                 fontspec,
                 lines,
+                above,
                 text_len,
                 total_lines: total,
                 first_line: first,
@@ -739,6 +765,7 @@ impl Element for TextElement {
                 text_origin: origin,
                 line_height: lh,
                 lines: pp.lines,
+                above: pp.above,
                 text_len: pp.text_len,
                 total_lines: pp.total_lines,
                 first_line: pp.first_line,
