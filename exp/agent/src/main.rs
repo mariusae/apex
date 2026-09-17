@@ -38,7 +38,9 @@
 //! `Allow Deny Ask`. B3 anywhere in a block (or `Open`) opens the
 //! agent's transcript beside it; `Preview` its page; `Changes` its
 //! diff; `Goto` goes to the agent itself, the window it was started in,
-//! in whatever session that was; `Send TEXT` types into that window;
+//! in whatever session that was; `Send TEXT` types into that window,
+//! and `SendToClaude` in any text window sends its selection there,
+//! with the file and line it came from;
 //! `Start` and `Resume` make terminals running agents; `History` lists
 //! the directory's past sessions.
 //!

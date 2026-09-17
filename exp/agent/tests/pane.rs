@@ -297,6 +297,22 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let said = wait_text(&mut c, "+Errors", |t| t.contains("Send:"));
     assert!(said.contains("Send: ") && (said.contains("apex term send") || said.contains("no apex command") || said.contains("session")), "{said:?}");
 
+    // SendToClaude in a file's window: its selection, with where it is,
+    // goes as Send goes (here, to a window that is no terminal, so it is
+    // said); with nothing selected, that is said
+    let fw = c.propose(apex_server::Proposal::NewWindow { col, name: proj.join("src/a.rs").display().to_string() }, Duration::from_secs(5)).unwrap().unwrap();
+    let v = menu(&mut c, fw, &["SendToClaude"]);
+    assert!(v.iter().any(|x| x == "SendToClaude"), "{v:?}");
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(fw), text: "SendToClaude".into() }, Duration::from_secs(5)).unwrap();
+    wait_text(&mut c, "+Errors", |t| t.contains("SendTo: select"));
+    let before = wait_text(&mut c, "+Errors", |_| true).matches("Send:").count();
+    let fb = c.node.state.window(fw).unwrap().body_buffer().unwrap();
+    let version = c.node.state.buffers[&fb].version;
+    c.propose(apex_server::Proposal::Insert { buffer: fb, version, at: 0, text: "one\ntwo\n".into(), follow: false }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(fw), q0: 4, q1: 8 }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(fw), text: "SendToClaude".into() }, Duration::from_secs(5)).unwrap();
+    wait_text(&mut c, "+Errors", |t| t.matches("Send:").count() > before);
+
     // the session ends: the block goes, the log with it, and the
     // transcript window says so and stays
     event::append(&logs, &ev("SessionEnd")).unwrap();
@@ -313,6 +329,15 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!event::log_path(&logs, "0b1c1425-aaaa").exists());
+    // and its SendTo with it
+    let v = menu(&mut c, fw, &[]);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut v = v;
+    while v.iter().any(|x| x.starts_with("SendTo")) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+        v = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(fw), c.node.window_kind(fw), Some(fw), c.node.window_owner(fw));
+    }
+    assert!(!v.iter().any(|x| x.starts_with("SendTo")), "{v:?}");
 
     // Del on the pane ends the tool
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
