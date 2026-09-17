@@ -305,7 +305,16 @@ client runs WebKit's `window.find` in the view, case-blind, wrapping,
 from the page's own selection onward (backwards for shift-B3), which
 selects the match and scrolls it into view; `Look` with nothing after it
 looks for the page's selection again. The pointer is not moved to what
-was found, as it is in text.
+was found, as it is in text. What was found is marked, and so is every
+other place the text is in the page, by CSS custom highlights
+(`LOOK_SCRIPT`), which paint without touching the DOM, so a preview's
+morph neither drops them nor diffs against them: the place found in the
+selection's colour deepened a quarter of the way to the ink, the others
+in the selection's colour -- told apart by how dark, not by hue. The
+places are found in the page's text joined across inline markup (a word
+half bold is one place) and broken at block edges; the page's own
+selection is painted clear while the marks are up, so as not to cover
+the one found, and a click or a key in the page takes them down.
 
 ### 2.3 Network through the server
 

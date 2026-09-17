@@ -75,6 +75,81 @@ fn theme_css() -> String {
     )
 }
 
+/// Look in a page (`Webs::find`): the next place, found as the browser
+/// finds (whole words or not, any case), and every place the text is,
+/// marked by CSS custom highlights -- which leave the page's own DOM
+/// alone, so a preview's morph neither loses them nor trips on them. The
+/// page's selection, which the found place is, goes clear while they are
+/// up so that it does not paint over the mark; a click or a key takes
+/// them down.
+const LOOK_SCRIPT: &str = r#"(function () {
+  let t = __TEXT__;
+  if (!t) t = String(window.getSelection());
+  if (!t) return;
+  window.find(t, false, __REVERSE__, true, false, true, false);
+  if (!(window.CSS && CSS.highlights && window.Highlight)) return;
+  if (!window.__apexLook) {
+    window.__apexLook = { sheet: new CSSStyleSheet() };
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, window.__apexLook.sheet];
+    const down = function () {
+      CSS.highlights.delete('apex-look');
+      CSS.highlights.delete('apex-look-here');
+      window.__apexLook.sheet.replaceSync('');
+    };
+    addEventListener('mousedown', down, true);
+    addEventListener('keydown', down, true);
+  }
+  window.__apexLook.sheet.replaceSync(
+    '::highlight(apex-look){background-color:__ELSE__}' +
+    '::highlight(apex-look-here){background-color:__HERE__}' +
+    '::selection{background-color:transparent}');
+  const all = new Highlight(), here = new Highlight();
+  here.priority = 1;
+  const sel = window.getSelection();
+  if (sel.rangeCount && !sel.isCollapsed) here.add(sel.getRangeAt(0).cloneRange());
+  // the page's text in order, each node where it starts in the whole, so
+  // that a place split by markup (a bold half) is found as one; a block's
+  // edge is a break, so that none runs on into the next
+  const nodes = [], starts = [];
+  let whole = '', block = null;
+  const blockOf = function (e) {
+    for (; e; e = e.parentElement) {
+      const d = getComputedStyle(e).display;
+      if (d !== 'inline' && d !== 'contents') return e;
+    }
+    return null;
+  };
+  const walk = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
+    acceptNode: function (x) {
+      const p = x.parentElement;
+      return p && p.closest('script,style,noscript,textarea,.apex-copy') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  for (let x = walk.nextNode(); x; x = walk.nextNode()) {
+    const b = blockOf(x.parentElement);
+    if (b !== block) { whole += '\n'; block = b; }
+    nodes.push(x); starts.push(whole.length);
+    whole += x.data;
+  }
+  const at = function (i) {
+    let lo = 0, hi = nodes.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (starts[m] <= i) lo = m; else hi = m - 1; }
+    return lo;
+  };
+  const want = t.toLowerCase(), n = want.length, text = whole.toLowerCase();
+  let count = 0;
+  for (let i = text.indexOf(want); i >= 0 && count < 5000; i = text.indexOf(want, i + n)) {
+    const a = at(i), b = at(i + n - 1);
+    const r = document.createRange();
+    r.setStart(nodes[a], i - starts[a]);
+    r.setEnd(nodes[b], i + n - starts[b]);
+    all.add(r);
+    count++;
+  }
+  CSS.highlights.set('apex-look', all);
+  CSS.highlights.set('apex-look-here', here);
+})();"#;
+
 /// The copy handle: every code block gets a button that sends the
 /// block's text over (`copy:`), those made later too (a re-render).
 const COPY_SCRIPT: &str = r#"(function () {
@@ -727,12 +802,25 @@ impl Webs {
     /// Look in a page: the next place `text` is in it, after the page's
     /// selection (backwards when `reverse`), wrapping, selected and scrolled
     /// to; with no text, the page's own selection looked for again.
+    ///
+    /// What was found is marked in a deeper shade of the selection's
+    /// colour, and every other place the text is in the page in the
+    /// selection's colour, until a click or a key in the page.
     pub fn find(&self, w: WindowId, text: &str, reverse: bool) {
         if let Some(h) = self.hosts.get(&w) {
-            let t = js_string(text);
-            let _ = h.view.evaluate_script(&format!(
-                "(function(){{let t={t};if(!t)t=String(window.getSelection());if(!t)return;window.find(t,false,{reverse},true,false,true,false);}})();"
-            ));
+            // the other places the selection's tint, the place found that
+            // tint deepened a quarter of the way to the ink: told apart by
+            // how dark, not by hue
+            let t = crate::theme::theme();
+            let hex = |c: u32| format!("#{c:06X}");
+            let deeper = crate::text_element::mix(t.body_sel, t.text, 0.25);
+            // the text last, so that nothing in it is taken for a slot
+            let js = LOOK_SCRIPT
+                .replace("__REVERSE__", if reverse { "true" } else { "false" })
+                .replace("__HERE__", &hex(deeper))
+                .replace("__ELSE__", &hex(t.body_sel))
+                .replace("__TEXT__", &js_string(text));
+            let _ = h.view.evaluate_script(&js);
         }
     }
 
