@@ -508,8 +508,10 @@ impl Element for TextElement {
                 acme.tag_need.insert(view, (wrapped, trailing));
             } else if kind == Kind::Body {
                 first = text.line_of(src.origin).min(total.saturating_sub(1));
-                // a view being brought somewhere is at its line, not between
-                let shift = if src.want_visible || src.show_at.is_some() { px(0.) } else { px(src.shift) };
+                // a view being brought somewhere is at its line, not between;
+                // one whose selection is in view already (typing) stays
+                // where it is scrolled, or it would jump there and back
+                let mut shift = if src.show_at.is_some() { px(0.) } else { px(src.shift) };
                 for _pass in 0..2 {
                     lines.clear();
                     let mut y = -shift;
@@ -543,10 +545,15 @@ impl Element for TextElement {
                     } else {
                         break;
                     }
+                    shift = px(0.);
                 }
                 let origin = text.line_start(first);
                 if origin != src.origin || src.want_visible || src.show_at.is_some() {
                     acme.set_origin(view, origin);
+                }
+                // brought to a line: the scroll between lines is gone with it
+                if shift == px(0.) && src.shift != 0. {
+                    acme.forget_smooth(view);
                 }
                 if src.smooth {
                     let mut up = px(0.);

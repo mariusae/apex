@@ -1766,7 +1766,11 @@ they always did; the pixels between them and the pull past an end are
 this client's (`Smooth`), dropped whenever the origin moves by anything
 else (the scrollbar, a key, a jump, another client), and the body is
 laid out from them, with the lines a screen above measured while it is
-being scrolled so that scrolling up crosses them without a jump; and
+being scrolled so that scrolling up crosses them without a jump. What
+brings a view to a place (a jump, `textshow`) puts it at a whole line
+and drops the pixels; typing, which asks only that the selection be in
+view, keeps them while it is, or each key would draw the body at its
+line and the next frame back between lines; and
 the pointers: plan9port's big arrow always, the box while
 a layout box is held. Also matching: the scrollbar scrolling
 continuously while a button is held, the pointer kept on the bar

@@ -2212,6 +2212,11 @@ impl Acme {
             .unwrap_or_default()
     }
 
+    /// The view is at a whole line again, not scrolled between two.
+    pub fn forget_smooth(&mut self, view: ViewId) {
+        self.smooth.remove(&view);
+    }
+
     pub fn set_origin(&mut self, view: ViewId, origin: usize) {
         let _ = self.node.set_origin(&mut self.log, view, origin);
     }
