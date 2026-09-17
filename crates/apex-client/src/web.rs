@@ -724,6 +724,18 @@ impl Webs {
         self.cursors.get(&w).copied().unwrap_or(gpui::CursorStyle::Arrow)
     }
 
+    /// Look in a page: the next place `text` is in it, after the page's
+    /// selection (backwards when `reverse`), wrapping, selected and scrolled
+    /// to; with no text, the page's own selection looked for again.
+    pub fn find(&self, w: WindowId, text: &str, reverse: bool) {
+        if let Some(h) = self.hosts.get(&w) {
+            let t = js_string(text);
+            let _ = h.view.evaluate_script(&format!(
+                "(function(){{let t={t};if(!t)t=String(window.getSelection());if(!t)return;window.find(t,false,{reverse},true,false,true,false);}})();"
+            ));
+        }
+    }
+
     /// A page asked for mermaid: given, and its diagrams drawn.
     pub fn give_mermaid(&self, w: WindowId) {
         let js = mermaid_js();

@@ -296,6 +296,17 @@ tag work as in any window; B2/B3 inside the page are the page's
 page's own selection can be plumbed with the B3 on the selected text
 through the tag's `Look` as a later refinement).
 
+*As built, Look in a page:* `Look` in a web window's or a preview's tag,
+and B3 there on text no rule takes, find in the page rather than in a
+buffer: a web window has none, and a preview's is the HTML, which is not
+what the user sees. The leader queues the text (`Node::find_in_page`,
+drained by the client each sync) instead of searching seltext, and the
+client runs WebKit's `window.find` in the view, case-blind, wrapping,
+from the page's own selection onward (backwards for shift-B3), which
+selects the match and scrolls it into view; `Look` with nothing after it
+looks for the page's selection again. The pointer is not moved to what
+was found, as it is in text.
+
 ### 2.3 Network through the server
 
 *As built (stage 5):* `plane::IoPlane` is the link's I/O plane for

@@ -184,6 +184,10 @@ pub struct Node {
     /// Places to go (`Goto`, `Back`, `Fwd`), for the client (or a headless
     /// leader) to open and select (`take_gotos`).
     pub gotos: Vec<Loc>,
+    /// Looks in pages (a web window, a preview): the text to find, and
+    /// backwards or not, for the client to find in the page's view, which
+    /// only it has (`take_page_finds`).
+    pub page_finds: Vec<(WindowId, String, bool)>,
     /// Places in other sessions to go to (a `Goto` or `Switch` naming
     /// one): a UI switches sessions for them (`take_switches`).
     pub switches: Vec<Loc>,
@@ -219,6 +223,7 @@ impl Node {
             seltext: None,
             shows: Vec::new(),
             gotos: Vec::new(),
+            page_finds: Vec::new(),
             switches: Vec::new(),
             quit_requested: false,
             warned: BTreeMap::new(),
@@ -1315,6 +1320,27 @@ impl Node {
         std::mem::take(&mut self.gotos)
     }
 
+    /// The window a Look in `ctx` finds in when it is a page's: a web window
+    /// or a preview, whose text the user sees is the page, not a buffer.
+    pub fn page_of(&self, ctx: ExecCtx) -> Option<WindowId> {
+        let ExecCtx::Window(w) = ctx else { return None };
+        matches!(self.state.window(w).ok()?.body, Body::Web | Body::Html(_)).then_some(w)
+    }
+
+    /// A Look in a page: for the client, which has the view. An empty text
+    /// is the page's own selection. A leader with no screen never takes
+    /// them, so only the latest few are kept.
+    pub fn find_in_page(&mut self, w: WindowId, text: &str, reverse: bool) {
+        self.page_finds.push((w, text.to_string(), reverse));
+        if self.page_finds.len() > 8 {
+            self.page_finds.remove(0);
+        }
+    }
+
+    pub fn take_page_finds(&mut self) -> Vec<(WindowId, String, bool)> {
+        std::mem::take(&mut self.page_finds)
+    }
+
     /// Where the user is: the window last selected in, and its dot.
     pub fn current_loc(&self) -> Option<Loc> {
         let v = self.seltext?;
@@ -1552,6 +1578,11 @@ impl Node {
             }
             "Look" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Look needs a window".into()))?;
+                // in a page: found in what the user sees, by the client
+                if self.page_of(ctx).is_some() {
+                    self.find_in_page(w, rest, false);
+                    return Ok(false);
+                }
                 let needle = if rest.is_empty() { self.selected_text(ViewId::Body(w))? } else { rest.to_string() };
                 self.look(log, ViewId::Body(w), &needle)?;
             }

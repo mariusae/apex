@@ -1104,3 +1104,22 @@ fn put_in_an_autoindent_window_trims_blanks_and_one_undo_brings_them_back() {
     assert_eq!(node.state.buffer(b).unwrap().undo.len(), undos, "no step added when nothing was trimmed");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn look_in_a_pages_tag_is_found_in_the_page() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let page = perform(&mut node, &mut log, vec![Proposal::OpenHtml { col, name: "/tmp/page+Preview".into(), text: "<p>foo bar foo</p>".into() }]).expect("a page");
+    // Look foo in its tag: for the client to find in the page's view, not
+    // searched for in the HTML the window holds
+    node.exec(&mut log, ExecCtx::Window(page), "Look foo").unwrap();
+    assert_eq!(node.take_page_finds(), vec![(page, "foo".to_string(), false)]);
+    // B3 in its tag, when no rule takes the text: the same, either way
+    perform(&mut node, &mut log, vec![Proposal::Look { ctx: ExecCtx::Window(page), text: "bar".into(), reverse: true }]);
+    assert_eq!(node.take_page_finds(), vec![(page, "bar".to_string(), true)]);
+    // a text window's Look is acme's still: its body searched, nothing queued
+    let w = node.new_window(&mut log, col, "/tmp/text", "one foo two").unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "Look foo").unwrap();
+    assert!(node.take_page_finds().is_empty());
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    assert_eq!(node.state.buffer(b).unwrap().view(ViewId::Body(w)).q0, 4, "found in the text");
+}

@@ -327,6 +327,12 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Look { ctx, text, reverse } => {
+            // B3 in a page's tag: found in the page, which is what the user
+            // sees there (the client has its view); seltext is not in it
+            if let Some(w) = node.page_of(ctx) {
+                node.find_in_page(w, &text, reverse);
+                return Ok(None);
+            }
             // acme's look3: the search runs in seltext, the text last
             // selected with B1, not necessarily where B3 was clicked
             let view = node

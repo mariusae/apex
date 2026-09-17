@@ -1506,6 +1506,10 @@ impl Acme {
         for (v, q) in self.node.take_shows() {
             self.show_at.insert(v, (q, 1));
         }
+        // Looks in pages: found in their views
+        for (w, text, reverse) in self.node.take_page_finds() {
+            self.webs.find(w, &text, reverse);
+        }
         for loc in self.node.take_gotos() {
             self.goto(loc);
         }
