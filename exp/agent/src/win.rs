@@ -151,11 +151,8 @@ pub struct Pane {
     /// on each: the ones for as long as the agent runs, and the ones
     /// for as long as it asks.
     targets: HashMap<WindowId, Target>,
-    /// `SendTo` verbs, one for each agent that can be typed to, in every
-    /// text window: by the agent's session, its verb and the rules that
-    /// offer it; and the other way, the agent a rule sends to.
-    sendto: HashMap<String, (String, Vec<RuleId>)>,
-    sendto_rules: HashMap<RuleId, String>,
+    /// `CopyContext`, in every text window.
+    copy: Vec<RuleId>,
     /// The notification raised for each agent that wants you, by the
     /// agent's session.
     flags: HashMap<String, Flag>,
@@ -219,6 +216,11 @@ impl Pane {
         // names no session of ours is handed back, and B3 does what it
         // always does with it
         let look_any = t.offer(Rule::plumb().text(r"[0-9a-fA-F]{6,}(-[0-9a-fA-F]{4,})*").priority(-1))?;
+        // a selection, with where it is, for an agent's prompt
+        let mut copy = Vec::new();
+        for kind in [WinKind::File, WinKind::Dir, WinKind::Errors] {
+            copy.push(t.offer(Rule::verb("CopyContext").kind(kind))?);
+        }
         let home = std::env::var("HOME").ok();
         // a change under a watched directory wakes the loop; what it
         // was is not said, since looking is cheap and the watch is
@@ -239,7 +241,7 @@ impl Pane {
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
         let (session, _) = t.session();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), sendto: HashMap::new(), sendto_rules: HashMap::new(), flags: HashMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -267,7 +269,6 @@ impl Pane {
                 self.sweep();
                 self.render()?;
                 self.sync_targets()?;
-                self.sync_sendto()?;
                 self.sync_flags();
             } else if self.last_render.elapsed() >= MINUTES {
                 self.render()?;
@@ -295,9 +296,8 @@ impl Pane {
                         d.wr.shift(e.q0, e.nd, e.text.chars().count());
                     }
                 }
-                Some(Event::Plumb(p)) if self.sendto_rules.contains_key(&p.rule) => {
-                    let key = self.sendto_rules[&p.rule].clone();
-                    let taken = self.send_selection(&key, p.window, p.at)?;
+                Some(Event::Plumb(p)) if self.copy.contains(&p.rule) => {
+                    let taken = self.copy_context(p.window, p.at)?;
                     self.t.answer(&p, taken)?;
                 }
                 Some(Event::Plumb(p)) => {
@@ -387,52 +387,20 @@ impl Pane {
         Ok(())
     }
 
-    /// A `SendTo` verb for each agent that can be typed to -- one started
-    /// in an apex terminal and still there -- offered in every text window
-    /// (a file's, a directory's, `+Errors`), named for the agent: the verb
-    /// takes that window's selection to it. Renamed when another agent of
-    /// the same kind comes or goes, since the name must tell them apart.
-    fn sync_sendto(&mut self) -> apex_tool::Result<()> {
-        let reachable: Vec<(String, String)> = self.agents.ordered().iter().filter(|a| a.apex.is_some() && a.win.is_some()).map(|a| (a.session.clone(), a.kind.clone())).collect();
-        let want: HashMap<String, String> = sendto_names(&reachable).into_iter().collect();
-        // gone, or renamed: its rules go
-        let stale: Vec<String> = self.sendto.iter().filter(|(k, (name, _))| want.get(*k) != Some(name)).map(|(k, _)| k.clone()).collect();
-        for k in stale {
-            if let Some((_, rules)) = self.sendto.remove(&k) {
-                for r in rules {
-                    self.sendto_rules.remove(&r);
-                    self.t.withdraw(r);
-                }
-            }
-        }
-        for (key, name) in want {
-            if self.sendto.contains_key(&key) {
-                continue;
-            }
-            let mut rules = Vec::new();
-            for kind in [WinKind::File, WinKind::Dir, WinKind::Errors] {
-                let r = self.t.offer(Rule::verb(&name).kind(kind))?;
-                self.sendto_rules.insert(r, key.clone());
-                rules.push(r);
-            }
-            self.sendto.insert(key, (name, rules));
-        }
-        Ok(())
-    }
-
-    /// `SendToX` in a window: its selection, and where it is, typed to the
-    /// agent as `Send` types, so the agent reads where the text came from.
-    fn send_selection(&mut self, key: &str, w: Option<WindowId>, at: Option<Range>) -> apex_tool::Result<bool> {
+    /// `CopyContext` in a window: its selection, headed by where it is
+    /// and fenced, into the snarf buffer and the clipboard, for whatever
+    /// prompt it goes into.
+    fn copy_context(&mut self, w: Option<WindowId>, at: Option<Range>) -> apex_tool::Result<bool> {
         let Some(w) = w else { return Ok(false) };
         let Some(r) = at.filter(|r| r.q1 > r.q0) else {
-            self.t.errors(None, "SendTo: select what to send first\n")?;
+            self.t.errors(None, "CopyContext: select what to copy first\n")?;
             return Ok(true);
         };
         let text = self.t.read(w)?;
         let sel: String = text.chars().skip(r.q0).take(r.q1 - r.q0).collect();
         let line = text.chars().take(r.q0).filter(|c| *c == '\n').count() + 1;
         let name = self.t.window_name(w).unwrap_or_default();
-        self.send_to(key, &quoted(&name, line, &sel))?;
+        self.t.snarf(&quoted(&name, line, &sel))?;
         Ok(true)
     }
 
@@ -1270,32 +1238,7 @@ pub fn term_send(session: &str, win: u64, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The `SendTo` verb for each agent, by its session: the kind alone when
-/// only one agent of that kind is there (`SendToClaude`), else the kind
-/// and as much of the session as tells them apart (`SendToClaude0b1c`).
-pub fn sendto_names(agents: &[(String, String)]) -> Vec<(String, String)> {
-    let title = |k: &str| {
-        let mut c = k.chars();
-        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
-    };
-    agents
-        .iter()
-        .map(|(session, kind)| {
-            let same: Vec<&str> = agents.iter().filter(|(s, k)| k == kind && s != session).map(|(s, _)| s.as_str()).collect();
-            if same.is_empty() {
-                return (session.clone(), format!("SendTo{}", title(kind)));
-            }
-            let id: String = session.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
-            let mut n = 4.min(id.len());
-            while n < id.len() && same.iter().any(|o| o.chars().filter(|c| c.is_ascii_alphanumeric()).take(n).collect::<String>() == id[..n]) {
-                n += 1;
-            }
-            (session.clone(), format!("SendTo{}{}", title(kind), &id[..n]))
-        })
-        .collect()
-}
-
-/// A selection as it is sent to an agent: where it is, as a place the
+/// A selection as `CopyContext` copies it: where it is, as a place an
 /// agent (and B3) can go to, then the text, fenced.
 pub fn quoted(name: &str, line: usize, sel: &str) -> String {
     let nl = if sel.ends_with('\n') { "" } else { "\n" };
@@ -1303,31 +1246,12 @@ pub fn quoted(name: &str, line: usize, sel: &str) -> String {
 }
 
 #[cfg(test)]
-mod sendto_tests {
-    use super::{quoted, sendto_names};
+mod copy_context_tests {
+    use super::quoted;
 
     #[test]
     fn a_selection_goes_with_where_it_is_and_fenced() {
         assert_eq!(quoted("/src/main.rs", 123, "fn main() {}"), "/src/main.rs:123:\n```\nfn main() {}\n```");
         assert_eq!(quoted("/src/main.rs", 7, "a\nb\n"), "/src/main.rs:7:\n```\na\nb\n```");
-    }
-
-    #[test]
-    fn an_agent_is_named_by_its_kind_and_by_its_id_when_that_is_not_enough() {
-        let one = |s: &str, k: &str| (s.to_string(), k.to_string());
-        assert_eq!(sendto_names(&[one("0b1c1425-aaaa", "claude")]), vec![one("0b1c1425-aaaa", "SendToClaude")]);
-        assert_eq!(
-            sendto_names(&[one("0b1c1425-aaaa", "claude"), one("7f3a0000-bbbb", "codex")]),
-            vec![one("0b1c1425-aaaa", "SendToClaude"), one("7f3a0000-bbbb", "SendToCodex")]
-        );
-        assert_eq!(
-            sendto_names(&[one("0b1c1425-aaaa", "claude"), one("7f3a0000-bbbb", "claude")]),
-            vec![one("0b1c1425-aaaa", "SendToClaude0b1c"), one("7f3a0000-bbbb", "SendToClaude7f3a")]
-        );
-        // ids that share a start are told apart further in
-        assert_eq!(
-            sendto_names(&[one("0b1c1425", "claude"), one("0b1c9999", "claude")]),
-            vec![one("0b1c1425", "SendToClaude0b1c1"), one("0b1c9999", "SendToClaude0b1c9")]
-        );
     }
 }

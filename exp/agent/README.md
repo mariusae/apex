@@ -176,19 +176,17 @@ of the transcript, as apex-acp's window does, and takes it away again,
 since it comes back as the agent's own record of it. `apex` must be on
 PATH, which in an apex terminal it is.
 
-`SendToClaude` (or `SendToCodex`) is offered in every text window --
-a file's, a directory's, `+Errors` -- for each agent that can be sent
-to, and sends that window's selection with where it came from, fenced:
+`CopyContext` is offered in every text window -- a file's, a
+directory's, `+Errors` -- and copies that window's selection, with
+where it came from, fenced, to the snarf buffer and the clipboard:
 
     /path/to/file:123:
     ```
     the selected text
     ```
 
-so the agent reads the place as well as the text, and B3 on the first
-line goes there. With two agents of a kind the verb carries as much of
-each id as tells them apart, `SendToClaude0b1c`; the verbs come and go
-with the agents.
+to paste into a prompt however it fits, so the agent reads the place as
+well as the text; B3 on the first line goes there.
 
 `Start [claude|codex] [DIR]` makes a terminal beside the pane running
 the agent, in the pane's directory or the one named, by `Newterm`; the
