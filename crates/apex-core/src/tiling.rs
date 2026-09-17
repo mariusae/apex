@@ -559,10 +559,12 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
     let w = l.cols[ci].wins[wi].window;
     let (mut px, py) = p;
     if (px - op.0).abs() < 5 && (py - op.1).abs() < 5 {
-        // a window in a strip: the click is on the column's box too, which
-        // brings the column back, and the window grows in it as it comes
+        // a window in a strip: the first click is the column's box's, which
+        // brings the column back; the window grows from the next one, once
+        // it can be seen
         if is_strip(l.cols[ci].r) {
             rowgrow(l, ci, 1, info);
+            return Some(Warp::WinButton(w));
         }
         colgrow(l, ci, wi, but, info);
         return Some(Warp::WinButton(w));
@@ -996,6 +998,22 @@ fn restore_one(l: &mut Layout, j: usize, info: &dyn Info) -> bool {
     l.cols[j].restore = 0;
     rowpack(l, &w, info);
     true
+}
+
+/// Column `ci` made something the user can see, because they are being
+/// taken to a window in it (a warp): out from behind a column given the
+/// row, and back from a strip at the width it had, as a click on its box
+/// would bring it.
+pub fn uncover(l: &mut Layout, ci: usize, info: &dyn Info) {
+    if ci >= l.cols.len() {
+        return;
+    }
+    if l.full.is_some() && !l.shows(ci) {
+        reveal(l, info);
+    }
+    if l.full.is_none() && is_strip(l.cols[ci].r) {
+        rowrestore(l, ci, info);
+    }
 }
 
 /// A row with a column grown to the whole of it, laid out again with the

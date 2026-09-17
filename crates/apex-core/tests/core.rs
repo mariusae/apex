@@ -655,3 +655,18 @@ fn a_column_given_the_whole_row_is_replicated_and_new_windows_land_in_it() {
     assert!(!tiling::is_strip(node.state.layout.cols[1].r));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
+
+#[test]
+fn going_to_a_window_in_a_collapsed_column_brings_the_column_back() {
+    let (mut log, mut node, _) = session();
+    let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
+    let w = node.new_window(&mut log, cols[0], "/tmp/in-a-collapsed-column", "").unwrap();
+    let r = node.state.layout.cols[0].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    node.drag_column(&mut log, cols[0], 4, at, at).unwrap();
+    assert!(tiling::is_strip(node.state.layout.cols[0].r));
+    // what a warp onto the window does first (a notification's, a Goto's)
+    node.uncover(&mut log, w).unwrap();
+    assert!(!tiling::is_strip(node.state.layout.cols[0].r));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+}

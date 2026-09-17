@@ -1540,6 +1540,17 @@ impl Acme {
     /// The mouse move acme would make after the last layout change.
     fn take_warp(&mut self) {
         let Some(w) = self.node.warp.take() else { return };
+        // taken to a window in a collapsed or hidden column: the column comes
+        // back first, and the warp lands on the frame that shows it
+        let onto = match w {
+            Warp::NewWindow(x) | Warp::WinButton(x) => Some(x),
+            Warp::Sel(v) => v.window(),
+            Warp::Closed { next, .. } => next,
+            Warp::ColButton(_) => None,
+        };
+        if let Some(x) = onto {
+            let _ = self.node.uncover(&mut self.log, x);
+        }
         let p = match w {
             Warp::NewWindow(win) => {
                 // savemouse: coming back is possible if this window closes

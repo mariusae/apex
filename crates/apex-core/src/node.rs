@@ -536,6 +536,19 @@ impl Node {
         Ok(())
     }
 
+    /// A window the user is being taken to (a warp onto it): its column is
+    /// brought out if it is a strip or hidden behind a column given the
+    /// row, so they land on something they can see.
+    pub fn uncover(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some(ci) = self.state.layout.column_of(w).and_then(|c| self.state.layout.column_index(c)) else { return Ok(()) };
+        let mut l = self.state.layout.clone();
+        tiling::uncover(&mut l, ci, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
     /// acme's `textshow` on a window showing no lines (squeezed to its
     /// tag, or obscured): grow it a little (`colgrow` with button 1) so
     /// what is shown can be seen. No mouse warp: that is the caller's.

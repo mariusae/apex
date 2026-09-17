@@ -1641,9 +1641,14 @@ neighbour's width and then collapsed itself remembers the sum, and hands
 the neighbour's part back when the neighbour returns, so undoing a
 stack of collapses returns the row to how it was, as far as the columns
 beside it have the room to give. A click on the box of a window in a
-strip is a click on the column's box as well: the column comes back, and
-the window grows in it by the button used, as it would in a column with
-room (`coldragwin`, before its `colgrow`).
+strip is a click on the column's box: the column comes back and nothing
+else happens, and the window grows from the next click, once it can be
+seen (`coldragwin`, instead of its `colgrow`). Being taken to a window
+in a strip, or in a column hidden behind one given the row, brings its
+column back too (`Node::uncover`, `tiling::uncover`): every warp onto a
+window -- a new one, a Goto landing, a notification taken -- passes
+through the client's `take_warp`, which uncovers the column first and
+lands the pointer on the frame that shows it.
 
 A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column
