@@ -49,6 +49,9 @@ pub enum WebEvent {
     /// A code block's copy handle was clicked: its text, for the snarf
     /// buffer and the clipboard.
     Copy(String),
+    /// A page from a buffer has mermaid blocks to draw and no mermaid:
+    /// the client's copy is given to it.
+    Mermaid,
     /// Where the page is scrolled, as the scrollbar beside it shows it:
     /// how far down (`top`), how long the page is, and how much shows,
     /// in CSS pixels.
@@ -88,10 +91,71 @@ const COPY_SCRIPT: &str = r#"(function () {
     });
     pre.appendChild(b);
   }
-  function all() { document.querySelectorAll('pre').forEach(dress); }
+  function all() { document.querySelectorAll('pre:not(.mermaid)').forEach(dress); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', all); else all();
   new MutationObserver(all).observe(document.documentElement, { childList: true, subtree: true });
 })();"#;
+
+/// Mermaid in a page from a buffer (WEB.md §3): each `pre.mermaid` block
+/// (what `apex md` makes of a ```mermaid fence) drawn as its diagram, in
+/// the page's theme. Mermaid itself is large and most pages have no
+/// diagram, so a page asks for it (`mermaid:`) only when it has a block,
+/// and the client gives it its copy. A block keeps the source it was drawn
+/// from, so re-rendering the page leaves a diagram whose source did not
+/// change alone (`morph_script`), and a drawing that finishes after its
+/// source changed is dropped; a theme change draws them all again.
+const MERMAID_SCRIPT: &str = r#"(function () {
+  if (window.__apexMermaid) return;
+  let asked = false, n = 0;
+  function dark() {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--apex-bg').trim();
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(v);
+    if (!m) return false;
+    const [r, g, b] = [m[1], m[2], m[3]].map(function (x) { return parseInt(x, 16) / 255; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;
+  }
+  window.__apexMermaid = function () {
+    const blocks = Array.from(document.querySelectorAll('pre.mermaid'));
+    if (!blocks.length) return;
+    if (!window.mermaid) {
+      if (!asked) { asked = true; try { window.ipc.postMessage('mermaid:'); } catch (e) {} }
+      return;
+    }
+    const d = dark();
+    if (window.__apexMermaidDark !== d) {
+      window.mermaid.initialize({ startOnLoad: false, theme: d ? 'dark' : 'neutral', securityLevel: 'strict', suppressErrorRendering: true });
+      window.__apexMermaidDark = d;
+      blocks.forEach(function (b) { delete b.dataset.apexDrawn; });
+    }
+    blocks.forEach(function (b) {
+      if (b.dataset.apexDrawn) return;
+      if (b.dataset.apexSrc === undefined) b.dataset.apexSrc = b.textContent;
+      const src = b.dataset.apexSrc;
+      window.mermaid.render('apex-mermaid-' + (++n), src).then(function (r) {
+        if (b.isConnected && b.dataset.apexSrc === src) { b.innerHTML = r.svg; b.dataset.apexDrawn = '1'; b.removeAttribute('title'); }
+      }).catch(function (e) {
+        if (b.isConnected && b.dataset.apexSrc === src) { b.textContent = src; b.dataset.apexDrawn = '1'; b.title = String((e && e.message) || e); }
+      });
+    });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { window.__apexMermaid(); });
+  else window.__apexMermaid();
+})();"#;
+
+/// Mermaid, the browser build, vendored gzipped (`assets/`): unpacked the
+/// first time a page asks for it.
+fn mermaid_js() -> &'static str {
+    static JS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JS.get_or_init(|| {
+        use std::io::Read;
+        let gz: &[u8] = include_bytes!("../assets/mermaid.min.js.gz");
+        let mut js = String::new();
+        if flate2::read::GzDecoder::new(gz).read_to_string(&mut js).is_err() {
+            js.clear();
+        }
+        js
+    })
+}
 
 /// One window's view.
 pub struct WebHost {
@@ -381,7 +445,7 @@ impl Webs {
         let css = js_string(&theme_css());
         for h in self.hosts.values() {
             if h.html.is_some() {
-                let _ = h.view.evaluate_script(&format!("(function(){{var s=document.getElementById('apex-theme');if(s){{s.textContent={css};}}}})();"));
+                let _ = h.view.evaluate_script(&format!("(function(){{var s=document.getElementById('apex-theme');if(s){{s.textContent={css};}}window.__apexMermaid&&window.__apexMermaid();}})();"));
             }
         }
     }
@@ -487,7 +551,12 @@ impl Webs {
             .with_initialization_script(CURSOR_SCRIPT)
             .with_initialization_script(SCROLL_SCRIPT)
             .with_ipc_handler(move |req| {
-                if let Some(rest) = req.body().strip_prefix("scroll:") {
+                if req.body() == "mermaid:" {
+                    let _ = tx4.send((w, WebEvent::Mermaid));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
+                } else if let Some(rest) = req.body().strip_prefix("scroll:") {
                     let n: Vec<f64> = rest.split(',').filter_map(|x| x.parse().ok()).collect();
                     if let [top, height, view] = n[..] {
                         let _ = tx4.send((w, WebEvent::Scroll { top, height, view }));
@@ -514,7 +583,7 @@ impl Webs {
                 }
                 b.with_url(&webkit_url(url))
             }
-            Page::Html { html, dir, .. } => b.with_initialization_script(COPY_SCRIPT).with_html(dress(html, dir)),
+            Page::Html { html, dir, .. } => b.with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_html(dress(html, dir)),
         };
         b = b
             .with_navigation_handler(move |u| {
@@ -653,6 +722,17 @@ impl Webs {
     /// The cursor a page last asked for (the arrow until it says).
     pub fn cursor(&self, w: WindowId) -> gpui::CursorStyle {
         self.cursors.get(&w).copied().unwrap_or(gpui::CursorStyle::Arrow)
+    }
+
+    /// A page asked for mermaid: given, and its diagrams drawn.
+    pub fn give_mermaid(&self, w: WindowId) {
+        let js = mermaid_js();
+        if js.is_empty() {
+            return;
+        }
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("{js}\n;window.__apexMermaid && window.__apexMermaid();"));
+        }
     }
 
     /// The page said where it is scrolled.
@@ -976,6 +1056,13 @@ fn morph_script(html: &str) -> String {
 const doc = new DOMParser().parseFromString({json}, 'text/html');
 function morph(a, b) {{
   if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) {{ a.replaceWith(b.cloneNode(true)); return; }}
+  if (a.nodeType === 1 && a.nodeName === 'PRE' && a.classList.contains('mermaid') && b.classList.contains('mermaid')) {{
+    // a diagram: left drawn while its source is the same, else its new source
+    if (a.dataset.apexSrc === b.textContent) return;
+    a.textContent = b.textContent;
+    delete a.dataset.apexSrc; delete a.dataset.apexDrawn;
+    return;
+  }}
   if (a.nodeType === 3 || a.nodeType === 8) {{ if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }}
   if (a.nodeType === 1) {{
     for (const at of Array.from(a.attributes)) if (!b.hasAttribute(at.name)) a.removeAttribute(at.name);
@@ -990,6 +1077,7 @@ function morph(a, b) {{
 }}
 morph(document.head, doc.head);
 morph(document.body, doc.body);
+window.__apexMermaid && window.__apexMermaid();
 }})();"#
     )
 }
@@ -1102,6 +1190,13 @@ fn respond(responder: wry::RequestAsyncResponder, status: u16, mime: &str, body:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_bundled_mermaid_unpacks_to_the_browser_build() {
+        let js = mermaid_js();
+        assert_eq!(js.len(), 5_575_485, "the size of mermaid 12.0.0's dist/mermaid.min.js");
+        assert!(js.contains("globalThis[\"mermaid\"]"), "it defines the global the page's script uses");
+    }
 
     #[test]
     fn a_pages_thumb_is_the_part_of_it_that_shows() {

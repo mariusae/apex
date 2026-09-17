@@ -892,10 +892,26 @@ pub fn markdown_page(text: &str) -> String {
     // read it, not the reader; the line numbers still count it
     let skip = front_matter_len(text);
     let mut events: Vec<pulldown_cmark::Event> = Vec::new();
+    // inside a ```mermaid block: its text is a diagram's source, which the
+    // client draws (WEB.md §3), not code to show
+    let mut mermaid = false;
     for (ev, range) in Parser::new_ext(&text[skip..], opts).into_offset_iter() {
-        use pulldown_cmark::{CowStr, Event, Tag};
+        use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
         if let Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::BlockQuote(_) | Tag::CodeBlock(_) | Tag::Item | Tag::Table(_) | Tag::HtmlBlock) = &ev {
             events.push(Event::Html(CowStr::from(format!("<span class=\"apex-line\" data-line=\"{}\"></span>", line_at(range.start + skip)))));
+        }
+        match &ev {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) if info.split_whitespace().next() == Some("mermaid") => {
+                mermaid = true;
+                events.push(Event::Html(CowStr::from("<pre class=\"mermaid\">")));
+                continue;
+            }
+            Event::End(TagEnd::CodeBlock) if mermaid => {
+                mermaid = false;
+                events.push(Event::Html(CowStr::from("</pre>\n")));
+                continue;
+            }
+            _ => {}
         }
         events.push(ev);
     }
@@ -1714,6 +1730,20 @@ fn cat(ctx: &Ctx, p: &Parsed) -> R {
 #[cfg(test)]
 mod front_matter_tests {
     use super::{front_matter_len, markdown_page};
+
+    #[test]
+    fn a_mermaid_fence_is_a_diagram_to_draw_and_other_fences_stay_code() {
+        let page = markdown_page("```mermaid\ngraph TD\n  A-->B & C<D\n```\n\n```mermaid title=x\nsequenceDiagram\n```\n\n```rust\nfn main() {}\n```\n");
+        // the source, escaped, in a block the client draws
+        assert!(page.contains("<pre class=\"mermaid\">graph TD\n  A--&gt;B &amp; C&lt;D\n</pre>"), "{page}");
+        assert!(page.contains("<pre class=\"mermaid\">sequenceDiagram\n</pre>"), "{page}");
+        assert_eq!(page.matches("<pre class=\"mermaid\">").count(), 2);
+        // code stays code, and a mermaid block is no code block
+        assert!(page.contains("<pre><code class=\"language-rust\">fn main() {}"), "{page}");
+        assert!(!page.contains("language-mermaid"), "{page}");
+        // the line marker still comes before it, for following dot
+        assert!(page.contains("data-line=\"1\"></span><pre class=\"mermaid\">"), "{page}");
+    }
 
     #[test]
     fn front_matter_is_left_out_and_lines_still_count() {

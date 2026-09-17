@@ -449,7 +449,26 @@ apex set Preview.svg cat
 pulldown-cmark crate: GitHub-flavoured tables, task lists, footnotes,
 strikethrough, a small default stylesheet, and line markers (§3.3).
 Requiring pandoc on every host for the common case would be a poor
-default. Someone who wants more adds a setting:
+default.
+
+*Mermaid:* a ```` ```mermaid ```` fence becomes `<pre class="mermaid">`
+holding the diagram's source rather than a code block, and the page
+draws it. The client carries Mermaid itself (12.0.0, the browser build,
+vendored gzipped in `crates/apex-client/assets/`, unpacked once on first
+use), so a diagram needs no network and the page's HTML, which the
+session replicates as the preview window's text, stays as small as the
+Markdown. A page from a buffer runs a small script: when it has a
+`pre.mermaid` and no Mermaid it asks for it (`mermaid:` over the IPC),
+the client evaluates its copy in that page, and each block is drawn in
+the page's theme (`neutral` on light, `dark` on dark, read off the
+`--apex-bg` the client sets). A block keeps the source it was drawn from:
+re-rendering the page morphs it, and the morph leaves a drawn diagram
+alone while its source is unchanged and resets it when it is not, so
+typing elsewhere in the document does not redraw every diagram, and a
+drawing that finishes after its source changed is dropped. A theme
+change draws them all again. A diagram Mermaid cannot parse shows its
+source, with the error as the block's tooltip. Diagrams get no copy
+handle and no code-block ground. Someone who wants more adds a setting:
 
 ```
 apex set Preview.rst 'pandoc -f rst -t html5'

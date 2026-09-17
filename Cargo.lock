@@ -290,6 +290,7 @@ dependencies = [
  "apex-edit",
  "apex-server",
  "core-text",
+ "flate2",
  "futures",
  "gpui",
  "gpui_platform",

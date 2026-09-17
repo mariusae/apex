@@ -3224,6 +3224,8 @@ impl Acme {
                     self.clips.push(text);
                     self.after();
                 }
+                // a page with diagrams to draw: mermaid for it
+                WebEvent::Mermaid => self.webs.give_mermaid(w),
                 // where the page is scrolled, for its scrollbar
                 WebEvent::Scroll { top, height, view } => self.webs.set_scroll(w, top, height, view),
                 // the page's cursor: set now, if the pointer is on that page

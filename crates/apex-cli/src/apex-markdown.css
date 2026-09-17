@@ -33,3 +33,8 @@ img { max-width: 100%; }
 dt { font-weight: bold; } dd { margin-left: 1.5em; }
 sup.footnote-ref a, .footnote-definition { font-size: 0.9em; }
 .apex-line { display: inline; }
+
+/* a mermaid diagram: drawn by the client in place of its source, on the
+   page's own paper, centred, not a code block */
+pre.mermaid { background: transparent; padding: 0; text-align: center; overflow: auto; font-family: inherit; }
+pre.mermaid svg { max-width: 100%; height: auto; }
