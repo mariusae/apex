@@ -1752,8 +1752,10 @@ over; a text body under the trackpad scrolling as a native view does
 (`Acme::smooth_scroll`): by the pixel, carried on by the system's
 momentum, which gpui passes on as more deltas once the finger has
 lifted (its momentum phase is not given, so what follows a touch's
-end is taken for it), and past either end -- the start, or acme's end,
-the last line at the top -- against AppKit's rubber band, which a
+end is taken for it), and past either end -- the start, or the text's
+end at the bottom of the view, as a native view's end is and not
+acme's last line at the top (which the scrollbar still reaches, and
+from which the trackpad only bounces) -- against AppKit's rubber band, which a
 finger holds and which springs back once none does, momentum pushing
 past an end only a third as far so that the spring wins as it fades.
 Only whole lines crossed reach the session, as the view's origin, as

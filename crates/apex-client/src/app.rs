@@ -186,6 +186,12 @@ impl Smooth {
     /// first line. `below` are the heights of the lines from the first down,
     /// `above` of those above it nearest first (either short, a line is `lh`);
     /// `h` is the view's height, which the rubber band never reaches.
+    ///
+    /// The end is where a native view's is: the text's last line at the
+    /// bottom of the view (or, text shorter than the view, at its start),
+    /// not acme's last line at the top. `below` reaching the last line
+    /// says where that is; a body already past it (the scrollbar takes it
+    /// further) goes no further down, and bounces.
     #[allow(clippy::too_many_arguments)]
     fn scroll(mut self, dy: f32, phase: TouchPhase, mut line: usize, total: usize, below: &[f32], above: &[f32], lh: f32, h: f32) -> (Smooth, usize) {
         match phase {
@@ -207,6 +213,16 @@ impl Smooth {
             } else {
                 self.over = 0.;
                 d = -left;
+            }
+        }
+        // down: no further than the end of the text at the bottom
+        if d > 0. && line + below.len() >= total {
+            let rest: f32 = below.iter().sum();
+            let room = (rest - self.px - h).max(0.);
+            if d > room {
+                let past = d - room;
+                d = room;
+                self.over = rubber(unrubber(self.over, h) - past * give, h);
             }
         }
         self.px += d;
@@ -4227,7 +4243,30 @@ mod smooth_scroll_tests {
     }
 
     #[test]
-    fn the_end_is_the_last_line_at_the_top_and_momentum_pushes_past_it_less() {
+    fn the_end_is_the_text_at_the_bottom_of_the_view() {
+        // 40 lines of 17 left from line 60 of 100 is 680: 80 to go
+        let (s, line) = Smooth::at(0).scroll(60., Started, 60, 100, &[17.; 40], &[], LH, H);
+        assert_eq!((line, s.px, s.over), (63, 9., 0.));
+        // 60 more: 20 of it scrolls, the rest pulls past the end
+        let (s, line) = s.scroll(60., Moved, line, 100, &[17.; 37], &[], LH, H);
+        assert_eq!((line, s.px), (64, 12.));
+        assert!(s.over < 0. && s.over > -40., "{}", s.over);
+        // back up: the pull goes first, then the text
+        let (s, line) = s.scroll(-200., Moved, line, 100, &[17.; 36], &[17.; 40], LH, H);
+        assert_eq!(s.over, 0.);
+        assert!(line < 64, "{line}");
+        // text shorter than the view: it does not move down at all
+        let (s, line) = Smooth::at(0).scroll(30., Started, 0, 10, &[17.; 10], &[], LH, H);
+        assert_eq!((line, s.px), (0, 0.));
+        assert!(s.over < 0.);
+        // past the end already (the scrollbar put it there): only a bounce
+        let (s, line) = Smooth::at(0).scroll(30., Started, 90, 100, &[17.; 10], &[], LH, H);
+        assert_eq!((line, s.px), (90, 0.));
+        assert!(s.over < 0.);
+    }
+
+    #[test]
+    fn momentum_pushes_past_the_end_less_than_a_finger() {
         let s = Smooth::at(0);
         // the finger: past the end by 50
         let (held, line) = s.scroll(50., Started, 99, 100, &[17.], &[], LH, H);
