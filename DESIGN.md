@@ -1759,8 +1759,13 @@ end is taken for it), and past either end -- the start, or the text's
 end at the bottom of the view, as a native view's end is and not
 acme's last line at the top (which the scrollbar still reaches, and
 from which the trackpad only bounces) -- against AppKit's rubber band, which a
-finger holds and which springs back once none does, momentum pushing
-past an end only a third as far so that the spring wins as it fades.
+finger holds and which springs back once none does. The spring is
+critically damped and runs on the time that passed, not on its ticks;
+momentum that reaches an end is handed to it as its speed, so the text
+goes out and back once, and what more momentum comes that way is spent
+until a finger is down again. (Momentum pushing the pull out while the
+spring pulled it in, each at its own rate -- scrolls at the display's
+120 a second, the spring at 60 -- shook the text on some machines.)
 Only whole lines crossed reach the session, as the view's origin, as
 they always did; the pixels between them and the pull past an end are
 this client's (`Smooth`), dropped whenever the origin moves by anything

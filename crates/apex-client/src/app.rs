@@ -172,36 +172,69 @@ struct Smooth {
     /// positive, up past the last line when negative. Springs back to 0
     /// once no finger holds it.
     over: f32,
+    /// How fast the pull is changing, in pixels of pull (before the rubber
+    /// band) a second: the spring's, once no finger holds it.
+    vel: f32,
+    /// The view's height, which the rubber band never reaches.
+    h: f32,
     /// A finger is on the trackpad: what it pulls past an end stays pulled.
     finger: bool,
+    /// The momentum since the finger lifted met an end, down past the
+    /// last line when negative, up past the start when positive: what more
+    /// of it comes that way is spent, even once the bounce is over. (A
+    /// scroll the other way is not momentum, and moves the text.)
+    spent: f32,
 }
+
+/// The spring that brings a body back past an end: critically damped, so
+/// that it goes out and back once and never rings; at this rate a bounce
+/// is back in about half a second.
+const SPRING: f32 = 13.;
 
 impl Smooth {
     fn at(origin: usize) -> Smooth {
-        Smooth { origin, px: 0., over: 0., finger: false }
+        Smooth { origin, px: 0., over: 0., vel: 0., h: 1., finger: false, spent: 0. }
     }
 
-    /// Scrolled `dy` pixels down (up when negative), `phase` saying what the
-    /// finger is doing, from `line` of `total`: the new scroll and the new
-    /// first line. `below` are the heights of the lines from the first down,
-    /// `above` of those above it nearest first (either short, a line is `lh`);
-    /// `h` is the view's height, which the rubber band never reaches.
+    /// Scrolled `dy` pixels down (up when negative), `dt` seconds after the
+    /// last scroll, `phase` saying what the finger is doing, from `line` of
+    /// `total`: the new scroll and the new first line. `below` are the
+    /// heights of the lines from the first down, `above` of those above it
+    /// nearest first (either short, a line is `lh`); `h` is the view's
+    /// height.
     ///
     /// The end is where a native view's is: the text's last line at the
     /// bottom of the view (or, text shorter than the view, at its start),
     /// not acme's last line at the top. `below` reaching the last line
     /// says where that is; a body already past it (the scrollbar takes it
     /// further) goes no further down, and bounces.
+    ///
+    /// Past an end, a finger pulls against the rubber band. Without one,
+    /// the pull is the spring's alone: the system's momentum carries on
+    /// sending scrolls after the finger lifts, and the spring and they
+    /// taking turns at the pull (at whatever rates each comes, which
+    /// differ from display to display) shakes the text. So momentum that
+    /// reaches an end is handed to the spring as its speed, and what more
+    /// of it comes is spent until a finger is down again.
     #[allow(clippy::too_many_arguments)]
-    fn scroll(mut self, dy: f32, phase: TouchPhase, mut line: usize, total: usize, below: &[f32], above: &[f32], lh: f32, h: f32) -> (Smooth, usize) {
+    fn scroll(mut self, dy: f32, phase: TouchPhase, dt: f32, mut line: usize, total: usize, below: &[f32], above: &[f32], lh: f32, h: f32) -> (Smooth, usize) {
+        self.h = h;
         match phase {
-            TouchPhase::Started => self.finger = true,
-            TouchPhase::Ended | TouchPhase::Cancelled => self.finger = false,
+            TouchPhase::Started => {
+                self.finger = true;
+                self.spent = 0.;
+                self.vel = 0.;
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                self.finger = false;
+                // let go past an end: the spring has it from here
+                self.spent = if self.over != 0. { self.over.signum() } else { 0. };
+            }
             TouchPhase::Moved => {}
         }
-        // after the finger lifts it is the system's momentum: it pushes past
-        // an end only a little, and the spring wins as it fades
-        let give = if self.finger { 1. } else { 0.35 };
+        if !self.finger && (self.over != 0. || self.vel != 0. || self.spent * dy < 0.) {
+            return (self, line);
+        }
         let mut d = dy;
         // moving back towards the text: the pull goes first
         if self.over > 0. && d > 0. || self.over < 0. && d < 0. {
@@ -215,14 +248,15 @@ impl Smooth {
                 d = -left;
             }
         }
+        // past an end by `past` (down past the start when positive)
+        let mut past = 0.;
         // down: no further than the end of the text at the bottom
         if d > 0. && line + below.len() >= total {
             let rest: f32 = below.iter().sum();
             let room = (rest - self.px - h).max(0.);
             if d > room {
-                let past = d - room;
+                past -= d - room;
                 d = room;
-                self.over = rubber(unrubber(self.over, h) - past * give, h);
             }
         }
         self.px += d;
@@ -238,9 +272,8 @@ impl Smooth {
             k += 1;
         }
         if line + 1 >= total && self.px > 0. {
-            let past = self.px;
+            past -= self.px;
             self.px = 0.;
-            self.over = rubber(unrubber(self.over, h) - past * give, h);
         }
         // up, across the lines above, to the start
         let mut k = 0;
@@ -250,24 +283,46 @@ impl Smooth {
             k += 1;
         }
         if self.px < 0. {
-            let past = -self.px;
+            past -= self.px;
             self.px = 0.;
-            self.over = rubber(unrubber(self.over, h) + past * give, h);
+        }
+        if past != 0. {
+            if self.finger {
+                self.over = rubber(unrubber(self.over, h) + past, h);
+            } else {
+                // momentum: its speed, the scroll over the time it took
+                self.vel = (-dy / dt.clamp(1. / 240., 1. / 30.)).clamp(-6000., 6000.);
+                self.spent = past.signum();
+            }
         }
         (self, line)
     }
 
-    /// One frame of the spring: what no finger holds goes a fifth of the way
-    /// back. False once there is nothing left to pull back.
-    fn settle(&mut self) -> bool {
-        if self.finger || self.over == 0. {
+    /// `dt` seconds of the spring: what no finger holds goes out as far as
+    /// its speed takes it and comes back. False once it is back.
+    fn settle(&mut self, dt: f32) -> bool {
+        if self.finger || self.over == 0. && self.vel == 0. {
             return false;
         }
-        self.over *= 0.8;
-        if self.over.abs() < 0.5 {
+        let h = self.h.max(1.);
+        let mut x = unrubber(self.over, h);
+        let mut v = self.vel;
+        let from = if x != 0. { x.signum() } else { v.signum() };
+        // in steps of a millisecond, however long the frame was
+        let mut left = dt.clamp(0., 0.1);
+        while left > 0. {
+            let step = left.min(0.001);
+            v += (-SPRING * SPRING * x - 2. * SPRING * v) * step;
+            x += v * step;
+            left -= step;
+        }
+        if (x.abs() < 0.5 && v.abs() < 20.) || x.signum() == -from {
             self.over = 0.;
+            self.vel = 0.;
             return false;
         }
+        self.over = rubber(x, h);
+        self.vel = v;
         true
     }
 }
@@ -393,6 +448,8 @@ pub struct Acme {
     /// pixel between whole lines, and past either end. Only this client's;
     /// the origin line is what the session has.
     smooth: HashMap<ViewId, Smooth>,
+    /// When each body was last scrolled by the trackpad.
+    wheel_at: HashMap<ViewId, std::time::Instant>,
     /// The spring pulling overscrolled bodies back is running.
     springing: bool,
     /// The window under the pointer, which has the keyboard while the app
@@ -1485,6 +1542,7 @@ impl Acme {
             menu_last: None,
             notified_tabs: Vec::new(),
             smooth: HashMap::new(),
+            wheel_at: HashMap::new(),
             springing: false,
             win_under_pointer: None,
             entered: None,
@@ -2305,13 +2363,16 @@ impl Acme {
         };
         let total = t.line_count().max(1);
         let line = t.line_of(origin).min(total - 1);
-        let (mut s, line) = s.scroll(dy, phase, line, total, &below, &above, lh, h);
+        // how long since this body's last scroll, for momentum's speed
+        let now = std::time::Instant::now();
+        let dt = self.wheel_at.insert(v, now).map(|t| now.duration_since(t).as_secs_f32()).unwrap_or(1. / 60.);
+        let (mut s, line) = s.scroll(dy, phase, dt, line, total, &below, &above, lh, h);
         let at = t.line_start(line);
         if at != origin {
             self.set_origin(v, at);
         }
         s.origin = at;
-        let loose = !s.finger && s.over != 0.;
+        let loose = !s.finger && (s.over != 0. || s.vel != 0.);
         self.smooth.insert(v, s);
         if loose {
             self.spring(cx);
@@ -2326,14 +2387,19 @@ impl Acme {
             return;
         }
         self.springing = true;
+        let mut last = std::time::Instant::now();
         cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(std::time::Duration::from_millis(16)).await;
+            cx.background_executor().timer(std::time::Duration::from_millis(8)).await;
+            // the spring runs on the time that passed, not on the ticks
+            let now = std::time::Instant::now();
+            let dt = now.duration_since(last).as_secs_f32();
+            last = now;
             let going = cx
                 .update(|cx| {
                     this.update(cx, |acme, cx| {
                         let mut any = false;
                         for s in acme.smooth.values_mut() {
-                            any |= s.settle();
+                            any |= s.settle(dt);
                         }
                         cx.notify();
                         if !any {
@@ -4186,6 +4252,7 @@ mod smooth_scroll_tests {
 
     const LH: f32 = 17.;
     const H: f32 = 600.;
+    const DT: f32 = 1. / 60.;
 
     #[test]
     fn the_rubber_band_resists_more_the_further_it_goes_and_undoes_itself() {
@@ -4203,10 +4270,10 @@ mod smooth_scroll_tests {
     fn scrolling_by_the_pixel_crosses_whole_lines_and_keeps_the_rest() {
         let s = Smooth::at(0);
         // 40 px down over lines of 17 and 34 (a wrapped one)
-        let (s, line) = s.scroll(40., Moved, 5, 100, &[17., 34.], &[], LH, H);
+        let (s, line) = s.scroll(40., Moved, DT, 5, 100, &[17., 34.], &[], LH, H);
         assert_eq!((line, s.px), (6, 23.));
         // 30 px up: back across the line above, 17 high
-        let (s, line) = s.scroll(-30., Moved, line, 100, &[34.], &[17.], LH, H);
+        let (s, line) = s.scroll(-30., Moved, DT, line, 100, &[34.], &[17.], LH, H);
         assert_eq!((line, s.px), (5, 10.));
         assert_eq!(s.over, 0.);
     }
@@ -4214,17 +4281,17 @@ mod smooth_scroll_tests {
     #[test]
     fn a_finger_pulls_past_the_start_and_the_spring_brings_it_back_when_it_lifts() {
         let s = Smooth::at(0);
-        let (s, line) = s.scroll(-80., Started, 0, 100, &[], &[], LH, H);
+        let (s, line) = s.scroll(-80., Started, DT, 0, 100, &[], &[], LH, H);
         assert_eq!((line, s.px), (0, 0.));
         assert!(s.over > 0. && s.over < 80., "{}", s.over);
         // held: the spring leaves it
         let mut held = s;
-        assert!(!held.settle());
+        assert!(!held.settle(DT));
         assert_eq!(held.over, s.over);
         // let go: back to the start, frame by frame
-        let (mut s, _) = s.scroll(0., Ended, 0, 100, &[], &[], LH, H);
+        let (mut s, _) = s.scroll(0., Ended, DT, 0, 100, &[], &[], LH, H);
         let mut frames = 0;
-        while s.settle() {
+        while s.settle(DT) {
             frames += 1;
             assert!(frames < 100);
         }
@@ -4235,14 +4302,14 @@ mod smooth_scroll_tests {
     #[test]
     fn moving_back_gives_back_the_pull_before_the_text_moves() {
         let s = Smooth::at(0);
-        let (s, _) = s.scroll(-80., Started, 0, 100, &[], &[], LH, H);
+        let (s, _) = s.scroll(-80., Started, DT, 0, 100, &[], &[], LH, H);
         let pulled = s.over;
         // a little back: only the pull shrinks
-        let (s, line) = s.scroll(10., Moved, 0, 100, &[17.], &[], LH, H);
+        let (s, line) = s.scroll(10., Moved, DT, 0, 100, &[17.], &[], LH, H);
         assert!(s.over < pulled && s.over > 0.);
         assert_eq!((line, s.px), (0, 0.));
         // far back: the pull is gone and the rest scrolls the text
-        let (s, line) = s.scroll(400., Moved, 0, 100, &[17.; 40], &[], LH, H);
+        let (s, line) = s.scroll(400., Moved, DT, 0, 100, &[17.; 40], &[], LH, H);
         assert_eq!(s.over, 0.);
         assert!(line > 0, "{line} {}", s.px);
     }
@@ -4250,37 +4317,82 @@ mod smooth_scroll_tests {
     #[test]
     fn the_end_is_the_text_at_the_bottom_of_the_view() {
         // 40 lines of 17 left from line 60 of 100 is 680: 80 to go
-        let (s, line) = Smooth::at(0).scroll(60., Started, 60, 100, &[17.; 40], &[], LH, H);
+        let (s, line) = Smooth::at(0).scroll(60., Started, DT, 60, 100, &[17.; 40], &[], LH, H);
         assert_eq!((line, s.px, s.over), (63, 9., 0.));
         // 60 more: 20 of it scrolls, the rest pulls past the end
-        let (s, line) = s.scroll(60., Moved, line, 100, &[17.; 37], &[], LH, H);
+        let (s, line) = s.scroll(60., Moved, DT, line, 100, &[17.; 37], &[], LH, H);
         assert_eq!((line, s.px), (64, 12.));
         assert!(s.over < 0. && s.over > -40., "{}", s.over);
         // back up: the pull goes first, then the text
-        let (s, line) = s.scroll(-200., Moved, line, 100, &[17.; 36], &[17.; 40], LH, H);
+        let (s, line) = s.scroll(-200., Moved, DT, line, 100, &[17.; 36], &[17.; 40], LH, H);
         assert_eq!(s.over, 0.);
         assert!(line < 64, "{line}");
         // text shorter than the view: it does not move down at all
-        let (s, line) = Smooth::at(0).scroll(30., Started, 0, 10, &[17.; 10], &[], LH, H);
+        let (s, line) = Smooth::at(0).scroll(30., Started, DT, 0, 10, &[17.; 10], &[], LH, H);
         assert_eq!((line, s.px), (0, 0.));
         assert!(s.over < 0.);
         // past the end already (the scrollbar put it there): only a bounce
-        let (s, line) = Smooth::at(0).scroll(30., Started, 90, 100, &[17.; 10], &[], LH, H);
+        let (s, line) = Smooth::at(0).scroll(30., Started, DT, 90, 100, &[17.; 10], &[], LH, H);
         assert_eq!((line, s.px), (90, 0.));
         assert!(s.over < 0.);
     }
 
     #[test]
-    fn momentum_pushes_past_the_end_less_than_a_finger() {
-        let s = Smooth::at(0);
-        // the finger: past the end by 50
-        let (held, line) = s.scroll(50., Started, 99, 100, &[17.], &[], LH, H);
-        assert_eq!(line, 99);
-        assert!(held.over < 0.);
-        // momentum (no finger), the same 50: pulled less far, and loose
-        let (flung, _) = Smooth::at(0).scroll(50., Moved, 99, 100, &[17.], &[], LH, H);
-        assert!(flung.over < 0. && flung.over > held.over, "{} {}", flung.over, held.over);
-        let mut flung = flung;
-        assert!(flung.settle());
+    fn momentum_at_an_end_bounces_out_and_back_once_whatever_the_rates() {
+        // the same fling, its scrolls coming at 60 or 120 a second, the
+        // spring ticked at 60 or 120: out and back, never shaking
+        for (events, ticks) in [(60., 60.), (120., 60.), (60., 120.), (120., 120.)] {
+            let (dt, tick) = (1. / events, 1. / ticks);
+            let (mut s, line) = Smooth::at(0).scroll(1500. * dt, Moved, dt, 99, 100, &[17.], &[], LH, H);
+            assert_eq!(line, 99);
+            assert!(s.vel < 0., "the fling is the spring's now");
+            let (mut outs, mut ins, mut last, mut frames) = (0, 0, 0f32, 0);
+            let mut deepest = 0f32;
+            let mut t = 0.;
+            while frames < 200 {
+                // momentum still coming, fading: spent
+                t += tick;
+                while t >= dt {
+                    t -= dt;
+                    let before = s.over;
+                    (s, _) = s.scroll(300. * dt, Moved, dt, 99, 100, &[17.], &[], LH, H);
+                    assert_eq!(s.over, before, "momentum after the end moves nothing");
+                }
+                let going = s.settle(tick);
+                assert!(s.over <= 0., "never past the other way: {}", s.over);
+                if s.over < last {
+                    outs += 1;
+                    assert_eq!(ins, 0, "out again after coming back: shaking ({events}/{ticks})");
+                } else if s.over > last {
+                    ins += 1;
+                }
+                deepest = deepest.min(s.over);
+                last = s.over;
+                frames += 1;
+                if !going {
+                    break;
+                }
+            }
+            assert_eq!(s.over, 0., "back ({events}/{ticks})");
+            // and the momentum that is still coming does not bounce it again
+            (s, _) = s.scroll(200. * dt, Moved, dt, 99, 100, &[17.], &[], LH, H);
+            assert!(!s.settle(tick) && s.over == 0. && s.vel == 0.);
+            // a scroll the other way is no momentum: it moves the text
+            let (_, back) = s.scroll(-40., Moved, dt, 99, 100, &[17.], &[17.; 40], LH, H);
+            assert!(back < 99);
+            assert!(outs > 0 && ins > 0 && deepest < -5., "a bounce: {outs} {ins} {deepest}");
+            assert!((frames as f32) * tick < 1.5, "back in time: {frames} frames");
+        }
+    }
+
+    #[test]
+    fn a_finger_catches_a_bounce() {
+        let (mut s, _) = Smooth::at(0).scroll(40., Moved, DT, 99, 100, &[17.], &[], LH, H);
+        s.settle(0.05);
+        assert!(s.over < 0.);
+        let (s, _) = s.scroll(0., Started, DT, 99, 100, &[17.], &[], LH, H);
+        let mut held = s;
+        assert!(!held.settle(0.1));
+        assert_eq!(held.over, s.over);
     }
 }
