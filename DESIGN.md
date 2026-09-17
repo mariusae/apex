@@ -1770,7 +1770,11 @@ being scrolled so that scrolling up crosses them without a jump. What
 brings a view to a place (a jump, `textshow`) puts it at a whole line
 and drops the pixels; typing, which asks only that the selection be in
 view, keeps them while it is, or each key would draw the body at its
-line and the next frame back between lines; and
+line and the next frame back between lines. Where a view is brought to
+(a quarter down for dot, three quarters for a win's output, half for
+the selection) is measured in the rows its lines wrap to, not in lines
+(`first_above`): a long line of output is many rows, and counting it as
+one left what was to be shown below the bottom; and
 the pointers: plan9port's big arrow always, the box while
 a layout box is held. Also matching: the scrollbar scrolling
 continuously while a button is held, the pointer kept on the bar

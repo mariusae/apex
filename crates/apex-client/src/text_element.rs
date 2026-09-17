@@ -323,6 +323,30 @@ pub struct Prepaint {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The first line to lay out from so that line `cl` starts `room` down the
+/// view (or as near as whole lines come without going over), counting
+/// the lines above it as they wrap: a long line of output is many rows,
+/// and counting it as one leaves what was to be shown below the bottom.
+/// `cl` itself is kept wholly in the `height` when it can be.
+fn first_above(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, cl: usize, room: Pixels, height: Pixels) -> usize {
+    let lh = fontspec.line_height;
+    let text_len = text.len();
+    let row = |n: usize| {
+        text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.)).height(lh)).unwrap_or(lh)
+    };
+    let room = room.min(height - row(cl)).max(px(0.));
+    let (mut first, mut used) = (cl, px(0.));
+    while first > 0 {
+        let h = row(first - 1);
+        if used + h > room {
+            break;
+        }
+        used += h;
+        first -= 1;
+    }
+    first
+}
+
 fn shape(
     window: &Window,
     line_text: &str,
@@ -487,7 +511,6 @@ impl Element for TextElement {
             let text = &src.text;
             let text_len = text.len();
             let total = text.line_count();
-            let fit = ((height / lh) as usize).max(1);
 
             let mut lines = Vec::new();
             let mut above = Vec::new();
@@ -529,7 +552,7 @@ impl Element for TextElement {
                         // textshow: the position quarters*maxlines/4 from the top
                         let cl = text.line_of(q.min(text_len));
                         if cl < first || cl >= last_full {
-                            first = cl.saturating_sub(fit * quarters / 4);
+                            first = first_above(window, text, &fontspec, wrap, cl, height * (quarters as f32 / 4.), height);
                             continue;
                         }
                         break;
@@ -541,7 +564,7 @@ impl Element for TextElement {
                     if cl < first {
                         first = cl;
                     } else if cl >= last_full {
-                        first = cl.saturating_sub(fit / 2);
+                        first = first_above(window, text, &fontspec, wrap, cl, height / 2., height);
                     } else {
                         break;
                     }
