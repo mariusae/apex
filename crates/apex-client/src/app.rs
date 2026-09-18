@@ -3676,22 +3676,15 @@ impl Acme {
         cx.notify();
     }
 
-    /// The window became active or inactive (cmd-` and friends): coming
-    /// back, put the pointer where it last was here, wherever it is now.
-    /// Unless a mouse button is down: then a click into the window is
-    /// what activated it, and the pointer stays where the click was.
-    pub fn window_activated(&mut self, active: bool, window: &mut Window) {
-        // the terminal under the pointer loses the keyboard with the app,
-        // and has it back with it
+    /// The window became active or inactive: the terminal under the
+    /// pointer loses the keyboard with the app, and has it back with it.
+    /// The pointer is left where it is: put back where it last was here,
+    /// it jumped under the hand whenever the window came forward (a new
+    /// window, the dock, cmd-tab).
+    pub fn window_activated(&mut self, active: bool, _window: &mut Window) {
         let under = self.term_under_pointer;
         self.note_active(self.win_under_pointer, active);
         self.term_focus_now(under, active);
-        if !active || self.last_mouse == Point::default() || crate::warp::button_down() {
-            return;
-        }
-        let at = self.last_mouse;
-        crate::warp::move_to(window, at);
-        self.pointer = Some(at);
     }
 
     /// What the Edit menu (and its shortcuts, which arrive as actions

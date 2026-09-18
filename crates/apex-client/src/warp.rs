@@ -31,14 +31,8 @@ struct CGRect {
 extern "C" {
     fn CGWarpMouseCursorPosition(p: CGPoint) -> i32;
     fn CGAssociateMouseAndMouseCursorPosition(connected: bool) -> i32;
-    fn CGEventSourceButtonState(state: i32, button: u32) -> bool;
 }
 
-/// Is a mouse button down right now (a click is what activated us)?
-pub fn button_down() -> bool {
-    // kCGEventSourceStateCombinedSessionState = 0; left, right, centre
-    unsafe { (0..3).any(|b| CGEventSourceButtonState(0, b)) }
-}
 /// Put the pointer at `p`, a point in this window's coordinates.
 pub fn move_to(window: &Window, p: Point<Pixels>) {
     let p = screen_point(window, p);
