@@ -1718,6 +1718,10 @@ follow-on for the rest.)
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
 and `scrl.c`. Matching now: the three buttons and their chords, including
 B1 while B2 is down passing the last selection as the command's argument;
+a B1 sweep's chords (B2 cuts, B3 pastes) being the sweep's wherever the
+pointer has gone -- another window, a page, off the window altogether
+(`Acme::chord`, before anything is located, and `mouse_down_out`) -- as
+`textselect` acts on its own text for as long as a button is held;
 double-click selection of bracketed and quoted spans and lines
 (`textdoubleclick`/`textclickmatch`); `Del`/`Delete`/`Delcol`/`Get` through
 `winclean` (scratch windows such as `+Errors` and directories go at once;

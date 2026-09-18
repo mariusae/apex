@@ -129,6 +129,8 @@ impl Render for Acme {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::mouse_up))
             .on_mouse_up(MouseButton::Right, cx.listener(Self::mouse_up))
+            // a chord with the pointer off the window is the sweep's still
+            .on_mouse_down_out(cx.listener(Self::mouse_down_out))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Right, cx.listener(Self::mouse_up))

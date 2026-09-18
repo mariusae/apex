@@ -2493,6 +2493,10 @@ impl Acme {
         self.last_mouse = e.position;
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
+        if self.chord(button, cx) {
+            cx.notify();
+            return;
+        }
         let Some((target, region)) = self.locate(e.position) else { return };
         // a click in a window attends to it: its notification goes
         if let Some(w) = target.window() {
@@ -2551,55 +2555,30 @@ impl Acme {
                 Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Left, e.position, window, cx),
                 _ => {}
             },
-            (Target::View(v), MouseButton::Middle) => {
-                if let Some(d) = self.mouse.b1 {
-                    self.mouse.chorded = true;
-                    self.cut(d.view, cx);
-                } else {
-                    match region {
-                        Region::Text(off) => {
-                            self.mouse.b2 = Some(Drag { view: v, anchor: off });
-                            self.hl = None;
-                        }
-                        Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Middle, e.position, window, cx),
-                        _ => {}
-                    }
+            (Target::View(v), MouseButton::Middle) => match region {
+                Region::Text(off) => {
+                    self.mouse.b2 = Some(Drag { view: v, anchor: off });
+                    self.hl = None;
                 }
-            }
-            (Target::View(v), MouseButton::Right) => {
-                if let Some(d) = self.mouse.b1 {
-                    self.mouse.chorded = true;
-                    self.paste(d.view, cx);
-                } else {
-                    match region {
-                        Region::Text(off) => {
-                            self.mouse.b3 = Some(Drag { view: v, anchor: off });
-                            self.mouse.b3_reverse = e.modifiers.shift;
-                            self.mouse.b3_cmd = Self::b3_cmd(e);
-                            self.hl = None;
-                        }
-                        Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Right, e.position, window, cx),
-                        _ => {}
-                    }
+                Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Middle, e.position, window, cx),
+                _ => {}
+            },
+            (Target::View(v), MouseButton::Right) => match region {
+                Region::Text(off) => {
+                    self.mouse.b3 = Some(Drag { view: v, anchor: off });
+                    self.mouse.b3_reverse = e.modifiers.shift;
+                    self.mouse.b3_cmd = Self::b3_cmd(e);
+                    self.hl = None;
                 }
-            }
+                Region::Scrollbar => self.start_scrolling(Target::View(v), MouseButton::Right, e.position, window, cx),
+                _ => {}
+            },
             (Target::Term(w, t), button) => match (region, button) {
                 (Region::Term(c, r), MouseButton::Left) => {
                     let p = (c, self.term_top(w) + r as u64);
                     self.term_sel = Some((w, p, p));
                     self.mouse.term_drag = Some(w);
                     self.node.activecol = self.column_of_view(ViewId::Tag(w));
-                }
-                (Region::Term(c, r), MouseButton::Middle) if self.mouse.term_drag.is_some() => {
-                    // B1+B2 in a terminal: copy (there is nothing to cut)
-                    let _ = (c, r);
-                    self.mouse.chorded = true;
-                    self.term_copy(w, cx);
-                }
-                (Region::Term(..), MouseButton::Right) if self.mouse.term_drag.is_some() => {
-                    // B1+B3 in a terminal: the clipboard typed into the shell
-                    self.mouse.chorded = true;
-                    self.term_paste_clipboard(w, cx);
                 }
                 (Region::Term(c, r), MouseButton::Middle | MouseButton::Right) => {
                     // acme's textselect23: sweep, then act on what was swept
@@ -2615,6 +2594,59 @@ impl Acme {
             _ => {}
         }
         cx.notify();
+    }
+
+    /// B2 or B3 while B1 sweeps: the sweep's chord, in the window the
+    /// sweep is in, wherever the pointer has gone since -- another window,
+    /// a page, a box, off the window altogether -- as in acme, whose
+    /// textselect acts on its text for as long as a button is held.
+    /// True if it was one.
+    fn chord(&mut self, button: MouseButton, cx: &mut Context<Self>) -> bool {
+        if let Some(d) = self.mouse.b1 {
+            match button {
+                MouseButton::Middle => {
+                    self.mouse.chorded = true;
+                    self.cut(d.view, cx);
+                    return true;
+                }
+                MouseButton::Right => {
+                    self.mouse.chorded = true;
+                    self.paste(d.view, cx);
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        if let Some(w) = self.mouse.term_drag {
+            match button {
+                // B1+B2 in a terminal: copy (there is nothing to cut)
+                MouseButton::Middle => {
+                    self.mouse.chorded = true;
+                    self.term_copy(w, cx);
+                    return true;
+                }
+                // B1+B3 in a terminal: the clipboard typed into the shell
+                MouseButton::Right => {
+                    self.mouse.chorded = true;
+                    self.term_paste_clipboard(w, cx);
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// A button pressed off the window (AppKit sends it here while another
+    /// is held from a press in it): only a chord means anything.
+    pub fn mouse_down_out(&mut self, e: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.mouse.b1.is_none() && self.mouse.term_drag.is_none() {
+            return;
+        }
+        let button = self.logical_button_peek(e);
+        if self.chord(button, cx) {
+            cx.notify();
+        }
     }
 
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
