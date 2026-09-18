@@ -62,8 +62,24 @@ fn events_of(agent: &str) -> &'static [&'static str] {
     }
 }
 
-/// The hook command: this binary, by its full path, so it is found
-/// whatever the agent's PATH is.
+/// This binary as it was invoked, not as it resolves: a path as given
+/// (made absolute), a bare name as PATH finds it -- the first match,
+/// symlinks and all left in place. A launcher that runs a binary from a
+/// cache (dotslash, a version manager) keeps the launcher's path, so
+/// the hooks outlive the cache's next version. None when it cannot say.
+pub fn invoked_as(argv0: Option<std::ffi::OsString>, cwd: Option<PathBuf>, path: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let a = PathBuf::from(argv0?);
+    if a.as_os_str().is_empty() {
+        return None;
+    }
+    if a.components().count() > 1 || a.is_absolute() {
+        return Some(if a.is_absolute() { a } else { cwd?.join(a) });
+    }
+    std::env::split_paths(&path?).map(|d| d.join(&a)).find(|p| p.is_file())
+}
+
+/// The hook command: this binary, by its full path as invoked, so it is
+/// found whatever the agent's PATH is.
 pub fn command(exe: &Path, agent: &str) -> String {
     format!("{} hook {agent}", word(&exe.display().to_string()))
 }
@@ -225,5 +241,22 @@ mod tests {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(v, json!({}));
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_binary_is_named_as_invoked_not_as_it_resolves() {
+        use std::ffi::OsString;
+        let tmp = std::env::temp_dir().join(format!("apex-agent-invoked-{}", std::process::id()));
+        let bin = tmp.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("apex-agent"), "#!/bin/sh\n").unwrap();
+        // a bare name: where PATH finds it, not where that leads
+        let path = std::env::join_paths([tmp.join("none"), bin.clone()]).unwrap();
+        assert_eq!(invoked_as(Some(OsString::from("apex-agent")), None, Some(path.clone())), Some(bin.join("apex-agent")));
+        assert_eq!(invoked_as(Some(OsString::from("nowhere")), None, Some(path)), None);
+        // a path: as given, made absolute against where it was run
+        assert_eq!(invoked_as(Some(OsString::from("/opt/x/apex-agent")), None, None), Some(PathBuf::from("/opt/x/apex-agent")));
+        assert_eq!(invoked_as(Some(OsString::from("bin/apex-agent")), Some(tmp.clone()), None), Some(tmp.join("bin/apex-agent")));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -81,8 +81,8 @@ fn main() {
             let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| usage()));
             let res = match cmd {
                 "install" => {
-                    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).unwrap_or_else(|e| {
-                        eprintln!("apex-agent: where am I? {e}");
+                    let exe = install::invoked_as(std::env::args_os().next(), std::env::current_dir().ok(), std::env::var_os("PATH")).or_else(|| std::env::current_exe().ok()).unwrap_or_else(|| {
+                        eprintln!("apex-agent: where am I?");
                         std::process::exit(1)
                     });
                     install::install(&home, &exe, &which)

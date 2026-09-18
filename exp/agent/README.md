@@ -25,8 +25,10 @@ surface.
     apex-agent events [-all]    # the events as they come, a line each
 
 `install` writes the hooks into `~/.claude/settings.json` and
-`~/.codex/hooks.json`, naming this binary by its full path; everything
-else in those files stays as it was, an install over an install
+`~/.codex/hooks.json`, naming this binary by its full path as it was
+invoked -- a bare `apex-agent` as PATH finds it, symlinks and launchers
+(dotslash) not followed, so the hooks stay right as what they lead to
+moves; everything else in those files stays as it was, an install over an install
 changes nothing, and `uninstall` takes ours out and no others. Agents
 started after that are seen; one already running is not, until it is
 started again. Codex has its hooks on by default in current versions;
