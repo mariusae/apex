@@ -865,11 +865,15 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
         w.iter_mut().for_each(|x| *x = STRIP);
         w[ci] = most;
     } else {
+        // a step, not a leap: columns are few and wide, and a window's
+        // growth (half again) would take most of a neighbour at a click.
+        // A fifth of its width or a twelfth of the row, whichever is
+        // more; a neighbour gives at most a third of what it can spare
         let mine = w[ci];
-        let mut dw = (mine / 2).max(row.dx() / 5).min(most - mine).max(0);
+        let mut dw = (mine / 5).max(row.dx() / 12).min(most - mine).max(0);
         let give = |w: &mut Vec<i32>, j: usize, dw: &mut i32| {
             let spare = (w[j] - STRIP).max(0);
-            let take = (*dw).min((spare + 1) / 2);
+            let take = (*dw).min((spare + 2) / 3);
             w[j] -= take;
             w[ci] += take;
             *dw -= take;

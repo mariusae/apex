@@ -1611,9 +1611,12 @@ pointer for keyboard routing until the mouse really moves.
 column's box does to the row what a click on a window's box does to its
 column: `rowgrow`, `colgrow` turned on its side, called by `rowdragcol`
 for a press and release under five pixels apart, as `coldragwin` calls
-`colgrow`. Button 1 widens the column by half again, or a fifth of the
-row if that is more, taking from the columns beside it, nearest first,
-right then left, each giving at most half of what it has beyond a strip.
+`colgrow`. Button 1 widens the column by a step smaller than a window's:
+a fifth of its width, or a twelfth of the row if that is more, taking
+from the columns beside it, nearest first, right then left, each giving
+at most a third of what it has beyond a strip. (Half again, as a window
+grows, took most of a neighbour at a click; columns are few and wide,
+and are adjusted by little.)
 Button 2 makes it as wide as can be and every other column a **strip**:
 `STRIP` wide, the box's width and a border's, which is a squeezed window's
 tag turned on its side -- its box at the top and its windows' boxes down

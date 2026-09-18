@@ -383,6 +383,17 @@ fn button_1_on_a_columns_box_widens_it_at_its_neighbours_expense() {
     assert!(after[1] > before[1], "{before:?} -> {after:?}");
     assert!(after[0] <= before[0] && after[2] <= before[2], "{before:?} -> {after:?}");
     assert_eq!(l.full, None);
+    // a step, smaller than a window's: a fifth of its width or a twelfth
+    // of the row, not half again
+    let grown = after[1] - before[1];
+    let row = l.r.dx();
+    assert!(grown <= (before[1] / 5).max(row / 12) + 1, "{before:?} -> {after:?}");
+    assert!(grown >= row / 20, "still a visible step: {before:?} -> {after:?}");
+    // and again: another step of the same kind
+    rowgrow(&mut l, 1, 1, &info());
+    tiles(&l);
+    let again = widths(&l);
+    assert!(again[1] > after[1] && again[1] - after[1] <= (after[1] / 5).max(row / 12) + 1, "{after:?} -> {again:?}");
 }
 
 #[test]
