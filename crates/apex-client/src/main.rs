@@ -107,7 +107,8 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Tab9, window, cx| this.go_to_tab(9, window, cx)))
             // the host's profile, the session's setup: opened, or made
             .on_action(cx.listener(|this, _: &shell::Profile, window, cx| this.menu_command("New ~/.apex/profile", window, cx)))
-            .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(cx)))
+            .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(false, cx)))
+            .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))

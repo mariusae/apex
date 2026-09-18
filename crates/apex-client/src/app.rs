@@ -426,7 +426,7 @@ pub struct Acme {
     /// Positions to bring on screen (new `+Errors` text), by view.
     show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
-    pending_goto: Option<Loc>,
+    pub pending_goto: Option<Loc>,
     /// A place in another session to go to: the next render switches.
     pub pending_switch: Option<Loc>,
     /// A page reported a cursor: apply it on the next tick.
@@ -3628,7 +3628,7 @@ impl Acme {
         }
         if self.finder.is_some() {
             let ks = &e.keystroke;
-            self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
             return;
         }
         if self.selector.is_some() {

@@ -254,6 +254,13 @@ impl Pool {
         cx.try_global::<Pool>().map(|pool| pool.parked.values().map(|p| (p.url.clone(), p.node.notifications().map(|n| n.at).collect())).collect()).unwrap_or_default()
     }
 
+    /// Each parked session and its replica, in the tabs' order, for what
+    /// looks across the tabs (⌘⇧P).
+    pub fn parked_nodes(cx: &App) -> Vec<(SessionUrl, &Node)> {
+        let Some(pool) = cx.try_global::<Pool>() else { return Vec::new() };
+        pool.order.iter().filter_map(|u| pool.parked.values().find(|p| p.url == *u).map(|p| (p.url.clone(), &p.node))).collect()
+    }
+
     /// The theme changed: every parked link tells its daemon the colours
     /// too, so a session shown later is right from the start.
     pub fn send_config(cx: &mut App) {

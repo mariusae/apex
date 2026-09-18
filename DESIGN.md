@@ -1368,6 +1368,15 @@ this one (detach, attach).
   consecutive matches, a penalty for the wrong case and for long paths),
   open before closed at equal scores. Enter or a click shows the window
   or opens the file, and warps the pointer to it as acme's warps do.
+  ⌘⇧P (Go to in All Tabs…) is the same across the window's tabs: each
+  tab's open windows, from its session's replica (this one's, and the
+  parked ones' in the pool, `Pool::parked_nodes`), in the tabs' order,
+  and each one's files closed lately; every row carries a badge naming
+  its tab as the strip does (with the host for one elsewhere), this
+  tab's in the accent colour and marked "here", and this tab's rows
+  come first at equal scores. A pick in another tab switches to it and
+  goes there as a pick in it would; a tab still attaching lands on the
+  window once it is.
 - *As built, tabs:* the title bar carries a tab per connected session
   — this window's, and the parked ones — in the order first shown
   (`Pool::order`), the current one selected; another tab switches to
