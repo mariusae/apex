@@ -2894,6 +2894,12 @@ impl Acme {
     pub fn modifiers_changed(&mut self, e: &ModifiersChangedEvent, window: &mut Window, cx: &mut Context<Self>) {
         let prev = self.mouse.mods;
         self.mouse.mods = e.modifiers;
+        // gpui takes ctrl-tab for typing (tab has a character, control or
+        // not) and hides the pointer for it; while control is down, no key
+        // is typing, so none hides it
+        if e.modifiers.control != prev.control {
+            cx.set_cursor_hide_mode(if e.modifiers.control { gpui::CursorHideMode::Never } else { gpui::CursorHideMode::OnTyping });
+        }
         // control let go: the ctrl-tab walk ends where it stands
         if self.switcher.is_some() && !e.modifiers.control {
             self.switcher_commit(window, cx);

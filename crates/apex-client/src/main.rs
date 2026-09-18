@@ -504,6 +504,9 @@ fn main() {
         shell::save_open(cx);
         // the tabs of last time, attached again in the background and parked
         pool::Pool::restore(cx, &shown);
+        // the pointer goes while text is typed, and only then: not for a
+        // key that does something (gpui's default), which a tab switch is
+        cx.set_cursor_hide_mode(gpui::CursorHideMode::OnTyping);
         cx.activate(true);
         // quitting from the Dock or by AppleScript does not run our Quit
         // action: remember the windows before they close on the way out
