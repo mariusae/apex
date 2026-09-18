@@ -1123,3 +1123,19 @@ fn look_in_a_pages_tag_is_found_in_the_page() {
     let b = node.state.window(w).unwrap().body_buffer().unwrap();
     assert_eq!(node.state.buffer(b).unwrap().view(ViewId::Body(w)).q0, 4, "found in the text");
 }
+
+#[test]
+fn b3_looks_in_the_window_it_was_in_not_the_one_last_selected() {
+    // acme's look3 searches the body of the window B3 was in (its tag's
+    // too); a window never selected in (`apex new`'s) is no exception
+    let (mut log, mut node, col, _server, _rx) = session();
+    let a = node.new_window(&mut log, col, "/tmp/selected-last", "alpha here\n").unwrap();
+    node.select(&mut log, ViewId::Body(a), 0, 0).unwrap();
+    assert_eq!(node.seltext, Some(ViewId::Body(a)));
+    let b = node.new_window(&mut log, col, "", "one alpha two\nthree alpha\n").unwrap();
+    let look = apex_server::Proposal::Look { ctx: ExecCtx::Window(b), text: "alpha".into(), reverse: false };
+    let r = apex_server::proposal::apply(&mut node, &mut log, look).unwrap();
+    assert_eq!(r, Some(b));
+    assert_eq!(node.selection(ViewId::Body(b)).unwrap(), (4, 9));
+    assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (0, 0), "the other window is left alone");
+}

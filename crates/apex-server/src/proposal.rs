@@ -333,16 +333,17 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.find_in_page(w, &text, reverse);
                 return Ok(None);
             }
-            // acme's look3: the search runs in seltext, the text last
-            // selected with B1, not necessarily where B3 was clicked
-            let view = node
-                .seltext
-                .filter(|v| node.view_buffer(*v).is_ok())
-                .or_else(|| match ctx {
-                    ExecCtx::Window(w) => Some(ViewId::Body(w)),
-                    ExecCtx::Column(c) => Some(ViewId::ColTag(c)),
-                    ExecCtx::Top => Some(ViewId::Top),
-                });
+            // acme's look3: the search runs in the body of the window B3
+            // was in (`ct = &t->w->body`), its tag's too -- not in seltext,
+            // which a window never selected in (`apex new`'s) is not, so the
+            // look went off to whatever window was. Outside any window (the
+            // top row, a column's tag) acme has nowhere to look; the text
+            // last selected is somewhere
+            let view = match ctx {
+                ExecCtx::Window(w) => Some(ViewId::Body(w)),
+                ExecCtx::Column(c) => node.seltext.filter(|v| node.view_buffer(*v).is_ok()).or(Some(ViewId::ColTag(c))),
+                ExecCtx::Top => node.seltext.filter(|v| node.view_buffer(*v).is_ok()).or(Some(ViewId::Top)),
+            };
             if let Some(v) = view {
                 if node.view_buffer(v).is_ok() && node.look_dir(log, v, &text, reverse)? {
                     if let Some(w) = v.window() {

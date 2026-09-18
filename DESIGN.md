@@ -940,13 +940,15 @@ character); a `http://` or `https://` run is taken whole; otherwise the
 word (acme's `isalnum`). A sweep or selection is taken as it is, still
 read for a name and address. The rules see that text; when none takes
 it, a file opens at its address (acme's `look3` after plumbing) and
-anything else is looked for, in the text last selected with B1
-(`seltext`), as acme's look3 searches. Not from a terminal's or a
+anything else is looked for in the body of the window B3 was in, its
+tag's included, as acme's look3 searches (`ct = &t->w->body`) -- not in
+the text last selected with B1 (`seltext`), which a window never
+selected in (one `apex new` made) is not, so its looks went off into
+whichever window was; only outside a window (the top row, a column's
+tag) does the look go to `seltext`. Not from a terminal's or a
 page's own text (a B3 without `at`/`sel` spans from a window whose
-body is not text): there is nothing there to look in, and the last
-selected text is another window's, which such a B3 must not go and
-select in (a terminal can never be `seltext`, so it would stay some
-other window's forever); that plumb is refused. `apex plumb -win=WIN`
+body is not text): there is nothing there to look in, and a look must
+not go and select in another window; that plumb is refused. `apex plumb -win=WIN`
 plumbs as from a window, dry runs included. `alt` is no longer sent. Left out:
 `<name>` as an include file. Actions: `Edit` (open in the session), `Run` (a host command,
 the selection on stdin), `Client{verb,args}` (a `ClientDo` proposal to
@@ -1743,7 +1745,7 @@ a dirty window warns "name modified" once and goes the second time; a
 small unnamed window never whines); the tag's words `Undo Redo Put Get`
 coming and going as acme's `winsettag1`; `Newcol` making an empty window;
 the last column being deletable, `New` making a column when there is none;
-`Look` searching the last-selected text (`seltext`), wrapping, and moving
+`Look` searching the window it runs in, wrapping, and moving
 the mouse to the match; `Tab`, `Indent on|off` (autoindent, on in every
 new window, as acme started with `-a`), `ID`; Put in an autoindent window
 trimming the blanks at the ends of lines and at the end of the text
