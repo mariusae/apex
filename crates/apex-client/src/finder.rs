@@ -392,14 +392,19 @@ impl Acme {
                 .when(picked, |d| d.bg(rgb(t.panel_pick)))
                 .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
                 .child(div().w(px(14.)).text_color(rgb(mark_color)).child(mark))
-                .child(div().text_color(rgb(if open { t.panel_text } else { t.panel_text_dim })).child(name))
-                .child(div().flex_1().text_size(px(12.)).text_color(rgb(t.panel_dim)).overflow_hidden().child(dir))
-                .when(!open, |d| d.child(div().text_size(px(11.)).text_color(rgb(t.panel_dim)).child("closed")))
+                // one line, whatever the lengths: the name and the badges
+                // keep theirs, the directory gives way and is cut short
+                .child(div().flex_none().max_w(px(300.)).overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(rgb(if open { t.panel_text } else { t.panel_text_dim })).child(name))
+                .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(rgb(t.panel_dim)).child(dir))
+                .when(!open, |d| d.child(div().flex_none().whitespace_nowrap().text_size(px(11.)).text_color(rgb(t.panel_dim)).child("closed")))
                 // the tab it is in: this one's marked so, the others named
                 .when_some(e.tab.clone(), |d, (u, label)| {
                     let here = u == self.url;
                     let badge = div()
                         .flex_none()
+                        .max_w(px(220.))
+                        .overflow_hidden()
+                        .text_ellipsis()
                         .px(px(6.))
                         .rounded(px(4.))
                         .border_1()
