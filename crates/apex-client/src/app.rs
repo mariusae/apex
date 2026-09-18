@@ -435,6 +435,9 @@ pub struct Acme {
     pub finder: Option<crate::finder::Finder>,
     /// The windows as of the last frame, to notice closings.
     pub last_windows: std::collections::BTreeMap<WindowId, String>,
+    /// The session those windows were in: after a switch they are the
+    /// other session's, not closed ones of this.
+    pub last_windows_of: Option<SessionUrl>,
     /// A new window with the picker open and nothing attached yet: it
     /// closes if the picker is dismissed, and is not remembered.
     pub chooser: bool,
@@ -1537,6 +1540,7 @@ impl Acme {
             page_cursor_now: false,
             finder: None,
             last_windows: std::collections::BTreeMap::new(),
+            last_windows_of: None,
             chooser: false,
             menu: None,
             menu_last: None,

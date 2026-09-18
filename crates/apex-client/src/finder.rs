@@ -339,8 +339,15 @@ impl Acme {
     }
 
     /// Windows that went since the last look: a file's goes on the list.
+    /// Only within one session: when the window has switched to another,
+    /// the windows of the one left are not gone, and not this one's.
     pub fn track_closed(&mut self) {
         let now: BTreeMap<WindowId, String> = self.node.state.windows.keys().map(|w| (*w, self.node.window_name(*w))).collect();
+        if self.last_windows_of.as_ref() != Some(&self.url) {
+            self.last_windows = now;
+            self.last_windows_of = Some(self.url.clone());
+            return;
+        }
         for (w, name) in &self.last_windows {
             if !now.contains_key(w) && name.starts_with('/') && !name.ends_with('/') && !name.contains("/+") && !name.rsplit('/').next().is_some_and(|n| n.starts_with('-')) {
                 note_closed(&self.url, name);
