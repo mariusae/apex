@@ -517,6 +517,14 @@ impl Node {
             Some(f) if f != col => (f, None),
             _ => (col, y),
         };
+        // a column down to its strip (collapsed into its side, or squeezed
+        // by B2 on another): the nearest column that shows windows has it
+        // instead -- the rightmost of those for a strip on the right, the
+        // leftmost for one on the left -- rather than opening the strip
+        let (col, y) = match tiling::nearest_open(&self.state.layout, self.column_index(col)?) {
+            Some(ci) if self.state.layout.cols[ci].id != col => (self.state.layout.cols[ci].id, None),
+            _ => (col, y),
+        };
         let ci = self.column_index(col)?;
         let mut l = self.state.layout.clone();
         tiling::coladd(&mut l, ci, tiling::Adding::New(w), y, &*self.tiling);

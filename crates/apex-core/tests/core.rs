@@ -670,3 +670,30 @@ fn going_to_a_window_in_a_collapsed_column_brings_the_column_back() {
     assert!(!tiling::is_strip(node.state.layout.cols[0].r));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
+
+#[test]
+fn a_new_window_meant_for_a_collapsed_column_lands_in_the_nearest_open_one() {
+    let (mut log, mut node, _) = session();
+    let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
+    let n = cols.len();
+    assert!(n >= 2);
+    // the rightmost collapsed: its window goes to the rightmost still open
+    let r = node.state.layout.cols[n - 1].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    node.drag_column(&mut log, cols[n - 1], 4, at, at).unwrap();
+    assert!(tiling::is_strip(node.state.layout.cols[n - 1].r));
+    let w = node.new_window(&mut log, cols[n - 1], "/tmp/meant-for-the-right", "").unwrap();
+    assert_eq!(node.state.layout.column_of(w), Some(cols[n - 2]));
+    assert!(tiling::is_strip(node.state.layout.cols[n - 1].r), "the strip stays a strip");
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+    // the leftmost (in a session of its own): the leftmost still open
+    let (mut log, mut node, _) = session();
+    let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
+    let r = node.state.layout.cols[0].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    node.drag_column(&mut log, cols[0], 4, at, at).unwrap();
+    assert!(tiling::is_strip(node.state.layout.cols[0].r));
+    let v = node.new_window(&mut log, cols[0], "/tmp/meant-for-the-left", "").unwrap();
+    assert_eq!(node.state.layout.column_of(v), Some(cols[1]));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+}

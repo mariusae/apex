@@ -31,6 +31,13 @@ pub fn is_strip(r: Rect) -> bool {
     r.dx() <= STRIP
 }
 
+/// The column nearest `ci` that is no strip, `ci` itself if it is none;
+/// nearer on the left first at equal distance. None if every column is.
+pub fn nearest_open(l: &Layout, ci: usize) -> Option<usize> {
+    let n = l.cols.len();
+    (0..n).flat_map(|d| [ci.checked_sub(d), Some(ci + d)]).flatten().filter(|&i| i < n).find(|&i| !is_strip(l.cols[i].r))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Hash)]
 pub struct Rect {
     pub x0: i32,

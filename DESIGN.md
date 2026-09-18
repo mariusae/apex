@@ -1662,7 +1662,12 @@ in a strip, or in a column hidden behind one given the row, brings its
 column back too (`Node::uncover`, `tiling::uncover`): every warp onto a
 window -- a new one, a Goto landing, a notification taken -- passes
 through the client's `take_warp`, which uncovers the column first and
-lands the pointer on the frame that shows it.
+lands the pointer on the frame that shows it. A new window is not taken
+to a strip, though: one meant for a column down to its strip (the last
+column, say, where acme puts what it opens) goes to the nearest column
+with room instead -- the rightmost of those for a strip on the right,
+the leftmost for one on the left (`tiling::nearest_open`, in
+`Node::place`) -- so opening something does not undo a collapse.
 
 A session starts as acme does: the top row and two columns (acme's
 `-c` defaults to 2), files given at launch opening in the last column
