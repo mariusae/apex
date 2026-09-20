@@ -385,6 +385,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "apex-tui"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
