@@ -62,7 +62,7 @@ Every component, and the TermKit it is built from:
 | fuzzy finder | `FinderView`: TermKit's `TextField` and `ListView`, ranked by `Fuzzy.swift` |
 | session switcher | `SwitcherView`: TermKit's `ListView` |
 | menus | TermKit's `MenuBar` — every entry does exactly what B2 on the same word in a tag does |
-| dialogs | TermKit's `MessageBox` |
+| dialogs | TermKit's `MessageBox` — what the session has to say, fencing chief among it |
 | theme | `Theme.swift`: plan9port's palette, as RGB where the terminal can and quantised where it cannot |
 
 ### The terminal is painted, not emulated

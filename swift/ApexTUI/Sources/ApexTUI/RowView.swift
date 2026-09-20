@@ -19,6 +19,8 @@ class RowView: View {
     private let finder = FinderView()
     private let switcher = SwitcherView()
     private var statusText = ""
+    /// The message last put up, so the same one is not put up twice.
+    private var shownMessage = ""
     /// Where the columns landed, for the borders between them.
     private var columnFrames: [Rect] = []
     private var lastSize = Size(width: 0, height: 0)
@@ -100,8 +102,15 @@ class RowView: View {
         case let .switcher(sessions, current):
             switcher.set(sessions: sessions, current: current)
             show(overlay: switcher)
-        case .message, .none:
+        case let .message(title, text):
             hideOverlay()
+            if shownMessage != title + text {
+                shownMessage = title + text
+                MessageBox.info(title, message: text)
+            }
+        case .none:
+            hideOverlay()
+            shownMessage = ""
         }
 
         if let snarf = frame.snarf {

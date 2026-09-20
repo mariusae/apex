@@ -162,6 +162,8 @@ pub struct Ui {
     closed: Vec<String>,
     /// The sessions this daemon has, as of the last ask.
     sessions: Vec<(String, String)>,
+    /// The fencing has been reported; it is said once, not every poll.
+    said_fenced: bool,
     /// Positions to bring on screen, with the fraction of the window to
     /// leave above (acme's `show`).
     show_at: HashMap<ViewId, (usize, u32)>,
@@ -191,6 +193,7 @@ impl Ui {
             active: None,
             closed: Vec::new(),
             sessions: Vec::new(),
+            said_fenced: false,
             show_at: HashMap::new(),
             warp: None,
             snarf_sent: String::new(),
@@ -224,6 +227,19 @@ impl Ui {
         self.connected = alive;
         if let Some(sessions) = self.link.sessions.take() {
             self.sessions = sessions.into_iter().map(|s| (s.id, s.label)).collect();
+        }
+        // another UI took the leases: say so once, as the gpui client
+        // does, rather than letting edits quietly go nowhere
+        let fenced = !self.node.leads(Shard::Layout);
+        if fenced && !self.said_fenced {
+            self.said_fenced = true;
+            self.over = Over::Message {
+                title: "Fenced".into(),
+                text: format!("another UI attached to {} and took the session; this one is watching", self.session),
+            };
+        }
+        if !fenced {
+            self.said_fenced = false;
         }
         if self.link.ended.take().is_some() {
             self.quit = true;
