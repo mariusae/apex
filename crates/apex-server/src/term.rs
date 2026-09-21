@@ -1,33 +1,49 @@
-//! A hosted terminal: alacritty_terminal owns the pty, its reader thread
-//! and the grid; we turn the grid into `TermOp` rows for the term shard
-//! and encode keystrokes xterm-style.
+//! A hosted terminal: a pty with a shell on it (`crate::pty`), whose
+//! stream libghostty-vt parses into a screen; we turn that screen into
+//! `TermOp` rows for the term shard and encode keystrokes xterm-style.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
-use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Column, Line, Point};
-use alacritty_terminal::sync::FairMutex;
-use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::term::{Config, TermMode};
-use alacritty_terminal::tty::{self, Options, Shell};
-use alacritty_terminal::vte::ansi::{ClearMode, Color, CursorShape, Handler, NamedColor, Rgb};
-use alacritty_terminal::Term as AlacTerm;
 use futures::channel::mpsc::UnboundedSender;
+use ghostty_vt_sys::{Mode, Terminal};
 
 use apex_core::{Cell, TermId, TermOp};
 
-use crate::term_loop::{EventLoop, Label, Msg, Notifier};
+use crate::pty::{self, Options, Pty};
+use crate::term_loop::{EventLoop, Label, Msg, Notifier, Report};
 
-/// What a terminal reports: alacritty's events, and the labels its shell
-/// wrote (acme's win: `ESC ] ; name BEL`; OSC 7: the working directory).
-#[derive(Debug)]
+/// What a terminal reports: what the program did (a title, a bell, the
+/// clipboard, its end), and the labels its shell wrote (acme's win:
+/// `ESC ] ; name BEL`; OSC 7: the working directory).
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TermEvent {
-    Alac(Event),
+    /// An xterm title (plan9port's label).
+    Title(String),
+    /// OSC 52: text for the snarf buffer.
+    Clipboard(String),
+    Bell,
+    /// The screen changed.
+    Wakeup,
+    /// The program ended.
+    Exit(i32),
     Name(String),
     Cwd(String),
+}
+
+/// The size of a cell as a program is told (`TIOCGWINSZ` pixels, and
+/// what an XTWINOPS report says).
+pub const CELL_W: u16 = 8;
+pub const CELL_H: u16 = 16;
+
+/// The window size a program reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WindowSize {
+    pub num_lines: u16,
+    pub num_cols: u16,
+    pub cell_width: u16,
+    pub cell_height: u16,
 }
 
 /// plan9port's `sysname`: `$sysname`, else the host's name up to the
@@ -182,37 +198,6 @@ pub const FLAG_BOLD: u8 = 1;
 pub const FLAG_ITALIC: u8 = 2;
 pub const FLAG_UNDERLINE: u8 = 4;
 
-/// Forwards alacritty's events to the server as (term, event).
-#[derive(Clone)]
-pub struct Listener {
-    id: TermId,
-    tx: UnboundedSender<(TermId, TermEvent)>,
-}
-
-impl EventListener for Listener {
-    fn send_event(&self, event: Event) {
-        let _ = self.tx.unbounded_send((self.id, TermEvent::Alac(event)));
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Size {
-    cols: u16,
-    rows: u16,
-}
-
-impl Dimensions for Size {
-    fn total_lines(&self) -> usize {
-        self.rows as usize
-    }
-    fn screen_lines(&self) -> usize {
-        self.rows as usize
-    }
-    fn columns(&self) -> usize {
-        self.cols as usize
-    }
-}
-
 /// A keystroke as the client reports it; encoded here because the
 /// encoding depends on terminal modes only the server knows.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -227,7 +212,7 @@ pub struct TermKey {
 }
 
 pub struct TermHost {
-    pub term: Arc<FairMutex<AlacTerm<Listener>>>,
+    pub term: Arc<Mutex<Terminal>>,
     notifier: Notifier,
     pub cols: u16,
     pub rows: u16,
@@ -259,6 +244,9 @@ pub struct TermHost {
     pub title: Option<String>,
     /// Where the shell started: the name's directory until OSC 7 says.
     pub initial_dir: PathBuf,
+    /// The colours last given to the terminal, which answers a program's
+    /// questions from them; none until a client has said.
+    colors: Option<crate::proto::TermColors>,
 }
 
 struct Published {
@@ -280,16 +268,10 @@ impl TermHost {
     /// environment; with `cmd`, the login shell runs that instead (acme's
     /// `win cmd`).
     /// `scrollback`: lines of history kept (the `Newterm.scrollback`
-    /// setting; alacritty's default of 10000 otherwise).
+    /// setting; 10000 otherwise).
     pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>, shell: Option<&str>, scrollback: usize) -> Result<TermHost, String> {
-        tty::setup_env();
-        let shell = match shell.map(str::trim).filter(|s| !s.is_empty()) {
-            Some(s) => PathBuf::from(s),
-            None => match std::env::var_os("SHELL") {
-                Some(s) if !s.is_empty() => PathBuf::from(s),
-                _ => PathBuf::from("/bin/sh"),
-            },
-        };
+        pty::setup_env();
+        let shell = pty::shell_path(shell);
         let args = match cmd {
             Some(c) => vec!["-l".to_string(), "-c".to_string(), c.to_string()],
             None => vec!["-l".to_string()],
@@ -303,36 +285,33 @@ impl TermHost {
         for (k, v) in extra {
             env.insert(k.clone(), v.clone());
         }
-        let options = Options {
-            shell: Some(Shell::new(shell.to_string_lossy().to_string(), args)),
-            working_directory: Some(dir.to_path_buf()),
-            drain_on_exit: false,
-            env,
-        };
-        let size = WindowSize { num_lines: rows, num_cols: cols, cell_width: 8, cell_height: 16 };
-        let pty = tty::new(&options, size, id.0).map_err(|e| e.to_string())?;
-        let pid = pty.child().id();
-        let name = cmd.map(crate::command_name).filter(|n| !n.is_empty()).unwrap_or_else(|| shell.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+        let opts = Options { program: shell.clone(), args, dir: dir.to_path_buf(), env };
+        let pty = Pty::spawn(&opts, cols, rows).map_err(|e| e.to_string())?;
+        let pid = pty.pid();
+        let name = cmd.map(crate::command_name).filter(|n| !n.is_empty()).unwrap_or_else(|| pty::program_name(&shell));
         let cmdline = match cmd {
             Some(c) => format!("{} -l -c {}", shell.display(), crate::shell_quote(c)),
             None => format!("{} -l", shell.display()),
         };
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let listener = Listener { id, tx: tx.clone() };
-        let term = AlacTerm::new(Config { scrolling_history: scrollback, ..Config::default() }, &Size { cols, rows }, listener.clone());
-        let term = Arc::new(FairMutex::new(term));
-        let label_tx = tx;
-        let on_label = Box::new(move |l: Label| {
-            let ev = match l {
-                Label::Name(s) => TermEvent::Name(s),
-                Label::Cwd(s) => TermEvent::Cwd(s),
+        let term = Terminal::new(cols, rows, scrollback).ok_or("no terminal")?;
+        let term = Arc::new(Mutex::new(term));
+        let report = Box::new(move |r: Report| {
+            let ev = match r {
+                Report::Label(Label::Name(s)) => TermEvent::Name(s),
+                Report::Label(Label::Cwd(s)) => TermEvent::Cwd(s),
+                Report::Title(t) => TermEvent::Title(t),
+                Report::Clipboard(t) => TermEvent::Clipboard(t),
+                Report::Bell => TermEvent::Bell,
+                Report::Wakeup => TermEvent::Wakeup,
+                Report::Exit(code) => TermEvent::Exit(code),
             };
-            let _ = label_tx.unbounded_send((id, ev));
+            let _ = tx.unbounded_send((id, ev));
         });
-        let event_loop = EventLoop::new(term.clone(), listener, pty, false, on_label).map_err(|e| e.to_string())?;
-        let notifier = Notifier(event_loop.channel());
+        let event_loop = EventLoop::new(term.clone(), pty, report).map_err(|e| e.to_string())?;
+        let notifier = event_loop.channel();
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf() })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None })
     }
 
     pub fn write(&self, data: &[u8]) {
@@ -345,39 +324,42 @@ impl TermHost {
         }
         self.cols = cols;
         self.rows = rows;
-        self.term.lock().resize(Size { cols, rows });
-        self.notifier.on_resize(WindowSize { num_lines: rows, num_cols: cols, cell_width: 8, cell_height: 16 });
+        // the loop resizes the pty and the terminal together, so the
+        // program never reads a size the screen does not have
+        self.notifier.send(Msg::Resize { cols, rows });
     }
 
     /// Scrolled back into the history, not on the live screen.
     pub fn scrolled_back(&self) -> bool {
-        self.term.lock().grid().display_offset() > 0
+        self.term.lock().map(|mut t| !t.size().2).unwrap_or(false)
     }
 
     /// The scrollback dropped (the `Clear` verb): the screen stays as it
     /// is, at the bottom.
     pub fn clear_history(&mut self) {
-        self.term.lock().clear_screen(ClearMode::Saved);
+        if let Ok(mut t) = self.term.lock() {
+            t.write(b"\x1b[3J"); // xterm's: the saved lines go
+        }
     }
 
     /// Positive scrolls towards newer output.
     /// Back to the live screen (typing goes where the cursor is).
     pub fn scroll_to_bottom(&mut self) -> bool {
-        let mut t = self.term.lock();
-        if t.grid().display_offset() == 0 {
+        let Ok(mut t) = self.term.lock() else { return false };
+        if t.size().2 {
             return false;
         }
-        t.scroll_display(Scroll::Bottom);
+        t.scroll_to_bottom();
         true
     }
 
     /// The text between two positions, `(column, history line)` as the
     /// term shard numbers them, the end exclusive; wrapped lines join.
     pub fn text(&self, p0: (u16, u64), p1: (u16, u64)) -> String {
-        let t = self.term.lock();
-        let hist = t.grid().history_size() as i64;
-        let last_col = t.grid().columns().saturating_sub(1) as u16;
-        let last_line = t.grid().screen_lines() as i64 - 1;
+        let Ok(mut t) = self.term.lock() else { return String::new() };
+        let (_, total, _) = t.size();
+        let last_col = self.cols.saturating_sub(1);
+        let last_row = total.saturating_sub(1) as u32;
         let (p0, p1) = if (p0.1, p0.0) <= (p1.1, p1.0) { (p0, p1) } else { (p1, p0) };
         // an exclusive end, as an inclusive one on the cell before it
         let end = if p1.0 == 0 {
@@ -388,16 +370,18 @@ impl TermHost {
         } else {
             (p1.0 - 1, p1.1)
         };
-        let point = |(c, l): (u16, u64)| Point::new(Line((l as i64 - hist).clamp(-hist, last_line) as i32), Column(c.min(last_col) as usize));
-        let (a, b) = (point(p0), point(end));
-        if a > b {
+        let at = |(c, l): (u16, u64)| (c.min(last_col), (l.min(u32::MAX as u64) as u32).min(last_row));
+        let (a, b) = (at(p0), at(end));
+        if (a.1, a.0) > (b.1, b.0) {
             return String::new();
         }
-        t.bounds_to_string(a, b)
+        t.text(a, b)
     }
 
     pub fn scroll(&mut self, delta: isize) {
-        self.term.lock().scroll_display(Scroll::Delta(-(delta as i32)));
+        if let Ok(mut t) = self.term.lock() {
+            t.scroll(delta);
+        }
     }
 
     /// The wheel as the program sees it, if it does: `delta` lines at
@@ -407,14 +391,13 @@ impl TermHost {
     /// arrows instead, as xterm sends them. False when the wheel is
     /// ours to scroll the display with.
     pub fn wheel(&self, delta: isize, at: Option<(u16, u16)>) -> bool {
-        let mode = self.mode();
         let Some((col, row)) = at else { return false };
         let n = delta.unsigned_abs();
-        if mode.intersects(TermMode::MOUSE_MODE) {
+        if self.mode(Mode::Mouse) {
             let button = if delta < 0 { 64 } else { 65 };
             let mut out = Vec::new();
             for _ in 0..n {
-                if mode.contains(TermMode::SGR_MOUSE) {
+                if self.mode(Mode::SgrMouse) {
                     out.extend_from_slice(format!("\x1b[<{button};{};{}M", col + 1, row + 1).as_bytes());
                 } else {
                     // X10: 32 + button, 32 + 1-based col and row, bytes
@@ -425,10 +408,10 @@ impl TermHost {
             self.write(&out);
             return true;
         }
-        if mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL) {
+        if self.mode(Mode::AltScreen) && self.mode(Mode::AltScroll) {
             let key = if delta < 0 { "up" } else { "down" };
             let k = TermKey { key: key.into(), text: None, shift: false, control: false, alt: false };
-            let one = encode_key(&k, mode.contains(TermMode::APP_CURSOR));
+            let one = encode_key(&k, self.mode(Mode::AppCursor));
             let mut out = Vec::new();
             for _ in 0..n {
                 out.extend_from_slice(&one);
@@ -440,23 +423,24 @@ impl TermHost {
     }
 
     pub fn window_size(&self) -> WindowSize {
-        WindowSize { num_lines: self.rows, num_cols: self.cols, cell_width: 8, cell_height: 16 }
+        WindowSize { num_lines: self.rows, num_cols: self.cols, cell_width: CELL_W, cell_height: CELL_H }
     }
 
-    fn mode(&self) -> TermMode {
-        *self.term.lock().mode()
+    /// Whether a mode the window cares about is on.
+    fn mode(&self, m: Mode) -> bool {
+        self.term.lock().map(|mut t| t.mode(m)).unwrap_or(false)
     }
 
     /// Focus gained or lost, to a program that asked for it (DECSET
     /// 1004): xterm's `CSI I` and `CSI O`.
     pub fn focus(&self, on: bool) {
-        if self.mode().contains(TermMode::FOCUS_IN_OUT) {
+        if self.mode(Mode::FocusInOut) {
             self.write(if on { b"\x1b[I" } else { b"\x1b[O" });
         }
     }
 
     pub fn paste(&self, text: &str) {
-        if self.mode().contains(TermMode::BRACKETED_PASTE) {
+        if self.mode(Mode::BracketedPaste) {
             let mut v = b"\x1b[200~".to_vec();
             v.extend_from_slice(text.as_bytes());
             v.extend_from_slice(b"\x1b[201~");
@@ -476,7 +460,7 @@ impl TermHost {
 
     /// Encode a keystroke xterm-style and send it.
     pub fn key(&self, k: &TermKey) {
-        let out = encode_key(k, self.mode().contains(TermMode::APP_CURSOR));
+        let out = encode_key(k, self.mode(Mode::AppCursor));
         if !out.is_empty() {
             self.write(&out);
         }
@@ -688,76 +672,40 @@ impl TermHost {
 
     /// The viewport as term-shard ops: all rows, then the cursor.
     pub fn snapshot_ops(&self) -> Vec<TermOp> {
-        let t = self.term.lock();
-        let content = t.renderable_content();
-        let colors = content.colors;
-        let rows_n = t.grid().screen_lines();
-        let cols_n = t.grid().columns();
         let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0, link: 0 };
-        let mut rows: Vec<Vec<Cell>> = vec![vec![blank; cols_n]; rows_n];
-        let mut links: Vec<String> = Vec::new();
-        let off = content.display_offset as i32;
-        for cell in content.display_iter {
-            let row = cell.point.line.0 + off;
-            if row < 0 || row >= rows_n as i32 {
-                continue;
+        let Ok(mut t) = self.term.lock() else {
+            return vec![TermOp::View { top: 0 }, TermOp::Links { links: Vec::new() }, TermOp::Rows { first: 0, rows: vec![vec![blank; self.cols as usize]; self.rows as usize] }, TermOp::Cursor { col: 0, row: 0, visible: false }];
+        };
+        let screen = t.screen();
+        let (cols, rows_n) = (screen.cols as usize, screen.rows as usize);
+        let mut rows: Vec<Vec<Cell>> = vec![vec![blank; cols]; rows_n];
+        for (y, row) in rows.iter_mut().enumerate() {
+            for (x, out) in row.iter_mut().enumerate() {
+                let c = screen.cells[y * cols + x];
+                *out = Cell { ch: char::from_u32(c.ch).unwrap_or(' '), fg: c.fg, bg: c.bg, flags: c.flags, link: c.link };
             }
-            let col = cell.point.column.0;
-            if col >= cols_n {
-                continue;
-            }
-            let flags = cell.flags;
-            if flags.contains(Flags::WIDE_CHAR_SPACER) || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
-                continue;
-            }
-            let mut fg = fg_of(cell.fg, colors);
-            let mut bg = bg_of(cell.bg, colors);
-            if flags.contains(Flags::INVERSE) {
-                // the defaults swapped are the theme's paper as ink and
-                // ink as paper, whatever the theme (the client knows)
-                let b = if bg == 0 { DEFAULT_BG } else { bg };
-                bg = if fg == 0 { DEFAULT_FG } else { fg };
-                fg = b;
-            }
-            if flags.contains(Flags::DIM) {
-                fg = pack(Rgb { r: 0x77, g: 0x77, b: 0x77 });
-            }
-            let mut f = 0u8;
-            if flags.contains(Flags::BOLD) {
-                f |= FLAG_BOLD;
-            }
-            if flags.contains(Flags::ITALIC) {
-                f |= FLAG_ITALIC;
-            }
-            if flags.intersects(Flags::ALL_UNDERLINES) {
-                f |= FLAG_UNDERLINE;
-            }
-            let ch = if flags.contains(Flags::HIDDEN) || cell.c == '\0' { ' ' } else { cell.c };
-            // OSC 8: the link's index, the table shared by the viewport
-            let link = match cell.hyperlink() {
-                Some(h) => {
-                    let uri = h.uri();
-                    let i = links.iter().position(|u| u == uri).unwrap_or_else(|| {
-                        links.push(uri.to_string());
-                        links.len() - 1
-                    });
-                    (i + 1).min(u16::MAX as usize) as u16
-                }
-                None => 0,
-            };
-            rows[row as usize][col] = Cell { ch, fg, bg, flags: f, link };
         }
-        let cursor = content.cursor;
-        let visible = cursor.shape != CursorShape::Hidden;
-        let crow = (cursor.point.line.0 + off).max(0) as u16;
-        let top = t.grid().history_size().saturating_sub(content.display_offset) as u64;
-        drop(t);
         vec![
-            TermOp::View { top },
-            TermOp::Links { links },
+            TermOp::View { top: screen.top },
+            TermOp::Links { links: screen.links.clone() },
             TermOp::Rows { first: 0, rows },
-            TermOp::Cursor { col: cursor.point.column.0 as u16, row: crow, visible },
+            TermOp::Cursor { col: screen.cursor.0, row: screen.cursor.1, visible: screen.cursor_visible },
         ]
+    }
+
+    /// The colours the client draws with, which the terminal answers a
+    /// program's questions from (OSC 4, 10, 11) and resolves its cells
+    /// against.
+    pub fn set_colors(&mut self, colors: &crate::proto::TermColors) {
+        if self.colors == Some(*colors) {
+            return;
+        }
+        self.colors = Some(*colors);
+        let mut palette = [0u32; 16];
+        palette.copy_from_slice(&colors.ansi);
+        if let Ok(mut t) = self.term.lock() {
+            t.set_colors(colors.fg, colors.bg, &palette);
+        }
     }
 }
 
@@ -767,48 +715,20 @@ impl Drop for TermHost {
     }
 }
 
-/// A cell colour as `Cell` carries it (entry.rs): a named RGB.
-fn pack(c: Rgb) -> u32 {
-    0xff00_0000 | ((c.r as u32) << 16) | ((c.g as u32) << 8) | c.b as u32
-}
-
-/// One of the sixteen ANSI colours by index, for the client's theme to
-/// colour: only while the program has not set that palette entry.
-fn pack_index(i: u8) -> u32 {
-    0xfe00_0000 | i as u32
+/// A colour as the protocol carries one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rgb8 {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
 }
 
 /// The theme's ink and paper, where a program inverted the defaults.
 pub const DEFAULT_FG: u32 = 0xfd00_0000;
 pub const DEFAULT_BG: u32 = 0xfd00_0001;
 
-/// A foreground as the cell carries it: 0 for the default ink.
-fn fg_of(c: Color, colors: &alacritty_terminal::term::color::Colors) -> u32 {
-    match c {
-        Color::Spec(rgb) => pack(rgb),
-        Color::Named(NamedColor::Foreground) => colors[NamedColor::Foreground].map(pack).unwrap_or(0),
-        Color::Named(NamedColor::Background) => colors[NamedColor::Background].map(pack).unwrap_or(DEFAULT_BG),
-        Color::Named(n) if (n as usize) < 16 => colors[n].map(pack).unwrap_or_else(|| pack_index(n as u8)),
-        Color::Named(n) => pack(colors[n].unwrap_or_else(|| default_color(n as usize))),
-        Color::Indexed(i) if i < 16 => colors[i as usize].map(pack).unwrap_or_else(|| pack_index(i)),
-        Color::Indexed(i) => pack(colors[i as usize].unwrap_or_else(|| default_color(i as usize))),
-    }
-}
-
-/// A background as the cell carries it: 0 for none of its own.
-fn bg_of(c: Color, colors: &alacritty_terminal::term::color::Colors) -> u32 {
-    match c {
-        Color::Named(NamedColor::Background) => colors[NamedColor::Background].map(pack).unwrap_or(0),
-        Color::Named(NamedColor::Foreground) => colors[NamedColor::Foreground].map(pack).unwrap_or(DEFAULT_FG),
-        other => fg_of(other, colors),
-    }
-}
-
-/// alacritty's RGB, by the name the protocol uses for it.
-pub type Rgb8 = Rgb;
-
 /// The 256-colour xterm palette used when the application hasn't set one.
-pub fn default_color(index: usize) -> Rgb {
+pub fn default_color(index: usize) -> Rgb8 {
     const ANSI: [(u8, u8, u8); 16] = [
         (0x00, 0x00, 0x00),
         (0xcc, 0x24, 0x1d),
@@ -830,20 +750,20 @@ pub fn default_color(index: usize) -> Rgb {
     match index {
         0..=15 => {
             let (r, g, b) = ANSI[index];
-            Rgb { r, g, b }
+            Rgb8 { r, g, b }
         }
         16..=231 => {
             let i = index - 16;
             let lv = |v: usize| if v == 0 { 0 } else { (55 + v * 40) as u8 };
-            Rgb { r: lv(i / 36), g: lv((i / 6) % 6), b: lv(i % 6) }
+            Rgb8 { r: lv(i / 36), g: lv((i / 6) % 6), b: lv(i % 6) }
         }
         232..=255 => {
             let v = (8 + (index - 232) * 10) as u8;
-            Rgb { r: v, g: v, b: v }
+            Rgb8 { r: v, g: v, b: v }
         }
-        256 => Rgb { r: 0, g: 0, b: 0 },
-        257 => Rgb { r: 0xff, g: 0xff, b: 0xea },
-        _ => Rgb { r: 0, g: 0, b: 0 },
+        256 => Rgb8 { r: 0, g: 0, b: 0 },
+        257 => Rgb8 { r: 0xff, g: 0xff, b: 0xea },
+        _ => Rgb8 { r: 0, g: 0, b: 0 },
     }
 }
 

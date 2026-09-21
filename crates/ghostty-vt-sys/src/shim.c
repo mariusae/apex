@@ -359,6 +359,34 @@ const char *apex_vt_link(ApexVt *vt, uint32_t i) {
   return vt->links[i - 1];
 }
 
+// The colours the embedder draws with: a program asking (OSC 4, 10, 11)
+// is answered from these, and a cell with no colour of its own is drawn
+// in them. Each is 0xRRGGBB.
+void apex_vt_set_colors(ApexVt *vt, uint32_t fg, uint32_t bg, const uint32_t *palette) {
+  GhosttyColorRgb f = {.r = (uint8_t)(fg >> 16), .g = (uint8_t)(fg >> 8), .b = (uint8_t)fg};
+  GhosttyColorRgb b = {.r = (uint8_t)(bg >> 16), .g = (uint8_t)(bg >> 8), .b = (uint8_t)bg};
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &f);
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, &b);
+  GhosttyColorRgb all[256];
+  for (size_t i = 0; i < 256; i++) {
+    uint32_t c;
+    if (i < 16) {
+      c = palette[i];
+    } else if (i < 232) {
+      size_t k = i - 16;
+      uint8_t lv[6] = {0, 95, 135, 175, 215, 255};
+      c = ((uint32_t)lv[k / 36] << 16) | ((uint32_t)lv[(k / 6) % 6] << 8) | lv[k % 6];
+    } else {
+      uint8_t v = (uint8_t)(8 + (i - 232) * 10);
+      c = ((uint32_t)v << 16) | ((uint32_t)v << 8) | v;
+    }
+    all[i].r = (uint8_t)(c >> 16);
+    all[i].g = (uint8_t)(c >> 8);
+    all[i].b = (uint8_t)c;
+  }
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_COLOR_PALETTE, all);
+}
+
 // ---- modes, text -----------------------------------------------------
 
 #define APEX_MODE_APP_CURSOR 1

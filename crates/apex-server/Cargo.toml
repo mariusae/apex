@@ -7,7 +7,7 @@ description = "apex server: terminals, files, processes and the plumber, over th
 [dependencies]
 apex-core = { path = "../apex-core" }
 apex-edit = { path = "../apex-edit" }
-alacritty_terminal = "0.26"
+ghostty-vt-sys = { path = "../ghostty-vt-sys" }
 polling = "3"
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -15,6 +15,7 @@ postcard = { version = "1", features = ["use-std"] }
 notify = "8"
 libc = "0.2"
 ureq = "3"
+rustix-openpty = "0.2.0"
 
 [build-dependencies]
 sha2 = "0.10"

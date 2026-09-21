@@ -14,6 +14,7 @@ pub const BUILD_ID: &str = env!("APEX_BUILD_ID");
 pub mod daemon;
 pub mod plane;
 pub mod proposal;
+pub mod pty;
 pub mod proto;
 pub mod providers;
 pub mod remote;
@@ -26,7 +27,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use alacritty_terminal::event::Event;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 
 use apex_core::node::ERRORS;
@@ -349,7 +349,8 @@ impl Server {
             let mut env = self.env.clone();
             env.push(("winid".into(), w.0.to_string()));
             match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback) {
-                Ok(host) => {
+                Ok(mut host) => {
+                    host.set_colors(&self.term_colors);
                     if (p.cols, p.rows) != (80, 24) {
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols: p.cols, rows: p.rows }));
                     }
@@ -526,6 +527,13 @@ impl Server {
     /// become proposals.
     pub fn pump(&mut self, log: &mut Log, view: &Node, ev: ServerEvent) -> Vec<Proposal> {
         let mut props = Vec::new();
+        // a client's colours are the terminal's: it answers a program
+        // asking (OSC 4, 10, 11) from them, and resolves its cells
+        // against them
+        let colors = self.term_colors;
+        for h in self.terms.values_mut() {
+            h.set_colors(&colors);
+        }
         match ev {
             ServerEvent::File(path) => {
                 let named = self.watches.as_named(&path);
@@ -538,29 +546,22 @@ impl Server {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
                 let was = h.window_name();
                 match ev {
-                    TermEvent::Alac(ev) => match ev {
-                        Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange | Event::ResetTitle | Event::Bell => {}
-                        // an xterm title is the window's title
-                        Event::Title(t) => h.title = Some(t),
-                        Event::PtyWrite(s) => h.write(s.as_bytes()),
-                        // a program asking its colours (OSC 10, 11, 4): the
-                        // UI's, as it draws them
-                        Event::ColorRequest(i, fmt) => h.write(fmt(self.term_colors.color(i)).as_bytes()),
-                        Event::TextAreaSizeRequest(fmt) => h.write(fmt(h.window_size()).as_bytes()),
-                        // OSC 52: into the snarf buffer, and (through the
-                        // daemon) onto the UIs' clipboards
-                        Event::ClipboardStore(_, text) => {
-                            if !text.is_empty() {
-                                self.clips.push(text.clone());
-                                props.push(Proposal::Snarf { text });
-                            }
+                    // the screen changed; the publish below carries it
+                    TermEvent::Wakeup | TermEvent::Bell => {}
+                    // an xterm title is the window's title
+                    TermEvent::Title(t) => h.title = Some(t),
+                    // OSC 52: into the snarf buffer, and (through the
+                    // daemon) onto the UIs' clipboards
+                    TermEvent::Clipboard(text) => {
+                        if !text.is_empty() {
+                            self.clips.push(text.clone());
+                            props.push(Proposal::Snarf { text });
                         }
-                        Event::ClipboardLoad(..) => {}
-                        Event::Exit | Event::ChildExit(_) => {
-                            h.exited = true;
-                            let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status: 0 }));
-                        }
-                    },
+                    }
+                    TermEvent::Exit(status) => {
+                        h.exited = true;
+                        let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status }));
+                    }
                     // plan9port's label is the title too
                     TermEvent::Name(t) => h.title = Some(t),
                     // OSC 7: the directory, for the name and for B2/B3 there

@@ -68,6 +68,7 @@ extern "C" {
     ) -> i32;
     fn apex_vt_link(vt: *mut ApexVt, i: u32) -> *const std::os::raw::c_char;
     fn apex_vt_mode(vt: *mut ApexVt, which: i32) -> bool;
+    fn apex_vt_set_colors(vt: *mut ApexVt, fg: u32, bg: u32, palette: *const u32);
     fn apex_vt_size(vt: *mut ApexVt, scrollback: *mut u64, total: *mut u64, at_bottom: *mut i32);
     fn apex_vt_text(vt: *mut ApexVt, x0: u16, y0: u32, x1: u16, y1: u32, out: *mut u8, cap: usize) -> isize;
     fn apex_vt_next_event(vt: *mut ApexVt, data: *mut *const u8, len: *mut usize) -> i32;
@@ -147,6 +148,15 @@ impl Terminal {
         // SAFETY: three outs of the stated types.
         unsafe { apex_vt_size(self.vt, &mut sb, &mut total, &mut bottom) }
         (sb, total, bottom != 0)
+    }
+
+    /// The colours the embedder draws with: a program that asks (OSC 4,
+    /// 10, 11) is answered from these, and a cell with no colour of its
+    /// own carries none, for the client's theme to draw. Each is
+    /// `0xRRGGBB`.
+    pub fn set_colors(&mut self, fg: u32, bg: u32, palette: &[u32; 16]) {
+        // SAFETY: sixteen colours at the pointer, as the shim reads.
+        unsafe { apex_vt_set_colors(self.vt, fg, bg, palette.as_ptr()) }
     }
 
     pub fn mode(&mut self, m: Mode) -> bool {
