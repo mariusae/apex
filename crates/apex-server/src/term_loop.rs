@@ -13,7 +13,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use ghostty_vt_sys::{Event as VtEvent, Terminal};
+use ghostty_vt_sys::{Event as VtEvent, Progress, Terminal};
 
 use crate::pty::Pty;
 
@@ -126,6 +126,9 @@ pub enum Report {
     /// OSC 52: text for the snarf buffer.
     Clipboard(String),
     Bell,
+    /// OSC 9;4: how the program's work goes, and how far along when it
+    /// says.
+    Progress(Progress, Option<u8>),
     /// The screen changed: what is drawn is behind it.
     Wakeup,
     /// The program ended.
@@ -324,6 +327,7 @@ impl EventLoop {
                     VtEvent::Title(t) => (self.report)(Report::Title(t)),
                     VtEvent::Clipboard(t) => (self.report)(Report::Clipboard(t)),
                     VtEvent::Bell => (self.report)(Report::Bell),
+                    VtEvent::Progress(p, at) => (self.report)(Report::Progress(p, at)),
                 }
             }
             if !answers.is_empty() {

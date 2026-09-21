@@ -1589,7 +1589,15 @@ left of the connection mark, the heartbeat's round trip and the log's
   attachment that set it is there, so a tool that dies leaves no window
   pulsing for ever, and the client draws those windows again each tick
   while any of them is working. A loading web page, which pulsed before
-  any of this existed, is the same thing said by the client itself.
+  any of this existed, is the same thing said by the client itself. A
+  program in a terminal says it too: OSC 9;4, ConEmu's progress report
+  (`1;PERCENT` going, `3` going with no telling how far, `0` done, `2`
+  failed, `4` waiting), which shells and build tools emit and other
+  terminals draw as a bar, pulses the terminal's window while the work
+  goes on and stops when it ends, fails, pauses -- or when the program
+  does, whatever it last said. The session itself says this one
+  (`SERVER`), which is in no attachment table and outlives every tool,
+  so `window_working` takes it as always there.
 - *As built:* the app remembers every window with its session URL and
   its frame (`last-sessions`, one line each), saved on every move or
   resize and on Quit, and opens them all again at launch, each on its

@@ -41,6 +41,8 @@ typedef struct {
 #define APEX_EVENT_TITLE 2
 #define APEX_EVENT_CLIPBOARD 3
 #define APEX_EVENT_BELL 4
+// a program saying how its work goes (OSC 9;4): its state, and how far
+#define APEX_EVENT_PROGRESS 5
 
 typedef struct ApexEvent {
   int kind;
@@ -113,6 +115,14 @@ static void on_clipboard(GhosttyTerminal t, void *ud, const GhosttyClipboardWrit
   push((ApexVt *)ud, APEX_EVENT_CLIPBOARD, c->data.ptr, c->data.len);
 }
 
+// OSC 9;4: the state, and the percentage when it gave one (else 0xff).
+static void on_progress(GhosttyTerminal t, void *ud, const GhosttyTerminalProgressReport *r) {
+  (void)t;
+  if (!r) return;
+  uint8_t out[2] = {(uint8_t)r->state, r->progress < 0 ? 0xff : (uint8_t)r->progress};
+  push((ApexVt *)ud, APEX_EVENT_PROGRESS, out, sizeof(out));
+}
+
 // The next event, its bytes borrowed until the call after it.
 int apex_vt_next_event(ApexVt *vt, const uint8_t **out_data, size_t *out_len) {
   static _Thread_local ApexEvent *held = NULL;
@@ -155,6 +165,7 @@ ApexVt *apex_vt_new(uint16_t cols, uint16_t rows, size_t scrollback) {
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_BELL, (const void *)on_bell);
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_TITLE_CHANGED, (const void *)on_title);
   ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_CLIPBOARD_WRITE, (const void *)on_clipboard);
+  ghostty_terminal_set(vt->term, GHOSTTY_TERMINAL_OPT_PROGRESS_REPORT, (const void *)on_progress);
   return vt;
 }
 

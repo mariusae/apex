@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use futures::channel::mpsc::UnboundedSender;
-use ghostty_vt_sys::{Mode, Terminal};
+use ghostty_vt_sys::{Mode, Progress, Terminal};
 
 use apex_core::{Cell, TermId, TermOp};
 
@@ -24,6 +24,9 @@ pub enum TermEvent {
     /// OSC 52: text for the snarf buffer.
     Clipboard(String),
     Bell,
+    /// OSC 9;4: the program is working, this far along when it says, or
+    /// no longer working.
+    Working(bool, Option<u8>),
     /// The screen changed.
     Wakeup,
     /// The program ended.
@@ -247,6 +250,10 @@ pub struct TermHost {
     /// The colours last given to the terminal, which answers a program's
     /// questions from them; none until a client has said.
     colors: Option<crate::proto::TermColors>,
+    /// Whether the program said it is at work (OSC 9;4), and how far
+    /// along it said it is: the window's handle pulses while it is.
+    pub working: bool,
+    pub progress: Option<u8>,
 }
 
 struct Published {
@@ -304,6 +311,9 @@ impl TermHost {
                 Report::Title(t) => TermEvent::Title(t),
                 Report::Clipboard(t) => TermEvent::Clipboard(t),
                 Report::Bell => TermEvent::Bell,
+                // a program at work makes its window's handle pulse; one
+                // that failed, paused or finished is at work no longer
+                Report::Progress(p, at) => TermEvent::Working(matches!(p, Progress::At | Progress::Unknown), at),
                 Report::Wakeup => TermEvent::Wakeup,
                 Report::Exit(code) => TermEvent::Exit(code),
             };
@@ -312,7 +322,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), pty, report).map_err(|e| e.to_string())?;
         let notifier = event_loop.channel();
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None })
     }
 
     pub fn write(&self, data: &[u8]) {

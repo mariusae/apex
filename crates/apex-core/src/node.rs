@@ -711,10 +711,13 @@ impl Node {
     }
 
     /// Is a tool working behind this window? Like `live`, it holds only
-    /// while the attachment that said so is still here.
+    /// while the attachment that said so is still here -- except the
+    /// session's own (`SERVER`, a program in a terminal saying its work
+    /// goes on), which is here as long as the session is and is in no
+    /// attachment table.
     pub fn window_working(&self, w: WindowId) -> bool {
         let Ok(win) = self.state.window(w) else { return false };
-        win.working.is_some_and(|a| self.state.meta.attachments.contains_key(&a))
+        win.working.is_some_and(|a| a == SERVER || self.state.meta.attachments.contains_key(&a))
     }
 
     /// The session's notifications, oldest first, of the windows still

@@ -558,8 +558,27 @@ impl Server {
                             props.push(Proposal::Snarf { text });
                         }
                     }
+                    // a program saying it is at work (OSC 9;4): the
+                    // window's handle pulses while it is, as it does for
+                    // a tool at work behind one
+                    TermEvent::Working(on, at) => {
+                        h.progress = at;
+                        if h.working != on {
+                            h.working = on;
+                            if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
+                                props.push(Proposal::Working { window: w, by: on.then_some(SERVER) });
+                            }
+                        }
+                    }
                     TermEvent::Exit(status) => {
                         h.exited = true;
+                        // a program that said it was at work and then
+                        // ended is at work no longer, whatever it said
+                        if std::mem::take(&mut h.working) {
+                            if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
+                                props.push(Proposal::Working { window: w, by: None });
+                            }
+                        }
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status }));
                     }
                     // plan9port's label is the title too

@@ -1170,3 +1170,33 @@ fn a_terminal_says_how_much_of_it_the_view_shows() {
     assert_eq!((up_top, up_rows), (top - 5, rows));
     assert!(up_total >= total, "the history did not shrink");
 }
+
+#[test]
+fn a_program_at_work_pulses_its_windows_handle() {
+    // OSC 9;4 (ConEmu's progress report): while a program says it is at
+    // work, its window's handle pulses, as it does for a tool at work
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    let w = node.state.windows.values().find(|w| w.body == Body::Term(t)).map(|w| w.id).expect("its window");
+    let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains('$') || grid_text(n).contains('%')));
+    assert!(!node.window_working(w), "nothing is at work yet");
+    let type_in = |server: &mut apex_server::Server, log: &mut Log, text: &str| {
+        for c in text.chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    // a program half way through its work
+    type_in(&mut server, &mut log, "printf '\\033]9;4;1;50\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_working(w)), "the handle pulses while it works");
+    // and done: it stops
+    type_in(&mut server, &mut log, "printf '\\033]9;4;0\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !n.window_working(w)), "and stops when the work is over");
+    // a program that ends while it says it is working stops too
+    type_in(&mut server, &mut log, "printf '\\033]9;4;3\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_working(w)));
+    type_in(&mut server, &mut log, "exit\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !n.window_working(w)), "the shell went and took its work with it");
+}

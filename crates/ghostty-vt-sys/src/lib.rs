@@ -27,6 +27,24 @@ pub enum Event {
     /// OSC 52: text for the snarf buffer.
     Clipboard(String),
     Bell,
+    /// OSC 9;4: how the program's work goes, and how far along it is
+    /// when it says (0 to 100).
+    Progress(Progress, Option<u8>),
+}
+
+/// What a program says of its work (OSC 9;4, ConEmu's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Progress {
+    /// It is over: nothing to show.
+    Removed,
+    /// It goes on, this far along.
+    At,
+    /// It failed.
+    Failed,
+    /// It goes on, with no telling how far.
+    Unknown,
+    /// It is waiting on something.
+    Paused,
 }
 
 /// The modes a window asks about.
@@ -231,6 +249,16 @@ impl Terminal {
                 1 => Event::WritePty(bytes),
                 2 => Event::Title(String::from_utf8_lossy(&bytes).to_string()),
                 3 => Event::Clipboard(String::from_utf8_lossy(&bytes).to_string()),
+                5 => {
+                    let state = match bytes.first() {
+                        Some(1) => Progress::At,
+                        Some(2) => Progress::Failed,
+                        Some(3) => Progress::Unknown,
+                        Some(4) => Progress::Paused,
+                        _ => Progress::Removed,
+                    };
+                    Event::Progress(state, bytes.get(1).copied().filter(|p| *p <= 100))
+                }
                 _ => Event::Bell,
             });
         }
@@ -344,6 +372,22 @@ mod tests {
         assert!(evs.iter().any(|e| matches!(e, Event::WritePty(b) if b.starts_with(b"\x1b["))), "the report is answered: {evs:?}");
         assert!(evs.iter().any(|e| matches!(e, Event::Clipboard(s) if s == "hello")), "{evs:?}");
         assert!(t.events().is_empty(), "drained");
+    }
+
+    #[test]
+    fn a_program_says_how_its_work_goes() {
+        let mut t = Terminal::new(20, 3, 100).unwrap();
+        // OSC 9;4: going, this far along; going, no telling; over
+        t.write(b"\x1b]9;4;1;40\x07");
+        assert_eq!(t.events(), vec![Event::Progress(Progress::At, Some(40))]);
+        t.write(b"\x1b]9;4;3\x07");
+        assert_eq!(t.events(), vec![Event::Progress(Progress::Unknown, None)]);
+        t.write(b"\x1b]9;4;2;70\x07");
+        assert_eq!(t.events(), vec![Event::Progress(Progress::Failed, Some(70))]);
+        t.write(b"\x1b]9;4;4\x07");
+        assert_eq!(t.events(), vec![Event::Progress(Progress::Paused, None)]);
+        t.write(b"\x1b]9;4;0\x07");
+        assert_eq!(t.events(), vec![Event::Progress(Progress::Removed, None)]);
     }
 
     #[test]
