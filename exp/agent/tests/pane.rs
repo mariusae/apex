@@ -182,6 +182,23 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     event::append(&logs, &Event { text: Some("Users, one a line.".into()), ..ev("Stop") }).unwrap();
     let text = wait_text(&mut c, &page_name, |t| t.contains("passwd"));
     assert_eq!(text, "> and /etc/passwd?\n\nUsers, one a line.\n");
+    let page = window_named(&c, &page_name).unwrap();
+    let tag = c.node.state.window(page).ok().and_then(|w| c.node.state.buffer(w.tag).ok()).map(|b| b.text.to_string()).unwrap();
+    assert!(tag.contains("| Look Back Fwd Latest"), "{tag:?}");
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Back".into() }, Duration::from_secs(5)).unwrap();
+    let text = wait_text(&mut c, &page_name, |t| t.contains("hosts"));
+    assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
+    // A new reply does not interrupt an older one being read.
+    event::append(&logs, &Event { text: Some("and /etc/groups?".into()), ..ev("UserPromptSubmit") }).unwrap();
+    event::append(&logs, &Event { text: Some("Groups, one a line.".into()), ..ev("Stop") }).unwrap();
+    wait_text(&mut c, &pane_name, |t| t.contains("Groups, one a line."));
+    assert_eq!(text_of(&c, page), "> what is in hosts?\n\nIt names localhost.\n");
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Fwd".into() }, Duration::from_secs(5)).unwrap();
+    let text = wait_text(&mut c, &page_name, |t| t.contains("passwd"));
+    assert_eq!(text, "> and /etc/passwd?\n\nUsers, one a line.\n");
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Latest".into() }, Duration::from_secs(5)).unwrap();
+    let text = wait_text(&mut c, &page_name, |t| t.contains("groups"));
+    assert_eq!(text, "> and /etc/groups?\n\nGroups, one a line.\n");
     // Preview again closes it
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview 0b1c".into() }, Duration::from_secs(5)).unwrap();
     wait_gone(&mut c, &page_name);

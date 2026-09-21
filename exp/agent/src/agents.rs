@@ -71,6 +71,9 @@ pub struct Agent {
     /// The last exchange finished, which the page shows: it stands
     /// while the next turn is going, until that one is whole.
     pub exchange: Option<Exchange>,
+    /// Every exchange finished, oldest first, for the page's Back and
+    /// Fwd navigation.
+    pub exchanges: Vec<Exchange>,
     /// Why the turn failed.
     pub why: Option<String>,
     pub subagents: usize,
@@ -84,7 +87,7 @@ pub struct Agent {
 
 impl Agent {
     pub fn new(session: &str) -> Agent {
-        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, rev: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, why: None, subagents: 0, subs: BTreeMap::new(), decided: None, mode: None }
+        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, rev: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, exchanges: Vec::new(), why: None, subagents: 0, subs: BTreeMap::new(), decided: None, mode: None }
     }
 
     /// Enough of the id to tell it apart, and to B3.
@@ -233,7 +236,9 @@ impl Agent {
                 self.asking = None;
                 self.said = e.text.clone();
                 if let Some(said) = e.text.as_deref().filter(|t| !t.trim().is_empty()) {
-                    self.exchange = Some(Exchange { asked: self.prompt.clone().unwrap_or_default(), said: said.to_string() });
+                    let exchange = Exchange { asked: self.prompt.clone().unwrap_or_default(), said: said.to_string() };
+                    self.exchange = Some(exchange.clone());
+                    self.exchanges.push(exchange);
                 }
             }
             "Interrupt" => {

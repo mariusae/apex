@@ -106,7 +106,7 @@ pub fn pane_present(dir: &Path) -> bool {
 /// Whether a process is there.
 pub fn alive(pid: i32) -> bool {
     // SAFETY: signal 0 delivers nothing; it asks whether the process is there
-    unsafe { libc::kill(pid, 0) == 0 || *libc::__error() != libc::ESRCH }
+    unsafe { libc::kill(pid, 0) == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) }
 }
 
 /// The session a log file is of, from its name.
@@ -188,6 +188,11 @@ pub fn events(lines: &[String]) -> Vec<Event> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_current_process_is_alive() {
+        assert!(alive(std::process::id() as i32));
+    }
 
     #[test]
     fn a_log_is_read_as_it_grows_and_a_half_line_waits() {

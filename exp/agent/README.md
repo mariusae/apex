@@ -251,7 +251,10 @@ was asked, quoted, and then the answer -- the agent's last word on the
 turn, not the running commentary on the way to it, which the
 transcript has. It is written afresh as each turn ends, so it always
 shows the latest answer whole, and holds still while the next one is
-being made. `Preview` again closes it. The page is
+being made. `Back` and `Fwd` in the preview move through the agent's
+earlier and later finished replies. While an earlier reply is showing,
+new replies do not move the page; `Latest` catches it up. `Preview` again
+closes it. The page is
 `AGENTDIR/-claude+ID+Preview`, and goes through the converter the
 session names for markdown (`Preview.md`, `apex md` unless a setting
 says otherwise), so it looks like every other preview.

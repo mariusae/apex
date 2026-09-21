@@ -101,6 +101,22 @@ struct Detail {
     send: RuleId,
 }
 
+/// An agent's open preview and the exchange it is showing.
+struct Page {
+    session: String,
+    at: Option<usize>,
+    back: RuleId,
+    fwd: RuleId,
+    latest: RuleId,
+}
+
+#[derive(Clone, Copy)]
+enum PageNav {
+    Back,
+    Fwd,
+    Latest,
+}
+
 pub struct Pane {
     t: Tool,
     /// The overview window, when `-a` asked for one.
@@ -116,8 +132,8 @@ pub struct Pane {
     starts: Vec<usize>,
     footer: String,
     details: HashMap<WindowId, Detail>,
-    /// The pages open, each showing an agent's last exchange.
-    pages: HashMap<WindowId, String>,
+    /// The pages open, each showing one of an agent's exchanges.
+    pages: HashMap<WindowId, Page>,
     /// The diff windows open, by agent.
     diffs: HashMap<WindowId, String>,
     /// The history window, while `History` has one open, and the
@@ -247,6 +263,8 @@ impl Pane {
         pane.look()?;
         pane.sweep();
         pane.render()?;
+        pane.sync_targets()?;
+        pane.sync_flags();
         Ok(pane)
     }
 
@@ -279,7 +297,11 @@ impl Pane {
                 None => {}
                 Some(Event::Deleted { window }) if Some(window) == self.w => return Ok(()),
                 Some(Event::Deleted { window }) => {
-                    self.pages.remove(&window);
+                    if let Some(page) = self.pages.remove(&window) {
+                        self.t.withdraw(page.back);
+                        self.t.withdraw(page.fwd);
+                        self.t.withdraw(page.latest);
+                    }
                     self.diffs.remove(&window);
                     if self.hist == Some(window) {
                         self.hist = None;
@@ -301,14 +323,28 @@ impl Pane {
                     self.t.answer(&p, taken)?;
                 }
                 Some(Event::Plumb(p)) => {
+                    let page_nav = p.window.and_then(|w| {
+                        self.pages.get(&w).and_then(|page| {
+                            if p.rule == page.back {
+                                Some((w, PageNav::Back))
+                            } else if p.rule == page.fwd {
+                                Some((w, PageNav::Fwd))
+                            } else if p.rule == page.latest {
+                                Some((w, PageNav::Latest))
+                            } else {
+                                None
+                            }
+                        })
+                    });
                     // in an agent's own window, the verb means that agent
                     let target = p.window.and_then(|w| self.targets.get(&w).map(|t| t.session.clone()));
-                    let taken = match (self.verbs.get(&p.rule).copied(), target) {
-                        (Some(v), Some(key)) => self.verb_for(v, &key)?,
-                        (Some(v), None) => self.verb(v, &p.text, p.at)?,
-                        (None, _) if Some(p.rule) == self.look => self.open_at(p.sel.or(p.at))?,
-                        (None, _) if p.rule == self.look_any => self.open_id(&p.text)?,
-                        (None, _) => match p.window.and_then(|w| self.details.get(&w).map(|d| (d.send, w))) {
+                    let taken = match (page_nav, self.verbs.get(&p.rule).copied(), target) {
+                        (Some((w, nav)), _, _) => self.navigate_page(w, nav)?,
+                        (None, Some(v), Some(key)) => self.verb_for(v, &key)?,
+                        (None, Some(v), None) => self.verb(v, &p.text, p.at)?,
+                        (None, None, _) if Some(p.rule) == self.look => self.open_at(p.sel.or(p.at))?,
+                        (None, None, _) if p.rule == self.look_any => self.open_id(&p.text)?,
+                        (None, None, _) => match p.window.and_then(|w| self.details.get(&w).map(|d| (d.send, w))) {
                             Some((send, w)) if send == p.rule => self.send_from_detail(w, &p.text)?,
                             _ => false,
                         },
@@ -953,10 +989,11 @@ impl Pane {
 
     // ---- the pages ----
 
-    /// `Preview`: the agent's last exchange as a page beside the pane,
+    /// `Preview`: the agent's exchanges as a page beside the pane,
     /// what was asked and then the answer, rendered as apex-acp's is;
     /// again, to close it. It is written afresh as each turn ends, so
-    /// it always shows the latest answer whole.
+    /// it follows the latest answer while that is the one being shown;
+    /// Back and Fwd move among finished answers, and Latest catches up.
     fn preview_verb(&mut self, args: &str, at: Option<Range>) -> apex_tool::Result<bool> {
         let Some(key) = self.meant("Preview", args, at)? else { return Ok(!args.trim().is_empty()) };
         self.preview_for(&key)
@@ -965,28 +1002,73 @@ impl Pane {
     /// The page for the agent named, or closed again.
     fn preview_for(&mut self, key: &str) -> apex_tool::Result<bool> {
         let key = key.to_string();
-        if let Some((&w, _)) = self.pages.iter().find(|(_, s)| **s == key) {
+        if let Some((&w, _)) = self.pages.iter().find(|(_, page)| page.session == key) {
             let _ = self.t.delete(w);
-            self.pages.remove(&w);
+            if let Some(page) = self.pages.remove(&w) {
+                self.t.withdraw(page.back);
+                self.t.withdraw(page.fwd);
+                self.t.withdraw(page.latest);
+            }
             return Ok(true);
         }
         let Some(a) = self.agents.get(&key).cloned() else { return Ok(true) };
         let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
         let name = format!("{}/-{kind}+{}+Preview", a.cwd.trim_end_matches('/'), a.short());
-        let html = page::render(&self.t, Path::new(&a.cwd), a.exchange.as_ref().map(|x| (x.asked.as_str(), x.said.as_str())));
+        let at = a.exchanges.len().checked_sub(1);
+        let html = page::render(&self.t, Path::new(&a.cwd), at.and_then(|i| a.exchanges.get(i)).map(|x| (x.asked.as_str(), x.said.as_str())));
         let w = self.t.new_page(&name, &html)?;
         // ours, as the preview tool's page is: Del does not ask
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_live(w, true);
-        self.pages.insert(w, key);
+        let _ = self.t.set_tag(w, "Look Back Fwd Latest");
+        let back = self.t.offer(Rule::verb("Back").window(w))?;
+        let fwd = self.t.offer(Rule::verb("Fwd").window(w))?;
+        let latest = self.t.offer(Rule::verb("Latest").window(w))?;
+        self.pages.insert(w, Page { session: key, at, back, fwd, latest });
         Ok(true)
     }
 
-    /// The agent's page again, when one is open.
+    /// Follow a newly finished exchange only when the page was already
+    /// showing the newest one. A page being read further back stays put.
     fn show_page(&mut self, session: &str) -> apex_tool::Result<()> {
-        let Some((&w, _)) = self.pages.iter().find(|(_, s)| *s == session) else { return Ok(()) };
-        let Some(a) = self.agents.get(session) else { return Ok(()) };
-        let html = page::render(&self.t, Path::new(&a.cwd), a.exchange.as_ref().map(|x| (x.asked.as_str(), x.said.as_str())));
+        let Some((&w, page)) = self.pages.iter().find(|(_, page)| page.session == session) else { return Ok(()) };
+        let latest = self.agents.get(session).and_then(|a| a.exchanges.len().checked_sub(1));
+        let following = match (page.at, latest) {
+            (None, Some(0)) => true,
+            (Some(at), Some(latest)) => at.checked_add(1) == Some(latest),
+            _ => false,
+        };
+        if !following {
+            return Ok(());
+        }
+        self.pages.get_mut(&w).expect("page just found").at = latest;
+        self.render_page(w)
+    }
+
+    /// Back to the previous exchange, Fwd to the next, or straight to
+    /// Latest. At either end the verb is still taken and the page stays.
+    fn navigate_page(&mut self, w: WindowId, nav: PageNav) -> apex_tool::Result<bool> {
+        let Some(page) = self.pages.get(&w) else { return Ok(false) };
+        let len = self.agents.get(&page.session).map(|a| a.exchanges.len()).unwrap_or(0);
+        let next = match nav {
+            PageNav::Back => page.at.and_then(|at| at.checked_sub(1)),
+            PageNav::Fwd => page.at.and_then(|at| (at + 1 < len).then_some(at + 1)),
+            PageNav::Latest => len.checked_sub(1),
+        };
+        let Some(next) = next else { return Ok(true) };
+        if page.at == Some(next) {
+            return Ok(true);
+        }
+        self.pages.get_mut(&w).expect("page just found").at = Some(next);
+        self.render_page(w)?;
+        Ok(true)
+    }
+
+    /// Render the exchange selected in an open page.
+    fn render_page(&mut self, w: WindowId) -> apex_tool::Result<()> {
+        let Some(page) = self.pages.get(&w) else { return Ok(()) };
+        let Some(a) = self.agents.get(&page.session) else { return Ok(()) };
+        let html = page::render(&self.t, Path::new(&a.cwd), page.at.and_then(|i| a.exchanges.get(i)).map(|x| (x.asked.as_str(), x.said.as_str())));
         self.t.replace(w, 0, END, &html)
     }
 
