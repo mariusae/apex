@@ -193,6 +193,24 @@ struct Flag {
     dismissed: bool,
 }
 
+/// The most recently active agent in each window of this apex session.
+/// A terminal can be reused for another provider session; its verbs and
+/// notification belong to the new session, not the first one seen there.
+fn current_in_windows<'a>(agents: &'a Agents, session: &str, windows: &[WindowId], pane: Option<WindowId>) -> Vec<(WindowId, &'a agents::Agent)> {
+    let mut current = BTreeMap::new();
+    for a in agents.ordered() {
+        if session.is_empty() || a.apex.as_deref() != Some(session) {
+            continue;
+        }
+        let Some(w) = a.win.map(WindowId).filter(|w| windows.contains(w) && Some(*w) != pane) else { continue };
+        let newer = current.get(&w).is_none_or(|old: &&agents::Agent| (a.last, a.started, a.session.as_str()) > (old.last, old.started, old.session.as_str()));
+        if newer {
+            current.insert(w, a);
+        }
+    }
+    current.into_iter().collect()
+}
+
 /// The verbs on an agent's own window: the transcript, named as
 /// apex-acp names its own; the page; the changes.
 const TARGET_VERBS: [&str; 3] = ["Transcript", "Preview", "Changes"];
@@ -378,13 +396,9 @@ impl Pane {
     fn sync_targets(&mut self) -> apex_tool::Result<()> {
         let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
         // what should be targeted now
-        let want: Vec<(WindowId, String, bool)> = self
-            .agents
-            .ordered()
-            .iter()
-            .filter(|a| a.apex.as_deref() == Some(self.session.as_str()) && !self.session.is_empty())
-            .filter_map(|a| a.win.map(|w| (WindowId(w), a.session.clone(), a.state == State::Asking && a.decided.is_none())))
-            .filter(|(w, _, _)| windows.contains(w) && Some(*w) != self.w)
+        let want: Vec<(WindowId, String, bool)> = current_in_windows(&self.agents, &self.session, &windows, self.w)
+            .into_iter()
+            .map(|(w, a)| (w, a.session.clone(), a.state == State::Asking && a.decided.is_none()))
             .collect();
         // gone: the window, or the agent, or another agent in its place
         let stale: Vec<WindowId> = self.targets.iter().filter(|(w, t)| !want.iter().any(|(ww, s, _)| ww == *w && *s == t.session)).map(|(w, _)| *w).collect();
@@ -459,14 +473,10 @@ impl Pane {
             return;
         }
         let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
-        let mine = self.session.clone();
-        let want: Vec<(String, WindowId)> = self
-            .agents
-            .ordered()
-            .iter()
-            .filter(|a| matches!(a.state, State::Idle | State::Asking | State::Failed))
-            .filter(|a| a.apex.as_deref() == Some(mine.as_str()))
-            .filter_map(|a| Some((a.session.clone(), a.win.map(WindowId).filter(|w| windows.contains(w))?)))
+        let want: Vec<(String, WindowId)> = current_in_windows(&self.agents, &self.session, &windows, self.w)
+            .into_iter()
+            .filter(|(_, a)| matches!(a.state, State::Idle | State::Asking | State::Failed))
+            .map(|(w, a)| (a.session.clone(), w))
             .collect();
         // back at work, gone, or moved: the notification goes
         let stale: Vec<String> = self.flags.iter().filter(|(s, f)| !want.iter().any(|(k, w)| k == *s && *w == f.window)).map(|(s, _)| s.clone()).collect();
@@ -1328,12 +1338,37 @@ pub fn quoted(name: &str, line: usize, sel: &str) -> String {
 }
 
 #[cfg(test)]
-mod copy_context_tests {
-    use super::quoted;
+mod tests {
+    use super::{current_in_windows, quoted};
+    use crate::agents::Agents;
+    use crate::event::Event;
+    use apex_tool::WindowId;
 
     #[test]
     fn a_selection_goes_with_where_it_is_and_fenced() {
         assert_eq!(quoted("/src/main.rs", 123, "fn main() {}"), "/src/main.rs:123:\n```\nfn main() {}\n```");
         assert_eq!(quoted("/src/main.rs", 7, "a\nb\n"), "/src/main.rs:7:\n```\na\nb\n```");
+    }
+
+    #[test]
+    fn a_reused_window_belongs_to_the_most_recent_agent_session() {
+        let event = |session: &str, event: &str, ms: i64| Event {
+            ms,
+            agent: "claude".into(),
+            event: event.into(),
+            session: session.into(),
+            cwd: "/repo".into(),
+            apex: Some("apex-session".into()),
+            win: Some(42),
+            ..Event::default()
+        };
+        let mut agents = Agents::default();
+        agents.apply(&event("old-provider", "SessionStart", 1));
+        agents.apply(&event("old-provider", "Stop", 2));
+        agents.apply(&event("new-provider", "SessionStart", 3));
+        agents.apply(&event("new-provider", "UserPromptSubmit", 4));
+
+        let current = current_in_windows(&agents, "apex-session", &[WindowId(42)], None);
+        assert_eq!(current.iter().map(|(_, a)| a.session.as_str()).collect::<Vec<_>>(), vec!["new-provider"]);
     }
 }
