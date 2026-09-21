@@ -1190,8 +1190,10 @@ replacing and delete/rename flags are not done.
 
 ## 10. Terminals and web windows
 
-**Terminals** use alacritty_terminal on the server: pty, reader thread and
-grid. The `term` shard is pinned to the server. The client renders rows from
+**Terminals** are libghostty-vt on the server, with the pty apex's own
+(`crate::pty`, `term_loop`): Ghostty's VT library parses the stream and
+keeps the screen, and opens no pty and starts no program (it makes no
+threads at all), so the pty, its loop and the keys are ours. The `term` shard is pinned to the server. The client renders rows from
 its mirror and proposes keystrokes. Attach sends the visible grid; scrollback
 is paged. Resizing is a proposal (`Resize{cols, rows}`) the server applies to
 the pty. Selection inside a terminal (v2) is a `window` shard entry like any
@@ -1205,7 +1207,8 @@ stays on its text as the terminal scrolls. B1 drag selects (acme's
 yellow); cmd-c / Edit ▸ Copy, `Snarf` in the window's tag, or the B1+B2
 chord send `TermText` to the server, which has the scrollback, and its
 answer is a `Snarf` proposal (so Paste and Send have the text); the
-clipboard follows the snarf buffer. Wrapped lines join, as in alacritty.
+clipboard follows the snarf buffer. Wrapped lines join, as a terminal's
+own selection does.
 cmd-a selects the viewport. B2 and B3 sweep too (acme's `textselect23`,
 in but2col/but3col): what was swept is executed or plumbed, a plain click
 takes the word under it, and the B1 selection is left alone. Keys and
@@ -1214,8 +1217,25 @@ back to the bottom, republishing the rows at once. History lines are
 numbered from the oldest line kept, so a selection drifts once the
 scrollback limit truncates; a selection does not outlive that.
 
-*As built, labels and environment:* the pty loop is alacritty's with
-`win`'s label scan in front of the parser. A terminal's name follows one
+*As built, the VT library:* `ghostty-vt-sys` builds libghostty-vt from a
+pinned Ghostty commit with Zig (its C API is on main alone; the tagged
+releases carry the OSC and SGR parsers and no terminal), keeping the
+source and the archive under `~/.cache/apex` so it is built once per
+commit. `APEX_GHOSTTY_SRC` builds a checkout instead, `APEX_GHOSTTY_LIB`
+takes a built one and builds nothing, and `ZIG` says which Zig. A C shim
+(`shim.c`) walks the grid and hands back the cells of a term shard -- a
+character, a foreground, a background, flags, a link -- so the library's
+enums and sized structs, which are not stable yet, are read from its
+headers by the compiler rather than copied into Rust by hand. Colours
+come packed as the shard carries them: one of the sixteen by its index,
+for the client's theme to colour, and anything else exactly. What a
+program asks for the library answers itself -- device attributes, the
+cursor's position, the colours (OSC 4, 10, 11) -- writing the answer
+through a callback that the loop puts on the pty; the colours it answers
+with are the client's, given to every terminal as they change.
+
+*As built, labels and environment:* the pty loop is ours, with `win`'s
+label scan in front of the parser. A terminal's name follows one
 rule, `{osc7 path}/-{title}` (`term::compose_name`): OSC 7
 (`file://host/path`) is the path, and once it has reported, nothing else
 ever is; the title is an xterm title (OSC 0/2) or plan9port's
@@ -1246,9 +1266,9 @@ Newterm.scrollback 50000` in the profile; 10000 by default, read when
 the terminal is made), and `Clear`, offered in a terminal's tools menu
 by a server rule (`apex term clear $win`), drops the scrollback and
 keeps the screen. A resize keeps the viewport where it was in the
-history as far as it can (alacritty's grid: a taller screen takes its
-extra lines from the history above, so a viewport scrolled back by
-fewer lines than the growth ends at the bottom); and a size the window
+history as far as it can (a taller screen takes its extra lines from
+the history above, so a viewport scrolled back by fewer lines than the
+growth ends at the bottom); and a size the window
 takes while the terminal is scrolled back is held (`TermHost::held_size`),
 neither the grid nor the pty resized, until the terminal is back at
 the bottom (a key, a paste, a scroll), so the program hears of one
