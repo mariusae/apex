@@ -437,16 +437,17 @@ impl Pane {
         Ok(())
     }
 
-    /// `CopyContext` in a window: its selection, headed by where it is
-    /// and fenced, into the snarf buffer and the clipboard, for whatever
-    /// prompt it goes into.
+    /// `CopyContext` in a window: its selection, or the line at dot when
+    /// the selection is empty, headed by where it is and fenced, into the
+    /// snarf buffer and the clipboard, for whatever prompt it goes into.
     fn copy_context(&mut self, w: Option<WindowId>, at: Option<Range>) -> apex_tool::Result<bool> {
         let Some(w) = w else { return Ok(false) };
-        let Some(r) = at.filter(|r| r.q1 > r.q0) else {
-            self.t.errors(None, "CopyContext: select what to copy first\n")?;
-            return Ok(true);
+        let at = match at {
+            Some(r) => r,
+            None => self.t.selection(w)?,
         };
         let text = self.t.read(w)?;
+        let r = context_range(&text, at);
         let sel: String = text.chars().skip(r.q0).take(r.q1 - r.q0).collect();
         let line = text.chars().take(r.q0).filter(|c| *c == '\n').count() + 1;
         let name = self.t.window_name(w).unwrap_or_default();
@@ -1330,8 +1331,20 @@ pub fn term_send(session: &str, win: u64, text: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// A selection as `CopyContext` copies it: where it is, as a place an
-/// agent (and B3) can go to, then the text, fenced.
+/// The selection to copy, or the whole line containing an empty dot.
+fn context_range(text: &str, at: Range) -> Range {
+    let len = text.chars().count();
+    let at = Range { q0: at.q0.min(len), q1: at.q1.min(len) };
+    if at.q1 > at.q0 {
+        return at;
+    }
+    let q0 = text.chars().take(at.q0).enumerate().filter_map(|(i, c)| (c == '\n').then_some(i + 1)).last().unwrap_or(0);
+    let q1 = at.q0 + text.chars().skip(at.q0).position(|c| c == '\n').unwrap_or(len - at.q0);
+    Range { q0, q1 }
+}
+
+/// Context as `CopyContext` copies it: where it is, as a place an agent
+/// (and B3) can go to, then the text, fenced.
 pub fn quoted(name: &str, line: usize, sel: &str) -> String {
     let nl = if sel.ends_with('\n') { "" } else { "\n" };
     format!("{name}:{line}:\n```\n{sel}{nl}```")
@@ -1339,7 +1352,7 @@ pub fn quoted(name: &str, line: usize, sel: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{current_in_windows, quoted};
+    use super::{context_range, current_in_windows, quoted};
     use crate::agents::Agents;
     use crate::event::Event;
     use apex_tool::WindowId;
@@ -1348,6 +1361,15 @@ mod tests {
     fn a_selection_goes_with_where_it_is_and_fenced() {
         assert_eq!(quoted("/src/main.rs", 123, "fn main() {}"), "/src/main.rs:123:\n```\nfn main() {}\n```");
         assert_eq!(quoted("/src/main.rs", 7, "a\nb\n"), "/src/main.rs:7:\n```\na\nb\n```");
+    }
+
+    #[test]
+    fn an_empty_selection_is_the_line_at_dot() {
+        let text = "one\ntwo words\nthree\n";
+        assert_eq!(context_range(text, apex_tool::Range { q0: 8, q1: 8 }), apex_tool::Range { q0: 4, q1: 13 });
+        assert_eq!(context_range(text, apex_tool::Range { q0: 3, q1: 3 }), apex_tool::Range { q0: 0, q1: 3 });
+        assert_eq!(context_range(text, apex_tool::Range { q0: text.chars().count(), q1: text.chars().count() }), apex_tool::Range { q0: 20, q1: 20 });
+        assert_eq!(context_range(text, apex_tool::Range { q0: 4, q1: 13 }), apex_tool::Range { q0: 4, q1: 13 });
     }
 
     #[test]

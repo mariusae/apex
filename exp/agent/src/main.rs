@@ -39,8 +39,8 @@
 //! agent's transcript beside it; `Preview` its page; `Changes` its
 //! diff; `Goto` goes to the agent itself, the window it was started in,
 //! in whatever session that was; `Send TEXT` types into that window;
-//! `CopyContext` in any text window copies its selection, headed by the
-//! file and line it came from, for a prompt;
+//! `CopyContext` in any text window copies its selection, or the current
+//! line when there is none, headed by the file and line it came from;
 //! `Start` and `Resume` make terminals running agents; `History` lists
 //! the directory's past sessions.
 //!

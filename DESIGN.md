@@ -2239,7 +2239,7 @@ rules naming it -- `Transcript`, `Preview`, `Changes` while it runs,
 `Allow Deny Ask` while it asks -- so the agent's own window answers it,
 as apex-acp's does; that, and the notifications, are the whole of it
 without `-a`. And `CopyContext`, a rule by window kind in every text window, copies
-the window's selection (`Tool::snarf`, so the clipboard too), headed by
+the window's selection, or the current line when there is none (`Tool::snarf`, so the clipboard too), headed by
 `path:line:` and fenced, for the user to put into a prompt as they see
 fit; it is copied rather than sent to an agent, so how it joins the
 prompt stays the user's. Both are the session's agents, `-all` every agent on the

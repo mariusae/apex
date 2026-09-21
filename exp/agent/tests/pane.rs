@@ -314,23 +314,29 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let said = wait_text(&mut c, "+Errors", |t| t.contains("Send:"));
     assert!(said.contains("Send: ") && (said.contains("apex term send") || said.contains("no apex command") || said.contains("session")), "{said:?}");
 
-    // CopyContext in a file's window: its selection, with where it is,
-    // into the snarf buffer; with nothing selected, that is said
+    // CopyContext in a file's window: its selection, or the line at dot
+    // with no selection, with where it is, into the snarf buffer
     let fw = c.propose(apex_server::Proposal::NewWindow { col, name: proj.join("src/a.rs").display().to_string() }, Duration::from_secs(5)).unwrap().unwrap();
     let v = menu(&mut c, fw, &["CopyContext"]);
     assert!(v.iter().any(|x| x == "CopyContext"), "{v:?}");
-    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(fw), text: "CopyContext".into() }, Duration::from_secs(5)).unwrap();
-    wait_text(&mut c, "+Errors", |t| t.contains("CopyContext: select"));
     let fb = c.node.state.window(fw).unwrap().body_buffer().unwrap();
     let version = c.node.state.buffers[&fb].version;
     c.propose(apex_server::Proposal::Insert { buffer: fb, version, at: 0, text: "one\ntwo\n".into(), follow: false }, Duration::from_secs(5)).unwrap();
-    c.propose(apex_server::Proposal::Select { view: ViewId::Body(fw), q0: 4, q1: 8 }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(fw), q0: 5, q1: 5 }, Duration::from_secs(5)).unwrap();
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(fw), text: "CopyContext".into() }, Duration::from_secs(5)).unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
-    while !c.node.state.layout.snarf.contains("```") && Instant::now() < deadline {
+    while !c.node.state.layout.snarf.contains(":2:") && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
     }
     assert_eq!(c.node.state.layout.snarf, format!("{}:2:\n```\ntwo\n```", proj.join("src/a.rs").display()));
+    // A real selection still wins over the line at dot.
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(fw), q0: 0, q1: 3 }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(fw), text: "CopyContext".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !c.node.state.layout.snarf.contains(":1:") && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert_eq!(c.node.state.layout.snarf, format!("{}:1:\n```\none\n```", proj.join("src/a.rs").display()));
 
     // the session ends: the block goes, the log with it, and the
     // transcript window says so and stays

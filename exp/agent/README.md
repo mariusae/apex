@@ -179,8 +179,9 @@ since it comes back as the agent's own record of it. `apex` must be on
 PATH, which in an apex terminal it is.
 
 `CopyContext` is offered in every text window -- a file's, a
-directory's, `+Errors` -- and copies that window's selection, with
-where it came from, fenced, to the snarf buffer and the clipboard:
+directory's, `+Errors` -- and copies that window's selection, or the
+whole current line when there is none, with where it came from, fenced,
+to the snarf buffer and the clipboard:
 
     /path/to/file:123:
     ```
