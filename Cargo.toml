@@ -6,6 +6,7 @@ members = ["crates/apex-edit", "crates/apex-core", "crates/apex-server", "crates
     "crates/apex-tool-preview",
     "crates/apex-tool",
     "crates/apex-tool-bridge",
+    "crates/ghostty-vt-sys",
     "exp/acp",
     "exp/agent"]
 
