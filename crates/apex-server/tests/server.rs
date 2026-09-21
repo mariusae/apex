@@ -1139,3 +1139,34 @@ fn b3_looks_in_the_window_it_was_in_not_the_one_last_selected() {
     assert_eq!(node.selection(ViewId::Body(b)).unwrap(), (4, 9));
     assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (0, 0), "the other window is left alone");
 }
+
+#[test]
+fn a_terminal_says_how_much_of_it_the_view_shows() {
+    // the scrollbar draws the viewport against the whole screen, the
+    // history and the viewport together, as a text window's does
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    let view = |n: &Node| n.state.terms.get(&t).map(|t| (t.top, t.total, t.rows as u64)).unwrap();
+    let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains('$') || grid_text(n).contains('%')));
+    // nothing has scrolled away: the view is the whole of it
+    let (top, total, rows) = view(&node);
+    assert_eq!((top, total), (0, rows), "a fresh terminal is all viewport");
+    // output enough to fill the history: the view is a part of it now
+    for c in "i=0; while [ $i -lt 60 ]; do echo line$i; i=$((i+1)); done\r".chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("line59")));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| view(n).1 > view(n).2));
+    let (top, total, rows) = view(&node);
+    assert!(total > rows, "the history grew: {top} {total} {rows}");
+    assert_eq!(top, total - rows, "at the bottom the view ends at the last row");
+    // scrolled back, the view moves up the bar and keeps its size
+    server.term_scroll(&mut log, t, -5);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| view(n).0 == top - 5));
+    let (up_top, up_total, up_rows) = view(&node);
+    assert_eq!((up_top, up_rows), (top - 5, rows));
+    assert!(up_total >= total, "the history did not shrink");
+}

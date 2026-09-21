@@ -1265,7 +1265,12 @@ keeps `Newterm.scrollback` lines of history (`apex set
 Newterm.scrollback 50000` in the profile; 10000 by default, read when
 the terminal is made), and `Clear`, offered in a terminal's tools menu
 by a server rule (`apex term clear $win`), drops the scrollback and
-keeps the screen. A resize keeps the viewport where it was in the
+keeps the screen. A terminal's scrollbar is a text window's: the bar
+dark, and the part of it the viewport takes of the whole screen -- the
+history and the viewport together -- in the paper, so how much of the
+output is in view, and where, reads the same in a terminal as anywhere
+else. `TermOp::View` carries both what it needs, the viewport's first
+row and the screen's rows (`total`). A resize keeps the viewport where it was in the
 history as far as it can (a taller screen takes its extra lines from
 the history above, so a viewport scrolled back by fewer lines than the
 growth ends at the bottom); and a size the window

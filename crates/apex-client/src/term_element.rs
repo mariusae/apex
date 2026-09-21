@@ -61,6 +61,9 @@ pub struct Prepaint {
     cols: u16,
     cursor: Option<(u16, u16)>,
     exited: bool,
+    /// What the scrollbar shows: the viewport's first row and how many
+    /// rows it holds, out of the whole screen's.
+    view: (u64, u64, u64),
 }
 
 pub struct TermElement {
@@ -126,6 +129,7 @@ impl Element for TermElement {
             // a B2/B3 sweep shows in the button's colour, over the selection
             let hl = acme.term_hl.filter(|(sw, ..)| *sw == self.window).map(|(_, b, p0, p1)| (b, order(p0, p1)));
             let top = t.top;
+            let total = t.total.max(t.rows as u64).max(1);
             let within = |x: usize, y: usize, (p0, p1): ((usize, u64), (usize, u64))| {
                 let line = top + y as u64;
                 (line, x) >= (p0.1, p0.0) && (line, x) < (p1.1, p1.0)
@@ -193,7 +197,7 @@ impl Element for TermElement {
                 row_text.push(line.clone());
                 rows.push(RowDraw { text: line.into(), runs, bgs });
             }
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some() })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some(), view: (top, t.rows as u64, total) })
         })
     }
 
@@ -213,8 +217,17 @@ impl Element for TermElement {
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             let th = crate::theme::theme();
             window.paint_quad(fill(bounds, rgb(th.body_bg)));
+            // acme's scrollbar, as a text window draws one: the bar dark,
+            // and the part of it the viewport takes of the whole screen
+            // (the history and the viewport together) in the paper
             let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
             window.paint_quad(fill(sb, rgb(th.body_border)));
+            let (top, shown, total) = pp.view;
+            let h = bounds.size.height;
+            let t0 = h * (top.min(total) as f32 / total as f32);
+            let t1 = h * ((top + shown).min(total) as f32 / total as f32);
+            let thumb = Bounds::new(point(bounds.left(), bounds.top() + t0), size(px(SCROLLWID - 1.), (t1 - t0).max(px(2.))));
+            window.paint_quad(fill(thumb, rgb(th.body_bg)));
             for (i, row) in pp.rows.iter().enumerate() {
                 let y = origin.y + lh * i as f32;
                 for &(x, n, c) in &row.bgs {

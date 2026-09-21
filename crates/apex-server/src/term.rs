@@ -251,6 +251,7 @@ pub struct TermHost {
 
 struct Published {
     top: u64,
+    total: u64,
     links: Vec<String>,
     rows: Vec<Vec<Cell>>,
     cursor: (u16, u16, bool),
@@ -623,10 +624,13 @@ impl TermHost {
     /// cursor when it moved. Nothing when nothing changed.
     pub fn changed_ops(&mut self) -> Vec<TermOp> {
         let all = self.snapshot_ops();
-        let (mut top, mut links, mut rows, mut cursor) = (0u64, Vec::new(), Vec::new(), (0u16, 0u16, true));
+        let (mut top, mut total, mut links, mut rows, mut cursor) = (0u64, 0u64, Vec::new(), Vec::new(), (0u16, 0u16, true));
         for op in all {
             match op {
-                TermOp::View { top: t } => top = t,
+                TermOp::View { top: t, total: n } => {
+                    top = t;
+                    total = n;
+                }
                 TermOp::Links { links: l } => links = l,
                 TermOp::Rows { rows: r, .. } => rows = r,
                 TermOp::Cursor { col, row, visible } => cursor = (col, row, visible),
@@ -636,8 +640,8 @@ impl TermHost {
         let mut out = Vec::new();
         match &self.last {
             Some(p) if p.rows.len() == rows.len() && p.rows.iter().zip(rows.iter()).all(|(a, b)| a.len() == b.len()) => {
-                if p.top != top {
-                    out.push(TermOp::View { top });
+                if (p.top, p.total) != (top, total) {
+                    out.push(TermOp::View { top, total });
                 }
                 if p.links != links {
                     out.push(TermOp::Links { links: links.clone() });
@@ -660,13 +664,13 @@ impl TermHost {
                 }
             }
             _ => {
-                out.push(TermOp::View { top });
+                out.push(TermOp::View { top, total });
                 out.push(TermOp::Links { links: links.clone() });
                 out.push(TermOp::Rows { first: 0, rows: rows.clone() });
                 out.push(TermOp::Cursor { col: cursor.0, row: cursor.1, visible: cursor.2 });
             }
         }
-        self.last = Some(Published { top, links, rows, cursor });
+        self.last = Some(Published { top, total, links, rows, cursor });
         out
     }
 
@@ -674,9 +678,13 @@ impl TermHost {
     pub fn snapshot_ops(&self) -> Vec<TermOp> {
         let blank = Cell { ch: ' ', fg: 0, bg: 0, flags: 0, link: 0 };
         let Ok(mut t) = self.term.lock() else {
-            return vec![TermOp::View { top: 0 }, TermOp::Links { links: Vec::new() }, TermOp::Rows { first: 0, rows: vec![vec![blank; self.cols as usize]; self.rows as usize] }, TermOp::Cursor { col: 0, row: 0, visible: false }];
+            return vec![TermOp::View { top: 0, total: self.rows as u64 }, TermOp::Links { links: Vec::new() }, TermOp::Rows { first: 0, rows: vec![vec![blank; self.cols as usize]; self.rows as usize] }, TermOp::Cursor { col: 0, row: 0, visible: false }];
         };
+        // the scrollbar measures the view against the whole screen, the
+        // history and the viewport together
+        let (_, total, _) = t.size();
         let screen = t.screen();
+        let total = total.max(screen.rows as u64);
         let (cols, rows_n) = (screen.cols as usize, screen.rows as usize);
         let mut rows: Vec<Vec<Cell>> = vec![vec![blank; cols]; rows_n];
         for (y, row) in rows.iter_mut().enumerate() {
@@ -686,7 +694,7 @@ impl TermHost {
             }
         }
         vec![
-            TermOp::View { top: screen.top },
+            TermOp::View { top: screen.top, total },
             TermOp::Links { links: screen.links.clone() },
             TermOp::Rows { first: 0, rows },
             TermOp::Cursor { col: screen.cursor.0, row: screen.cursor.1, visible: screen.cursor_visible },
@@ -778,7 +786,7 @@ mod scroll_tests {
         let (tx, _rx) = futures::channel::mpsc::unbounded();
         let cmd = "i=0; while [ $i -lt 400 ]; do echo line$i; i=$((i+1)); sleep 0.005; done; sleep 3";
         let mut h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh"), 1000).unwrap();
-        let top_of = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::View { top } = o { Some(*top) } else { None }).unwrap();
+        let top_of = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::View { top, .. } = o { Some(*top) } else { None }).unwrap();
         let first_row = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::Rows { rows, .. } = o { Some(rows[0].iter().map(|c| c.ch).collect::<String>().trim_end().to_string()) } else { None }).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while top_of(&h) < 30 && std::time::Instant::now() < deadline {

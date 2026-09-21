@@ -220,8 +220,10 @@ pub enum TermOp {
     Resize { cols: u16, rows: u16 },
     Exit { status: i32 },
     /// The viewport's first row is this line of the terminal's history
-    /// (0 is the oldest line kept); the client anchors selections to it.
-    View { top: u64 },
+    /// (0 is the oldest line kept); the client anchors selections to it,
+    /// and measures the view against `total`, the rows the whole screen
+    /// holds, history and viewport together, for the scrollbar.
+    View { top: u64, total: u64 },
 }
 
 // ---- meta -----------------------------------------------------------------

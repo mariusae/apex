@@ -201,6 +201,9 @@ pub struct Term {
     pub exit: Option<i32>,
     /// The history line shown in the viewport's first row.
     pub top: u64,
+    /// The rows the whole screen holds, the history and the viewport
+    /// together: what the scrollbar measures the view against.
+    pub total: u64,
 }
 
 // ---- meta -------------------------------------------------------------------
@@ -520,6 +523,7 @@ impl State {
                         cursor_visible: true,
                         exit: None,
                         top: 0,
+                        total: *rows as u64,
                     },
                 );
             }
@@ -549,7 +553,10 @@ impl State {
                         }
                     }
                     TermOp::Exit { status } => t.exit = Some(*status),
-                    TermOp::View { top } => t.top = *top,
+                    TermOp::View { top, total } => {
+                        t.top = *top;
+                        t.total = *total;
+                    }
                     TermOp::Create { .. } => unreachable!(),
                 }
             }
