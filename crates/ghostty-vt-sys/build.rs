@@ -4,9 +4,14 @@
 //! Ghostty's VT library is Zig, and its C API lives only on main (the
 //! tagged releases carry the OSC and SGR parsers alone), so a commit is
 //! pinned here and built with Zig. The build needs `zig` (0.16) and, the
-//! first time, the network. The source and the built library are kept
-//! under a cache directory, keyed by the commit, so this happens once
-//! per commit rather than once per build.
+//! first time, the network. The source and the built libraries are kept
+//! under a cache directory, keyed by the commit and (the libraries) by
+//! the target, so this happens once per commit and target rather than
+//! once per build; the checkout is shared between targets.
+//!
+//! The library is built for the target cargo builds for, so the Linux
+//! command the app carries for its hosts links a Linux archive, not the
+//! Mac's (Zig cross-compiles, as it does for the rest of that build).
 //!
 //! - `APEX_GHOSTTY_SRC`: a Ghostty checkout to build instead of cloning.
 //! - `APEX_GHOSTTY_LIB`: a directory holding `lib/libghostty-vt.a` and
@@ -49,10 +54,14 @@ fn main() {
     println!("cargo:include={}", include.display());
 }
 
-/// The library, built once per commit under the cache, then reused.
+/// The library, built once per commit and target under the cache, then
+/// reused.
 fn build_lib() -> PathBuf {
+    let target = std::env::var("TARGET").expect("TARGET");
+    let host = std::env::var("HOST").expect("HOST");
+    let zig_target = zig_target(&target).unwrap_or_else(|| panic!("libghostty-vt: no Zig target for {target}"));
     let cache = cache_dir().join(format!("ghostty-{}", &GHOSTTY_COMMIT[..12]));
-    let prefix = cache.join("out");
+    let prefix = cache.join("out").join(&zig_target);
     if prefix.join("lib/libghostty-vt.a").is_file() {
         return prefix;
     }
@@ -65,21 +74,53 @@ fn build_lib() -> PathBuf {
         }
     };
     let zig = zig().unwrap_or_else(|| panic!("libghostty-vt needs zig 0.16 to build: put it on PATH or set ZIG"));
-    run(
-        Command::new(&zig)
-            .current_dir(&src)
-            .arg("build")
-            .arg("-Demit-lib-vt=true")
-            // the xcframework wants xcodebuild, and we link the archive
-            .arg("-Demit-xcframework=false")
-            .arg("-Doptimize=ReleaseFast")
-            .arg("--summary")
-            .arg("none")
-            .arg("--prefix")
-            .arg(&prefix),
-        "zig build",
-    );
+    let mut cmd = Command::new(&zig);
+    cmd.current_dir(&src)
+        .arg("build")
+        .arg("-Demit-lib-vt=true")
+        // the xcframework wants xcodebuild, and we link the archive
+        .arg("-Demit-xcframework=false")
+        .arg("-Doptimize=ReleaseFast")
+        .arg("--summary")
+        .arg("none")
+        .arg("--prefix")
+        .arg(&prefix);
+    // building for ourselves, let Zig find the platform as it would; for
+    // anything else, name it
+    if target != host {
+        cmd.arg(format!("-Dtarget={zig_target}"));
+    }
+    run(&mut cmd, "zig build");
     prefix
+}
+
+/// Zig's name for a target of cargo's, as `zig build -Dtarget` takes it.
+fn zig_target(target: &str) -> Option<String> {
+    let mut parts = target.split('-');
+    let arch = parts.next()?;
+    let rest: Vec<&str> = parts.collect();
+    let arch = match arch {
+        "aarch64" => "aarch64",
+        "x86_64" => "x86_64",
+        "arm" | "armv7" => "arm",
+        "riscv64gc" => "riscv64",
+        other => other,
+    };
+    let (os, abi) = match rest.as_slice() {
+        // apple-darwin, apple-ios
+        [_, "darwin"] => ("macos", None),
+        [_, "ios"] => ("ios", None),
+        // unknown-linux-gnu, unknown-linux-musl, ...
+        [_, "linux", abi] => ("linux", Some(*abi)),
+        [_, "linux"] => ("linux", Some("gnu")),
+        // pc-windows-gnu, pc-windows-msvc
+        [_, "windows", abi] => ("windows", Some(*abi)),
+        _ => return None,
+    };
+    Some(match abi {
+        Some(abi) => format!("{arch}-{os}-{abi}"),
+        None => format!("{arch}-{os}"),
+    })
 }
 
 /// The pinned commit alone, fetched shallow into `src`.
