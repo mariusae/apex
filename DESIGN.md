@@ -1595,7 +1595,11 @@ left of the connection mark, the heartbeat's round trip and the log's
   failed, `4` waiting), which shells and build tools emit and other
   terminals draw as a bar, pulses the terminal's window while the work
   goes on and stops when it ends, fails, pauses -- or when the program
-  does, whatever it last said. The session itself says this one
+  does, whatever it last said. The bar is drawn too, as those terminals
+  draw it: two pixels across the top of the terminal's text, in a blue
+  that is no handle's colour, as far along as the program says and the
+  whole width while it does not say (`TermOp::Progress{going, at}`, the
+  terminal's own state, so every client draws the same bar). The session itself says this one
   (`SERVER`), which is in no attachment table and outlives every tool,
   so `window_working` takes it as always there.
 - *As built:* the app remembers every window with its session URL and

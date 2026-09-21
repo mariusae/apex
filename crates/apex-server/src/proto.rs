@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 30;
+pub const PROTOCOL: u32 = 31;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.

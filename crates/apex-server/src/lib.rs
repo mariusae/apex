@@ -562,11 +562,15 @@ impl Server {
                     // window's handle pulses while it is, as it does for
                     // a tool at work behind one
                     TermEvent::Working(on, at) => {
-                        h.progress = at;
-                        if h.working != on {
-                            h.working = on;
-                            if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                                props.push(Proposal::Working { window: w, by: on.then_some(SERVER) });
+                        if (h.working, h.progress) != (on, at) {
+                            let was = h.working;
+                            (h.working, h.progress) = (on, at);
+                            // the terminal carries the bar, the window the pulse
+                            let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: on, at }));
+                            if was != on {
+                                if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
+                                    props.push(Proposal::Working { window: w, by: on.then_some(SERVER) });
+                                }
                             }
                         }
                     }
@@ -575,6 +579,8 @@ impl Server {
                         // a program that said it was at work and then
                         // ended is at work no longer, whatever it said
                         if std::mem::take(&mut h.working) {
+                            h.progress = None;
+                            let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: false, at: None }));
                             if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
                                 props.push(Proposal::Working { window: w, by: None });
                             }

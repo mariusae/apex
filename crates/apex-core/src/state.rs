@@ -204,6 +204,10 @@ pub struct Term {
     /// The rows the whole screen holds, the history and the viewport
     /// together: what the scrollbar measures the view against.
     pub total: u64,
+    /// A program at work in it (OSC 9;4), and how far along it says it
+    /// is: the bar across the top of the terminal.
+    pub working: bool,
+    pub progress: Option<u8>,
 }
 
 // ---- meta -------------------------------------------------------------------
@@ -524,6 +528,8 @@ impl State {
                         exit: None,
                         top: 0,
                         total: *rows as u64,
+                        working: false,
+                        progress: None,
                     },
                 );
             }
@@ -556,6 +562,10 @@ impl State {
                     TermOp::View { top, total } => {
                         t.top = *top;
                         t.total = *total;
+                    }
+                    TermOp::Progress { going, at } => {
+                        t.working = *going;
+                        t.progress = *at;
                     }
                     TermOp::Create { .. } => unreachable!(),
                 }

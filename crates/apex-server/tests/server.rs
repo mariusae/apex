@@ -1191,9 +1191,17 @@ fn a_program_at_work_pulses_its_windows_handle() {
     // a program half way through its work
     type_in(&mut server, &mut log, "printf '\\033]9;4;1;50\\007'\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_working(w)), "the handle pulses while it works");
+    // and the terminal carries how far along, for the bar
+    let progress = |n: &Node| n.state.terms.get(&t).map(|t| (t.working, t.progress)).unwrap();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| progress(n) == (true, Some(50))), "{:?}", progress(&node));
+    // no percentage given: at work, as far along as it says, which is
+    // nothing
+    type_in(&mut server, &mut log, "printf '\\033]9;4;3\\007'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| progress(n) == (true, None)), "{:?}", progress(&node));
     // and done: it stops
     type_in(&mut server, &mut log, "printf '\\033]9;4;0\\007'\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !n.window_working(w)), "and stops when the work is over");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| progress(n) == (false, None)), "the bar goes with it: {:?}", progress(&node));
     // a program that ends while it says it is working stops too
     type_in(&mut server, &mut log, "printf '\\033]9;4;3\\007'\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_working(w)));

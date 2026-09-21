@@ -224,6 +224,10 @@ pub enum TermOp {
     /// and measures the view against `total`, the rows the whole screen
     /// holds, history and viewport together, for the scrollbar.
     View { top: u64, total: u64 },
+    /// OSC 9;4: the program says its work goes on (`going`), this far
+    /// along when it gives a percentage. The window's handle pulses
+    /// while it does, and its terminal carries a bar.
+    Progress { going: bool, at: Option<u8> },
 }
 
 // ---- meta -----------------------------------------------------------------

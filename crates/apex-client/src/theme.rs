@@ -46,6 +46,10 @@ pub struct Theme {
     pub notified: u32,
     /// Text on a notified tab, which takes the notification colour.
     pub tab_notified_text: u32,
+    /// The bar across the top of a terminal whose program says its work
+    /// goes on (OSC 9;4), as other terminals draw one: a blue that no
+    /// handle colour is, and that stands out on either paper.
+    pub progress: u32,
     pub exec_hl: u32,
     pub look_hl: u32,
     /// What the terminal's cursor tints its cell towards.
@@ -108,6 +112,7 @@ pub const LIGHT: Theme = Theme {
     fenced: 0xAA0000,
     notified: 0x0080FF,
     tab_notified_text: 0x000000,
+    progress: 0x1C4FD6,
     exec_hl: 0xAA0000,
     look_hl: 0x006600,
     cursor_tint_to: 0x000000,
@@ -169,6 +174,7 @@ pub const DARK: Theme = Theme {
     fenced: 0xFF3030,
     notified: 0x7DF9FF,
     tab_notified_text: 0x0A1A1C,
+    progress: 0x5580FF,
     exec_hl: 0xB02020,
     look_hl: 0x2E8B2E,
     cursor_tint_to: 0xFFFFFF,

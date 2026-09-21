@@ -64,6 +64,9 @@ pub struct Prepaint {
     /// What the scrollbar shows: the viewport's first row and how many
     /// rows it holds, out of the whole screen's.
     view: (u64, u64, u64),
+    /// A program at work (OSC 9;4), as far along as it says: the bar
+    /// across the top. Full width while it does not say.
+    progress: Option<Option<u8>>,
 }
 
 pub struct TermElement {
@@ -197,7 +200,7 @@ impl Element for TermElement {
                 row_text.push(line.clone());
                 rows.push(RowDraw { text: line.into(), runs, bgs });
             }
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some(), view: (top, t.rows as u64, total) })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
         })
     }
 
@@ -237,6 +240,15 @@ impl Element for TermElement {
                     let line = window.text_system().shape_line(row.text.clone(), pp.fontspec.size, &row.runs, None);
                     line.paint(point(origin.x, y), lh, gpui::TextAlign::Left, None, window, cx).ok();
                 }
+            }
+            // a program at work: the bar other terminals draw, across the
+            // top of the text, as far along as it says (all of it while
+            // it does not), over the text's first line and no taller
+            if let Some(at) = pp.progress {
+                let w = bounds.size.width - px(SCROLLWID);
+                let part = at.map(|p| f32::from(p.min(100)) / 100.).unwrap_or(1.);
+                let bar = Bounds::new(point(bounds.left() + px(SCROLLWID), bounds.top()), size((w * part).max(px(1.)), px(2.)));
+                window.paint_quad(fill(bar, rgb(th.progress)));
             }
             if pp.exited {
                 if let Some((cx_, cy)) = pp.cursor {
