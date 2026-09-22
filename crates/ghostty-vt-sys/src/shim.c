@@ -315,10 +315,12 @@ int apex_vt_snapshot(ApexVt *vt,
       ghostty_render_state_row_cells_get(vt->cells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW, &raw);
 
       GhosttyCellWide wide = GHOSTTY_CELL_WIDE_NARROW;
+      GhosttyCellContentTag tag = GHOSTTY_CELL_CONTENT_CODEPOINT;
       uint32_t cp = 0;
       bool has_link = false;
       if (raw != 0) {
         ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide);
+        ghostty_cell_get(raw, GHOSTTY_CELL_DATA_CONTENT_TAG, &tag);
         ghostty_cell_get(raw, GHOSTTY_CELL_DATA_CODEPOINT, &cp);
         ghostty_cell_get(raw, GHOSTTY_CELL_DATA_HAS_HYPERLINK, &has_link);
       }
@@ -333,6 +335,20 @@ int apex_vt_snapshot(ApexVt *vt,
 
       uint32_t fg = pack_color(style.fg_color, &colors, 0);
       uint32_t bg = pack_color(style.bg_color, &colors, 0);
+      // a cell with no text of its own but a colour to paint: what an
+      // erase leaves behind while a background is set (the whole of a
+      // screen a program has coloured and not written on is these), kept
+      // in the cell rather than in a style, so a style alone would lose
+      // it and the colour would show only under the text
+      if (tag == GHOSTTY_CELL_CONTENT_BG_COLOR_PALETTE) {
+        GhosttyColorPaletteIndex idx = 0;
+        if (ghostty_cell_get(raw, GHOSTTY_CELL_DATA_COLOR_PALETTE, &idx) == GHOSTTY_SUCCESS) {
+          bg = idx < 16 ? (0xfe000000u | idx) : pack_rgb(colors.palette[idx]);
+        }
+      } else if (tag == GHOSTTY_CELL_CONTENT_BG_COLOR_RGB) {
+        GhosttyColorRgb c = {0};
+        if (ghostty_cell_get(raw, GHOSTTY_CELL_DATA_COLOR_RGB, &c) == GHOSTTY_SUCCESS) bg = pack_rgb(c);
+      }
       if (style.inverse) {
         uint32_t b = bg == 0 ? APEX_DEFAULT_BG : bg;
         bg = fg == 0 ? APEX_DEFAULT_FG : fg;

@@ -1258,7 +1258,12 @@ character, a foreground, a background, flags, a link -- so the library's
 enums and sized structs, which are not stable yet, are read from its
 headers by the compiler rather than copied into Rust by hand. Colours
 come packed as the shard carries them: one of the sixteen by its index,
-for the client's theme to colour, and anything else exactly. What a
+for the client's theme to colour, and anything else exactly. A cell with
+no text but a colour of its own -- what an erase leaves behind while a
+background is set, which is how a program paints the part of a row it
+writes nothing on -- keeps that colour in the cell rather than in a
+style, so the shim reads the cell's own content as well as its style; a
+style alone leaves the colour showing under the text and nowhere else. What a
 program asks for the library answers itself -- device attributes, the
 cursor's position, the colours (OSC 4, 10, 11) -- writing the answer
 through a callback that the loop puts on the pty; the colours it answers

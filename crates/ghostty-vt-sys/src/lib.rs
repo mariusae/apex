@@ -307,6 +307,27 @@ mod tests {
     }
 
     #[test]
+    fn a_cleared_screen_keeps_the_colour_it_was_cleared_with() {
+        // what a full-screen program paints with: set a background, then
+        // erase. The cells it never writes on are blank, and the colour
+        // is the cell's own, not a style's -- reading the style alone
+        // leaves the colour showing under the text and nowhere else
+        let mut t = Terminal::new(8, 2, 100).unwrap();
+        t.write(b"\x1b[44m\x1b[2Jhi");
+        let s = t.screen();
+        assert_eq!(s.cells[0].bg, 0xfe00_0004, "under the text");
+        assert_eq!(s.cells[3].bg, 0xfe00_0004, "and where nothing was written");
+        assert_eq!(s.cells[8].bg, 0xfe00_0004, "the next row too");
+        assert_eq!(s.cells[3].ch, u32::from(b' '), "blank, all the same");
+        // an exact colour, and the erase of one line alone
+        let mut t = Terminal::new(8, 2, 100).unwrap();
+        t.write(b"\x1b[48;2;10;20;30m\x1b[K");
+        let s = t.screen();
+        assert_eq!(s.cells[4].bg, 0xff0a_141e, "an exact colour is exact");
+        assert_eq!(s.cells[8].bg, 0, "and the row below was not erased");
+    }
+
+    #[test]
     fn the_history_grows_and_the_viewport_moves_over_it() {
         let mut t = Terminal::new(10, 3, 100).unwrap();
         for i in 0..10 {
