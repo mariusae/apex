@@ -271,8 +271,11 @@ nothing beside another's: the client keeps a queue of what it has seen,
 in the order it saw it (`attention::advance`), each session's own in
 the order the metalog has them. The Dock icon carries how many are
 waiting as its badge, and still bounces once for one that comes while
-no window of the app's is in front. The session's tab says it with a bell
-(🔔) before its name, the two centred together, and changes in no other
+no window of the app's is in front. The session's tab says it with Peter J.
+Weinberger's face before its name -- the face Plan 9 has shown when
+something wants you since faces(1), its outline from plan9port's
+`pjw.char.ps` (`assets/pjw.svg`), 15 high in the name's own ink -- the
+two centred together, and the tab changes in no other
 way: a tab is a wide thing to colour, and the colour that suits a
 handle galls across that much of the strip. So a
 session wanting the user shows from any other tab; a parked session's entries arrive off the window, so each

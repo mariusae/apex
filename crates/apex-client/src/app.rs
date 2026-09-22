@@ -1816,6 +1816,13 @@ impl Acme {
         self.node.notifications().filter(|n| !self.suppressed.contains(&n.at))
     }
 
+    /// The server is in this process (`--local`), which is a session of
+    /// its own -- not the blank stand-in a window holds while its tab
+    /// has no link.
+    pub fn in_process(&self) -> bool {
+        matches!(self.backend, Backend::Local(_)) && self.wake.is_none()
+    }
+
     pub fn fenced(&self) -> bool {
         matches!(self.backend, Backend::Remote(_))
             && self.log.lease(Shard::Layout).is_some_and(|l| l.holder != self.node.attachment || l.released.is_some())

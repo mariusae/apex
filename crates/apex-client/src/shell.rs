@@ -486,6 +486,18 @@ mod tests {
 /// How long the pointer rests on a tab before its card shows.
 const CARD_DELAY: std::time::Duration = std::time::Duration::from_millis(450);
 
+/// Peter J. Weinberger's face: the mark a tab carries when a tool in its
+/// session wants the user, where a bell was. Plan 9 has shown this face
+/// for the same reason since faces(1); this is its outline, from
+/// plan9port's `pjw.char.ps` (`assets/pjw.svg`), drawn `h` high in the
+/// tab's own ink.
+fn pjw(h: f32, ink: u32) -> impl IntoElement {
+    const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
+    /// The face's own proportions: its outline is 201 wide by 259 tall.
+    const RATIO: f32 = 201. / 259.;
+    gpui::svg().data(PJW).flex_none().h(px(h)).w(px((h * RATIO).round())).text_color(rgb(ink))
+}
+
 /// A tab's status card, beneath the tab while the pointer rests on it:
 /// label and value lines. Records its bounds so the web views cut a
 /// hole for it.
@@ -1463,10 +1475,12 @@ impl Acme {
     /// The strip at the top: traffic lights live in its left margin; the
     /// session URL is a button, a tinted pill as in Zed.
     pub fn titlebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = match &self.backend {
-            Backend::Local(_) => "in-process".to_string(),
-            Backend::Remote(_) if self.fenced() => format!("{}  ·  fenced", self.url.describe()),
-            Backend::Remote(_) => self.url.describe(),
+        let label = if self.in_process() {
+            "in-process".to_string()
+        } else if self.fenced() {
+            format!("{}  ·  fenced", self.url.describe())
+        } else {
+            self.url.describe()
         };
         let clickable = self.socket.is_some();
         let open = self.selector.is_some();
@@ -1544,14 +1558,14 @@ impl Acme {
         for (i, u) in all.into_iter().enumerate() {
             let current = u == self.url;
             // the label; the host dimmed after it for a session elsewhere
-            let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
+            let text = if current && self.in_process() { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
             // what the tab is doing, when it is anything but simply up:
             // "connecting…", "restoring…", "fenced", "offline"
             let word = self.tab_word(&u, cx);
-            // a tool in that session wants the user: a bell before the
-            // name says so, and nothing else changes -- a tab is not a
-            // place to shout from
+            // a tool in that session wants the user: pjw's face before
+            // the name says so, and nothing else changes -- a tab is not
+            // a place to shout from
             let notified = self.tab_notified(&u, cx);
             // ⌘1 to ⌘9 reach the first nine tabs: each says which it is
             let key = (i < 9).then(|| format!("⌘{}", i + 1));
@@ -1560,6 +1574,14 @@ impl Acme {
             let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == u) && self.tab_drag.is_none();
             let bg = if open { hover_bg } else { front_bg };
             let dim = t.tab_dim;
+            // the name's ink, which the face before it shares
+            let ink = if word.is_some() {
+                t.tab_fenced_text
+            } else if current {
+                t.tab_current_text
+            } else {
+                t.tab_text
+            };
             let closable = clickable && (!current || others);
             // the tab's face: its look and its words, made twice for a
             // tab being dragged (the placeholder in the row, the one
@@ -1594,8 +1616,8 @@ impl Acme {
                     .when(word.is_some(), |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
                     // the name, centred in what room is left of the tab
                     // and cut short when there is not enough of it, with
-                    // the bell before it when a tool in that session wants
-                    // the user -- the two centred together, so the bell
+                    // the face before it when a tool in that session wants
+                    // the user -- the two centred together, so the face
                     // reads as part of the name and nothing else changes
                     .child(
                         div()
@@ -1607,7 +1629,7 @@ impl Acme {
                             .justify_center()
                             .gap(px(5.))
                             .overflow_hidden()
-                            .when(notified, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).child("🔔")))
+                            .when(notified, |d| d.child(pjw(15., ink)))
                             .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text.clone()))
                             .when_some(host.clone(), |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(h)))
                             .when_some(word.clone(), |d, w| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child(w))),
@@ -1764,7 +1786,7 @@ impl Acme {
         // of it, so the name sits where a title bar's title sits, and
         // under the + (added after it), which keeps its clicks
         let title = lone.map(|u| {
-            let text = if matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
+            let text = if self.in_process() { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
             let word = self.tab_word(&u, cx);
             let notified = self.tab_notified(&u, cx);
@@ -1790,7 +1812,7 @@ impl Acme {
                         .font_family(UI_FONT)
                         .text_color(rgb(t.tab_current_text))
                         .when(word.is_some(), |d| d.text_color(rgb(t.tab_fenced_text)))
-                        .when(notified, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).child("🔔")))
+                        .when(notified, |d| d.child(pjw(15., if word.is_some() { t.tab_fenced_text } else { t.tab_current_text })))
                         .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text))
                         .when_some(host, |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_dim)).child(h)))
                         .when_some(word, |d, w| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child(w))),
