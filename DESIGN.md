@@ -1426,9 +1426,10 @@ this one (detach, attach).
   of the strip, not a card on it. The others are chips lying on the
   strip, a touch lighter than it with a faint line closing each, and
   the tab search and `+` are the same chip; that faint lift is the only
-  shading in the bar. A tab's × shows while the pointer is on it, its
-  room kept whether it shows or not, so the tabs do not shift as the
-  pointer passes. The bar is 34 high and the traffic lights sit on its
+  shading in the bar. A tab's × shows while the pointer is
+  on it, over the tab's own contents and on the paper it lies on, and
+  takes no room of its own, so a tab is the same width whether the
+  pointer is on it or not and no tab shifts as the pointer passes. The bar is 34 high and the traffic lights sit on its
   centre line. Another tab switches to
   that session, another tab switches to
   its × lets a parked one go, the current tab's × (and
@@ -1439,7 +1440,9 @@ this one (detach, attach).
   create one, "+ new host…". Before the tabs, a browser's tab search:
   ▾ (⌘⇧A) drops a searchable list of the open tabs and the recently
   closed ones (the recent sessions not open here, one per place and
-  label), each with its host as a pill, the current landed on; a tab
+  label), each with its host as a pill, the current landed on; the card that tells a tab's state hangs from the
+  strip's bottom edge, not from the tab's, and in a layer under it, so
+  it can never cover the tab it belongs to; a tab
   right-clicked renames its session, this window's or another's (on
   its host, through the CLI's rename-session). The
   selected tab is styled as a browser's: the colour of the row below

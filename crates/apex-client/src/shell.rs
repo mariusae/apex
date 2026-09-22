@@ -1712,19 +1712,31 @@ impl Acme {
                     }),
                 );
                 // ×: a parked session let go; the current one let go
-                // too, the window moving to the one parked last
-                if closable {
+                // too, the window moving to the one parked last. It shows
+                // while the pointer is on the tab, over the tab's own
+                // contents (on the paper it lies on, so the name behind it
+                // does not show through) and taking no room of its own, so
+                // a tab is the same width whether the pointer is on it or
+                // not and the tabs do not shift as it passes
+                if closable && on_it {
                     let url = u.clone();
+                    let over = if current { bg } else { t.tab_hover };
                     tab = tab.child(
                         div()
                             .id(("tab-close", i))
+                            .absolute()
+                            .right(px(5.))
+                            .top(px(0.))
+                            .h(px(TAB_H - INSET))
+                            .flex()
+                            .items_center()
+                            .px(px(3.))
+                            .rounded(px(4.))
+                            .bg(rgb(over))
                             .text_size(px(11.))
                             .line_height(px(LINE))
-                            // the glyph is there whether it shows or not:
-                            // its room is the tab's, and the tab keeps its
-                            // width as the pointer comes and goes
-                            .text_color(if on_it { rgb(t.tab_dim) } else { gpui::rgba(0x00000000) })
-                            .when(on_it, |d| d.hover(|s| s.text_color(rgb(t.tab_close_hover))))
+                            .text_color(rgb(t.tab_dim))
+                            .hover(|s| s.text_color(rgb(t.tab_close_hover)))
                             .child("×")
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -1776,10 +1788,16 @@ impl Acme {
         }
         let button = tabs.child(plus);
         // the hovered tab's card, beneath it, once the pointer has rested
+        // the card hangs below the strip, under the tab the pointer rests
+        // on: it hangs from the strip's own bottom edge, not from the
+        // tab's, so whatever the tab's shape and however the layers fall
+        // it can never cover the tab it belongs to. Its layer is under
+        // the strip's too (the title bar is deferred at 1 in full
+        // screen), and over the window, which it is a card on.
         let card = hovered.map(|(u, b)| {
             let lines = self.tab_status(&u, cx);
             let el = tab_card(&lines, self.overlay_bounds.clone());
-            gpui::deferred(gpui::anchored().position(gpui::point(b.origin.x, b.origin.y + b.size.height + px(4.))).child(el)).with_priority(1)
+            gpui::deferred(gpui::anchored().position(gpui::point(b.origin.x, px(TITLEBAR_HEIGHT + 4.))).child(el)).with_priority(0)
         });
         div()
             .id("titlebar")
