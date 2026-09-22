@@ -515,7 +515,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             titlebar: Some(TitlebarOptions {
                 title: Some(title.into()),
                 appears_transparent: true,
-                traffic_light_position: Some(gpui::point(px(10.), px(8.))),
+                // the lights on the bar's centre line: their own height is
+                // 13 as AppKit draws them, so the room above is what is
+                // left of the bar (measured on screen, not by the book)
+                traffic_light_position: Some(gpui::point(px(10.), px((shell::TITLEBAR_HEIGHT - 13.) / 2.))),
             }),
             // the title bar is ours: AppKit must not take a drag there as a
             // window move (a tab dragged reorders the tabs); the strip's

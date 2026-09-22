@@ -65,19 +65,16 @@ pub struct Theme {
     pub cursor_tint_to: u32,
     // the title bar
     pub strip: u32,
-    /// The tab in front: the brightest of the three, as the page it
-    /// shows is.
-    pub tab_bg: u32,
-    /// The tab in front while the session picker is down.
+    /// The tab in front while the session picker is down; otherwise it
+    /// is the colour of the row below it, which it flows into.
     pub tab_open_bg: u32,
-    /// The other tabs, a touch behind the strip so the one in front
-    /// stands off it.
+    /// The tabs not in front: a touch lighter than the strip, so each
+    /// reads as a chip lying on it.
     pub tab_idle_bg: u32,
-    /// The line round every tab, and the fainter one round those not in
-    /// front: a tab is a card with an edge, which is what lifts it off
-    /// the strip.
-    pub tab_outline: u32,
+    /// The line round a chip, and the one it takes when the pointer is
+    /// on it. Faint: the lift is the fill, the line only closes it.
     pub tab_outline_dim: u32,
+    pub tab_outline: u32,
     pub tab_current_text: u32,
     pub tab_text: u32,
     pub tab_hover: u32,
@@ -139,11 +136,10 @@ pub const LIGHT: Theme = Theme {
     cursor_tint_to: 0x000000,
     // the strip tinted with acme's paper, so the bar and the rows agree
     strip: 0xEDEDDC,
-    tab_bg: 0xEAFFFF,
     tab_open_bg: 0xD4F5F5,
-    tab_idle_bg: 0xDCEAEA,
-    tab_outline: 0xB6C6C6,
-    tab_outline_dim: 0xDCDCCE,
+    tab_idle_bg: 0xF3F3E6,
+    tab_outline_dim: 0xDCDCCB,
+    tab_outline: 0xC3C3B0,
     tab_current_text: 0x000099,
     tab_text: 0x555555,
     tab_hover: 0xE0E0CC,
@@ -204,11 +200,10 @@ pub const DARK: Theme = Theme {
     look_hl: 0x2E8B2E,
     cursor_tint_to: 0xFFFFFF,
     strip: 0x2A2A22,
-    tab_bg: 0x22383B,
     tab_open_bg: 0x2B474A,
-    tab_idle_bg: 0x18282A,
-    tab_outline: 0x3C5A5E,
-    tab_outline_dim: 0x333329,
+    tab_idle_bg: 0x34342B,
+    tab_outline_dim: 0x3E3E34,
+    tab_outline: 0x55554C,
     tab_current_text: 0xA0A0FF,
     tab_text: 0xB8B8B8,
     tab_hover: 0x3A3A30,

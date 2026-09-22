@@ -65,7 +65,7 @@ pub fn apply_theme(cx: &mut App) {
 /// forget which sessions were open.
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
-pub const TITLEBAR_HEIGHT: f32 = 40.;
+pub const TITLEBAR_HEIGHT: f32 = 34.;
 /// The top row's background (acme's tag colour): what the selected tab is.
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
 /// The system's UI font.
@@ -1421,7 +1421,7 @@ impl Acme {
                 .py(px(8.))
                 .text_size(px(14.))
                 .font_family(UI_FONT)
-                .when(active, |d| d.bg(rgb(t.tab_bg)))
+                .when(active, |d| d.bg(rgb(t.tag_bg)))
                 .child(div().w(px(80.)).text_color(rgb(t.panel_dim)).text_size(px(12.)).child(label.to_string()))
         };
         let field = |value: &crate::field::LineEdit, hint: &str, active: bool| crate::field::field_view(value, caret_on, hint, active);
@@ -1482,12 +1482,16 @@ impl Acme {
         // the strip's colour rounded away), so it flows into the window
         // the selected tab nearly fills the bar; its text sits on the
         // bar's centre line, with the other tabs' and the + beside it
-        const TAB_H: f32 = 34.;
+        const TAB_H: f32 = 30.;
         const INSET: f32 = 4.;
+        /// The radius of the tab in front at the top; its bottom sweeps
+        /// out over `DRAPE`, wider, so the shape flows into the strip
+        /// rather than turning a corner into it.
+        const CROWN: f32 = 8.;
         // one line box for every piece of text in a tab, whatever its
         // size, so centring them centres them on the same line
         const LINE: f32 = 18.;
-        const DRAPE: f32 = 10.;
+        const DRAPE: f32 = 12.;
         let t = crate::theme::theme();
         let strip: u32 = t.strip;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
@@ -1568,19 +1572,20 @@ impl Acme {
             // a tool in that session wants the user: the tab takes the
             // colour the session's square does, so it shows from any tab
             let notified = self.tab_notified(&u, cx);
-            let bg = if notified { t.tab_notified_bg } else if open { t.tab_open_bg } else { t.tab_bg };
+            // the × shows while the pointer is on the tab (a tab held for
+            // a drag is not rested on, and shows none)
+            let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == u) && self.tab_drag.is_none();
+            let bg = if notified { t.tab_notified_bg } else if open { t.tab_open_bg } else { t.tag_bg };
             let dim = if notified { t.tab_notified_text } else { t.tab_dim };
             let closable = clickable && (!current || others);
             // the selected tab's bottom corners drape out into the strip,
             // as a browser's do, so it flows into the window below: a
             // square of the tab's colour with the strip's rounded away,
             // and the tab's edge traced down the outer side of it
-            let outline = t.tab_outline;
             let drape = move |left: bool| {
                 let corner = div().size_full().bg(rgb(strip));
                 let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
-                let corner = if left { corner.border_r_1() } else { corner.border_l_1() };
-                let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner.border_color(rgb(outline)));
+                let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
                 if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
             };
             // the tab's face: its look and its words, made twice for a
@@ -1600,17 +1605,13 @@ impl Acme {
                     .line_height(px(LINE))
                     .font_family(UI_FONT)
                     // the one in front: the colour of the row below it,
-                    // rounded at the top, its edge round the top and the
-                    // sides and down the drapes, and open at the bottom,
-                    // where it flows into the window
+                    // rounded at the top and sweeping out at the bottom
+                    // into the strip, with no line of its own -- it is a
+                    // shape cut out of the strip, not a card on it
                     .when(current, |d| {
                         d.h(px(TAB_H))
                             .pb(px(INSET))
-                            .rounded_t(px(DRAPE))
-                            .border_t_1()
-                            .border_l_1()
-                            .border_r_1()
-                            .border_color(rgb(t.tab_outline))
+                            .rounded_t(px(CROWN))
                             .text_color(rgb(t.tab_current_text))
                             .bg(rgb(bg))
                             .child(drape(true))
@@ -1619,16 +1620,17 @@ impl Acme {
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
                     .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
-                    // the others: on the strip, an edge so faint it is
-                    // barely there, and the strip's own colour, so only the
-                    // one in front stands out; the same centre line as it,
-                    // so the text stays put as the front moves; the one
-                    // dragged shows as hovered
+                    // the others: chips lying on the strip, a touch
+                    // lighter than it with a faint line closing them, on
+                    // the same centre line as the one in front, so the
+                    // text stays put as the front moves; the one dragged
+                    // shows as hovered
                     .when(!current, |d| {
                         d.h(px(TAB_H - INSET))
                             .mb(px(INSET))
                             .rounded(px(7.))
                             .border_1()
+                            .bg(rgb(t.tab_idle_bg))
                             .border_color(rgb(t.tab_outline_dim))
                             .text_color(rgb(t.tab_text))
                             .hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)))
@@ -1718,8 +1720,11 @@ impl Acme {
                             .id(("tab-close", i))
                             .text_size(px(11.))
                             .line_height(px(LINE))
-                            .text_color(rgb(t.tab_dim))
-                            .hover(|s| s.text_color(rgb(t.tab_close_hover)))
+                            // the glyph is there whether it shows or not:
+                            // its room is the tab's, and the tab keeps its
+                            // width as the pointer comes and goes
+                            .text_color(if on_it { rgb(t.tab_dim) } else { gpui::rgba(0x00000000) })
+                            .when(on_it, |d| d.hover(|s| s.text_color(rgb(t.tab_close_hover))))
                             .child("×")
                             .on_mouse_down(
                                 MouseButton::Left,

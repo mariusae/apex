@@ -1419,14 +1419,17 @@ this one (detach, attach).
 - *As built, tabs:* the title bar carries a tab per connected session
   — this window's, and the parked ones — in the order first shown
   (`Pool::order`), the current one selected. The tab in front is the colour
-  of the row below it, rounded at the top, its bottom corners draping
-  out into the strip (a square of its colour with the strip's rounded
-  away) so it flows into the window as a browser's does, with a faint
-  line round its top, its sides and the outer side of each drape, and
-  none across its bottom, where it joins the window. The others sit on
-  the strip in the strip's own colour, a fainter line round each; the
-  tab search and `+` are the same. No shading anywhere: the line is
-  the whole of it. The bar is 40 high, which the taller tab needs. Another tab switches to
+  of the row below it, rounded at the top (`CROWN`, 8) and sweeping out
+  at the bottom over a wider curve (`DRAPE`, 12: a square of its colour
+  with the strip's rounded away) so it flows into the window as a
+  browser's does. It carries no line of its own: it is a shape cut out
+  of the strip, not a card on it. The others are chips lying on the
+  strip, a touch lighter than it with a faint line closing each, and
+  the tab search and `+` are the same chip; that faint lift is the only
+  shading in the bar. A tab's × shows while the pointer is on it, its
+  room kept whether it shows or not, so the tabs do not shift as the
+  pointer passes. The bar is 34 high and the traffic lights sit on its
+  centre line. Another tab switches to
   that session, another tab switches to
   its × lets a parked one go, the current tab's × (and
   ⌘⇧W) lets this session go and shows the one parked last (the last
