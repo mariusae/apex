@@ -1595,7 +1595,7 @@ impl Acme {
             // a tool in that session wants the user: the tab takes the
             // colour the session's square does, so it shows from any tab
             let notified = self.tab_notified(&u, cx);
-            let bg = if notified { t.notified } else if open { t.tab_open_bg } else { t.tab_bg };
+            let bg = if notified { t.tab_notified_bg } else if open { t.tab_open_bg } else { t.tab_bg };
             let dim = if notified { t.tab_notified_text } else { t.tab_dim };
             let closable = clickable && (!current || others);
             let drape = move |left: bool| {
@@ -1633,7 +1633,7 @@ impl Acme {
                     .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(t.tab_hover))))
                     .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
                     // notified, selected or not, and hovered too
-                    .when(!current && notified, |d| d.bg(rgb(t.notified)).hover(|s| s.bg(rgb(t.notified))))
+                    .when(!current && notified, |d| d.bg(rgb(t.tab_notified_bg)).hover(|s| s.bg(rgb(t.tab_notified_bg))))
                     .when(notified, |d| d.text_color(rgb(t.tab_notified_text)))
                     .child(text.clone())
                     .when_some(host.clone(), |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(h)))

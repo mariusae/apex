@@ -44,7 +44,13 @@ pub struct Theme {
     /// simulation to stand apart from every handle colour, border and
     /// highlight it can sit beside (azure on light, ice on dark).
     pub notified: u32,
-    /// Text on a notified tab, which takes the notification colour.
+    /// A notified session's tab: a tab is a wide thing to fill, so it
+    /// takes a darker, quieter tint of the notification's hue rather
+    /// than the notification colour itself, which galls across that
+    /// much of the strip. Far enough from the other tab colours --
+    /// the open tab's above all -- under the deuteranopia simulation.
+    pub tab_notified_bg: u32,
+    /// Text on a notified tab, light on that tint.
     pub tab_notified_text: u32,
     /// Work going on: the bar across the top of a terminal whose program
     /// says so (OSC 9;4), and the colour a working handle breathes from,
@@ -114,7 +120,8 @@ pub const LIGHT: Theme = Theme {
     stale: 0xFFD700,
     fenced: 0xAA0000,
     notified: 0x0080FF,
-    tab_notified_text: 0x000000,
+    tab_notified_bg: 0x1F4E63,
+    tab_notified_text: 0xEAFFFF,
     progress: 0x1B4F9B,
     exec_hl: 0xAA0000,
     look_hl: 0x006600,
@@ -176,7 +183,8 @@ pub const DARK: Theme = Theme {
     stale: 0xFFD700,
     fenced: 0xFF3030,
     notified: 0x7DF9FF,
-    tab_notified_text: 0x0A1A1C,
+    tab_notified_bg: 0x356E78,
+    tab_notified_text: 0xE8F6F8,
     progress: 0x3355FF,
     exec_hl: 0xB02020,
     look_hl: 0x2E8B2E,

@@ -271,9 +271,12 @@ nothing beside another's: the client keeps a queue of what it has seen,
 in the order it saw it (`attention::advance`), each session's own in
 the order the metalog has them. The Dock icon carries how many are
 waiting as its badge, and still bounces once for one that comes while
-no window of the app's is in front. The session's tab takes the same
-colour, its text dark on it, so a session wanting the user shows from
-any other tab; a parked session's entries arrive off the window, so each
+no window of the app's is in front. The session's tab says it in a darker,
+quieter tint of that hue (`tab_notified_bg`, deep teal-blue) with light
+text, since a tab is a wide thing to fill and the notification colour
+across that much of the strip galls; it is far enough from the other tab
+colours, the open tab's above all, under the same simulation. So a
+session wanting the user shows from any other tab; a parked session's entries arrive off the window, so each
 window looks at its tabs' queues on its tick and draws the strip again
 when that changes. With no window of the app's in front, a notification
 coming to any session it has open, shown or parked, bounces the dock
