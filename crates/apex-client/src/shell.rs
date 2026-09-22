@@ -539,7 +539,7 @@ pub fn tab_card(lines: &[(String, String)], mark: std::rc::Rc<std::cell::RefCell
 /// current one, where the press was, and whether it has moved enough
 /// to be a drag rather than a click.
 pub struct TabDrag {
-    pub url: SessionUrl,
+    pub tab: crate::pool::TabId,
     pub current: bool,
     pub start: gpui::Point<Pixels>,
     /// Where the pointer is now.
@@ -556,9 +556,9 @@ pub struct TabDrag {
 /// tabs (the open ones and the recently closed, searched: ⌘⇧A and the
 /// ▾ before the tabs, a browser's tab search).
 pub struct Selector {
-    /// The tabs open now, in the strip's order (left out of a new tab's
-    /// list; the first section of the tabs' list).
-    pub tabs: Vec<SessionUrl>,
+    /// The tabs open now, in the strip's order: the app's name for each
+    /// and the session it holds.
+    pub tabs: Vec<(crate::pool::TabId, SessionUrl)>,
     /// Tabs closed lately, the latest first (the tabs' second section).
     pub closed: Vec<SessionUrl>,
     pub filter: crate::field::LineEdit,
@@ -573,6 +573,9 @@ pub struct Selector {
     /// a host that is down must not hold the picker).
     pub sessions: HashMap<Host, Loading>,
     pub current: SessionUrl,
+    /// The tab the window shows: left out of the list, being where we
+    /// already are.
+    pub here: crate::pool::TabId,
     /// Typing a new name for this session (a tab, right-clicked).
     pub renaming: Option<SessionUrl>,
     /// The new-host form: a provider, a host.
@@ -646,8 +649,9 @@ impl Loading {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Row {
-    /// A session this window has open (a tab): going there.
-    GoTo(SessionUrl),
+    /// A tab this window has open: going there. By the app's own name
+    /// for it, so what session it turns out to hold changes nothing.
+    GoTo(crate::pool::TabId, SessionUrl),
     /// A session that is there but not open here: opening it.
     Open(SessionUrl),
     /// A session to make, named by what was typed, on this host.
@@ -664,7 +668,7 @@ impl Row {
     /// The words at the right of the row: what picking it does.
     pub fn action(&self) -> String {
         match self {
-            Row::GoTo(_) => "Go to session".into(),
+            Row::GoTo(..) => "Go to session".into(),
             Row::Open(_) => "Open session".into(),
             Row::Create(_, h) => {
                 let (name, prov) = h.parts();
@@ -684,7 +688,7 @@ impl Row {
     /// something to make.
     pub fn glyph(&self) -> &'static str {
         match self {
-            Row::GoTo(_) | Row::Open(_) => "→",
+            Row::GoTo(..) | Row::Open(_) => "→",
             Row::Create(..) | Row::NewHost => "+",
             Row::Rename(_) => "✓",
             Row::Note(_) => "",
@@ -694,7 +698,7 @@ impl Row {
     /// What the row says: the session's name, or the text typed.
     pub fn title(&self) -> String {
         match self {
-            Row::GoTo(u) | Row::Open(u) | Row::Create(u, _) => u.session.clone(),
+            Row::GoTo(_, u) | Row::Open(u) | Row::Create(u, _) => u.session.clone(),
             Row::NewHost => "Add a host…".into(),
             Row::Note(t) | Row::Rename(t) => t.clone(),
         }
@@ -703,7 +707,7 @@ impl Row {
     /// The host under the name, dimmed, for a session that is elsewhere.
     pub fn where_(&self) -> Option<String> {
         match self {
-            Row::GoTo(u) | Row::Open(u) | Row::Create(u, _) => (!u.is_local()).then(|| u.arg.clone()),
+            Row::GoTo(_, u) | Row::Open(u) | Row::Create(u, _) => (!u.is_local()).then(|| u.arg.clone()),
             _ => None,
         }
     }
@@ -888,9 +892,9 @@ impl Selector {
         let matches = |u: &SessionUrl| fl.is_empty() || u.session.to_lowercase().contains(&fl) || u.arg.to_lowercase().contains(&fl);
         let mut rows = Vec::new();
         let mut seen: Vec<SessionUrl> = vec![self.current.clone()];
-        for u in self.tabs.iter().filter(|u| **u != self.current && matches(u)) {
+        for (id, u) in self.tabs.iter().filter(|(id, u)| *id != self.here && matches(u)) {
             seen.push(u.clone());
-            rows.push(Row::GoTo(u.clone()));
+            rows.push(Row::GoTo(*id, u.clone()));
         }
         // the sessions the hosts have, and the ones lately closed: there
         // to open, and not open here
@@ -1064,18 +1068,18 @@ impl Acme {
         if !hosts.contains(&here) {
             hosts.push(here);
         }
-        let tabs = crate::pool::Pool::tabs(cx, &self.url);
+        let tabs: Vec<(crate::pool::TabId, SessionUrl)> = crate::pool::Pool::tabs(cx).into_iter().map(|t| (t.id, t.url)).collect();
         // recently closed: the recent sessions not open here, one per
         // place and label (a session made anew under an old label is
         // the same tab to the eye)
         let same = |a: &SessionUrl, b: &SessionUrl| a.provider == b.provider && a.arg == b.arg && a.session == b.session;
         let mut closed: Vec<SessionUrl> = Vec::new();
         for u in recent() {
-            if !tabs.iter().any(|t| same(t, &u)) && !closed.iter().any(|c| same(c, &u)) {
+            if !tabs.iter().any(|(_, t)| same(t, &u)) && !closed.iter().any(|c| same(c, &u)) {
                 closed.push(u);
             }
         }
-        let mut sel = Selector { tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        let mut sel = Selector { tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), here: self.tab, renaming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
         // what each host had last time, shown at once; the answers update it
         let mut known = known_sessions();
         for h in &hosts {
@@ -1402,14 +1406,19 @@ impl Acme {
                 cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }
-            Row::GoTo(url) | Row::Open(url) | Row::Create(url, _) => {
+            Row::GoTo(id, url) => {
                 self.selector = None;
                 note_host(&url);
-                if url == self.url {
-                    cx.notify();
-                    return;
+                if id != self.tab {
+                    self.switch_to(id, window, cx);
+                    cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 }
-                self.switch_to(&url, window, cx);
+                cx.notify();
+            }
+            Row::Open(url) | Row::Create(url, _) => {
+                self.selector = None;
+                note_host(&url);
+                self.switch_to_url(&url, window, cx);
                 cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }
@@ -1509,7 +1518,7 @@ impl Acme {
         // no chevron in the strip and no key of its own for searching the
         // tabs: ⌘T opens the picker, which is that and every other way
         // into a session besides, and the bar is the tabs' room
-        let all = crate::pool::Pool::tabs(cx, &self.url);
+        let all = crate::pool::Pool::tabs(cx);
         // one tab is no tab: the bar is then a plain title bar, with the
         // session's name in the middle of it and the + at its right, as
         // ghostty's and Terminal's are
@@ -1523,10 +1532,10 @@ impl Acme {
         }
         // a tab being dragged floats under the pointer, kept within the
         // strip's tabs (their bounds of last frame say where that is)
-        let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.url.clone());
-        let ghost: Option<(SessionUrl, Pixels, Pixels)> = self.tab_drag.as_ref().filter(|d| d.moved).and_then(|d| {
+        let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.tab);
+        let ghost: Option<(crate::pool::TabId, Pixels, Pixels)> = self.tab_drag.as_ref().filter(|d| d.moved).and_then(|d| {
             let bounds = self.tab_bounds.borrow();
-            let mine = bounds.iter().find(|(u, _)| *u == d.url).map(|(_, b)| *b)?;
+            let mine = bounds.iter().find(|(u, _)| *u == d.tab).map(|(_, b)| *b)?;
             let left = bounds.iter().map(|(_, b)| b.origin.x).fold(mine.origin.x, |a, x| if x < a { x } else { a });
             let right = bounds.iter().map(|(_, b)| b.origin.x + b.size.width).fold(mine.origin.x + mine.size.width, |a, x| if x > a { x } else { a });
             let mut x = d.pos.x - d.grab;
@@ -1537,44 +1546,43 @@ impl Acme {
                 x = left;
             }
             // the face carries its own margin: the bounds are the face's
-            Some((d.url.clone(), x, mine.origin.y))
+            Some((d.tab, x, mine.origin.y))
         });
         let mut floating: Option<gpui::Div> = None;
         // where the hovered tab sits, for its card to hang under: read
         // with the drag's, before the bounds are cleared, since what the
         // tabs record they record at paint, a frame behind this one
-        let hovered: Option<(SessionUrl, gpui::Bounds<Pixels>)> = self
+        let hovered: Option<(crate::pool::TabId, gpui::Bounds<Pixels>)> = self
             .tab_hovered
             .as_ref()
             // no card while a tab is held: it would hang in the drag's way
             .filter(|_| self.tab_drag.is_none())
             .filter(|(_, since)| since.elapsed() >= CARD_DELAY)
-            .and_then(|(u, _)| self.tab_bounds.borrow().iter().find(|(x, _)| x == u).map(|(_, b)| (u.clone(), *b)));
+            .and_then(|(id, _)| self.tab_bounds.borrow().iter().find(|(x, _)| x == id).map(|(_, b)| (*id, *b)));
         // where each tab lands this frame, for a drag to reorder by
         self.tab_bounds.borrow_mut().clear();
         let others = all.len() > 1;
         // the tab under the pointer, floating, keeps the width it had
         let drag_w = self.tab_drag.as_ref().map(|d| d.width);
-        for (i, u) in all.into_iter().enumerate() {
-            // the tab this window shows: by the session, not by the
-            // identity, which the two hold apart for as long as a link
-            // is being made
-            let current = crate::pool::one_session(&u, &self.url);
+        for (i, tab) in all.into_iter().enumerate() {
+            let u = tab.url.clone();
+            // the tab this window shows, by the app's own name for it
+            let current = tab.id == self.tab;
             // the label; the host dimmed after it for a session elsewhere
             let text = if current && self.in_process() { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
             // what the tab is doing, when it is anything but simply up:
             // "connecting…", "restoring…", "fenced", "offline"
-            let word = self.tab_word(&u, cx);
+            let word = self.tab_word(&tab, cx);
             // a tool in that session wants the user: pjw's face before
             // the name says so, and nothing else changes -- a tab is not
             // a place to shout from
-            let notified = self.tab_notified(&u, cx);
+            let notified = self.tab_notified(tab.id, cx);
             // ⌘1 to ⌘9 reach the first nine tabs: each says which it is
             let key = (i < 9).then(|| format!("⌘{}", i + 1));
             // the × shows while the pointer is on the tab (a tab held for
             // a drag is not rested on, and shows none)
-            let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == u) && self.tab_drag.is_none();
+            let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == tab.id) && self.tab_drag.is_none();
             let bg = if open { hover_bg } else { front_bg };
             let dim = t.tab_dim;
             // the name's ink, which the face before it shares
@@ -1641,58 +1649,56 @@ impl Acme {
                     .when_some(key.clone(), |d, k| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(k)))
                     .when(closable && ghost, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child("×")))
             };
-            if let Some((_, x, y)) = ghost.as_ref().filter(|(g, _, _)| *g == u) {
+            if let Some((_, x, y)) = ghost.as_ref().filter(|(g, _, _)| *g == tab.id) {
                 // the tab under the pointer, over everything in the strip
                 floating = Some(div().absolute().left(*x).top(*y).child(face(true)));
             }
             let bounds = self.tab_bounds.clone();
-            let bounds_url = u.clone();
-            let mut tab = face(false)
+            let id = tab.id;
+            let mut chip = face(false)
                 .id(("tab", i))
                 .child(div().absolute().top(px(0.)).left(px(0.)).size_full().child(gpui::canvas(
-                    move |b, _, _| bounds.borrow_mut().push((bounds_url, b)),
+                    move |b, _, _| bounds.borrow_mut().push((id, b)),
                     |_, _, _, _| {},
                 )))
                 // dragged: its place in the row is kept, empty, as the
                 // tabs around it slide; the tab itself is the floating one
-                .when(dragging.as_ref() == Some(&u), |d| d.opacity(0.));
+                .when(dragging == Some(id), |d| d.opacity(0.));
             if clickable {
                 // the pointer resting on a tab: its status card beneath it
                 // after a moment (`tab_hovered`, drawn below)
-                let url = u.clone();
-                tab = tab.on_hover(cx.listener(move |this, on: &bool, _, cx| {
+                chip = chip.on_hover(cx.listener(move |this, on: &bool, _, cx| {
                     // a tab passed over while one is dragged is not rested on
                     if this.tab_drag.is_some() {
                         return;
                     }
                     if *on {
-                        if this.tab_hovered.as_ref().map(|(u, _)| u) != Some(&url) {
-                            this.tab_hovered = Some((url.clone(), std::time::Instant::now()));
+                        if this.tab_hovered.as_ref().map(|(h, _)| *h) != Some(id) {
+                            this.tab_hovered = Some((id, std::time::Instant::now()));
                             cx.spawn(async move |this, cx| {
                                 cx.background_executor().timer(CARD_DELAY).await;
                                 let _ = cx.update(|cx| this.update(cx, |_, cx| cx.notify()));
                             })
                             .detach();
                         }
-                    } else if this.tab_hovered.as_ref().map(|(u, _)| u) == Some(&url) {
+                    } else if this.tab_hovered.as_ref().map(|(h, _)| *h) == Some(id) {
                         this.tab_hovered = None;
                         cx.notify();
                     }
                 }));
-                let url = u.clone();
                 // held: a click on release unless it moved, a drag
                 // reordering the tabs if it did (`mouse_move`, `mouse_up`)
-                tab = tab.cursor_pointer().on_mouse_down(
+                chip = chip.cursor_pointer().on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
                         let (grab, width) = this
                             .tab_bounds
                             .borrow()
                             .iter()
-                            .find(|(u, _)| *u == url)
+                            .find(|(u, _)| *u == id)
                             .map(|(_, b)| (e.position.x - b.origin.x, b.size.width))
                             .unwrap_or((px(0.), px(80.)));
-                        this.tab_drag = Some(TabDrag { url: url.clone(), current, start: e.position, pos: e.position, grab, width, moved: false });
+                        this.tab_drag = Some(TabDrag { tab: id, current, start: e.position, pos: e.position, grab, width, moved: false });
                         // held, not rested on: the card goes, and comes back
                         // only for a pointer that comes to rest on a tab again
                         this.tab_hovered = None;
@@ -1701,7 +1707,7 @@ impl Acme {
                 );
                 // right-clicked: the session renamed
                 let url = u.clone();
-                tab = tab.on_mouse_down(
+                chip = chip.on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |this, _, _, cx| {
                         this.open_rename(url.clone(), cx);
@@ -1716,9 +1722,8 @@ impl Acme {
                 // a tab is the same width whether the pointer is on it or
                 // not and the tabs do not shift as it passes
                 if closable && on_it {
-                    let url = u.clone();
                     let over = if current { bg } else { hover_bg };
-                    tab = tab.child(
+                    chip = chip.child(
                         div()
                             .id(("tab-close", i))
                             .absolute()
@@ -1741,7 +1746,7 @@ impl Acme {
                                     if current {
                                         this.close_current_session(window, cx);
                                     } else {
-                                        crate::pool::Pool::let_go(cx, &url);
+                                        crate::pool::Pool::let_go(cx, id);
                                     }
                                     cx.notify();
                                     cx.stop_propagation();
@@ -1750,7 +1755,7 @@ impl Acme {
                     );
                 }
             }
-            tabs = tabs.child(tab);
+            tabs = tabs.child(chip);
         }
         // and one more: the picker, for a session not here yet
         // the +, sized as the × and on the same line as they are
@@ -1788,11 +1793,12 @@ impl Acme {
         // the lone tab's name, in the middle of the bar: the whole width
         // of it, so the name sits where a title bar's title sits, and
         // under the + (added after it), which keeps its clicks
-        let title = lone.map(|u| {
+        let title = lone.map(|tab| {
+            let u = &tab.url;
             let text = if self.in_process() { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
-            let word = self.tab_word(&u, cx);
-            let notified = self.tab_notified(&u, cx);
+            let word = self.tab_word(&tab, cx);
+            let notified = self.tab_notified(tab.id, cx);
             div()
                 .absolute()
                 .top(px(0.))
@@ -1828,8 +1834,8 @@ impl Acme {
         // it can never cover the tab it belongs to. Its layer is under
         // the strip's too (the title bar is deferred at 1 in full
         // screen), and over the window, which it is a card on.
-        let card = hovered.map(|(u, b)| {
-            let lines = self.tab_status(&u, cx);
+        let card = hovered.and_then(|(id, b)| Some((crate::pool::Pool::tab(cx, id)?, b))).map(|(tab, b)| {
+            let lines = self.tab_status(&tab, cx);
             let el = tab_card(&lines, self.overlay_bounds.clone());
             gpui::deferred(gpui::anchored().position(gpui::point(b.origin.x, px(TITLEBAR_HEIGHT + 4.))).child(el)).with_priority(0)
         });
@@ -2010,6 +2016,7 @@ mod picker_tests {
             hosts: vec![local, box_],
             sessions,
             current: SessionUrl::local("notes"),
+            here: crate::pool::TabId(2),
             renaming: None,
             connect: None,
             epoch: 1,
@@ -2028,7 +2035,7 @@ mod picker_tests {
         // nothing typed: the tabs to go to, the sessions to open, a host
         // to add at the bottom; this window's own session is not offered
         let mut sel = picker();
-        sel.tabs = vec![SessionUrl::local("default"), SessionUrl::local("notes")];
+        sel.tabs = vec![(crate::pool::TabId(1), SessionUrl::local("default")), (crate::pool::TabId(2), SessionUrl::local("notes"))];
         assert_eq!(
             shape(&sel),
             vec![

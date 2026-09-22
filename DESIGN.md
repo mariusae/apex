@@ -1441,16 +1441,23 @@ this one (detach, attach).
   window once it is.
 - *As built, tabs:* the title bar carries a tab per session the app has
   open, in the order first shown (`Pool::order`), the current one
-  selected. A tab is a session, and a session is a host and a label: the
-  identity under it is the session's own and can change beneath the tab
-  (one that is gone is made again, with the same label and a new id, and
-  a window holds the identity it asked with until its link lands and
-  says otherwise). So everything the pool holds -- the order, what each
-  tab is doing, the parked links -- is matched by host and label
-  (`pool::one_session`), and only a url that came off a link renames a
-  tab's identity (`Pool::claim`). Otherwise the same session shows twice,
-  once attaching and once offline, and the window waits on a link that
-  has already landed under another name. A tab is the app's own state, not the link's: it is made
+  selected. A tab is the app's own: `TabId` is made by the client, never
+  changes and means nothing to any host, and the session behind it is
+  data the tab carries (`Tab::url`) -- the host and label always, the
+  session's own identity once an attach has said what it is. Identity
+  cannot be leaned on: end a session and attach to its label again and
+  the host makes a new one with a new id, so two attaches disagree about
+  what a name means. Every window, key, click and notification therefore
+  means a tab by its id; `Pool::open` is the one place a url becomes a
+  tab (the picker's pick, the launch target, a place in another
+  session), and the one place two urls are weighed against each other --
+  the same identity, or, while either side has none or holds one the
+  session has left behind, the same label on the same host. What comes
+  off a link names the tab's session (`Pool::named`); nothing else does.
+  Before this the pool held sessions by url and identity churn showed as
+  two tabs for one session -- one attaching, one offline -- with the
+  window waiting on a link that had already landed under another name,
+  and a failing attach could let go of a live tab that shared the label. A tab is the app's own state, not the link's: it is made
   when the user makes it and brought back at launch, and it goes only
   when the user closes it (or its session is gone). So a tab keeps its
   place while its link is being made, and keeps it when the link fails

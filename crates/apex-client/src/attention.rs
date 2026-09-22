@@ -16,14 +16,13 @@ use objc::runtime::Object;
 use objc::{class, msg_send, sel, sel_impl};
 
 use apex_core::{Seq, WindowId};
-use apex_server::providers::SessionUrl;
 
 use crate::app::Acme;
-use crate::pool::Pool;
+use crate::pool::{Pool, TabId};
 
-/// A notification the app is carrying: the session it is in, the window
-/// it is about, and the entry that raised it.
-pub type Note = (SessionUrl, WindowId, Seq);
+/// A notification the app is carrying: the tab it is in, the window it
+/// is about, and the entry that raised it.
+pub type Note = (TabId, WindowId, Seq);
 
 /// The notifications seen so far, oldest first.
 #[derive(Default)]
@@ -41,11 +40,11 @@ pub fn tick(cx: &mut App) {
     for h in cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()) {
         if let Ok(a) = h.read(cx) {
             active |= a.app_active();
-            now.push((a.url.clone(), a.node.notifications().map(|n| (n.window, n.at)).collect()));
+            now.push((a.tab, a.node.notifications().map(|n| (n.window, n.at)).collect()));
         }
     }
-    let looked: HashSet<SessionUrl> = cx.default_global::<Looked>().0.clone();
-    cx.default_global::<Looked>().0 = now.iter().map(|(u, _)| u.clone()).collect();
+    let looked: HashSet<TabId> = cx.default_global::<Looked>().0.clone();
+    cx.default_global::<Looked>().0 = now.iter().map(|(id, _)| *id).collect();
     let queue = cx.default_global::<Queue>();
     let came = advance(&mut queue.0, &looked, &now);
     let waiting = queue.0.len();
@@ -60,26 +59,26 @@ pub fn tick(cx: &mut App) {
 /// order, since only the app can say how two sessions' compare. True if
 /// any of what came is news, which a session the app is seeing for the
 /// first time (not in `looked`) never is: it brought its own along.
-fn advance(queue: &mut Vec<Note>, looked: &HashSet<SessionUrl>, now: &[(SessionUrl, Vec<(WindowId, Seq)>)]) -> bool {
-    let here: HashSet<(SessionUrl, Seq)> = now.iter().flat_map(|(u, ns)| ns.iter().map(|(_, at)| (u.clone(), *at))).collect();
-    let known: HashSet<(SessionUrl, Seq)> = queue.iter().map(|(u, _, at)| (u.clone(), *at)).collect();
-    queue.retain(|(u, _, at)| here.contains(&(u.clone(), *at)));
+fn advance(queue: &mut Vec<Note>, looked: &HashSet<TabId>, now: &[(TabId, Vec<(WindowId, Seq)>)]) -> bool {
+    let here: HashSet<(TabId, Seq)> = now.iter().flat_map(|(id, ns)| ns.iter().map(|(_, at)| (*id, *at))).collect();
+    let known: HashSet<(TabId, Seq)> = queue.iter().map(|(id, _, at)| (*id, *at)).collect();
+    queue.retain(|(id, _, at)| here.contains(&(*id, *at)));
     let mut came = false;
-    for (u, ns) in now {
+    for (id, ns) in now {
         for (w, at) in ns {
-            if !known.contains(&(u.clone(), *at)) {
-                queue.push((u.clone(), *w, *at));
-                came |= looked.contains(u);
+            if !known.contains(&(*id, *at)) {
+                queue.push((*id, *w, *at));
+                came |= looked.contains(id);
             }
         }
     }
     came
 }
 
-/// The sessions the app has looked at: what one already had when it was
+/// The tabs the app has looked at: what one already had when it was
 /// first seen is no news.
 #[derive(Default)]
-struct Looked(HashSet<SessionUrl>);
+struct Looked(HashSet<TabId>);
 
 impl Global for Looked {}
 
@@ -143,36 +142,36 @@ extern "C" {
 mod tests {
     use super::*;
 
-    fn url(name: &str) -> SessionUrl {
-        SessionUrl::local(name).with_id(name)
+    fn tab(n: u64) -> TabId {
+        TabId(n)
     }
 
     #[test]
     fn the_queue_keeps_them_in_the_order_they_came() {
-        let (a, b) = (url("main"), url("work"));
+        let (a, b) = (tab(1), tab(2));
         let mut q: Vec<Note> = Vec::new();
-        let mut looked: HashSet<SessionUrl> = HashSet::new();
+        let mut looked: HashSet<TabId> = HashSet::new();
         // the first look at a session: what it has is queued, and is no news
-        let came = advance(&mut q, &looked, &[(a.clone(), vec![(WindowId(1), 7)])]);
+        let came = advance(&mut q, &looked, &[(a, vec![(WindowId(1), 7)])]);
         assert!(!came, "a session first seen brings no news");
-        assert_eq!(q, vec![(a.clone(), WindowId(1), 7)]);
-        looked.insert(a.clone());
+        assert_eq!(q, vec![(a, WindowId(1), 7)]);
+        looked.insert(a);
         // another in the same session, and one in a session also new
-        let came = advance(&mut q, &looked, &[(a.clone(), vec![(WindowId(1), 7), (WindowId(2), 9)]), (b.clone(), vec![(WindowId(5), 2)])]);
+        let came = advance(&mut q, &looked, &[(a, vec![(WindowId(1), 7), (WindowId(2), 9)]), (b, vec![(WindowId(5), 2)])]);
         assert!(came, "the one in the session we had is news");
-        assert_eq!(q, vec![(a.clone(), WindowId(1), 7), (a.clone(), WindowId(2), 9), (b.clone(), WindowId(5), 2)]);
-        looked.insert(b.clone());
+        assert_eq!(q, vec![(a, WindowId(1), 7), (a, WindowId(2), 9), (b, WindowId(5), 2)]);
+        looked.insert(b);
         // the oldest is taken: it goes, the rest keep their order
-        let came = advance(&mut q, &looked, &[(a.clone(), vec![(WindowId(2), 9)]), (b.clone(), vec![(WindowId(5), 2)])]);
+        let came = advance(&mut q, &looked, &[(a, vec![(WindowId(2), 9)]), (b, vec![(WindowId(5), 2)])]);
         assert!(!came);
-        assert_eq!(q, vec![(a.clone(), WindowId(2), 9), (b.clone(), WindowId(5), 2)]);
+        assert_eq!(q, vec![(a, WindowId(2), 9), (b, WindowId(5), 2)]);
         // one raised again after being lowered is another notification,
         // and goes to the end
-        let came = advance(&mut q, &looked, &[(a.clone(), vec![(WindowId(2), 9), (WindowId(1), 11)]), (b.clone(), vec![(WindowId(5), 2)])]);
+        let came = advance(&mut q, &looked, &[(a, vec![(WindowId(2), 9), (WindowId(1), 11)]), (b, vec![(WindowId(5), 2)])]);
         assert!(came);
-        assert_eq!(q, vec![(a.clone(), WindowId(2), 9), (b.clone(), WindowId(5), 2), (a.clone(), WindowId(1), 11)]);
+        assert_eq!(q, vec![(a, WindowId(2), 9), (b, WindowId(5), 2), (a, WindowId(1), 11)]);
         // and with none left, nothing is queued
-        let came = advance(&mut q, &looked, &[(a.clone(), vec![]), (b.clone(), vec![])]);
+        let came = advance(&mut q, &looked, &[(a, vec![]), (b, vec![])]);
         assert!(!came);
         assert!(q.is_empty());
     }

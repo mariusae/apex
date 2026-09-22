@@ -501,14 +501,21 @@ fn main() {
                 }
             }
         };
-        let shown: Vec<SessionUrl> = match &target {
-            Target::Url { url, .. } => vec![url.clone()],
-            _ => Vec::new(),
+        // a session elsewhere is attached once its window is open, so the
+        // link that lands has a window to land in
+        let start = match &target {
+            Target::Url { url, files } if !url.is_local() => Some(files.clone()),
+            _ => None,
         };
-        open_window(cx, target, frame);
+        let opened = open_window(cx, target, frame);
+        if let Some(files) = start {
+            if let Some(tab) = opened.and_then(|h| h.read(cx).ok().map(|a| a.tab)) {
+                pool::Pool::start(cx, tab, pool::Why::Attaching, false, files);
+            }
+        }
         shell::save_open(cx);
         // the tabs of last time, attached again in the background and parked
-        pool::Pool::restore(cx, &shown);
+        pool::Pool::restore(cx);
         // the pointer goes while text is typed, and only then: not for a
         // key that does something (gpui's default), which a tab switch is
         cx.set_cursor_hide_mode(gpui::CursorHideMode::OnTyping);
@@ -560,7 +567,8 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
         move |window, cx| {
             let view = cx.new(|cx| match target {
                 Target::Local(files) => {
-                    let (acme, mut rx) = Acme::new(cx, files);
+                    let (mut acme, mut rx) = Acme::new(cx, files);
+                    acme.tab = pool::Pool::open(cx, &acme.url.clone());
                     cx.spawn(async move |this, cx| {
                         use futures::StreamExt;
                         while let Some(ev) = rx.next().await {
@@ -591,32 +599,14 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                 std::process::exit(1);
                             }
                         },
-                        Target::Url { url, files } if !url.is_local() => {
-                            // a session elsewhere: the window opens now and
-                            // says so; the attach (a binary to upload, a daemon
-                            // to start there) runs on a thread and comes back
+                        Target::Url { url, .. } if !url.is_local() => {
+                            // a session elsewhere: the window opens now on a
+                            // blank page and says so, and the pool makes the
+                            // link (a binary to upload, a daemon to start
+                            // there) as it makes every other -- `start`, once
+                            // this window is open and can be found waiting
                             let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
                             a.wait(&pool::Why::Attaching.sentence(&url));
-                            shell::log_line(&format!("attaching to {url} in the background"));
-                            let (u, w) = (url.clone(), wake.clone());
-                            let connecting = cx.background_executor().spawn(async move { Acme::connect_blocking(&u, w) });
-                            cx.spawn_in(window, async move |this, cx| {
-                                let r = connecting.await;
-                                let _ = this.update_in(cx, |acme, window, cx| {
-                                    match r {
-                                        Ok((link, log, node, target)) => {
-                                            if let Err(e) = acme.adopt(link, log, node, target, &url, files, window) {
-                                                acme.wait_failed(&Acme::connect_error(&url, &e));
-                                            } else {
-                                                shell::log_line(&format!("attached to {url}"));
-                                            }
-                                        }
-                                        Err(e) => acme.wait_failed(&Acme::connect_error(&url, &e)),
-                                    }
-                                    cx.notify();
-                                });
-                            })
-                            .detach();
                             a
                         }
                         Target::Url { url, files } => match Acme::attach(cx, &url, files.clone(), wake.clone()) {
@@ -638,10 +628,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                     acme.switch_for(loc, window, cx);
                                 }
                                 if acme.connected {
-                                    pool::Pool::note_open(cx, &acme.url.clone());
+                                    pool::Pool::note_open(cx, acme.tab, &acme.url.clone());
                                     // settled here, unless ctrl-tab is passing through
                                     if acme.switcher.is_none() {
-                                        pool::Pool::note_settled(cx, &acme.url.clone());
+                                        pool::Pool::note_settled(cx, acme.tab);
                                     }
                                 }
                                 acme.settle_snarf(cx);
@@ -740,6 +730,8 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     .detach();
     acme.url = url.clone();
     acme.session = url.session.clone();
+    // its tab, which is the app's name for it however the attach goes
+    acme.tab = pool::Pool::open(cx, url);
     acme.wake = Some(wake);
     acme.connected = false;
     // remembered like any window, on the session it is meant for

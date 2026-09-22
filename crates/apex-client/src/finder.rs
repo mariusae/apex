@@ -36,9 +36,9 @@ pub struct Entry {
     /// The window, when one is open on it.
     pub window: Option<WindowId>,
     pub kind: WinKind,
-    /// The tab it is in, across the tabs (⌘⇧P): the session and its
-    /// label; none for this session in the plain finder.
-    pub tab: Option<(SessionUrl, String)>,
+    /// The tab it is in, across the tabs (⌘⇧P): the tab and its label;
+    /// none for this session in the plain finder.
+    pub tab: Option<(crate::pool::TabId, String)>,
 }
 
 /// A choice: an entry.
@@ -56,7 +56,7 @@ pub struct Finder {
     /// Across every tab (⌘⇧P), not this session alone.
     pub all: bool,
     /// This window's session, whose windows come first at equal scores.
-    here: Option<SessionUrl>,
+    here: Option<crate::pool::TabId>,
 }
 
 impl Finder {
@@ -75,7 +75,7 @@ impl Finder {
             let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| score(q, &e.name).map(|s| (s, i, e))).collect();
             // best first; open before closed; this tab before others; then
             // the order we had
-            let here = |e: &Entry| e.tab.as_ref().map(|(u, _)| Some(u) == self.here.as_ref()).unwrap_or(true);
+            let here = |e: &Entry| e.tab.as_ref().map(|(id, _)| Some(*id) == self.here).unwrap_or(true);
             scored.sort_by(|a, b| {
                 b.0.partial_cmp(&a.0)
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -201,8 +201,8 @@ pub fn note_closed(url: &SessionUrl, path: &str) {
 /// A session's entries: its open windows in layout order, then its files
 /// closed lately that are not open now; each said to be in `tab` when
 /// given (the label it goes by in the strip).
-fn session_entries(node: &Node, url: &SessionUrl, label: Option<String>) -> Vec<Entry> {
-    let tab = label.map(|l| (url.clone(), l));
+fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label: Option<String>) -> Vec<Entry> {
+    let tab = label.map(|l| (id, l));
     let mut out = Vec::new();
     for col in &node.state.layout.cols {
         for slot in &col.wins {
@@ -235,16 +235,16 @@ impl Acme {
     /// tabs' order, all of them said to be in it.
     fn finder_entries(&self, all: bool, cx: &Context<Self>) -> Vec<Entry> {
         if !all {
-            return session_entries(&self.node, &self.url, None);
+            return session_entries(&self.node, &self.url, self.tab, None);
         }
         let mut out = Vec::new();
         let parked = crate::pool::Pool::parked_nodes(cx);
-        for u in crate::pool::Pool::tabs(cx, &self.url) {
-            let label = tab_label(&u, (u == self.url).then_some(self.session.as_str()));
-            if u == self.url {
-                out.extend(session_entries(&self.node, &u, Some(label)));
-            } else if let Some((_, node)) = parked.iter().find(|(p, _)| *p == u) {
-                out.extend(session_entries(node, &u, Some(label)));
+        for t in crate::pool::Pool::tabs(cx) {
+            let label = tab_label(&t.url, (t.id == self.tab).then_some(self.session.as_str()));
+            if t.id == self.tab {
+                out.extend(session_entries(&self.node, &t.url, t.id, Some(label)));
+            } else if let Some((_, _, node)) = parked.iter().find(|(id, _, _)| *id == t.id) {
+                out.extend(session_entries(node, &t.url, t.id, Some(label)));
             }
         }
         out
@@ -253,7 +253,7 @@ impl Acme {
     pub fn open_finder(&mut self, all: bool, cx: &mut Context<Self>) {
         self.selector = None;
         let entries = self.finder_entries(all, cx);
-        self.finder = Some(Finder { filter: crate::field::LineEdit::new(), cursor: 0, entries, caret_since: std::time::Instant::now(), all, here: Some(self.url.clone()) });
+        self.finder = Some(Finder { filter: crate::field::LineEdit::new(), cursor: 0, entries, caret_since: std::time::Instant::now(), all, here: Some(self.tab) });
         cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(BLINK).await;
             let open = cx
@@ -319,11 +319,11 @@ impl Acme {
         self.finder = None;
         let Pick::Entry(Entry { name, tab, .. }) = p;
         let loc = Loc { session: None, name, pos: Pos::Keep };
-        if let Some((url, _)) = tab.filter(|(u, _)| *u != self.url) {
-            self.switch_to(&url, window, cx);
+        if let Some((id, _)) = tab.filter(|(id, _)| *id != self.tab) {
+            self.switch_to(id, window, cx);
             // a parked tab is here at once, and the pick is made in it as
             // in any; one still attaching lands there once its window is
-            if self.url != url || self.node.state.meta.id.is_empty() {
+            if !self.connected || self.node.state.meta.id.is_empty() {
                 self.pending_goto = Some(loc);
                 self.sync();
                 self.after();
@@ -398,8 +398,8 @@ impl Acme {
                 .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(rgb(t.panel_dim)).child(dir))
                 .when(!open, |d| d.child(div().flex_none().whitespace_nowrap().text_size(px(11.)).text_color(rgb(t.panel_dim)).child("closed")))
                 // the tab it is in: this one's marked so, the others named
-                .when_some(e.tab.clone(), |d, (u, label)| {
-                    let here = u == self.url;
+                .when_some(e.tab.clone(), |d, (id, label)| {
+                    let here = id == self.tab;
                     let badge = div()
                         .flex_none()
                         .max_w(px(220.))
@@ -477,18 +477,19 @@ mod tests {
     fn across_the_tabs_this_tab_comes_first_at_equal_scores() {
         let here = SessionUrl::local("main").with_id("aaaa");
         let there = SessionUrl::local("work").with_id("bbbb");
-        let e = |name: &str, w: u64, u: &SessionUrl, l: &str| Entry { name: name.into(), window: Some(WindowId(w)), kind: WinKind::File, tab: Some((u.clone(), l.into())) };
+        let (t_here, t_there) = (crate::pool::TabId(1), crate::pool::TabId(2));
+        let e = |name: &str, w: u64, id: crate::pool::TabId, l: &str| Entry { name: name.into(), window: Some(WindowId(w)), kind: WinKind::File, tab: Some((id, l.into())) };
         let f = Finder {
             filter: "lib".into(),
             cursor: 0,
             // the other tab's listed first, as the strip might have it
-            entries: vec![e("/w/src/lib.rs", 1, &there, "work"), e("/m/src/lib.rs", 2, &here, "main")],
+            entries: vec![e("/w/src/lib.rs", 1, t_there, "work"), e("/m/src/lib.rs", 2, t_here, "main")],
             caret_since: std::time::Instant::now(),
             all: true,
-            here: Some(here.clone()),
+            here: Some(t_here),
         };
         let picks = f.picks();
-        assert!(matches!(&picks[0], Pick::Entry(e) if e.tab.as_ref().is_some_and(|(u, _)| *u == here)), "{picks:?}");
+        assert!(matches!(&picks[0], Pick::Entry(e) if e.tab.as_ref().is_some_and(|(id, _)| *id == t_here)), "{picks:?}");
         assert_eq!(picks.len(), 2);
         // a remote tab is named with its host
         assert_eq!(super::tab_label(&here, Some("main")), "main");

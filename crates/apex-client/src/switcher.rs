@@ -9,25 +9,23 @@
 
 use gpui::{Context, Window};
 
-use apex_server::providers::SessionUrl;
-
 use crate::app::Acme;
-use crate::pool::Pool;
+use crate::pool::{Pool, TabId};
 
 pub struct Switcher {
     /// The connected sessions (the tabs), most recently shown first as
     /// they were when control was pressed: this window's, then the
     /// parked ones by when they were parked.
-    pub entries: Vec<SessionUrl>,
+    pub entries: Vec<TabId>,
     pub index: usize,
 }
 
 impl Acme {
-    fn switcher_entries(&self, cx: &Context<Self>) -> Vec<SessionUrl> {
-        let mut out: Vec<SessionUrl> = vec![self.url.clone()];
-        for u in Pool::by_recency(cx) {
-            if !out.contains(&u) {
-                out.push(u);
+    fn switcher_entries(&self, cx: &Context<Self>) -> Vec<TabId> {
+        let mut out: Vec<TabId> = vec![self.tab];
+        for id in Pool::by_recency(cx) {
+            if !out.contains(&id) {
+                out.push(id);
             }
         }
         out
@@ -45,9 +43,9 @@ impl Acme {
         if n > 1 {
             s.index = if back { (s.index + n - 1) % n } else { (s.index + 1) % n };
         }
-        if let Some(url) = self.switcher.as_ref().and_then(|s| s.entries.get(s.index)).cloned() {
-            if url != self.url {
-                self.switch_to(&url, window, cx);
+        if let Some(id) = self.switcher.as_ref().and_then(|s| s.entries.get(s.index)).copied() {
+            if id != self.tab {
+                self.switch_to(id, window, cx);
             }
         }
         cx.notify();
@@ -58,17 +56,16 @@ impl Acme {
     /// not: the next ctrl-tab goes back to the one left).
     pub fn switcher_commit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.switcher = None;
-        Pool::note_settled(cx, &self.url.clone());
+        Pool::note_settled(cx, self.tab);
         cx.notify();
     }
 
     /// Escape with control still held: back to where the walk began.
     pub fn close_switcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(s) = self.switcher.take() {
-            if let Some(url) = s.entries.first() {
-                if *url != self.url {
-                    let url = url.clone();
-                    self.switch_to(&url, window, cx);
+            if let Some(id) = s.entries.first().copied() {
+                if id != self.tab {
+                    self.switch_to(id, window, cx);
                 }
             }
         }

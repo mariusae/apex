@@ -27,7 +27,7 @@ use crate::text_element::font_for;
 
 use crate::term_element::TermLayout;
 use crate::web::{Nav, WebEvent, Webs};
-use crate::pool::{Parked, Pool, WakeTarget};
+use crate::pool::{Parked, Pool, TabId, WakeTarget};
 use crate::text_element::{Source, TextLayout};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -367,6 +367,10 @@ pub struct Acme {
     pub socket: Option<std::path::PathBuf>,
     /// Where this window's session is, as a URL.
     pub url: SessionUrl,
+    /// The tab this window shows. The app's own name for it: the session
+    /// behind it can turn out to be another one (`pool::Pool::open`),
+    /// and the tab is still this tab.
+    pub tab: TabId,
     pub wake: Option<Wake>,
     /// Where the current link's wake goes: this window, until the
     /// session is parked.
@@ -377,10 +381,10 @@ pub struct Acme {
     pub tab_drag: Option<crate::shell::TabDrag>,
     /// The tab under the pointer, and since when: its status card shows
     /// beneath it once the pointer has rested there a moment.
-    pub tab_hovered: Option<(SessionUrl, std::time::Instant)>,
+    pub tab_hovered: Option<(TabId, std::time::Instant)>,
     /// Where the tabs were drawn last frame, for the drag to know
     /// which one the pointer has passed.
-    pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(SessionUrl, gpui::Bounds<Pixels>)>>>,
+    pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(TabId, gpui::Bounds<Pixels>)>>>,
     /// Where the overlays (the picker, the finder, the tools menu) were
     /// drawn this frame: holes cut in the web views,
     /// which are native views above everything gpui paints, so the
@@ -454,7 +458,7 @@ pub struct Acme {
     menu_last: Option<String>,
     /// The tabs as the strip last drew them -- which they are, which
     /// want the user, and what each is doing (`tabs_tick`).
-    tabs_shown: Vec<(SessionUrl, bool, Option<String>)>,
+    tabs_shown: Vec<(TabId, String, bool, Option<String>)>,
     /// Bodies scrolled by the trackpad, as a native view scrolls: by the
     /// pixel between whole lines, and past either end. Only this client's;
     /// the origin line is what the session has.
@@ -568,9 +572,10 @@ impl Acme {
     /// it must be) or a destination through its provider. `wake` is
     /// called from the reader thread when there is something to poll.
     pub fn attach(cx: &mut Context<Self>, url: &SessionUrl, files: Vec<String>, wake: Wake) -> std::io::Result<Acme> {
+        let tab = Pool::open(cx, url);
         // parked here (a window closed on it, say): shown at once
-        if let Some(p) = Pool::take(cx, url) {
-            let mut acme = Self::from_parked(cx, p, wake.clone());
+        if let Some(p) = Pool::take(cx, tab) {
+            let mut acme = Self::from_parked(cx, tab, p, wake.clone());
             acme.open_initial(acme.node.state.layout.cols.first().map(|c| c.id).unwrap_or(ColumnId(0)), files);
             return Ok(acme);
         }
@@ -584,21 +589,23 @@ impl Acme {
         let mut acme = Self::over(cx, log, node, Backend::Remote(link), &url.session);
         acme.socket = Some(apex_server::daemon::default_socket());
         acme.url = url.clone();
+        acme.tab = tab;
         acme.wake = Some(wake);
         acme.wake_target = Some(target);
         crate::shell::note_recent(url);
-        Pool::note_open(cx, url);
+        Pool::note_open(cx, tab, url);
         acme.open_initial(col, files);
         Ok(acme)
     }
 
     /// A window on a parked session: its state as it was left, its wake
     /// pointed here.
-    fn from_parked(cx: &mut Context<Self>, p: Parked, wake: Wake) -> Acme {
+    fn from_parked(cx: &mut Context<Self>, tab: TabId, p: Parked, wake: Wake) -> Acme {
         p.target.set(wake.clone());
         let mut acme = Self::over(cx, p.log, p.node, Backend::Remote(p.link), &p.url.session);
         acme.socket = Some(apex_server::daemon::default_socket());
         acme.url = p.url.clone();
+        acme.tab = tab;
         acme.wake = Some(wake);
         acme.wake_target = Some(p.target);
         acme.previews = p.previews;
@@ -606,7 +613,7 @@ impl Acme {
         acme.snarfouts = p.snarfouts;
         acme.pending_goto = p.pending_goto;
         crate::shell::note_recent(&acme.url.clone());
-        Pool::note_open(cx, &acme.url.clone());
+        Pool::note_open(cx, tab, &acme.url.clone());
         acme
     }
 
@@ -694,7 +701,7 @@ impl Acme {
     /// Park this window's session in the pool (the window is closing).
     pub fn park_into_pool(&mut self, cx: &mut gpui::App) {
         if let Some(p) = self.park() {
-            Pool::park(cx, p);
+            Pool::park(cx, self.tab, p);
         }
     }
 
@@ -702,13 +709,13 @@ impl Acme {
     /// session parked last, or closes when no other is connected.
     pub fn leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.leave_requested = false;
-        let gone = self.url.clone();
-        let next = self.next_tab(&gone, cx);
-        Pool::let_go(cx, &gone);
+        let (gone, tab) = (self.url.clone(), self.tab);
+        let next = self.next_tab(cx);
+        Pool::let_go(cx, tab);
         match next {
             Some(prev) => {
                 crate::shell::log_line(&format!("{gone} over: the window shows {prev}"));
-                self.switch_to(&prev, window, cx);
+                self.switch_to(prev, window, cx);
             }
             None => {
                 crate::shell::log_line(&format!("{gone} over, nothing else connected: closing the window"));
@@ -742,11 +749,11 @@ impl Acme {
     /// The current tab's ×: this session let go (its link closes, its
     /// tab goes), the window showing the session parked most recently.
     pub fn close_current_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let leaving = self.url.clone();
-        match self.next_tab(&leaving, cx) {
+        let leaving = self.tab;
+        match self.next_tab(cx) {
             Some(prev) => {
-                self.switch_to(&prev, window, cx);
-                Pool::let_go(cx, &leaving);
+                self.switch_to(prev, window, cx);
+                Pool::let_go(cx, leaving);
             }
             // the last tab: the window goes with it, as a browser's does
             // (the session stays, parked, for a window asking later)
@@ -758,22 +765,22 @@ impl Acme {
     /// Where the window goes when the tab it shows is closed or over:
     /// the session parked most recently, else the tab beside this one
     /// (which may be one still coming up, or down -- a tab is a tab).
-    fn next_tab(&self, leaving: &SessionUrl, cx: &gpui::App) -> Option<SessionUrl> {
-        if let Some(u) = Pool::most_recent(cx).filter(|u| u != leaving) {
-            return Some(u);
+    fn next_tab(&self, cx: &gpui::App) -> Option<TabId> {
+        if let Some(id) = Pool::most_recent(cx).filter(|id| *id != self.tab) {
+            return Some(id);
         }
-        let tabs = Pool::tabs(cx, leaving);
-        let at = tabs.iter().position(|u| u == leaving)?;
-        tabs.get(at + 1).or_else(|| at.checked_sub(1).and_then(|i| tabs.get(i))).cloned()
+        let tabs = Pool::tabs(cx);
+        let at = tabs.iter().position(|t| t.id == self.tab)?;
+        tabs.get(at + 1).or_else(|| at.checked_sub(1).and_then(|i| tabs.get(i))).map(|t| t.id)
     }
 
     /// cmd-N: the Nth tab.
     pub fn go_to_tab(&mut self, n: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let tabs = Pool::tabs(cx, &self.url);
-        if let Some(u) = tabs.get(n.saturating_sub(1)) {
-            if *u != self.url {
-                let u = u.clone();
-                self.switch_to(&u, window, cx);
+        let tabs = Pool::tabs(cx);
+        if let Some(t) = tabs.get(n.saturating_sub(1)) {
+            if t.id != self.tab {
+                let id = t.id;
+                self.switch_to(id, window, cx);
                 cx.notify();
             }
         }
@@ -782,11 +789,11 @@ impl Acme {
     /// ⌘⇧[ and ⌘⇧]: the tab on either side of this one, in the order the
     /// bar shows them, wrapping at both ends as a browser's do.
     pub fn cycle_tab(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let tabs = Pool::tabs(cx, &self.url);
-        let Some(at) = tabs.iter().position(|u| *u == self.url) else { return };
-        let u = tabs[around(at, tabs.len(), by)].clone();
-        if u != self.url {
-            self.switch_to(&u, window, cx);
+        let tabs = Pool::tabs(cx);
+        let Some(at) = tabs.iter().position(|t| t.id == self.tab) else { return };
+        let id = tabs[around(at, tabs.len(), by)].id;
+        if id != self.tab {
+            self.switch_to(id, window, cx);
             cx.notify();
         }
     }
@@ -794,8 +801,8 @@ impl Acme {
     /// cmd-shift-k: back to the session parked most recently.
     pub fn previous_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match Pool::most_recent(cx) {
-            Some(url) => {
-                self.switch_to(&url, window, cx);
+            Some(id) => {
+                self.switch_to(id, window, cx);
                 cx.notify();
             }
             None => self.notice("no previous session\n"),
@@ -820,39 +827,52 @@ impl Acme {
             None if apex_server::providers::valid_label(&id).is_ok() => here.url(&id),
             None => here.url(&id.chars().take(8).collect::<String>()).with_id(&id),
         };
-        self.switch_to(&url, window, cx);
+        self.switch_to_url(&url, window, cx);
         if !loc.name.is_empty() {
             self.pending_goto = Some(Loc { session: None, ..loc });
         }
         cx.notify();
     }
 
-    /// Show the tab at `url`. Attached already (parked here), it is back
-    /// at once; otherwise the window is a blank page saying what is
-    /// happening while the pool makes the link. Nothing waits on the UI
-    /// thread, and nothing is lost by moving on: the link goes on being
-    /// made, and lands in the tab whether or not it is the one shown.
-    pub fn switch_to(&mut self, url: &SessionUrl, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(p) = self.park() {
-            Pool::park(cx, p);
-        }
-        if let Some(p) = Pool::take(cx, url) {
-            self.adopt_parked(p, window);
-            Pool::note_open(cx, &self.url.clone());
+    /// Show the session at `url`: its tab, which is the one the app has
+    /// for that session or a new one (`Pool::open` -- the one place a
+    /// url becomes a tab).
+    pub fn switch_to_url(&mut self, url: &SessionUrl, window: &mut Window, cx: &mut Context<Self>) {
+        let id = Pool::open(cx, url);
+        self.switch_to(id, window, cx);
+    }
+
+    /// Show a tab. Attached already (parked here), it is back at once;
+    /// otherwise the window is a blank page saying what is happening
+    /// while the pool makes the link. Nothing waits on the UI thread,
+    /// and nothing is lost by moving on: the link goes on being made,
+    /// and lands in its tab whether or not that tab is the one shown.
+    pub fn switch_to(&mut self, id: TabId, window: &mut Window, cx: &mut Context<Self>) {
+        if id == self.tab && self.connected {
             return;
         }
+        if let Some(p) = self.park() {
+            Pool::park(cx, self.tab, p);
+        }
+        self.tab = id;
+        if let Some(p) = Pool::take(cx, id) {
+            self.adopt_parked(p, window);
+            Pool::note_open(cx, id, &self.url.clone());
+            return;
+        }
+        let Some(url) = Pool::url_of(cx, id) else { return };
         self.url = url.clone();
         self.session = url.session.clone();
         self.connected = false;
         // a tab already coming up says what it is doing, not what this
         // switch would have said
-        let why = match Pool::tab(cx, url) {
-            crate::pool::Tab::Coming(why) => why,
+        let why = match Pool::state(cx, id) {
+            crate::pool::State::Coming(why) => why,
             _ => crate::pool::Why::Attaching,
         };
-        self.wait(&why.sentence(url));
+        self.wait(&why.sentence(&url));
         window.set_window_title(&self.current_title());
-        Pool::start(cx, url, why, false, Vec::new());
+        Pool::start(cx, id, why, false, Vec::new());
     }
 
     /// The window has no session to show: the blank page says why. What
@@ -1251,6 +1271,7 @@ impl Acme {
         let mut acme = Self::over(cx, log, node, Backend::Remote(link), session);
         acme.socket = Some(apex_server::daemon::default_socket());
         acme.url = SessionUrl { provider: "via".into(), arg: cmd.split_whitespace().nth(1).unwrap_or("?").to_string(), session: session.to_string(), id: None };
+        acme.tab = Pool::open(cx, &acme.url.clone());
         acme.wake = Some(wake);
         acme.open_initial(col, files);
         Ok(acme)
@@ -1334,7 +1355,7 @@ impl Acme {
         self.connected = false;
         self.wait(&crate::pool::Why::Attaching.sentence(&url));
         window.set_window_title(&self.current_title());
-        Pool::start(cx, &url, crate::pool::Why::Attaching, false, Vec::new());
+        Pool::start(cx, self.tab, crate::pool::Why::Attaching, false, Vec::new());
     }
 
     /// What to tell the user when a session could not be attached: the
@@ -1433,12 +1454,13 @@ impl Acme {
     /// A tab's status card (hovered): the session, where it is, how the
     /// link stands, and the round trips spelled out: the heartbeat's
     /// (ping) and a log append's acknowledgement (log).
-    pub fn tab_status(&self, url: &SessionUrl, cx: &gpui::App) -> Vec<(String, String)> {
+    pub fn tab_status(&self, tab: &crate::pool::Tab, cx: &gpui::App) -> Vec<(String, String)> {
+        let url = &tab.url;
         let ms = |m: Option<u64>| m.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
         let mut lines = vec![("Session".to_string(), url.session.clone())];
         let host = if url.is_local() { "this machine".to_string() } else { format!("{} ({})", url.arg, url.provider) };
         lines.push(("Host".into(), host));
-        if *url == self.url {
+        if tab.id == self.tab {
             let state = match &self.backend {
                 _ if self.waiting.is_some() => self.waiting.clone().unwrap_or_default(),
                 Backend::Local(_) => "in-process".to_string(),
@@ -1454,7 +1476,7 @@ impl Acme {
             };
             lines.push(("Log".into(), ms(ack)));
         } else {
-            match Pool::link_status(cx, url) {
+            match Pool::link_status(cx, tab.id) {
                 Some((ack, pong)) => {
                     let heard = match pong {
                         Some(d) if d.as_secs() < 2 => "just now".to_string(),
@@ -1465,11 +1487,10 @@ impl Acme {
                     lines.push(("Log".into(), ms(ack)));
                 }
                 None => {
-                    let t = Pool::tab(cx, url);
-                    let what = match &t {
-                        crate::pool::Tab::Coming(why) => why.word().to_string(),
-                        crate::pool::Tab::Down(why) => why.clone(),
-                        crate::pool::Tab::Up => "not connected".into(),
+                    let what = match &tab.state {
+                        crate::pool::State::Coming(why) => why.word().to_string(),
+                        crate::pool::State::Down(why) => why.clone(),
+                        crate::pool::State::Up => "not connected".into(),
                     };
                     lines.push(("Status".into(), what));
                 }
@@ -1535,6 +1556,7 @@ impl Acme {
             session: session.to_string(),
             socket: None,
             url: SessionUrl::local(session),
+            tab: TabId(0),
             wake: None,
             wake_target: None,
             selector: None,
@@ -1659,11 +1681,11 @@ impl Acme {
 
     /// Whether the session a tab names has notifications waiting: this
     /// window's own, or a parked one's.
-    pub fn tab_notified(&self, url: &SessionUrl, cx: &gpui::App) -> bool {
-        if crate::pool::one_session(url, &self.url) {
+    pub fn tab_notified(&self, id: TabId, cx: &gpui::App) -> bool {
+        if id == self.tab {
             return self.notification_head().is_some();
         }
-        crate::pool::Pool::notified(cx, url)
+        Pool::notified(cx, id)
     }
 
     /// Every tick: the strip as it would be drawn now -- the tabs, which
@@ -1672,8 +1694,8 @@ impl Acme {
     /// window, and so does a tab coming up, so nothing else would draw
     /// the strip again.
     pub fn tabs_tick(&mut self, cx: &gpui::App) -> bool {
-        let now: Vec<(SessionUrl, bool, Option<String>)> =
-            crate::pool::Pool::tabs(cx, &self.url).into_iter().map(|u| (u.clone(), self.tab_notified(&u, cx), self.tab_word(&u, cx))).collect();
+        let now: Vec<(TabId, String, bool, Option<String>)> =
+            Pool::tabs(cx).into_iter().map(|t| (t.id, t.url.to_string(), self.tab_notified(t.id, cx), self.tab_word(&t, cx))).collect();
         if now == self.tabs_shown {
             return false;
         }
@@ -1684,20 +1706,20 @@ impl Acme {
     /// The word after a tab's name: what it is doing, when that is
     /// anything but simply being up -- "connecting…", "restoring…",
     /// "fenced", "offline".
-    pub fn tab_word(&self, url: &SessionUrl, cx: &gpui::App) -> Option<String> {
-        use crate::pool::Tab;
-        if crate::pool::one_session(url, &self.url) {
+    pub fn tab_word(&self, tab: &crate::pool::Tab, cx: &gpui::App) -> Option<String> {
+        use crate::pool::State;
+        if tab.id == self.tab {
             // this window knows its own session better than the pool does
-            return match crate::pool::Pool::tab(cx, url) {
-                Tab::Coming(why) if self.waiting.is_some() => Some(why.word().to_string()),
+            return match &tab.state {
+                State::Coming(why) if self.waiting.is_some() => Some(why.word().to_string()),
                 _ if self.waiting.is_some() => Some("offline".into()),
                 _ if self.fenced() => Some("fenced".into()),
                 _ => None,
             };
         }
-        match crate::pool::Pool::tab(cx, url) {
-            Tab::Up => crate::pool::Pool::fenced(cx, url).then(|| "fenced".to_string()),
-            t => t.word().map(str::to_string),
+        match &tab.state {
+            State::Up => Pool::fenced(cx, tab.id).then(|| "fenced".to_string()),
+            s => s.word().map(str::to_string),
         }
     }
 
@@ -1711,15 +1733,15 @@ impl Acme {
     /// is shown and the pointer lands on it, and the notification is
     /// taken. A beep when there is none left to take.
     pub fn next_notification(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((url, w, _)) = crate::attention::queue(cx).into_iter().next() else {
+        let Some((tab, w, _)) = crate::attention::queue(cx).into_iter().next() else {
             crate::attention::beep();
             return;
         };
-        if url != self.url {
-            self.switch_to(&url, window, cx);
+        if tab != self.tab {
+            self.switch_to(tab, window, cx);
             // a parked tab is here at once; one still attaching takes it
             // when it lands
-            if self.url != url {
+            if !self.connected {
                 self.pending_note = Some(w);
                 cx.notify();
                 return;
@@ -2761,16 +2783,16 @@ impl Acme {
                 d.moved = true;
             }
             if d.moved {
-                let (url, grab, width) = (d.url.clone(), d.grab, d.width);
-                let mut all: Vec<(SessionUrl, gpui::Bounds<Pixels>)> = self.tab_bounds.borrow().clone();
+                let (id, grab, width) = (d.tab, d.grab, d.width);
+                let mut all: Vec<(TabId, gpui::Bounds<Pixels>)> = self.tab_bounds.borrow().clone();
                 all.sort_by(|a, b| a.1.origin.x.partial_cmp(&b.1.origin.x).unwrap_or(std::cmp::Ordering::Equal));
                 let gap = if all.len() >= 2 { all[1].1.origin.x - (all[0].1.origin.x + all[0].1.size.width) } else { px(4.) };
                 let (gl, gr) = (pos.x - grab, pos.x - grab + width);
                 // the others' slots with the dragged tab out of the row
                 let mut left = all.first().map(|(_, b)| b.origin.x).unwrap_or(px(0.));
-                let mut slots: Vec<(SessionUrl, Pixels, Pixels)> = Vec::new();
-                for (u, b) in all.iter().filter(|(u, _)| *u != url) {
-                    slots.push((u.clone(), left, left + b.size.width));
+                let mut slots: Vec<(TabId, Pixels, Pixels)> = Vec::new();
+                for (u, b) in all.iter().filter(|(u, _)| *u != id) {
+                    slots.push((*u, left, left + b.size.width));
                     left += b.size.width + gap;
                 }
                 // where it is now among them, then past each neighbour it
@@ -2781,7 +2803,7 @@ impl Acme {
                 // (the two tests exclude each other, so the walk ends and
                 // a swap cannot undo itself as the pointer moves on)
                 let c = gl + width / 2.;
-                let mut k = all.iter().position(|(u, _)| *u == url).unwrap_or(slots.len());
+                let mut k = all.iter().position(|(u, _)| *u == id).unwrap_or(slots.len());
                 for _ in 0..=slots.len() {
                     if k < slots.len() && gl >= slots[k].1 && c >= (slots[k].1 + slots[k].2) / 2. {
                         k += 1;
@@ -2791,8 +2813,8 @@ impl Acme {
                         break;
                     }
                 }
-                let before = slots.get(k).map(|(u, _, _)| u.clone());
-                crate::pool::Pool::move_tab(cx, &url, before.as_ref());
+                let before = slots.get(k).map(|(u, _, _)| *u);
+                crate::pool::Pool::move_tab(cx, id, before);
             }
             cx.notify();
             self.last_mouse = pos;
@@ -2904,7 +2926,7 @@ impl Acme {
             // toggles the picker; another is switched to)
             if !d.moved && !d.current {
                 // (the current tab, clicked, is where we are)
-                self.switch_to(&d.url, window, cx);
+                self.switch_to(d.tab, window, cx);
             }
             cx.notify();
             return;
