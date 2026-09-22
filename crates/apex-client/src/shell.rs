@@ -18,7 +18,7 @@ use apex_server::providers::SessionUrl;
 use apex_server::proto::SessionInfo;
 use apex_server::remote::{list_sessions, new_session};
 
-use crate::app::{Acme, Backend};
+use crate::app::Acme;
 
 actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs, ToggleContrast]);
 

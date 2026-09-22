@@ -1231,6 +1231,22 @@ back to the bottom, republishing the rows at once. History lines are
 numbered from the oldest line kept, so a selection drifts once the
 scrollback limit truncates; a selection does not outlive that.
 
+*As built, a grid is drawn cell by cell:* a row is shaped as one line,
+so the font system still does what it does -- ligatures, fallbacks, the
+right glyph for a combining sequence -- but every glyph is then painted
+at its own cell's x (`window.paint_glyph`, the row's byte-to-column map),
+and the underlines with it. A glyph whose advance is not a cell's width
+cannot push the rest of the row along: an icon from a Nerd Font is a
+whole em wide where a cell is 0.6 of one, and a CJK ideograph is two
+cells and a spacer. apex carries the symbols font itself
+(`assets/SymbolsNerdFontMono-Regular.ttf`), registered with CoreText for
+its own process at launch and named as the fallback behind Menlo and
+Lucida Grande, so `exa --icons`, a powerline prompt and the rest draw
+their private-use glyphs whether or not the user has installed a patched
+font. Icons are drawn at their own size, overflowing into the cell after
+them as they do in other terminals -- which is why the programs that
+print them print a space after.
+
 *As built, the VT library:* `ghostty-vt-sys` builds libghostty-vt from a
 pinned Ghostty commit with Zig (its C API is on main alone; the tagged
 releases carry the OSC and SGR parsers and no terminal), keeping the

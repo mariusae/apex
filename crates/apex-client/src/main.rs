@@ -424,6 +424,7 @@ fn main() {
     }
     gpui_platform::application().run(move |cx: &mut App| {
         cursor::install();
+        text_element::install_symbols();
         pool::Pool::install(cx);
         theme::load();
         cx.set_menus(shell::menus());

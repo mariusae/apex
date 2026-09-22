@@ -47,6 +47,14 @@ struct RowDraw {
     text: SharedString,
     runs: Vec<TextRun>,
     bgs: Vec<(u16, u16, Hsla)>,
+    /// The column each byte of `text` belongs to: a grid is drawn cell
+    /// by cell, so every glyph is put where its cell is and no glyph's
+    /// own width can move the ones after it.
+    cols: Vec<u16>,
+    /// The ink of each column.
+    inks: Vec<Hsla>,
+    /// The underlined stretches: first column, how many, in what ink.
+    uls: Vec<(u16, u16, Hsla)>,
 }
 
 pub struct Prepaint {
@@ -151,6 +159,9 @@ impl Element for TermElement {
                 let mut line = String::with_capacity(row.len());
                 let mut runs: Vec<TextRun> = Vec::new();
                 let mut bgs: Vec<(u16, u16, Hsla)> = Vec::new();
+                let mut cols: Vec<u16> = Vec::with_capacity(row.len());
+                let mut inks: Vec<Hsla> = Vec::with_capacity(row.len());
+                let mut uls: Vec<(u16, u16, Hsla)> = Vec::new();
                 for (x, cell) in row.iter().enumerate() {
                     let Cell { ch, fg, bg, flags, link } = *cell;
                     let fg_rgb = if fg == 0 { th.text } else { color_rgb(fg, th) };
@@ -180,25 +191,30 @@ impl Element for TermElement {
                     let start = line.len();
                     line.push(if ch == '\0' { ' ' } else { ch });
                     let len = line.len() - start;
+                    cols.resize(line.len(), x as u16);
+                    inks.push(fgc);
                     let bold = flags & FLAG_BOLD != 0;
                     // underlined text, and OSC 8 links (B3 on one plumbs it)
                     let ul = flags & FLAG_UNDERLINE != 0 || link != 0;
+                    if ul {
+                        match uls.last_mut() {
+                            Some((sx, n, c)) if *c == fgc && (*sx + *n) as usize == x => *n += 1,
+                            _ => uls.push((x as u16, 1, fgc)),
+                        }
+                    }
                     match runs.last_mut() {
-                        Some(r) if r.color == fgc && r.underline.is_some() == ul && (r.font.weight == gpui::FontWeight::BOLD) == bold => r.len += len,
+                        Some(r) if r.color == fgc && (r.font.weight == gpui::FontWeight::BOLD) == bold => r.len += len,
                         _ => {
                             let mut r = run(len, fgc);
                             if bold {
                                 r.font = bold_font.clone();
-                            }
-                            if ul {
-                                r.underline = Some(gpui::UnderlineStyle { thickness: px(1.), color: Some(fgc), wavy: false });
                             }
                             runs.push(r);
                         }
                     }
                 }
                 row_text.push(line.clone());
-                rows.push(RowDraw { text: line.into(), runs, bgs });
+                rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
             Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
         })
@@ -237,8 +253,32 @@ impl Element for TermElement {
                     window.paint_quad(fill(Bounds::new(point(origin.x + pp.cell_w * x as f32, y), size(pp.cell_w * n as f32, lh)), c));
                 }
                 if !row.runs.is_empty() {
+                    // shaped as a line, so a font's own choices still hold
+                    // (and the symbols font can stand in where the mono
+                    // one has nothing), but painted cell by cell: a glyph
+                    // wider than a cell -- an icon from a Nerd Font is a
+                    // whole em wide, a CJK ideograph two cells -- would
+                    // otherwise push the rest of the row along with it
                     let line = window.text_system().shape_line(row.text.clone(), pp.fontspec.size, &row.runs, None);
-                    line.paint(point(origin.x, y), lh, gpui::TextAlign::Left, None, window, cx).ok();
+                    let base = y + (lh - line.ascent - line.descent) / 2. + line.ascent;
+                    for run in &line.runs {
+                        for g in &run.glyphs {
+                            let col = row.cols.get(g.index).copied().unwrap_or_default();
+                            let at = point(origin.x + pp.cell_w * col as f32, base);
+                            let _ = if g.is_emoji {
+                                window.paint_emoji(at, run.font_id, g.id, pp.fontspec.size)
+                            } else {
+                                let ink = row.inks.get(col as usize).copied().unwrap_or(rgb(th.text));
+                                window.paint_glyph(at, run.font_id, g.id, pp.fontspec.size, ink)
+                            };
+                        }
+                    }
+                    // and the underlines under their own cells, so a link
+                    // is underlined as far as it reaches and no further
+                    for &(x0, n, ink) in &row.uls {
+                        let at = point(origin.x + pp.cell_w * x0 as f32, base + line.descent * 0.618);
+                        window.paint_underline(at, pp.cell_w * n as f32, &gpui::UnderlineStyle { thickness: px(1.), color: Some(ink), wavy: false });
+                    }
                 }
             }
             // a program at work: the bar other terminals draw, across the

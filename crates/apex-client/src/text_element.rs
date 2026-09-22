@@ -58,10 +58,77 @@ pub struct FontSpec {
 
 pub fn font_for(mono: bool) -> FontSpec {
     if mono {
-        FontSpec { font: font("Menlo"), size: px(12.), line_height: px(16.) }
+        FontSpec { font: with_symbols(font("Menlo")), size: px(12.), line_height: px(16.) }
     } else {
-        FontSpec { font: font("Lucida Grande"), size: px(13.), line_height: px(17.) }
+        FontSpec { font: with_symbols(font("Lucida Grande")), size: px(13.), line_height: px(17.) }
     }
+}
+
+/// The symbols font apex carries (`install_symbols`), behind whatever
+/// font is asked for: the glyphs a program means when it prints one of
+/// the private-use characters the Nerd Fonts agreed on -- `exa --icons`,
+/// a shell prompt's powerline arrows -- which no font of the system's
+/// has.
+fn with_symbols(f: Font) -> Font {
+    Font { fallbacks: Some(gpui::FontFallbacks::from_fonts(vec![SYMBOLS.to_string()])), ..f }
+}
+
+/// The family name of the font in `assets/`, as its `name` table has it.
+pub const SYMBOLS: &str = "Symbols Nerd Font Mono";
+
+/// Give the symbols font to CoreText, for this process alone: it is in
+/// the binary, not on the machine, so nothing the user has installed (or
+/// has not) decides whether a terminal can draw what a program prints.
+///
+/// It goes to CoreText rather than to gpui's own font source because a
+/// fallback is named to CoreText, which resolves the cascade list, and
+/// because gpui will not load a family with no `m` in it -- which a font
+/// of symbols has no business having.
+pub fn install_symbols() {
+    const TTF: &[u8] = include_bytes!("../assets/SymbolsNerdFontMono-Regular.ttf");
+    // SAFETY: the bytes are static, so the provider needs no release
+    // callback and may outlive this call; the font and the provider are
+    // CoreFoundation objects we own and hand to the font manager.
+    unsafe {
+        let provider = CGDataProviderCreateWithData(std::ptr::null_mut(), TTF.as_ptr() as *const _, TTF.len(), std::ptr::null());
+        if provider.is_null() {
+            eprintln!("apex-ui: the symbols font: no data provider");
+            return;
+        }
+        let font = CGFontCreateWithDataProvider(provider);
+        CFRelease(provider);
+        if font.is_null() {
+            eprintln!("apex-ui: the symbols font is not a font CoreGraphics knows");
+            return;
+        }
+        let mut err: *const std::ffi::c_void = std::ptr::null();
+        let ok = CTFontManagerRegisterGraphicsFont(font, &mut err);
+        CFRelease(font);
+        if !ok {
+            eprintln!("apex-ui: the symbols font was not registered");
+            if !err.is_null() {
+                CFRelease(err);
+            }
+        }
+    }
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGDataProviderCreateWithData(info: *mut std::ffi::c_void, data: *const std::ffi::c_void, size: usize, release: *const std::ffi::c_void) -> *const std::ffi::c_void;
+    fn CGFontCreateWithDataProvider(provider: *const std::ffi::c_void) -> *const std::ffi::c_void;
+}
+
+#[link(name = "CoreText", kind = "framework")]
+extern "C" {
+    /// Registers a font with CoreText for this process, as a font in an
+    /// app bundle's Resources would be. Not in the `core-text` crate.
+    fn CTFontManagerRegisterGraphicsFont(font: *const std::ffi::c_void, error: *mut *const std::ffi::c_void) -> bool;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFRelease(v: *const std::ffi::c_void);
 }
 
 /// Glyph substitution: Lucida Grande ships a slashed zero (glyph
