@@ -1423,9 +1423,10 @@ this one (detach, attach).
   at the bottom over a wider curve (`DRAPE`, 12: a square of its colour
   with the strip's rounded away) so it flows into the window as a
   browser's does. It carries no line of its own: it is a shape cut out
-  of the strip, not a card on it. The others are chips lying on the
-  strip, a touch lighter than it with a faint line closing each, and
-  the tab search and `+` are the same chip; that faint lift is the only
+  of the strip, not a card on it. The others are the strip's own
+  colour, with a faint line the only thing that says where each one is;
+  the tab search and `+` are the same. The pointer on one fills it
+  (`tab_hover`) and darkens its line a little: that fill is the only
   shading in the bar. A tab's × shows while the pointer is
   on it, over the tab's own contents and on the paper it lies on, and
   takes no room of its own, so a tab is the same width whether the

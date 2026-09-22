@@ -1509,7 +1509,6 @@ impl Acme {
             .rounded(px(7.))
             .border_1()
             .border_color(rgb(t.tab_outline_dim))
-            .bg(rgb(t.tab_button))
             .text_size(px(16.))
             .line_height(px(LINE))
             .font_family(UI_FONT)
@@ -1517,7 +1516,7 @@ impl Acme {
             .pb(px(7.)) // the glyph hangs low in its box: centred by eye
             .child("⌄");
         if clickable {
-            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_button_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
+            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::Tabs) {
@@ -1620,17 +1619,16 @@ impl Acme {
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
                     .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
-                    // the others: chips lying on the strip, a touch
-                    // lighter than it with a faint line closing them, on
+                    // the others: the strip's own colour, with a faint
+                    // line the only thing that says where each one is, on
                     // the same centre line as the one in front, so the
-                    // text stays put as the front moves; the one dragged
-                    // shows as hovered
+                    // text stays put as the front moves; the pointer on
+                    // one fills it, and the one dragged shows as hovered
                     .when(!current, |d| {
                         d.h(px(TAB_H - INSET))
                             .mb(px(INSET))
                             .rounded(px(7.))
                             .border_1()
-                            .bg(rgb(t.tab_idle_bg))
                             .border_color(rgb(t.tab_outline_dim))
                             .text_color(rgb(t.tab_text))
                             .hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)))

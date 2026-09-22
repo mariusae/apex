@@ -68,20 +68,14 @@ pub struct Theme {
     /// The tab in front while the session picker is down; otherwise it
     /// is the colour of the row below it, which it flows into.
     pub tab_open_bg: u32,
-    /// The tabs not in front: a touch lighter than the strip, so each
-    /// reads as a chip lying on it.
-    pub tab_idle_bg: u32,
-    /// The line round a chip, and the one it takes when the pointer is
-    /// on it. Faint: the lift is the fill, the line only closes it.
+    /// The line round a tab not in front -- which is the strip's own
+    /// colour, so the line is the only thing that says where it is --
+    /// and the line it takes when the pointer is on it.
     pub tab_outline_dim: u32,
     pub tab_outline: u32,
     pub tab_current_text: u32,
     pub tab_text: u32,
     pub tab_hover: u32,
-    /// The tab-search button's ground, a browser's chevron in a rounded
-    /// square before the tabs, and its ground hovered.
-    pub tab_button: u32,
-    pub tab_button_hover: u32,
     pub tab_dim: u32,
     pub tab_close_hover: u32,
     pub tab_fenced_text: u32,
@@ -137,14 +131,11 @@ pub const LIGHT: Theme = Theme {
     // the strip tinted with acme's paper, so the bar and the rows agree
     strip: 0xEDEDDC,
     tab_open_bg: 0xD4F5F5,
-    tab_idle_bg: 0xF3F3E6,
     tab_outline_dim: 0xDCDCCB,
     tab_outline: 0xC3C3B0,
     tab_current_text: 0x000099,
     tab_text: 0x555555,
     tab_hover: 0xE0E0CC,
-    tab_button: 0xE2E2CE,
-    tab_button_hover: 0xD6D6C0,
     tab_dim: 0x9A9A9A,
     tab_close_hover: 0x000000,
     tab_fenced_text: 0x555555,
@@ -201,14 +192,11 @@ pub const DARK: Theme = Theme {
     cursor_tint_to: 0xFFFFFF,
     strip: 0x2A2A22,
     tab_open_bg: 0x2B474A,
-    tab_idle_bg: 0x34342B,
     tab_outline_dim: 0x3E3E34,
     tab_outline: 0x55554C,
     tab_current_text: 0xA0A0FF,
     tab_text: 0xB8B8B8,
     tab_hover: 0x3A3A30,
-    tab_button: 0x3C3C32,
-    tab_button_hover: 0x4A4A3E,
     tab_dim: 0x8A8A8A,
     tab_close_hover: 0xFFFFFF,
     tab_fenced_text: 0xB8B8B8,
