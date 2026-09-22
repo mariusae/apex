@@ -354,10 +354,6 @@ enum Target {
     Url { url: SessionUrl, files: Vec<String> },
     /// Through an arbitrary command's stdin/stdout.
     Via { cmd: String, session: String, files: Vec<String> },
-    /// A window with the session picker open, attached to nothing yet:
-    /// what a new window is until a session is chosen (`url` is the one
-    /// the picker calls current, the active window's).
-    Chooser { url: SessionUrl },
 }
 
 fn main() {
@@ -441,41 +437,15 @@ fn main() {
                 });
             }
         });
-        cx.on_action(move |_: &shell::NewWindow, cx| {
-            // the first window goes to the local default; another one asks
-            // which session, in the picker, before attaching anywhere
-            // "any window at all" decides, not the active one: during action
-            // dispatch there may be no active window to ask
-            let ours: Vec<gpui::WindowHandle<Acme>> = cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()).collect();
-            let current = cx
-                .active_window()
-                .and_then(|w| w.downcast::<Acme>())
-                .into_iter()
-                .chain(ours.iter().copied())
-                .find_map(|h| h.read(cx).ok().map(|a| a.url.clone()));
-            shell::log_line(&format!("new window: {} open, current {:?}", ours.len(), current.as_ref().map(|u| u.to_string())));
-            match current {
-                None if ours.is_empty() => {
-                    open_window(cx, Target::Url { url: SessionUrl::local(apex_server::providers::DEFAULT_SESSION), files: Vec::new() }, None);
-                }
-                current => {
-                    let url = current.unwrap_or_else(|| SessionUrl::local(apex_server::providers::DEFAULT_SESSION));
-                    if let Some(h) = open_window(cx, Target::Chooser { url }, None) {
-                        let _ = h.update(cx, |acme, _, cx| acme.open_selector(cx));
-                    }
-                }
-            }
-            cx.defer(|cx| shell::save_open(cx));
-        });
-
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
-        let targets: Vec<(Target, Option<WindowBounds>)> = if local {
-            vec![(Target::Local(files.clone()), None)]
+        // apex has one window; everything else it has open is a tab in it
+        let (target, frame): (Target, Option<WindowBounds>) = if local {
+            (Target::Local(files.clone()), None)
         } else if let Some(cmd) = via.clone() {
-            vec![(Target::Via { cmd, session: default(), files: files.clone() }, None)]
+            (Target::Via { cmd, session: default(), files: files.clone() }, None)
         } else if let Some(u) = url.clone() {
             match SessionUrl::parse(&u) {
-                Some(url) => vec![(Target::Url { url, files: files.clone() }, None)],
+                Some(url) => (Target::Url { url, files: files.clone() }, None),
                 None => {
                     eprintln!("apex-ui: bad session URL {u:?}");
                     std::process::exit(2);
@@ -483,28 +453,28 @@ fn main() {
             }
         } else if let Some(dest) = remote.clone() {
             let d = apex_server::providers::Dest::parse(&dest);
-            vec![(Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default(), id: None }, files: files.clone() }, None)]
+            (Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default(), id: None }, files: files.clone() }, None)
         } else {
             if let Err(e) = shell::ensure_daemon(&socket) {
                 eprintln!("apex-ui: {e}");
                 std::process::exit(1);
             }
-            let urls = match &session {
-                Some(s) => vec![(SessionUrl::local(s), None)],
-                None => shell::plan(&socket).unwrap_or_else(|e| {
-                    eprintln!("apex-ui: {e}");
-                    std::process::exit(1);
-                }),
-            };
-            urls.into_iter().map(|(url, frame)| (Target::Url { url, files: files.clone() }, frame)).collect()
+            match &session {
+                Some(s) => (Target::Url { url: SessionUrl::local(s), files: files.clone() }, None),
+                None => {
+                    let (url, frame) = shell::plan(&socket).unwrap_or_else(|e| {
+                        eprintln!("apex-ui: {e}");
+                        std::process::exit(1);
+                    });
+                    (Target::Url { url, files: files.clone() }, frame)
+                }
+            }
         };
-        let shown: Vec<SessionUrl> = targets.iter().filter_map(|(t, _)| match t {
-            Target::Url { url, .. } => Some(url.clone()),
-            _ => None,
-        }).collect();
-        for (t, frame) in targets {
-            open_window(cx, t, frame);
-        }
+        let shown: Vec<SessionUrl> = match &target {
+            Target::Url { url, .. } => vec![url.clone()],
+            _ => Vec::new(),
+        };
+        open_window(cx, target, frame);
         shell::save_open(cx);
         // the tabs of last time, attached again in the background and parked
         pool::Pool::restore(cx, &shown);
@@ -530,19 +500,14 @@ fn main() {
     });
 }
 
+/// The window. apex has one, on a session, with the rest of what it has
+/// open as tabs in it.
 fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Option<gpui::WindowHandle<Acme>> {
-    let n = cx.windows().len() as f32;
-    let bounds = frame.unwrap_or_else(|| {
-        let mut b = Bounds::centered(None, size(px(1100.), px(760.)), cx);
-        b.origin.x += px(24. * n);
-        b.origin.y += px(24. * n);
-        WindowBounds::Windowed(b)
-    });
+    let bounds = frame.unwrap_or_else(|| WindowBounds::Windowed(Bounds::centered(None, size(px(1100.), px(760.)), cx)));
     let title = match &target {
         Target::Local(_) => "apex".to_string(),
         Target::Url { url, .. } => Acme::title(url),
         Target::Via { cmd, session, .. } => format!("{session} via {} — apex", cmd.split_whitespace().nth(1).unwrap_or(cmd)),
-        Target::Chooser { .. } => "choose a session — apex".to_string(),
     };
     let opened = cx.open_window(
         WindowOptions {
@@ -577,7 +542,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                     .detach();
                     acme
                 }
-                Target::Url { .. } | Target::Via { .. } | Target::Chooser { .. } => {
+                Target::Url { .. } | Target::Via { .. } => {
                     // the reader thread pokes this channel; the task polls
                     // the link on the UI thread
                     let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
@@ -627,11 +592,6 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                             Ok(a) => a,
                             Err(e) => offline(cx, &url, files, wake.clone(), &e),
                         },
-                        Target::Chooser { url } => {
-                            let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
-                            a.chooser = true;
-                            a
-                        }
                         Target::Local(_) => unreachable!(),
                     };
                     cx.spawn_in(window, async move |this, cx| {

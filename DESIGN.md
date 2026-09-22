@@ -1621,10 +1621,15 @@ left of the connection mark, the heartbeat's round trip and the log's
   terminal's own state, so every client draws the same bar). The session itself says this one
   (`SERVER`), which is in no attachment table and outlives every tool,
   so `window_working` takes it as always there.
-- *As built:* the app remembers every window with its session URL and
-  its frame (`last-sessions`, one line each), saved on every move or
-  resize and on Quit, and opens them all again at launch, each on its
-  session and where it was. The name in a tag is editable, as acme's is:
+- *As built:* apex has one window. Everything else it has open is a tab
+  in it, so two views of one session -- which could only fence each
+  other -- cannot happen, and a session is where the user left it. The
+  app remembers that window with its session URL and its frame
+  (`last-sessions`), saved on every move or resize and on Quit, and
+  opens it again at launch, on its session and where it was, with the
+  sessions beside it back as its tabs (`Pool::restore`). A second
+  `apex-ui` process, which `apex attach` starts for a host, is its own
+  app with its own window; nothing inside one opens another. The name in a tag is editable, as acme's is:
   `winsettag` leaves a typed first word alone, a click in the tag or a
   command from the window commits it (`wincommit`: the buffer takes the
   name), and `Put` resolves a relative name where the window is and makes
@@ -1893,15 +1898,15 @@ makes `Apex.app`: `apex-ui` as the executable, the `apex` command beside
 it, and an icon of Glenda with big eyes (`mac/glenda.svg`, rasterised by
 headless Chrome). Launched with no arguments the app makes sure a daemon
 answers on the default socket — starting one through the bundled `apex`
-with the home directory as its working directory — and opens one window
-per session it had open last time (`~/Library/Application
+with the home directory as its working directory — and opens its window
+on the session it had last time (`~/Library/Application
 Support/apex/last-sessions`), else the first existing session, else a new
 `local`. The title bar is the app's own: tabs for the connected
 sessions, `+` (⌘T) dropping the picker for a new one, a list filtered
 by what you type, where a name that matches nothing becomes "Create
 session", and ▾ (⌘⇧A) the tab search. Choosing
-re-points this window; ⌘N opens another window on the same session. The
-menu bar carries Quit, Hide, New Window, Sessions, Close Window and the
+re-points the window. The
+menu bar carries Quit, Hide, Sessions, Close Window and the
 Edit menu, whose items act on the text under the pointer, as acme's keys
 do. Not yet: remote sessions in the selector, an About window.
 

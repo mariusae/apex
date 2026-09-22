@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
 
 /// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
 /// remade with the mark, every window laid out again.
@@ -91,7 +91,6 @@ pub fn menus() -> Vec<Menu> {
             disabled: false,
             items: vec![
                 MenuItem::action("New", NewFile),
-                MenuItem::action("New Window", NewWindow),
                 MenuItem::action("New Tab", NewTab),
                 MenuItem::action("Search Tabs…", SearchTabs),
                 MenuItem::action("Close Tab", CloseTab),
@@ -149,7 +148,6 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-h", HideApp, None),
         // acme's commands on the text under the pointer, the Mac way
         KeyBinding::new("cmd-n", NewFile, None),
-        KeyBinding::new("cmd-shift-n", NewWindow, None),
         KeyBinding::new("cmd-s", Put, None),
         KeyBinding::new("cmd-t", NewTab, None),
         KeyBinding::new("cmd-shift-a", SearchTabs, None),
@@ -269,8 +267,9 @@ pub fn remember(windows: &[Remembered]) {
     let _ = std::fs::write(p, text);
 }
 
-/// Record every open window, its session and its frame, unless the app
-/// is quitting (then what was recorded is what we want back next time).
+/// Record the window, its session and its frame, unless the app is
+/// quitting (then what was recorded is what we want back next time).
+/// apex has one window; the loop is over the one there is.
 pub fn save_open(cx: &mut App) {
     if QUITTING.load(Ordering::Relaxed) {
         return;
@@ -290,7 +289,7 @@ pub fn save_open(cx: &mut App) {
             }
             continue;
         };
-        if a.socket.is_none() || a.url.provider == "via" || a.chooser {
+        if a.socket.is_none() || a.url.provider == "via" {
             if debug {
                 eprintln!("apex-ui: save_open: skipping {} (socket {:?})", a.url, a.socket);
             }
@@ -318,34 +317,24 @@ pub fn log_line(what: &str) {
     }
 }
 
-/// The windows to open at launch: the remembered ones, each on its
-/// session and at its frame (a session that is gone, after `apex stop`
-/// say, is made again, empty: attaching creates it); else one on the
-/// first existing local session; else one on a new `default`.
-pub fn plan(socket: &Path) -> std::io::Result<Vec<(SessionUrl, Option<WindowBounds>)>> {
+/// The window to open at launch: the one remembered, on the session it
+/// showed and at the frame it had (a session that is gone, after `apex
+/// stop` say, is made again, empty: attaching creates it); else the
+/// first existing local session; else a new `default`. The sessions
+/// beside it come back as its tabs, from what the pool remembers.
+pub fn plan(socket: &Path) -> std::io::Result<(SessionUrl, Option<WindowBounds>)> {
     let existing = list_sessions(socket)?;
-    // one window per session: a second one could only fence the first
-    let mut seen: Vec<SessionUrl> = Vec::new();
-    let again: Vec<(SessionUrl, Option<WindowBounds>)> = remembered()
+    let again = remembered()
         .iter()
-        .filter_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame.map(|b| if r.fullscreen { WindowBounds::Fullscreen(b) } else { WindowBounds::Windowed(b) }))))
-        .filter(|(u, _)| {
-            if seen.contains(u) {
-                false
-            } else {
-                seen.push(u.clone());
-                true
-            }
-        })
-        .collect();
-    if !again.is_empty() {
-        return Ok(again);
+        .find_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame.map(|b| if r.fullscreen { WindowBounds::Fullscreen(b) } else { WindowBounds::Windowed(b) }))));
+    if let Some(one) = again {
+        return Ok(one);
     }
     if let Some(first) = existing.first() {
-        return Ok(vec![(SessionUrl::local(&first.label).with_id(&first.id), None)]);
+        return Ok((SessionUrl::local(&first.label).with_id(&first.id), None));
     }
     new_session(socket, apex_server::providers::DEFAULT_SESSION)?;
-    Ok(vec![(SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None)])
+    Ok((SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None))
 }
 
 /// Make sure a daemon answers on `socket`: start one with the `apex`
@@ -1055,7 +1044,7 @@ impl Acme {
         if !hosts.contains(&here) {
             hosts.push(here);
         }
-        let tabs = if self.chooser { Vec::new() } else { crate::pool::Pool::tabs(cx, &self.url) };
+        let tabs = crate::pool::Pool::tabs(cx, &self.url);
         // recently closed: the recent sessions not open here, one per
         // place and label (a session made anew under an old label is
         // the same tab to the eye)
@@ -1225,10 +1214,6 @@ impl Acme {
 
     pub fn close_selector(&mut self, cx: &mut Context<Self>) {
         self.selector = None;
-        if self.chooser {
-            // a new window that never got a session: nothing to show
-            self.close_requested = true;
-        }
         cx.notify();
     }
 
@@ -1411,21 +1396,7 @@ impl Acme {
             Row::Open(url) | Row::Create(url) => {
                 self.selector = None;
                 note_host(&url);
-                if !self.chooser && url == self.url {
-                    cx.notify();
-                    return;
-                }
-                // a window already on that session: go there instead
-                let me = window.window_handle().window_id();
-                let elsewhere = cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()).find(|h| {
-                    h.window_id() != me && h.read(cx).ok().is_some_and(|a| a.url == url)
-                });
-                if let Some(h) = elsewhere {
-                    let _ = h.update(cx, |_, window, _| window.activate_window());
-                    if self.chooser {
-                        // the new window has no reason to be: that one shows it
-                        self.close_requested = true;
-                    }
+                if url == self.url {
                     cx.notify();
                     return;
                 }

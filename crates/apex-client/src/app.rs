@@ -443,7 +443,6 @@ pub struct Acme {
     pub last_windows_of: Option<SessionUrl>,
     /// A new window with the picker open and nothing attached yet: it
     /// closes if the picker is dismissed, and is not remembered.
-    pub chooser: bool,
     /// The tools menu while B4 is held.
     pub menu: Option<menu::Menu>,
     /// What the menu ran last: it opens on that item.
@@ -875,7 +874,6 @@ impl Acme {
         self.entered = None;
         self.suppressed.clear();
         self.socket = Some(apex_server::daemon::default_socket());
-        self.chooser = false;
         self.webs = Webs::new(self.io_plane(), self.wake.clone());
         self.selector = None;
         window.set_window_title(&Self::title(&p.url));
@@ -1272,7 +1270,6 @@ impl Acme {
         self.url = url.clone();
         // a window that started offline is one to remember now
         self.socket = Some(apex_server::daemon::default_socket());
-        self.chooser = false;
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
@@ -1545,7 +1542,6 @@ impl Acme {
             finder: None,
             last_windows: std::collections::BTreeMap::new(),
             last_windows_of: None,
-            chooser: false,
             menu: None,
             menu_last: None,
             notified_tabs: Vec::new(),
@@ -1635,16 +1631,12 @@ impl Acme {
     }
 
     /// Whether the session a tab names has notifications waiting: this
-    /// window's own, a parked one's, or one another window is showing. (Our
-    /// own window, mid-update, reads as not found and is passed over.)
+    /// window's own, or a parked one's.
     pub fn tab_notified(&self, url: &SessionUrl, cx: &gpui::App) -> bool {
         if *url == self.url {
             return self.notification_head().is_some();
         }
-        if crate::pool::Pool::notified(cx, url) {
-            return true;
-        }
-        cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()).filter_map(|h| h.read(cx).ok()).any(|a| a.url == *url && a.notification_head().is_some())
+        crate::pool::Pool::notified(cx, url)
     }
 
     /// Every tick: the tabs whose sessions want the user, when that changed
@@ -2509,9 +2501,6 @@ impl Acme {
             return;
         }
         if self.selector.is_some() {
-            if self.chooser {
-                return; // a new window's picker stays until Escape or a choice
-            }
             // a click anywhere else dismisses the dropdown
             self.close_selector(cx);
             return;

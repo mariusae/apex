@@ -274,7 +274,8 @@ impl Pool {
         }
     }
 
-    /// The sessions the windows show, as their links know them.
+    /// The session the window shows, as its link knows it (apex has one
+    /// window, so this is one url or none).
     pub fn shown_urls(cx: &App) -> Vec<SessionUrl> {
         cx.windows()
             .into_iter()
@@ -285,7 +286,7 @@ impl Pool {
 
     pub fn park(cx: &mut App, p: Parked) {
         let Some(pool) = cx.try_global::<Pool>() else { return };
-        // a window shows this session already: a second attachment of
+        // the window shows this session already: a second attachment of
         // ours would take the lead from it (the daemon lets the latest
         // UI lead), leaving the window fenced; this link is let go
         if Self::shown_urls(cx).iter().any(|s| *s == p.url) {
