@@ -1430,14 +1430,18 @@ this one (detach, attach).
   little larger than the name, over the tab's own paper; it takes no
   room of its own, so a tab is the same width whether the pointer is on
   it or not and no tab shifts as the pointer passes. `+` is a round
-  chip at the far right. There is no chevron in the bar: ⌘⇧A
-  is the way to the tab search, and the bar is the tabs' room. The bar
-  is 34 high and the traffic lights sit on its centre line. Another tab switches to
+  chip at the far right. There is no chevron in the bar and no
+  key of its own for searching the tabs: ⌘T opens the picker, which is
+  that search and everything else besides. The bar is 34 high, the
+  traffic lights sit on its centre line, and it keeps a margin on the
+  right so the `+` is not flush with the edge. A session's host, dimmed
+  after its name, sits on the name's baseline rather than centred in a
+  line box of its own, where the smaller glyphs would ride high. Another tab switches to
   its × lets a parked one go, the current tab's × (and
   ⌘⇧W) lets this session go and shows the one parked last (the last
   tab's closes the window, as a browser's does), and `+` (⌘T) opens
-  the picker. There is one picker, however it is opened -- `+`, ⌘T or
-  ⌘⇧A -- and it is every way into a session at once: the window goes
+  the picker. There is one picker, however it is opened -- `+` or ⌘T
+  -- and it is every way into a session at once: the window goes
   quiet behind it and it sits in the middle, a field with the rows
   under it, each a name and, dimmed beside it, what picking it does.
   The rows are the tabs this window has open ("Go to session"), the

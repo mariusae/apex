@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
 
 /// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
 /// remade with the mark, every window laid out again.
@@ -92,7 +92,6 @@ pub fn menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action("New", NewFile),
                 MenuItem::action("New Tab", NewTab),
-                MenuItem::action("Search Tabs…", SearchTabs),
                 MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Go to…", Goto),
                 MenuItem::action("Go to in All Tabs…", GotoAll),
@@ -150,7 +149,6 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-n", NewFile, None),
         KeyBinding::new("cmd-s", Put, None),
         KeyBinding::new("cmd-t", NewTab, None),
-        KeyBinding::new("cmd-shift-a", SearchTabs, None),
         KeyBinding::new("cmd-w", Del, None),
         KeyBinding::new("cmd-shift-w", CloseTab, None),
         KeyBinding::new("cmd-shift-k", PreviousSession, None),
@@ -987,11 +985,6 @@ impl Acme {
         self.open_picker(cx);
     }
 
-    /// ⌘⇧A: the same picker -- searching the tabs is searching everything.
-    pub fn open_tab_search(&mut self, cx: &mut Context<Self>) {
-        self.open_picker(cx);
-    }
-
     /// A tab right-clicked: its session renamed (the picker's field, on
     /// that session).
     pub fn open_rename(&mut self, url: SessionUrl, cx: &mut Context<Self>) {
@@ -1585,7 +1578,7 @@ impl Acme {
                             .min_w_0()
                             .flex()
                             .flex_row()
-                            .items_center()
+                            .items_baseline()
                             .justify_center()
                             .gap(px(5.))
                             .overflow_hidden()
@@ -1765,6 +1758,9 @@ impl Acme {
             .items_center()
             // room for the traffic lights, which full screen has none of
             .pl(px(if self.fullscreen { 12. } else { 78. }))
+            // the `+` is not flush with the edge: the bar keeps a margin
+            // on the right, as ghostty's does
+            .pr(px(10.))
             .bg(rgb(strip))
             .gap(px(6.))
             // no line under the strip: its grey meets the row below, and

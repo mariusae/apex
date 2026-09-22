@@ -93,7 +93,6 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewTab, _, cx| this.open_selector(cx)))
-            .on_action(cx.listener(|this, _: &shell::SearchTabs, _, cx| this.open_tab_search(cx)))
             .on_action(cx.listener(|this, _: &shell::CloseTab, window, cx| this.close_current_session(window, cx)))
             .on_action(cx.listener(|this, _: &shell::PreviousSession, window, cx| this.previous_session(window, cx)))
             .on_action(cx.listener(|this, _: &shell::Tab1, window, cx| this.go_to_tab(1, window, cx)))
