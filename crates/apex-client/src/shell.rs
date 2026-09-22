@@ -1527,11 +1527,13 @@ impl Acme {
             .h(px(TAB_H - INSET))
             .w(px(30.))
             .mb(px(INSET))
-            .mr(px(DRAPE / 2. + 1.)) // clear of the first tab's drape too
+            .mr(px(DRAPE / 2. + 1.)) // a tab's gap to the first tab
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(6.))
+            .rounded(px(7.))
+            .border_1()
+            .border_color(rgb(t.tab_outline_dim))
             .bg(rgb(t.tab_button))
             .text_size(px(16.))
             .line_height(px(LINE))
@@ -1540,7 +1542,7 @@ impl Acme {
             .pb(px(7.)) // the glyph hangs low in its box: centred by eye
             .child("⌄");
         if clickable {
-            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_button_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
+            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_button_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::Tabs) {
@@ -1598,12 +1600,6 @@ impl Acme {
             let bg = if notified { t.tab_notified_bg } else if open { t.tab_open_bg } else { t.tab_bg };
             let dim = if notified { t.tab_notified_text } else { t.tab_dim };
             let closable = clickable && (!current || others);
-            let drape = move |left: bool| {
-                let corner = div().size_full().bg(rgb(strip));
-                let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
-                let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
-                if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
-            };
             // the tab's face: its look and its words, made twice for a
             // tab being dragged (the placeholder in the row, the one
             // under the pointer)
@@ -1615,22 +1611,27 @@ impl Acme {
                     .items_center()
                     .gap(px(5.))
                     .px(px(10.))
-                    // a drape's width between tabs, so the selected tab's
-                    // drapes lie on the strip alone, never on a neighbour's
-                    // hover (a browser's tabs sit a little apart too)
+                    // a little apart, as a browser's tabs are
                     .mx(px(DRAPE / 2.))
                     .text_size(px(13.))
                     .line_height(px(LINE))
                     .font_family(UI_FONT)
-                    .when(current, |d| d.h(px(TAB_H)).pb(px(INSET)).rounded_t(px(DRAPE)).text_color(rgb(t.tab_current_text)).bg(rgb(bg)).child(drape(true)).child(drape(false)))
+                    // every tab is a card: an edge round it, the corners
+                    // rounded, and the same centre line whether or not it
+                    // is in front, so the text stays put as the front moves
+                    .h(px(TAB_H - INSET))
+                    .mb(px(INSET))
+                    .rounded(px(7.))
+                    .border_1()
+                    // the one in front: brighter than the strip, its edge
+                    // darker, and lifted off it by a shadow
+                    .when(current, |d| d.text_color(rgb(t.tab_current_text)).bg(rgb(bg)).border_color(rgb(t.tab_outline)).shadow_sm())
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
                     .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
-                    // the other tabs: the same centre line as the selected one,
-                    // so the text stays put as the selection moves; hovered, a
-                    // rounded rectangle, as a browser's (only the selected tab
-                    // drapes); the one dragged shows as hovered
-                    .when(!current, |d| d.h(px(TAB_H - INSET)).mb(px(INSET)).rounded(px(6.)).text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(t.tab_hover))))
+                    // the others: a touch behind the strip, their edge
+                    // fainter; the one dragged shows as hovered
+                    .when(!current, |d| d.text_color(rgb(t.tab_text)).bg(rgb(t.tab_idle_bg)).border_color(rgb(t.tab_outline_dim)).hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline))))
                     .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
                     // notified, selected or not, and hovered too
                     .when(!current && notified, |d| d.bg(rgb(t.tab_notified_bg)).hover(|s| s.bg(rgb(t.tab_notified_bg))))
@@ -1738,9 +1739,24 @@ impl Acme {
         }
         // and one more: the picker, for a session not here yet
         // the +, sized as the × and on the same line as they are
-        let mut plus = div().id("tab-new").h(px(TAB_H - INSET)).mb(px(INSET)).px(px(7.)).flex().items_center().rounded(px(6.)).text_size(px(11.)).line_height(px(LINE)).font_family(UI_FONT).text_color(rgb(0x8a8a8a)).child("+");
+        let mut plus = div()
+            .id("tab-new")
+            .h(px(TAB_H - INSET))
+            .mb(px(INSET))
+            .ml(px(DRAPE / 2.))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .rounded(px(7.))
+            .border_1()
+            .border_color(rgb(t.tab_outline_dim))
+            .text_size(px(12.))
+            .line_height(px(LINE))
+            .font_family(UI_FONT)
+            .text_color(rgb(t.tab_dim))
+            .child("+");
         if clickable {
-            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).text_color(rgb(t.tab_current_text))).on_mouse_down(
+            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::NewTab) {

@@ -1418,8 +1418,14 @@ this one (detach, attach).
   window once it is.
 - *As built, tabs:* the title bar carries a tab per connected session
   — this window's, and the parked ones — in the order first shown
-  (`Pool::order`), the current one selected; another tab switches to
-  that session, its × lets a parked one go, the current tab's × (and
+  (`Pool::order`), the current one selected. A tab is a card: an edge
+  round it (`tab_outline`, fainter on the ones not in front), corners
+  rounded, and the one in front brighter than the strip with a shadow
+  under it, so it stands off the strip as a browser's does; the tab
+  search and `+` are the same card, so the strip reads as one row of
+  them. Another tab switches to
+  that session, another tab switches to
+  its × lets a parked one go, the current tab's × (and
   ⌘⇧W) lets this session go and shows the one parked last (the last
   tab's closes the window, as a browser's does), and `+` (⌘T) opens
   the picker for a new tab: the sessions on the known hosts that are

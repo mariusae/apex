@@ -65,8 +65,19 @@ pub struct Theme {
     pub cursor_tint_to: u32,
     // the title bar
     pub strip: u32,
+    /// The tab in front: the brightest of the three, as the page it
+    /// shows is.
     pub tab_bg: u32,
+    /// The tab in front while the session picker is down.
     pub tab_open_bg: u32,
+    /// The other tabs, a touch behind the strip so the one in front
+    /// stands off it.
+    pub tab_idle_bg: u32,
+    /// The line round every tab, and the fainter one round those not in
+    /// front: a tab is a card with an edge, which is what lifts it off
+    /// the strip.
+    pub tab_outline: u32,
+    pub tab_outline_dim: u32,
     pub tab_current_text: u32,
     pub tab_text: u32,
     pub tab_hover: u32,
@@ -130,6 +141,9 @@ pub const LIGHT: Theme = Theme {
     strip: 0xEDEDDC,
     tab_bg: 0xEAFFFF,
     tab_open_bg: 0xD4F5F5,
+    tab_idle_bg: 0xDCEAEA,
+    tab_outline: 0x93AEAE,
+    tab_outline_dim: 0xBCCFCF,
     tab_current_text: 0x000099,
     tab_text: 0x555555,
     tab_hover: 0xE0E0CC,
@@ -190,8 +204,11 @@ pub const DARK: Theme = Theme {
     look_hl: 0x2E8B2E,
     cursor_tint_to: 0xFFFFFF,
     strip: 0x2A2A22,
-    tab_bg: 0x142426,
-    tab_open_bg: 0x1E3A3C,
+    tab_bg: 0x22383B,
+    tab_open_bg: 0x2B474A,
+    tab_idle_bg: 0x18282A,
+    tab_outline: 0x4A6C70,
+    tab_outline_dim: 0x32494C,
     tab_current_text: 0xA0A0FF,
     tab_text: 0xB8B8B8,
     tab_hover: 0x3A3A30,
