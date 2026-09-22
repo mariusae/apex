@@ -1516,6 +1516,10 @@ this one (detach, attach).
   last time's, skipped. Nor is a link parked for a session a window
   shows: the daemon lets the latest UI attachment lead, so a second
   attachment of this client's own would fence the window it shows.
+- *As built, one tab:* one tab is no tab. The strip is then a plain
+  title bar with the session's name (its host and state dimmed after
+  it) in the middle and the `+` at the right, as ghostty's and
+  Terminal's are; the chips come back as soon as there is a second tab.
 - *As built, the picker:* while it (or the finder, ⌘P) is up it has
   the keyboard. Its field is a one-line editor (`field.rs`) with a
   cursor and a selection and the keys a Mac field answers: arrows with

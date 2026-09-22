@@ -1496,8 +1496,17 @@ impl Acme {
         // tabs: ⌘T opens the picker, which is that and every other way
         // into a session besides, and the bar is the tabs' room
         let all = crate::pool::Pool::tabs(cx, &self.url);
-        // the tabs fill the bar, each the same width as the rest
+        // one tab is no tab: the bar is then a plain title bar, with the
+        // session's name in the middle of it and the + at its right, as
+        // ghostty's and Terminal's are
+        let lone = (all.len() == 1).then(|| all[0].clone());
+        let all = if lone.is_some() { Vec::new() } else { all };
+        // the tabs fill the bar, each the same width as the rest; with
+        // no tab in it, the + keeps to the right end all the same
         let mut tabs = div().id("tabs").flex_1().min_w_0().h_full().flex().flex_row().items_center().gap(px(2.));
+        if lone.is_some() {
+            tabs = tabs.justify_end();
+        }
         // a tab being dragged floats under the pointer, kept within the
         // strip's tabs (their bounds of last frame say where that is)
         let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.url.clone());
@@ -1751,6 +1760,42 @@ impl Acme {
             );
         }
         let button = tabs.child(plus);
+        // the lone tab's name, in the middle of the bar: the whole width
+        // of it, so the name sits where a title bar's title sits, and
+        // under the + (added after it), which keeps its clicks
+        let title = lone.map(|u| {
+            let text = if matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
+            let host = (!u.is_local()).then(|| u.arg.clone());
+            let word = self.tab_word(&u, cx);
+            let notified = self.tab_notified(&u, cx);
+            div()
+                .absolute()
+                .top(px(0.))
+                .left(px(0.))
+                .size_full()
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_baseline()
+                        .gap(px(5.))
+                        .px(px(90.))
+                        .overflow_hidden()
+                        .text_size(px(13.))
+                        .line_height(px(LINE))
+                        .font_family(UI_FONT)
+                        .text_color(rgb(t.tab_current_text))
+                        .when(word.is_some(), |d| d.text_color(rgb(t.tab_fenced_text)))
+                        .when(notified, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).child("🔔")))
+                        .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text))
+                        .when_some(host, |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_dim)).child(h)))
+                        .when_some(word, |d, w| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child(w))),
+                )
+        });
         // the hovered tab's card, beneath it, once the pointer has rested
         // the card hangs below the strip, under the tab the pointer rests
         // on: it hangs from the strip's own bottom edge, not from the
@@ -1795,6 +1840,7 @@ impl Acme {
                     cx.stop_propagation();
                 }),
             )
+            .when_some(title, |d, el| d.child(el))
             .child(button)
             .when_some(card, |d, c| d.child(c))
             .when_some(floating, |d, f| d.child(f))
