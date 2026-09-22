@@ -120,7 +120,7 @@ pub const LIGHT: Theme = Theme {
     stale: 0xFFD700,
     fenced: 0xAA0000,
     notified: 0x0080FF,
-    tab_notified_bg: 0x1F4E63,
+    tab_notified_bg: 0x1A4354,
     tab_notified_text: 0xEAFFFF,
     progress: 0x1B4F9B,
     exec_hl: 0xAA0000,
