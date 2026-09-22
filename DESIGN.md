@@ -1421,13 +1421,16 @@ this one (detach, attach).
   them, as ghostty's do: every one the same width, the row reaching the
   far right, with `+` after it. Each is a pill inset in the bar, its
   name centred in it and the key that reaches it (⌘1 to ⌘9) at its
-  right end; the one in front is filled with the colour of the row it
-  shows, and the others are the bare strip until the pointer is on one,
-  which fills it (`tab_hover`). That fill is the only shading in the
-  bar. A tab's × shows while the pointer is on it, over the tab's own
-  contents and on the paper it lies on, and takes no room of its own,
-  so a tab is the same width whether the pointer is on it or not and no
-  tab shifts as the pointer passes. There is no chevron in the bar: ⌘⇧A
+  right end. The colours are one rule, not a palette: the bar is acme's
+  own paper, a tab lies a step off it, the pointer on one lifts it
+  another step, and the one in front lies a step beyond that
+  (`theme::step`, each step 4.5% toward the ink on light paper and
+  toward the light on dark, so the same rule reads on either). A tab's
+  × shows while the pointer is on it, at its left end, centred and a
+  little larger than the name, over the tab's own paper; it takes no
+  room of its own, so a tab is the same width whether the pointer is on
+  it or not and no tab shifts as the pointer passes. `+` is a round
+  chip at the far right. There is no chevron in the bar: ⌘⇧A
   is the way to the tab search, and the bar is the tabs' room. The bar
   is 34 high and the traffic lights sit on its centre line. Another tab switches to
   its × lets a parked one go, the current tab's × (and

@@ -1492,6 +1492,13 @@ impl Acme {
         const LINE: f32 = 18.;
         let t = crate::theme::theme();
         let strip: u32 = t.strip;
+        // the bar is acme's paper; a tab lies a step off it, the pointer
+        // on one lifts it another, and the one in front lies a step
+        // beyond that (`theme::step`, toward the ink on light paper and
+        // toward the light on dark)
+        let idle_bg = crate::theme::step(strip, 1);
+        let hover_bg = crate::theme::step(strip, 2);
+        let front_bg = crate::theme::step(strip, 3);
         // the tabs fill the bar, each the same width as the rest
         let mut tabs = div().id("tabs").flex_1().min_w_0().h_full().flex().flex_row().items_center().gap(px(2.));
         // no chevron in the strip: the tab search is ⌘⇧A (the picker
@@ -1546,7 +1553,7 @@ impl Acme {
             // the × shows while the pointer is on the tab (a tab held for
             // a drag is not rested on, and shows none)
             let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == u) && self.tab_drag.is_none();
-            let bg = if open { t.tab_open_bg } else { t.tag_bg };
+            let bg = if open { hover_bg } else { front_bg };
             let dim = t.tab_dim;
             let closable = clickable && (!current || others);
             // the tab's face: its look and its words, made twice for a
@@ -1574,8 +1581,8 @@ impl Acme {
                     // it shows; the others are the bare strip until the
                     // pointer is on one, as ghostty's are
                     .when(current, |d| d.bg(rgb(bg)).text_color(rgb(t.tab_current_text)))
-                    .when(!current, |d| d.text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(t.tab_hover))))
-                    .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
+                    .when(!current, |d| d.bg(rgb(idle_bg)).text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(hover_bg))))
+                    .when(!current && ghost, |d| d.bg(rgb(hover_bg)))
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
                     .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
@@ -1679,20 +1686,20 @@ impl Acme {
                 // not and the tabs do not shift as it passes
                 if closable && on_it {
                     let url = u.clone();
-                    let over = if current { bg } else { t.tab_hover };
+                    let over = if current { bg } else { hover_bg };
                     tab = tab.child(
                         div()
                             .id(("tab-close", i))
                             .absolute()
-                            .right(px(5.))
+                            .left(px(6.))
                             .top(px(0.))
-                            .h(px(TAB_H - INSET))
+                            .h(px(TAB_H))
                             .flex()
                             .items_center()
                             .px(px(3.))
                             .rounded(px(4.))
                             .bg(rgb(over))
-                            .text_size(px(11.))
+                            .text_size(px(14.))
                             .line_height(px(LINE))
                             .text_color(rgb(t.tab_dim))
                             .hover(|s| s.text_color(rgb(t.tab_close_hover)))
@@ -1721,13 +1728,14 @@ impl Acme {
             .flex_none()
             .h(px(TAB_H))
             .ml(px(2.))
-            .px(px(8.))
+            .w(px(TAB_H))
             .flex()
             .items_center()
-            .rounded(px(7.))
+            .justify_center()
+            .rounded_full()
             .border_1()
             .border_color(rgb(t.tab_outline_dim))
-            .text_size(px(12.))
+            .text_size(px(13.))
             .line_height(px(LINE))
             .font_family(UI_FONT)
             .text_color(rgb(t.tab_dim))

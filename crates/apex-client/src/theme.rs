@@ -57,9 +57,6 @@ pub struct Theme {
     pub cursor_tint_to: u32,
     // the title bar
     pub strip: u32,
-    /// The tab in front while the session picker is down; otherwise it
-    /// is the colour of the row below it, which it flows into.
-    pub tab_open_bg: u32,
     /// The line round a tab not in front -- which is the strip's own
     /// colour, so the line is the only thing that says where it is --
     /// and the line it takes when the pointer is on it.
@@ -119,8 +116,7 @@ pub const LIGHT: Theme = Theme {
     look_hl: 0x006600,
     cursor_tint_to: 0x000000,
     // the strip tinted with acme's paper, so the bar and the rows agree
-    strip: 0xEDEDDC,
-    tab_open_bg: 0xD4F5F5,
+    strip: 0xFFFFEA,
     tab_outline_dim: 0xDCDCCB,
     tab_outline: 0xC3C3B0,
     tab_current_text: 0x000099,
@@ -178,8 +174,7 @@ pub const DARK: Theme = Theme {
     exec_hl: 0xB02020,
     look_hl: 0x2E8B2E,
     cursor_tint_to: 0xFFFFFF,
-    strip: 0x2A2A22,
-    tab_open_bg: 0x2B474A,
+    strip: 0x1E1E14,
     tab_outline_dim: 0x3E3E34,
     tab_outline: 0x55554C,
     tab_current_text: 0xA0A0FF,
@@ -232,6 +227,15 @@ pub fn set_mode(m: Mode) {
 /// follows it).
 pub fn set_system_dark(dark: bool) {
     SYSTEM_DARK.store(dark, Ordering::Relaxed);
+}
+
+/// A step away from `base`: toward the ink on light paper, toward the
+/// light on dark, so one rule gives the bar its tabs on either -- the
+/// bar itself, what lies on it, and what lies in front, each a step or
+/// two further off (ghostty's way with its tabs).
+pub fn step(base: u32, n: u32) -> u32 {
+    let toward = if is_dark() { 0xFF_FFFF } else { 0x00_0000 };
+    crate::text_element::mix(base, toward, 0.045 * n as f32)
 }
 
 pub fn is_dark() -> bool {
