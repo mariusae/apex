@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 
 use gpui::{
-    actions, anchored, deferred, div, point, prelude::*, px, rgb, size, App, Bounds, Context, KeyBinding, Menu, MenuItem, MouseButton, Pixels, WindowBounds,
+    actions, deferred, div, point, prelude::*, px, rgb, size, App, Bounds, Context, KeyBinding, Menu, MenuItem, MouseButton, Pixels, WindowBounds,
     Window,
 };
 
@@ -529,14 +529,7 @@ pub struct TabDrag {
 /// hosts, a session to create, a host to add: ⌘T and the `+`), or the
 /// tabs (the open ones and the recently closed, searched: ⌘⇧A and the
 /// ▾ before the tabs, a browser's tab search).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum PickerMode {
-    NewTab,
-    Tabs,
-}
-
 pub struct Selector {
-    pub mode: PickerMode,
     /// The tabs open now, in the strip's order (left out of a new tab's
     /// list; the first section of the tabs' list).
     pub tabs: Vec<SessionUrl>,
@@ -556,8 +549,6 @@ pub struct Selector {
     pub current: SessionUrl,
     /// Typing a new name for this session (a tab, right-clicked).
     pub renaming: Option<SessionUrl>,
-    /// Typing the name of a new session on this host.
-    pub naming: Option<Host>,
     /// The new-host form: a provider, a host.
     pub connect: Option<Connect>,
     /// Which opening of the picker this is: answers for an older one are
@@ -629,24 +620,67 @@ impl Loading {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Row {
-    /// A host's section: its name, and the host, to forget it by.
-    Header(Host),
-    /// A section of the tabs' list: "Open tabs", "Recently closed".
-    Section(&'static str),
-    Divider,
-    /// A session on a host.
+    /// A session this window has open (a tab): going there.
+    GoTo(SessionUrl),
+    /// A session that is there but not open here: opening it.
     Open(SessionUrl),
-    /// "+ new session" under a host: type its name next.
-    NewSession(Host),
-    /// Still asking, or could not.
-    Note(String),
-    /// A session named to be made: on a host after `NewSession`, or as
-    /// a URL typed into the search.
-    Create(SessionUrl),
-    /// "+ new host…": the form next.
+    /// A session to make, named by what was typed, on this host.
+    Create(SessionUrl, Host),
+    /// "Add a host…": the form next.
     NewHost,
+    /// Nothing to offer, or a host that could not be asked.
+    Note(String),
     /// The new name typed for the session being renamed.
     Rename(String),
+}
+
+impl Row {
+    /// The words at the right of the row: what picking it does.
+    pub fn action(&self) -> String {
+        match self {
+            Row::GoTo(_) => "Go to session".into(),
+            Row::Open(_) => "Open session".into(),
+            Row::Create(_, h) => {
+                let (name, prov) = h.parts();
+                if prov.is_empty() {
+                    format!("Create on {name}")
+                } else {
+                    format!("Create on {name} {prov}")
+                }
+            }
+            Row::NewHost => "Add a host".into(),
+            Row::Rename(_) => "Rename".into(),
+            Row::Note(_) => String::new(),
+        }
+    }
+
+    /// The glyph at the left: an arrow for somewhere to go, a plus for
+    /// something to make.
+    pub fn glyph(&self) -> &'static str {
+        match self {
+            Row::GoTo(_) | Row::Open(_) => "→",
+            Row::Create(..) | Row::NewHost => "+",
+            Row::Rename(_) => "✓",
+            Row::Note(_) => "",
+        }
+    }
+
+    /// What the row says: the session's name, or the text typed.
+    pub fn title(&self) -> String {
+        match self {
+            Row::GoTo(u) | Row::Open(u) | Row::Create(u, _) => u.session.clone(),
+            Row::NewHost => "Add a host…".into(),
+            Row::Note(t) | Row::Rename(t) => t.clone(),
+        }
+    }
+
+    /// The host under the name, dimmed, for a session that is elsewhere.
+    pub fn where_(&self) -> Option<String> {
+        match self {
+            Row::GoTo(u) | Row::Open(u) | Row::Create(u, _) => (!u.is_local()).then(|| u.arg.clone()),
+            _ => None,
+        }
+    }
 }
 
 /// The new-host form's fields.
@@ -797,7 +831,7 @@ pub fn session_parts(u: &SessionUrl) -> (String, String, String) {
 
 impl Row {
     pub fn pickable(&self) -> bool {
-        !matches!(self, Row::Header(_) | Row::Section(_) | Row::Divider | Row::Note(_))
+        !matches!(self, Row::Note(_))
     }
 }
 
@@ -818,76 +852,48 @@ impl Selector {
                 (false, Err(_)) => vec![Row::Note("a label: a letter first, then lowercase letters, digits and -".into())],
             };
         }
-        if let Some(h) = &self.naming {
-            return match (f.is_empty(), apex_server::providers::valid_label(f)) {
-                (true, _) => Vec::new(),
-                (false, Ok(())) => vec![Row::Create(h.url(f))],
-                (false, Err(_)) => vec![Row::Note("a label: a letter first, then lowercase letters, digits and -".into())],
-            };
-        }
+        // one list, whatever the way in was: the sessions this window has
+        // open, then the ones that are there to open, then the making of
+        // one by the name typed on each host, then a host to add. A name
+        // typed narrows all of it at once, so `another` offers the tab
+        // `anotherfoobaz`, the session `anotherfoobar`, and `another` on
+        // every host.
         let fl = f.to_lowercase();
-        if self.mode == PickerMode::Tabs {
-            // the open tabs, then the recently closed, those matching
-            let matches = |u: &SessionUrl| fl.is_empty() || u.to_string().to_lowercase().contains(&fl);
-            let mut rows = Vec::new();
-            let open: Vec<Row> = self.tabs.iter().filter(|u| matches(u)).map(|u| Row::Open(u.clone())).collect();
-            if !open.is_empty() {
-                rows.push(Row::Section("Open tabs"));
-                rows.extend(open);
-            }
-            let closed: Vec<Row> = self.closed.iter().filter(|u| !self.tabs.contains(u) && matches(u)).map(|u| Row::Open(u.clone())).collect();
-            if !closed.is_empty() {
-                rows.push(Row::Section("Recently closed"));
-                rows.extend(closed);
-            }
-            if rows.is_empty() {
-                rows.push(Row::Note(if f.is_empty() { "no tabs".into() } else { "no tab matches".into() }));
-            }
-            return rows;
-        }
+        let matches = |u: &SessionUrl| fl.is_empty() || u.session.to_lowercase().contains(&fl) || u.arg.to_lowercase().contains(&fl);
         let mut rows = Vec::new();
-        // a new tab: the sessions open here already are not offered
-        let mut seen: Vec<SessionUrl> = self.tabs.clone();
+        let mut seen: Vec<SessionUrl> = vec![self.current.clone()];
+        for u in self.tabs.iter().filter(|u| **u != self.current && matches(u)) {
+            seen.push(u.clone());
+            rows.push(Row::GoTo(u.clone()));
+        }
+        // the sessions the hosts have, and the ones lately closed: there
+        // to open, and not open here
+        let mut elsewhere: Vec<SessionUrl> = Vec::new();
         for h in &self.hosts {
-            let (name, prov) = h.parts();
-            let host_matches = fl.is_empty() || format!("{name} {prov}").to_lowercase().contains(&fl);
-            let mut section = Vec::new();
-            let loading = self.sessions.get(h);
-            for n in loading.map(|l| l.sessions()).unwrap_or(&[]) {
-                let u = h.url_of(n);
-                if (host_matches || u.to_string().to_lowercase().contains(&fl)) && !seen.contains(&u) {
-                    seen.push(u.clone());
-                    section.push(Row::Open(u));
-                }
-            }
-            if host_matches {
-                match loading {
-                    Some(Loading::Failed(_, e)) => section.push(Row::Note(format!("unreachable: {e}"))),
-                    Some(Loading::Ready(_)) => {}
-                    _ => section.push(Row::Note("asking…".into())),
-                }
-                section.push(Row::NewSession(h.clone()));
-            }
-            if !section.is_empty() {
-                rows.push(Row::Header(h.clone()));
-                rows.extend(section);
+            for n in self.sessions.get(h).map(|l| l.sessions()).unwrap_or(&[]) {
+                elsewhere.push(h.url_of(n));
             }
         }
-        let mut actions = Vec::new();
-        if !f.is_empty() {
-            if let Some(u) = SessionUrl::parse(f) {
-                if !seen.contains(&u) && apex_server::providers::valid_label(&u.session).is_ok() {
-                    actions.push(Row::Create(u));
+        elsewhere.extend(self.closed.iter().cloned());
+        for u in elsewhere {
+            if !seen.contains(&u) && matches(&u) {
+                seen.push(u.clone());
+                rows.push(Row::Open(u));
+            }
+        }
+        // a name to make: on each host that has no session by that name
+        if apex_server::providers::valid_label(f).is_ok() {
+            for h in &self.hosts {
+                let u = h.url(f);
+                if !seen.iter().any(|s| s.provider == u.provider && s.arg == u.arg && s.session == u.session) {
+                    rows.push(Row::Create(u, h.clone()));
                 }
             }
-        } else {
-            actions.push(Row::NewHost);
         }
-        if !actions.is_empty() {
-            if !rows.is_empty() {
-                rows.push(Row::Divider);
-            }
-            rows.extend(actions);
+        // and a host, at the very bottom
+        rows.push(Row::NewHost);
+        if rows.len() == 1 && !f.is_empty() && apex_server::providers::valid_label(f).is_err() {
+            rows.insert(0, Row::Note("a label: a letter first, then lowercase letters, digits and -".into()));
         }
         rows
     }
@@ -930,15 +936,8 @@ impl Selector {
         self.cursor = self.pickable_from(&rows, self.cursor.min(rows.len().saturating_sub(1))).or_else(|| self.pickable_from(&rows, 0)).unwrap_or(0);
     }
 
-    /// Put the cursor on this window's session, when it is listed.
+    /// The cursor on the first row worth landing on.
     pub fn land_on_current(&mut self) {
-        let rows = self.rows();
-        if self.mode == PickerMode::Tabs {
-            if let Some(i) = rows.iter().position(|r| matches!(r, Row::Open(u) if *u == self.current)) {
-                self.cursor = i;
-                return;
-            }
-        }
         self.settle();
     }
 }
@@ -983,20 +982,20 @@ pub fn renamed_recent(old: &SessionUrl, new: &SessionUrl) {
 }
 
 impl Acme {
-    /// ⌘T, the `+`: the picker for a new tab.
+    /// ⌘T, the `+`: the picker, which is every way into a session.
     pub fn open_selector(&mut self, cx: &mut Context<Self>) {
-        self.open_picker(PickerMode::NewTab, cx);
+        self.open_picker(cx);
     }
 
-    /// ⌘⇧A, the ▾: the tabs, open and recently closed, searched.
+    /// ⌘⇧A: the same picker -- searching the tabs is searching everything.
     pub fn open_tab_search(&mut self, cx: &mut Context<Self>) {
-        self.open_picker(PickerMode::Tabs, cx);
+        self.open_picker(cx);
     }
 
     /// A tab right-clicked: its session renamed (the picker's field, on
     /// that session).
     pub fn open_rename(&mut self, url: SessionUrl, cx: &mut Context<Self>) {
-        self.open_picker(PickerMode::Tabs, cx);
+        self.open_picker(cx);
         if let Some(sel) = self.selector.as_mut() {
             sel.renaming = Some(url);
             sel.filter.clear();
@@ -1035,7 +1034,7 @@ impl Acme {
         .detach();
     }
 
-    pub fn open_picker(&mut self, mode: PickerMode, cx: &mut Context<Self>) {
+    pub fn open_picker(&mut self, cx: &mut Context<Self>) {
         let Some(socket) = self.socket.clone() else { return };
         static EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let epoch = EPOCH.fetch_add(1, Ordering::Relaxed);
@@ -1055,7 +1054,7 @@ impl Acme {
                 closed.push(u);
             }
         }
-        let mut sel = Selector { mode, tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: None, naming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
+        let mut sel = Selector { tabs, closed, filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: hosts.clone(), sessions: HashMap::new(), current: self.url.clone(), renaming: None, connect: None, epoch, caret_since: std::time::Instant::now() };
         // what each host had last time, shown at once; the answers update it
         let mut known = known_sessions();
         for h in &hosts {
@@ -1068,11 +1067,9 @@ impl Acme {
         sel.land_on_current();
         self.selector = Some(sel);
         // every host's sessions, asked for in the background: a host that
-        // is down, or slow, holds nothing up (the tabs' list needs none)
-        if mode == PickerMode::NewTab {
-            for h in hosts {
-                self.ask_host(h, socket.clone(), epoch, cx);
-            }
+        // is down, or slow, holds nothing up
+        for h in hosts {
+            self.ask_host(h, socket.clone(), epoch, cx);
         }
         // blink the caret while the selector is open
         cx.spawn(async move |this, cx| loop {
@@ -1258,9 +1255,8 @@ impl Acme {
         }
         match key {
             "escape" => {
-                if sel.naming.is_some() || sel.renaming.is_some() {
+                if sel.renaming.is_some() {
                     // back to the list
-                    sel.naming = None;
                     sel.renaming = None;
                     sel.filter.clear();
                     sel.land_on_current();
@@ -1355,7 +1351,7 @@ impl Acme {
                 }
                 sel.sessions.insert(h.clone(), Loading::Seeded(Vec::new()));
                 let rows = sel.rows();
-                sel.cursor = rows.iter().position(|r| matches!(r, Row::NewSession(x) if *x == h)).unwrap_or(0);
+                sel.cursor = rows.iter().position(|r| matches!(r, Row::Create(_, x) if *x == h)).unwrap_or(0);
                 sel.settle();
                 sel.epoch
             }
@@ -1367,19 +1363,11 @@ impl Acme {
 
     pub fn choose(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
         match row {
-            Row::Header(_) | Row::Section(_) | Row::Divider | Row::Note(_) => {}
+            Row::Note(_) => {}
             Row::NewHost => {
                 if let Some(sel) = self.selector.as_mut() {
                     sel.connect = Some(Connect::new());
                     sel.filter.clear();
-                }
-                cx.notify();
-            }
-            Row::NewSession(h) => {
-                if let Some(sel) = self.selector.as_mut() {
-                    sel.naming = Some(h);
-                    sel.filter.clear();
-                    sel.cursor = 0;
                 }
                 cx.notify();
             }
@@ -1393,7 +1381,7 @@ impl Acme {
                 cx.defer(|cx| save_open(cx)); // after this window's update, so it is read too
                 cx.notify();
             }
-            Row::Open(url) | Row::Create(url) => {
+            Row::GoTo(url) | Row::Open(url) | Row::Create(url, _) => {
                 self.selector = None;
                 note_host(&url);
                 if url == self.url {
@@ -1744,7 +1732,7 @@ impl Acme {
             plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
-                    if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::NewTab) {
+                    if this.selector.is_some() {
                         this.close_selector(cx);
                     } else {
                         this.open_selector(cx);
@@ -1801,180 +1789,121 @@ impl Acme {
 
     }
 
-    /// The dropdown, when open.
+    /// The picker, when open: the window dimmed behind it and the dialog
+    /// in the middle -- a field, and under it the rows, each a thing to
+    /// do with the words for it at the right.
     pub fn selector_panel(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let sel = self.selector.as_ref()?;
         let rows = sel.rows();
+        let t = crate::theme::theme();
         let hint = if let Some(u) = &sel.renaming {
             format!("New name for {}…", u.session)
-        } else if let Some(h) = &sel.naming {
-            let (name, prov) = h.parts();
-            format!("Name for the new session on {name} {prov}…")
-        } else if sel.mode == PickerMode::Tabs {
-            "Search open and recently closed tabs…".to_string()
         } else {
-            "New tab: a session or host, or type a URL to create one…".to_string()
+            "Search a session, or type a name to make one…".to_string()
         };
-        // the field: the text typed, its selection and caret, or the hint
-        let t = crate::theme::theme();
-        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&sel.filter, sel.caret_visible(), &hint, true));
-        let mut list = div().id("picker-list").flex().flex_col().py(px(6.)).px(px(6.)).max_h(px(480.)).overflow_y_scroll();
-        let row_style = |d: gpui::Stateful<gpui::Div>, picked: bool| {
-            d.flex()
-                .flex_row()
-                .items_center()
-                .gap(px(8.))
-                .px(px(10.))
-                .py(px(6.))
-                .rounded(px(6.))
-                .text_size(px(14.))
-                .font_family(UI_FONT)
-                .cursor_pointer()
-                .when(picked, |d| d.bg(rgb(t.panel_pick)))
-                .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
-        };
+        let caret_on = sel.caret_visible();
+        // the field: a glass at the left, then what is typed
+        let field = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(10.))
+            .px(px(16.))
+            .py(px(12.))
+            .text_size(px(15.))
+            .font_family(UI_FONT)
+            .child(div().flex_none().text_color(rgb(t.panel_dim)).child("⌕"))
+            .child(div().flex_1().min_w_0().child(crate::field::field_view(&sel.filter, caret_on, &hint, true)));
+        let mut list = div().id("picker-rows").flex().flex_col().px(px(8.)).pb(px(8.)).max_h(px(420.)).overflow_y_scroll();
         for (i, row) in rows.iter().enumerate() {
             let picked = i == sel.cursor && row.pickable();
-            let el = match row {
-                Row::Header(h) => {
-                    // the host: its name, the provider dimmed, and a × to forget it
-                    let (name, prov) = h.parts();
-                    let mut d = div().flex().flex_row().items_baseline().gap(px(8.)).px(px(10.)).pt(px(8.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(0x6f6f6f)).child(div().text_color(rgb(0x333333)).child(name));
-                    if !prov.is_empty() {
-                        d = d.child(div().child(prov));
-                    }
-                    if !h.is_local() {
-                        let forget = h.clone();
-                        d = d.child(div().flex_1()).child(
-                            div()
-                                .id(("forget", i))
-                                .px(px(6.))
-                                .rounded(px(4.))
-                                .text_color(rgb(t.panel_dim))
-                                .hover(|s| s.bg(rgb(t.panel_hover)).text_color(rgb(t.panel_text)))
-                                .child("×")
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _, _, cx| {
-                                        forget_host(&forget);
-                                        if let Some(s) = this.selector.as_mut() {
-                                            s.hosts.retain(|x| *x != forget);
-                                            s.sessions.remove(&forget);
-                                            let mut all = known_sessions();
-                                            all.remove(&forget);
-                                            s.settle();
-                                        }
-                                        cx.stop_propagation();
-                                        cx.notify();
-                                    }),
-                                ),
-                        );
-                    }
-                    d.into_any_element()
-                }
-                Row::Section(name) => div().px(px(10.)).pt(px(8.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(*name).into_any_element(),
-                Row::Divider => div().h(px(1.)).my(px(6.)).mx(px(4.)).bg(rgb(t.panel_divider)).into_any_element(),
-                Row::Note(n) => div().px(px(22.)).py(px(4.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(n.clone()).into_any_element(),
-                Row::Open(u) | Row::Create(u) => {
-                    let is_current = matches!(row, Row::Open(u) if *u == self.url);
-                    let create = matches!(row, Row::Create(_));
-                    let (label, host, provider) = session_parts(u);
-                    let mut text = div().flex().flex_row().items_baseline().gap(px(8.));
-                    if create {
-                        text = text.child(div().text_color(rgb(t.panel_accent)).child("Create"));
-                    }
-                    text = text.child(div().child(label));
-                    if sel.mode == PickerMode::Tabs && !host.is_empty() {
-                        // where it is, as a small pill
-                        text = text.child(div().px(px(6.)).rounded(px(8.)).bg(rgb(t.panel_hover)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(host.clone()));
-                    }
-                    if create {
-                        // where it will be, since the section does not say
-                        if !host.is_empty() {
-                            text = text.child(div().text_color(rgb(t.panel_dim)).child(host));
-                        }
-                        text = text.child(div().text_color(rgb(t.panel_dim)).text_size(px(12.)).child(provider));
-                    }
-                    let r = row.clone();
-                    let mut d = row_style(div().id(("row", i)), picked).pl(px(22.)).text_color(rgb(t.panel_text)).child(text);
-                    if is_current {
-                        d = d.child(div().text_color(rgb(t.panel_accent)).child("✓"));
-                    }
-                    // a session is ended from here: "end" at the right
-                    if !create {
-                        let end = u.clone();
-                        d = d.child(div().flex_1()).child(
-                            div()
-                                .id(("end", i))
-                                .px(px(6.))
-                                .rounded(px(4.))
-                                .text_size(px(12.))
-                                .text_color(rgb(t.panel_dim))
-                                .hover(|s| s.bg(rgb(t.panel_danger_hover)).text_color(rgb(t.panel_text)))
-                                .child("end")
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _, _, cx| {
-                                        this.end_session_from_picker(end.clone(), cx);
-                                        cx.stop_propagation();
-                                    }),
-                                ),
-                        );
-                    }
-                    d.on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, window, cx| {
-                            this.choose(r.clone(), window, cx);
-                            cx.stop_propagation();
-                        }),
-                    )
-                    .into_any_element()
-                }
-                Row::NewSession(_) | Row::NewHost | Row::Rename(_) => {
-                    let (text, indent) = match row {
-                        Row::NewSession(_) => ("+ new session".to_string(), 22.),
-                        Row::NewHost => ("+ new host…".to_string(), 10.),
-                        Row::Rename(n) => (format!("Rename to “{n}”"), 10.),
-                        _ => unreachable!(),
-                    };
-                    let r = row.clone();
-                    row_style(div().id(("row", i)), picked)
-                        .pl(px(indent))
-                        .text_color(rgb(t.panel_accent))
-                        .child(text)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, window, cx| {
-                                this.choose(r.clone(), window, cx);
-                                cx.stop_propagation();
-                            }),
-                        )
-                        .into_any_element()
-                }
-            };
+            let dim = if picked { t.panel_chosen_text } else { t.panel_dim };
+            let ink = if picked { t.panel_chosen_text } else { t.panel_text };
+            let r = row.clone();
+            let mut el = div()
+                .id(("picker-row", i))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(10.))
+                .px(px(10.))
+                .py(px(7.))
+                .rounded(px(7.))
+                .text_size(px(14.))
+                .font_family(UI_FONT)
+                .text_color(rgb(ink))
+                .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
+                .when(!picked && row.pickable(), |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
+                // the glyph, in a ring as the screenshots have it
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(18.))
+                        .h(px(18.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .border_1()
+                        .border_color(rgb(dim))
+                        .text_size(px(11.))
+                        .text_color(rgb(dim))
+                        .child(row.glyph()),
+                )
+                .child(div().flex_none().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.title()))
+                .when_some(row.where_(), |d, w| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(w)))
+                // what picking it does, in the dim words at the right of
+                // the name, as the screenshots have it
+                .child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(row.action()))
+                .child(div().flex_1());
+            if row.pickable() {
+                el = el.cursor_pointer().on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, window, cx| {
+                        this.choose(r.clone(), window, cx);
+                        cx.stop_propagation();
+                    }),
+                );
+            }
             list = list.child(el);
         }
         if rows.is_empty() && sel.connect.is_none() {
-            let what = if sel.renaming.is_some() || sel.naming.is_some() { "Type a name" } else { "Nothing matches" };
+            let what = if sel.renaming.is_some() { "Type a name" } else { "Nothing matches" };
             list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(what));
         }
         let mut panel = div()
-            .w(px(620.))
-            .max_h(px(560.))
+            .w(px(760.))
+            .max_w_full()
             .bg(rgb(t.panel_bg))
             .border_1()
             .border_color(rgb(t.panel_border))
-            .rounded(px(10.))
+            .rounded(px(12.))
             .shadow_lg()
             .flex()
             .flex_col()
             .overflow_hidden()
-            .child(self.overlay_mark());
+            .child(self.overlay_mark())
+            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));
         panel = match &sel.connect {
-            Some(form) => panel.child(self.connect_form(form, sel.caret_visible(), cx)),
+            Some(form) => panel.child(self.connect_form(form, caret_on, cx)),
             None => panel.child(field).child(list),
         };
-        Some(deferred(anchored().position(point(px(72.), px(self.top() - 2.))).child(panel)).with_priority(1))
+        // the window behind it goes quiet: the dialog is the whole of
+        // what there is to do while it is up
+        let veil = div()
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .bg(gpui::rgba(if crate::theme::is_dark() { 0x00000099 } else { 0x33332899 }))
+            .justify_center()
+            .child(panel)
+            // a little above the middle, where the eye goes first
+            .child(div().flex_none().h(px(110.)));
+        Some(deferred(veil).with_priority(2))
     }
 }
 
@@ -1985,85 +1914,96 @@ mod picker_tests {
     fn picker() -> Selector {
         let local = Host::local();
         let box_ = Host { provider: "sprite".into(), arg: "devvm".into() };
-        let down = Host { provider: "ssh".into(), arg: "gone".into() };
         let si = |l: &str| SessionInfo { id: format!("id-{l}"), label: l.to_string() };
         let mut sessions = HashMap::new();
-        sessions.insert(local.clone(), Loading::Ready(vec![si("default"), si("notes")]));
+        sessions.insert(local.clone(), Loading::Ready(vec![si("default"), si("notes"), si("anotherfoobaz")]));
         sessions.insert(box_.clone(), Loading::Seeded(vec![si("work")]));
-        sessions.insert(down.clone(), Loading::Failed(vec![si("old")], "no route".into()));
-        Selector { mode: PickerMode::NewTab, tabs: Vec::new(), closed: Vec::new(), filter: crate::field::LineEdit::new(), cursor: 0, moved: false, hosts: vec![local, box_, down], sessions, current: SessionUrl::local("notes"), renaming: None, naming: None, connect: None, epoch: 1, caret_since: std::time::Instant::now() }
+        Selector {
+            tabs: Vec::new(),
+            closed: Vec::new(),
+            filter: crate::field::LineEdit::new(),
+            cursor: 0,
+            moved: false,
+            hosts: vec![local, box_],
+            sessions,
+            current: SessionUrl::local("notes"),
+            renaming: None,
+            connect: None,
+            epoch: 1,
+            caret_since: std::time::Instant::now(),
+        }
+    }
+
+    /// What the rows say, as the eye reads them: the name and what
+    /// picking it does.
+    fn shape(sel: &Selector) -> Vec<String> {
+        sel.rows().iter().map(|r| format!("{} {}", r.title(), r.action())).collect()
     }
 
     #[test]
-    fn hosts_head_their_sessions_and_offer_a_new_one() {
-        let sel = picker();
-        let rows = sel.rows();
-        let shape: Vec<String> = rows
-            .iter()
-            .map(|r| match r {
-                Row::Header(h) => format!("[{}]", h.parts().0),
-                Row::Open(u) => u.session.clone(),
-                Row::NewSession(_) => "+session".into(),
-                Row::Note(t) => format!("note:{}", t.split(':').next().unwrap()),
-                Row::Divider => "-".into(),
-                Row::NewHost => "+host".into(),
-                other => format!("{other:?}"),
-            })
-            .collect();
-        // a host still asked shows what it had last time, then "asking…";
-        // one that could not be reached keeps what it had, and says so
-        assert_eq!(shape, vec!["[local]", "default", "notes", "+session", "[devvm]", "work", "note:asking…", "+session", "[gone]", "old", "note:unreachable", "+session", "-", "+host"]);
-        // a new tab leaves out the sessions open here already
+    fn the_picker_offers_every_way_into_a_session() {
+        // nothing typed: the tabs to go to, the sessions to open, a host
+        // to add at the bottom; this window's own session is not offered
         let mut sel = picker();
-        sel.tabs = vec![SessionUrl::local("notes")];
-        assert!(!sel.rows().iter().any(|r| matches!(r, Row::Open(u) if u.session == "notes")));
-        // the tabs' list: open, then recently closed, the current landed on
-        let mut sel = picker();
-        sel.mode = PickerMode::Tabs;
         sel.tabs = vec![SessionUrl::local("default"), SessionUrl::local("notes")];
-        sel.closed = vec![SessionUrl::local("notes"), SessionUrl::local("old")];
-        let shape: Vec<String> = sel.rows().iter().map(|r| match r {
-            Row::Section(s) => format!("[{s}]"),
-            Row::Open(u) => u.session.clone(),
-            Row::Divider => "-".into(),
-            other => format!("{other:?}"),
-        }).collect();
-        assert_eq!(shape, vec!["[Open tabs]", "default", "notes", "[Recently closed]", "old"]);
-        sel.land_on_current();
-        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "notes"));
-        // a new tab's picker lands on its first row (this window's
-        // session is not among them; the tabs' list lands on it)
+        assert_eq!(
+            shape(&sel),
+            vec![
+                "default Go to session",
+                "anotherfoobaz Open session",
+                "work Open session",
+                "Add a host… Add a host",
+            ]
+        );
+        // a name typed: what it matches, then the making of it on every
+        // host that has no session by that name, then the host row
+        sel.filter = "another".into();
+        assert_eq!(
+            shape(&sel),
+            vec![
+                "anotherfoobaz Open session",
+                "another Create on local",
+                "another Create on devvm (sprite)",
+                "Add a host… Add a host",
+            ]
+        );
+        // a name a session already has on one host: only the other hosts
+        // offer to make it
+        sel.filter = "work".into();
+        assert_eq!(shape(&sel), vec!["work Open session", "work Create on local", "Add a host… Add a host"]);
+        // one closed lately is there to open, and is not offered twice
         let mut sel = picker();
-        sel.land_on_current();
-        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "default"));
-        // a filter narrows to sessions and hosts that carry it; a URL typed creates
+        sel.closed = vec![SessionUrl::local("default"), SessionUrl::local("gone")];
+        assert!(shape(&sel).contains(&"gone Open session".to_string()));
+        assert_eq!(shape(&sel).iter().filter(|r| r.starts_with("default ")).count(), 1);
+        // a name that is no label: said, and nothing is offered to make
         let mut sel = picker();
-        sel.filter = "dev".into();
+        sel.filter = "Not A Label".into();
         let rows = sel.rows();
-        assert!(matches!(rows[0], Row::Header(ref h) if h.arg == "devvm"), "{rows:?}");
-        assert!(!rows.iter().any(|r| matches!(r, Row::Open(u) if u.is_local())));
-        sel.filter = "ssh://new@host/x".into();
-        assert!(sel.rows().iter().any(|r| matches!(r, Row::Create(u) if u.arg == "new@host" && u.session == "x")));
-        // a host answering fills its section in above the cursor: the
-        // cursor keeps its row (the first devvm session grows to three)
+        assert!(matches!(rows[0], Row::Note(_)), "{rows:?}");
+        assert!(!rows.iter().any(|r| matches!(r, Row::Create(..))));
+        // the cursor lands on the first row worth landing on, and a host
+        // answering leaves it on the row it was on
         let mut sel = picker();
-        sel.cursor = sel.rows().iter().position(|r| matches!(r, Row::Open(u) if u.session == "old")).unwrap();
+        sel.land_on_current();
+        assert!(sel.rows()[sel.cursor].pickable());
+        sel.cursor = sel.rows().iter().position(|r| matches!(r, Row::Open(u) if u.session == "work")).unwrap();
         sel.moved = true;
         let devvm = Host { provider: "sprite".into(), arg: "devvm".into() };
         sel.keeping(|s| {
             let si = |l: &str| SessionInfo { id: format!("id-{l}"), label: l.to_string() };
-            s.sessions.insert(devvm.clone(), Loading::Ready(vec![si("a"), si("b"), si("work")]));
+            s.sessions.insert(devvm, Loading::Ready(vec![si("a"), si("b"), si("work")]));
         });
-        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "old"), "{:?}", sel.rows()[sel.cursor]);
-        // its row gone, the cursor settles on the next pickable one
-        sel.keeping(|s| {
-            s.sessions.insert(Host { provider: "ssh".into(), arg: "gone".into() }, Loading::Ready(vec![]));
-        });
-        assert!(sel.rows()[sel.cursor].pickable());
-        // naming a new session on a host
+        assert!(matches!(sel.rows()[sel.cursor], Row::Open(ref u) if u.session == "work"), "{:?}", sel.rows()[sel.cursor]);
+        // renaming: the field is the new name, and the only row is it
+        let mut sel = picker();
+        sel.renaming = Some(SessionUrl::local("notes"));
         sel.filter = "scratch".into();
-        sel.naming = Some(Host { provider: "sprite".into(), arg: "devvm".into() });
-        assert_eq!(sel.rows(), vec![Row::Create(SessionUrl::parse("sprite://devvm/scratch").unwrap())]);
+        assert_eq!(sel.rows(), vec![Row::Rename("scratch".into())]);
+    }
+
+    #[test]
+    fn the_new_host_form_reads_its_fields() {
         // the new-host form
         let mut f = Connect { providers: vec!["ssh".into(), "sprite".into()], provider: 0, host: crate::field::LineEdit::new(), field: Field::Provider };
         assert!(f.host().is_none());

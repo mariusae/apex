@@ -1436,20 +1436,24 @@ this one (detach, attach).
   its × lets a parked one go, the current tab's × (and
   ⌘⇧W) lets this session go and shows the one parked last (the last
   tab's closes the window, as a browser's does), and `+` (⌘T) opens
-  the picker for a new tab: the sessions on the known hosts that are
-  not tabs here, "+ new session" under each host, a URL typed to
-  create one, "+ new host…". Before the tabs, a browser's tab search:
-  ▾ (⌘⇧A) drops a searchable list of the open tabs and the recently
-  closed ones (the recent sessions not open here, one per place and
-  label), each with its host as a pill, the current landed on; the card that tells a tab's state hangs from the
+  the picker. There is one picker, however it is opened -- `+`, ⌘T or
+  ⌘⇧A -- and it is every way into a session at once: the window goes
+  quiet behind it and it sits in the middle, a field with the rows
+  under it, each a name and, dimmed beside it, what picking it does.
+  The rows are the tabs this window has open ("Go to session"), the
+  sessions that are there to open -- what the hosts answer with and
+  what was closed lately -- ("Open session"), then, for a name typed
+  that no session on that host has, the making of it on each host
+  ("Create on <host>"), and "Add a host…" at the very bottom. So
+  typing `another` with a tab `anotherfoobaz` and a closed session
+  `anotherfoobar` offers to go to the one, open the other, and make
+  `another` on each host. A name that is no label says so and offers
+  nothing to make. The card that tells a tab's state hangs from the
   strip's bottom edge, not from the tab's, and in a layer under it, so
   it can never cover the tab it belongs to; a tab
   right-clicked renames its session, this window's or another's (on
   its host, through the CLI's rename-session). The
-  selected tab is styled as a browser's: the colour of the row below
-  it, rounded at the top, its bottom corners draping out into the strip
-  (a square of its colour with the strip's colour rounded away), and
-  no line under the strip, so it flows into the window. A tab hovered
+  A tab hovered
   shows a card: the session, its host, the link's state (leading,
   fenced, disconnected; parked and when last heard from) and the round
   trips spelled out, the heartbeat's as "Ping" and a log append's
@@ -1912,9 +1916,9 @@ with the home directory as its working directory — and opens its window
 on the session it had last time (`~/Library/Application
 Support/apex/last-sessions`), else the first existing session, else a new
 `local`. The title bar is the app's own: tabs for the connected
-sessions, `+` (⌘T) dropping the picker for a new one, a list filtered
-by what you type, where a name that matches nothing becomes "Create
-session", and ▾ (⌘⇧A) the tab search. Choosing
+sessions and `+` (⌘T) opening the picker, which is every way into a
+session: going to a tab, opening a session that is there, making one
+by the name typed on any host, or adding a host. Choosing
 re-points the window. The
 menu bar carries Quit, Hide, Sessions, Close Window and the
 Edit menu, whose items act on the text under the pointer, as acme's keys
