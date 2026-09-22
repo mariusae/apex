@@ -1420,9 +1420,11 @@ this one (detach, attach).
   — this window's, and the parked ones — in the order first shown
   (`Pool::order`), the current one selected. The tab in front is the colour
   of the row below it, rounded at the top (`CROWN`, 8) and sweeping out
-  at the bottom over a wider curve (`DRAPE`, 12: a square of its colour
-  with the strip's rounded away) so it flows into the window as a
-  browser's does. It carries no line of its own: it is a shape cut out
+  at the bottom over a curve twice that (`DRAPE`, 16: a square of its
+  colour with the strip's rounded away) so it flows into the window as
+  a browser's does. The tabs sit `DRAPE`/2 apart on each side, since a
+  drape lies on the strip and must not reach a neighbour, whose own
+  edge it would paint over. It carries no line of its own: it is a shape cut out
   of the strip, not a card on it. The others are the strip's own
   colour, with a faint line the only thing that says where each one is;
   the tab search and `+` are the same. The pointer on one fills it

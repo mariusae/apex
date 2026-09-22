@@ -1491,7 +1491,7 @@ impl Acme {
         // one line box for every piece of text in a tab, whatever its
         // size, so centring them centres them on the same line
         const LINE: f32 = 18.;
-        const DRAPE: f32 = 12.;
+        const DRAPE: f32 = 16.;
         let t = crate::theme::theme();
         let strip: u32 = t.strip;
         let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
