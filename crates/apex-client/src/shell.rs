@@ -65,7 +65,7 @@ pub fn apply_theme(cx: &mut App) {
 /// forget which sessions were open.
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
-pub const TITLEBAR_HEIGHT: f32 = 34.;
+pub const TITLEBAR_HEIGHT: f32 = 40.;
 /// The top row's background (acme's tag colour): what the selected tab is.
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
 /// The system's UI font.
@@ -1482,7 +1482,7 @@ impl Acme {
         // the strip's colour rounded away), so it flows into the window
         // the selected tab nearly fills the bar; its text sits on the
         // bar's centre line, with the other tabs' and the + beside it
-        const TAB_H: f32 = 30.;
+        const TAB_H: f32 = 34.;
         const INSET: f32 = 4.;
         // one line box for every piece of text in a tab, whatever its
         // size, so centring them centres them on the same line
@@ -1571,6 +1571,18 @@ impl Acme {
             let bg = if notified { t.tab_notified_bg } else if open { t.tab_open_bg } else { t.tab_bg };
             let dim = if notified { t.tab_notified_text } else { t.tab_dim };
             let closable = clickable && (!current || others);
+            // the selected tab's bottom corners drape out into the strip,
+            // as a browser's do, so it flows into the window below: a
+            // square of the tab's colour with the strip's rounded away,
+            // and the tab's edge traced down the outer side of it
+            let outline = t.tab_outline;
+            let drape = move |left: bool| {
+                let corner = div().size_full().bg(rgb(strip));
+                let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
+                let corner = if left { corner.border_r_1() } else { corner.border_l_1() };
+                let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner.border_color(rgb(outline)));
+                if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
+            };
             // the tab's face: its look and its words, made twice for a
             // tab being dragged (the placeholder in the row, the one
             // under the pointer)
@@ -1587,22 +1599,40 @@ impl Acme {
                     .text_size(px(13.))
                     .line_height(px(LINE))
                     .font_family(UI_FONT)
-                    // every tab is a card: an edge round it, the corners
-                    // rounded, and the same centre line whether or not it
-                    // is in front, so the text stays put as the front moves
-                    .h(px(TAB_H - INSET))
-                    .mb(px(INSET))
-                    .rounded(px(7.))
-                    .border_1()
-                    // the one in front: brighter than the strip, its edge
-                    // darker, and lifted off it by a shadow
-                    .when(current, |d| d.text_color(rgb(t.tab_current_text)).bg(rgb(bg)).border_color(rgb(t.tab_outline)).shadow_sm())
+                    // the one in front: the colour of the row below it,
+                    // rounded at the top, its edge round the top and the
+                    // sides and down the drapes, and open at the bottom,
+                    // where it flows into the window
+                    .when(current, |d| {
+                        d.h(px(TAB_H))
+                            .pb(px(INSET))
+                            .rounded_t(px(DRAPE))
+                            .border_t_1()
+                            .border_l_1()
+                            .border_r_1()
+                            .border_color(rgb(t.tab_outline))
+                            .text_color(rgb(t.tab_current_text))
+                            .bg(rgb(bg))
+                            .child(drape(true))
+                            .child(drape(false))
+                    })
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
                     .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
-                    // the others: a touch behind the strip, their edge
-                    // fainter; the one dragged shows as hovered
-                    .when(!current, |d| d.text_color(rgb(t.tab_text)).bg(rgb(t.tab_idle_bg)).border_color(rgb(t.tab_outline_dim)).hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline))))
+                    // the others: on the strip, an edge so faint it is
+                    // barely there, and the strip's own colour, so only the
+                    // one in front stands out; the same centre line as it,
+                    // so the text stays put as the front moves; the one
+                    // dragged shows as hovered
+                    .when(!current, |d| {
+                        d.h(px(TAB_H - INSET))
+                            .mb(px(INSET))
+                            .rounded(px(7.))
+                            .border_1()
+                            .border_color(rgb(t.tab_outline_dim))
+                            .text_color(rgb(t.tab_text))
+                            .hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)))
+                    })
                     .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
                     // notified, selected or not, and hovered too
                     .when(!current && notified, |d| d.bg(rgb(t.tab_notified_bg)).hover(|s| s.bg(rgb(t.tab_notified_bg))))

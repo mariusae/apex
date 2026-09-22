@@ -1418,12 +1418,15 @@ this one (detach, attach).
   window once it is.
 - *As built, tabs:* the title bar carries a tab per connected session
   — this window's, and the parked ones — in the order first shown
-  (`Pool::order`), the current one selected. A tab is a card: an edge
-  round it (`tab_outline`, fainter on the ones not in front), corners
-  rounded, and the one in front brighter than the strip with a shadow
-  under it, so it stands off the strip as a browser's does; the tab
-  search and `+` are the same card, so the strip reads as one row of
-  them. Another tab switches to
+  (`Pool::order`), the current one selected. The tab in front is the colour
+  of the row below it, rounded at the top, its bottom corners draping
+  out into the strip (a square of its colour with the strip's rounded
+  away) so it flows into the window as a browser's does, with a faint
+  line round its top, its sides and the outer side of each drape, and
+  none across its bottom, where it joins the window. The others sit on
+  the strip in the strip's own colour, a fainter line round each; the
+  tab search and `+` are the same. No shading anywhere: the line is
+  the whole of it. The bar is 40 high, which the taller tab needs. Another tab switches to
   that session, another tab switches to
   its × lets a parked one go, the current tab's × (and
   ⌘⇧W) lets this session go and shows the one parked last (the last
