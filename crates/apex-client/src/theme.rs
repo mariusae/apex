@@ -280,10 +280,30 @@ pub fn set_fullscreen_tabs(on: bool) {
     let _ = std::fs::write(p, if on { "always\n" } else { "hover\n" });
 }
 
+/// View ▸ Correct Terminal Contrast (on by default): a terminal's ink
+/// that does not read on its paper is moved until it does
+/// (`contrast.rs`). Kept in the `contrast` state file.
+static CONTRAST: AtomicBool = AtomicBool::new(true);
+
+pub fn contrast() -> bool {
+    CONTRAST.load(Ordering::Relaxed)
+}
+
+pub fn set_contrast(on: bool) {
+    CONTRAST.store(on, Ordering::Relaxed);
+    let p = crate::shell::state_file().with_file_name("contrast");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
+}
+
 /// The choice of last time, applied.
 pub fn load() {
     let tabs = std::fs::read_to_string(crate::shell::state_file().with_file_name("fullscreen-tabs")).map(|s| s.trim() != "hover").unwrap_or(true);
     FULLSCREEN_TABS.store(tabs, Ordering::Relaxed);
+    let contrast = std::fs::read_to_string(crate::shell::state_file().with_file_name("contrast")).map(|s| s.trim() != "off").unwrap_or(true);
+    CONTRAST.store(contrast, Ordering::Relaxed);
     let m = match std::fs::read_to_string(file()).map(|s| s.trim().to_string()).as_deref() {
         Ok("dark") => Mode::Dark,
         Ok("system") => Mode::System,

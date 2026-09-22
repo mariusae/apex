@@ -1812,6 +1812,36 @@ by focus lost and regained on the keyboard's terminal for that
 reason. (DECSET 2031's dark/light notification is a possible
 follow-on for the rest.)
 
+*Automatic contrast correction (View ▸ Correct Terminal Contrast, on
+by default; kept in the `contrast` state file):* programs choose their
+colours for a dark terminal and name them outright -- a 256-colour
+index, a truecolor triple, which the theme cannot touch -- so on light
+paper `ls` comes out in pale yellow and `lazygit` in greys nobody can
+read, and the few that choose for light paper do the reverse on dark.
+As it paints, the client checks every cell's ink against the paper it
+sits on, the cell's own background or the theme's, and where the two do
+not read moves the ink -- only the ink, never a program's background --
+in lightness toward the ink of the paper it is on (`contrast.rs`). Reads
+is WCAG AA, 4.5:1, in the eye of a normal viewer and of a deuteranope
+(Machado 2009's simulation) both: a red reads lighter to a deuteranope,
+and one that passes for the first fails for the second. Hue and chroma
+stay, so a yellow is a deeper yellow, the hue turned halfway toward the
+nearest of the theme's own sixteen when one is within 40°, so the
+corrected colours belong with the theme's; greys are not given a hue.
+The ink is not set on the edge of reading but mirrored about it: one
+that lay a little beyond the edge lands a little inside, one far beyond
+lands deep, half as far in as it was out, so the shades a program tells
+its things apart by stay apart -- to a deuteranope, who has lightness
+where others have hue, two colours stay two where setting both on the
+edge would make them one -- and a dark terminal's bright red is a light
+one's deep red, which is what bright means on paper. Ink that reads is
+not touched, the theme's own sixteen included: the light theme's bright
+yellow on its paper does not, and is corrected like anything else. The
+moves are in Oklab, where a step in lightness is the same size on any
+hue, judged as drawn in eight bits (the edge found in floats can fall a
+hair short once packed), and every answer is cached by the pair, so a
+cell costs a lookup.
+
 *Fidelity audit against plan9port acme (2026-09-05).* Read side by side
 with `acme.c`, `text.c`, `exec.c`, `look.c`, `wind.c`, `cols.c`, `rows.c`
 and `scrl.c`. Matching now: the three buttons and their chords, including

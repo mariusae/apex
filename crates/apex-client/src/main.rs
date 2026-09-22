@@ -13,6 +13,7 @@
 
 mod app;
 mod attention;
+mod contrast;
 mod cursor;
 mod field;
 mod finder;
@@ -402,6 +403,7 @@ fn main() {
         cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
         cx.on_action(|_: &shell::ToggleFullscreenTabs, cx| shell::toggle_fullscreen_tabs(cx));
+        cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             // the action arrives while the focused window is mid-update,

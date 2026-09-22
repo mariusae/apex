@@ -43,10 +43,6 @@ fn color_rgb(packed: u32, th: &crate::theme::Theme) -> u32 {
     }
 }
 
-fn color(packed: u32, th: &crate::theme::Theme) -> Hsla {
-    rgb(color_rgb(packed, th))
-}
-
 struct RowDraw {
     text: SharedString,
     runs: Vec<TextRun>,
@@ -124,7 +120,7 @@ impl Element for TermElement {
             acme.term_resize(term, cols, rows_n);
             let t = acme.node.state.terms.get(&term)?;
             let th = crate::theme::theme();
-            let fg_default = rgb(th.text);
+            let correct = crate::theme::contrast();
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
             // the selection, if it is in this terminal: acme's yellow
             let order = |a: (usize, u64), b: (usize, u64)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
@@ -157,14 +153,18 @@ impl Element for TermElement {
                 let mut bgs: Vec<(u16, u16, Hsla)> = Vec::new();
                 for (x, cell) in row.iter().enumerate() {
                     let Cell { ch, fg, bg, flags, link } = *cell;
-                    let mut fgc = if fg == 0 { fg_default } else { color(fg, th) };
-                    let mut bgc = if bg == 0 { None } else { Some(color(bg, th)) };
+                    let fg_rgb = if fg == 0 { th.text } else { color_rgb(fg, th) };
+                    let bg_rgb = if bg == 0 { None } else { Some(color_rgb(bg, th)) };
+                    // the ink as it reads on its paper (contrast.rs):
+                    // the theme's own on the theme's own needs no asking
+                    let fg_rgb = if correct && (fg != 0 || bg != 0) { crate::contrast::correct(fg_rgb, bg_rgb.unwrap_or(th.body_bg), th) } else { fg_rgb };
+                    let mut fgc = rgb(fg_rgb);
+                    let mut bgc = bg_rgb.map(rgb);
                     if let Some((cx_, cy)) = cursor {
                         if cx_ as usize == x && cy as usize == y {
                             // the cursor: the cell's background tinted
                             // down a little, the text as it is, not inverted
-                            let under = if bg == 0 { th.body_bg } else { color_rgb(bg, th) };
-                            bgc = Some(rgb(mix(under, th.cursor_tint_to, CURSOR_TINT)));
+                            bgc = Some(rgb(mix(bg_rgb.unwrap_or(th.body_bg), th.cursor_tint_to, CURSOR_TINT)));
                         }
                     }
                     if let Some((b, f)) = highlight(x, y) {
