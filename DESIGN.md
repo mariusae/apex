@@ -1578,12 +1578,13 @@ left of the connection mark, the heartbeat's round trip and the log's
   terminal (`TermRead`), into the snarf buffer and clipboard.
 - *As built:* a window is **working** when a tool says so
   (`WindowOp::Working{by}`, `Tool::set_working`): its handle breathes
-  between its own colour and the tag's, a second and a half to the
-  cycle, for as long as the work lasts. It is not a fourth state but a
-  mark over the three: a clean, dirty, stale or live window can be
-  working, and its handle keeps saying which it is. A handle with
-  nothing else to say breathes from the live colour, so the work still
-  shows. It is for work with nothing to show while it runs, where a
+  between the colour work is drawn in and the tag's own, a second and a
+  half to the cycle, for as long as the work lasts. That colour is the
+  one a terminal's progress bar is (`Theme::progress`, a blue no handle
+  colour is), so a handle and a bar saying the same thing look the
+  same. It is not a fourth state but a mark over the three: a clean,
+  dirty, stale or live window can be working, and says so again in its
+  own colour the moment the work ends. It is for work with nothing to show while it runs, where a
   window would otherwise look idle: an agent thinking, a language
   server indexing, a build. Like `Live`, it holds only while the
   attachment that set it is there, so a tool that dies leaves no window

@@ -667,10 +667,11 @@ impl Element for TextElement {
                         None
                     };
                     let fillc = match (pp.pulse, resting) {
-                        // pulsing: between that colour and the tag's own;
-                        // a handle with nothing to say breathes from live,
-                        // so the work still shows
-                        (Some(t), c) => rgb(mix(c.unwrap_or(th.live), th.tag_bg, t * 0.85)),
+                        // pulsing: between the colour work is drawn in --
+                        // the same blue a terminal's progress bar is, so
+                        // the handle and the bar say one thing -- and the
+                        // tag's own
+                        (Some(t), _) => rgb(mix(th.progress, th.tag_bg, t * 0.85)),
                         (None, Some(c)) => rgb(c),
                         (None, None) => pal.bg,
                     };
