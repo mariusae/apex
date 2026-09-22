@@ -290,6 +290,12 @@ impl TermHost {
         env.insert("TERM".to_string(), "xterm-256color".to_string());
         env.insert("COLORTERM".to_string(), "truecolor".to_string());
         env.insert("TERM_PROGRAM".to_string(), "apex".to_string());
+        // what a program can count on, in iTerm2's feature-reporting
+        // spec: 24-bit colour, Unicode, bracketed paste, the clipboard
+        // (OSC 52), hyperlinks (OSC 8) and progress (OSC 9;4). Only
+        // what is true: no mouse beyond the wheel, no sixel, no
+        // synchronised output of our own
+        env.insert("TERM_FEATURES".to_string(), "T3UBCwHP".to_string());
         for (k, v) in extra {
             env.insert(k.clone(), v.clone());
         }

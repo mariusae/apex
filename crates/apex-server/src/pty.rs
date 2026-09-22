@@ -159,6 +159,7 @@ pub fn setup_env() {
     std::env::set_var("TERM", "xterm-256color");
     std::env::set_var("COLORTERM", "truecolor");
     std::env::set_var("TERM_PROGRAM", "apex");
+    std::env::set_var("TERM_FEATURES", "T3UBCwHP");
 }
 
 /// Where a program's `$SHELL` is, or a plain one.
