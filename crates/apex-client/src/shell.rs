@@ -1470,15 +1470,11 @@ impl Acme {
         };
         let clickable = self.socket.is_some();
         let open = self.selector.is_some();
-        // a tab per connected session (this one, and the parked ones), in
-        // the order first shown; this one is the selected tab and toggles
-        // the picker; another switches to it; its × lets a parked one go
-        // the tabs sit on the strip's bottom edge; the selected one is the
-        // colour of the row below it, rounded at the top, and its bottom
-        // corners drape out into the strip (a square of its colour with
-        // the strip's colour rounded away), so it flows into the window
-        // the selected tab nearly fills the bar; its text sits on the
-        // bar's centre line, with the other tabs' and the + beside it
+        // a tab per session the app has open, in the order first shown,
+        // whatever its link is doing: shown, parked, still coming up or
+        // down, each saying so after its name. This one is the selected
+        // tab and toggles the picker; another switches to it; its ×
+        // closes it. The text sits on the bar's centre line.
         /// A tab is a pill inset in the bar, as ghostty's are, and the
         /// tabs share the bar between them: every one the same width,
         /// the row reaching the far right, with `+` after it.
@@ -1496,11 +1492,12 @@ impl Acme {
         let idle_bg = crate::theme::step(strip, 1);
         let hover_bg = crate::theme::step(strip, 2);
         let front_bg = crate::theme::step(strip, 3);
+        // no chevron in the strip and no key of its own for searching the
+        // tabs: ⌘T opens the picker, which is that and every other way
+        // into a session besides, and the bar is the tabs' room
+        let all = crate::pool::Pool::tabs(cx, &self.url);
         // the tabs fill the bar, each the same width as the rest
         let mut tabs = div().id("tabs").flex_1().min_w_0().h_full().flex().flex_row().items_center().gap(px(2.));
-        // no chevron in the strip: the tab search is ⌘⇧A (the picker
-        // draws its own way in, and the bar is the tabs' room)
-        let all = crate::pool::Pool::tabs(cx, &self.url);
         // a tab being dragged floats under the pointer, kept within the
         // strip's tabs (their bounds of last frame say where that is)
         let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.url.clone());
@@ -1540,7 +1537,9 @@ impl Acme {
             // the label; the host dimmed after it for a session elsewhere
             let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
-            let fenced = current && self.fenced();
+            // what the tab is doing, when it is anything but simply up:
+            // "connecting…", "restoring…", "fenced", "offline"
+            let word = self.tab_word(&u, cx);
             // a tool in that session wants the user: a bell before the
             // name says so, and nothing else changes -- a tab is not a
             // place to shout from
@@ -1580,9 +1579,10 @@ impl Acme {
                     .when(current, |d| d.bg(rgb(bg)).text_color(rgb(t.tab_current_text)))
                     .when(!current, |d| d.bg(rgb(idle_bg)).text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(hover_bg))))
                     .when(!current && ghost, |d| d.bg(rgb(hover_bg)))
-                    // fenced (another client leads, nothing here takes): the
-                    // whole tab fades into the strip, its name greyed, and says so
-                    .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
+                    // not simply up (fenced: another client leads and
+                    // nothing here takes; coming up; down): the whole tab
+                    // fades into the strip, its name greyed, and says so
+                    .when(word.is_some(), |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
                     // the name, centred in what room is left of the tab
                     // and cut short when there is not enough of it, with
                     // the bell before it when a tool in that session wants
@@ -1601,7 +1601,7 @@ impl Acme {
                             .when(notified, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).child("🔔")))
                             .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text.clone()))
                             .when_some(host.clone(), |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(h)))
-                            .when(fenced, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child("fenced"))),
+                            .when_some(word.clone(), |d, w| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child(w))),
                     )
                     // the key that reaches it, at the tab's right end
                     .when_some(key.clone(), |d, k| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(k)))

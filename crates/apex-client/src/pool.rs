@@ -20,7 +20,61 @@ use apex_server::{perform, Proposal};
 use crate::app::{client_do, Live};
 
 /// How many sessions stay parked; the least recently parked goes first.
+/// A tab beyond that keeps its place, with no link under it, until it is
+/// shown again.
 const CAP: usize = 8;
+
+/// What a tab is doing, when it is not simply up. Tabs are local state:
+/// one is made when the user makes it and brought back at launch, and it
+/// goes only when the user closes it (or its session does) -- whatever
+/// the link under it is doing. So a tab still connecting keeps its place
+/// in the bar, and one whose link has gone says so instead of vanishing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Tab {
+    /// A link is being made, and why.
+    Coming(Why),
+    /// Attached: shown in the window, or parked here.
+    Up,
+    /// No link, and why (the tab's card says it in full).
+    Down(String),
+}
+
+impl Tab {
+    /// The word after the session's name in its tab, when there is one.
+    pub fn word(&self) -> Option<&str> {
+        match self {
+            Tab::Coming(why) => Some(why.word()),
+            Tab::Up => None,
+            Tab::Down(_) => Some("offline"),
+        }
+    }
+}
+
+/// Why a link is being made: a word for the tab, and a sentence for the
+/// blank page of the tab while it waits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Why {
+    /// A tab the user has just asked for.
+    Attaching,
+    /// A tab of last time, coming back at launch.
+    Restoring,
+}
+
+impl Why {
+    pub fn word(self) -> &'static str {
+        match self {
+            Why::Attaching => "connecting…",
+            Why::Restoring => "restoring…",
+        }
+    }
+
+    pub fn sentence(self, url: &SessionUrl) -> String {
+        match self {
+            Why::Attaching => format!("attaching to {}…", url.describe()),
+            Why::Restoring => format!("restoring {}…", url.describe()),
+        }
+    }
+}
 
 /// Where a link's wake goes: the window showing the session, or the
 /// pool while it is parked. The reader thread holds the forwarding
@@ -72,6 +126,8 @@ pub struct Pool {
     /// application switcher's order). `by_recency` follows it, so the
     /// next ctrl-tab after settling goes back to the session left.
     settled: Vec<SessionUrl>,
+    /// What each tab is doing, for the bar: absent is up.
+    state: HashMap<SessionUrl, Tab>,
     /// Wakes the tending task.
     wake: Wake,
 }
@@ -90,7 +146,7 @@ impl Pool {
         // first window's own tab joins them rather than replacing them
         let text = std::fs::read_to_string(Self::tabs_file()).unwrap_or_default();
         let order: Vec<SessionUrl> = text.lines().filter_map(SessionUrl::parse).filter(|u| u.id.is_some()).collect();
-        cx.set_global(Pool { parked: HashMap::new(), order, settled: Vec::new(), wake });
+        cx.set_global(Pool { parked: HashMap::new(), order, settled: Vec::new(), state: HashMap::new(), wake });
         cx.spawn(async move |cx| {
             use futures::StreamExt;
             while rx.next().await.is_some() {
@@ -111,6 +167,7 @@ impl Pool {
         if pool.order.contains(url) {
             // the label may have changed: the tab says the current one
             let pool = cx.global_mut::<Pool>();
+            pool.state.insert(url.clone(), Tab::Up);
             if let Some(u) = pool.order.iter_mut().find(|u| *u == url) {
                 if *u != *url || u.session != url.session {
                     *u = url.clone();
@@ -121,6 +178,7 @@ impl Pool {
         }
         let pool = cx.global_mut::<Pool>();
         pool.order.push(url.clone());
+        pool.state.insert(url.clone(), Tab::Up);
         pool.save_tabs();
     }
 
@@ -159,7 +217,6 @@ impl Pool {
     /// already have.
     pub fn restore(cx: &mut App, shown: &[SessionUrl]) {
         let Some(pool) = cx.try_global::<Pool>() else { return };
-        let wake = pool.wake.clone();
         let urls: Vec<SessionUrl> = pool.order.clone();
         // what the windows show, as they know it now: a window attached by
         // label has the session's id by now, where the launch target
@@ -170,49 +227,198 @@ impl Pool {
         shown.extend(Self::shown_urls(cx));
         crate::shell::log_line(&format!("restoring {} tab(s) of last time; {} shown already", urls.len(), shown.len()));
         for url in urls {
-            if shown.contains(&url) || shown.iter().any(|s| s.id.is_some() && url.id.is_some() && s.provider == url.provider && s.arg == url.arg && s.session == url.session) {
-                // the same session, or the same label on the same host
-                // under another id: last time's, before a restart
+            if shown.contains(&url) {
+                continue; // the window has it: its tab is that one
+            }
+            if shown.iter().any(|s| s.id.is_some() && url.id.is_some() && s.provider == url.provider && s.arg == url.arg && s.session == url.session) {
+                // the same label on the same host under another id: last
+                // time's, before a restart. The window's tab is the
+                // session now, and this entry is a tab of a session that
+                // is not there -- it goes, or the bar would show both
+                crate::shell::log_line(&format!("tab {url}: last time's id for a session the window has; forgotten"));
+                Self::let_go(cx, &url);
                 continue;
             }
-            crate::shell::log_line(&format!("tab {url}: attaching again"));
-            let (u, w) = (url.clone(), wake.clone());
-            let connecting = cx.background_executor().spawn(async move { crate::app::Acme::connect_existing_targeted(&u, w) });
-            cx.spawn(async move |cx| {
-                let r = connecting.await;
-                let _ = cx.update(|cx| match r {
-                    Ok((link, log, node, target)) => {
-                        crate::shell::log_line(&format!("tab {url} attached again, parked"));
-                        let parked = Parked { link, log, node, url: url.clone(), target, previews: Vec::new(), live: std::collections::HashMap::new(), snarfouts: Vec::new(), pending_goto: None, parked_at: Instant::now() };
-                        Pool::park(cx, parked);
-                    }
-                    Err(e) => {
-                        crate::shell::log_line(&format!("tab {url}: {e}; forgotten"));
-                        let pool = cx.global_mut::<Pool>();
-                        pool.order.retain(|u| *u != url);
-                        pool.save_tabs();
-                    }
-                });
-            })
-            .detach();
+            // the tab is in the bar from this moment, saying what it is
+            // doing: waiting for the link is not a reason to hide it
+            Self::start(cx, &url, Why::Restoring, true, Vec::new());
         }
     }
 
-    /// The tabs: the sessions still connected — `current`, shown in the
-    /// window asking, and the parked ones — in first-shown order.
+    /// Bring a tab up: the link is made on a thread, and the tab says
+    /// what is happening until it lands. What lands goes to the window
+    /// when the window is waiting on that tab, and is parked otherwise,
+    /// so switching away from a tab still connecting leaves it coming.
+    /// `existing` attaches to a session that must be there already (a
+    /// tab of last time); else one of that name is made if it is gone.
+    /// A tab already coming up is left to come.
+    pub fn start(cx: &mut App, url: &SessionUrl, why: Why, existing: bool, files: Vec<String>) {
+        let Some(pool) = cx.try_global::<Pool>() else { return };
+        if matches!(pool.state.get(url), Some(Tab::Coming(_))) {
+            return;
+        }
+        let wake = pool.wake.clone();
+        let pool = cx.global_mut::<Pool>();
+        if !pool.order.contains(url) {
+            pool.order.push(url.clone());
+            pool.save_tabs();
+        }
+        pool.state.insert(url.clone(), Tab::Coming(why));
+        crate::shell::log_line(&format!("tab {url}: {}", why.word()));
+        let (u, w) = (url.clone(), wake);
+        let connecting = cx.background_executor().spawn(async move {
+            if existing {
+                crate::app::Acme::connect_existing_targeted(&u, w)
+            } else {
+                crate::app::Acme::connect_blocking(&u, w)
+            }
+        });
+        let url = url.clone();
+        cx.spawn(async move |cx| {
+            let r = connecting.await;
+            let _ = cx.update(|cx| Pool::landed(cx, url, r, files));
+        })
+        .detach();
+    }
+
+    /// A tab's link has come, or has not. The window waiting on that tab
+    /// takes it; otherwise it is parked. A session that is gone takes
+    /// its tab with it (nothing is there to come back to); any other
+    /// failure leaves the tab where it is, saying why.
+    fn landed(cx: &mut App, url: SessionUrl, r: std::io::Result<(Link, Log, Node, WakeTarget)>, files: Vec<String>) {
+        match r {
+            Ok((link, log, node, target)) => {
+                // the session says which it is: the tab takes that name
+                let real = crate::app::identified(&url, &node);
+                Self::rename(cx, &url, &real);
+                Self::set(cx, &real, Tab::Up);
+                match Self::waiting_on(cx, &real) {
+                    Some(h) => {
+                        crate::shell::log_line(&format!("tab {real}: attached, shown"));
+                        let bad = h
+                            .update(cx, |acme, window, cx| {
+                                let bad = acme.adopt(link, log, node, target, &real, files, window).err().map(|e| e.to_string());
+                                if let Some(why) = &bad {
+                                    acme.wait_failed(why);
+                                }
+                                cx.notify();
+                                bad
+                            })
+                            .ok()
+                            .flatten();
+                        if let Some(why) = bad {
+                            Self::set(cx, &real, Tab::Down(why));
+                        }
+                    }
+                    // the tab was closed while its link was being made:
+                    // the link goes with it
+                    None if !Self::has(cx, &real) => {
+                        crate::shell::log_line(&format!("tab {real}: closed while coming; the link goes"));
+                        let mut link = link;
+                        link.close();
+                    }
+                    None => {
+                        crate::shell::log_line(&format!("tab {real}: attached, parked"));
+                        let parked = Parked { link, log, node, url: real, target, previews: Vec::new(), live: HashMap::new(), snarfouts: Vec::new(), pending_goto: None, parked_at: Instant::now() };
+                        Pool::park(cx, parked);
+                    }
+                }
+            }
+            Err(e) => {
+                let why = e.to_string();
+                crate::shell::log_line(&format!("tab {url}: {why}"));
+                match Self::waiting_on(cx, &url) {
+                    Some(h) => {
+                        Self::set(cx, &url, Tab::Down(why.clone()));
+                        let _ = h.update(cx, |acme, _, cx| {
+                            acme.wait_failed(&why);
+                            cx.notify();
+                        });
+                    }
+                    // the session is not there any more: its tab goes
+                    // with it, there being nothing to come back to
+                    None if why.starts_with("no session") => Self::let_go(cx, &url),
+                    None => Self::set(cx, &url, Tab::Down(why)),
+                }
+            }
+        }
+    }
+
+    /// The window sitting on this tab with nothing attached: the one a
+    /// link that lands belongs to.
+    fn waiting_on(cx: &App, url: &SessionUrl) -> Option<gpui::WindowHandle<crate::app::Acme>> {
+        cx.windows()
+            .into_iter()
+            .filter_map(|w| w.downcast::<crate::app::Acme>())
+            .find(|h| h.read(cx).is_ok_and(|a| a.url == *url && !a.connected))
+    }
+
+    /// Whether the app still has a tab for this session.
+    fn has(cx: &App, url: &SessionUrl) -> bool {
+        cx.try_global::<Pool>().is_some_and(|p| p.order.contains(url))
+    }
+
+    /// What a tab is doing. One nothing has been said about is up if it
+    /// is parked here, and down if it is not: a tab in the order with no
+    /// link is a tab with no link, whatever nobody has said about it.
+    pub fn tab(cx: &App, url: &SessionUrl) -> Tab {
+        let Some(pool) = cx.try_global::<Pool>() else { return Tab::Up };
+        if let Some(t) = pool.state.get(url) {
+            return t.clone();
+        }
+        if pool.parked.values().any(|p| p.url == *url) {
+            Tab::Up
+        } else {
+            Tab::Down("not attached".into())
+        }
+    }
+
+    fn set(cx: &mut App, url: &SessionUrl, t: Tab) {
+        if cx.try_global::<Pool>().is_none() {
+            return;
+        }
+        cx.global_mut::<Pool>().state.insert(url.clone(), t);
+    }
+
+    /// The session behind a tab is known by another name now (it said
+    /// its identity, or it was renamed): the tab follows it.
+    fn rename(cx: &mut App, from: &SessionUrl, to: &SessionUrl) {
+        if cx.try_global::<Pool>().is_none() {
+            return;
+        }
+        let pool = cx.global_mut::<Pool>();
+        let mut changed = false;
+        for u in pool.order.iter_mut() {
+            if (*u == *from || *u == *to) && (u.id != to.id || u.session != to.session) {
+                *u = to.clone();
+                changed = true;
+            }
+        }
+        if let Some(t) = pool.state.remove(from) {
+            pool.state.insert(to.clone(), t);
+        }
+        if changed {
+            pool.save_tabs();
+        }
+    }
+
+    /// Whether a parked session is fenced: another client leads it, and
+    /// nothing it is told there takes.
+    pub fn fenced(cx: &App, url: &SessionUrl) -> bool {
+        let Some(pool) = cx.try_global::<Pool>() else { return false };
+        pool.parked
+            .values()
+            .find(|p| p.url == *url)
+            .is_some_and(|p| p.log.lease(Shard::Layout).is_some_and(|l| l.holder != p.node.attachment || l.released.is_some()))
+    }
+
+    /// The tabs, in first-shown order: every one the app has, whatever
+    /// its link is doing — shown, parked, still coming up, or down. The
+    /// one the window shows is named as the window knows it (its label
+    /// may have changed since the order was written).
     pub fn tabs(cx: &App, current: &SessionUrl) -> Vec<SessionUrl> {
         let Some(pool) = cx.try_global::<Pool>() else { return vec![current.clone()] };
-        let mut out: Vec<SessionUrl> = pool
-            .order
-            .iter()
-            .filter_map(|u| {
-                if *u == *current {
-                    Some(current.clone())
-                } else {
-                    pool.parked.values().find(|p| p.url == *u).map(|p| p.url.clone())
-                }
-            })
-            .collect();
+        let mut out: Vec<SessionUrl> = pool.order.iter().map(|u| if *u == *current { current.clone() } else { u.clone() }).collect();
         if !out.contains(current) {
             out.push(current.clone());
         }
@@ -231,6 +437,7 @@ impl Pool {
             }
         }
         pool.order.retain(|u| u != url);
+        pool.state.remove(url);
         pool.save_tabs();
     }
 
@@ -305,6 +512,7 @@ impl Pool {
                 old.link.close();
             }
         }
+        pool.state.insert(p.url.clone(), Tab::Up);
         pool.parked.insert(key.clone(), p);
         while pool.parked.len() > CAP {
             let oldest = pool.parked.iter().min_by_key(|(_, p)| p.parked_at).map(|(k, _)| k.clone());
@@ -312,8 +520,9 @@ impl Pool {
                 Some(k) => {
                     if let Some(mut p) = pool.parked.remove(&k) {
                         crate::shell::log_line(&format!("parked {k} let go: {CAP} is enough"));
-                        pool.order.retain(|u| *u != p.url);
-                        pool.save_tabs();
+                        // the tab stays: it is the user's, not the link's.
+                        // Shown again, it is attached again
+                        pool.state.insert(p.url.clone(), Tab::Down(format!("let go: {CAP} sessions are as many as stay attached")));
                         p.link.close();
                     }
                 }
@@ -406,8 +615,8 @@ impl Pool {
         for key in gone {
             crate::shell::log_line(&format!("parked {key}: link ended"));
             if let Some(p) = pool.parked.remove(&key) {
-                pool.order.retain(|u| *u != p.url);
-                pool.save_tabs();
+                // the tab keeps its place: shown again, it attaches again
+                pool.state.insert(p.url, Tab::Down("the link ended".into()));
             }
         }
     }

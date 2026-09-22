@@ -1415,9 +1415,24 @@ this one (detach, attach).
   come first at equal scores. A pick in another tab switches to it and
   goes there as a pick in it would; a tab still attaching lands on the
   window once it is.
-- *As built, tabs:* the title bar carries a tab per connected session
-  — this window's, and the parked ones — in the order first shown
-  (`Pool::order`), the current one selected. The tabs share the bar between
+- *As built, tabs:* the title bar carries a tab per session the app has
+  open, in the order first shown (`Pool::order`), the current one
+  selected. A tab is the app's own state, not the link's: it is made
+  when the user makes it and brought back at launch, and it goes only
+  when the user closes it (or its session is gone). So a tab keeps its
+  place while its link is being made, and keeps it when the link fails
+  or ends, saying what it is doing after its name -- "connecting…",
+  "restoring…", "fenced", "offline" (`Pool::Tab`, and the fuller
+  sentence in its card). A tab whose session is not there any more is
+  the one exception: nothing can bring it back, so it goes. Showing a
+  tab with no link asks for one; the link is made off the UI thread, and
+  moving to another tab meanwhile loses nothing -- what lands goes to
+  the window if the window is still on that tab, and is parked
+  otherwise. While a tab has nothing attached the window is not acme at
+  all but a blank page with what it is waiting for in the middle of it,
+  and the bar, the keys that reach the other tabs and the picker still
+  work over it.
+ The tabs share the bar between
   them, as ghostty's do: every one the same width, the row reaching the
   far right, with `+` after it. Each is a pill inset in the bar, its
   name centred in it and the key that reaches it (⌘1 to ⌘9) at its
@@ -1487,9 +1502,12 @@ this one (detach, attach).
   the neighbours' places with it out of the row, the two tests
   excluding each other, so a swap cannot undo itself; the order is
   kept on release. The tab order is kept in `open-sessions` beside the
-  other state files, and at launch the tabs of last time are attached
-  again in the background and parked, by identity: one that is gone
-  (an ended session, a new daemon) is forgotten rather than made anew. Sessions shown
+  other state files, and at launch every tab of last time is in the bar
+  from the first frame, saying "restoring…" while its link is made in
+  the background, by identity: one whose session is gone (ended, or a
+  new daemon) is forgotten rather than made anew, and one that could
+  not be reached for any other reason stays, offline, to be attached
+  again by showing it. Sessions shown
   by other windows are theirs, not tabs here. A tab is compared against
   what the windows show as their links know it now, not the launch
   target: a window attached by label has the session's current id,
@@ -1549,9 +1567,13 @@ parked session, by a tab or a picker or as a new window, takes it back at once w
 its state as it was left (web views are made again). A link's wake goes
 through a target that moves between the window and the pool. Eight stay
 parked, the least recently parked let go beyond that; a parked link
-that ends is dropped; quitting closes them all, and nothing is parked
-across a launch (a remembered window attaches afresh). Switching to a
-session elsewhere attaches in the background like a launch does.
+that ends is let go too. Neither takes the tab with it: the tab stays,
+offline, and showing it attaches again. Quitting closes them all, and
+nothing is parked across a launch (a remembered window attaches
+afresh). Every link the app makes -- a tab switched to, a tab of last
+time, a Reconnect -- is made by the pool, off the UI thread, and lands
+in the window if the window is still waiting on that tab (`Pool::start`,
+`Pool::landed`).
 - *As built:* Enter repeats the leading whitespace of the line it ends,
 up to dot, in every body: acme's `-a`, always on. The title bar shows,
 left of the connection mark, the heartbeat's round trip and the log's

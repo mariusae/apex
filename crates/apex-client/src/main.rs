@@ -117,7 +117,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NavFwd, window, cx| this.menu_command("Fwd", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
-                this.reconnect(window);
+                this.reconnect(window, cx);
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &shell::CloseWindow, window, cx| {
@@ -158,6 +158,33 @@ impl Render for Acme {
         let hides = self.strip_hides();
         let strip_over = hides && self.strip_revealed;
         let root = if hides { root } else { root.child(self.titlebar(cx)) };
+        // a tab with nothing attached to it: no acme, just the page and
+        // what the tab is waiting for in the middle of it. The window
+        // still takes the keys that reach the other tabs, and the picker
+        // still opens over it; the link goes on being made in the pool
+        if let Some(what) = self.waiting.clone() {
+            let blank = div()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(gpui::rgb(t.body_bg))
+                .child(div().px(px(24.)).text_size(px(13.)).font_family(shell::UI_FONT).text_color(gpui::rgb(t.tab_dim)).child(what));
+            let root = root.child(blank);
+            let root = match self.selector_panel(cx) {
+                Some(panel) => root.child(panel),
+                None => root,
+            };
+            let root = if strip_over {
+                let width = window.viewport_size().width;
+                root.child(gpui::deferred(div().absolute().top(px(0.)).left(px(0.)).w(width).h(px(shell::TITLEBAR_HEIGHT)).child(self.titlebar(cx))).with_priority(1))
+            } else {
+                root
+            };
+            return root.into_any_element();
+        }
 
         // acme's tiling placed everything; draw each piece where it says
         let l = self.node.state.layout.clone();
@@ -568,7 +595,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                             // says so; the attach (a binary to upload, a daemon
                             // to start there) runs on a thread and comes back
                             let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
-                            a.notice(&format!("{}: attaching…\n", url.describe()));
+                            a.wait(&pool::Why::Attaching.sentence(&url));
                             shell::log_line(&format!("attaching to {url} in the background"));
                             let (u, w) = (url.clone(), wake.clone());
                             let connecting = cx.background_executor().spawn(async move { Acme::connect_blocking(&u, w) });
@@ -578,15 +605,12 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                     match r {
                                         Ok((link, log, node, target)) => {
                                             if let Err(e) = acme.adopt(link, log, node, target, &url, files, window) {
-                                                acme.notice(&Acme::connect_error(&url, &e));
+                                                acme.wait_failed(&Acme::connect_error(&url, &e));
                                             } else {
                                                 shell::log_line(&format!("attached to {url}"));
                                             }
                                         }
-                                        Err(e) => {
-                                            shell::log_line(&format!("attach {url}: {e}"));
-                                            acme.notice(&Acme::connect_error(&url, &e));
-                                        }
+                                        Err(e) => acme.wait_failed(&Acme::connect_error(&url, &e)),
                                     }
                                     cx.notify();
                                 });
@@ -692,7 +716,7 @@ fn offline(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<String>, w
     eprintln!("apex-ui: attach {url}: {e}");
     let mut acme = offline_window(cx, url, files, wake);
     let msg = Acme::connect_error(url, e);
-    acme.notice(&msg);
+    acme.wait_failed(msg.trim_end());
     acme
 }
 
