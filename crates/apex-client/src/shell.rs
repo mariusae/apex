@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs, ToggleContrast]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs, ToggleContrast]);
 
 /// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
 /// remade with the mark, every window laid out again.
@@ -101,6 +101,8 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("New", NewFile),
                 MenuItem::action("New Tab", NewTab),
                 MenuItem::action("Close Tab", CloseTab),
+                MenuItem::action("Previous Tab", PrevTab),
+                MenuItem::action("Next Tab", NextTab),
                 MenuItem::action("Go to…", Goto),
                 MenuItem::action("Go to in All Tabs…", GotoAll),
                 MenuItem::action("Next Notification", NextNotification),
@@ -172,6 +174,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-7", Tab7, None),
         KeyBinding::new("cmd-8", Tab8, None),
         KeyBinding::new("cmd-9", Tab9, None),
+        // ⌘⇧[ and ⌘⇧]: macOS hands the shifted character over, so the
+        // binding is on what the key makes -- { and } -- as Zed's is
+        KeyBinding::new("cmd-{", PrevTab, None),
+        KeyBinding::new("cmd-}", NextTab, None),
         KeyBinding::new("cmd-,", Profile, None),
         KeyBinding::new("cmd-r", Get, None),
         KeyBinding::new("cmd-shift-r", Reconnect, None),

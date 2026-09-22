@@ -760,6 +760,18 @@ impl Acme {
         }
     }
 
+    /// ⌘⇧[ and ⌘⇧]: the tab on either side of this one, in the order the
+    /// bar shows them, wrapping at both ends as a browser's do.
+    pub fn cycle_tab(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let tabs = Pool::tabs(cx, &self.url);
+        let Some(at) = tabs.iter().position(|u| *u == self.url) else { return };
+        let u = tabs[around(at, tabs.len(), by)].clone();
+        if u != self.url {
+            self.switch_to(&u, window, cx);
+            cx.notify();
+        }
+    }
+
     /// cmd-shift-k: back to the session parked most recently.
     pub fn previous_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match Pool::most_recent(cx) {
@@ -4208,6 +4220,15 @@ pub fn client_do(verb: &str, args: &str) -> Result<(), String> {
     }
 }
 
+/// `by` steps from `at` around a ring of `len`: past the end is back at
+/// the start, and before the start is at the end.
+fn around(at: usize, len: usize, by: isize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    (at as isize + by).rem_euclid(len as isize) as usize
+}
+
 /// Is the cell `p` within the selection `a`..`b` (either way round)?
 /// Cells are (column, line), and lines order before columns.
 fn in_selection(a: (usize, u64), b: (usize, u64), p: (usize, u64)) -> bool {
@@ -4292,6 +4313,20 @@ fn identified(url: &SessionUrl, node: &Node) -> SessionUrl {
         u.session = label.clone();
     }
     u
+}
+
+#[cfg(test)]
+mod tab_ring_tests {
+    use super::around;
+
+    #[test]
+    fn a_step_off_either_end_of_the_tabs_comes_round() {
+        assert_eq!(around(0, 3, 1), 1);
+        assert_eq!(around(2, 3, 1), 0, "past the last is the first");
+        assert_eq!(around(0, 3, -1), 2, "before the first is the last");
+        assert_eq!(around(0, 1, 1), 0, "one tab stays where it is");
+        assert_eq!(around(0, 0, 1), 0, "and none is nowhere to go");
+    }
 }
 
 #[cfg(test)]

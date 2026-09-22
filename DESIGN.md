@@ -1473,7 +1473,9 @@ this one (detach, attach).
   AppKit's own title bar container, which would slide down empty with
   the menu bar, is hidden while full screen lasts.
   ⌘1…⌘9 go
-  to the Nth tab. Tabs drag to reorder, as a browser's: a tab held
+  to the Nth tab, and ⌘⇧[ and ⌘⇧] to the tab on either side, wrapping
+  at both ends (macOS hands over the shifted character, so the bindings
+  are on ⌘{ and ⌘}). Tabs drag to reorder, as a browser's: a tab held
   with B1 is a click on release until it has moved a few pixels; after
   that the tab floats under the pointer (keeping the grip it was taken
   by, kept within the strip's tabs), its place in the row stays as an
