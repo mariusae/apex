@@ -76,6 +76,38 @@ impl Why {
     }
 }
 
+/// What names a tab: a host and a label. Identity is the session's own
+/// and can change under a tab -- a session that was gone is made again
+/// with the same label and a new id, and a window holds the one it asked
+/// with until its link lands -- so what a tab is doing is kept by the
+/// name, not by the identity.
+type Key = (String, String, String);
+
+fn key(u: &SessionUrl) -> Key {
+    (u.provider.clone(), u.arg.clone(), u.session.clone())
+}
+
+/// One tab a session: the same host and label, or the same identity
+/// under a label one side has not heard about yet. Everything the pool
+/// holds is matched this way, so a window holding an identity the
+/// session has left behind still finds its own tab, its own parked link
+/// and its own state -- it does not make a second of any of them.
+pub fn one_session(a: &SessionUrl, b: &SessionUrl) -> bool {
+    a == b || key(a) == key(b)
+}
+
+/// The tabs the bar shows: the order, with the session the window shows
+/// named as the window knows it (its label may have changed since the
+/// order was written), and the window's own session added when the order
+/// has no tab for it at all.
+fn tab_list(order: &[SessionUrl], current: &SessionUrl) -> Vec<SessionUrl> {
+    let mut out: Vec<SessionUrl> = order.iter().map(|u| if *u == *current { current.clone() } else { u.clone() }).collect();
+    if !out.iter().any(|u| one_session(u, current)) {
+        out.push(current.clone());
+    }
+    out
+}
+
 /// Where a link's wake goes: the window showing the session, or the
 /// pool while it is parked. The reader thread holds the forwarding
 /// closure; the target behind it moves.
@@ -127,7 +159,7 @@ pub struct Pool {
     /// next ctrl-tab after settling goes back to the session left.
     settled: Vec<SessionUrl>,
     /// What each tab is doing, for the bar: absent is up.
-    state: HashMap<SessionUrl, Tab>,
+    state: HashMap<Key, Tab>,
     /// Wakes the tending task.
     wake: Wake,
 }
@@ -163,23 +195,13 @@ impl Pool {
         if url.id.is_none() {
             return;
         }
-        let Some(pool) = cx.try_global::<Pool>() else { return };
-        if pool.order.contains(url) {
-            // the label may have changed: the tab says the current one
-            let pool = cx.global_mut::<Pool>();
-            pool.state.insert(url.clone(), Tab::Up);
-            if let Some(u) = pool.order.iter_mut().find(|u| *u == url) {
-                if *u != *url || u.session != url.session {
-                    *u = url.clone();
-                    pool.save_tabs();
-                }
-            }
+        if cx.try_global::<Pool>().is_none() {
             return;
         }
-        let pool = cx.global_mut::<Pool>();
-        pool.order.push(url.clone());
-        pool.state.insert(url.clone(), Tab::Up);
-        pool.save_tabs();
+        // its tab, whatever name that tab was made under (the label may
+        // have changed; the session may have been made again)
+        Self::claim(cx, url);
+        cx.global_mut::<Pool>().state.insert(key(url), Tab::Up);
     }
 
     /// The tabs, one URL a line, for next time.
@@ -227,10 +249,10 @@ impl Pool {
         shown.extend(Self::shown_urls(cx));
         crate::shell::log_line(&format!("restoring {} tab(s) of last time; {} shown already", urls.len(), shown.len()));
         for url in urls {
-            if shown.contains(&url) {
+            if shown.iter().any(|s| *s == url) {
                 continue; // the window has it: its tab is that one
             }
-            if shown.iter().any(|s| s.id.is_some() && url.id.is_some() && s.provider == url.provider && s.arg == url.arg && s.session == url.session) {
+            if shown.iter().any(|s| one_session(s, &url)) {
                 // the same label on the same host under another id: last
                 // time's, before a restart. The window's tab is the
                 // session now, and this entry is a tab of a session that
@@ -254,16 +276,15 @@ impl Pool {
     /// A tab already coming up is left to come.
     pub fn start(cx: &mut App, url: &SessionUrl, why: Why, existing: bool, files: Vec<String>) {
         let Some(pool) = cx.try_global::<Pool>() else { return };
-        if matches!(pool.state.get(url), Some(Tab::Coming(_))) {
+        if matches!(pool.state.get(&key(url)), Some(Tab::Coming(_))) {
             return;
         }
         let wake = pool.wake.clone();
-        let pool = cx.global_mut::<Pool>();
-        if !pool.order.contains(url) {
-            pool.order.push(url.clone());
-            pool.save_tabs();
-        }
-        pool.state.insert(url.clone(), Tab::Coming(why));
+        // its tab, made now if the app has none for it; the tab it has
+        // keeps the identity it has -- this url's may be the stale one,
+        // and a tab with a link must not be renamed away from it
+        let k = Self::ensure(cx, url);
+        cx.global_mut::<Pool>().state.insert(k, Tab::Coming(why));
         crate::shell::log_line(&format!("tab {url}: {}", why.word()));
         let (u, w) = (url.clone(), wake);
         let connecting = cx.background_executor().spawn(async move {
@@ -290,9 +311,13 @@ impl Pool {
             Ok((link, log, node, target)) => {
                 // the session says which it is: the tab takes that name
                 let real = crate::app::identified(&url, &node);
-                Self::rename(cx, &url, &real);
+                Self::claim(cx, &real);
                 Self::set(cx, &real, Tab::Up);
-                match Self::waiting_on(cx, &real) {
+                // the window that asked for the link takes it, whatever
+                // identity came back: a session that was gone is made
+                // again under a new one, and the window -- still holding
+                // the old one -- is the window waiting for it
+                match Self::waiting_on(cx, &url).or_else(|| Self::waiting_on(cx, &real)) {
                     Some(h) => {
                         crate::shell::log_line(&format!("tab {real}: attached, shown"));
                         let bad = h
@@ -355,7 +380,7 @@ impl Pool {
 
     /// Whether the app still has a tab for this session.
     fn has(cx: &App, url: &SessionUrl) -> bool {
-        cx.try_global::<Pool>().is_some_and(|p| p.order.contains(url))
+        cx.try_global::<Pool>().is_some_and(|p| p.order.iter().any(|u| one_session(u, url)))
     }
 
     /// What a tab is doing. One nothing has been said about is up if it
@@ -363,7 +388,7 @@ impl Pool {
     /// link is a tab with no link, whatever nobody has said about it.
     pub fn tab(cx: &App, url: &SessionUrl) -> Tab {
         let Some(pool) = cx.try_global::<Pool>() else { return Tab::Up };
-        if let Some(t) = pool.state.get(url) {
+        if let Some(t) = pool.state.get(&key(url)) {
             return t.clone();
         }
         if pool.parked.values().any(|p| p.url == *url) {
@@ -377,29 +402,50 @@ impl Pool {
         if cx.try_global::<Pool>().is_none() {
             return;
         }
-        cx.global_mut::<Pool>().state.insert(url.clone(), t);
+        cx.global_mut::<Pool>().state.insert(key(url), t);
     }
 
-    /// The session behind a tab is known by another name now (it said
-    /// its identity, or it was renamed): the tab follows it.
-    fn rename(cx: &mut App, from: &SessionUrl, to: &SessionUrl) {
+    /// The tab for this session: the one the app has, or a new one.
+    /// Answers the name its state is kept under. Nothing is renamed: the
+    /// asking url may hold an identity the session has left behind.
+    fn ensure(cx: &mut App, url: &SessionUrl) -> Key {
+        let pool = cx.global_mut::<Pool>();
+        match pool.order.iter().position(|u| one_session(u, url)) {
+            Some(at) => key(&pool.order[at]),
+            None => {
+                pool.order.push(url.clone());
+                pool.save_tabs();
+                key(url)
+            }
+        }
+    }
+
+    /// This is the session, as the session itself says: its tab takes
+    /// that name and that identity, whatever it was made under. Only for
+    /// a url that came off a link -- the identity it carries is the one
+    /// that answered.
+    fn claim(cx: &mut App, url: &SessionUrl) {
         if cx.try_global::<Pool>().is_none() {
             return;
         }
         let pool = cx.global_mut::<Pool>();
-        let mut changed = false;
-        for u in pool.order.iter_mut() {
-            if (*u == *from || *u == *to) && (u.id != to.id || u.session != to.session) {
-                *u = to.clone();
-                changed = true;
+        let Some(at) = pool.order.iter().position(|u| one_session(u, url)) else {
+            pool.order.push(url.clone());
+            pool.save_tabs();
+            return;
+        };
+        let old = pool.order[at].clone();
+        if old.id == url.id && old.session == url.session {
+            return;
+        }
+        crate::shell::log_line(&format!("tab {old} is {url}"));
+        pool.order[at] = url.clone();
+        if key(&old) != key(url) {
+            if let Some(t) = pool.state.remove(&key(&old)) {
+                pool.state.insert(key(url), t);
             }
         }
-        if let Some(t) = pool.state.remove(from) {
-            pool.state.insert(to.clone(), t);
-        }
-        if changed {
-            pool.save_tabs();
-        }
+        pool.save_tabs();
     }
 
     /// Whether a parked session is fenced: another client leads it, and
@@ -408,7 +454,7 @@ impl Pool {
         let Some(pool) = cx.try_global::<Pool>() else { return false };
         pool.parked
             .values()
-            .find(|p| p.url == *url)
+            .find(|p| one_session(&p.url, url))
             .is_some_and(|p| p.log.lease(Shard::Layout).is_some_and(|l| l.holder != p.node.attachment || l.released.is_some()))
     }
 
@@ -418,17 +464,13 @@ impl Pool {
     /// may have changed since the order was written).
     pub fn tabs(cx: &App, current: &SessionUrl) -> Vec<SessionUrl> {
         let Some(pool) = cx.try_global::<Pool>() else { return vec![current.clone()] };
-        let mut out: Vec<SessionUrl> = pool.order.iter().map(|u| if *u == *current { current.clone() } else { u.clone() }).collect();
-        if !out.contains(current) {
-            out.push(current.clone());
-        }
-        out
+        tab_list(&pool.order, current)
     }
 
     /// Let a parked session go: its link closes, its tab with it.
     pub fn let_go(cx: &mut App, url: &SessionUrl) {
         let Some(pool) = cx.try_global::<Pool>() else { return };
-        let keys: Vec<String> = pool.parked.iter().filter(|(_, p)| p.url == *url).map(|(k, _)| k.clone()).collect();
+        let keys: Vec<String> = pool.parked.iter().filter(|(_, p)| one_session(&p.url, url)).map(|(k, _)| k.clone()).collect();
         let pool = cx.global_mut::<Pool>();
         for k in keys {
             if let Some(mut p) = pool.parked.remove(&k) {
@@ -436,8 +478,8 @@ impl Pool {
                 crate::shell::log_line(&format!("parked {k} let go"));
             }
         }
-        pool.order.retain(|u| u != url);
-        pool.state.remove(url);
+        pool.order.retain(|u| !one_session(u, url));
+        pool.state.remove(&key(url));
         pool.save_tabs();
     }
 
@@ -447,13 +489,13 @@ impl Pool {
     /// heartbeat, when it has.
     pub fn link_status(cx: &App, url: &SessionUrl) -> Option<(Option<u64>, Option<std::time::Duration>)> {
         let pool = cx.try_global::<Pool>()?;
-        let p = pool.parked.values().find(|p| p.url == *url)?;
+        let p = pool.parked.values().find(|p| one_session(&p.url, url))?;
         Some((p.link.ack_ms, p.link.last_pong.map(|t| t.elapsed())))
     }
 
     /// Whether a parked session has notifications waiting, for its tab.
     pub fn notified(cx: &App, url: &SessionUrl) -> bool {
-        cx.try_global::<Pool>().and_then(|pool| pool.parked.values().find(|p| p.url == *url)).is_some_and(|p| p.node.notifications().next().is_some())
+        cx.try_global::<Pool>().and_then(|pool| pool.parked.values().find(|p| one_session(&p.url, url))).is_some_and(|p| p.node.notifications().next().is_some())
     }
 
     /// Each parked session's notifications, oldest first: the window
@@ -468,7 +510,7 @@ impl Pool {
     /// looks across the tabs (⌘⇧P).
     pub fn parked_nodes(cx: &App) -> Vec<(SessionUrl, &Node)> {
         let Some(pool) = cx.try_global::<Pool>() else { return Vec::new() };
-        pool.order.iter().filter_map(|u| pool.parked.values().find(|p| p.url == *u).map(|p| (p.url.clone(), &p.node))).collect()
+        pool.order.iter().filter_map(|u| pool.parked.values().find(|p| one_session(&p.url, u)).map(|p| (p.url.clone(), &p.node))).collect()
     }
 
     /// The theme changed: every parked link tells its daemon the colours
@@ -496,24 +538,24 @@ impl Pool {
         // the window shows this session already: a second attachment of
         // ours would take the lead from it (the daemon lets the latest
         // UI lead), leaving the window fenced; this link is let go
-        if Self::shown_urls(cx).iter().any(|s| *s == p.url) {
+        if Self::shown_urls(cx).iter().any(|s| one_session(s, &p.url)) {
             crate::shell::log_line(&format!("{}: shown already; not parked", p.url));
             let mut p = p;
             p.link.close();
             return;
         }
         p.target.set(pool.wake.clone());
-        let key = p.url.to_string();
+        let name = p.url.to_string();
         let pool = cx.global_mut::<Pool>();
         // the same session parked twice (whatever its label was): the older leaves
-        let same: Vec<String> = pool.parked.iter().filter(|(_, x)| x.url == p.url).map(|(k, _)| k.clone()).collect();
+        let same: Vec<String> = pool.parked.iter().filter(|(_, x)| one_session(&x.url, &p.url)).map(|(k, _)| k.clone()).collect();
         for k in same {
             if let Some(mut old) = pool.parked.remove(&k) {
                 old.link.close();
             }
         }
-        pool.state.insert(p.url.clone(), Tab::Up);
-        pool.parked.insert(key.clone(), p);
+        pool.state.insert(key(&p.url), Tab::Up);
+        pool.parked.insert(name.clone(), p);
         while pool.parked.len() > CAP {
             let oldest = pool.parked.iter().min_by_key(|(_, p)| p.parked_at).map(|(k, _)| k.clone());
             match oldest {
@@ -522,14 +564,14 @@ impl Pool {
                         crate::shell::log_line(&format!("parked {k} let go: {CAP} is enough"));
                         // the tab stays: it is the user's, not the link's.
                         // Shown again, it is attached again
-                        pool.state.insert(p.url.clone(), Tab::Down(format!("let go: {CAP} sessions are as many as stay attached")));
+                        pool.state.insert(key(&p.url), Tab::Down(format!("let go: {CAP} sessions are as many as stay attached")));
                         p.link.close();
                     }
                 }
                 None => break,
             }
         }
-        crate::shell::log_line(&format!("parked {key}"));
+        crate::shell::log_line(&format!("parked {name}"));
     }
 
     /// The session parked most recently: the one to switch back to.
@@ -565,10 +607,11 @@ impl Pool {
 
     /// Take a parked session to show it.
     pub fn take(cx: &mut App, url: &SessionUrl) -> Option<Parked> {
-        let key = cx.try_global::<Pool>()?.parked.iter().find(|(_, p)| p.url == *url).map(|(k, _)| k.clone())?;
+        let key = cx.try_global::<Pool>()?.parked.iter().find(|(_, p)| one_session(&p.url, url)).map(|(k, _)| k.clone())?;
         let p = cx.global_mut::<Pool>().parked.remove(&key);
-        if p.is_some() {
-            crate::shell::log_line(&format!("unparked {url}"));
+        if let Some(p) = &p {
+            // by the session, so the name in the log is the session's own
+            crate::shell::log_line(&format!("unparked {}", p.url));
         }
         p
     }
@@ -612,11 +655,11 @@ impl Pool {
             p.link.flush(&p.log);
             let _ = p.node.catch_up(&p.log);
         }
-        for key in gone {
-            crate::shell::log_line(&format!("parked {key}: link ended"));
-            if let Some(p) = pool.parked.remove(&key) {
+        for name in gone {
+            crate::shell::log_line(&format!("parked {name}: link ended"));
+            if let Some(p) = pool.parked.remove(&name) {
                 // the tab keeps its place: shown again, it attaches again
-                pool.state.insert(p.url, Tab::Down("the link ended".into()));
+                pool.state.insert(key(&p.url), Tab::Down("the link ended".into()));
             }
         }
     }
@@ -636,5 +679,50 @@ impl Pool {
         for (_, mut p) in pool.parked.drain() {
             p.link.close();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn url(label: &str, id: &str) -> SessionUrl {
+        SessionUrl::local(label).with_id(id)
+    }
+
+    #[test]
+    fn what_makes_two_urls_one_session() {
+        // a host and a label name a session: the identity under it can
+        // change (one that was gone is made again with the same label)
+        assert!(one_session(&url("work", "old"), &url("work", "new")));
+        // and a label can change under an identity (a rename one side
+        // has not heard about yet)
+        let mut renamed = url("work", "same");
+        renamed.session = "toil".into();
+        assert!(one_session(&url("work", "same"), &renamed));
+        // but two names and two identities are two sessions
+        assert!(!one_session(&url("work", "a"), &url("play", "b")));
+        // and a host of its own is a session of its own
+        let mut elsewhere = url("work", "a");
+        elsewhere.provider = "ssh".into();
+        elsewhere.arg = "box".into();
+        assert!(!one_session(&url("work", "b"), &elsewhere));
+    }
+
+    #[test]
+    fn one_tab_a_session_whatever_identity_each_side_holds() {
+        // the pool has the session as the daemon named it; the window is
+        // still holding the identity it asked with (the session it asked
+        // for was gone, and one of that label was made again)
+        let order = vec![url("work", "new")];
+        assert_eq!(tab_list(&order, &url("work", "old")), order, "one session, one tab");
+        // the window's own session, which the pool has no tab for
+        let out = tab_list(&order, &url("side", "c"));
+        assert_eq!(out.len(), 2, "a session the pool has no tab for is a tab all the same");
+        // the shown session is named as the window knows it: the label
+        // it has now, not the one the order was written with
+        let mut renamed = url("work", "new");
+        renamed.session = "toil".into();
+        assert_eq!(tab_list(&order, &renamed)[0].session, "toil");
     }
 }

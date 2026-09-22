@@ -1556,7 +1556,10 @@ impl Acme {
         // the tab under the pointer, floating, keeps the width it had
         let drag_w = self.tab_drag.as_ref().map(|d| d.width);
         for (i, u) in all.into_iter().enumerate() {
-            let current = u == self.url;
+            // the tab this window shows: by the session, not by the
+            // identity, which the two hold apart for as long as a link
+            // is being made
+            let current = crate::pool::one_session(&u, &self.url);
             // the label; the host dimmed after it for a session elsewhere
             let text = if current && self.in_process() { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());

@@ -1441,7 +1441,16 @@ this one (detach, attach).
   window once it is.
 - *As built, tabs:* the title bar carries a tab per session the app has
   open, in the order first shown (`Pool::order`), the current one
-  selected. A tab is the app's own state, not the link's: it is made
+  selected. A tab is a session, and a session is a host and a label: the
+  identity under it is the session's own and can change beneath the tab
+  (one that is gone is made again, with the same label and a new id, and
+  a window holds the identity it asked with until its link lands and
+  says otherwise). So everything the pool holds -- the order, what each
+  tab is doing, the parked links -- is matched by host and label
+  (`pool::one_session`), and only a url that came off a link renames a
+  tab's identity (`Pool::claim`). Otherwise the same session shows twice,
+  once attaching and once offline, and the window waits on a link that
+  has already landed under another name. A tab is the app's own state, not the link's: it is made
   when the user makes it and brought back at launch, and it goes only
   when the user closes it (or its session is gone). So a tab keeps its
   place while its link is being made, and keeps it when the link fails

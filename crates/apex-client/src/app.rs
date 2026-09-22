@@ -1660,7 +1660,7 @@ impl Acme {
     /// Whether the session a tab names has notifications waiting: this
     /// window's own, or a parked one's.
     pub fn tab_notified(&self, url: &SessionUrl, cx: &gpui::App) -> bool {
-        if *url == self.url {
+        if crate::pool::one_session(url, &self.url) {
             return self.notification_head().is_some();
         }
         crate::pool::Pool::notified(cx, url)
@@ -1686,7 +1686,7 @@ impl Acme {
     /// "fenced", "offline".
     pub fn tab_word(&self, url: &SessionUrl, cx: &gpui::App) -> Option<String> {
         use crate::pool::Tab;
-        if *url == self.url {
+        if crate::pool::one_session(url, &self.url) {
             // this window knows its own session better than the pool does
             return match crate::pool::Pool::tab(cx, url) {
                 Tab::Coming(why) if self.waiting.is_some() => Some(why.word().to_string()),
