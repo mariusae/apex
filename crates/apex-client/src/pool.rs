@@ -249,9 +249,12 @@ impl Pool {
         cx.try_global::<Pool>().and_then(|pool| pool.parked.values().find(|p| p.url == *url)).is_some_and(|p| p.node.notifications().next().is_some())
     }
 
-    /// Each parked session's notifications, by the entry that raised each.
-    pub fn notifications(cx: &App) -> Vec<(SessionUrl, std::collections::HashSet<Seq>)> {
-        cx.try_global::<Pool>().map(|pool| pool.parked.values().map(|p| (p.url.clone(), p.node.notifications().map(|n| n.at).collect())).collect()).unwrap_or_default()
+    /// Each parked session's notifications, oldest first: the window
+    /// each is about, and the entry that raised it.
+    pub fn notifications(cx: &App) -> Vec<(SessionUrl, Vec<(WindowId, Seq)>)> {
+        cx.try_global::<Pool>()
+            .map(|pool| pool.parked.values().map(|p| (p.url.clone(), p.node.notifications().map(|n| (n.window, n.at)).collect())).collect())
+            .unwrap_or_default()
     }
 
     /// Each parked session and its replica, in the tabs' order, for what

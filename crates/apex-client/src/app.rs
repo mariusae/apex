@@ -427,6 +427,9 @@ pub struct Acme {
     show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
     pub pending_goto: Option<Loc>,
+    /// A notification in a tab still attaching (⌘G): taken once it is
+    /// here and its window with it.
+    pending_note: Option<WindowId>,
     /// A place in another session to go to: the next render switches.
     pub pending_switch: Option<Loc>,
     /// A page reported a cursor: apply it on the next tick.
@@ -1536,6 +1539,7 @@ impl Acme {
             fullscreen: false,
             show_at: HashMap::new(),
             pending_goto: None,
+            pending_note: None,
             pending_switch: None,
             page_cursor_now: false,
             finder: None,
@@ -1603,6 +1607,15 @@ impl Acme {
                 self.want_visible.insert(ViewId::Body(w));
             }
         }
+        // a notification taken in a tab that was still attaching (⌘G)
+        if let Some(w) = self.pending_note {
+            if self.node.state.window(w).is_ok() {
+                self.pending_note = None;
+                let _ = self.dismiss(w);
+                self.show(w);
+                self.node.warp = Some(Warp::NewWindow(w));
+            }
+        }
         if let Backend::Remote(link) = &mut self.backend {
             link.flush(&self.log);
         }
@@ -1651,6 +1664,41 @@ impl Acme {
     /// to it, as a new window is landed on, and its notification is
     /// dismissed. The next click takes the next; once there are none the
     /// square is the tag's colour again.
+    /// ⌘G: the oldest notification the app is carrying, wherever it is.
+    /// The tab it is in comes forward if it is not this one, the window
+    /// is shown and the pointer lands on it, and the notification is
+    /// taken. A beep when there is none left to take.
+    pub fn next_notification(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((url, w, _)) = crate::attention::queue(cx).into_iter().next() else {
+            crate::attention::beep();
+            return;
+        };
+        if url != self.url {
+            self.switch_to(&url, window, cx);
+            // a parked tab is here at once; one still attaching takes it
+            // when it lands
+            if self.url != url {
+                self.pending_note = Some(w);
+                cx.notify();
+                return;
+            }
+        }
+        self.take_note(w, cx);
+    }
+
+    /// Take a notification here: it is lowered, its window shown, and
+    /// the pointer warped to it, as taking one from the square does.
+    fn take_note(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        if self.node.state.window(w).is_err() {
+            return;
+        }
+        let _ = self.dismiss(w);
+        self.show(w);
+        self.node.warp = Some(Warp::NewWindow(w));
+        self.after();
+        cx.notify();
+    }
+
     fn take_notification(&mut self, cx: &mut Context<Self>) {
         let Some(n) = self.notification_head() else { return };
         let _ = self.dismiss(n.window);

@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::{Acme, Backend};
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWindow, CloseWindow, NewTab, SearchTabs, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs]);
 
 /// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
 /// remade with the mark, every window laid out again.
@@ -97,6 +97,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Go to…", Goto),
                 MenuItem::action("Go to in All Tabs…", GotoAll),
+                MenuItem::action("Next Notification", NextNotification),
                 MenuItem::action("Back", NavBack),
                 MenuItem::action("Forward", NavFwd),
                 MenuItem::action("Reconnect", Reconnect),
@@ -155,6 +156,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-w", Del, None),
         KeyBinding::new("cmd-shift-w", CloseTab, None),
         KeyBinding::new("cmd-shift-k", PreviousSession, None),
+        KeyBinding::new("cmd-g", NextNotification, None),
         KeyBinding::new("cmd-1", Tab1, None),
         KeyBinding::new("cmd-2", Tab2, None),
         KeyBinding::new("cmd-3", Tab3, None),

@@ -109,6 +109,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Profile, window, cx| this.menu_command("New ~/.apex/profile", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(false, cx)))
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
+            .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))

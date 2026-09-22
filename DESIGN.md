@@ -262,7 +262,16 @@ the tag border on dark) -- unless the client is fenced, whose red wins.
 A click on the square takes the oldest: the window is revealed and the
 pointer landed on it, as a new window is, and its notification
 dismissed; the next click takes the next, and when none is left the
-square is the tag's colour again. The session's tab takes the same
+square is the tag's colour again. ⌘G does the same across every tab the
+app has open: the oldest of them all, the tab it is in brought forward
+first when it is not this one, and a beep (`NSBeep`) when there is none
+left to take. The order across sessions is the app's own, since the
+entry that raised each is a sequence in its session's metalog and means
+nothing beside another's: the client keeps a queue of what it has seen,
+in the order it saw it (`attention::advance`), each session's own in
+the order the metalog has them. The Dock icon carries how many are
+waiting as its badge, and still bounces once for one that comes while
+no window of the app's is in front. The session's tab takes the same
 colour, its text dark on it, so a session wanting the user shows from
 any other tab; a parked session's entries arrive off the window, so each
 window looks at its tabs' queues on its tick and draws the strip again
