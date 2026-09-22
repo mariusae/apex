@@ -271,11 +271,10 @@ nothing beside another's: the client keeps a queue of what it has seen,
 in the order it saw it (`attention::advance`), each session's own in
 the order the metalog has them. The Dock icon carries how many are
 waiting as its badge, and still bounces once for one that comes while
-no window of the app's is in front. The session's tab says it in a darker,
-quieter tint of that hue (`tab_notified_bg`, deep teal-blue) with light
-text, since a tab is a wide thing to fill and the notification colour
-across that much of the strip galls; it is far enough from the other tab
-colours, the open tab's above all, under the same simulation. So a
+no window of the app's is in front. The session's tab says it with a bell
+(🔔) before its name, the two centred together, and changes in no other
+way: a tab is a wide thing to colour, and the colour that suits a
+handle galls across that much of the strip. So a
 session wanting the user shows from any other tab; a parked session's entries arrive off the window, so each
 window looks at its tabs' queues on its tick and draws the strip again
 when that changes. With no window of the app's in front, a notification
@@ -1418,23 +1417,19 @@ this one (detach, attach).
   window once it is.
 - *As built, tabs:* the title bar carries a tab per connected session
   — this window's, and the parked ones — in the order first shown
-  (`Pool::order`), the current one selected. The tab in front is the colour
-  of the row below it, rounded at the top (`CROWN`, 8) and sweeping out
-  at the bottom over a curve twice that (`DRAPE`, 16: a square of its
-  colour with the strip's rounded away) so it flows into the window as
-  a browser's does. The tabs sit `DRAPE`/2 apart on each side, since a
-  drape lies on the strip and must not reach a neighbour, whose own
-  edge it would paint over. It carries no line of its own: it is a shape cut out
-  of the strip, not a card on it. The others are the strip's own
-  colour, with a faint line the only thing that says where each one is;
-  the tab search and `+` are the same. The pointer on one fills it
-  (`tab_hover`) and darkens its line a little: that fill is the only
-  shading in the bar. A tab's × shows while the pointer is
-  on it, over the tab's own contents and on the paper it lies on, and
-  takes no room of its own, so a tab is the same width whether the
-  pointer is on it or not and no tab shifts as the pointer passes. The bar is 34 high and the traffic lights sit on its
-  centre line. Another tab switches to
-  that session, another tab switches to
+  (`Pool::order`), the current one selected. The tabs share the bar between
+  them, as ghostty's do: every one the same width, the row reaching the
+  far right, with `+` after it. Each is a pill inset in the bar, its
+  name centred in it and the key that reaches it (⌘1 to ⌘9) at its
+  right end; the one in front is filled with the colour of the row it
+  shows, and the others are the bare strip until the pointer is on one,
+  which fills it (`tab_hover`). That fill is the only shading in the
+  bar. A tab's × shows while the pointer is on it, over the tab's own
+  contents and on the paper it lies on, and takes no room of its own,
+  so a tab is the same width whether the pointer is on it or not and no
+  tab shifts as the pointer passes. There is no chevron in the bar: ⌘⇧A
+  is the way to the tab search, and the bar is the tabs' room. The bar
+  is 34 high and the traffic lights sit on its centre line. Another tab switches to
   its × lets a parked one go, the current tab's × (and
   ⌘⇧W) lets this session go and shows the one parked last (the last
   tab's closes the window, as a browser's does), and `+` (⌘T) opens

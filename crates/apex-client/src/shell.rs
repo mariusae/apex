@@ -1482,53 +1482,20 @@ impl Acme {
         // the strip's colour rounded away), so it flows into the window
         // the selected tab nearly fills the bar; its text sits on the
         // bar's centre line, with the other tabs' and the + beside it
-        const TAB_H: f32 = 30.;
-        const INSET: f32 = 4.;
-        /// The radius of the tab in front at the top; its bottom sweeps
-        /// out over `DRAPE`, wider, so the shape flows into the strip
-        /// rather than turning a corner into it.
-        const CROWN: f32 = 8.;
-        // one line box for every piece of text in a tab, whatever its
-        // size, so centring them centres them on the same line
+        /// A tab is a pill inset in the bar, as ghostty's are, and the
+        /// tabs share the bar between them: every one the same width,
+        /// the row reaching the far right, with `+` after it.
+        const INSET: f32 = 5.;
+        const TAB_H: f32 = TITLEBAR_HEIGHT - INSET * 2.;
+        /// One line box for every piece of text in a tab, whatever its
+        /// size, so centring them centres them on the same line.
         const LINE: f32 = 18.;
-        const DRAPE: f32 = 16.;
         let t = crate::theme::theme();
         let strip: u32 = t.strip;
-        let mut tabs = div().id("tabs").h_full().flex().flex_row().items_end();
-        // tab search, a browser's: a chevron in a rounded square before
-        // the tabs (⌘⇧A), a shade of the strip
-        let mut search = div()
-            .id("tab-search")
-            .h(px(TAB_H - INSET))
-            .w(px(30.))
-            .mb(px(INSET))
-            .mr(px(DRAPE / 2. + 1.)) // a tab's gap to the first tab
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(7.))
-            .border_1()
-            .border_color(rgb(t.tab_outline_dim))
-            .text_size(px(16.))
-            .line_height(px(LINE))
-            .font_family(UI_FONT)
-            .text_color(rgb(t.tab_text))
-            .pb(px(7.)) // the glyph hangs low in its box: centred by eye
-            .child("⌄");
-        if clickable {
-            search = search.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
-                    if this.selector.as_ref().is_some_and(|s| s.mode == PickerMode::Tabs) {
-                        this.close_selector(cx);
-                    } else {
-                        this.open_tab_search(cx);
-                    }
-                    cx.stop_propagation();
-                }),
-            );
-        }
-        tabs = tabs.child(search);
+        // the tabs fill the bar, each the same width as the rest
+        let mut tabs = div().id("tabs").flex_1().min_w_0().h_full().flex().flex_row().items_center().gap(px(2.));
+        // no chevron in the strip: the tab search is ⌘⇧A (the picker
+        // draws its own way in, and the bar is the tabs' room)
         let all = crate::pool::Pool::tabs(cx, &self.url);
         // a tab being dragged floats under the pointer, kept within the
         // strip's tabs (their bounds of last frame say where that is)
@@ -1546,7 +1513,7 @@ impl Acme {
                 x = left;
             }
             // the face carries its own margin: the bounds are the face's
-            Some((d.url.clone(), x - px(DRAPE / 2.), mine.origin.y))
+            Some((d.url.clone(), x, mine.origin.y))
         });
         let mut floating: Option<gpui::Div> = None;
         // where the hovered tab sits, for its card to hang under: read
@@ -1562,31 +1529,26 @@ impl Acme {
         // where each tab lands this frame, for a drag to reorder by
         self.tab_bounds.borrow_mut().clear();
         let others = all.len() > 1;
+        // the tab under the pointer, floating, keeps the width it had
+        let drag_w = self.tab_drag.as_ref().map(|d| d.width);
         for (i, u) in all.into_iter().enumerate() {
             let current = u == self.url;
             // the label; the host dimmed after it for a session elsewhere
             let text = if current && matches!(self.backend, Backend::Local(_)) { label.clone() } else { u.session.clone() };
             let host = (!u.is_local()).then(|| u.arg.clone());
             let fenced = current && self.fenced();
-            // a tool in that session wants the user: the tab takes the
-            // colour the session's square does, so it shows from any tab
+            // a tool in that session wants the user: a bell before the
+            // name says so, and nothing else changes -- a tab is not a
+            // place to shout from
             let notified = self.tab_notified(&u, cx);
+            // ⌘1 to ⌘9 reach the first nine tabs: each says which it is
+            let key = (i < 9).then(|| format!("⌘{}", i + 1));
             // the × shows while the pointer is on the tab (a tab held for
             // a drag is not rested on, and shows none)
             let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == u) && self.tab_drag.is_none();
-            let bg = if notified { t.tab_notified_bg } else if open { t.tab_open_bg } else { t.tag_bg };
-            let dim = if notified { t.tab_notified_text } else { t.tab_dim };
+            let bg = if open { t.tab_open_bg } else { t.tag_bg };
+            let dim = t.tab_dim;
             let closable = clickable && (!current || others);
-            // the selected tab's bottom corners drape out into the strip,
-            // as a browser's do, so it flows into the window below: a
-            // square of the tab's colour with the strip's rounded away,
-            // and the tab's edge traced down the outer side of it
-            let drape = move |left: bool| {
-                let corner = div().size_full().bg(rgb(strip));
-                let corner = if left { corner.rounded_br(px(DRAPE)) } else { corner.rounded_bl(px(DRAPE)) };
-                let d = div().absolute().bottom(px(0.)).w(px(DRAPE)).h(px(DRAPE)).bg(rgb(bg)).child(corner);
-                if left { d.left(px(-DRAPE)) } else { d.right(px(-DRAPE)) }
-            };
             // the tab's face: its look and its words, made twice for a
             // tab being dragged (the placeholder in the row, the one
             // under the pointer)
@@ -1596,51 +1558,50 @@ impl Acme {
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap(px(5.))
+                    .gap(px(6.))
+                    // the tabs share the bar: each takes the same part of
+                    // it, and the one floating over a drag keeps the width
+                    // its place in the row had
+                    .when(!ghost, |d| d.flex_1().min_w_0())
+                    .when(ghost, |d| d.w(drag_w.unwrap_or(px(160.))))
+                    .h(px(TAB_H))
                     .px(px(10.))
-                    // a little apart, as a browser's tabs are
-                    .mx(px(DRAPE / 2.))
+                    .rounded(px(8.))
                     .text_size(px(13.))
                     .line_height(px(LINE))
                     .font_family(UI_FONT)
-                    // the one in front: the colour of the row below it,
-                    // rounded at the top and sweeping out at the bottom
-                    // into the strip, with no line of its own -- it is a
-                    // shape cut out of the strip, not a card on it
-                    .when(current, |d| {
-                        d.h(px(TAB_H))
-                            .pb(px(INSET))
-                            .rounded_t(px(CROWN))
-                            .text_color(rgb(t.tab_current_text))
-                            .bg(rgb(bg))
-                            .child(drape(true))
-                            .child(drape(false))
-                    })
+                    // the one in front is a pill of the colour of the row
+                    // it shows; the others are the bare strip until the
+                    // pointer is on one, as ghostty's are
+                    .when(current, |d| d.bg(rgb(bg)).text_color(rgb(t.tab_current_text)))
+                    .when(!current, |d| d.text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(t.tab_hover))))
+                    .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
                     // fenced (another client leads, nothing here takes): the
                     // whole tab fades into the strip, its name greyed, and says so
                     .when(fenced, |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
-                    // the others: the strip's own colour, with a faint
-                    // line the only thing that says where each one is, on
-                    // the same centre line as the one in front, so the
-                    // text stays put as the front moves; the pointer on
-                    // one fills it, and the one dragged shows as hovered
-                    .when(!current, |d| {
-                        d.h(px(TAB_H - INSET))
-                            .mb(px(INSET))
-                            .rounded(px(7.))
-                            .border_1()
-                            .border_color(rgb(t.tab_outline_dim))
-                            .text_color(rgb(t.tab_text))
-                            .hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)))
-                    })
-                    .when(!current && ghost, |d| d.bg(rgb(t.tab_hover)))
-                    // notified, selected or not, and hovered too
-                    .when(!current && notified, |d| d.bg(rgb(t.tab_notified_bg)).hover(|s| s.bg(rgb(t.tab_notified_bg))))
-                    .when(notified, |d| d.text_color(rgb(t.tab_notified_text)))
-                    .child(text.clone())
-                    .when_some(host.clone(), |d, h| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(h)))
-                    .when(fenced, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child("fenced")))
-                    .when(closable && ghost, |d| d.child(div().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child("×")))
+                    // the name, centred in what room is left of the tab
+                    // and cut short when there is not enough of it, with
+                    // the bell before it when a tool in that session wants
+                    // the user -- the two centred together, so the bell
+                    // reads as part of the name and nothing else changes
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .justify_center()
+                            .gap(px(5.))
+                            .overflow_hidden()
+                            .when(notified, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).child("🔔")))
+                            .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text.clone()))
+                            .when_some(host.clone(), |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(h)))
+                            .when(fenced, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child("fenced"))),
+                    )
+                    // the key that reaches it, at the tab's right end
+                    .when_some(key.clone(), |d, k| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(k)))
+                    .when(closable && ghost, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child("×")))
             };
             if let Some((_, x, y)) = ghost.as_ref().filter(|(g, _, _)| *g == u) {
                 // the tab under the pointer, over everything in the strip
@@ -1757,9 +1718,9 @@ impl Acme {
         // the +, sized as the × and on the same line as they are
         let mut plus = div()
             .id("tab-new")
-            .h(px(TAB_H - INSET))
-            .mb(px(INSET))
-            .ml(px(DRAPE / 2.))
+            .flex_none()
+            .h(px(TAB_H))
+            .ml(px(2.))
             .px(px(8.))
             .flex()
             .items_center()
@@ -1828,7 +1789,6 @@ impl Acme {
             )
             .child(button)
             .when_some(card, |d, c| d.child(c))
-            .child(div().flex_1())
             .when_some(floating, |d, f| d.child(f))
 
     }
