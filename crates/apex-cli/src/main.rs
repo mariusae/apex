@@ -85,7 +85,14 @@ fn parse(defs: &[Flag], args: &[String]) -> Result<Parsed, String> {
             (true, Some(v)) if v == "true" || v == "false" => v,
             (true, Some(v)) => return Err(format!("invalid boolean value {v:?} for -{name}")),
             (false, Some(v)) => v,
-            (false, None) => return Err(format!("flag needs an argument: -{name}=VALUE")),
+            // -flag value, as Go's flag package takes it: the next argument
+            (false, None) => match args.get(i + 1) {
+                Some(v) => {
+                    i += 1;
+                    v.clone()
+                }
+                None => return Err(format!("flag needs an argument: -{name}")),
+            },
         };
         if value != "false" {
             flags.insert(def.name, value);
@@ -1758,5 +1765,31 @@ mod front_matter_tests {
         assert_eq!(front_matter_len("--- not front matter\n---\n"), 0);
         assert_eq!(front_matter_len("---\nunclosed\n"), 0);
         assert_eq!(front_matter_len("# plain\n"), 0);
+    }
+}
+
+#[cfg(test)]
+mod flag_tests {
+    use super::{flag, parse, switch};
+
+    fn args(s: &[&str]) -> Vec<String> {
+        s.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn a_flag_takes_its_value_after_an_equals_or_as_the_next_argument() {
+        let defs = [flag("C", ""), switch("f", "")];
+        // Go's flag package takes both, and `-C dir` is how git and make write it
+        let p = parse(&defs, &args(&["-C", "/w", "patch"])).unwrap();
+        assert_eq!(p.get("C"), Some("/w"));
+        assert_eq!(p.args, vec!["patch".to_string()]);
+        let p = parse(&defs, &args(&["-C=/w"])).unwrap();
+        assert_eq!(p.get("C"), Some("/w"));
+        // a switch takes nothing after it
+        let p = parse(&defs, &args(&["-f", "x"])).unwrap();
+        assert!(p.is("f"));
+        assert_eq!(p.args, vec!["x".to_string()]);
+        // and a flag with nothing after it is still wanting
+        assert!(parse(&defs, &args(&["-C"])).is_err());
     }
 }
