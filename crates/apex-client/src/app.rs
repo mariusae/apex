@@ -2695,9 +2695,21 @@ impl Acme {
             },
             (Target::Term(w, t), button) => match (region, button) {
                 (Region::Term(c, r), MouseButton::Left) => {
-                    let p = (c, self.term_top(w) + r as u64);
-                    self.term_sel = Some((w, p, p));
-                    self.mouse.term_drag = Some(w);
+                    let top = self.term_top(w);
+                    match self.term_layouts.get(&w).filter(|_| e.click_count >= 2) {
+                        // double-clicked: what acme's text windows select,
+                        // over the rows on screen -- the word, the line at
+                        // either end of it, what brackets or quotes enclose
+                        Some(l) => {
+                            let ((c0, r0), (c1, r1)) = term_double_click(&l.rows, c, r);
+                            self.term_sel = Some((w, (c0, top + r0 as u64), (c1, top + r1 as u64)));
+                        }
+                        None => {
+                            let p = (c, top + r as u64);
+                            self.term_sel = Some((w, p, p));
+                            self.mouse.term_drag = Some(w);
+                        }
+                    }
                     self.node.activecol = self.column_of_view(ViewId::Tag(w));
                 }
                 (Region::Term(c, r), MouseButton::Middle | MouseButton::Right) => {
@@ -4296,6 +4308,40 @@ fn around(at: usize, len: usize, by: isize) -> usize {
     (at as isize + by).rem_euclid(len as isize) as usize
 }
 
+/// acme's double-click (`node::double_click`) on a terminal's screen, so
+/// a terminal selects as a text window does: the rows as lines, each
+/// without the blanks after its text, so that a click anywhere past the
+/// end of a row is a click at the end of its line -- which takes the
+/// line. The selection comes back as two (column, row) cells, the end
+/// exclusive. Rows are one character a cell (`TermLayout::rows`), so a
+/// character's place in its row is its column.
+fn term_double_click(rows: &[String], c: usize, r: usize) -> ((usize, usize), (usize, usize)) {
+    let lines: Vec<&str> = rows.iter().map(|s| s.trim_end()).collect();
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut text = String::new();
+    let mut at = 0;
+    for (i, l) in lines.iter().enumerate() {
+        if i > 0 {
+            text.push('\n');
+            at += 1;
+        }
+        starts.push(at);
+        text.push_str(l);
+        at += l.chars().count();
+    }
+    if lines.is_empty() {
+        return ((c, r), (c, r));
+    }
+    let r = r.min(lines.len() - 1);
+    let q = starts[r] + c.min(lines[r].chars().count());
+    let (q0, q1) = apex_core::node::double_click(&apex_core::Text::new(&text), q);
+    let cell = |o: usize| {
+        let row = starts.iter().rposition(|&s| s <= o).unwrap_or(0);
+        (o - starts[row], row)
+    };
+    (cell(q0), cell(q1))
+}
+
 /// Is the cell `p` within the selection `a`..`b` (either way round)?
 /// Cells are (column, line), and lines order before columns.
 fn in_selection(a: (usize, u64), b: (usize, u64), p: (usize, u64)) -> bool {
@@ -4393,6 +4439,35 @@ mod tab_ring_tests {
         assert_eq!(around(0, 3, -1), 2, "before the first is the last");
         assert_eq!(around(0, 1, 1), 0, "one tab stays where it is");
         assert_eq!(around(0, 0, 1), 0, "and none is nowhere to go");
+    }
+}
+
+#[cfg(test)]
+mod term_double_click_tests {
+    use super::term_double_click;
+
+    fn rows(lines: &[&str]) -> Vec<String> {
+        // as the screen has them: every row the terminal's width
+        lines.iter().map(|l| format!("{l:<40}")).collect()
+    }
+
+    #[test]
+    fn a_double_click_in_a_terminal_selects_as_a_text_window_does() {
+        let screen = rows(&["ls -l src/main.rs", "total 8", "f(a, b) and 'q'"]);
+        // in a word: the word (acme's: `.` and `/` end it)
+        assert_eq!(term_double_click(&screen, 1, 0), ((0, 0), (2, 0)));
+        assert_eq!(term_double_click(&screen, 12, 0), ((10, 0), (14, 0)), "main");
+        // at the end of a line, and anywhere in the blanks past it: the
+        // line, and its newline with it, as a text window takes it
+        assert_eq!(term_double_click(&screen, 17, 0), ((0, 0), (0, 1)));
+        assert_eq!(term_double_click(&screen, 35, 0), ((0, 0), (0, 1)), "past the text is the line's end");
+        // at the start of a line: the line
+        assert_eq!(term_double_click(&screen, 0, 1), ((0, 1), (0, 2)));
+        // inside brackets and quotes: what they enclose
+        assert_eq!(term_double_click(&screen, 2, 2), ((2, 2), (6, 2)), "(a, b)");
+        assert_eq!(term_double_click(&screen, 13, 2), ((13, 2), (14, 2)), "'q'");
+        // the last line has no newline after it, and still is a line
+        assert_eq!(term_double_click(&screen, 39, 2), ((0, 2), (15, 2)));
     }
 }
 

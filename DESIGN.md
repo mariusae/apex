@@ -1218,7 +1218,11 @@ work exactly as in text windows.
 term shard carries `View{top}`, the history line in the viewport's first
 row, and a selection is two `(column, history line)` positions, so it
 stays on its text as the terminal scrolls. B1 drag selects (acme's
-yellow); cmd-c / Edit ▸ Copy, `Snarf` in the window's tag, or the B1+B2
+yellow), and a double-click selects as it does in a text window -- the
+same `node::double_click`, over the rows on screen taken as lines
+without the blanks after their text: the word, what brackets or quotes
+enclose, and the whole line at either end of it (so a double-click
+anywhere past the end of a row's text takes the row); cmd-c / Edit ▸ Copy, `Snarf` in the window's tag, or the B1+B2
 chord send `TermText` to the server, which has the scrollback, and its
 answer is a `Snarf` proposal (so Paste and Send have the text); the
 clipboard follows the snarf buffer. Wrapped lines join, as a terminal's
