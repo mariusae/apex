@@ -1312,10 +1312,15 @@ fn apex_url(url: &str) -> String {
     }
 }
 
-/// A `file://` link carrying a line (`?line=N`, or `#L123` as GitHub
-/// writes it): the host's path, percent-decoded, and the line.
+/// A link to a file carrying a line (`?line=N`, or `#L123` as GitHub
+/// writes it): the host's path, percent-decoded, and the line. `file://`
+/// as anyone writes one, and `apexfile://` (the host's files through
+/// apex): a page from a buffer has no origin WebKit will let reach a
+/// `file:` URL -- it refuses the navigation outright, and the handler
+/// never hears of it -- so a page apex writes itself (apex diff) links
+/// through its own scheme, which is asked about like any other.
 fn file_link(url: &str) -> Option<(String, usize)> {
-    let rest = url.strip_prefix("file://")?;
+    let rest = url.strip_prefix("file://").or_else(|| url.strip_prefix("apexfile://"))?;
     let (before_frag, frag) = rest.split_once('#').map(|(a, b)| (a, Some(b))).unwrap_or((rest, None));
     let (path_part, query) = before_frag.split_once('?').map(|(a, b)| (a, Some(b))).unwrap_or((before_frag, None));
     let line = query
@@ -1402,6 +1407,10 @@ mod tests {
         assert_eq!(file_link("file://localhost/a/b%20c.go?x=1&line=3"), Some(("/a/b c.go".to_string(), 3)));
         assert_eq!(file_link("file:///a/b.md#L7-L9"), Some(("/a/b.md".to_string(), 7)));
         assert_eq!(file_link("file:///a/b.md"), None);
+        // apex's own scheme, as a page it writes links (apex diff)
+        assert_eq!(file_link("apexfile://localhost/a/b%20c.rs?line=9"), Some(("/a/b c.rs".to_string(), 9)));
+        assert_eq!(file_link("apexfile:///a/b.rs?line=2"), Some(("/a/b.rs".to_string(), 2)));
+        assert_eq!(file_link("apexfile://localhost/a/b.html"), None, "no line: a page, as before");
         assert_eq!(file_link("https://x/?line=3"), None);
         assert_eq!(apex_url("file:///a/b.html"), "apexfile:///a/b.html");
         assert_eq!(webkit_url("apexfile:///a/b.html"), "apexfile://localhost/a/b.html");
