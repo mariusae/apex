@@ -66,11 +66,12 @@ fn theme_css() -> String {
     let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2C2C24, 0x4A4A40, 0x9A9A8E) } else { (0xE8E8DC, 0xC8C8B8, 0x6F6F60) };
     let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
     // a diff's added and removed lines (apex diff): pale for the line,
-    // strong for what changed in it. Blue and orange, not green and red,
-    // chosen under a deuteranopia simulation to stand apart from each
-    // other, from each other's strong, and from the paper they sit on,
-    // which Gerrit's greens and reds do not on acme's yellow
-    let (add, add_s, del, del_s) = if crate::theme::is_dark() { (0x223A78, 0x2F5AC0, 0x5E4412, 0xA0621A) } else { (0xC8E4FF, 0xB0C4FF, 0xFFE6B6, 0xFFC080) };
+    // strong for what changed in it. Added is Gerrit's green a shade
+    // deeper, so that on acme's yellow the pale one does not all but
+    // vanish for a reader with deuteranopia (Gerrit's is 5 from the paper
+    // under a simulation, this 10); removed is orange rather than red,
+    // which stays apart from the green for that reader where red does not
+    let (add, add_s, del, del_s) = if crate::theme::is_dark() { (0x244828, 0x3A8048, 0x5E4412, 0xA0621A) } else { (0xC8F2C8, 0x9CE49C, 0xFFE6B6, 0xFFC080) };
     let diff = format!(":root{{--apex-add:{};--apex-add-strong:{};--apex-del:{};--apex-del-strong:{}}}", hex(add), hex(add_s), hex(del), hex(del_s));
     diff + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
@@ -897,6 +898,14 @@ impl Webs {
     /// What was found is marked in a deeper shade of the selection's
     /// colour, and every other place the text is in the page in the
     /// selection's colour, until a click or a key in the page.
+    /// A word the page says it answers (`page_verbs`), run in the page:
+    /// its `apexVerb`.
+    pub fn verb(&self, w: WindowId, word: &str) {
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("window.apexVerb && window.apexVerb({})", js_string(word)));
+        }
+    }
+
     pub fn find(&self, w: WindowId, text: &str, reverse: bool) {
         if let Some(h) = self.hosts.get(&w) {
             // the other places the selection's tint, the place found that
@@ -1319,6 +1328,24 @@ fn apex_url(url: &str) -> String {
     }
 }
 
+/// The words a page says it answers, as `<meta name="apex-verbs"
+/// content="Prev Next">` in its head: B2 on one of them in the page's tag
+/// runs it in the page (its `apexVerb`) rather than as a command. A page
+/// declares them, rather than apex guessing, so that a word the page does
+/// not answer still means what it means anywhere else.
+pub fn page_verbs(html: &str) -> Vec<String> {
+    // the head is at the top; a page's body is no place to look for it
+    let head = &html[..html.len().min(8192)];
+    let Some(at) = head.find("name=\"apex-verbs\"") else { return Vec::new() };
+    // the tag it is in
+    let from = head[..at].rfind('<').unwrap_or(0);
+    let to = head[at..].find('>').map(|i| at + i).unwrap_or(head.len());
+    let tag = &head[from..to];
+    let Some(c) = tag.find("content=\"") else { return Vec::new() };
+    let rest = &tag[c + 9..];
+    rest[..rest.find('"').unwrap_or(rest.len())].split_whitespace().map(String::from).collect()
+}
+
 /// A link to a file carrying a line (`?line=N`, or `#L123` as GitHub
 /// writes it): the host's path, percent-decoded, and the line. `file://`
 /// as anyone writes one, and `apexfile://` (the host's files through
@@ -1406,6 +1433,13 @@ mod tests {
         // overscrolled (a bounce past either end) stays in the bar
         assert_eq!(thumb_of(Some((-50., 4000., 1000.))), (0., 0.2375));
         assert_eq!(thumb_of(Some((3100., 4000., 1000.))), (0.775, 1.));
+    }
+
+    #[test]
+    fn a_page_says_which_words_it_answers() {
+        assert_eq!(page_verbs("<html><head><meta charset=\"utf-8\"><meta name=\"apex-verbs\" content=\"Prev Next\"><title>x</title>"), vec!["Prev", "Next"]);
+        assert_eq!(page_verbs("<meta content=\"Up\" name=\"apex-verbs\">"), vec!["Up"], "in either order");
+        assert!(page_verbs("<html><head><title>x</title></head><body>apex-verbs</body>").is_empty());
     }
 
     #[test]

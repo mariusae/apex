@@ -9,10 +9,10 @@
 //!
 //! The colours are the page's theme (`--apex-*`, which apex gives every
 //! page and rewrites when the theme changes), with acme's light ones for
-//! a page seen anywhere else. Added and removed are blue and orange, not
-//! green and red: on acme's yellow paper Gerrit's greens and reds (which
-//! review keeps, as chosen to stay legible on white) run together for a
-//! reader with deuteranopia, and blue against orange does not.
+//! a page seen anywhere else. Added is Gerrit's green a shade deeper,
+//! and removed orange rather than Gerrit's red: on acme's yellow paper
+//! Gerrit's pale green all but vanishes for a reader with deuteranopia,
+//! and red runs into green for that reader where orange does not.
 //!
 //! Nothing here touches the filesystem: paths in the diff are resolved
 //! against the base directory given, as they are written.
@@ -402,7 +402,9 @@ fn marked(s: &str, (q0, q1): (usize, usize)) -> String {
 pub fn page(files: &[File], base: &Path) -> String {
     let mut out = String::new();
     let (adds, dels) = files.iter().map(File::counts).fold((0, 0), |a, c| (a.0 + c.0, a.1 + c.1));
-    let _ = write!(out, "<!doctype html><html><head><meta charset=\"utf-8\"><title>Diff</title><style>{STYLE}</style></head><body>");
+    // Prev and Next are the page's own: B2 on them in its tag runs them
+    // here (a page says the words it answers, and apex asks it)
+    let _ = write!(out, "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"apex-verbs\" content=\"Prev Next\"><title>Diff</title><style>{STYLE}</style></head><body>");
     let _ = write!(
         out,
         "<div class=\"summary\">{} file{} changed, <span class=\"plus\">+{adds}</span> <span class=\"minus\">\u{2212}{dels}</span></div>",
@@ -511,7 +513,8 @@ fn split_rows(out: &mut String, rows: &[Cells]) {
             Some((n, t, class)) => format!("<td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td>"),
             None => "<td class=\"num blank\"></td><td class=\"code blank\"></td>".to_string(),
         };
-        let _ = write!(out, "<tr{href}>{}{}</tr>", side(&c.left), side(&c.right));
+        let chg = if c.kind == Kind::Same { "" } else { " class=\"chg\"" };
+        let _ = write!(out, "<tr{chg}{href}>{}{}</tr>", side(&c.left), side(&c.right));
     }
 }
 
@@ -537,12 +540,12 @@ fn inline_rows(out: &mut String, rows: &[Cells]) {
                 let run = rows[i..].iter().take_while(|c| matches!(c.kind, Kind::Changed | Kind::Removed | Kind::Added)).count();
                 for c in &rows[i..i + run] {
                     if let Some((n, t, class)) = &c.left {
-                        let _ = write!(out, "<tr{}><td class=\"num {class}\">{n}</td><td class=\"num {class}\"></td><td class=\"code {class}\">{t}</td></tr>", c.href);
+                        let _ = write!(out, "<tr class=\"chg\"{}><td class=\"num {class}\">{n}</td><td class=\"num {class}\"></td><td class=\"code {class}\">{t}</td></tr>", c.href);
                     }
                 }
                 for c in &rows[i..i + run] {
                     if let Some((n, t, class)) = &c.right {
-                        let _ = write!(out, "<tr{}><td class=\"num {class}\"></td><td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td></tr>", c.href);
+                        let _ = write!(out, "<tr class=\"chg\"{}><td class=\"num {class}\"></td><td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td></tr>", c.href);
                     }
                 }
                 i += run;
@@ -565,7 +568,7 @@ const STYLE: &str = r#"
   --bg: var(--apex-bg, #FFFFEA); --fg: var(--apex-fg, #000);
   --tag: var(--apex-tag-bg, #EAFFFF); --band: var(--apex-code-bg, #E8E8DC);
   --rule: var(--apex-rule, #C8C8B8); --dim: var(--apex-dim, #6F6F60); --border: var(--apex-border, #99994C);
-  --add: var(--apex-add, #C8E4FF); --add-strong: var(--apex-add-strong, #B0C4FF);
+  --add: var(--apex-add, #C8F2C8); --add-strong: var(--apex-add-strong, #9CE49C);
   --del: var(--apex-del, #FFE6B6); --del-strong: var(--apex-del-strong, #FFC080);
 }
 * { box-sizing: border-box; }
@@ -613,10 +616,22 @@ tr.hunk td { background: var(--band); color: var(--dim); padding: 2px 8px; borde
              font: 11px Menlo, monospace; cursor: pointer; }
 tr.hunk .section { color: var(--fg); }
 tr.nonl td { color: var(--dim); font-style: italic; }
+/* the chunk Prev or Next landed on: a bar down the edge of its first
+   row, as review's cursor has */
+tr.cursor td:first-child { box-shadow: inset 3px 0 0 var(--fg); }
 "#;
 
 /// A click on a line -- anywhere in it, not only its number -- opens its
 /// file there. A drag that selects text is a selection, not a click.
+///
+/// Prev and Next (the page's verbs, `apexVerb`) move between chunks as
+/// review's p and n do, Gerrit's sense of a chunk: a run of changed
+/// lines, several of which a hunk may hold. Each goes from the chunk it
+/// last landed on -- unless the page has been scrolled away from that
+/// one, when it goes from what is in view -- to the start of the next
+/// run in the layout showing, across files, and brings it up to a few
+/// lines below the file's header, so the lines leading into it stay in
+/// sight; a chunk already there is left where it is.
 const SCRIPT: &str = r#"
 document.addEventListener('click', function (e) {
   if (e.target.closest('a')) return;
@@ -625,6 +640,62 @@ document.addEventListener('click', function (e) {
   var tr = e.target.closest('tr[data-href]');
   if (tr) location.href = tr.dataset.href;
 });
+(function () {
+  var cur = null;
+  function rows() {
+    return Array.prototype.filter.call(document.querySelectorAll('table.diff tr'), function (r) { return r.offsetParent !== null; });
+  }
+  function starts() {
+    var all = rows(), out = [];
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].classList.contains('chg') && !(i > 0 && all[i - 1].classList.contains('chg'))) out.push(all[i]);
+    }
+    return out;
+  }
+  function header(row) {
+    var h = row.closest('section') && row.closest('section').querySelector('h2');
+    return h ? h.getBoundingClientRect().height : 0;
+  }
+  // where a landed chunk sits: below the file's header, with some lines
+  // above it in view (review's ten, or a third of a short window)
+  function margin(row) {
+    var lh = parseFloat(getComputedStyle(row).lineHeight) || 16;
+    return header(row) + Math.min(10 * lh, window.innerHeight / 3);
+  }
+  function land(row) {
+    if (cur) cur.classList.remove('cursor');
+    cur = row;
+    row.classList.add('cursor');
+    var at = row.getBoundingClientRect().top, top = header(row), m = margin(row);
+    if (at >= top && at <= m) return;
+    var max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+    window.scrollTo(0, Math.min(Math.max(window.scrollY + at - m, 0), max));
+  }
+  window.apexVerb = function (w) {
+    if (w !== 'Next' && w !== 'Prev') return false;
+    var s = starts();
+    if (!s.length) return true;
+    var i = s.indexOf(cur), seen = false;
+    if (i >= 0) {
+      var t = cur.getBoundingClientRect();
+      seen = t.bottom > 0 && t.top < window.innerHeight;
+    }
+    if (seen) {
+      i += w === 'Next' ? 1 : -1;
+    } else if (w === 'Next') {
+      // the first at or below the top of what is in view: from the top of
+      // the page, the first chunk, as review's n goes first to the first
+      i = s.findIndex(function (r) { return r.getBoundingClientRect().top >= header(r) - 1; });
+    } else {
+      i = -1;
+      for (var k = s.length - 1; k >= 0; k--) {
+        if (s[k].getBoundingClientRect().top < header(s[k]) - 1) { i = k; break; }
+      }
+    }
+    if (i >= 0 && i < s.length) land(s[i]);
+    return true;
+  };
+})();
 "#;
 
 #[cfg(test)]
@@ -745,6 +816,17 @@ deleted file mode 100644
         assert!(inline.contains("<td class=\"num\"><a href=\"apexfile://localhost/w/b?line=1\">1</a></td><td class=\"num\"><a href=\"apexfile://localhost/w/b?line=1\">1</a></td>"), "{inline}");
         // and the page's width chooses between them
         assert!(html.contains("@media (max-width: 1100px)"));
+    }
+
+    #[test]
+    fn the_page_answers_prev_and_next_and_marks_what_they_move_between() {
+        let html = render("--- a\n+++ b\n@@ -1,3 +1,3 @@\n top\n-red\n+blue\n end\n", Path::new("/w"));
+        assert!(html.contains("<meta name=\"apex-verbs\" content=\"Prev Next\">"), "{html}");
+        assert!(html.contains("window.apexVerb"));
+        // the changed rows, in both layouts; the shared ones not
+        assert_eq!(html.matches("<tr class=\"chg\"").count(), 3, "one side by side, two one above the other: {html}");
+        let top = &html[html.find("top").unwrap() - 120..html.find("top").unwrap()];
+        assert!(!top.contains("chg"), "{top}");
     }
 
     #[test]

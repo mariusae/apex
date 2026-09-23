@@ -4195,6 +4195,18 @@ impl Acme {
                 }
             }
         }
+        // a word a page from a buffer says it answers (apex diff's Prev and
+        // Next): run in the page, not as a command
+        if let ExecCtx::Window(w) = ctx {
+            if let Ok(Body::Html(b)) = self.node.state.window(w).map(|x| x.body) {
+                // the head is at the top: no need of the rest of the page
+                let html = self.node.state.buffer(b).map(|b| b.text.slice(0, b.text.len().min(8192))).unwrap_or_default();
+                if crate::web::page_verbs(&html).iter().any(|v| *v == word) {
+                    self.webs.verb(w, &word);
+                    return;
+                }
+            }
+        }
         // a page's own history and reload: Back, Fwd, Get in a web window
         if let ExecCtx::Window(w) = ctx {
             if self.node.state.window(w).map(|x| x.body) == Ok(Body::Web) {

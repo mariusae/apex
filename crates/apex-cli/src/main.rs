@@ -409,8 +409,10 @@ header naming it with how much it changed, a
 band between hunks naming where each starts. A changed line is pale
 and the part of it that changed strong, as Gerrit and review show them;
 a line only added or only removed is strong throughout. The colours are
-acme's, and added and removed are blue and orange, which stay apart for
-a reader who cannot tell red from green.
+acme's; added is Gerrit's green, a shade deeper so that it shows on
+acme's yellow, and removed is orange rather than red, which stays apart
+from the green for a reader who cannot tell red from green. Prev and
+Next in the window's tag step between chunks, the runs of changed lines.
 
 Every file name, line number and line is a link: a click on any of it
 opens the file in a text window at that line of the file as it is now

@@ -495,19 +495,28 @@ impl Tool {
     /// under `dir` (the tool's own directory when empty). It is the
     /// window `DIR/+Diff`, made in the last column the first time and
     /// written over after that, and shown either way; a scratch window,
-    /// so there is nothing for `Del` to ask about.
+    /// so there is nothing for `Del` to ask about. Its tag has Prev and
+    /// Next, which step between the chunks of changes.
     pub fn diff(&mut self, text: &str, dir: &str) -> Result<WindowId> {
         let dir = if dir.is_empty() { std::env::current_dir().map_err(|e| e.to_string())? } else { std::path::absolute(dir).map_err(|e| format!("{dir}: {e}"))? };
         let html = apex_diff::render(text, &dir);
         let name = format!("{}/+Diff", dir.display().to_string().trim_end_matches('/'));
-        match self.windows().into_iter().find(|w| w.name == name) {
+        let w = match self.windows().into_iter().find(|w| w.name == name) {
             Some(w) => {
                 self.replace(w.id, 0, END, &html)?;
                 self.open(&name, None)?;
-                Ok(w.id)
+                w.id
             }
-            None => self.new_page(&name, &html),
+            None => self.new_page(&name, &html)?,
+        };
+        // the page's own words, where B2 finds them: Prev and Next go
+        // between chunks (the page answers them). Put in front of what the
+        // tag has, once, so a tag the user has written to keeps what they wrote
+        let tag = self.tag(w)?;
+        if !tag.split_whitespace().any(|x| x == "Next") {
+            self.set_tag(w, &format!("Prev Next {}", tag.trim()))?;
         }
+        Ok(w)
     }
 
     /// The file (or directory) of this name shown, opened if it is not

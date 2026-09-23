@@ -572,16 +572,31 @@ commit message, `git show`'s header) is left out, and a hunk ends when it
 has the lines its header counts, so a `---` in it is never the next file.
 
 The colours are the page's theme, as every page from a buffer has
-(`--apex-*`), so the page follows light and dark with the rest. Added and
-removed are blue and orange (`--apex-add`, `--apex-del`, and their
-`-strong`s): on acme's yellow paper Gerrit's greens and reds, which
-review keeps because they stay legible on white, run together for a
-reader with deuteranopia -- the pale green against the paper 5 apart in
-CIELAB under a simulation, the two strong ones 19 -- where the blue and
-orange stand at least 17 apart from each other, from each other's strong
-and from the paper, light or dark. A line breaks at a space where it can
+(`--apex-*`), so the page follows light and dark with the rest. Added is
+Gerrit's green, a shade deeper, and removed is orange rather than red
+(`--apex-add`, `--apex-del`, and their `-strong`s). On acme's yellow
+paper Gerrit's own pale green is 5 from the paper in CIELAB under a
+deuteranopia simulation -- all but gone for such a reader -- where this
+one is 10 and still within 5 of Gerrit's for anyone else (#C8F2C8 and
+#9CE49C, #244828 and #3A8048 on dark); red would run into the green for
+that reader, and orange keeps 13 from it pale and 17 strong. (Blue for
+added separated better still, and was too far from what a diff is
+expected to look like.) A line breaks at a space where it can
 (review breaks anywhere, which suits a browser's width and splits every
 other word in half a column).
+
+`Prev` and `Next` are in the window's tag: B2 on them steps between
+chunks, as review's `p` and `n` do in Gerrit's sense of a chunk -- a run
+of changed lines, several to a hunk -- in the layout showing and across
+files. Each goes from the chunk it last landed on (marked by a bar down
+its edge), or from what is in view when the page has been scrolled away
+from that, and brings the chunk up to a few lines below the file's
+header; one already there stays put. They are the page's own words: a
+page from a buffer may say which words it answers, as `<meta
+name="apex-verbs" content="Prev Next">`, and B2 on one of those in its tag
+runs the page's `apexVerb(word)` rather than a command (`web::page_verbs`).
+A page says so rather than apex guessing, so a word it does not answer
+means in its tag what it means anywhere.
 
 Every file name, line number and line is a link: a click anywhere on a
 line -- a drag that selects is a selection, not a click -- opens its file
