@@ -555,7 +555,12 @@ is designed until it is needed.
 `git diff` writes, from FILE or stdin (`git diff | apex diff`) -- as a
 page in the window `DIR/+Diff`: side by side, the old file on the left
 and the new on the right, laid out as rsc's review lays out a change
-(`crates/apex-diff`). Each file has a header in the tag's colour naming
+(`crates/apex-diff`), while the page is wide enough for that (1100
+pixels, about seventy columns of code a side); narrower, one above the
+other, as `diff -u` writes it -- a line both sides share once with both
+its numbers, a changed run's removed lines and then its added ones. The
+page carries both and a media query picks, so the layout follows the
+column as it is resized, with nothing rendered again. Each file has a header in the tag's colour naming
 it, a `from` for a rename, how much it changed (`+N −M`) and what the
 diff said of it (a mode, "Binary files … differ"); a band between hunks
 names where each starts and the function it is in. A changed line takes

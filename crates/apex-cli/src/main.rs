@@ -403,7 +403,9 @@ resolve in the file's directory (apexfile://)." },
 Diff shows a unified diff -- what diff -u or git diff writes, read from
 FILE or from stdin (git diff | apex diff) -- as a page in the window
 DIR/+Diff: side by side, the old file on the left and the new on the
-right, each file under a header naming it with how much it changed, a
+right, when the window is wide enough for that, and one above the other
+when it is not (it switches as the window is resized), each file under a
+header naming it with how much it changed, a
 band between hunks naming where each starts. A changed line is pale
 and the part of it that changed strong, as Gerrit and review show them;
 a line only added or only removed is strong throughout. The colours are

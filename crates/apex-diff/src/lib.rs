@@ -440,53 +440,115 @@ pub fn page(files: &[File], base: &Path) -> String {
             out.push_str("</section>");
             continue;
         }
-        out.push_str("<table class=\"diff\"><colgroup><col class=\"numcol\"><col><col class=\"numcol\"><col></colgroup><tbody>");
+        // both layouts, and the page's width chooses (STYLE): side by
+        // side where each side has room for a line, one above the other
+        // where it has not
+        let mut split = String::from("<table class=\"diff split\"><colgroup><col class=\"numcol\"><col><col class=\"numcol\"><col></colgroup><tbody>");
+        let mut inline = String::from("<table class=\"diff inline\"><colgroup><col class=\"numcol\"><col class=\"numcol\"><col></colgroup><tbody>");
         for h in &f.hunks {
             let href = link(h.new_start.max(1)).map(|u| format!(" data-href=\"{}\"", esc(&u))).unwrap_or_default();
-            let _ = write!(
-                out,
-                "<tr class=\"hunk\"{href}><td colspan=\"4\">@@ \u{2212}{} +{} @@ <span class=\"section\">{}</span></td></tr>",
-                h.old_start,
-                h.new_start,
-                esc(&h.section)
-            );
-            for r in rows(h) {
-                let u = link(r.at);
-                let href = u.as_ref().map(|u| format!(" data-href=\"{}\"", esc(u))).unwrap_or_default();
-                if r.kind == Kind::NoNewline {
-                    let _ = write!(out, "<tr class=\"nonl\"{href}><td></td><td colspan=\"3\">No newline at end of file</td></tr>");
-                    continue;
-                }
-                let num = |n: Option<usize>| match (n, &u) {
-                    (Some(n), Some(u)) => format!("<a href=\"{}\">{n}</a>", esc(u)),
-                    (Some(n), None) => n.to_string(),
-                    (None, _) => String::new(),
-                };
-                let (lclass, rclass) = match r.kind {
-                    Kind::Same => ("", ""),
-                    Kind::Changed => ("del", "add"),
-                    Kind::Removed => ("del total", "blank"),
-                    Kind::Added => ("blank", "add total"),
-                    Kind::NoNewline => ("", ""),
-                };
-                let (lpart, rpart) = match (&r.left, &r.right) {
-                    (Some((_, a)), Some((_, b))) if r.kind == Kind::Changed => changed_part(a, b),
-                    _ => ((0, 0), (0, 0)),
-                };
-                let ltext = r.left.as_ref().map(|(_, t)| marked(t, lpart)).unwrap_or_default();
-                let rtext = r.right.as_ref().map(|(_, t)| marked(t, rpart)).unwrap_or_default();
-                let _ = write!(
-                    out,
-                    "<tr{href}><td class=\"num {lclass}\">{}</td><td class=\"code {lclass}\">{ltext}</td><td class=\"num {rclass}\">{}</td><td class=\"code {rclass}\">{rtext}</td></tr>",
-                    num(r.left.as_ref().map(|l| l.0)),
-                    num(r.right.as_ref().map(|r| r.0)),
-                );
-            }
+            let band = format!("@@ \u{2212}{} +{} @@ <span class=\"section\">{}</span>", h.old_start, h.new_start, esc(&h.section));
+            let _ = write!(split, "<tr class=\"hunk\"{href}><td colspan=\"4\">{band}</td></tr>");
+            let _ = write!(inline, "<tr class=\"hunk\"{href}><td colspan=\"3\">{band}</td></tr>");
+            let cells: Vec<Cells> = rows(h).iter().map(|r| cells(r, link(r.at))).collect();
+            split_rows(&mut split, &cells);
+            inline_rows(&mut inline, &cells);
         }
-        out.push_str("</tbody></table></section>");
+        split.push_str("</tbody></table>");
+        inline.push_str("</tbody></table>");
+        out.push_str(&split);
+        out.push_str(&inline);
+        out.push_str("</section>");
     }
     let _ = write!(out, "<script>{SCRIPT}</script></body></html>");
     out
+}
+
+/// A row's parts as both layouts draw them: each side's number (a link
+/// when the file is there to open), text (its changed part marked) and
+/// colour, or none where that side has no line; and where a click goes.
+struct Cells {
+    href: String,
+    kind: Kind,
+    left: Option<(String, String, &'static str)>,
+    right: Option<(String, String, &'static str)>,
+}
+
+fn cells(r: &Row, u: Option<String>) -> Cells {
+    let href = u.as_ref().map(|u| format!(" data-href=\"{}\"", esc(u))).unwrap_or_default();
+    let num = |n: usize| match &u {
+        Some(u) => format!("<a href=\"{}\">{n}</a>", esc(u)),
+        None => n.to_string(),
+    };
+    let (lclass, rclass) = match r.kind {
+        Kind::Changed => ("del", "add"),
+        Kind::Removed => ("del total", ""),
+        Kind::Added => ("", "add total"),
+        Kind::Same | Kind::NoNewline => ("", ""),
+    };
+    let (lpart, rpart) = match (&r.left, &r.right) {
+        (Some((_, a)), Some((_, b))) if r.kind == Kind::Changed => changed_part(a, b),
+        _ => ((0, 0), (0, 0)),
+    };
+    Cells {
+        href,
+        kind: r.kind,
+        left: r.left.as_ref().map(|(n, t)| (num(*n), marked(t, lpart), lclass)),
+        right: r.right.as_ref().map(|(n, t)| (num(*n), marked(t, rpart), rclass)),
+    }
+}
+
+/// Side by side: the old line and the new on one row, a side with no
+/// line on it blank.
+fn split_rows(out: &mut String, rows: &[Cells]) {
+    for c in rows {
+        let href = &c.href;
+        if c.kind == Kind::NoNewline {
+            let _ = write!(out, "<tr class=\"nonl\"{href}><td></td><td colspan=\"3\">No newline at end of file</td></tr>");
+            continue;
+        }
+        let side = |s: &Option<(String, String, &'static str)>| match s {
+            Some((n, t, class)) => format!("<td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td>"),
+            None => "<td class=\"num blank\"></td><td class=\"code blank\"></td>".to_string(),
+        };
+        let _ = write!(out, "<tr{href}>{}{}</tr>", side(&c.left), side(&c.right));
+    }
+}
+
+/// One above the other, as `diff -u` writes it: a line both sides share
+/// once, with both its numbers; a changed run's removed lines, then its
+/// added ones, each with the number of the side it is on.
+fn inline_rows(out: &mut String, rows: &[Cells]) {
+    let mut i = 0;
+    while i < rows.len() {
+        let c = &rows[i];
+        match c.kind {
+            Kind::NoNewline => {
+                let _ = write!(out, "<tr class=\"nonl\"{}><td colspan=\"2\"></td><td>No newline at end of file</td></tr>", c.href);
+                i += 1;
+            }
+            Kind::Same => {
+                let (ln, lt, _) = c.left.as_ref().expect("a shared line has both sides");
+                let (rn, _, _) = c.right.as_ref().expect("a shared line has both sides");
+                let _ = write!(out, "<tr{}><td class=\"num\">{ln}</td><td class=\"num\">{rn}</td><td class=\"code\">{lt}</td></tr>", c.href);
+                i += 1;
+            }
+            _ => {
+                let run = rows[i..].iter().take_while(|c| matches!(c.kind, Kind::Changed | Kind::Removed | Kind::Added)).count();
+                for c in &rows[i..i + run] {
+                    if let Some((n, t, class)) = &c.left {
+                        let _ = write!(out, "<tr{}><td class=\"num {class}\">{n}</td><td class=\"num {class}\"></td><td class=\"code {class}\">{t}</td></tr>", c.href);
+                    }
+                }
+                for c in &rows[i..i + run] {
+                    if let Some((n, t, class)) = &c.right {
+                        let _ = write!(out, "<tr{}><td class=\"num {class}\"></td><td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td></tr>", c.href);
+                    }
+                }
+                i += run;
+            }
+        }
+    }
 }
 
 /// A diff's text as its page, its paths under `base`.
@@ -522,6 +584,14 @@ h2 .name { font-weight: bold; }
 h2 .from, h2 .delta, h2 .note { color: var(--dim); margin-left: 6px; }
 table.diff { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px/16px Menlo, monospace; tab-size: 4; }
 col.numcol { width: 6ch; }
+/* side by side while each side has room for a line of code, about 70
+   columns of it beside its number; one above the other below that, as
+   the page narrows with its column -- no render, the page decides */
+table.inline { display: none; }
+@media (max-width: 1100px) {
+  table.split { display: none; }
+  table.inline { display: table; }
+}
 td { padding: 0; vertical-align: top; }
 td.num { text-align: right; padding-right: 6px; color: var(--dim); background: var(--band); border-right: 1px solid var(--rule); user-select: none; }
 td.num a { display: block; cursor: pointer; }
@@ -657,6 +727,24 @@ deleted file mode 100644
         // an insertion marks nothing on the side that had nothing there
         assert_eq!(changed_part("ab", "aXb"), ((1, 1), (1, 2)));
         assert_eq!(marked("let x = 1;", (8, 9)), "let x = <span class=\"i\">1</span>;");
+    }
+
+    #[test]
+    fn wide_it_is_side_by_side_and_narrow_one_above_the_other() {
+        let text = "--- a\n+++ b\n@@ -1,4 +1,3 @@\n top\n-red\n-tan\n+blue\n end\n";
+        let html = render(text, Path::new("/w"));
+        let (s, i) = (html.find("<table class=\"diff split\">").expect("side by side"), html.find("<table class=\"diff inline\">").expect("inline"));
+        let (split, inline) = (&html[s..i], &html[i..]);
+        // side by side, red and blue share a row: the change pairs off
+        let row = &split[split.find("red").unwrap()..];
+        assert!(row.find("blue").unwrap() < row.find("</tr>").unwrap(), "{split}");
+        // one above the other, as diff -u writes it: the removed run, then the added
+        let at = |w: &str| inline.find(w).unwrap();
+        assert!(at("top") < at("red") && at("red") < at("tan") && at("tan") < at("blue") && at("blue") < at("end"), "{inline}");
+        // a shared line once, with both its numbers
+        assert!(inline.contains("<td class=\"num\"><a href=\"apexfile://localhost/w/b?line=1\">1</a></td><td class=\"num\"><a href=\"apexfile://localhost/w/b?line=1\">1</a></td>"), "{inline}");
+        // and the page's width chooses between them
+        assert!(html.contains("@media (max-width: 1100px)"));
     }
 
     #[test]
