@@ -249,6 +249,7 @@ dependencies = [
  "apex-core",
  "apex-edit",
  "apex-server",
+ "apex-tool",
  "apex-tool-bridge",
  "apex-tool-lsp",
  "apex-tool-preview",
@@ -292,6 +293,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "apex-diff"
+version = "0.1.0"
+
+[[package]]
 name = "apex-edit"
 version = "0.1.0"
 dependencies = [
@@ -323,6 +328,7 @@ name = "apex-tool"
 version = "0.1.0"
 dependencies = [
  "apex-core",
+ "apex-diff",
  "apex-server",
 ]
 

@@ -399,6 +399,25 @@ buffer changes, unsaved edits included. The converter runs on the
 host as apex tool preview FILE, a command named preview (apex ps,
 Kill preview); it ends with either window. Relative links in the page
 resolve in the file's directory (apexfile://)." },
+    Cmd { name: "diff", usage: "apex diff [-C DIR] [FILE]", short: "show a diff as a page, side by side, every line a link into its file", flags: &[flag("C", "the directory the diff's paths are under (default the current one)")], run: diff_cmd, long: "\
+Diff shows a unified diff -- what diff -u or git diff writes, read from
+FILE or from stdin (git diff | apex diff) -- as a page in the window
+DIR/+Diff: side by side, the old file on the left and the new on the
+right, each file under a header naming it with how much it changed, a
+band between hunks naming where each starts. A changed line is pale
+and the part of it that changed strong, as Gerrit and review show them;
+a line only added or only removed is strong throughout. The colours are
+acme's, and added and removed are blue and orange, which stay apart for
+a reader who cannot tell red from green.
+
+Every file name, line number and line is a link: a click on any of it
+opens the file in a text window at that line of the file as it is now
+(a removed line, at the line of the new file where it was). The paths in
+the diff are taken under DIR, -C's, or the current directory; a git
+diff's a/ and b/ come off. The window is made the first time and written
+over after that, and it is scratch: nothing for Del to ask about. Tools
+have the same through the SDKs (Tool::diff in Rust, Diff in Go, diff in
+the bridge)." },
     Cmd { name: "md", usage: "apex md <MARKDOWN", short: "Markdown on stdin to HTML on stdout", flags: &[], run: md, long: "\
 Md converts Markdown on stdin to an HTML page on stdout: CommonMark
 with tables, footnotes, strikethrough and task lists, styled as GitHub
@@ -847,6 +866,27 @@ fn preview_cmd(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     let text = format!("apex tool preview {}", apex_server::shell_quote(&file));
     c.propose(Proposal::Exec { ctx: ExecCtx::Top, text }, TIMEOUT)?;
+    Ok(())
+}
+
+/// `apex diff`: a unified diff, from FILE or stdin, as a page.
+fn diff_cmd(ctx: &Ctx, p: &Parsed) -> R {
+    let text = match p.args.as_slice() {
+        [] => {
+            let mut t = String::new();
+            std::io::stdin().read_to_string(&mut t).map_err(|e| e.to_string())?;
+            t
+        }
+        [f] if f == "-" => {
+            let mut t = String::new();
+            std::io::stdin().read_to_string(&mut t).map_err(|e| e.to_string())?;
+            t
+        }
+        [f] => std::fs::read_to_string(f).map_err(|e| format!("{f}: {e}"))?,
+        _ => return Err("usage".into()),
+    };
+    let mut t = apex_tool::Tool::attach_to(&ctx.socket, &ctx.session, "diff").map_err(|e| e.to_string())?;
+    t.diff(&text, p.get("C").unwrap_or("")).map_err(|e| e.to_string())?;
     Ok(())
 }
 

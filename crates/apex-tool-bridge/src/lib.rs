@@ -29,6 +29,9 @@
 //!   the window's tag, what follows `|` (the words before it are apex's)
 //! - `page {name, html}` → `window` (a window showing HTML as a page;
 //!   `write` on it rewrites the page)
+//! - `diff {text, dir?}` → `window`: a unified diff shown as a page, side
+//!   by side, every line a link into its file (paths under `dir`, else
+//!   the bridge's own directory), in the window `DIR/+Diff`
 //! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
 //! - `snarf {text}`: the snarf buffer, and the UIs' clipboards, set
 //! - `switch {session, window?}`: another session shown (by id, a prefix
@@ -179,6 +182,11 @@ impl Bridge {
                 let name = v["name"].as_str().ok_or("name")?;
                 let html = v["html"].as_str().unwrap_or("");
                 Ok(json!({ "window": self.tool.new_page(name, html).map_err(e)?.0 }))
+            }
+            "diff" => {
+                let text = v["text"].as_str().ok_or("text")?;
+                let dir = v["dir"].as_str().unwrap_or("");
+                Ok(json!({ "window": self.tool.diff(text, dir).map_err(e)?.0 }))
             }
             "open" => {
                 let name = v["name"].as_str().ok_or("name")?;

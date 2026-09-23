@@ -1,0 +1,7 @@
+[package]
+name = "apex-diff"
+version.workspace = true
+edition.workspace = true
+description = "unified diffs as a page: side by side, in acme's colours, every line a link to its place in the file"
+
+[dependencies]

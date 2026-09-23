@@ -65,7 +65,14 @@ fn theme_css() -> String {
     let hex = |c: u32| format!("#{c:06X}");
     let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2C2C24, 0x4A4A40, 0x9A9A8E) } else { (0xE8E8DC, 0xC8C8B8, 0x6F6F60) };
     let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
-    format!(
+    // a diff's added and removed lines (apex diff): pale for the line,
+    // strong for what changed in it. Blue and orange, not green and red,
+    // chosen under a deuteranopia simulation to stand apart from each
+    // other, from each other's strong, and from the paper they sit on,
+    // which Gerrit's greens and reds do not on acme's yellow
+    let (add, add_s, del, del_s) = if crate::theme::is_dark() { (0x223A78, 0x2F5AC0, 0x5E4412, 0xA0621A) } else { (0xC8E4FF, 0xB0C4FF, 0xFFE6B6, 0xFFC080) };
+    let diff = format!(":root{{--apex-add:{};--apex-add-strong:{};--apex-del:{};--apex-del-strong:{}}}", hex(add), hex(add_s), hex(del), hex(del_s));
+    diff + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
          html{{background:{}}}\
          .apex-copy{{position:absolute;top:4px;right:4px;font:11px \"Lucida Grande\",sans-serif;color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\

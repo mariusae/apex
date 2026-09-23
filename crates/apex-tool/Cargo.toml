@@ -7,3 +7,4 @@ description = "the Rust API for apex tools: windows, verbs, and following what o
 [dependencies]
 apex-core = { path = "../apex-core" }
 apex-server = { path = "../apex-server" }
+apex-diff = { path = "../apex-diff" }

@@ -549,6 +549,52 @@ is designed until it is needed.
 
 ---
 
+## 3½. Diff
+
+`apex diff [-C DIR] [FILE]` shows a unified diff -- what `diff -u` or
+`git diff` writes, from FILE or stdin (`git diff | apex diff`) -- as a
+page in the window `DIR/+Diff`: side by side, the old file on the left
+and the new on the right, laid out as rsc's review lays out a change
+(`crates/apex-diff`). Each file has a header in the tag's colour naming
+it, a `from` for a rename, how much it changed (`+N −M`) and what the
+diff said of it (a mode, "Binary files … differ"); a band between hunks
+names where each starts and the function it is in. A changed line takes
+the pale colour and the part of it that changed the strong one (the
+lines' common start and end taken away); a line only added or only
+removed is strong throughout, and the side with no line on it is the
+band's colour, as Gerrit shows them. Text before the first file (a
+commit message, `git show`'s header) is left out, and a hunk ends when it
+has the lines its header counts, so a `---` in it is never the next file.
+
+The colours are the page's theme, as every page from a buffer has
+(`--apex-*`), so the page follows light and dark with the rest. Added and
+removed are blue and orange (`--apex-add`, `--apex-del`, and their
+`-strong`s): on acme's yellow paper Gerrit's greens and reds, which
+review keeps because they stay legible on white, run together for a
+reader with deuteranopia -- the pale green against the paper 5 apart in
+CIELAB under a simulation, the two strong ones 19 -- where the blue and
+orange stand at least 17 apart from each other, from each other's strong
+and from the paper, light or dark. A line breaks at a space where it can
+(review breaks anywhere, which suits a browser's width and splits every
+other word in half a column).
+
+Every file name, line number and line is a link: a click anywhere on a
+line -- a drag that selects is a selection, not a click -- opens its file
+in a text window at that line of the file as it is now; a removed line
+opens at the line of the new file where it was, a band at its hunk's
+start, a name at its file's first hunk. A deleted file has nowhere to go
+and no links. The paths are the diff's, `a/` and `b/` taken off a git
+diff's, under `-C`'s directory or the current one. The links are
+`apexfile://localhost/PATH?line=N`, not `file://`: a page from a buffer
+has no origin WebKit lets navigate to a `file:` URL -- it refuses before
+the navigation handler hears of it -- and a link on apex's own scheme is
+asked about like any other, and taken as a file at a line.
+
+The window is scratch (its name's last part starts with `+`): made in the
+last column the first time, written over after that, nothing for `Del` to
+ask about. Tools get the same: `Tool::diff(text, dir)` in apex-tool,
+`diff {text, dir?}` in the bridge, `Diff(text, dir)` in the Go package.
+
 ## 4. Wire summary
 
 Added to DESIGN.md §6.1 when built:

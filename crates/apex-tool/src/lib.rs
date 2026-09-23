@@ -489,6 +489,27 @@ impl Tool {
         Ok(w)
     }
 
+    /// A diff (what `diff -u` or `git diff` writes) as a page: side by
+    /// side, in acme's colours, every file name, line number and line a
+    /// link that opens the file there -- the paths in the diff taken
+    /// under `dir` (the tool's own directory when empty). It is the
+    /// window `DIR/+Diff`, made in the last column the first time and
+    /// written over after that, and shown either way; a scratch window,
+    /// so there is nothing for `Del` to ask about.
+    pub fn diff(&mut self, text: &str, dir: &str) -> Result<WindowId> {
+        let dir = if dir.is_empty() { std::env::current_dir().map_err(|e| e.to_string())? } else { std::path::absolute(dir).map_err(|e| format!("{dir}: {e}"))? };
+        let html = apex_diff::render(text, &dir);
+        let name = format!("{}/+Diff", dir.display().to_string().trim_end_matches('/'));
+        match self.windows().into_iter().find(|w| w.name == name) {
+            Some(w) => {
+                self.replace(w.id, 0, END, &html)?;
+                self.open(&name, None)?;
+                Ok(w.id)
+            }
+            None => self.new_page(&name, &html),
+        }
+    }
+
     /// The file (or directory) of this name shown, opened if it is not
     /// open, at `line` (1-based) when given.
     pub fn open(&mut self, name: &str, line: Option<usize>) -> Result<WindowId> {

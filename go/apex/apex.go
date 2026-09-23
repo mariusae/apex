@@ -281,6 +281,26 @@ func (t *Tool) NewPage(name, html string) (*Window, error) {
 	return &Window{ID: r.Window, t: t}, nil
 }
 
+// Diff shows text, a unified diff (what diff -u or git diff writes), as a
+// page: side by side, in acme's colours, every file name, line number and
+// line a link that opens the file at that line. The paths in the diff are
+// taken under dir (the bridge's own directory when dir is empty); the
+// page is the window DIR/+Diff, made the first time and written over
+// after that.
+func (t *Tool) Diff(text, dir string) (*Window, error) {
+	args := map[string]any{"text": text}
+	if dir != "" {
+		args["dir"] = dir
+	}
+	var r struct {
+		Window int `json:"window"`
+	}
+	if err := t.call("diff", args, &r); err != nil {
+		return nil, err
+	}
+	return &Window{ID: r.Window, t: t}, nil
+}
+
 // Open shows the file (or directory) of this name, opening it if it is
 // not open, at line (1-based) when line is not 0.
 func (t *Tool) Open(name string, line int) (*Window, error) {
