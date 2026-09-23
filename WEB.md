@@ -34,7 +34,13 @@ one is up, the client cuts a hole: each overlay records its bounds as
 it is laid out, and the last thing laid out masks every view's layer
 with its rectangle less the overlays' (a CAShapeLayer, even-odd, the
 panels' shadow margin included), so the overlay shows through and the
-page stays live around it. No overlay over a view, no mask.
+page stays live around it. No overlay over a view, no mask. The
+picker also dims the window behind it, and a page is above that veil
+as it is above everything else: so each page gets the veil itself, a
+CALayer of the veil's colour in the page's own layer (`Webs::set_veil`,
+`shell::veil` the one colour for both), above the page's layers and cut
+by the same holes. A layer takes no events, so the page answers the
+pointer as it did.
 
 Order of work, done in this order: the I/O plane (porting today's
 `Watch` onto it), then web windows with `wry`, then `apex md` and

@@ -364,7 +364,12 @@ impl Render for Acme {
             div().absolute().top(px(0.)).left(px(0.)).w(px(0.)).h(px(0.)).child(canvas(
                 move |_, _, cx| {
                     let holes: Vec<Bounds<gpui::Pixels>> = holes.borrow().clone();
-                    me3.update(cx, |acme, _| acme.webs.set_holes(&holes));
+                    me3.update(cx, |acme, _| {
+                        acme.webs.set_holes(&holes);
+                        // the pages go quiet with the rest while the
+                        // picker has the window
+                        acme.webs.set_veil(acme.selector.is_some().then(shell::veil));
+                    });
                 },
                 |_, _, _, _| {},
             )),

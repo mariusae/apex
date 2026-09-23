@@ -498,6 +498,17 @@ fn pjw(h: f32, ink: u32) -> impl IntoElement {
     gpui::svg().data(PJW).flex_none().h(px(h)).w(px((h * RATIO).round())).text_color(rgb(ink))
 }
 
+/// The colour the window goes behind a dialog (the picker), as RGBA:
+/// gpui's veil and the one laid over each page (`Webs::set_veil`) are
+/// this one colour, so a page goes as quiet as the text beside it.
+pub fn veil() -> u32 {
+    if crate::theme::is_dark() {
+        0x00000099
+    } else {
+        0x33332899
+    }
+}
+
 /// A tab's status card, beneath the tab while the pointer rests on it:
 /// label and value lines. Records its bounds so the web views cut a
 /// hole for it.
@@ -1987,7 +1998,7 @@ impl Acme {
             .flex()
             .flex_col()
             .items_center()
-            .bg(gpui::rgba(if crate::theme::is_dark() { 0x00000099 } else { 0x33332899 }))
+            .bg(gpui::rgba(veil()))
             .justify_center()
             .child(panel)
             // a little above the middle, where the eye goes first

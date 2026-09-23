@@ -258,6 +258,25 @@ pub struct WebHost {
     /// Where the page last said it was scrolled: top, length, and how much
     /// shows, for the scrollbar beside it.
     scroll: Option<(f64, f64, f64)>,
+    /// The veil laid over the page while a dialog has the window (`set_veil`):
+    /// its colour, and the layer that draws it.
+    veil: Option<(u32, VeilLayer)>,
+}
+
+/// A CALayer over a page, retained while it is there.
+pub struct VeilLayer(*mut objc::runtime::Object);
+
+impl Drop for VeilLayer {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        // SAFETY: a layer we made and retained; removed from its parent
+        // before the last reference goes.
+        unsafe {
+            use objc::{msg_send, sel, sel_impl};
+            let _: () = msg_send![self.0, removeFromSuperlayer];
+            let _: () = msg_send![self.0, release];
+        }
+    }
 }
 
 impl Drop for WebHost {
@@ -514,6 +533,71 @@ impl Webs {
     #[cfg(not(target_os = "macos"))]
     pub fn set_holes(&mut self, _holes: &[Bounds<Pixels>]) {}
 
+    /// A dialog has the window, and the window goes quiet behind it: gpui
+    /// paints its veil over everything it draws, but a page is a native
+    /// view above all of that, so each page gets the veil too -- a layer of
+    /// the same colour over it (`rgba`), inside the page's own layer and so
+    /// cut by the same holes the dialog cuts. A layer takes no events: the
+    /// page answers the pointer as it did. `None` takes the veils away.
+    #[cfg(target_os = "macos")]
+    pub fn set_veil(&mut self, rgba: Option<u32>) {
+        use objc::runtime::Object;
+        use objc::{class, msg_send, sel, sel_impl};
+        use wry::WebViewExtMacOS;
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGColorCreateSRGB(r: f64, g: f64, b: f64, a: f64) -> *mut std::ffi::c_void;
+            fn CGColorRelease(c: *mut std::ffi::c_void);
+        }
+        /// kCALayerWidthSizable | kCALayerHeightSizable: the veil follows
+        /// the page as it is laid out again
+        const SIZABLE: u32 = 2 | 16;
+        for h in self.hosts.values_mut() {
+            let want = rgba.filter(|_| h.shown);
+            if h.veil.as_ref().map(|(c, _)| *c) == want {
+                continue;
+            }
+            h.veil = None; // the old one, if any, comes off
+            let Some(c) = want else { continue };
+            let wk = h.view.webview();
+            let view = &*wk as *const _ as *mut Object;
+            // SAFETY: the WKWebView is alive while its host is; CoreAnimation
+            // and CoreGraphics calls on the main thread; the layer is
+            // retained by `VeilLayer` and released when it is dropped.
+            unsafe {
+                let host: *mut Object = msg_send![view, layer];
+                if host.is_null() {
+                    continue;
+                }
+                // a CGRect, as CoreAnimation passes it
+                #[repr(C)]
+                #[derive(Clone, Copy)]
+                struct Rect {
+                    x: f64,
+                    y: f64,
+                    w: f64,
+                    h: f64,
+                }
+                let bounds: Rect = msg_send![host, bounds];
+                let veil: *mut Object = msg_send![class!(CALayer), layer];
+                let veil: *mut Object = msg_send![veil, retain];
+                let _: () = msg_send![veil, setFrame: bounds];
+                let _: () = msg_send![veil, setAutoresizingMask: SIZABLE];
+                // over whatever the page's own layers are doing
+                let _: () = msg_send![veil, setZPosition: 1.0e6_f64];
+                let comp = |shift: u32| f64::from((c >> shift) & 0xff) / 255.;
+                let color = CGColorCreateSRGB(comp(24), comp(16), comp(8), comp(0));
+                let _: () = msg_send![veil, setBackgroundColor: color];
+                CGColorRelease(color);
+                let _: () = msg_send![host, addSublayer: veil];
+                h.veil = Some((c, VeilLayer(veil)));
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_veil(&mut self, _rgba: Option<u32>) {}
+
     /// The theme changed: every page from a buffer takes the new colours
     /// in place (its `#apex-theme` style rewritten; nothing reloads).
     pub fn restyle(&self) {
@@ -733,7 +817,7 @@ impl Webs {
             Ok(view) => {
                 let _ = view.set_visible(visible);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone(), scroll: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
