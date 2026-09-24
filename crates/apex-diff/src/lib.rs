@@ -1,18 +1,18 @@
 //! Unified diffs as a page. What `diff -u` or `git diff` writes, laid
 //! out side by side the way rsc's review lays out a change -- the old
 //! file on the left and the new on the right, each with its line
-//! numbers, a band between hunks, a pale colour for a changed line and a
-//! strong one for the part of it that changed -- in acme's colours, and
-//! with every file name, line number and line a link to its place in
-//! the file on disk: `apexfile://localhost/path?line=N`, which a page in
-//! apex opens in a text window at that line.
+//! numbers -- and kept plain, as acme is: the paper, the text, a dim
+//! line where a hunk starts, and one pale tint for a removed line and
+//! one for an added line, nothing more. Every file name and line number
+//! is a link to its place in the file on disk:
+//! `apexfile://localhost/path?line=N`, which a page in apex opens in a
+//! text window at that line.
 //!
 //! The colours are the page's theme (`--apex-*`, which apex gives every
 //! page and rewrites when the theme changes), with acme's light ones for
-//! a page seen anywhere else. Added is Gerrit's green a shade deeper,
-//! and removed orange rather than Gerrit's red: on acme's yellow paper
-//! Gerrit's pale green all but vanishes for a reader with deuteranopia,
-//! and red runs into green for that reader where orange does not.
+//! a page seen anywhere else. Added is a pale green and removed a pale
+//! orange rather than Gerrit's red: red runs into green for a reader
+//! with deuteranopia where orange does not.
 //!
 //! Nothing here touches the filesystem: paths in the diff are resolved
 //! against the base directory given, as they are written.
@@ -271,8 +271,8 @@ pub struct Row {
     pub left: Option<(usize, String)>,
     pub right: Option<(usize, String)>,
     pub kind: Kind,
-    /// The line of the new file this row is at: what a click on any of it
-    /// opens. A removed line is at the line of the new file where it was.
+    /// The line of the new file this row is at: what its numbers open. A
+    /// removed line is at the line of the new file where it was.
     pub at: usize,
 }
 
@@ -280,8 +280,7 @@ pub struct Row {
 pub enum Kind {
     /// The same on both sides.
     Same,
-    /// A line removed and one added in its place: the part that changed
-    /// is marked on each.
+    /// A line removed and one added in its place.
     Changed,
     /// Removed, with nothing in its place.
     Removed,
@@ -341,18 +340,6 @@ pub fn rows(h: &Hunk) -> Vec<Row> {
     out
 }
 
-/// The part of two lines that differs, as char ranges into each: what is
-/// left once their common start and end are taken away. Gerrit marks a
-/// changed line's changed words with a real diff; the common ends are
-/// the whole of it for the one edit a line usually has, and never mark
-/// less than changed.
-pub fn changed_part(a: &str, b: &str) -> ((usize, usize), (usize, usize)) {
-    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
-    let pre = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
-    let suf = a[pre..].iter().rev().zip(b[pre..].iter().rev()).take_while(|(x, y)| x == y).count();
-    ((pre, a.len() - suf), (pre, b.len() - suf))
-}
-
 /// A link to the file at `path` (under `base` unless absolute) at `line`:
 /// what a page in apex opens in a text window there. Through apex's own
 /// scheme, `apexfile://`, not `file://`: a page from a buffer has no
@@ -386,19 +373,10 @@ fn esc(s: &str) -> String {
     out
 }
 
-/// A line's text, the chars `[q0, q1)` marked as the part that changed.
-fn marked(s: &str, (q0, q1): (usize, usize)) -> String {
-    if q0 >= q1 {
-        return esc(s);
-    }
-    let cs: Vec<char> = s.chars().collect();
-    let part = |a: usize, b: usize| esc(&cs[a.min(cs.len())..b.min(cs.len())].iter().collect::<String>());
-    format!("{}<span class=\"i\">{}</span>{}", part(0, q0), part(q0, q1), part(q1, cs.len()))
-}
-
 /// The page: a summary, then each file -- its name (a link to the file,
 /// at its first hunk), how much it changed, what the diff said of it,
-/// and its hunks side by side.
+/// and its hunks side by side, each after a dim line saying where it
+/// starts.
 pub fn page(files: &[File], base: &Path) -> String {
     let mut out = String::new();
     let (adds, dels) = files.iter().map(File::counts).fold((0, 0), |a, c| (a.0 + c.0, a.1 + c.1));
@@ -448,10 +426,9 @@ pub fn page(files: &[File], base: &Path) -> String {
         let mut split = String::from("<table class=\"diff split\"><colgroup><col class=\"numcol\"><col><col class=\"numcol\"><col></colgroup><tbody>");
         let mut inline = String::from("<table class=\"diff inline\"><colgroup><col class=\"numcol\"><col class=\"numcol\"><col></colgroup><tbody>");
         for h in &f.hunks {
-            let href = link(h.new_start.max(1)).map(|u| format!(" data-href=\"{}\"", esc(&u))).unwrap_or_default();
-            let band = format!("@@ \u{2212}{} +{} @@ <span class=\"section\">{}</span>", h.old_start, h.new_start, esc(&h.section));
-            let _ = write!(split, "<tr class=\"hunk\"{href}><td colspan=\"4\">{band}</td></tr>");
-            let _ = write!(inline, "<tr class=\"hunk\"{href}><td colspan=\"3\">{band}</td></tr>");
+            let band = format!("@@ \u{2212}{} +{} @@ {}", h.old_start, h.new_start, esc(&h.section));
+            let _ = write!(split, "<tr class=\"hunk\"><td colspan=\"4\">{band}</td></tr>");
+            let _ = write!(inline, "<tr class=\"hunk\"><td colspan=\"3\">{band}</td></tr>");
             let cells: Vec<Cells> = rows(h).iter().map(|r| cells(r, link(r.at))).collect();
             split_rows(&mut split, &cells);
             inline_rows(&mut inline, &cells);
@@ -467,36 +444,25 @@ pub fn page(files: &[File], base: &Path) -> String {
 }
 
 /// A row's parts as both layouts draw them: each side's number (a link
-/// when the file is there to open), text (its changed part marked) and
-/// colour, or none where that side has no line; and where a click goes.
+/// when the file is there to open), text and tint -- removed on the
+/// left, added on the right, whether or not the other side has a line --
+/// or none where that side has no line.
 struct Cells {
-    href: String,
     kind: Kind,
     left: Option<(String, String, &'static str)>,
     right: Option<(String, String, &'static str)>,
 }
 
 fn cells(r: &Row, u: Option<String>) -> Cells {
-    let href = u.as_ref().map(|u| format!(" data-href=\"{}\"", esc(u))).unwrap_or_default();
     let num = |n: usize| match &u {
         Some(u) => format!("<a href=\"{}\">{n}</a>", esc(u)),
         None => n.to_string(),
     };
-    let (lclass, rclass) = match r.kind {
-        Kind::Changed => ("del", "add"),
-        Kind::Removed => ("del total", ""),
-        Kind::Added => ("", "add total"),
-        Kind::Same | Kind::NoNewline => ("", ""),
-    };
-    let (lpart, rpart) = match (&r.left, &r.right) {
-        (Some((_, a)), Some((_, b))) if r.kind == Kind::Changed => changed_part(a, b),
-        _ => ((0, 0), (0, 0)),
-    };
+    let (lclass, rclass) = if r.kind == Kind::Same { ("", "") } else { ("del", "add") };
     Cells {
-        href,
         kind: r.kind,
-        left: r.left.as_ref().map(|(n, t)| (num(*n), marked(t, lpart), lclass)),
-        right: r.right.as_ref().map(|(n, t)| (num(*n), marked(t, rpart), rclass)),
+        left: r.left.as_ref().map(|(n, t)| (num(*n), esc(t), lclass)),
+        right: r.right.as_ref().map(|(n, t)| (num(*n), esc(t), rclass)),
     }
 }
 
@@ -504,17 +470,16 @@ fn cells(r: &Row, u: Option<String>) -> Cells {
 /// line on it blank.
 fn split_rows(out: &mut String, rows: &[Cells]) {
     for c in rows {
-        let href = &c.href;
         if c.kind == Kind::NoNewline {
-            let _ = write!(out, "<tr class=\"nonl\"{href}><td></td><td colspan=\"3\">No newline at end of file</td></tr>");
+            out.push_str("<tr class=\"nonl\"><td></td><td colspan=\"3\">No newline at end of file</td></tr>");
             continue;
         }
         let side = |s: &Option<(String, String, &'static str)>| match s {
-            Some((n, t, class)) => format!("<td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td>"),
-            None => "<td class=\"num blank\"></td><td class=\"code blank\"></td>".to_string(),
+            Some((n, t, class)) => format!("<td class=\"num\">{n}</td><td class=\"code {class}\">{t}</td>"),
+            None => "<td class=\"num\"></td><td class=\"code\"></td>".to_string(),
         };
         let chg = if c.kind == Kind::Same { "" } else { " class=\"chg\"" };
-        let _ = write!(out, "<tr{chg}{href}>{}{}</tr>", side(&c.left), side(&c.right));
+        let _ = write!(out, "<tr{chg}>{}{}</tr>", side(&c.left), side(&c.right));
     }
 }
 
@@ -527,25 +492,25 @@ fn inline_rows(out: &mut String, rows: &[Cells]) {
         let c = &rows[i];
         match c.kind {
             Kind::NoNewline => {
-                let _ = write!(out, "<tr class=\"nonl\"{}><td colspan=\"2\"></td><td>No newline at end of file</td></tr>", c.href);
+                out.push_str("<tr class=\"nonl\"><td colspan=\"2\"></td><td>No newline at end of file</td></tr>");
                 i += 1;
             }
             Kind::Same => {
                 let (ln, lt, _) = c.left.as_ref().expect("a shared line has both sides");
                 let (rn, _, _) = c.right.as_ref().expect("a shared line has both sides");
-                let _ = write!(out, "<tr{}><td class=\"num\">{ln}</td><td class=\"num\">{rn}</td><td class=\"code\">{lt}</td></tr>", c.href);
+                let _ = write!(out, "<tr><td class=\"num\">{ln}</td><td class=\"num\">{rn}</td><td class=\"code\">{lt}</td></tr>");
                 i += 1;
             }
             _ => {
                 let run = rows[i..].iter().take_while(|c| matches!(c.kind, Kind::Changed | Kind::Removed | Kind::Added)).count();
                 for c in &rows[i..i + run] {
                     if let Some((n, t, class)) = &c.left {
-                        let _ = write!(out, "<tr class=\"chg\"{}><td class=\"num {class}\">{n}</td><td class=\"num {class}\"></td><td class=\"code {class}\">{t}</td></tr>", c.href);
+                        let _ = write!(out, "<tr class=\"chg\"><td class=\"num\">{n}</td><td class=\"num\"></td><td class=\"code {class}\">{t}</td></tr>");
                     }
                 }
                 for c in &rows[i..i + run] {
                     if let Some((n, t, class)) = &c.right {
-                        let _ = write!(out, "<tr class=\"chg\"{}><td class=\"num {class}\"></td><td class=\"num {class}\">{n}</td><td class=\"code {class}\">{t}</td></tr>", c.href);
+                        let _ = write!(out, "<tr class=\"chg\"><td class=\"num\"></td><td class=\"num\">{n}</td><td class=\"code {class}\">{t}</td></tr>");
                     }
                 }
                 i += run;
@@ -560,30 +525,25 @@ pub fn render(text: &str, base: &Path) -> String {
 }
 
 /// review's layout -- a fixed table of number, code, number, code, the
-/// code wrapping where it must, a band between hunks -- in acme's
-/// colours. Each is the page's theme variable, with acme's light colour
-/// for a page seen outside apex.
+/// code wrapping where it must -- kept as plain as acme: no bands, boxes
+/// or bold, the numbers and a hunk's start dim, a file's name a line of
+/// text with a rule under it. Each colour is the page's theme variable,
+/// with acme's light one for a page seen outside apex.
 const STYLE: &str = r#"
 :root {
   --bg: var(--apex-bg, #FFFFEA); --fg: var(--apex-fg, #000);
-  --tag: var(--apex-tag-bg, #EAFFFF); --band: var(--apex-code-bg, #E8E8DC);
-  --rule: var(--apex-rule, #C8C8B8); --dim: var(--apex-dim, #6F6F60); --border: var(--apex-border, #99994C);
-  --add: var(--apex-add, #C8F2C8); --add-strong: var(--apex-add-strong, #9CE49C);
-  --del: var(--apex-del, #FFE6B6); --del-strong: var(--apex-del-strong, #FFC080);
+  --rule: var(--apex-rule, #C8C8B8); --dim: var(--apex-dim, #6F6F60);
+  --add: var(--apex-add, #D8F0DC); --del: var(--apex-del, #FFECC8);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 13px "Lucida Grande", -apple-system, sans-serif; }
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: underline; }
 .summary { padding: 8px 12px; color: var(--dim); }
-.plus, .minus { font: 12px Menlo, monospace; }
 .empty { padding: 0 12px; color: var(--dim); }
 section.file { margin: 0 0 16px; }
-/* a file's name as acme's tags are: the pale blue, a line under it,
-   and there at the top while its lines go by */
-h2 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 4px 12px; font: 13px "Lucida Grande", -apple-system, sans-serif;
-     background: var(--tag); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-h2 .name { font-weight: bold; }
+/* a file's name stays at the top while its lines go by */
+h2 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 4px 12px; font: inherit; background: var(--bg); border-bottom: 1px solid var(--rule); }
 h2 .from, h2 .delta, h2 .note { color: var(--dim); margin-left: 6px; }
 table.diff { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px/16px Menlo, monospace; tab-size: 4; }
 col.numcol { width: 6ch; }
@@ -596,33 +556,24 @@ table.inline { display: none; }
   table.inline { display: table; }
 }
 td { padding: 0; vertical-align: top; }
-td.num { text-align: right; padding-right: 6px; color: var(--dim); background: var(--band); border-right: 1px solid var(--rule); user-select: none; }
+td.num { text-align: right; padding-right: 8px; color: var(--dim); user-select: none; }
 td.num a { display: block; cursor: pointer; }
-td.num a:hover { color: var(--fg); }
 /* review breaks a long line anywhere, which suits a browser's whole
    width; a page in apex is half a column, where that splits every other
    word, so a line breaks where it has room to (a space), and a token is
    split only when it will not fit on a line of its own */
 td.code { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 6px; }
-/* Gerrit's rule: the pale colour for a changed line, the strong one for
-   the part of it that changed, and for the whole of a line that is only
-   added or only removed */
-td.code.add { background: var(--add); } td.code.add .i { background: var(--add-strong); }
-td.code.del { background: var(--del); } td.code.del .i { background: var(--del-strong); }
-td.code.add.total { background: var(--add-strong); } td.code.del.total { background: var(--del-strong); }
-td.num.add, td.num.del { color: var(--fg); }
-td.blank { background: var(--band); }
-tr.hunk td { background: var(--band); color: var(--dim); padding: 2px 8px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-             font: 11px Menlo, monospace; cursor: pointer; }
-tr.hunk .section { color: var(--fg); }
-tr.nonl td { color: var(--dim); font-style: italic; }
+td.code.add { background: var(--add); }
+td.code.del { background: var(--del); }
+tr.hunk td { color: var(--dim); padding: 8px 8px 2px; }
+tr.nonl td { color: var(--dim); }
 /* the chunk Prev or Next landed on: a bar down the edge of its first
    row, as review's cursor has */
-tr.cursor td:first-child { box-shadow: inset 3px 0 0 var(--fg); }
+tr.cursor td:first-child { box-shadow: inset 2px 0 0 var(--dim); }
 "#;
 
-/// A click on a line -- anywhere in it, not only its number -- opens its
-/// file there. A drag that selects text is a selection, not a click.
+/// A line number opens its file there; nothing else on a line is a link,
+/// so a click in the code places nothing and a drag selects.
 ///
 /// Prev and Next (the page's verbs, `apexVerb`) move between chunks as
 /// review's p and n do, Gerrit's sense of a chunk: a run of changed
@@ -633,15 +584,7 @@ tr.cursor td:first-child { box-shadow: inset 3px 0 0 var(--fg); }
 /// lines below the file's header, so the lines leading into it stay in
 /// sight; a chunk already there is left where it is.
 const SCRIPT: &str = r#"
-document.addEventListener('click', function (e) {
-  if (e.target.closest('a')) return;
-  var s = window.getSelection();
-  if (s && !s.isCollapsed) return;
-  var tr = e.target.closest('tr[data-href]');
-  if (tr) location.href = tr.dataset.href;
-});
-(function () {
-  var cur = null;
+(function () {  var cur = null;
   function rows() {
     return Array.prototype.filter.call(document.querySelectorAll('table.diff tr'), function (r) { return r.offsetParent !== null; });
   }
@@ -792,12 +735,21 @@ deleted file mode 100644
     }
 
     #[test]
-    fn the_part_of_a_changed_line_that_changed_is_marked() {
-        assert_eq!(changed_part("let x = 1;", "let x = 22;"), ((8, 9), (8, 10)));
-        assert_eq!(changed_part("same", "same"), ((4, 4), (4, 4)));
-        // an insertion marks nothing on the side that had nothing there
-        assert_eq!(changed_part("ab", "aXb"), ((1, 1), (1, 2)));
-        assert_eq!(marked("let x = 1;", (8, 9)), "let x = <span class=\"i\">1</span>;");
+    fn side_by_side_a_line_is_removed_changed_or_added_and_nothing_more() {
+        let text = "--- a\n+++ b\n@@ -1,4 +1,4 @@\n-was\n+now\n same\n-gone\n also\n+new\n";
+        let html = render(text, Path::new("/w"));
+        let split = &html[html.find("<table class=\"diff split\">").unwrap()..html.find("<table class=\"diff inline\">").unwrap()];
+        let row = |w: &str| {
+            let at = split[..split.find(w).unwrap()].rfind("<tr").unwrap();
+            split[at..at + split[at..].find("</tr>").unwrap()].to_string()
+        };
+        // removed: the left tinted, nothing on the right
+        assert!(row("gone").contains("code del\">gone") && !row("gone").contains("code add"), "{}", row("gone"));
+        // changed: removed on the left, added on the right, the line whole
+        assert!(row("was").contains("code del\">was</td>") && row("was").contains("code add\">now</td>"), "{}", row("was"));
+        // added: the right tinted, nothing on the left
+        assert!(row("new").contains("code add\">new") && !row("new").contains("code del"), "{}", row("new"));
+        assert!(!row("same").contains("add") && !row("same").contains("del"), "{}", row("same"));
     }
 
     #[test]
@@ -830,16 +782,18 @@ deleted file mode 100644
     }
 
     #[test]
-    fn every_line_and_name_links_to_its_place_in_the_file() {
+    fn every_line_number_and_name_links_to_its_place_in_the_file() {
         let html = render(GIT, Path::new("/work/repo"));
-        // the name, at its first hunk; each line, at its line of the new file
-        assert!(html.contains("href=\"apexfile://localhost/work/repo/src/main.rs?line=1\""), "{html}");
-        assert!(html.contains("data-href=\"apexfile://localhost/work/repo/src/main.rs?line=3\""), "the added y");
+        // the name, at its first hunk; each number, at its line of the new file
+        assert!(html.contains("<a class=\"name\" href=\"apexfile://localhost/work/repo/src/main.rs?line=1\""), "{html}");
+        assert!(html.contains("<td class=\"num\"><a href=\"apexfile://localhost/work/repo/src/main.rs?line=3\">3</a></td>"), "the added y");
+        // and only those: a click on a line itself, or a hunk's start, goes nowhere
+        assert!(!html.contains("data-href") && !html.contains("addEventListener('click'"), "{html}");
         // a deleted file has nowhere to go
         assert!(!html.contains("gone.txt?line"), "no links into a file that is gone");
         // what the diff holds is text, whatever it says
         let html = render("--- a\n+++ b\n@@ -1 +1 @@\n-<b>&\n+<i>&\n", Path::new("/w"));
-        assert!(html.contains("&lt;<span class=\"i\">b</span>&gt;&amp;"), "{html}");
+        assert!(html.contains("&lt;b&gt;&amp;") && html.contains("&lt;i&gt;&amp;"), "{html}");
         // names with room in them are escaped for a URL
         assert_eq!(file_url(Path::new("/w"), "a b/c#d.rs", 3), "apexfile://localhost/w/a%20b/c%23d.rs?line=3");
         assert_eq!(file_url(Path::new("/w"), "/abs/x.rs", 1), "apexfile://localhost/abs/x.rs?line=1");

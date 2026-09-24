@@ -560,28 +560,30 @@ pixels, about seventy columns of code a side); narrower, one above the
 other, as `diff -u` writes it -- a line both sides share once with both
 its numbers, a changed run's removed lines and then its added ones. The
 page carries both and a media query picks, so the layout follows the
-column as it is resized, with nothing rendered again. Each file has a header in the tag's colour naming
-it, a `from` for a rename, how much it changed (`+N −M`) and what the
-diff said of it (a mode, "Binary files … differ"); a band between hunks
-names where each starts and the function it is in. A changed line takes
-the pale colour and the part of it that changed the strong one (the
-lines' common start and end taken away); a line only added or only
-removed is strong throughout, and the side with no line on it is the
-band's colour, as Gerrit shows them. Text before the first file (a
-commit message, `git show`'s header) is left out, and a hunk ends when it
-has the lines its header counts, so a `---` in it is never the next file.
+column as it is resized, with nothing rendered again.
+
+The page is kept plain, as acme is: the paper and the text, the line
+numbers dim, no bands, boxes or bold. Each file has a line naming it,
+with a rule under it that stays at the top while its lines go by, a
+`from` for a rename, how much it changed (`+N −M`) and what the diff
+said of it (a mode, "Binary files … differ"); a dim `@@ −a +c @@` line
+says where each hunk starts and the function it is in. Side by side
+there are three kinds of changed line and only three looks: a removed
+line is tinted on the left with nothing on the right, an added line
+tinted on the right with nothing on the left, and a changed line --
+one removed and one added in its place -- has both. There is one tint
+for removed and one for added, the whole line; the part of a line that
+changed is not marked. Text before the first file (a commit message,
+`git show`'s header) is left out, and a hunk ends when it has the lines
+its header counts, so a `---` in it is never the next file.
 
 The colours are the page's theme, as every page from a buffer has
 (`--apex-*`), so the page follows light and dark with the rest. Added is
-Gerrit's green, a shade deeper, and removed is orange rather than red
-(`--apex-add`, `--apex-del`, and their `-strong`s). On acme's yellow
-paper Gerrit's own pale green is 5 from the paper in CIELAB under a
-deuteranopia simulation -- all but gone for such a reader -- where this
-one is 10 and still within 5 of Gerrit's for anyone else (#C8F2C8 and
-#9CE49C, #244828 and #3A8048 on dark); red would run into the green for
-that reader, and orange keeps 13 from it pale and 17 strong. (Blue for
-added separated better still, and was too far from what a diff is
-expected to look like.) A line breaks at a space where it can
+a pale green and removed a pale orange rather than red (`--apex-add`,
+`--apex-del`: #D8F0DC and #FFECC8, #203A2C and #443418 on dark). Under a
+deuteranopia simulation red runs into the green, where this orange
+stays 14 from it in CIELAB (16 on dark), and each clears the paper by
+at least 8 (11 on dark). A line breaks at a space where it can
 (review breaks anywhere, which suits a browser's width and splits every
 other word in half a column).
 
@@ -598,12 +600,12 @@ runs the page's `apexVerb(word)` rather than a command (`web::page_verbs`).
 A page says so rather than apex guessing, so a word it does not answer
 means in its tag what it means anywhere.
 
-Every file name, line number and line is a link: a click anywhere on a
-line -- a drag that selects is a selection, not a click -- opens its file
-in a text window at that line of the file as it is now; a removed line
-opens at the line of the new file where it was, a band at its hunk's
-start, a name at its file's first hunk. A deleted file has nowhere to go
-and no links. The paths are the diff's, `a/` and `b/` taken off a git
+Every file name and line number is a link, and nothing else is: a click
+on a number opens its file in a text window at that line of the file as
+it is now; a click in a line's text does nothing, so a
+line can be selected without opening anything. A removed line's number
+opens at the line of the new file where it was, and a name at its
+file's first hunk. A deleted file has nowhere to go and no links. The paths are the diff's, `a/` and `b/` taken off a git
 diff's, under `-C`'s directory or the current one. The links are
 `apexfile://localhost/PATH?line=N`, not `file://`: a page from a buffer
 has no origin WebKit lets navigate to a `file:` URL -- it refuses before

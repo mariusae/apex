@@ -65,14 +65,14 @@ fn theme_css() -> String {
     let hex = |c: u32| format!("#{c:06X}");
     let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2C2C24, 0x4A4A40, 0x9A9A8E) } else { (0xE8E8DC, 0xC8C8B8, 0x6F6F60) };
     let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
-    // a diff's added and removed lines (apex diff): pale for the line,
-    // strong for what changed in it. Added is Gerrit's green a shade
-    // deeper, so that on acme's yellow the pale one does not all but
-    // vanish for a reader with deuteranopia (Gerrit's is 5 from the paper
-    // under a simulation, this 10); removed is orange rather than red,
-    // which stays apart from the green for that reader where red does not
-    let (add, add_s, del, del_s) = if crate::theme::is_dark() { (0x244828, 0x3A8048, 0x5E4412, 0xA0621A) } else { (0xC8F2C8, 0x9CE49C, 0xFFE6B6, 0xFFC080) };
-    let diff = format!(":root{{--apex-add:{};--apex-add-strong:{};--apex-del:{};--apex-del-strong:{}}}", hex(add), hex(add_s), hex(del), hex(del_s));
+    // a diff's added and removed lines (apex diff): pale, one tint each.
+    // Removed is orange rather than red, which stays apart from the green
+    // for a reader with deuteranopia where red does not (under a
+    // simulation, 14 apart in CIELAB on light and 16 on dark), and each
+    // still clears the paper for that reader (8 and 12 on light, 11 and
+    // 18 on dark)
+    let (add, del) = if crate::theme::is_dark() { (0x203A2C, 0x443418) } else { (0xD8F0DC, 0xFFECC8) };
+    let diff = format!(":root{{--apex-add:{};--apex-del:{}}}", hex(add), hex(del));
     diff + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
          html{{background:{}}}\
