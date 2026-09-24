@@ -2777,6 +2777,16 @@ impl Acme {
         false
     }
 
+    /// B5, a mouse's forward button (the fifth, past B4's back): `Back`
+    /// in the window under the pointer, what ⌘[ and ⇧⌘-B3 issue, on the
+    /// press. Nothing while the tools menu is up, which B4 holds.
+    pub fn b5_down(&mut self, _e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.is_some() {
+            return;
+        }
+        self.menu_command("Back", window, cx);
+    }
+
     /// A button pressed off the window (AppKit sends it here while another
     /// is held from a press in it): only a chord means anything.
     pub fn mouse_down_out(&mut self, e: &MouseDownEvent, _window: &mut Window, cx: &mut Context<Self>) {

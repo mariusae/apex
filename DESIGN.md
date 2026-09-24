@@ -1634,7 +1634,9 @@ left of the connection mark, the heartbeat's round trip and the log's
   wrapping), always: no rule changes what B3 does with an identifier.
   The lsp's `Def` is ⌘-B3 (`Plumb{verb: Def}` at the pointer, walked as
   a verb: the lsp's rule takes it in a source window, elsewhere "no rule
-  takes it here") and `Back` is ⇧⌘-B3, exactly what ⌘[ issues. On a
+  takes it here") and `Back` is ⇧⌘-B3, exactly what ⌘[ issues -- and
+  B5, a mouse's forward button (the fifth, past B4's back), issues it
+  too, in the window under the pointer, on the press. On a
   laptop, where ⌘-click is B3, ⌃⌘-click is ⌘-B3 and ⇧⌃⌘-click is ⇧⌘-B3.
   The picker's recent sessions carry a × that forgets them.
 - *As built:* a window is **live** when a process is behind it: a
