@@ -58,11 +58,26 @@ pub struct FontSpec {
 
 pub fn font_for(mono: bool) -> FontSpec {
     if mono {
-        FontSpec { font: with_symbols(font("Menlo")), size: px(12.), line_height: px(16.) }
+        FontSpec { font: unjoined(with_symbols(font("Menlo"))), size: px(12.), line_height: px(16.) }
     } else {
-        FontSpec { font: with_symbols(font("Lucida Grande")), size: px(13.), line_height: px(17.) }
+        FontSpec { font: unjoined(with_symbols(font("Lucida Grande"))), size: px(13.), line_height: px(17.) }
     }
 }
+
+/// No ligatures from the font: every character its own glyph. Where a
+/// character is -- for a click, the cursor, a selection's edge, a sweep --
+/// is known only from where its glyph starts (gpui's `x_for_index` and
+/// `closest_index_for_x`), and the letters a ligature joins have no glyph
+/// of their own, so there was no putting the cursor between the f's of an
+/// `ff`. Lucida Grande joins ff, fi, fl, ffi and ffl by default (`liga`);
+/// `clig` and `calt` are the other ways a font joins letters. All three
+/// are named: gpui's `disable_ligatures` turns off `calt` alone.
+fn unjoined(f: Font) -> Font {
+    Font { features: gpui::FontFeatures(std::sync::Arc::new(UNJOINED.iter().map(|t| (t.to_string(), 0)).collect())), ..f }
+}
+
+/// The features that join letters into one glyph, all off.
+const UNJOINED: [&str; 3] = ["liga", "clig", "calt"];
 
 /// The symbols font apex carries (`install_symbols`), behind whatever
 /// font is asked for: the glyphs a program means when it prints one of
@@ -875,5 +890,24 @@ impl Element for TextElement {
                 acme.layouts.insert(view, layout);
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod ligature_tests {
+    use super::font_for;
+
+    #[test]
+    fn text_fonts_join_no_letters_into_one_glyph() {
+        // with liga, clig and calt off CoreText gives each of ff, fi, fl,
+        // ffi and ffl a glyph a letter in Lucida Grande (and Menlo), so a
+        // click or the cursor can land between any two of them
+        for mono in [false, true] {
+            let f = font_for(mono).font;
+            let off: Vec<(String, u32)> = f.features.tag_value_list().to_vec();
+            for tag in ["liga", "clig", "calt"] {
+                assert!(off.contains(&(tag.to_string(), 0)), "{tag} off in {} ({off:?})", f.family);
+            }
+        }
     }
 }
