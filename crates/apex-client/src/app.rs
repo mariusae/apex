@@ -2611,6 +2611,14 @@ impl Acme {
         }
         self.pointer = None;
         self.last_mouse = e.position;
+        // the left button going down cannot already be down: a sweep still
+        // held from it is one whose release never came, and it would keep
+        // this press off a layout box and make B2 or B3 a chord
+        if e.button == MouseButton::Left {
+            self.mouse.b1 = None;
+            self.mouse.autoscroll = None;
+            self.mouse.term_drag = None;
+        }
         let button = self.logical_button(e);
         self.mouse.mods = e.modifiers;
         if self.chord(button, cx) {

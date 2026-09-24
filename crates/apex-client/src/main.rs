@@ -67,8 +67,13 @@ impl Render for Acme {
             window.set_window_title(&title);
             self.title_shown = title;
         }
+        // where things are is this frame's to say: a page's scrollbar left
+        // over from where its window was would take the clicks there --
+        // on the box of the window that is there now, which sits in the
+        // same strip at the column's edge
         self.layouts.clear();
         self.term_layouts.clear();
+        self.web_bars.clear();
         let me = cx.entity();
         let font = f32::from(text_element::font_for(false).line_height) as i32;
 
