@@ -1955,9 +1955,23 @@ is over a page gpui's cursor rect asks for a style behind which
 undo it (`APEX_CURSOR_DEBUG=1` logs every cursor set and by whom);
 double-click expansion with acme's
 `isalnum` (`_` and any
-rune above Latin-1 are word characters, ASCII punctuation is not); a
-wheel that clicks by lines scrolling by lines, its fractions carried
-over; a text body under the trackpad scrolling as a native view does
+rune above Latin-1 are word characters, ASCII punctuation is not);
+scrolling as acme's is, by the rows of the frame and not the text's
+lines: the origin is any rune, in the middle of a line as well as at its
+start, and the view starts at the row the origin is on, the line
+wrapped from its own start whatever row of it is at the top (so it
+wraps the same wherever it is scrolled to). The wheel, the arrow and
+page keys, and B1 and B3 on the scrollbar step across rows, so a line
+that wraps to a screen of them scrolls through as any text does, and
+the last row can come to the top; B2 on the scrollbar goes as far into
+the text as the pointer is down the bar, by the rune (acme's
+`textsetorigin`, not exact: on to the start of the next line when one
+is within 256 runes, else in the middle of the line), and the thumb is
+acme's, the runes shown of all of them. (Snapping the origin to a
+line's start, as the client once did, left a window that is one long
+line no place to scroll to but its start and past its end, and a long
+last line no way to its bottom.) A wheel that clicks by lines has its
+fractions carried over; a text body under the trackpad scrolling as a native view does
 (`Acme::smooth_scroll`): by the pixel, carried on by the system's
 momentum, which gpui passes on as more deltas once the finger has
 lifted (its momentum phase is not given, so what follows a touch's
@@ -1972,20 +1986,22 @@ goes out and back once, and what more momentum comes that way is spent
 until a finger is down again. (Momentum pushing the pull out while the
 spring pulled it in, each at its own rate -- scrolls at the display's
 120 a second, the spring at 60 -- shook the text on some machines.)
-Only whole lines crossed reach the session, as the view's origin, as
-they always did; the pixels between them and the pull past an end are
+Only whole rows crossed reach the session, as the view's origin (the
+row's first rune); the pixels between them and the pull past an end are
 this client's (`Smooth`), dropped whenever the origin moves by anything
 else (the scrollbar, a key, a jump, another client), and the body is
-laid out from them, with the lines a screen above measured while it is
-being scrolled so that scrolling up crosses them without a jump. What
-brings a view to a place (a jump, `textshow`) puts it at a whole line
-and drops the pixels; typing, which asks only that the selection be in
-view, keeps them while it is, or each key would draw the body at its
-line and the next frame back between lines. Where a view is brought to
+laid out from them, with the rows a screen above measured every frame
+(`TextLayout::rows`) so that scrolling up crosses them without a jump.
+What brings a view to a place (a jump, `textshow`) puts it at a whole
+row and drops the pixels; typing, which asks only that the selection be
+in view, keeps them while it is, or each key would draw the body at its
+row and the next frame back between rows. Where a view is brought to
 (a quarter down for dot, three quarters for a win's output, half for
-the selection) is measured in the rows its lines wrap to, not in lines
-(`first_above`): a long line of output is many rows, and counting it as
-one left what was to be shown below the bottom; and
+the selection) is measured in rows (`top_for`), and the row at the top
+may be any row of a line: a long line of output is many rows, and
+counting it as one left what was to be shown below the bottom. The rest
+of the line is kept in view when it fits, and a line taller than the
+view is brought to where the place was to go; and
 the pointers: plan9port's big arrow always, the box while
 a layout box is held. Also matching: the scrollbar scrolling
 continuously while a button is held, the pointer kept on the bar

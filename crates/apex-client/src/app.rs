@@ -159,14 +159,17 @@ enum Target {
     Web(WindowId),
 }
 
-/// A body's scroll between whole lines, and past its ends (`Acme::smooth`).
+/// A body's scroll between whole rows, and past its ends (`Acme::smooth`).
+/// It steps across rows, not lines: a line that wraps to a screen of them
+/// scrolls through as any other text does. (`scroll` is written in lines
+/// of any height; it is given rows, each a line of one height.)
 #[derive(Clone, Copy, Debug)]
 struct Smooth {
-    /// The origin this is about: the session's first line. When that moves
-    /// by anything else (the scrollbar, a key, a jump, another client), this
-    /// is dropped and the body is at its line again.
+    /// The origin this is about: the session's, at the top row. When that
+    /// moves by anything else (the scrollbar, a key, a jump, another
+    /// client), this is dropped and the body is at its row again.
     origin: usize,
-    /// Pixels scrolled down into the first line, less than its height.
+    /// Pixels scrolled down into the top row, less than its height.
     px: f32,
     /// How far past an end the text is pulled: down past the start when
     /// positive, up past the last line when negative. Springs back to 0
@@ -325,6 +328,19 @@ impl Smooth {
         self.vel = v;
         true
     }
+}
+
+/// Where B2 on a body's scrollbar `frac` of the way down takes it, as
+/// acme's does: as far into the text as the pointer is down the bar, by
+/// the rune, moved on to the start of the next line when one is near,
+/// and else left where it is, in the middle of a line.
+fn bar_origin(t: &Text, frac: f32) -> usize {
+    let len = t.len();
+    let p = ((len as f64 * frac.clamp(0., 1.) as f64) as usize).min(len);
+    if p == 0 || t.char_at(p - 1) == '\n' {
+        return p;
+    }
+    (p..(p + 256).min(len)).find(|&q| t.char_at(q) == '\n').map_or(p, |nl| nl + 1)
 }
 
 /// The rubber band past an end, as AppKit's: `raw` pixels of pull show as
@@ -2322,16 +2338,16 @@ impl Acme {
             _ => false,
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
-        // a body scrolled by the pixel: moved up by its scroll into the first
-        // line, and down by any pull past the start; forgotten once the
-        // session's first line is not the one it was scrolled from
-        let (shift, smooth) = match self.smooth.get(&view).copied() {
-            Some(s) if s.origin == v.origin => (s.px - s.over, true),
+        // a body scrolled by the pixel: moved up by its scroll into the top
+        // row, and down by any pull past the start; forgotten once the
+        // session's origin is not the one it was scrolled from
+        let shift = match self.smooth.get(&view).copied() {
+            Some(s) if s.origin == v.origin => s.px - s.over,
             Some(_) => {
                 self.smooth.remove(&view);
-                (0., false)
+                0.
             }
-            None => (0., false),
+            None => 0.,
         };
         // a tag in a strip (a column squeezed by B2 on another's box) is its
         // box alone: no text laid out in no width, and nothing it would
@@ -2345,7 +2361,6 @@ impl Acme {
         if column.is_some_and(|c| tiling::is_strip(c.r)) {
             return Some(Source {
                 shift: 0.,
-                smooth: false,
                 kind: Kind::of(view),
                 mono,
                 dirty,
@@ -2365,7 +2380,6 @@ impl Acme {
         }
         Some(Source {
             shift,
-            smooth,
             kind: Kind::of(view),
             mono,
             dirty,
@@ -2472,29 +2486,37 @@ impl Acme {
     /// once none does. A gesture moving back towards the text gives back
     /// what it pulled first.
     fn smooth_scroll(&mut self, v: ViewId, dy: f32, phase: TouchPhase, cx: &mut Context<Self>) {
-        let Some(t) = self.text_of(v) else { return };
         let Ok(b) = self.node.view_buffer(v) else { return };
         let origin = self.node.state.buffer(b).map(|b| b.view(v).origin).unwrap_or(0);
         let Some(l) = self.layouts.get(&v) else { return };
+        if l.rows.is_empty() {
+            return;
+        }
         let lh = f32::from(l.line_height).max(1.);
         let h = f32::from(l.bounds.size.height).max(lh);
-        let below: Vec<f32> = l.lines.iter().map(|li| f32::from(li.height(l.line_height))).collect();
-        let above: Vec<f32> = l.above.iter().map(|x| f32::from(*x)).collect();
+        // the rows as the scroll counts them, each a line of one height:
+        // the one the origin is on, those laid out below it and a screen of
+        // them above; and, where the rows laid out do not reach the start
+        // or the end of the text, that far from it as the scroll can tell
+        let at = l.rows.partition_point(|&r| r <= origin).saturating_sub(1);
+        let base = if l.rows[0] == 0 { 0 } else { 1 << 20 };
+        let line = base + at;
+        let total = if l.rows_end { base + l.rows.len() } else { usize::MAX / 2 };
+        let below = vec![lh; l.rows.len() - at];
+        let above = vec![lh; at];
         let s = match self.smooth.get(&v).copied() {
             Some(s) if s.origin == origin => s,
             _ => Smooth::at(origin),
         };
-        let total = t.line_count().max(1);
-        let line = t.line_of(origin).min(total - 1);
         // how long since this body's last scroll, for momentum's speed
         let now = std::time::Instant::now();
         let dt = self.wheel_at.insert(v, now).map(|t| now.duration_since(t).as_secs_f32()).unwrap_or(1. / 60.);
-        let (mut s, line) = s.scroll(dy, phase, dt, line, total, &below, &above, lh, h);
-        let at = t.line_start(line);
-        if at != origin {
-            self.set_origin(v, at);
+        let (mut s, new) = s.scroll(dy, phase, dt, line, total, &below, &above, lh, h);
+        let to = if new == line { origin } else { l.rows[new.saturating_sub(base).min(l.rows.len() - 1)] };
+        if to != origin {
+            self.set_origin(v, to);
         }
-        s.origin = at;
+        s.origin = to;
         let loose = !s.finger && (s.over != 0. || s.vel != 0.);
         self.smooth.insert(v, s);
         if loose {
@@ -2539,14 +2561,16 @@ impl Acme {
         .detach();
     }
 
+    /// Scrolled by `delta` rows, as acme scrolls by the rows of its frame
+    /// (a long line is many of them): the last row can come to the top.
     fn scroll_by(&mut self, view: ViewId, delta: i64) {
-        let Some(t) = self.text_of(view) else { return };
         let Ok(b) = self.node.view_buffer(view) else { return };
         let origin = self.node.state.buffer(b).map(|b| b.view(view).origin).unwrap_or(0);
-        let total = t.line_count();
-        let line = t.line_of(origin) as i64;
-        let new = (line + delta).clamp(0, total.saturating_sub(1) as i64) as usize;
-        self.set_origin(view, t.line_start(new));
+        let Some(l) = self.layouts.get(&view) else { return };
+        let to = l.row_from(origin, delta);
+        if to != origin {
+            self.set_origin(view, to);
+        }
     }
 
     // ---- mouse ---------------------------------------------------------------
@@ -3665,11 +3689,9 @@ impl Acme {
         let Some(l) = self.layouts.get(&view) else { return };
         let frac = ((pos.y - l.bounds.top()) / l.bounds.size.height).clamp(0., 1.);
         let fit = l.lines_that_fit() as f32;
-        let total = l.total_lines;
         if dir == 0 {
             if let Some(t) = self.text_of(view) {
-                let line = ((total as f32 * frac) as usize).min(total.saturating_sub(1));
-                self.set_origin(view, t.line_start(line));
+                self.set_origin(view, bar_origin(&t, frac));
             }
         } else {
             let n = ((fit * frac) as i64).max(1);
@@ -4525,6 +4547,26 @@ mod term_selection_tests {
 }
 
 #[cfg(test)]
+mod bar_origin_tests {
+    use super::bar_origin;
+    use apex_core::text::Text;
+
+    #[test]
+    fn b2_on_the_scrollbar_goes_by_the_rune_into_a_long_line() {
+        // one line of 10000 runes: half way down the bar is half way along it
+        let t = Text::new(&"x".repeat(10000));
+        assert_eq!(bar_origin(&t, 0.5), 5000);
+        assert_eq!(bar_origin(&t, 0.), 0);
+        assert_eq!(bar_origin(&t, 1.), 10000);
+        // a line start near: moved on to it, as acme's textsetorigin does
+        let t = Text::new(&format!("{}\n{}", "a".repeat(60), "b".repeat(40)));
+        assert_eq!(bar_origin(&t, 0.5), 61);
+        // already at one: left there
+        assert_eq!(bar_origin(&Text::new("ab\ncd"), 0.6), 3);
+    }
+}
+
+#[cfg(test)]
 mod smooth_scroll_tests {
     use super::{rubber, unrubber, Smooth};
     use gpui::TouchPhase::{Ended, Moved, Started};
@@ -4609,6 +4651,12 @@ mod smooth_scroll_tests {
         // text shorter than the view: it does not move down at all
         let (s, line) = Smooth::at(0).scroll(30., Started, DT, 0, 10, &[17.; 10], &[], LH, H);
         assert_eq!((line, s.px), (0, 0.));
+        assert!(s.over < 0.);
+        // one line wrapped to 100 rows, the last of the text: the trackpad
+        // takes it down to its last row at the bottom of the view (the
+        // view 600 high holds 35 rows and 5 pixels)
+        let (s, line) = Smooth::at(0).scroll(5000., Started, DT, 0, 100, &[17.; 100], &[], LH, H);
+        assert_eq!((line, s.px), (64, 12.), "the end: 100 rows less 600 px of them");
         assert!(s.over < 0.);
         // past the end already (the scrollbar put it there): only a bounce
         let (s, line) = Smooth::at(0).scroll(30., Started, DT, 90, 100, &[17.; 10], &[], LH, H);

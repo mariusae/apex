@@ -256,6 +256,15 @@ impl LineInfo {
     pub fn height(&self, lh: Pixels) -> Pixels {
         lh * self.subs.len() as f32
     }
+    /// Where each of the rows it wraps to starts, as rune offsets.
+    pub fn row_starts(&self) -> Vec<usize> {
+        self.subs.iter().map(|&(ds, _)| self.to_src(ds)).collect()
+    }
+    /// The row a rune is on: the last to start at or before it.
+    pub fn row_of(&self, q: usize) -> usize {
+        let d = self.to_disp(q);
+        self.subs.iter().rposition(|&(ds, _)| ds <= d).unwrap_or(0)
+    }
 }
 
 pub struct TextLayout {
@@ -263,10 +272,14 @@ pub struct TextLayout {
     pub text_origin: Point<Pixels>,
     pub line_height: Pixels,
     pub lines: Vec<LineInfo>,
-    /// The heights of the lines above the first, nearest first, a screen of
-    /// them, while the view is being scrolled by the pixel: what scrolling
-    /// up past the first line crosses.
-    pub above: Vec<Pixels>,
+    /// Where the rows start, in order: a screen of them above the top one,
+    /// the top one, and those laid out below it -- the rows
+    /// a scroll steps across, as acme's scrolling steps across the rows of
+    /// its frame rather than the text's lines. The first is 0 when they
+    /// reach back to the start of the text.
+    pub rows: Vec<usize>,
+    /// The last of `rows` is the text's last.
+    pub rows_end: bool,
     pub text_len: usize,
     pub total_lines: usize,
     pub first_line: usize,
@@ -301,13 +314,29 @@ impl TextLayout {
     }
 
     /// Where a rune is drawn, if it is on screen: the top-left of its
-    /// glyph, in window coordinates.
+    /// glyph, in window coordinates. (The first line's rows above the top
+    /// one are laid out too, and are not on screen.)
     pub fn point_of(&self, off: usize) -> Option<Point<Pixels>> {
         let lh = self.line_height;
         let line = self.lines.iter().find(|l| l.start <= off && (off < l.end || (off == l.end && !l.has_newline)))?;
         let d = line.to_disp(off);
         let p = line.layout.position_for_index(d, lh)?;
+        if line.y + p.y + lh <= px(0.) {
+            return None;
+        }
         Some(point(self.text_origin.x + p.x, self.text_origin.y + line.y + p.y))
+    }
+
+    /// The row `n` rows below the one `origin` is on (above when `n` is
+    /// negative), as far as the rows laid out reach: where the top of the
+    /// view goes when scrolled by `n` rows.
+    pub fn row_from(&self, origin: usize, n: i64) -> usize {
+        if n == 0 || self.rows.is_empty() {
+            return origin;
+        }
+        let at = self.rows.partition_point(|&s| s <= origin).saturating_sub(1);
+        let to = (at as i64 + n).clamp(0, self.rows.len() as i64 - 1) as usize;
+        self.rows[to]
     }
 
     pub fn lines_that_fit(&self) -> usize {
@@ -346,10 +375,9 @@ fn expand(src: &str, start: usize) -> (String, Vec<usize>) {
 pub struct Source {
     pub kind: Kind,
     /// A body scrolled by the pixel (the trackpad): how far its text is
-    /// moved up from its first line at the top, negative when pulled down
-    /// past the start; and whether to measure the lines above for it.
+    /// moved up from the top of the row its origin is on, negative when
+    /// pulled down past the start.
     pub shift: f32,
-    pub smooth: bool,
     pub mono: bool,
     pub dirty: bool,
     /// Dirty, and the file (or directory) changed on disk since.
@@ -389,7 +417,12 @@ pub struct Prepaint {
     kind: Kind,
     fontspec: FontSpec,
     lines: Vec<LineInfo>,
-    above: Vec<Pixels>,
+    rows: Vec<usize>,
+    rows_end: bool,
+    /// The text from the top row to the end of the last row in view: what
+    /// the scrollbar's thumb covers, as acme's covers the runes its frame
+    /// shows.
+    shown: (usize, usize),
     text_len: usize,
     total_lines: usize,
     first_line: usize,
@@ -404,29 +437,40 @@ pub struct Prepaint {
     notified: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
-/// The first line to lay out from so that line `cl` starts `room` down the
-/// view (or as near as whole lines come without going over), counting
-/// the lines above it as they wrap: a long line of output is many rows,
+/// The row to have at the top so that the row `q` is on starts `room`
+/// down the view (or as near as whole rows come without going over),
+/// counting rows as the lines wrap: a long line of output is many rows,
 /// and counting it as one leaves what was to be shown below the bottom.
-/// `cl` itself is kept wholly in the `height` when it can be.
-fn first_above(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, cl: usize, room: Pixels, height: Pixels) -> usize {
+/// The rest of `q`'s line is kept in the `height` when it can be. The
+/// top row may be any row of a line, as acme's origin may be anywhere.
+fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, q: usize, room: Pixels, height: Pixels) -> usize {
     let lh = fontspec.line_height;
     let text_len = text.len();
-    let row = |n: usize| {
-        text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.)).height(lh)).unwrap_or(lh)
-    };
-    let room = room.min(height - row(cl)).max(px(0.));
-    let (mut first, mut used) = (cl, px(0.));
-    while first > 0 {
-        let h = row(first - 1);
-        if used + h > room {
-            break;
-        }
-        used += h;
-        first -= 1;
+    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.)));
+    let cl = text.line_of(q.min(text_len));
+    let Some(li) = line(cl) else { return 0 };
+    let r = li.row_of(q);
+    // (a line taller than the view cannot be kept in it: `q` goes where
+    // it was to go)
+    let rest = lh * (li.subs.len() - r) as f32;
+    let room = if rest <= height { room.min(height - rest) } else { room }.max(px(0.));
+    let mut up = (room / lh).floor() as usize;
+    let starts = li.row_starts();
+    if up <= r {
+        return starts[r - up];
     }
-    first
+    up -= r;
+    let mut n = cl;
+    while n > 0 {
+        n -= 1;
+        let Some(li) = line(n) else { break };
+        let starts = li.row_starts();
+        if up <= starts.len() {
+            return starts[starts.len() - up];
+        }
+        up -= starts.len();
+    }
+    0
 }
 
 fn shape(
@@ -595,7 +639,8 @@ impl Element for TextElement {
             let total = text.line_count();
 
             let mut lines = Vec::new();
-            let mut above = Vec::new();
+            let mut rows = Vec::new();
+            let (mut rows_end, mut shown) = (true, (0, text_len));
             let mut first = 0;
             if kind != Kind::Body {
                 // what acme's wintaglines asks: how many lines the tag wraps to
@@ -612,66 +657,101 @@ impl Element for TextElement {
                 let trailing = text_len > 0 && text.char_at(text_len - 1) == '\n';
                 acme.tag_need.insert(view, (wrapped, trailing));
             } else if kind == Kind::Body {
-                first = text.line_of(src.origin).min(total.saturating_sub(1));
-                // a view being brought somewhere is at its line, not between;
+                // acme's frame: from the origin, which may be anywhere in a
+                // line -- the view starts at the row it is on, the line
+                // wrapped from its own start whatever row is at the top --
+                // and down the rows to the bottom
+                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y));
+                let mut top = src.origin.min(text_len);
+                // a view being brought somewhere is at its row, not between;
                 // one whose selection is in view already (typing) stays
                 // where it is scrolled, or it would jump there and back
                 let mut shift = if src.show_at.is_some() { px(0.) } else { px(src.shift) };
-                for _pass in 0..2 {
+                for pass in 0..2 {
                     lines.clear();
+                    first = text.line_of(top).min(total.saturating_sub(1));
                     let mut y = -shift;
                     let mut n = first;
                     while y < height {
-                        let Some((s, e)) = text.line_range(n) else { break };
-                        let nl = e < text_len;
-                        let li = shape(window, &text.slice(s, e), s, e, nl, &fontspec, src.hl, wrap, y);
+                        let Some(mut li) = line(n, y, src.hl) else { break };
+                        if n == first {
+                            // the rows of the first line above the top one
+                            // are above the view
+                            li.y -= lh * li.row_of(top) as f32;
+                            y = li.y;
+                        }
                         y += li.height(lh);
                         lines.push(li);
                         n += 1;
                     }
-                    let last_full = if y <= height { n } else { n.saturating_sub(1) };
-                    if let Some((q, quarters)) = src.show_at {
-                        // textshow: the position quarters*maxlines/4 from the top
-                        let cl = text.line_of(q.min(text_len));
-                        if cl < first || cl >= last_full {
-                            first = first_above(window, text, &fontspec, wrap, cl, height * (quarters as f32 / 4.), height);
-                            continue;
-                        }
+                    if pass == 1 {
                         break;
                     }
-                    if !src.want_visible {
+                    // what is to be shown: textshow's position, `quarters`
+                    // quarters of the window down (one for new `+Errors`
+                    // text, three for a program's output), or the selection
+                    let want = match (src.show_at, src.want_visible) {
+                        (Some((q, quarters)), _) => Some((q, Some(height * (quarters as f32 / 4.)))),
+                        (None, true) => Some((src.sel.1, None)),
+                        _ => None,
+                    };
+                    let Some((q, room)) = want else { break };
+                    let q = q.min(text_len);
+                    let cl = text.line_of(q);
+                    // in view: its row wholly on screen (the top one while
+                    // scrolled into it counts)
+                    let row_y = cl.checked_sub(first).and_then(|i| lines.get(i)).map(|l| l.y + lh * l.row_of(q) as f32);
+                    if row_y.is_some_and(|ry| ry + lh > px(0.) && ry + lh <= height) {
                         break;
                     }
-                    let cl = text.line_of(src.sel.1);
-                    if cl < first {
-                        first = cl;
-                    } else if cl >= last_full {
-                        first = first_above(window, text, &fontspec, wrap, cl, height / 2., height);
-                    } else {
-                        break;
-                    }
+                    let above_top = cl < first || row_y.is_some_and(|ry| ry < px(0.));
+                    // the selection above: its row at the top; else half
+                    // way down, as acme's textshow
+                    let room = room.unwrap_or(if above_top { px(0.) } else { height / 2. });
+                    top = top_for(window, text, &fontspec, wrap, q, room, height);
                     shift = px(0.);
                 }
-                let origin = text.line_start(first);
-                if origin != src.origin || src.want_visible || src.show_at.is_some() {
-                    acme.set_origin(view, origin);
+                if top != src.origin || src.want_visible || src.show_at.is_some() {
+                    acme.set_origin(view, top);
                 }
-                // brought to a line: the scroll between lines is gone with it
+                // brought to a row: the scroll between rows is gone with it
                 if shift == px(0.) && src.shift != 0. {
                     acme.forget_smooth(view);
                 }
-                if src.smooth {
-                    let mut up = px(0.);
+                // the rows: a screen of them above the top, for scrolling
+                // back across, and those laid out from it down
+                let mut up = Vec::new();
+                if let Some(l) = lines.first() {
+                    let starts = l.row_starts();
+                    let r0 = l.row_of(top);
+                    up.extend(starts[..r0].iter().rev());
                     let mut n = first;
-                    while n > 0 && up < height {
+                    while n > 0 && lh * up.len() as f32 <= height {
                         n -= 1;
-                        let Some((s, e)) = text.line_range(n) else { break };
-                        let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, None, wrap, px(0.));
-                        let lh_n = li.height(lh);
-                        up += lh_n;
-                        above.push(lh_n);
+                        let Some(li) = line(n, px(0.), None) else { break };
+                        up.extend(li.row_starts().iter().rev());
                     }
+                    up.reverse();
+                    up.extend(starts[r0..].iter());
+                    for li in &lines[1..] {
+                        up.extend(li.row_starts());
+                    }
+                    rows_end = first + lines.len() >= total;
+                    // what shows, from the top row to the end of the last
+                    // row whose top is in view
+                    let mut end = l.start;
+                    for li in &lines {
+                        let starts = li.row_starts();
+                        for (i, _) in starts.iter().enumerate() {
+                            if li.y + lh * i as f32 >= height {
+                                break;
+                            }
+                            end = starts.get(i + 1).copied().unwrap_or(li.end + usize::from(li.has_newline));
+                        }
+                    }
+                    shown = (starts[r0], end.max(starts[r0]));
                 }
+                rows = up;
             } else {
                 unreachable!()
             }
@@ -679,7 +759,9 @@ impl Element for TextElement {
                 kind,
                 fontspec,
                 lines,
-                above,
+                rows,
+                rows_end,
+                shown,
                 text_len,
                 total_lines: total,
                 first_line: first,
@@ -721,10 +803,11 @@ impl Element for TextElement {
                 Kind::Body => {
                     let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
                     window.paint_quad(fill(sb, pal.border));
-                    let total = pp.total_lines.max(1) as f32;
+                    // acme's: the runes shown, of all of them
+                    let total = pp.text_len.max(1) as f32;
                     let h = bounds.size.height;
-                    let t0 = h * (pp.first_line as f32 / total);
-                    let t1 = h * (((pp.first_line + pp.lines.len()) as f32).min(total) / total);
+                    let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
+                    let (t0, t1) = (h * s0, h * s1);
                     let thumb = Bounds::new(point(bounds.left(), bounds.top() + t0), size(px(SCROLLWID - 1.), (t1 - t0).max(px(2.))));
                     window.paint_quad(fill(thumb, pal.bg));
                     scrollbar = Some(sb);
@@ -878,7 +961,8 @@ impl Element for TextElement {
                 text_origin: origin,
                 line_height: lh,
                 lines: pp.lines,
-                above: pp.above,
+                rows: pp.rows,
+                rows_end: pp.rows_end,
                 text_len: pp.text_len,
                 total_lines: pp.total_lines,
                 first_line: pp.first_line,
@@ -890,6 +974,39 @@ impl Element for TextElement {
                 acme.layouts.insert(view, layout);
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod row_tests {
+    use super::TextLayout;
+    use gpui::{point, px, Bounds};
+
+    fn laid(rows: Vec<usize>) -> TextLayout {
+        TextLayout {
+            bounds: Bounds::default(),
+            text_origin: point(px(0.), px(0.)),
+            line_height: px(16.),
+            lines: Vec::new(),
+            rows,
+            rows_end: true,
+            text_len: 1000,
+            total_lines: 1,
+            first_line: 0,
+            scrollbar: None,
+            layout_box: None,
+        }
+    }
+
+    #[test]
+    fn scrolling_steps_across_rows_from_wherever_the_origin_is() {
+        // one line wrapped every 80 runes
+        let l = laid((0..10).map(|r| r * 80).collect());
+        assert_eq!(l.row_from(0, 3), 240, "three rows into the line");
+        assert_eq!(l.row_from(250, -1), 160, "from a row's middle, a row back");
+        assert_eq!(l.row_from(250, 0), 250, "no scroll, no move");
+        assert_eq!(l.row_from(160, 100), 720, "the last row can come to the top");
+        assert_eq!(l.row_from(160, -100), 0);
     }
 }
 
