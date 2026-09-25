@@ -2330,10 +2330,9 @@ impl Acme {
             }
             _ => (false, false, false, false, None),
         };
-        // the session's square while any window is notified, and a window's
-        // handle while it is
+        // a window's handle while it is notified (the session's square
+        // says nothing of it: the tab's face does)
         let notified = match view {
-            ViewId::Top => self.notification_head().is_some(),
             ViewId::Tag(w) => self.shown_notifications().any(|n| n.window == w),
             _ => false,
         };

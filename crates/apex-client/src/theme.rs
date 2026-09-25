@@ -36,14 +36,17 @@ pub struct Theme {
     pub dirty: u32,
     pub stale: u32,
     pub fenced: u32,
-    /// A window wants the user (a tool raised a notification): while any
-    /// window does, the session's top left square (a notified window's
-    /// handle wears pjw's face instead). Chosen under a deuteranopia
-    /// simulation to stand apart from every handle colour, border and
-    /// highlight it can sit beside (azure on light, ice on dark).
-    pub notified: u32,
+    /// A handle's stipples: live's, and the colour working's breathes
+    /// from. On light the dirty navy and the progress blue; on dark each
+    /// paler than those, since a dot a pixel wide shows by how much
+    /// lighter it is than the handle under it, and the dark ones were
+    /// half as far from the dark tag as the light ones are from the pale
+    /// (about 69 and 67 in CIELAB lightness from it, against light's 81
+    /// and 64).
+    pub live_ink: u32,
+    pub work_ink: u32,
     /// Work going on: the bar across the top of a terminal whose program
-    /// says so (OSC 9;4), and the colour a working handle's stipple breathes from,
+    /// says so (OSC 9;4), and on light the colour a working handle's stipple breathes from,
     /// so the two say the same thing. A blue chosen under a deuteranopia
     /// simulation to stand apart from every handle colour it can sit
     /// beside -- the dirty blue and the notification's above all -- and
@@ -106,7 +109,8 @@ pub const LIGHT: Theme = Theme {
     dirty: 0x000099,
     stale: 0xFFD700,
     fenced: 0xAA0000,
-    notified: 0x0080FF,
+    live_ink: 0x000099,
+    work_ink: 0x1B4F9B,
     progress: 0x1B4F9B,
     exec_hl: 0xAA0000,
     look_hl: 0x006600,
@@ -163,7 +167,8 @@ pub const DARK: Theme = Theme {
     dirty: 0x6A6AF0,
     stale: 0xFFD700,
     fenced: 0xFF3030,
-    notified: 0x7DF9FF,
+    live_ink: 0xC8C8FF,
+    work_ink: 0x9CC8FF,
     progress: 0x3355FF,
     exec_hl: 0xB02020,
     look_hl: 0x2E8B2E,

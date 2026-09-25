@@ -60,8 +60,8 @@ pub struct Handle {
     /// disk since).
     pub base: u32,
     /// Live, a process behind it: ░ in the dirty colour -- dirty, but
-    /// going on -- or in the paper's over a dirty base, where the dirty
-    /// colour would not show.
+    /// going on; a paler one on dark (`Theme::live_ink`) -- or in the
+    /// paper's over a dirty base, where the dirty colour would not show.
     pub live: Option<u32>,
     /// Working: ░ breathing between the colour work is drawn in (a
     /// terminal's progress bar's) and the base.
@@ -81,8 +81,8 @@ pub fn handle(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, pu
     let dark = base == th.dirty;
     Handle {
         base,
-        live: live.then_some(if dark { th.tag_bg } else { th.dirty }),
-        pulse: pulse.map(|t| mix(th.progress, base, t * 0.85)),
+        live: live.then_some(if dark { th.tag_bg } else { th.live_ink }),
+        pulse: pulse.map(|t| mix(th.work_ink, base, t * 0.85)),
         face: notified.then_some(if dark { th.tag_bg } else { th.text }),
     }
 }
@@ -901,21 +901,15 @@ impl Element for TextElement {
                 }
                 Kind::Top => {
                     // the upper-left square, the session's own: filled when
-                    // this client has lost its leases and only watches, and
-                    // else when a tool has asked for the user; clicked then,
-                    // it takes the oldest notification
+                    // this client has lost its leases and only watches (a
+                    // notification is the tab's face and the window's
+                    // handle's; a click here still takes the oldest)
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
                     window.paint_quad(fill(b, pal.border));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
                     let th = crate::theme::theme();
-                    let fillc = if pp.fenced {
-                        rgb(th.fenced)
-                    } else if pp.notified {
-                        rgb(th.notified)
-                    } else {
-                        pal.bg
-                    };
+                    let fillc = if pp.fenced { rgb(th.fenced) } else { pal.bg };
                     window.paint_quad(fill(inner, fillc));
                     layout_box = Some(b);
                 }
@@ -1055,10 +1049,10 @@ mod handle_tests {
         assert_eq!((clean.base, clean.live, clean.pulse, clean.face), (th.tag_bg, None, None, None));
         assert_eq!(handle(&th, false, true, false, None, false).base, th.dirty);
         // live: the dirty colour stippled over clean, the paper's over dirty
-        assert_eq!(handle(&th, false, false, true, None, false).live, Some(th.dirty));
+        assert_eq!(handle(&th, false, false, true, None, false).live, Some(th.live_ink));
         assert_eq!(handle(&th, false, true, true, None, false).live, Some(th.tag_bg));
         // working: a stipple from the progress blue at the top of its breath
-        assert_eq!(handle(&th, false, false, false, Some(0.), false).pulse, Some(th.progress));
+        assert_eq!(handle(&th, false, false, false, Some(0.), false).pulse, Some(th.work_ink));
         // all of it at once: each mark still there
         let all = handle(&th, false, false, true, Some(0.), true);
         assert!(all.live.is_some() && all.pulse.is_some() && all.face == Some(th.text), "{all:?}");

@@ -253,16 +253,12 @@ A notified window's handle wears Peter J. Weinberger's face (below)
 over whatever else it shows, frame and all, in the text's ink or, on
 the dirty colour, the paper's: a handle is a colour with marks laid over
 it, so the face says it where a colour may not, and dirty, live or
-working still shows around and under it. While any window is notified the session's square fills with the
-notification colour -- azure `0080FF` on light, ice `7DF9FF` on dark,
-each chosen under the deuteranopia simulation against every handle
-colour, border and highlight it can sit beside, where it is further from
-its nearest neighbour than any other candidate (the dirty navy on light,
-the tag border on dark) -- unless the client is fenced, whose red wins.
-A click on the square takes the oldest: the window is revealed and the
-pointer landed on it, as a new window is, and its notification
-dismissed; the next click takes the next, and when none is left the
-square is the tag's colour again. ⌘G does the same across every tab the
+working still shows around and under it. The session's square says
+nothing of it -- it filled with an azure once, which the face in the
+tab (below) made one signal too many -- but a click on it still takes
+the oldest: the window is revealed and the pointer landed on it, as a
+new window is, and its notification dismissed; the next click takes the
+next. ⌘G does the same across every tab the
 app has open: the oldest of them all, the tab it is in brought forward
 first when it is not this one, and a beep (`NSBeep`) when there is none
 left to take. The order across sessions is the app's own, since the
@@ -1636,7 +1632,9 @@ left of the connection mark, the heartbeat's round trip and the log's
   (`WindowOp::Live{by}`, the win tool's attachment; the state ends with
   the program, or with that attachment, so a crashed tool leaves nothing
   stuck). Not a colour of its own but a mark over one: the handle is
-  stippled, ░, in the dirty colour -- dirty, but going on -- or in the
+  stippled, ░, in the dirty colour -- dirty, but going on; on dark a
+  paler one, since a dot a pixel wide shows only by how much lighter it
+  is than what is under it (`Theme::live_ink`) -- or in the
   paper's over a dirty handle, where the dirty colour would not show
   (`text_element::handle`: a handle is its colour, clean, dirty or stale,
   and over it the marks, live's stipple, working's, and a
@@ -1689,7 +1687,8 @@ left of the connection mark, the heartbeat's round trip and the log's
   live's, so a live window working shows both. That colour is the
   one a terminal's progress bar is (`Theme::progress`, a blue no handle
   colour is), so a handle and a bar saying the same thing look the
-  same. It is not a state but a mark over one: a clean, dirty, stale or
+  same; on dark a paler blue of the same kind (`Theme::work_ink`), for
+  the reason live's is. It is not a state but a mark over one: a clean, dirty, stale or
   live window can be working, and shows as it was the moment the work
   ends. It is for work with nothing to show while it runs, where a
   window would otherwise look idle: an agent thinking, a language
