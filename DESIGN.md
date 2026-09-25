@@ -1638,7 +1638,11 @@ left of the connection mark, the heartbeat's round trip and the log's
   paper's over a dirty handle, where the dirty colour would not show
   (`text_element::handle`: a handle is its colour, clean, dirty or stale,
   and over it the marks, live's stipple, working's, and a
-  notification's face, any of them with any other). It was a raspberry
+  notification's face, any of them with any other). Dirty there is what
+  `Del` asks about (`Node::window_unsaved`), not the buffer's flag: a
+  live, owned or scratch window's text is a transcript and never
+  unsaved, so a terminal or a win is clean under its stipple however
+  much it has printed. It was a raspberry
   of its own once, one colour more to tell from the rest. `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`. The tag says the same: a live window is
   offered no `Put`, since there is no file of that name to write it to.

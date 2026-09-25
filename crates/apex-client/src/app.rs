@@ -2319,8 +2319,10 @@ impl Acme {
             ViewId::Body(w) | ViewId::Tag(w) => {
                 let win = self.node.state.window(w).ok()?;
                 let body = win.body_buffer().and_then(|b| self.node.state.buffer(b).ok());
-                let dirty = body.is_some_and(|b| b.dirty());
-                let stale = body.is_some_and(|b| b.stale && b.dirty());
+                // dirty as Del asks about it: a transcript (a live, owned
+                // or scratch window's) is never unsaved, however it changed
+                let dirty = self.node.window_unsaved(w);
+                let stale = dirty && body.is_some_and(|b| b.stale);
                 // a page is live as a terminal is; while it loads, and
                 // while a tool works behind a window, the handle
                 // breathes between its colour and pale

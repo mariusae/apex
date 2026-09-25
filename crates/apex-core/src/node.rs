@@ -1108,15 +1108,10 @@ impl Node {
     /// ("name modified") and goes the second time, as acme clears its
     /// dirty flag after warning.
     pub fn winclean(&mut self, log: &mut Log, w: WindowId, _conservative: bool) -> Result<bool> {
-        let name = self.window_name(w);
-        let isdir = name.ends_with('/');
-        let isscratch = crate::entry::is_scratch(&name) || name.ends_with("/guide");
-        if isscratch || isdir || self.window_owner(w).is_some() || self.window_live(w) {
-            return Ok(true); // a live window's text is a transcript, not a file
-        }
-        if !self.window_dirty(w) {
+        if !self.window_unsaved(w) {
             return Ok(true);
         }
+        let name = self.window_name(w);
         let Some(b) = self.state.window(w)?.body_buffer() else { return Ok(true) };
         let (version, len) = {
             let buf = self.state.buffer(b)?;
@@ -1734,6 +1729,21 @@ impl Node {
             _ => return Err(CoreError::Missing(format!("{cmd}: not a built-in"))),
         }
         Ok(false)
+    }
+
+    /// Does the window hold edits a file has not had: dirty, and a file's
+    /// window at all? Scratch windows (`+Errors`, `guide`, a program's
+    /// `-` and `+` names), directories, and windows a tool owns or keeps
+    /// live are not: their text is a transcript, not a file, so it is
+    /// never unsaved however it changed. What `Del` asks about, and what
+    /// a handle shows as dirty.
+    pub fn window_unsaved(&self, w: WindowId) -> bool {
+        let name = self.window_name(w);
+        let isscratch = crate::entry::is_scratch(&name) || name.ends_with("/guide");
+        if isscratch || name.ends_with('/') || self.window_owner(w).is_some() || self.window_live(w) {
+            return false;
+        }
+        self.window_dirty(w)
     }
 
     fn window_dirty(&self, w: WindowId) -> bool {

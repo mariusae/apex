@@ -466,6 +466,7 @@ fn a_live_window_is_not_put() {
     // dirty and nobody behind it: Put, as any written-in window has
     node.update_tags(&mut log).unwrap();
     assert!(tag(&node).contains(" Put"), "{}", tag(&node));
+    assert!(node.window_unsaved(w), "a handle shows it dirty");
     // a tool says it is live: the handle says so, and the tag stops
     // offering to write it to a file of that name
     let by = node.state.meta.attachments.keys().next().copied();
@@ -473,6 +474,8 @@ fn a_live_window_is_not_put() {
     assert!(node.window_live(w));
     node.update_tags(&mut log).unwrap();
     assert!(!tag(&node).contains(" Put"), "{}", tag(&node));
+    // nor is it dirty to the handle: a transcript is never unsaved
+    assert!(!node.window_unsaved(w));
     // and comes back when the program behind it is gone
     node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Live { by: None })).unwrap();
     node.update_tags(&mut log).unwrap();
@@ -490,6 +493,7 @@ fn a_live_window_is_not_put() {
     node.update_tags(&mut log).unwrap();
     assert!(!tag_of(&node, f).contains(" Put") && !tag_of(&node, f).contains(" Undo"), "{}", tag_of(&node, f));
     assert!(node.winclean(&mut log, f, true).unwrap());
+    assert!(!node.window_unsaved(f));
     // and lets go when the tool does
     node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by: None })).unwrap();
     node.update_tags(&mut log).unwrap();
@@ -504,6 +508,7 @@ fn a_live_window_is_not_put() {
         assert!(!t.contains(" Put") && !t.contains(" Undo"), "{name}: {t}");
         // and Del does not ask about what is in it
         assert!(node.winclean(&mut log, s, true).unwrap(), "{name}");
+        assert!(!node.window_unsaved(s), "{name}");
     }
 }
 
