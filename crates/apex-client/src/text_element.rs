@@ -56,8 +56,8 @@ pub fn palette(kind: Kind) -> Palette {
 /// other: a live, working, notified window shows all three.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Handle {
-    /// Clean (the tag's colour), dirty, stale (dirty, and changed on disk
-    /// since), or unsynced (the client has lost its place in the log).
+    /// Clean (the tag's colour), dirty, or stale (dirty, and changed on
+    /// disk since).
     pub base: u32,
     /// Live, a process behind it: ░ in the dirty colour -- dirty, but
     /// going on -- or in the paper's over a dirty base, where the dirty
@@ -70,10 +70,8 @@ pub struct Handle {
     pub face: Option<u32>,
 }
 
-pub fn handle(th: &crate::theme::Theme, unsynced: bool, stale: bool, dirty: bool, live: bool, pulse: Option<f32>, notified: bool) -> Handle {
-    let base = if unsynced {
-        th.unsynced
-    } else if stale {
+pub fn handle(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, pulse: Option<f32>, notified: bool) -> Handle {
+    let base = if stale {
         th.stale
     } else if dirty {
         th.dirty
@@ -438,7 +436,6 @@ pub struct Source {
     /// far (0..1) the handle is from its colour towards pale this
     /// instant.
     pub pulse: Option<f32>,
-    pub unsynced: bool,
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
     pub fenced: bool,
@@ -481,7 +478,6 @@ pub struct Prepaint {
     stale: bool,
     live: bool,
     pulse: Option<f32>,
-    unsynced: bool,
     fenced: bool,
     notified: bool,
 }
@@ -820,7 +816,6 @@ impl Element for TextElement {
                 stale: src.stale,
                 live: src.live,
                 pulse: src.pulse,
-                unsynced: src.unsynced,
                 fenced: src.fenced,
                 notified: src.notified,
             })
@@ -867,7 +862,7 @@ impl Element for TextElement {
                     window.paint_quad(fill(b, pal.border));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
-                    let h = handle(&th, pp.unsynced, pp.stale, pp.dirty, pp.live, pp.pulse, pp.notified);
+                    let h = handle(&th, pp.stale, pp.dirty, pp.live, pp.pulse, pp.notified);
                     window.paint_quad(fill(inner, rgb(h.base)));
                     // the stipples, each on its own half of a ░ lattice so
                     // that both show when both are on
@@ -1056,16 +1051,16 @@ mod handle_tests {
     fn a_handle_is_a_colour_with_its_marks_laid_over_it() {
         let th = crate::theme::theme();
         // clean and dirty: a colour, and nothing over it
-        let clean = handle(&th, false, false, false, false, None, false);
+        let clean = handle(&th, false, false, false, None, false);
         assert_eq!((clean.base, clean.live, clean.pulse, clean.face), (th.tag_bg, None, None, None));
-        assert_eq!(handle(&th, false, false, true, false, None, false).base, th.dirty);
+        assert_eq!(handle(&th, false, true, false, None, false).base, th.dirty);
         // live: the dirty colour stippled over clean, the paper's over dirty
-        assert_eq!(handle(&th, false, false, false, true, None, false).live, Some(th.dirty));
-        assert_eq!(handle(&th, false, false, true, true, None, false).live, Some(th.tag_bg));
+        assert_eq!(handle(&th, false, false, true, None, false).live, Some(th.dirty));
+        assert_eq!(handle(&th, false, true, true, None, false).live, Some(th.tag_bg));
         // working: a stipple from the progress blue at the top of its breath
-        assert_eq!(handle(&th, false, false, false, false, Some(0.), false).pulse, Some(th.progress));
+        assert_eq!(handle(&th, false, false, false, Some(0.), false).pulse, Some(th.progress));
         // all of it at once: each mark still there
-        let all = handle(&th, false, false, false, true, Some(0.), true);
+        let all = handle(&th, false, false, true, Some(0.), true);
         assert!(all.live.is_some() && all.pulse.is_some() && all.face == Some(th.text), "{all:?}");
     }
 

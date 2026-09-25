@@ -288,11 +288,6 @@ session seen for the first time brings no bounce for what it already
 had. `apex notify [-win=WIN]` notifies a window, `$winid`
 by default, from a script and waits until the user attends to it.
 
-While an attachment holds entries the server has not acknowledged, the
-affected buffers are **unsynced** — a state distinct from dirty (§9), shown
-in the tag box in its own colour. It clears when the attachment resumes
-and flushes; if the attachment is fenced instead, §4.4 applies.
-
 ### 4.2 Leases
 
 Every shard has exactly one **leader** at any time: the holder of its lease.
@@ -345,8 +340,6 @@ tries the first before the second:
   rather than lost.
 
 The UI flushes every frame, so the unflushed tail is milliseconds of typing.
-Server acks give an honest "unsynced" signal; the tag's layout box can show
-it.
 
 Every entry records the attachment and epoch that wrote it. `apex log`
 shows provenance: "this edit came from the agent's attachment".
@@ -1155,11 +1148,10 @@ concrete `Edit` entries (§5).
 
 The server runs where the files are; that is the whole remote story.
 
-- Three derived flags per buffer, each with its own signal: **dirty** =
+- Two derived flags per buffer, each with its own signal: **dirty** =
   version differs from the version at last load or `Put` (acme's `Put`
   appears in the tag); **stale** = the disk changed underneath (`Get` in
-  the tag); **unsynced** = the leader holds entries the server has not
-  acknowledged (§4.1, the tag box).
+  the tag).
 - **Watching.** The server watches the parent directories of open files
   (editors and `git checkout` replace files by rename, which breaks per-file
   watches) with FSEvents/inotify via the `notify` crate, debounced. On an
@@ -1646,8 +1638,8 @@ left of the connection mark, the heartbeat's round trip and the log's
   stuck). Not a colour of its own but a mark over one: the handle is
   stippled, ░, in the dirty colour -- dirty, but going on -- or in the
   paper's over a dirty handle, where the dirty colour would not show
-  (`text_element::handle`: a handle is its colour, clean, dirty, stale or
-  unsynced, and over it the marks, live's stipple, working's, and a
+  (`text_element::handle`: a handle is its colour, clean, dirty or stale,
+  and over it the marks, live's stipple, working's, and a
   notification's face, any of them with any other). It was a raspberry
   of its own once, one colour more to tell from the rest. `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`. The tag says the same: a live window is

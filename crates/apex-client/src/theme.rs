@@ -34,7 +34,6 @@ pub struct Theme {
     pub column: u32,
     // the handles
     pub dirty: u32,
-    pub unsynced: u32,
     pub stale: u32,
     pub fenced: u32,
     /// A window wants the user (a tool raised a notification): while any
@@ -105,7 +104,6 @@ pub const LIGHT: Theme = Theme {
     border: 0x000000,
     column: 0xFFFFFF,
     dirty: 0x000099,
-    unsynced: 0x88CC88,
     stale: 0xFFD700,
     fenced: 0xAA0000,
     notified: 0x0080FF,
@@ -163,7 +161,6 @@ pub const DARK: Theme = Theme {
     border: 0x76766C,
     column: 0x101010,
     dirty: 0x6A6AF0,
-    unsynced: 0x88CC88,
     stale: 0xFFD700,
     fenced: 0xFF3030,
     notified: 0x7DF9FF,
