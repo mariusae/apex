@@ -35,17 +35,16 @@ pub struct Theme {
     // the handles
     pub dirty: u32,
     pub unsynced: u32,
-    pub live: u32,
     pub stale: u32,
     pub fenced: u32,
-    /// A window wants the user (a tool raised a notification): its handle's
-    /// frame and circle, and while any window does, the session's
-    /// top left square, and the session's tab. Chosen under a deuteranopia
+    /// A window wants the user (a tool raised a notification): while any
+    /// window does, the session's top left square (a notified window's
+    /// handle wears pjw's face instead). Chosen under a deuteranopia
     /// simulation to stand apart from every handle colour, border and
     /// highlight it can sit beside (azure on light, ice on dark).
     pub notified: u32,
     /// Work going on: the bar across the top of a terminal whose program
-    /// says so (OSC 9;4), and the colour a working handle breathes from,
+    /// says so (OSC 9;4), and the colour a working handle's stipple breathes from,
     /// so the two say the same thing. A blue chosen under a deuteranopia
     /// simulation to stand apart from every handle colour it can sit
     /// beside -- the dirty blue and the notification's above all -- and
@@ -107,7 +106,6 @@ pub const LIGHT: Theme = Theme {
     column: 0xFFFFFF,
     dirty: 0x000099,
     unsynced: 0x88CC88,
-    live: 0xB24073,
     stale: 0xFFD700,
     fenced: 0xAA0000,
     notified: 0x0080FF,
@@ -166,7 +164,6 @@ pub const DARK: Theme = Theme {
     column: 0x101010,
     dirty: 0x6A6AF0,
     unsynced: 0x88CC88,
-    live: 0xC8508A,
     stale: 0xFFD700,
     fenced: 0xFF3030,
     notified: 0x7DF9FF,

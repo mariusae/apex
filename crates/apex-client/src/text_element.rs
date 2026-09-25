@@ -50,6 +50,55 @@ pub fn palette(kind: Kind) -> Palette {
     }
 }
 
+/// A window's handle, in layers: a colour for what the text is, the
+/// stipples of what goes on behind it over that, and pjw's face over all
+/// for a window that wants the user. Any of the marks goes with any
+/// other: a live, working, notified window shows all three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Handle {
+    /// Clean (the tag's colour), dirty, stale (dirty, and changed on disk
+    /// since), or unsynced (the client has lost its place in the log).
+    pub base: u32,
+    /// Live, a process behind it: ░ in the dirty colour -- dirty, but
+    /// going on -- or in the paper's over a dirty base, where the dirty
+    /// colour would not show.
+    pub live: Option<u32>,
+    /// Working: ░ breathing between the colour work is drawn in (a
+    /// terminal's progress bar's) and the base.
+    pub pulse: Option<u32>,
+    /// Notified: pjw's face, in an ink the base does not hide.
+    pub face: Option<u32>,
+}
+
+pub fn handle(th: &crate::theme::Theme, unsynced: bool, stale: bool, dirty: bool, live: bool, pulse: Option<f32>, notified: bool) -> Handle {
+    let base = if unsynced {
+        th.unsynced
+    } else if stale {
+        th.stale
+    } else if dirty {
+        th.dirty
+    } else {
+        th.tag_bg
+    };
+    let dark = base == th.dirty;
+    Handle {
+        base,
+        live: live.then_some(if dark { th.tag_bg } else { th.dirty }),
+        pulse: pulse.map(|t| mix(th.progress, base, t * 0.85)),
+        face: notified.then_some(if dark { th.tag_bg } else { th.text }),
+    }
+}
+
+/// `x`, `y` (pixels into the handle) inked in a ░: a dot every other
+/// pixel on every other row, each such row shifted one from the last, on
+/// the even rows -- or, `odd`, on the odd rows, the lattice between.
+pub fn stippled(x: i32, y: i32, odd: bool) -> bool {
+    y % 2 == i32::from(odd) && x % 2 == (y / 2 + i32::from(odd)) % 2
+}
+
+/// pjw's face, as wide as it is high (its outline is 201 by 259).
+const PJW_RATIO: f32 = 201. / 259.;
+
 pub struct FontSpec {
     pub font: Font,
     pub size: Pixels,
@@ -815,42 +864,31 @@ impl Element for TextElement {
                 Kind::WinTag => {
                     let th = crate::theme::theme();
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
-                    // notified: the frame takes the notification colour
-                    window.paint_quad(fill(b, if pp.notified { rgb(th.notified) } else { pal.border }));
+                    window.paint_quad(fill(b, pal.border));
                     let bb = px(BUTTON_BORDER);
                     let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
-                    // what the handle says when nothing is going on
-                    let resting = if pp.unsynced {
-                        Some(th.unsynced)
-                    } else if pp.live {
-                        Some(th.live)
-                    } else if pp.stale {
-                        Some(th.stale)
-                    } else if pp.dirty {
-                        Some(th.dirty)
-                    } else {
-                        None
-                    };
-                    let fillc = match (pp.pulse, resting) {
-                        // pulsing: between the colour work is drawn in --
-                        // the same blue a terminal's progress bar is, so
-                        // the handle and the bar say one thing -- and the
-                        // tag's own
-                        (Some(t), _) => rgb(mix(th.progress, th.tag_bg, t * 0.85)),
-                        (None, Some(c)) => rgb(c),
-                        (None, None) => pal.bg,
-                    };
-                    if pp.notified {
-                        // and what it says is a circle inside it, the shape
-                        // saying so where the colour may not: the state's
-                        // colour, or the notification's when it has none
-                        window.paint_quad(fill(inner, pal.bg));
-                        let d = inner.size.width.min(inner.size.height);
-                        let c = Bounds::new(point(inner.left() + (inner.size.width - d) / 2., inner.top() + (inner.size.height - d) / 2.), size(d, d));
-                        let cc = if pp.pulse.is_none() && resting.is_none() { rgb(th.notified) } else { fillc };
-                        window.paint_quad(fill(c, cc).corner_radii(d / 2.));
-                    } else {
-                        window.paint_quad(fill(inner, fillc));
+                    let h = handle(&th, pp.unsynced, pp.stale, pp.dirty, pp.live, pp.pulse, pp.notified);
+                    window.paint_quad(fill(inner, rgb(h.base)));
+                    // the stipples, each on its own half of a ░ lattice so
+                    // that both show when both are on
+                    for (ink, odd) in [(h.live, false), (h.pulse, true)] {
+                        let Some(ink) = ink else { continue };
+                        let (w, hh) = (f32::from(inner.size.width) as i32, f32::from(inner.size.height) as i32);
+                        for y in 0..hh {
+                            for x in 0..w {
+                                if stippled(x, y, odd) {
+                                    window.paint_quad(fill(Bounds::new(point(inner.left() + px(x as f32), inner.top() + px(y as f32)), size(px(1.), px(1.))), rgb(ink)));
+                                }
+                            }
+                        }
+                    }
+                    // pjw's face over the whole handle, frame and all
+                    if let Some(ink) = h.face {
+                        const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
+                        let fh = (b.size.height - px(2.)).min(b.size.width / PJW_RATIO);
+                        let fw = fh * PJW_RATIO;
+                        let at = point(b.left() + (b.size.width - fw) / 2., b.top() + (b.size.height - fh) / 2.);
+                        let _ = window.paint_svg(Bounds::new(at, size(fw, fh)), "pjw.svg".into(), Some(PJW), gpui::TransformationMatrix::unit(), rgb(ink), cx);
                     }
                     window.paint_quad(fill(
                         // acme's line between tag and body is one device
@@ -1007,6 +1045,41 @@ mod row_tests {
         assert_eq!(l.row_from(250, 0), 250, "no scroll, no move");
         assert_eq!(l.row_from(160, 100), 720, "the last row can come to the top");
         assert_eq!(l.row_from(160, -100), 0);
+    }
+}
+
+#[cfg(test)]
+mod handle_tests {
+    use super::{handle, stippled};
+
+    #[test]
+    fn a_handle_is_a_colour_with_its_marks_laid_over_it() {
+        let th = crate::theme::theme();
+        // clean and dirty: a colour, and nothing over it
+        let clean = handle(&th, false, false, false, false, None, false);
+        assert_eq!((clean.base, clean.live, clean.pulse, clean.face), (th.tag_bg, None, None, None));
+        assert_eq!(handle(&th, false, false, true, false, None, false).base, th.dirty);
+        // live: the dirty colour stippled over clean, the paper's over dirty
+        assert_eq!(handle(&th, false, false, false, true, None, false).live, Some(th.dirty));
+        assert_eq!(handle(&th, false, false, true, true, None, false).live, Some(th.tag_bg));
+        // working: a stipple from the progress blue at the top of its breath
+        assert_eq!(handle(&th, false, false, false, false, Some(0.), false).pulse, Some(th.progress));
+        // all of it at once: each mark still there
+        let all = handle(&th, false, false, false, true, Some(0.), true);
+        assert!(all.live.is_some() && all.pulse.is_some() && all.face == Some(th.text), "{all:?}");
+    }
+
+    #[test]
+    fn the_two_stipples_are_a_quarter_each_and_never_on_one_pixel() {
+        let (mut even, mut odd) = (0, 0);
+        for y in 0..8 {
+            for x in 0..8 {
+                assert!(!(stippled(x, y, false) && stippled(x, y, true)), "{x},{y}");
+                even += i32::from(stippled(x, y, false));
+                odd += i32::from(stippled(x, y, true));
+            }
+        }
+        assert_eq!((even, odd), (16, 16));
     }
 }
 

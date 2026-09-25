@@ -249,11 +249,11 @@ the tool still sees it raised and lowered, as it would any the user
 attended to. Coming to a window that is already notified is not
 attending to it: that one stays.
 
-A notified window's handle takes the notification colour for its frame
-and draws its state -- the colour it would fill with, pulse and all, or
-the notification colour when it has none -- as a circle inside it, so
-the shape says it where the colour may not and dirty or live still
-shows. While any window is notified the session's square fills with the
+A notified window's handle wears Peter J. Weinberger's face (below)
+over whatever else it shows, frame and all, in the text's ink or, on
+the dirty colour, the paper's: a handle is a colour with marks laid over
+it, so the face says it where a colour may not, and dirty, live or
+working still shows around and under it. While any window is notified the session's square fills with the
 notification colour -- azure `0080FF` on light, ice `7DF9FF` on dark,
 each chosen under the deuteranopia simulation against every handle
 colour, border and highlight it can sit beside, where it is further from
@@ -1195,7 +1195,7 @@ is clean, and flags it stale when edited, the same flow. A stale
 window has its own handle colour, gold (`STALE`), a caution in one of
 acme's yellows, chosen by simulating deuteranopia to stand clear of
 every other handle colour and the tag's border (a dark cyan fell on
-the live raspberry, an orange on the scrollbar's olive, a medium blue
+the raspberry live once was, an orange on the scrollbar's olive, a medium blue
 on the border's purple-blue): dirty, and the disk has moved
 on underneath, so `Get` would drop the edits. Diffing rather than
 replacing and delete/rename flags are not done.
@@ -1643,10 +1643,13 @@ left of the connection mark, the heartbeat's round trip and the log's
   terminal whose program runs, or a text window a tool keeps so
   (`WindowOp::Live{by}`, the win tool's attachment; the state ends with
   the program, or with that attachment, so a crashed tool leaves nothing
-  stuck). A third state beside clean and dirty: the handle is a raspberry
-  (`0xB24073`, dark magenta with a quarter of yellow: unlike the dirty
-  blue, the fenced red, the unsynced green and the scrollbar's dark
-  yellow beside it), `Del` does not ask (the text is a transcript, not a file), and
+  stuck). Not a colour of its own but a mark over one: the handle is
+  stippled, ░, in the dirty colour -- dirty, but going on -- or in the
+  paper's over a dirty handle, where the dirty colour would not show
+  (`text_element::handle`: a handle is its colour, clean, dirty, stale or
+  unsynced, and over it the marks, live's stipple, working's, and a
+  notification's face, any of them with any other). It was a raspberry
+  of its own once, one colour more to tell from the rest. `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`. The tag says the same: a live window is
   offered no `Put`, since there is no file of that name to write it to.
   A window's *name* says it too, and says it whether or not anything is
@@ -1687,14 +1690,16 @@ left of the connection mark, the heartbeat's round trip and the log's
   prompts begin like it and carry its marker), read from the host for a
   terminal (`TermRead`), into the snarf buffer and clipboard.
 - *As built:* a window is **working** when a tool says so
-  (`WindowOp::Working{by}`, `Tool::set_working`): its handle breathes
-  between the colour work is drawn in and the tag's own, a second and a
-  half to the cycle, for as long as the work lasts. That colour is the
+  (`WindowOp::Working{by}`, `Tool::set_working`): its handle is
+  stippled, ░, in a colour that breathes between the colour work is
+  drawn in and the handle's own, a second and a half to the cycle, for
+  as long as the work lasts -- on the other half of the ░ lattice from
+  live's, so a live window working shows both. That colour is the
   one a terminal's progress bar is (`Theme::progress`, a blue no handle
   colour is), so a handle and a bar saying the same thing look the
-  same. It is not a fourth state but a mark over the three: a clean,
-  dirty, stale or live window can be working, and says so again in its
-  own colour the moment the work ends. It is for work with nothing to show while it runs, where a
+  same. It is not a state but a mark over one: a clean, dirty, stale or
+  live window can be working, and shows as it was the moment the work
+  ends. It is for work with nothing to show while it runs, where a
   window would otherwise look idle: an agent thinking, a language
   server indexing, a build. Like `Live`, it holds only while the
   attachment that set it is there, so a tool that dies leaves no window
