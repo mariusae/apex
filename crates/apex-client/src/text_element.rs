@@ -167,7 +167,7 @@ pub fn font_for(mono: bool) -> FontSpec {
         let family = if SF_MONO.with(|c| c.get()) { SF_MONO_FAMILY } else { "Menlo" };
         FontSpec { font: unjoined(with_symbols(font(family))), size: px(12.), line_height: px(16.) }
     } else {
-        FontSpec { font: unjoined(with_symbols(font(".SystemUIFont"))), size: px(13.), line_height: px(18.) }
+        FontSpec { font: legible(unjoined(with_symbols(font(".SystemUIFont")))), size: px(14.), line_height: px(20.) }
     }
 }
 
@@ -201,6 +201,16 @@ fn unjoined(f: Font) -> Font {
     // and a zero with a slash through it, where the face has one (SF
     // Pro and SF Mono do: `zero`), so it is not an O
     features.push(("zero".to_string(), 1));
+    Font { features: gpui::FontFeatures(std::sync::Arc::new(features)), ..f }
+}
+
+/// SF Pro set for code, as it is set in an editor for it: its high
+/// legibility set (`ss06`: an I with bars, an l with a tail, a 1 with a
+/// flag, so none is taken for another) and tabular figures (`tnum`: every
+/// digit as wide as the next, so numbers line up down a column).
+fn legible(f: Font) -> Font {
+    let mut features: Vec<(String, u32)> = f.features.0.as_ref().clone();
+    features.extend([("ss06".to_string(), 1), ("tnum".to_string(), 1)]);
     Font { features: gpui::FontFeatures(std::sync::Arc::new(features)), ..f }
 }
 

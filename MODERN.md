@@ -14,9 +14,11 @@ already do.
   header over each window, hairlines for acme's black borders, the
   system's selection blue and label greys, one accent blue. B2's sweep
   is amber and B3's blue, apart for a reader with deuteranopia. Text is
-  SF Pro 13/18, mono SF Mono 12/16 (loaded from the system's own file,
-  which CoreText will not hand out by name), with a slashed zero from
-  the fonts' `zero` feature.
+  SF Pro 14/20 set as an editor sets it for code: its high legibility
+  set (`ss06`: I, l and 1 each unlike the others) and tabular figures
+  (`tnum`); mono is SF Mono 12/16 (loaded from the system's own file,
+  which CoreText will not hand out by name); both with a slashed zero
+  from the fonts' `zero` feature.
 - **Tags as title bars.** The window's name in the primary ink, a
   medium weight; the commands after it in the secondary. Column tags
   and the top row are all secondary. A header's caret is not drawn
