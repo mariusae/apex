@@ -73,7 +73,7 @@ fn theme_css() -> String {
     // 18 on dark)
     // on the modern-mac branch, GitHub Colorblind's diff lines: added in
     // its blue (its green scale is blue), removed in its orange
-    let (add, del) = if crate::theme::is_dark() { (0x101F37, 0x271B18) } else { (0xE9F7FF, 0xFFF5E7) };
+    let (add, del) = if crate::theme::is_dark() { (0x243145, 0x372E2C) } else { (0xE9F7FF, 0xFFF5E7) };
     let diff = format!(":root{{--apex-add:{};--apex-del:{}}}", hex(add), hex(del));
     diff + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\

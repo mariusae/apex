@@ -10,9 +10,12 @@ already do.
 
 ## What changed
 
-- **Look.** GitHub's Light and Dark Colorblind themes (Primer's
-  `light_colorblind` and `dark_colorblind`, as the GitHub VS Code theme
-  draws them) for the palette (`theme.rs`): the canvas and its subtle
+- **Look.** GitHub's palettes, both a step in from the extremes
+  (`theme.rs`): light is GitHub Light Colorblind with its canvas.subtle
+  (#f6f8fa) for the paper and a softer ink (#32383f), sheets and menus
+  white above it; dark is GitHub Dark Dimmed (#22272e, ink #adbac7) with
+  the colour-blind themes' orange-for-red and blue-for-green kept. From
+  Primer, as the GitHub VS Code theme draws them: the canvas and its subtle
   grey, fg.default and fg.muted, accent.fg as the accent and caret and,
   at 20%, the selection; and, where GitHub's other themes have red and
   green, orange and blue -- B2's sweep orange and B3's blue, the

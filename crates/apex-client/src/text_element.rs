@@ -968,7 +968,7 @@ impl Element for TextElement {
         // a notified window's header in a pale tint of the accent, as
         // Mail tints a flagged row: the whole bar says it wants the user.
         // Pale enough that a selection in the tag still shows on it: with
-        // GitHub Colorblind's accents, 8 to 9 in CIELAB from the plain
+        // the GitHub palettes' accents, 6 to 9 in CIELAB from the plain
         // header and from the tag's selection, light and dark, under a
         // deuteranopia simulation too
         let header_bg = if pp.kind == Kind::WinTag && pp.notified {

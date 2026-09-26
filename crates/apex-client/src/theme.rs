@@ -90,37 +90,40 @@ pub struct Theme {
 }
 
 /// GitHub Light Colorblind (Primer's `light_colorblind`, as the GitHub
-/// VS Code theme draws it): the canvas and its subtle grey, fg.default
-/// and fg.muted for the ink, accent.fg (#0969da) as the accent and caret
-/// and, at 20%, the selection; and where GitHub's other themes have red
-/// and green, this one's orange (danger, attention) and blue (success):
-/// B2's sweep orange, B3's blue, and the terminal's ANSI red and green
-/// the same orange and blue.
+/// VS Code theme draws it), lifted a little off pure white: the paper is
+/// its canvas.subtle (#f6f8fa) and the headers and sidebar a step below
+/// that, the ink its gray 8 (#32383f) rather than fg.default, so neither
+/// end is at the extreme; sheets and menus stay white, lifted off the
+/// paper as a Mac popover is. accent.fg (#0969da) as the accent and
+/// caret and, at 20%, the selection; and where GitHub's other themes
+/// have red and green, this one's orange (danger, attention) and blue
+/// (success): B2's sweep orange, B3's blue, the terminal's ANSI red and
+/// green the same orange and blue.
 pub const LIGHT: Theme = Theme {
-    body_bg: 0xFFFFFF,
-    body_sel: 0xCEE1F8,
+    body_bg: 0xF6F8FA,
+    body_sel: 0xC7DBF4,
     body_border: 0xD0D7DE,
-    tag_bg: 0xF6F8FA,
-    tag_sel: 0xC8DBF3,
+    tag_bg: 0xEAEEF2,
+    tag_sel: 0xBDD3ED,
     tag_border: 0xD0D7DE,
-    text: 0x24292F,
+    text: 0x32383F,
     text_dim: 0x57606A,
     accent: 0x0969DA,
     sweep_text: 0xFFFFFF,
-    border: 0xD8DEE4,
-    column: 0xF6F8FA,
+    border: 0xD0D7DE,
+    column: 0xEFF2F5,
     dirty: 0x424A53,
     stale: 0x9A6700,
     fenced: 0xB35900,
     progress: 0x0969DA,
     exec_hl: 0xB35900,
     look_hl: 0x0969DA,
-    strip: 0xEAEEF2,
+    strip: 0xE6EAEF,
     tab_outline_dim: 0xD0D7DE,
     tab_outline: 0xAFB8C1,
     tab_current_text: 0x24292F,
     tab_text: 0x57606A,
-    tab_hover: 0xEAEEF2,
+    tab_hover: 0xE0E5EA,
     tab_dim: 0x6E7781,
     tab_close_hover: 0x24292F,
     tab_fenced_text: 0x57606A,
@@ -131,12 +134,12 @@ pub const LIGHT: Theme = Theme {
     panel_text_dim: 0x57606A,
     panel_dim: 0x6E7781,
     panel_pick: 0xDDF4FF,
-    panel_hover: 0xF3F5F8,
+    panel_hover: 0xF1F3F6,
     panel_chosen_bg: 0x0969DA,
     panel_chosen_text: 0xFFFFFF,
     panel_accent: 0x0969DA,
     panel_danger_hover: 0xFFF5E8,
-    field_sel: 0xCEE1F8,
+    field_sel: 0xC7DBF4,
     // xterm's, as the server sent them before the theme
     ansi: [0x24292F, 0xB35900, 0x0550AE, 0x4D2D00, 0x0969DA, 0x8250DF, 0x1B7C83, 0x6E7781, 0x57606A, 0x8A4600, 0x0969DA, 0x633C01, 0x218BFF, 0xA475F9, 0x3192AA, 0x8C959F],
     menu_bg: 0xFFFFFF,
@@ -146,58 +149,61 @@ pub const LIGHT: Theme = Theme {
     menu_hl_text: 0xFFFFFF,
 };
 
-/// GitHub Dark Colorblind (Primer's `dark_colorblind`): #0d1117 canvas,
-/// #c9d1d9 ink, accent.fg #58a6ff, accent.emphasis #1f6feb for a chosen
-/// row, and the same orange-for-red, blue-for-green as the light.
+/// GitHub Dark Dimmed (Primer's `dark_dimmed`), GitHub's own dark that
+/// is not so dark: #22272e canvas, #2d333b for headers, the sidebar and
+/// sheets, #adbac7 ink, accent.fg #539bf5 and accent.emphasis #316dca
+/// for a chosen row -- with the colour-blind themes' orange for red and
+/// blue for green kept, from Dimmed's own orange and blue scales, the
+/// terminal's ANSI included.
 pub const DARK: Theme = Theme {
-    body_bg: 0x0D1117,
-    body_sel: 0x1C2F45,
-    body_border: 0x484F58,
-    tag_bg: 0x161B22,
-    tag_sel: 0x23374E,
-    tag_border: 0x30363D,
-    text: 0xC9D1D9,
-    text_dim: 0x8B949E,
-    accent: 0x58A6FF,
+    body_bg: 0x22272E,
+    body_sel: 0x2C3E56,
+    body_border: 0x545D68,
+    tag_bg: 0x2D333B,
+    tag_sel: 0x354860,
+    tag_border: 0x444C56,
+    text: 0xADBAC7,
+    text_dim: 0x768390,
+    accent: 0x539BF5,
     sweep_text: 0xFFFFFF,
-    border: 0x21262D,
-    column: 0x010409,
-    dirty: 0xC9D1D9,
-    stale: 0xD29922,
-    fenced: 0xEC8E2C,
-    progress: 0x58A6FF,
-    exec_hl: 0xBD561D,
-    look_hl: 0x1F6FEB,
-    strip: 0x161B22,
-    tab_outline_dim: 0x30363D,
-    tab_outline: 0x484F58,
-    tab_current_text: 0xC9D1D9,
-    tab_text: 0x8B949E,
-    tab_hover: 0x21262D,
-    tab_dim: 0x6E7681,
-    tab_close_hover: 0xFFFFFF,
-    tab_fenced_text: 0x8B949E,
-    panel_bg: 0x161B22,
-    panel_border: 0x30363D,
-    panel_divider: 0x21262D,
-    panel_text: 0xC9D1D9,
-    panel_text_dim: 0x8B949E,
-    panel_dim: 0x6E7681,
-    panel_pick: 0x1C2F45,
-    panel_hover: 0x21262D,
-    panel_chosen_bg: 0x1F6FEB,
+    border: 0x373E47,
+    column: 0x1C2128,
+    dirty: 0xADBAC7,
+    stale: 0xC69026,
+    fenced: 0xE0823D,
+    progress: 0x539BF5,
+    exec_hl: 0xAE5622,
+    look_hl: 0x316DCA,
+    strip: 0x2D333B,
+    tab_outline_dim: 0x373E47,
+    tab_outline: 0x545D68,
+    tab_current_text: 0xCDD9E5,
+    tab_text: 0x768390,
+    tab_hover: 0x373E47,
+    tab_dim: 0x636E7B,
+    tab_close_hover: 0xCDD9E5,
+    tab_fenced_text: 0x768390,
+    panel_bg: 0x2D333B,
+    panel_border: 0x444C56,
+    panel_divider: 0x373E47,
+    panel_text: 0xADBAC7,
+    panel_text_dim: 0x909DAB,
+    panel_dim: 0x768390,
+    panel_pick: 0x2C3E56,
+    panel_hover: 0x373E47,
+    panel_chosen_bg: 0x316DCA,
     panel_chosen_text: 0xFFFFFF,
-    panel_accent: 0x58A6FF,
-    panel_danger_hover: 0x3D2A1A,
-    field_sel: 0x1C2F45,
+    panel_accent: 0x539BF5,
+    panel_danger_hover: 0x4D2F22,
+    field_sel: 0x2C3E56,
     // the same hues, lit for the dark paper: black a shade of it, white
     // the ink, the rest lighter and a little softer; the bright ones
     // brighter still
-    ansi: [0x484F58, 0xEC8E2C, 0x58A6FF, 0xD29922, 0x58A6FF, 0xBC8CFF, 0x39C5CF, 0xB1BAC4, 0x6E7681, 0xFDAC54, 0x79C0FF, 0xE3B341, 0x79C0FF, 0xD2A8FF, 0x56D4DD, 0xFFFFFF],
-    menu_bg: 0x161B22,
-    menu_hl: 0x1F6FEB,
-    menu_border: 0x30363D,
-    menu_text: 0xC9D1D9,
+    ansi: [0x545D68, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 0xB083F0, 0x39C5CF, 0x909DAB, 0x636E7B, 0xFFBC6F, 0x6CB6FF, 0xDAAA3F, 0x6CB6FF, 0xDCBDFB, 0x56D4DD, 0xCDD9E5],
+    menu_bg: 0x2D333B,
+    menu_hl: 0x316DCA,
+    menu_border: 0x444C56,
+    menu_text: 0xADBAC7,
     menu_hl_text: 0xFFFFFF,
 };
 
