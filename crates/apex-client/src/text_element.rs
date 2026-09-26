@@ -987,9 +987,10 @@ impl Element for TextElement {
                     let th = crate::theme::theme();
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
                     let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified);
-                    // on a sheet's edge, in from the sheet's rounded corner
-                    let dx = if pp.sheet { px(7.5) } else { px(6.) };
-                    paint_dot(window, &d, point(b.left() + dx, b.top() + lh / 2.));
+                    // in from the edge as far as a folded window's sheet puts
+                    // it (in from its rounded corner), so the dots of the
+                    // folded and the open line up down a column
+                    paint_dot(window, &d, point(b.left() + px(7.5), b.top() + lh / 2.));
                     badge = d.badge;
                     window.paint_quad(fill(
                         // a hairline under the header, one device pixel
