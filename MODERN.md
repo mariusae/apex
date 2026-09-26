@@ -10,17 +10,16 @@ already do.
 
 ## What changed
 
-- **Look.** rsms's Sublime schemes (github.com/rsms/sublime-theme) for
-  the palette (`theme.rs`): bright's near-white paper and black ink, its
-  blue2 accent and caret, its selection; dark's near-black paper and
-  soft white ink, its pink cursor as the accent, its selection blue. A
-  grey header over each window, hairlines for acme's black borders; B2's
-  sweep a red and B3's a blue, apart for a reader with deuteranopia. Text is
-  SF Pro 14/20 set as an editor sets it for code: its high legibility
-  set (`ss06`: I, l and 1 each unlike the others) and tabular figures
-  (`tnum`); mono is SF Mono 12/16 (loaded from the system's own file,
-  which CoreText will not hand out by name); both with a slashed zero
-  from the fonts' `zero` feature.
+- **Look.** GitHub's Light and Dark Colorblind themes (Primer's
+  `light_colorblind` and `dark_colorblind`, as the GitHub VS Code theme
+  draws them) for the palette (`theme.rs`): the canvas and its subtle
+  grey, fg.default and fg.muted, accent.fg as the accent and caret and,
+  at 20%, the selection; and, where GitHub's other themes have red and
+  green, orange and blue -- B2's sweep orange and B3's blue, the
+  terminal's ANSI red and green orange and blue, apex diff's removed and
+  added lines orange and blue. A grey header over each window, hairlines
+  for acme's black borders. (rsms's Sublime schemes were the palette
+  before; they are in the history.)
 - **Tags as title bars.** The window's name in the primary ink, a
   medium weight; the commands after it in the secondary. Column tags
   and the top row are all secondary. A header's caret is not drawn

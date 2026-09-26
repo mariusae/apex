@@ -71,7 +71,9 @@ fn theme_css() -> String {
     // simulation, 14 apart in CIELAB on light and 16 on dark), and each
     // still clears the paper for that reader (8 and 12 on light, 11 and
     // 18 on dark)
-    let (add, del) = if crate::theme::is_dark() { (0x203A2C, 0x443418) } else { (0xD8F0DC, 0xFFECC8) };
+    // on the modern-mac branch, GitHub Colorblind's diff lines: added in
+    // its blue (its green scale is blue), removed in its orange
+    let (add, del) = if crate::theme::is_dark() { (0x101F37, 0x271B18) } else { (0xE9F7FF, 0xFFF5E7) };
     let diff = format!(":root{{--apex-add:{};--apex-del:{}}}", hex(add), hex(del));
     diff + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\

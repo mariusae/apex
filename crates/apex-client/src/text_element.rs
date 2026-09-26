@@ -967,13 +967,13 @@ impl Element for TextElement {
 
         // a notified window's header in a pale tint of the accent, as
         // Mail tints a flagged row: the whole bar says it wants the user.
-        // Pale enough that a selection in the tag still shows on it (under
-        // a deuteranopia simulation, 8 in CIELAB from the plain header and
-        // 6 from the tag's selection on light, rsms's vivid blue being
-        // near the selection's hue; 10 and 16 on dark, the pink)
+        // Pale enough that a selection in the tag still shows on it: with
+        // GitHub Colorblind's accents, 8 to 9 in CIELAB from the plain
+        // header and from the tag's selection, light and dark, under a
+        // deuteranopia simulation too
         let header_bg = if pp.kind == Kind::WinTag && pp.notified {
             let th = crate::theme::theme();
-            rgb(mix(th.tag_bg, th.accent, if crate::theme::is_dark() { 0.14 } else { 0.06 }))
+            rgb(mix(th.tag_bg, th.accent, 0.10))
         } else {
             pal.bg
         };
