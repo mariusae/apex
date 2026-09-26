@@ -60,9 +60,9 @@ pub struct Prepaint {
     row_text: Vec<String>,
     cols: u16,
     cursor: Option<(u16, u16)>,
-    /// The keys go here: the cursor is the accent's block, and whether it
-    /// shows just now (it blinks with the caret). None when they go
-    /// elsewhere, and the cursor is a hollow box.
+    /// The keys go here: the cursor is the accent's caret, and whether it
+    /// shows just now (it blinks with the text caret). None when they go
+    /// elsewhere, and it is the plain dark caret.
     keys: Option<bool>,
     exited: bool,
     /// What the scrollbar shows: the viewport's first row and how many
@@ -172,15 +172,6 @@ impl Element for TermElement {
                     let fg_rgb = if correct && (fg != 0 || bg != 0) { crate::contrast::correct(fg_rgb, bg_rgb.unwrap_or(th.body_bg), th) } else { fg_rgb };
                     let mut fgc = rgb(fg_rgb);
                     let mut bgc = bg_rgb.map(rgb);
-                    if let Some((cx_, cy)) = cursor {
-                        if cx_ as usize == x && cy as usize == y && keys == Some(true) {
-                            // the cursor where the keys go: the accent's
-                            // block, the character on it in white, as the
-                            // text caret is the accent where they go
-                            bgc = Some(rgb(th.accent));
-                            fgc = rgb(0xFFFFFF);
-                        }
-                    }
                     if let Some((b, f)) = highlight(x, y) {
                         bgc = Some(b);
                         fgc = f;
@@ -289,14 +280,21 @@ impl Element for TermElement {
                 let bar = Bounds::new(point(bounds.left() + px(SCROLLWID), bounds.top()), size((w * part).max(px(1.)), px(2.)));
                 window.paint_quad(fill(bar, rgb(th.progress)));
             }
-            // the keys elsewhere: a hollow box, as Terminal's inactive
-            // cursor is (in the ink once the program has ended)
-            if pp.keys.is_none() || pp.exited {
-                if let Some((cx_, cy)) = pp.cursor {
-                    let x = origin.x + pp.cell_w * cx_ as f32;
-                    let y = origin.y + lh * cy as f32;
-                    let ink = if pp.exited { th.text } else { th.text_dim };
-                    window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(ink), BorderStyle::Solid));
+            // the cursor as a text window's caret: where the keys go, the
+            // accent's, a little wider, blinking with the text caret; where
+            // they do not, the plain dark one. A program that has ended
+            // leaves a hollow box where its cursor was
+            if let Some((cx_, cy)) = pp.cursor {
+                let x = origin.x + pp.cell_w * cx_ as f32;
+                let y = origin.y + lh * cy as f32;
+                if pp.exited {
+                    window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(th.text), BorderStyle::Solid));
+                } else {
+                    match pp.keys {
+                        Some(true) => window.paint_quad(fill(Bounds::new(point(x - px(0.5), y + px(1.)), size(px(2.), lh - px(2.))), rgb(th.accent)).corner_radii(px(1.))),
+                        Some(false) => {}
+                        None => window.paint_quad(fill(Bounds::new(point(x, y + px(2.)), size(px(1.5), lh - px(4.))), rgb(th.text)).corner_radii(px(0.75))),
+                    }
                 }
             }
             let layout = TermLayout {

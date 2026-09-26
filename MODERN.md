@@ -37,9 +37,9 @@ already do.
   half a second after a key, a click or the pointer coming to it, then
   on and off every 530 ms. A header's shows at its start too while it is
   the one. The window is drawn again only when the caret changes.
-  A terminal's cursor says the same: the accent's block, the character
-  on it in white, blinking with the caret, where the keys go; a hollow
-  box, as Terminal's inactive cursor, where they do not.
+  A terminal's cursor is the same caret: the accent's, blinking, where
+  the keys go, and the plain dark one where they do not (a hollow box
+  once its program has ended).
 - **Pointers.** The system's, not Plan 9's: the arrow over text as over
   everything else (a click in apex's text does far more than place an
   insertion point, which is all the I-beam promises), the open hand over
