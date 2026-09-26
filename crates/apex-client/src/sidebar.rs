@@ -80,7 +80,7 @@ impl Acme {
             row = if current {
                 row.bg(rgb(chosen)).shadow(vec![BoxShadow { color: gpui::hsla(0., 0., 0., if dark { 0.4 } else { 0.08 }), offset: gpui::point(px(0.), px(1.)), blur_radius: px(2.), spread_radius: px(0.), inset: false }])
             } else {
-                row.cursor_pointer().hover(move |s| s.bg(rgb(hover)))
+                row.cursor_default().hover(move |s| s.bg(rgb(hover)))
             };
             let url = u.clone();
             row = row
@@ -116,7 +116,7 @@ impl Acme {
             .flex()
             .items_center()
             .gap(px(8.))
-            .cursor_pointer()
+            .cursor_default()
             .hover(move |s| s.bg(rgb(hover)))
             .text_color(rgb(t.text_dim))
             .child(div().flex_none().w(px(18.)).flex().justify_center().text_size(px(16.)).child("+"))
@@ -142,7 +142,7 @@ impl Acme {
             .flex()
             .items_center()
             .justify_center()
-            .cursor_pointer()
+            .cursor_default()
             .hover(move |s| s.bg(rgb(hover)))
             .child(sidebar_glyph(t.text_dim))
             .on_mouse_down(
@@ -224,7 +224,7 @@ impl Acme {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .cursor_pointer()
+                    .cursor_default()
                     .hover(move |s| s.bg(rgb(hover)))
                     .child(dot_element(&d))
                     .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(label))

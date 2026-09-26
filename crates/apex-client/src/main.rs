@@ -223,19 +223,35 @@ impl Render for Acme {
         let acme_border = if scale <= 1. { 2. } else { ((2. * (scale * 110.).floor() + 66.) / 133.).floor() };
         let extra = ((apex_core::tiling::BORDER as f32 * scale - acme_border).max(0.) / scale).min(apex_core::tiling::BORDER as f32);
         let fill = |x: f32, y: f32, w: f32, h: f32, c: u32| div().absolute().left(px(x)).top(px(y)).w(px(w.max(0.))).h(px(h.max(0.))).bg(gpui::rgb(c));
-        // acme's pointer over acme's part of the window only; the box while
-        // a layout box is held (the innermost hitbox's style wins)
-        let pointer = if self.dragging_box() {
-            cursor::BOX_CURSOR
+        // the system's pointers, as a Mac app's (the innermost hitbox's
+        // style wins): the I-beam over text, tags and bodies alike; the
+        // open hand over what drags (a window's handle, a column's box,
+        // the session's), the closed hand everywhere while one is held;
+        // the arrow over scrollbars and the column where no window is;
+        // over a page, the page's own
+        use gpui::CursorStyle;
+        let dragging = self.dragging_box();
+        let hold = |c: CursorStyle| if dragging { CursorStyle::ClosedHand } else { c };
+        let pointer = if dragging {
+            CursorStyle::ClosedHand
         } else if self.over_page(window) {
             cursor::NATIVE_CURSOR // the page's own, set as it asks
         } else {
-            cursor::BIG_ARROW
+            CursorStyle::Arrow
+        };
+        // a lane down a text's left: its handle (a row high) or its
+        // scrollbar (all the way down), with its own pointer
+        let lane = |h: Option<f32>, c: CursorStyle| {
+            let d = div().absolute().left(px(0.)).top(px(0.)).w(px(crate::text_element::SCROLLWID)).cursor(c);
+            match h {
+                Some(h) => d.h(px(h)),
+                None => d.h_full(),
+            }
         };
         let mut area = rest(div().relative()).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
-        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
+        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
         for (ci, col) in l.cols.iter().enumerate() {
             // hidden behind a column grown to the whole row (B3 on its box)
             if !l.shows(ci) {
@@ -299,7 +315,7 @@ impl Render for Acme {
                     }
                 }
             }
-            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
+            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
             for (i, s) in col.wins.iter().enumerate() {
                 if !col.safe && i > 0 {
                     continue; // obscured by the full-column window
@@ -307,7 +323,7 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()));
+                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 if s.body.dy() > 0 && strip {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
                 } else if s.body.dy() > 0 {
@@ -366,7 +382,14 @@ impl Render for Acme {
                                 .into_any_element()
                         }
                     };
-                    area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body));
+                    // text and terminals take the I-beam, with the arrow
+                    // down the scrollbar; a page keeps its own pointer
+                    let body = if matches!(win.body, Body::Web | Body::Html(_)) {
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).child(lane(None, hold(CursorStyle::Arrow)))
+                    } else {
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::IBeam)).child(lane(None, hold(CursorStyle::Arrow)))
+                    };
+                    area = area.child(body);
                 }
             }
         }

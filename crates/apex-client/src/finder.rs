@@ -388,7 +388,7 @@ impl Acme {
                 .rounded(px(6.))
                 .text_size(px(14.))
                 .font_family(UI_FONT)
-                .cursor_pointer()
+                .cursor_default()
                 .when(picked, |d| d.bg(rgb(t.panel_pick)))
                 .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
                 .child(div().w(px(14.)).text_color(rgb(mark_color)).child(mark))

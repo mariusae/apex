@@ -37,6 +37,11 @@ already do.
   half a second after a key, a click or the pointer coming to it, then
   on and off every 530 ms. A header's shows at its start too while it is
   the one. The window is drawn again only when the caret changes.
+- **Pointers.** The system's, not Plan 9's: the I-beam over text (tags,
+  bodies, terminals), the open hand over what drags (a window's handle, a
+  column's box, the session's) and the closed hand everywhere while one
+  is held, the arrow over scrollbars, sidebars and lists and where no
+  window is; a page keeps its own.
 - **Scrollers.** acme's lane, drawn as a slim rounded thumb with no
   track (`paint_scroller`), in text, terminal and page windows alike.
 - **Sidebar** (`sidebar.rs`, ⌃⌘S): the sessions as vertical tabs in a

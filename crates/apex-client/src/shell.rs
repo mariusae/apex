@@ -1491,7 +1491,7 @@ impl Acme {
                     .border_color(rgb(t.panel_border))
                     .when(chosen, |d| d.bg(rgb(t.panel_chosen_bg)).text_color(rgb(t.panel_chosen_text)).border_color(rgb(t.panel_chosen_bg)))
                     .when(!chosen, |d| d.text_color(rgb(t.panel_text)).hover(|s| s.bg(rgb(t.panel_hover))))
-                    .cursor_pointer()
+                    .cursor_default()
                     .child(p.clone())
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1723,7 +1723,7 @@ impl Acme {
                 }));
                 // held: a click on release unless it moved, a drag
                 // reordering the tabs if it did (`mouse_move`, `mouse_up`)
-                chip = chip.cursor_pointer().on_mouse_down(
+                chip = chip.cursor_default().on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
                         let (grab, width) = this
@@ -1812,7 +1812,7 @@ impl Acme {
             .text_color(rgb(t.tab_dim))
             .child("+");
         if clickable {
-            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
+            plus = plus.cursor_default().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
                     if this.selector.is_some() {
@@ -1981,7 +1981,7 @@ impl Acme {
                 .child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(row.action()))
                 .child(div().flex_1());
             if row.pickable() {
-                el = el.cursor_pointer().on_mouse_down(
+                el = el.cursor_default().on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
                         this.choose(r.clone(), window, cx);

@@ -235,10 +235,9 @@ extern "C" fn native_cursor(_cls: &Class, _sel: Sel) -> Id {
 /// over text) decide.
 extern "C" fn set_nothing(_this: &Object, _sel: Sel) {}
 
-/// The style the acme area asks for: the big arrow.
-pub const BIG_ARROW: gpui::CursorStyle = gpui::CursorStyle::DragLink;
-/// The style while a layout box is held: the box.
-pub const BOX_CURSOR: gpui::CursorStyle = gpui::CursorStyle::DragCopy;
+// (main's acme area asks for the big arrow as `DragLink` and the box as
+// `DragCopy`; the modern-mac branch's asks for the system's own, and
+// only the page's no-op below is used)
 /// The style over a web or preview body: a cursor that sets nothing,
 /// leaving the pointer to the page.
 pub const NATIVE_CURSOR: gpui::CursorStyle = gpui::CursorStyle::ContextualMenu;
