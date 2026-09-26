@@ -1528,7 +1528,9 @@ impl Acme {
                         let _ = h.update(cx, |acme, window, cx| {
                             if cx.entity_id() == mine {
                                 alive = true;
-                                if acme.web_focus_tick(window) || acme.any_working() {
+                                // a spinner turning: the working handles, or the
+                                // page a tab shows while it comes up
+                                if acme.web_focus_tick(window) || acme.any_working() || acme.waiting.is_some() {
                                     cx.notify();
                                 }
                                 if acme.strip_tick(window) {

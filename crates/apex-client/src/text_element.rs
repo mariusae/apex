@@ -106,18 +106,40 @@ fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
         window.paint_quad(fill(circle(1.75), rgb(core)).corner_radii(px(1.75)));
     }
     if let Some(ink) = d.spin {
-        // a quarter and a bit of the circle, once round in 0.9 s
-        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis() % 900).unwrap_or(0);
-        let a0 = ms as f32 / 900. * std::f32::consts::TAU;
-        let a1 = a0 + 1.8;
-        let at = |a: f32| point(c.x + px(SPIN_R * a.cos()), c.y + px(SPIN_R * a.sin()));
-        let mut p = gpui::PathBuilder::stroke(px(1.5));
-        p.move_to(at(a0));
-        p.arc_to(point(px(SPIN_R), px(SPIN_R)), px(0.), false, true, at(a1));
-        if let Ok(path) = p.build() {
-            window.paint_path(path, rgb(ink));
-        }
+        paint_spinner(window, c, SPIN_R, 1.5, rgb(ink));
     }
+}
+
+/// The system's spinner, as an arc: a quarter and a bit of a circle of
+/// radius `r` round `c`, once round in 0.9 s (the window is drawn again
+/// each tick while anything spins).
+pub fn paint_spinner(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink: Hsla) {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis() % 900).unwrap_or(0);
+    let a0 = ms as f32 / 900. * std::f32::consts::TAU;
+    let a1 = a0 + 1.8;
+    let at = |a: f32| point(c.x + px(r * a.cos()), c.y + px(r * a.sin()));
+    let mut p = gpui::PathBuilder::stroke(px(width));
+    p.move_to(at(a0));
+    p.arc_to(point(px(r), px(r)), px(0.), false, true, at(a1));
+    if let Ok(path) = p.build() {
+        window.paint_path(path, ink);
+    }
+}
+
+/// A Mac scroller's thumb in acme's scrollbar lane: slim and rounded,
+/// no track, `s0` to `s1` of the way down, and nothing at all when the
+/// whole of it shows. The lane is acme's whatever is drawn in it: B1,
+/// B2 and B3 anywhere down it.
+pub fn paint_scroller(window: &mut Window, lane: Bounds<Pixels>, s0: f32, s1: f32, ink: Hsla) {
+    if s0 <= 0. && s1 >= 1. {
+        return;
+    }
+    let h = lane.size.height - px(6.);
+    let (t0, t1) = (h * s0.clamp(0., 1.), h * s1.clamp(0., 1.));
+    let len = (t1 - t0).max(px(14.)).min(h);
+    let top = (lane.top() + px(3.) + t0).min(lane.bottom() - px(3.) - len);
+    let thumb = Bounds::new(point(lane.left() + px(4.), top), size(px(5.), len));
+    window.paint_quad(fill(thumb, ink).corner_radii(px(2.5)));
 }
 
 /// A drag grip, two columns of three dots: a column's box, and the
@@ -947,15 +969,8 @@ impl Element for TextElement {
                     let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
                     // acme's: the runes shown, of all of them
                     let total = pp.text_len.max(1) as f32;
-                    let h = bounds.size.height - px(6.);
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
-                    if s0 > 0. || s1 < 1. {
-                        let (t0, t1) = (h * s0, h * s1);
-                        let len = (t1 - t0).max(px(14.)).min(h);
-                        let top = (bounds.top() + px(3.) + t0).min(bounds.bottom() - px(3.) - len);
-                        let thumb = Bounds::new(point(bounds.left() + px(4.), top), size(px(5.), len));
-                        window.paint_quad(fill(thumb, pal.border).corner_radii(px(2.5)));
-                    }
+                    paint_scroller(window, sb, s0, s1, pal.border);
                     scrollbar = Some(sb);
                 }
                 Kind::WinTag => {

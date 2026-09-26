@@ -240,13 +240,9 @@ impl Element for TermElement {
             // and the part of it the viewport takes of the whole screen
             // (the history and the viewport together) in the paper
             let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
-            window.paint_quad(fill(sb, rgb(th.body_border)));
             let (top, shown, total) = pp.view;
-            let h = bounds.size.height;
-            let t0 = h * (top.min(total) as f32 / total as f32);
-            let t1 = h * ((top + shown).min(total) as f32 / total as f32);
-            let thumb = Bounds::new(point(bounds.left(), bounds.top() + t0), size(px(SCROLLWID - 1.), (t1 - t0).max(px(2.))));
-            window.paint_quad(fill(thumb, rgb(th.body_bg)));
+            let total = total.max(1);
+            crate::text_element::paint_scroller(window, sb, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, rgb(th.body_border));
             for (i, row) in pp.rows.iter().enumerate() {
                 let y = origin.y + lh * i as f32;
                 for &(x, n, c) in &row.bgs {

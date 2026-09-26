@@ -181,11 +181,17 @@ impl Render for Acme {
         // still takes the keys that reach the other tabs, and the picker
         // still opens over it; the link goes on being made in the pool
         if let Some(what) = self.waiting.clone() {
+            // a spinner over the words, as a Mac app waits
+            let accent = text_element::rgb(t.accent);
+            let spinner = canvas(|_, _, _| {}, move |b, _, window, _| text_element::paint_spinner(window, gpui::point(b.left() + b.size.width / 2., b.top() + b.size.height / 2.), 9., 2., accent)).w(px(24.)).h(px(24.));
             let blank = rest(div())
                 .flex()
+                .flex_col()
+                .gap(px(10.))
                 .items_center()
                 .justify_center()
                 .bg(gpui::rgb(t.body_bg))
+                .child(spinner)
                 .child(div().px(px(24.)).text_size(px(13.)).font_family(shell::UI_FONT).text_color(gpui::rgb(t.tab_dim)).child(what));
             let root = root.child(blank);
             let root = match self.selector_panel(cx) {
@@ -311,7 +317,7 @@ impl Render for Acme {
                             // as wide, drawn as it draws one: the page's own is
                             // hidden, and this one moves the page (WEB.md §2.2)
                             let me_bar = me.clone();
-                            let (bar_bg, thumb_bg) = (t.body_border, t.body_bg);
+                            let (bar_bg, thumb) = (paper, t.body_border);
                             let sw = crate::text_element::SCROLLWID;
                             let bar = canvas(
                                 move |bounds, _, cx| {
@@ -322,9 +328,7 @@ impl Render for Acme {
                                 },
                                 move |bounds, (t0, t1), window, _| {
                                     window.paint_quad(gpui::fill(bounds, gpui::rgb(bar_bg)));
-                                    let h = bounds.size.height;
-                                    let thumb = Bounds::new(gpui::point(bounds.left(), bounds.top() + h * t0), size(px(sw - 1.), (h * (t1 - t0)).max(px(2.))));
-                                    window.paint_quad(gpui::fill(thumb, gpui::rgb(thumb_bg)));
+                                    text_element::paint_scroller(window, bounds, t0 as f32, t1 as f32, text_element::rgb(thumb));
                                 },
                             )
                             .w(px(sw))
