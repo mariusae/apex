@@ -51,11 +51,18 @@ already do.
   closed hand everywhere while one is held; a page keeps its own.
 - **Scrollers.** acme's lane, drawn as a slim rounded thumb with no
   track (`paint_scroller`), in text, terminal and page windows alike.
-- **Sidebar** (`sidebar.rs`, ⌃⌘S): the sessions as vertical tabs in a
-  card inset from the window's edges, the traffic lights at its top.
-  The shown session lists its windows, column by column, each with its
-  dot; a click reveals one and lands on it, as taking a notification
-  does. New Session opens the picker. Hidden, the tab strip comes back.
+- **Sidebar, and no title bar** (`sidebar.rs`), as Manifold's: the
+  sessions as vertical tabs in a card inset from the window's edges, the
+  window's buttons on its top row. The shown session lists its windows,
+  column by column, each with its dot; a click reveals one and lands on
+  it, as taking a notification does. New Session opens the picker.
+  Pinned (⌃⌘S, View ▸ Show/Hide Sidebar), it stands beside the content;
+  unpinned, the content has the whole window and the sidebar floats over
+  it without moving it, brought by the pointer at the window's left edge
+  (or leaving by it) and put away a tenth of a second after the pointer
+  is 8 pixels past it, sliding in and out as Manifold's does. The
+  window's buttons show only with it. There is no tab strip and no title
+  bar, so full screen is the whole screen.
 - **Sheets.** The picker and the finder hang from the top edge of the
   content, square above and rounded below, and slide down into place.
 - **Stacks.** A window folded to its tag is drawn as the edge of a sheet

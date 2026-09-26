@@ -1202,6 +1202,40 @@ pub fn set_native_titlebar_hidden(window: &Window, hidden: bool) {
 #[cfg(not(target_os = "macos"))]
 pub fn set_native_titlebar_hidden(_window: &Window, _hidden: bool) {}
 
+/// The window's buttons shown or not, as Manifold shows them: with the
+/// sidebar, faded in and out (AppKit's animator), and not to be pressed
+/// while they are not there.
+#[cfg(target_os = "macos")]
+pub fn set_traffic_lights(window: &Window, visible: bool) {
+    use objc::runtime::Object;
+    use objc::{msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(h) = HasWindowHandle::window_handle(window) else { return };
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return };
+    let view = h.ns_view.as_ptr() as *mut Object;
+    // SAFETY: gpui's own NSView, alive while the window is; AppKit
+    // messages on the main thread
+    unsafe {
+        let ns_window: *mut Object = msg_send![view, window];
+        if ns_window.is_null() {
+            return;
+        }
+        for kind in 0u64..3 {
+            let b: *mut Object = msg_send![ns_window, standardWindowButton: kind];
+            if b.is_null() {
+                continue;
+            }
+            let animator: *mut Object = msg_send![b, animator];
+            let alpha: f64 = if visible { 1. } else { 0. };
+            let _: () = msg_send![animator, setAlphaValue: alpha];
+            let _: () = msg_send![b, setEnabled: visible];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_traffic_lights(_window: &Window, _visible: bool) {}
+
 /// What a view shows: a URL, or a buffer's HTML.
 enum Page<'a> {
     Url(&'a str),

@@ -161,20 +161,23 @@ impl Render for Acme {
             web::set_native_titlebar_hidden(window, self.fullscreen);
             self.native_bar_hidden = self.fullscreen;
         }
-        // full screen with the tabs always shown: the strip as ever; else
-        // only when the pointer brings it, over the top of the layout
-        let hides = self.strip_hides();
-        let strip_over = hides && self.strip_revealed;
-        // the sidebar down the left, or the strip across the top
+        // the sidebar, as Manifold's: pinned, down the left with the
+        // content beside it; else floating over the content when the
+        // pointer brings it, sliding in and out. The window's buttons are
+        // on its top row and show only with it; there is no title bar, so
+        // full screen is the whole screen
         let side = self.sidebar_shown();
-        let root = if side {
-            root.flex_row().child(self.sidebar(cx))
-        } else if hides {
-            root
-        } else {
-            root.child(self.titlebar(cx))
-        };
-        // what fills the rest: across from the sidebar, or under the strip
+        let slide = if side { None } else { self.sidebar_slide() };
+        let lights = side || self.sidebar_out;
+        if self.lights_shown != Some(lights) {
+            web::set_traffic_lights(window, lights);
+            self.lights_shown = Some(lights);
+        }
+        if slide.is_some_and(|t| t < 1.) {
+            window.request_animation_frame();
+        }
+        let root = if side { root.flex_row().child(self.sidebar(false, cx)) } else { root };
+        // what fills the rest: across from a pinned sidebar, or all of it
         let rest = move |d: gpui::Div| if side { d.flex_1().min_w_0().h_full() } else { d.flex_1().min_h_0().w_full() };
         // a tab with nothing attached to it: no acme, just the page and
         // what the tab is waiting for in the middle of it. The window
@@ -192,17 +195,15 @@ impl Render for Acme {
                 .justify_center()
                 .bg(gpui::rgb(t.body_bg))
                 .child(spinner)
-                .child(div().px(px(24.)).text_size(px(13.)).font_family(shell::UI_FONT).text_color(gpui::rgb(t.tab_dim)).child(what));
+                .child(div().px(px(24.)).text_size(px(13.)).font_family(shell::UI_FONT).text_color(gpui::rgb(t.text_dim)).child(what));
             let root = root.child(blank);
             let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
                 None => root,
             };
-            let root = if strip_over {
-                let width = window.viewport_size().width;
-                root.child(gpui::deferred(div().absolute().top(px(0.)).left(px(0.)).w(width).h(px(shell::TITLEBAR_HEIGHT)).child(self.titlebar(cx))).with_priority(1))
-            } else {
-                root
+            let root = match slide {
+                Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
+                None => root,
             };
             return root.into_any_element();
         }
@@ -410,11 +411,9 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        let root = if strip_over {
-            let width = window.viewport_size().width;
-            root.child(gpui::deferred(div().absolute().top(px(0.)).left(px(0.)).w(width).h(px(shell::TITLEBAR_HEIGHT)).child(self.titlebar(cx)).child(self.overlay_mark())).with_priority(1))
-        } else {
-            root
+        let root = match slide {
+            Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
+            None => root,
         };
         let holes = self.overlay_bounds.clone();
         let me3 = me.clone();
@@ -496,7 +495,6 @@ fn main() {
         cx.on_action(|_: &shell::ThemeLight, cx| shell::set_theme(theme::Mode::Light, cx));
         cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
-        cx.on_action(|_: &shell::ToggleFullscreenTabs, cx| shell::toggle_fullscreen_tabs(cx));
         cx.on_action(|_: &shell::ToggleSidebar, cx| shell::toggle_sidebar(cx));
         cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.bind_keys(shell::bindings());
@@ -621,7 +619,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                 // the lights on the bar's centre line: their own height is
                 // 13 as AppKit draws them, so the room above is what is
                 // left of the bar (measured on screen, not by the book)
-                traffic_light_position: Some(gpui::point(px(10.), px((shell::TITLEBAR_HEIGHT - 13.) / 2.))),
+                // on the sidebar card's top row, as Manifold puts them: the
+                // close button's middle 20 in from the card's edge and half
+                // the row down (the card is 6 in from the window's)
+                traffic_light_position: Some(gpui::point(px(19.), px(6. + shell::SIDEBAR_HEADER / 2. - 6.5))),
             }),
             // the title bar is ours: AppKit must not take a drag there as a
             // window move (a tab dragged reorders the tabs); the strip's
@@ -802,6 +803,13 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     // remembered like any window, on the session it is meant for
     acme.socket = Some(apex_server::daemon::default_socket());
     acme
+}
+
+/// The floating sidebar over the content, `t` of the way in: from 24
+/// pixels to the left and faded, as Manifold's slides.
+fn floating_sidebar(sidebar: impl IntoElement, t: f32) -> impl IntoElement {
+    use gpui::{div, px};
+    gpui::deferred(div().absolute().top(px(0.)).bottom(px(0.)).left(px(-24. * (1. - t))).opacity(t).child(sidebar)).with_priority(1)
 }
 
 /// The tools menu painted as a Mac context menu: the card rounded and

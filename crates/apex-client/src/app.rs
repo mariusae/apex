@@ -21,7 +21,7 @@ use apex_server::providers::SessionUrl;
 use apex_server::remote::{Link, Wake};
 use apex_server::{PlumbReq, PlumbStep, Proposal, perform, Server, ServerEvent, TermKey};
 
-use crate::shell::{Selector, TITLEBAR_HEIGHT};
+use crate::shell::Selector;
 use crate::menu;
 use crate::text_element::font_for;
 
@@ -392,9 +392,6 @@ pub struct Acme {
     /// session is parked.
     pub wake_target: Option<WakeTarget>,
     pub selector: Option<Selector>,
-    /// A tab held with B1: a click until it moves, a drag reordering
-    /// the tabs after that.
-    pub tab_drag: Option<crate::shell::TabDrag>,
     /// The view the keys go to, whose caret is the blue one that blinks
     /// (none when apex is not in front, or the keys go to a terminal or
     /// a page); whether that caret shows just now; and since when it has
@@ -405,12 +402,6 @@ pub struct Acme {
     pub caret_term: Option<TermId>,
     pub caret_on: bool,
     pub caret_since: std::time::Instant,
-    /// The tab under the pointer, and since when: its status card shows
-    /// beneath it once the pointer has rested there a moment.
-    pub tab_hovered: Option<(TabId, std::time::Instant)>,
-    /// Where the tabs were drawn last frame, for the drag to know
-    /// which one the pointer has passed.
-    pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(TabId, gpui::Bounds<Pixels>)>>>,
     /// Where the overlays (the picker, the finder, the tools menu) were
     /// drawn this frame: holes cut in the web views,
     /// which are native views above everything gpui paints, so the
@@ -452,10 +443,16 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
-    /// Full screen hides the strip; the pointer at the top edge brings
-    /// it over the top of the window (a browser's full screen), and it
-    /// goes once the pointer has left it.
-    pub strip_revealed: bool,
+    /// The sidebar, not pinned, floating over the content: brought by the
+    /// pointer at the window's left edge (or leaving the window by it)
+    /// and put away a moment after the pointer is past it, as
+    /// Manifold's is; and when it last came or went, for its slide.
+    pub sidebar_out: bool,
+    pub sidebar_moved: Option<std::time::Instant>,
+    /// When the pointer left it: it goes a tenth of a second after.
+    pub sidebar_leaving: Option<std::time::Instant>,
+    /// Whether the window's buttons show just now: with the sidebar.
+    pub lights_shown: Option<bool>,
     /// Whether AppKit's title bar container is hidden (full screen).
     pub native_bar_hidden: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
@@ -1475,56 +1472,6 @@ impl Acme {
         changed
     }
 
-    /// What the titlebar shows of the link: the heartbeat's round trip
-    /// and the log's (an entry flushed to its Ack), in milliseconds.
-    /// A tab's status card (hovered): the session, where it is, how the
-    /// link stands, and the round trips spelled out: the heartbeat's
-    /// (ping) and a log append's acknowledgement (log).
-    pub fn tab_status(&self, tab: &crate::pool::Tab, cx: &gpui::App) -> Vec<(String, String)> {
-        let url = &tab.url;
-        let ms = |m: Option<u64>| m.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
-        let mut lines = vec![("Session".to_string(), url.session.clone())];
-        let host = if url.is_local() { "this machine".to_string() } else { format!("{} ({})", url.arg, url.provider) };
-        lines.push(("Host".into(), host));
-        if tab.id == self.tab {
-            let state = match &self.backend {
-                _ if self.waiting.is_some() => self.waiting.clone().unwrap_or_default(),
-                Backend::Local(_) => "in-process".to_string(),
-                Backend::Remote(_) if !self.connected => "disconnected".into(),
-                Backend::Remote(_) if self.fenced() => "attached, fenced: another client leads".into(),
-                Backend::Remote(_) => "attached, leading".into(),
-            };
-            lines.push(("Status".into(), state));
-            lines.push(("Ping".into(), ms(self.ping_ms)));
-            let ack = match &self.backend {
-                Backend::Remote(link) => link.ack_ms,
-                _ => None,
-            };
-            lines.push(("Log".into(), ms(ack)));
-        } else {
-            match Pool::link_status(cx, tab.id) {
-                Some((ack, pong)) => {
-                    let heard = match pong {
-                        Some(d) if d.as_secs() < 2 => "just now".to_string(),
-                        Some(d) => format!("{}s ago", d.as_secs()),
-                        None => "not yet".into(),
-                    };
-                    lines.push(("Status".into(), format!("parked, attached; last heard {heard}")));
-                    lines.push(("Log".into(), ms(ack)));
-                }
-                None => {
-                    let what = match &tab.state {
-                        crate::pool::State::Coming(why) => why.word().to_string(),
-                        crate::pool::State::Down(why) => why.clone(),
-                        crate::pool::State::Up => "not connected".into(),
-                    };
-                    lines.push(("Status".into(), what));
-                }
-            }
-        }
-        lines
-    }
-
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
         // keys follow the pointer over pages too: a native view keeps the
         // pointer's moves to itself, so the system is asked, often
@@ -1546,8 +1493,13 @@ impl Acme {
                                 if acme.caret_tick() {
                                     cx.notify();
                                 }
-                                if acme.strip_tick(window) {
-                                    cx.notify();
+                                // the floating sidebar, from where the pointer
+                                // is, asked of the system (a page keeps its
+                                // moves to itself, and it may have left)
+                                if let Some(p) = crate::web::native_mouse(window) {
+                                    if acme.sidebar_tick(p, window.viewport_size()) {
+                                        cx.notify();
+                                    }
                                 }
                                 if acme.tabs_tick(cx) {
                                     cx.notify();
@@ -1591,15 +1543,15 @@ impl Acme {
             wake: None,
             wake_target: None,
             selector: None,
-            tab_drag: None,
             caret_view: None,
             caret_term: None,
             caret_on: true,
             caret_since: std::time::Instant::now(),
-            tab_hovered: None,
-            strip_revealed: false,
+            sidebar_out: false,
+            sidebar_moved: None,
+            sidebar_leaving: None,
+            lights_shown: None,
             native_bar_hidden: false,
-            tab_bounds: Default::default(),
             overlay_bounds: Default::default(),
             switcher: None,
             tag_need: HashMap::new(),
@@ -2183,19 +2135,16 @@ impl Acme {
         }
     }
 
-    /// Where acme's area starts: below the title bar, or at the top when
-    /// the window is full screen.
+    /// Where acme's area starts: the top of the window, always. There is
+    /// no title bar (the window's buttons are the sidebar's), so full
+    /// screen is the whole screen.
     pub fn top(&self) -> f32 {
-        if self.strip_hides() || self.sidebar_shown() {
-            0.
-        } else {
-            TITLEBAR_HEIGHT
-        }
+        0.
     }
 
     /// Where acme's area starts across: right of the sidebar, while it
-    /// shows. acme's layout is in its own coordinates, from the area's
-    /// corner; the pointer and the pages are in the window's.
+    /// is pinned. acme's layout is in its own coordinates, from the
+    /// area's corner; the pointer and the pages are in the window's.
     pub fn left(&self) -> f32 {
         if self.sidebar_shown() {
             crate::shell::SIDEBAR_W
@@ -2204,39 +2153,71 @@ impl Acme {
         }
     }
 
-    /// The sidebar is up: chosen, and not in full screen with the strip
-    /// hiding, where the whole screen is acme's.
+    /// The sidebar is pinned: beside the content, which is laid out
+    /// right of it. Unpinned it floats over the content when brought.
     pub fn sidebar_shown(&self) -> bool {
-        crate::theme::sidebar() && !self.strip_hides()
+        crate::theme::sidebar()
     }
 
-    /// Full screen with the strip not always shown: it hides, and comes
-    /// with the menu bar.
-    pub fn strip_hides(&self) -> bool {
-        self.fullscreen && !crate::theme::fullscreen_tabs()
-    }
-
-    /// Full screen, the strip hiding: where the pointer is, asked of the
-    /// system (the menu bar takes its moves at the top, and it can be
-    /// over a page), every tick; near the top it brings the strip, as
-    /// the menu bar comes, and below the strip it lets it go. True when
-    /// the strip's state changed.
-    pub fn strip_tick(&mut self, window: &Window) -> bool {
-        if !self.strip_hides() {
-            if self.strip_revealed {
-                self.strip_revealed = false;
+    /// The floating sidebar, as Manifold's: the pointer within 6 pixels
+    /// of the window's left edge (or just past it, leaving by it, as a
+    /// window against the screen's side is left) brings it; once the
+    /// pointer is more than 8 pixels past it, or out of the window, it
+    /// goes a tenth of a second later -- not while the picker it opened
+    /// is up. `p` is the pointer in the window's coordinates, `size` the
+    /// window's. True when it came or went.
+    pub fn sidebar_tick(&mut self, p: Point<Pixels>, size: gpui::Size<Pixels>) -> bool {
+        if self.sidebar_shown() {
+            let was = self.sidebar_out;
+            self.sidebar_out = false;
+            self.sidebar_leaving = None;
+            return was;
+        }
+        let within_y = p.y >= px(0.) && p.y <= size.height;
+        let at_edge = within_y && p.x <= px(6.) && p.x >= px(-60.);
+        if at_edge {
+            self.sidebar_leaving = None;
+            if !self.sidebar_out {
+                self.sidebar_out = true;
+                self.sidebar_moved = Some(std::time::Instant::now());
                 return true;
             }
             return false;
         }
-        let Some(p) = crate::web::native_mouse(window) else { return false };
-        let inside = p.x >= px(0.) && p.x <= window.viewport_size().width;
-        let revealed = inside && if self.strip_revealed { p.y <= px(TITLEBAR_HEIGHT + 10.) } else { p.y <= px(3.) };
-        if revealed != self.strip_revealed {
-            self.strip_revealed = revealed;
-            return true;
+        if !self.sidebar_out {
+            return false;
         }
-        false
+        let over = within_y && p.x >= px(-60.) && p.x <= px(crate::shell::SIDEBAR_W + 8.);
+        if over || self.selector.is_some() {
+            self.sidebar_leaving = None;
+            return false;
+        }
+        match self.sidebar_leaving {
+            None => {
+                self.sidebar_leaving = Some(std::time::Instant::now());
+                false
+            }
+            Some(t) if t.elapsed() >= std::time::Duration::from_millis(100) => {
+                self.sidebar_out = false;
+                self.sidebar_leaving = None;
+                self.sidebar_moved = Some(std::time::Instant::now());
+                true
+            }
+            Some(_) => false,
+        }
+    }
+
+    /// How far the floating sidebar is in, 0 to 1, as it slides: in over
+    /// 0.16 s easing out, from 24 pixels to the left and faded, and away
+    /// over 0.14 s easing in; None when it is not there at all.
+    pub fn sidebar_slide(&self) -> Option<f32> {
+        let t = self.sidebar_moved.map(|m| m.elapsed().as_secs_f32());
+        match (self.sidebar_out, t) {
+            (true, Some(t)) => Some(1. - (1. - (t / 0.16).min(1.)).powi(3)),
+            (true, None) => Some(1.),
+            (false, Some(t)) if t < 0.14 => Some(1. - (t / 0.14).powi(3)),
+            _ => None,
+        }
     }
 
     fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
@@ -2927,60 +2908,14 @@ impl Acme {
         }
     }
 
-    pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn mouse_move(&mut self, e: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
         self.last_mouse = pos;
         if self.caret_tick() {
             cx.notify();
         }
-        if let Some(d) = &mut self.tab_drag {
-            // a tab held: past a few pixels it is a drag; the tab floats
-            // under the pointer and passes a neighbour once it covers
-            // the whole of it: its far edge past the neighbour's far
-            // edge (measured against the neighbours' places with it out
-            // of the row, so a swap cannot undo itself; overlapping one
-            // partly changes nothing, whichever is the wider)
-            d.pos = pos;
-            if !d.moved && ((d.start.x - pos.x).abs() > px(4.) || (d.start.y - pos.y).abs() > px(4.)) {
-                d.moved = true;
-            }
-            if d.moved {
-                let (id, grab, width) = (d.tab, d.grab, d.width);
-                let mut all: Vec<(TabId, gpui::Bounds<Pixels>)> = self.tab_bounds.borrow().clone();
-                all.sort_by(|a, b| a.1.origin.x.partial_cmp(&b.1.origin.x).unwrap_or(std::cmp::Ordering::Equal));
-                let gap = if all.len() >= 2 { all[1].1.origin.x - (all[0].1.origin.x + all[0].1.size.width) } else { px(4.) };
-                let (gl, gr) = (pos.x - grab, pos.x - grab + width);
-                // the others' slots with the dragged tab out of the row
-                let mut left = all.first().map(|(_, b)| b.origin.x).unwrap_or(px(0.));
-                let mut slots: Vec<(TabId, Pixels, Pixels)> = Vec::new();
-                for (u, b) in all.iter().filter(|(u, _)| *u != id) {
-                    slots.push((*u, left, left + b.size.width));
-                    left += b.size.width + gap;
-                }
-                // where it is now among them, then past each neighbour it
-                // has come to occupy: rightwards once its left edge is past
-                // the neighbour's left edge, leftwards once its right edge
-                // is past the neighbour's right; a narrower tab, which can
-                // sit wholly inside a neighbour, goes by its centre there
-                // (the two tests exclude each other, so the walk ends and
-                // a swap cannot undo itself as the pointer moves on)
-                let c = gl + width / 2.;
-                let mut k = all.iter().position(|(u, _)| *u == id).unwrap_or(slots.len());
-                for _ in 0..=slots.len() {
-                    if k < slots.len() && gl >= slots[k].1 && c >= (slots[k].1 + slots[k].2) / 2. {
-                        k += 1;
-                    } else if k > 0 && gr <= slots[k - 1].2 && c < (slots[k - 1].1 + slots[k - 1].2) / 2. {
-                        k -= 1;
-                    } else {
-                        break;
-                    }
-                }
-                let before = slots.get(k).map(|(u, _, _)| *u);
-                crate::pool::Pool::move_tab(cx, id, before);
-            }
+        if self.sidebar_tick(pos, window.viewport_size()) {
             cx.notify();
-            self.last_mouse = pos;
-            return;
         }
         if self.menu.is_some() {
             self.menu_track(pos);
@@ -3082,17 +3017,7 @@ impl Acme {
         }
     }
 
-    pub fn mouse_up(&mut self, e: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(d) = self.tab_drag.take() {
-            // let go without moving: the click it was (the current tab
-            // toggles the picker; another is switched to)
-            if !d.moved && !d.current {
-                // (the current tab, clicked, is where we are)
-                self.switch_to(d.tab, window, cx);
-            }
-            cx.notify();
-            return;
-        }
+    pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
         if self.mouse.scrolling.is_some_and(|(_, b, _)| b == button) {

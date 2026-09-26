@@ -53,17 +53,6 @@ pub struct Theme {
     pub look_hl: u32,
     // the title bar
     pub strip: u32,
-    /// The line round a tab not in front -- which is the strip's own
-    /// colour, so the line is the only thing that says where it is --
-    /// and the line it takes when the pointer is on it.
-    pub tab_outline_dim: u32,
-    pub tab_outline: u32,
-    pub tab_current_text: u32,
-    pub tab_text: u32,
-    pub tab_hover: u32,
-    pub tab_dim: u32,
-    pub tab_close_hover: u32,
-    pub tab_fenced_text: u32,
     // the overlays (picker, finder, switcher) and their fields
     pub panel_bg: u32,
     pub panel_border: u32,
@@ -119,14 +108,6 @@ pub const LIGHT: Theme = Theme {
     exec_hl: 0xB35900,
     look_hl: 0x0969DA,
     strip: 0xE6EAEF,
-    tab_outline_dim: 0xD0D7DE,
-    tab_outline: 0xAFB8C1,
-    tab_current_text: 0x24292F,
-    tab_text: 0x57606A,
-    tab_hover: 0xE0E5EA,
-    tab_dim: 0x6E7781,
-    tab_close_hover: 0x24292F,
-    tab_fenced_text: 0x57606A,
     panel_bg: 0xFFFFFF,
     panel_border: 0xD0D7DE,
     panel_divider: 0xD8DEE4,
@@ -175,14 +156,6 @@ pub const DARK: Theme = Theme {
     exec_hl: 0xAE5622,
     look_hl: 0x316DCA,
     strip: 0x2D333B,
-    tab_outline_dim: 0x373E47,
-    tab_outline: 0x545D68,
-    tab_current_text: 0xCDD9E5,
-    tab_text: 0x768390,
-    tab_hover: 0x373E47,
-    tab_dim: 0x636E7B,
-    tab_close_hover: 0xCDD9E5,
-    tab_fenced_text: 0x768390,
     panel_bg: 0x2D333B,
     panel_border: 0x444C56,
     panel_divider: 0x373E47,
@@ -261,25 +234,6 @@ fn file() -> std::path::PathBuf {
     crate::shell::state_file().with_file_name("theme")
 }
 
-/// View ▸ Always Show Tabs in Full Screen (on by default, as a
-/// browser's): the strip stays as part of the layout in full screen;
-/// off, it hides and comes when the pointer is at the top, with the
-/// menu bar. Kept in the `fullscreen-tabs` state file.
-static FULLSCREEN_TABS: AtomicBool = AtomicBool::new(true);
-
-pub fn fullscreen_tabs() -> bool {
-    FULLSCREEN_TABS.load(Ordering::Relaxed)
-}
-
-pub fn set_fullscreen_tabs(on: bool) {
-    FULLSCREEN_TABS.store(on, Ordering::Relaxed);
-    let p = crate::shell::state_file().with_file_name("fullscreen-tabs");
-    if let Some(d) = p.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    let _ = std::fs::write(p, if on { "always\n" } else { "hover\n" });
-}
-
 /// View ▸ Show Sidebar (on by default): the sessions down the left, as
 /// vertical tabs, the one shown with its windows under it. Kept in the
 /// `sidebar` state file.
@@ -318,8 +272,6 @@ pub fn set_contrast(on: bool) {
 
 /// The choice of last time, applied.
 pub fn load() {
-    let tabs = std::fs::read_to_string(crate::shell::state_file().with_file_name("fullscreen-tabs")).map(|s| s.trim() != "hover").unwrap_or(true);
-    FULLSCREEN_TABS.store(tabs, Ordering::Relaxed);
     let side = std::fs::read_to_string(crate::shell::state_file().with_file_name("sidebar")).map(|s| s.trim() != "hidden").unwrap_or(true);
     SIDEBAR.store(side, Ordering::Relaxed);
     let contrast = std::fs::read_to_string(crate::shell::state_file().with_file_name("contrast")).map(|s| s.trim() != "off").unwrap_or(true);

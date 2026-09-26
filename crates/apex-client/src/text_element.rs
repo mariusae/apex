@@ -987,7 +987,7 @@ impl Element for TextElement {
                 window.paint_quad(fill(bounds, rgb(th.body_bg)));
                 let card = Bounds::new(point(bounds.left() + px(2.), bounds.top() + px(1.)), size(bounds.size.width - px(4.), bounds.size.height + px(1.)));
                 let radii = gpui::Corners { top_left: px(7.), top_right: px(7.), bottom_left: px(0.), bottom_right: px(0.) };
-                window.paint_quad(gpui::quad(card, radii, header_bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.tab_outline), gpui::BorderStyle::Solid));
+                window.paint_quad(gpui::quad(card, radii, header_bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.body_border), gpui::BorderStyle::Solid));
             } else {
                 window.paint_quad(fill(bounds, header_bg));
             }
