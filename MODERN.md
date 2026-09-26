@@ -30,6 +30,13 @@ already do.
   with pjw's face in the accent at its end (and by the window's row in
   the sidebar, as by the session's). Column and session boxes are drag grips.
   All still acme's layout boxes: B1, B2 and B3 on them as ever.
+- **The caret says where the keys go.** Every text's caret is a plain
+  dark line, but the one the keys go to (acme's rule: the text under the
+  pointer, else the last selected in; none while apex is not in front)
+  is the accent blue, a little wider, blinking as iOS's does -- solid for
+  half a second after a key, a click or the pointer coming to it, then
+  on and off every 530 ms. A header's shows at its start too while it is
+  the one. The window is drawn again only when the caret changes.
 - **Scrollers.** acme's lane, drawn as a slim rounded thumb with no
   track (`paint_scroller`), in text, terminal and page windows alike.
 - **Sidebar** (`sidebar.rs`, ⌃⌘S): the sessions as vertical tabs in a

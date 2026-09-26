@@ -543,6 +543,10 @@ pub struct Source {
     /// A window's tag with no body under it (acme collapsed it, or the
     /// column has no room): drawn as the edge of a sheet in a stack.
     pub sheet: bool,
+    /// The keys go here: its caret is the blue one, and whether it shows
+    /// just now (it blinks). None for any other view, whose caret is the
+    /// plain one.
+    pub key_caret: Option<bool>,
     pub text: Text,
     pub sel: (usize, usize),
     pub origin: usize,
@@ -581,6 +585,7 @@ pub struct Prepaint {
     fenced: bool,
     notified: bool,
     sheet: bool,
+    key_caret: Option<bool>,
 }
 
 /// The row to have at the top so that the row `q` is on starts `room`
@@ -939,6 +944,7 @@ impl Element for TextElement {
                 fenced: src.fenced,
                 notified: src.notified,
                 sheet: src.sheet,
+                key_caret: src.key_caret,
             })
         })
     }
@@ -1088,8 +1094,14 @@ impl Element for TextElement {
                 // little in from the row's top and bottom. A header's is
                 // left out where it only sits at its start, as every
                 // one's does until it is typed in or clicked in
+                // The keys' view has the blue one, a little wider, which
+                // blinks as iOS's does -- and which, being the one, says
+                // where typing goes; a header's shows even at its start
+                // then, since that is where a key would land
                 let header = pp.kind != Kind::Body;
-                if q0 == q1 && q0 >= line.start && q0 <= line.end && !(header && q0 == 0) {
+                let keys = pp.key_caret.is_some();
+                let shows = pp.key_caret.unwrap_or(true);
+                if q0 == q1 && q0 >= line.start && q0 <= line.end && !(header && q0 == 0 && !keys) && shows {
                     let d = line.to_disp(q0);
                     let mut sub = line.subs.len() - 1;
                     for (i, &(ds, de)) in line.subs.iter().enumerate() {
@@ -1101,8 +1113,12 @@ impl Element for TextElement {
                     let (ds, _) = line.subs[sub];
                     let cx_ = origin.x + x(d) - x(ds);
                     let ty = ly + lh * sub as f32;
-                    let ink = rgb(crate::theme::theme().text);
-                    window.paint_quad(fill(Bounds::new(point(cx_, ty + px(2.)), size(px(1.5), lh - px(4.))), ink).corner_radii(px(0.75)));
+                    let th = crate::theme::theme();
+                    if keys {
+                        window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), ty + px(1.)), size(px(2.), lh - px(2.))), rgb(th.accent)).corner_radii(px(1.)));
+                    } else {
+                        window.paint_quad(fill(Bounds::new(point(cx_, ty + px(2.)), size(px(1.5), lh - px(4.))), rgb(th.text)).corner_radii(px(0.75)));
+                    }
                 }
             }
 

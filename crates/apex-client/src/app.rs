@@ -395,6 +395,14 @@ pub struct Acme {
     /// A tab held with B1: a click until it moves, a drag reordering
     /// the tabs after that.
     pub tab_drag: Option<crate::shell::TabDrag>,
+    /// The view the keys go to, whose caret is the blue one that blinks
+    /// (none when apex is not in front, or the keys go to a terminal or
+    /// a page); whether that caret shows just now; and since when it has
+    /// been left alone -- a key, a click or the pointer coming to it
+    /// start it again from solid.
+    pub caret_view: Option<ViewId>,
+    pub caret_on: bool,
+    pub caret_since: std::time::Instant,
     /// The tab under the pointer, and since when: its status card shows
     /// beneath it once the pointer has rested there a moment.
     pub tab_hovered: Option<(TabId, std::time::Instant)>,
@@ -1533,6 +1541,9 @@ impl Acme {
                                 if acme.web_focus_tick(window) || acme.any_working() || acme.waiting.is_some() {
                                     cx.notify();
                                 }
+                                if acme.caret_tick() {
+                                    cx.notify();
+                                }
                                 if acme.strip_tick(window) {
                                     cx.notify();
                                 }
@@ -1579,6 +1590,9 @@ impl Acme {
             wake_target: None,
             selector: None,
             tab_drag: None,
+            caret_view: None,
+            caret_on: true,
+            caret_since: std::time::Instant::now(),
             tab_hovered: None,
             strip_revealed: false,
             native_bar_hidden: false,
@@ -1832,6 +1846,43 @@ impl Acme {
     /// Is this window in front?
     pub fn app_active(&self) -> bool {
         self.app_active
+    }
+
+    /// The view the keys go to, as `key_down` finds it: the text under
+    /// the pointer; over a page's scrollbar or no text at all, the last
+    /// text selected in; over a terminal, none of acme's (the terminal
+    /// has its own cursor). None while apex is not in front.
+    pub fn key_view(&self) -> Option<ViewId> {
+        if !self.app_active {
+            return None;
+        }
+        match self.locate(self.pointer.unwrap_or(self.last_mouse)) {
+            Some((Target::View(v), _)) => Some(v),
+            Some((Target::Term(..), _)) => None,
+            Some((Target::Web(_), _)) | None => self.node.seltext,
+        }
+    }
+
+    /// The blue caret's state brought up to now: which view has it, and
+    /// whether it shows -- solid for half a second after it was last
+    /// started, then on and off every 530 ms, as the system's blinks.
+    /// True when either changed, so the window is drawn again only when
+    /// the caret does.
+    pub fn caret_tick(&mut self) -> bool {
+        let view = self.key_view();
+        if view != self.caret_view {
+            self.caret_view = view;
+            self.caret_since = std::time::Instant::now();
+            self.caret_on = true;
+            return true;
+        }
+        let t = self.caret_since.elapsed().as_millis();
+        let on = t < 500 || ((t - 500) / 530) % 2 == 1;
+        if on != self.caret_on {
+            self.caret_on = on;
+            return view.is_some();
+        }
+        false
     }
 
     /// The window the user is in: the one under the pointer, which has
@@ -2405,6 +2456,7 @@ impl Acme {
                 fenced: false,
                 notified,
                 sheet: false,
+                key_caret: None,
                 text: apex_core::text::Text::new(""),
                 sel: (0, 0),
                 origin: 0,
@@ -2425,6 +2477,8 @@ impl Acme {
             notified,
             // a tag alone, its body folded away: a sheet's edge
             sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.slot(w).is_some_and(|s| s.body.dy() <= 0)),
+            // the keys' view: its caret the blue one, blinking
+            key_caret: (self.caret_view == Some(view)).then_some(self.caret_on),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
@@ -2630,6 +2684,9 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // a click: the caret solid again, wherever it lands
+        self.caret_since = std::time::Instant::now();
+        self.caret_on = true;
         // a click in acme's part of the window takes the keyboard back
         // from any page that had it, and from the window itself when a
         // view that had it went and left it there: not only while pages
@@ -2861,6 +2918,10 @@ impl Acme {
 
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
+        self.last_mouse = pos;
+        if self.caret_tick() {
+            cx.notify();
+        }
         if let Some(d) = &mut self.tab_drag {
             // a tab held: past a few pixels it is a drag; the tab floats
             // under the pointer and passes a neighbour once it covers
@@ -3786,6 +3847,9 @@ impl Acme {
 
     /// Keys go to the text under the pointer, as in acme.
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // typing: the caret solid while it goes on
+        self.caret_since = std::time::Instant::now();
+        self.caret_on = true;
         // ctrl-tab: the next session, switched to live, while control is
         // held; escape then goes back to where it began
         {
