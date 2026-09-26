@@ -15,8 +15,9 @@ already do.
   which: Alabaster (tonsky's, light and dark), System (Xcode's Default
   Light and Dark, the system blue), Classic (acme's make -- cream paper,
   pale blue tags, a yellow selection -- toned down, in the hues of
-  go.dev's playground) and GitHub (Light Colorblind lifted off white,
-  and Dark Dimmed). Each is a handful of key colours from which the rest
+  go.dev's playground) GitHub (Light Colorblind lifted off white,
+  and Dark Dimmed) and Nova (Panic's standard Bright and Dark, sampled
+  from Panic's own preview of them). Each is a handful of key colours from which the rest
   follows (`make`); every one keeps orange-for-red and blue-for-green
   where it matters (the terminal's ANSI, apex diff's lines) and B2's and
   B3's sweeps apart under a deuteranopia simulation. A grey header over
@@ -26,7 +27,8 @@ already do.
   pages (previews, apex diff, as `--apex-font` and `--apex-mono`):
   System (SF Pro with its high legibility set and tabular figures, 14/20;
   Terminal's own SF Mono at Medium, 12/16, the Regular being thin),
-  Classic (Lucida Grande 13/17, Menlo 12/16), Go (Go 14/20, Go Mono
+  Classic (Lucida Grande 13/17, Menlo 12/16), Nova (SF Pro legible
+  14/20 for text and the interface, Menlo 12/16), Go (Go 14/20, Go Mono
   12/16, bundled) and Mona (Mona Sans 15/21, Monaspace Xenon 12/16 with
   Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled).
 - **Tags as title bars.** The window's name in the primary ink, a

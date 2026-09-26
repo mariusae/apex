@@ -331,6 +331,28 @@ pub const CLASSIC_DARK: Theme = make(Keys {
     popover: 0x2B2D2F, pick: 0x1F4B5A, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
 });
 
+/// Panic's Nova, its standard Bright: a white editor on a #ececec
+/// sidebar, #262626 ink, Nova's keyword blue (#255ab1) and red (#bc391c)
+/// for B3 and B2, its comment grey (#69727d) for what is secondary, and
+/// the blue of its buttons (#3777ea) for the accent (as sampled from
+/// Panic's own preview of its themes).
+pub const NOVA_LIGHT: Theme = make(Keys {
+    paper: 0xFFFFFF, sel: 0xCCE0FA, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xC4D9F7, line: 0xE0E0E0,
+    ink: 0x262626, dim: 0x69727D, faint: 0x8F97A0, accent: 0x3777EA, chosen: 0x3777EA, column: 0xFAFAFA, sidebar: 0xECECEC,
+    dirty: 0x3A3A3A, stale: 0xD39B00, fenced: 0xBC391C, exec: 0xBC391C, look: 0x255AB1,
+    popover: 0xFFFFFF, pick: 0xE3ECFC, hover: 0xF2F2F2, danger_hover: 0xF9E3DE, ansi: ANSI_LIGHT, diff_add: 0xE6EFFD, diff_del: 0xFDEEE0,
+});
+
+/// Nova's standard Dark: a #1b1c1d editor beside a lighter #323232
+/// sidebar, its cool white ink (#dbe5f1), its light blue (#78b1f9) for
+/// the accent and caret, the buttons' blue for a chosen row.
+pub const NOVA_DARK: Theme = make(Keys {
+    paper: 0x1B1C1D, sel: 0x23375A, thumb: 0x4A4C4E, header: 0x242628, header_sel: 0x2C3F5E, line: 0x323436,
+    ink: 0xDBE5F1, dim: 0x8A96A6, faint: 0x5E6670, accent: 0x78B1F9, chosen: 0x3777EA, column: 0x161718, sidebar: 0x323232,
+    dirty: 0xDBE5F1, stale: 0xE5B94B, fenced: 0xF09084, exec: 0xB8462E, look: 0x3777EA,
+    popover: 0x2A2B2D, pick: 0x23375A, hover: 0x2E3032, danger_hover: 0x4A2A24, ansi: ANSI_DARK, diff_add: 0x1A2A45, diff_del: 0x3A2A20,
+});
+
 /// View ▸ Theme: which palette, each with its light and dark (which of
 /// those is the appearance's to say: Light, Dark, System).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -339,9 +361,10 @@ pub enum Palette {
     System,
     Classic,
     GitHub,
+    Nova,
 }
 
-pub const PALETTES: [Palette; 4] = [Palette::Alabaster, Palette::System, Palette::Classic, Palette::GitHub];
+pub const PALETTES: [Palette; 5] = [Palette::Alabaster, Palette::System, Palette::Classic, Palette::GitHub, Palette::Nova];
 
 impl Palette {
     pub fn title(self) -> &'static str {
@@ -350,6 +373,7 @@ impl Palette {
             Palette::System => "System",
             Palette::Classic => "Classic",
             Palette::GitHub => "GitHub",
+            Palette::Nova => "Nova",
         }
     }
     fn word(self) -> &'static str {
@@ -358,6 +382,7 @@ impl Palette {
             Palette::System => "system",
             Palette::Classic => "classic",
             Palette::GitHub => "github",
+            Palette::Nova => "nova",
         }
     }
 }
@@ -427,6 +452,8 @@ pub fn theme() -> &'static Theme {
         (Palette::Classic, true) => &CLASSIC_DARK,
         (Palette::GitHub, false) => &LIGHT,
         (Palette::GitHub, true) => &DARK,
+        (Palette::Nova, false) => &NOVA_LIGHT,
+        (Palette::Nova, true) => &NOVA_DARK,
     }
 }
 

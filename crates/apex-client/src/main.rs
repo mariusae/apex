@@ -502,10 +502,12 @@ fn main() {
         cx.on_action(|_: &shell::PaletteSystem, cx| shell::set_palette(theme::Palette::System, cx));
         cx.on_action(|_: &shell::PaletteClassic, cx| shell::set_palette(theme::Palette::Classic, cx));
         cx.on_action(|_: &shell::PaletteGitHub, cx| shell::set_palette(theme::Palette::GitHub, cx));
+        cx.on_action(|_: &shell::PaletteNova, cx| shell::set_palette(theme::Palette::Nova, cx));
         cx.on_action(|_: &shell::FontSystem, cx| shell::set_fonts(fonts::Set::System, cx));
         cx.on_action(|_: &shell::FontClassic, cx| shell::set_fonts(fonts::Set::Classic, cx));
         cx.on_action(|_: &shell::FontGo, cx| shell::set_fonts(fonts::Set::Go, cx));
         cx.on_action(|_: &shell::FontMona, cx| shell::set_fonts(fonts::Set::Mona, cx));
+        cx.on_action(|_: &shell::FontNova, cx| shell::set_fonts(fonts::Set::Nova, cx));
         cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {

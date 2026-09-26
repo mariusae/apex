@@ -9,6 +9,9 @@
 //!   its Medium weight, since the Regular draws thin at 12.
 //! - Classic: Lucida Grande and Menlo, apex's as it was.
 //! - Go: Go and Go Mono (bundled).
+//! - Nova: as Panic's Nova is set, SF (with its high legibility set and
+//!   tabular figures, as System's) for text and the interface, and Menlo
+//!   for code.
 //! - Mona: Mona Sans and Monaspace Xenon (bundled), Xenon set as
 //!   Manifold sets it: texture healing (`calt`) and stylistic sets 2, 3,
 //!   7 and 8, and in pages Radon for its italics.
@@ -28,9 +31,10 @@ pub enum Set {
     Classic,
     Go,
     Mona,
+    Nova,
 }
 
-pub const ALL: [Set; 4] = [Set::System, Set::Classic, Set::Go, Set::Mona];
+pub const ALL: [Set; 5] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova];
 
 impl Set {
     pub fn title(self) -> &'static str {
@@ -39,6 +43,7 @@ impl Set {
             Set::Classic => "Classic",
             Set::Go => "Go",
             Set::Mona => "Mona",
+            Set::Nova => "Nova",
         }
     }
 
@@ -48,6 +53,7 @@ impl Set {
             Set::Classic => "classic",
             Set::Go => "go",
             Set::Mona => "mona",
+            Set::Nova => "nova",
         }
     }
 }
@@ -109,6 +115,7 @@ pub fn text() -> Spec {
         Set::Classic => Spec { family: "Lucida Grande", size: px(13.), line_height: px(17.), weight: FontWeight::NORMAL, features: &[] },
         Set::Go => Spec { family: "Go", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
         Set::Mona => Spec { family: "Mona Sans", size: px(15.), line_height: px(21.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Nova => Spec { family: ".SystemUIFont", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: LEGIBLE },
     }
 }
 
@@ -128,6 +135,7 @@ pub fn mono() -> Spec {
         Set::Classic => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Go => Spec { family: "Go Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Mona => Spec { family: "Monaspace Xenon", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: XENON },
+        Set::Nova => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
@@ -138,6 +146,7 @@ pub fn ui() -> &'static str {
         Set::Classic => "Lucida Grande",
         Set::Go => "Go",
         Set::Mona => "Mona Sans",
+        Set::Nova => ".AppleSystemUIFont",
     }
 }
 
@@ -234,6 +243,7 @@ pub fn page_css() -> String {
         Set::System => ("-apple-system, BlinkMacSystemFont, sans-serif", "ui-monospace, \"SF Mono\", Menlo, monospace", "\"ss06\", \"tnum\"", "\"zero\""),
         Set::Classic => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "Menlo, monospace", "normal", "normal"),
         Set::Go => ("\"Go\", sans-serif", "\"Go Mono\", monospace", "normal", "normal"),
+        Set::Nova => ("-apple-system, BlinkMacSystemFont, sans-serif", "Menlo, monospace", "\"ss06\", \"tnum\"", "normal"),
         Set::Mona => ("\"Mona Sans\", sans-serif", "\"Monaspace Xenon\", monospace", "normal", "\"calt\", \"ss02\", \"ss03\", \"ss07\", \"ss08\""),
     };
     css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features}}}"));
