@@ -37,8 +37,18 @@ already do.
   content, square above and rounded below, and slide down into place.
 - **Stacks.** A window folded to its tag is drawn as the edge of a sheet
   in a stack, Manifold's stack of paper, on the body's paper.
-- **Menus.** The B4 tools menu is a Mac context menu: rounded, lifted,
-  the chosen item an accent pill.
+- **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
+  `Menu::place`) with menuhit's ways: up while the button is held, run on
+  release over an item, the last choice remembered and opened under the
+  pointer (which lands on it), a part and a lane past 25 items. It looks
+  like a Mac menu: 22-pixel rows in the system font, the highlight an
+  accent pill in from the sides, a checkmark by the remembered item as a
+  pop-up button marks its choice, the corners rounded and a shadow under
+  it, the lane down its right with a slim thumb.
+- **Columns on paper.** A column is the body's paper where its windows
+  leave it (a body's part line at its foot, the gaps), with a hairline
+  where each window meets the one above, as acme's column is white with
+  black between.
 - **Waiting.** A tab coming up shows the system's spinner over its words.
 
 ## Not done

@@ -3620,49 +3620,16 @@ impl Acme {
         if items.is_empty() {
             return;
         }
-        let fs = crate::text_element::font_for(false);
-        let ih = f32::from(fs.line_height) as i32 + menu::VSPACING;
-        let fh = f32::from(fs.line_height) as i32;
-        let run = |len: usize| gpui::TextRun { len, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
-        let widths: Vec<i32> = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), fs.size, &[run(i.len())], None).width).ceil() as i32).collect();
-        let maxwid = widths.iter().copied().max().unwrap_or(0);
-        let nitem = items.len() as i32;
-        let lasthit = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l)).unwrap_or(0) as i32;
+        // the items measured in the face the menu sets them in, the
+        // system's at a menu's size
+        let face = gpui::font(crate::shell::UI_FONT);
+        let run = |len: usize| gpui::TextRun { len, font: face.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+        let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), px(13.), &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
+        let checked = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l));
         // the screen, for menuhit, is acme's area
-        let screen = self.node.state.layout.r;
-        let screenitem = (screen.dy() - 10) / ih;
-        let (scrolling, nitemdrawn, wid, off, lasti) = if nitem > menu::MAXUNSCROLL || nitem > screenitem {
-            let nitemdrawn = menu::NSCROLL.min(screenitem).max(1);
-            let off = (lasthit - nitemdrawn / 2).clamp(0, (nitem - nitemdrawn).max(0));
-            (true, nitemdrawn, maxwid + menu::GAP + menu::SCROLLWID, off, lasthit - off)
-        } else {
-            (false, nitem, maxwid, 0, lasthit)
-        };
-        let (mx, my) = self.row_pt(at);
-        // r = insetrect(Rect(0,0,wid,n*ih), -Margin), moved so item lasti is centred on the pointer
-        let mut r = tiling::Rect::new(-menu::MARGIN, -menu::MARGIN, wid + menu::MARGIN, nitemdrawn * ih + menu::MARGIN);
-        let (dx, dy) = (mx - wid / 2, my - (lasti * ih + fh / 2));
-        r = tiling::Rect::new(r.x0 + dx, r.y0 + dy, r.x1 + dx, r.y1 + dy);
-        let mut px_ = 0;
-        let mut py_ = 0;
-        if r.x1 > screen.x1 {
-            px_ = screen.x1 - r.x1;
-        }
-        if r.y1 > screen.y1 {
-            py_ = screen.y1 - r.y1;
-        }
-        if r.x0 < screen.x0 {
-            px_ = screen.x0 - r.x0;
-        }
-        if r.y0 < screen.y0 {
-            py_ = screen.y0 - r.y0;
-        }
-        let menur = tiling::Rect::new(r.x0 + px_, r.y0 + py_, r.x1 + px_, r.y1 + py_);
-        let textr = tiling::Rect::new(menur.x1 - menu::MARGIN - maxwid, menur.y0 + menu::MARGIN, menur.x1 - menu::MARGIN, menur.y0 + menu::MARGIN + nitemdrawn * ih);
-        let scrollr = if scrolling { tiling::Rect::new(menur.x0 + menu::BORDER, menur.y0 + menu::BORDER, menur.x0 + menu::BORDER + menu::SCROLLWID, menur.y1 - menu::BORDER) } else { tiling::Rect::new(0, 0, 0, 0) };
-        let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih };
+        let m = menu::Menu::place(w, items, checked, maxwid, self.row_pt(at), self.node.state.layout.r);
         // moveto: the pointer onto the item, so a click alone repeats it
-        let ir = m.item_rect(lasti);
+        let ir = m.item_rect(m.lasti);
         let center = point(px(((ir.x0 + ir.x1) / 2) as f32 + self.left()), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
         crate::warp::move_to(window, center);
         self.pointer = Some(center);

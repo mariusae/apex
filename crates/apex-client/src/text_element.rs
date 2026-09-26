@@ -293,6 +293,12 @@ fn slashed_zero(window: &Window, cx: &App) -> Option<Subst> {
         return cached;
     }
     let fs = font_for(false);
+    // the system's faces have their slashed zero as a feature (`zero`,
+    // set in `unjoined`), and CoreText will not open them by name
+    if fs.font.family.starts_with('.') {
+        SUBST.with(|c| c.set(Some(None)));
+        return None;
+    }
     let run = TextRun { len: 1, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
     let shaped = window.text_system().shape_line("0".into(), fs.size, &[run], None);
     let lucida = cx.text_system().resolve_font(&fs.font);

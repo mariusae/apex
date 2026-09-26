@@ -251,6 +251,19 @@ impl Render for Acme {
             // it); everywhere else the black root is the borders between
             // the tag and the windows and between the windows
             let tail = col.wins.last().map(|s| s.r.y1).unwrap_or(col.r.y0 + font + apex_core::tiling::BORDER);
+            // the column on the body's paper, as acme's is on white: what
+            // the windows leave -- a body's last part line, the gaps
+            // between them -- is paper, not the rule's grey; a hairline
+            // where each window meets the one above it says where it
+            // starts (not above a folded one, whose sheet's edge does)
+            area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, t.body_bg));
+            for (i, s) in col.wins.iter().enumerate() {
+                if s.body.dy() > 0 || i == 0 {
+                    let b = apex_core::tiling::BORDER as f32;
+                    let hair = 1. / scale;
+                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b / 2. - hair / 2., s.r.dx() as f32, hair, t.border));
+                }
+            }
             if tail < col.r.y1 {
                 area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::rgb(t.column)).into_any_element()));
             }
@@ -294,12 +307,6 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                // a folded window is a sheet in a stack: the border
-                // above it is the paper the stack lies on, not a rule
-                if s.body.dy() <= 0 && i > 0 {
-                    let b = apex_core::tiling::BORDER as f32;
-                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b, s.r.dx() as f32, b, t.body_bg));
-                }
                 area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()));
                 if s.body.dy() > 0 && strip {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
@@ -771,47 +778,53 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     acme
 }
 
-/// menuhit's painting: the box, its border, the items centred, the
-/// highlighted one in negative, and the scroll bar when there is one.
-fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
+/// The tools menu painted as a Mac context menu: the card rounded and
+/// lifted, a hairline round it; each row in the system font, the
+/// highlighted one an accent pill in from the sides, the remembered one
+/// checked; and the scrolling lane's thumb a slim scroller's.
+fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
+    let t = theme::theme();
     let r = m.menur;
+    // children are placed from the menu's corner, inside its hairline
+    const EDGE: i32 = 1;
     let mut el = div()
         .absolute()
         .left(px(r.x0 as f32))
         .top(px(r.y0 as f32))
         .w(px(r.dx() as f32))
         .h(px(r.dy() as f32))
-        .bg(rgb(theme::theme().menu_bg))
-        .border(px(menu::BLACKBORDER as f32))
-        .border_color(rgb(theme::theme().menu_border))
-        // a Mac context menu's: rounded, lifted off the window
-        .rounded(px(8.))
+        .bg(rgb(t.menu_bg))
+        .border(px(EDGE as f32))
+        .border_color(rgb(t.menu_border))
+        .rounded(px(menu::RADIUS))
         .shadow_lg()
+        .font_family(shell::UI_FONT)
         .child(mark);
-    // children are placed relative to the menu's own origin
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);
-        let text = m.items.get((i + m.off) as usize).cloned().unwrap_or_default();
+        let at = (i + m.off) as usize;
+        let text = m.items.get(at).cloned().unwrap_or_default();
         let hl = i == m.lasti;
-        el = el.child(
-            div()
-                .absolute()
-                .left(px((ir.x0 - r.x0 - menu::BLACKBORDER) as f32))
-                .top(px((ir.y0 - r.y0 - menu::BLACKBORDER) as f32))
-                .w(px(ir.dx() as f32))
-                .h(px(ir.dy() as f32))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.))
-                .bg(rgb(if hl { theme::theme().menu_hl } else { theme::theme().menu_bg }))
-                .text_color(rgb(if hl { theme::theme().menu_hl_text } else { theme::theme().menu_text }))
-                .font_family(shell::UI_FONT)
-                .text_size(px(13.))
-                .line_height(px(font as f32))
-                .child(text),
-        );
+        let ink = if hl { t.menu_hl_text } else { t.menu_text };
+        let mut row = div()
+            .absolute()
+            .left(px((ir.x0 - r.x0 - EDGE) as f32))
+            .top(px((ir.y0 - r.y0 - EDGE) as f32))
+            .w(px(ir.dx() as f32))
+            .h(px(ir.dy() as f32))
+            .rounded(px(menu::ROW_RADIUS))
+            .flex()
+            .items_center()
+            .pl(px((menu::LEAD - menu::INSET) as f32))
+            .text_size(px(13.))
+            .text_color(rgb(ink))
+            .when(hl, |d| d.bg(rgb(t.menu_hl)))
+            .child(text);
+        if m.checked == Some(at) {
+            row = row.child(div().absolute().left(px(5.)).top(px(0.)).h_full().flex().items_center().text_size(px(12.)).text_color(rgb(ink)).child("✓"));
+        }
+        el = el.child(row);
     }
     if m.scrolling {
         let sr = m.scrollr;
@@ -819,22 +832,12 @@ fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyE
         el = el.child(
             div()
                 .absolute()
-                .left(px((sr.x0 - r.x0 - menu::BLACKBORDER) as f32))
-                .top(px((sr.y0 - r.y0 - menu::BLACKBORDER) as f32))
-                .w(px(sr.dx() as f32))
-                .h(px(sr.dy() as f32))
-                .bg(rgb(theme::theme().menu_bg))
-                .child(
-                    div()
-                        .absolute()
-                        .left(px(0.))
-                        .top(px((th.y0 - sr.y0) as f32))
-                        .w(px(sr.dx() as f32))
-                        .h(px(th.dy() as f32))
-                        .border(px(1.))
-                        .border_color(rgb(theme::theme().menu_border))
-                        .bg(rgb(theme::theme().menu_hl)),
-                ),
+                .left(px((sr.x0 - r.x0 - EDGE) as f32 + 3.5))
+                .top(px((th.y0 - r.y0 - EDGE) as f32))
+                .w(px(5.))
+                .h(px(th.dy() as f32))
+                .rounded(px(2.5))
+                .bg(rgb(t.body_border)),
         );
     }
     el.into_any_element()
