@@ -224,11 +224,12 @@ impl Render for Acme {
         let extra = ((apex_core::tiling::BORDER as f32 * scale - acme_border).max(0.) / scale).min(apex_core::tiling::BORDER as f32);
         let fill = |x: f32, y: f32, w: f32, h: f32, c: u32| div().absolute().left(px(x)).top(px(y)).w(px(w.max(0.))).h(px(h.max(0.))).bg(gpui::rgb(c));
         // the system's pointers, as a Mac app's (the innermost hitbox's
-        // style wins): the I-beam over text, tags and bodies alike; the
-        // open hand over what drags (a window's handle, a column's box,
-        // the session's), the closed hand everywhere while one is held;
-        // the arrow over scrollbars and the column where no window is;
-        // over a page, the page's own
+        // style wins): the arrow over text as over everything else -- in
+        // apex a click in text does far more than place an insertion
+        // point, which is all the I-beam says; the open hand over what
+        // drags (a window's handle, a column's box, the session's), the
+        // closed hand everywhere while one is held; over a page, the
+        // page's own
         use gpui::CursorStyle;
         let dragging = self.dragging_box();
         let hold = |c: CursorStyle| if dragging { CursorStyle::ClosedHand } else { c };
@@ -251,7 +252,7 @@ impl Render for Acme {
         let mut area = rest(div().relative()).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
-        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
         for (ci, col) in l.cols.iter().enumerate() {
             // hidden behind a column grown to the whole row (B3 on its box)
             if !l.shows(ci) {
@@ -315,7 +316,7 @@ impl Render for Acme {
                     }
                 }
             }
-            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
             for (i, s) in col.wins.iter().enumerate() {
                 if !col.safe && i > 0 {
                     continue; // obscured by the full-column window
@@ -323,7 +324,7 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::IBeam)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 if s.body.dy() > 0 && strip {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
                 } else if s.body.dy() > 0 {
@@ -382,15 +383,14 @@ impl Render for Acme {
                                 .into_any_element()
                         }
                     };
-                    // text takes the I-beam, with the arrow down the
-                    // scrollbar; a terminal the arrow, as Terminal's is; a
-                    // page keeps its own pointer
+                    // the arrow over text and terminals, and down the
+                    // scrollbar; a page keeps its own pointer
                     let body = if matches!(win.body, Body::Web | Body::Html(_)) {
                         at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).child(lane(None, hold(CursorStyle::Arrow)))
                     } else if matches!(win.body, Body::Term(_)) {
                         at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow))
                     } else {
-                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::IBeam)).child(lane(None, hold(CursorStyle::Arrow)))
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
                     };
                     area = area.child(body);
                 }
