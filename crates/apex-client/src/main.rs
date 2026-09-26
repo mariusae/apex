@@ -19,6 +19,7 @@ mod field;
 mod finder;
 mod menu;
 mod shell;
+mod sidebar;
 mod switcher;
 mod term_element;
 mod pool;
@@ -164,16 +165,23 @@ impl Render for Acme {
         // only when the pointer brings it, over the top of the layout
         let hides = self.strip_hides();
         let strip_over = hides && self.strip_revealed;
-        let root = if hides { root } else { root.child(self.titlebar(cx)) };
+        // the sidebar down the left, or the strip across the top
+        let side = self.sidebar_shown();
+        let root = if side {
+            root.flex_row().child(self.sidebar(cx))
+        } else if hides {
+            root
+        } else {
+            root.child(self.titlebar(cx))
+        };
+        // what fills the rest: across from the sidebar, or under the strip
+        let rest = move |d: gpui::Div| if side { d.flex_1().min_w_0().h_full() } else { d.flex_1().min_h_0().w_full() };
         // a tab with nothing attached to it: no acme, just the page and
         // what the tab is waiting for in the middle of it. The window
         // still takes the keys that reach the other tabs, and the picker
         // still opens over it; the link goes on being made in the pool
         if let Some(what) = self.waiting.clone() {
-            let blank = div()
-                .flex_1()
-                .min_h_0()
-                .w_full()
+            let blank = rest(div())
                 .flex()
                 .items_center()
                 .justify_center()
@@ -218,7 +226,7 @@ impl Render for Acme {
         } else {
             cursor::BIG_ARROW
         };
-        let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden().cursor(pointer);
+        let mut area = rest(div().relative()).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
@@ -446,6 +454,7 @@ fn main() {
         cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
         cx.on_action(|_: &shell::ToggleFullscreenTabs, cx| shell::toggle_fullscreen_tabs(cx));
+        cx.on_action(|_: &shell::ToggleSidebar, cx| shell::toggle_sidebar(cx));
         cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
@@ -766,6 +775,9 @@ fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyE
         .bg(rgb(theme::theme().menu_bg))
         .border(px(menu::BLACKBORDER as f32))
         .border_color(rgb(theme::theme().menu_border))
+        // a Mac context menu's: rounded, lifted off the window
+        .rounded(px(8.))
+        .shadow_lg()
         .child(mark);
     // children are placed relative to the menu's own origin
     for i in 0..m.nitemdrawn {
@@ -782,9 +794,10 @@ fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyE
                 .flex()
                 .items_center()
                 .justify_center()
+                .rounded(px(5.))
                 .bg(rgb(if hl { theme::theme().menu_hl } else { theme::theme().menu_bg }))
                 .text_color(rgb(if hl { theme::theme().menu_hl_text } else { theme::theme().menu_text }))
-                .font_family("Lucida Grande")
+                .font_family(shell::UI_FONT)
                 .text_size(px(13.))
                 .line_height(px(font as f32))
                 .child(text),

@@ -20,7 +20,15 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs, ToggleContrast]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs, ToggleContrast, ToggleSidebar]);
+
+/// View ▸ Show Sidebar toggled: kept, the menus remade with the mark,
+/// every window laid out again.
+pub fn toggle_sidebar(cx: &mut App) {
+    crate::theme::set_sidebar(!crate::theme::sidebar());
+    cx.set_menus(menus());
+    cx.refresh_windows();
+}
 
 /// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
 /// remade with the mark, every window laid out again.
@@ -74,6 +82,9 @@ pub fn apply_theme(cx: &mut App) {
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
 pub const TITLEBAR_HEIGHT: f32 = 34.;
+
+/// The sidebar's width, its card and the margin round it together.
+pub const SIDEBAR_W: f32 = 236.;
 /// The top row's background (acme's tag colour): what the selected tab is.
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
 /// The system's UI font.
@@ -140,11 +151,13 @@ pub fn menus() -> Vec<Menu> {
                 let mark = |name: &str, mine: crate::theme::Mode| if m == mine { format!("{name} ✓") } else { name.to_string() };
                 let tabs = if crate::theme::fullscreen_tabs() { "Always Show Tabs in Full Screen ✓" } else { "Always Show Tabs in Full Screen" };
                 let contrast = if crate::theme::contrast() { "Correct Terminal Contrast ✓" } else { "Correct Terminal Contrast" };
+                let side = if crate::theme::sidebar() { "Hide Sidebar" } else { "Show Sidebar" };
                 vec![
                     MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
                     MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
                     MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
                     MenuItem::separator(),
+                    MenuItem::action(side, ToggleSidebar),
                     MenuItem::action(tabs, ToggleFullscreenTabs),
                     MenuItem::action(contrast, ToggleContrast),
                 ]
@@ -177,6 +190,8 @@ pub fn bindings() -> Vec<KeyBinding> {
         // ⌘⇧[ and ⌘⇧]: macOS hands the shifted character over, so the
         // binding is on what the key makes -- { and } -- as Zed's is
         KeyBinding::new("cmd-{", PrevTab, None),
+        // Manifold's, and Xcode's: the sidebar
+        KeyBinding::new("ctrl-cmd-s", ToggleSidebar, None),
         KeyBinding::new("cmd-}", NextTab, None),
         KeyBinding::new("cmd-,", Profile, None),
         KeyBinding::new("cmd-r", Get, None),
@@ -491,11 +506,20 @@ const CARD_DELAY: std::time::Duration = std::time::Duration::from_millis(450);
 /// for the same reason since faces(1); this is its outline, from
 /// plan9port's `pjw.char.ps` (`assets/pjw.svg`), drawn `h` high in the
 /// tab's own ink.
-fn pjw(h: f32, ink: u32) -> impl IntoElement {
+pub fn pjw(h: f32, ink: u32) -> impl IntoElement {
     const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
     /// The face's own proportions: its outline is 201 wide by 259 tall.
     const RATIO: f32 = 201. / 259.;
     gpui::svg().data(PJW).flex_none().h(px(h)).w(px((h * RATIO).round())).text_color(rgb(ink))
+}
+
+/// A Mac sheet: `panel` hung from the top edge of the content (right of
+/// the sidebar's `left`), centred across it, sliding down out from under
+/// the edge as it opens -- about a sixth of a second, easing out.
+pub fn sheet(left: f32, id: &'static str, panel: gpui::Div) -> impl IntoElement {
+    use gpui::{Animation, AnimationExt};
+    let slide = panel.with_animation(id, Animation::new(std::time::Duration::from_millis(170)).with_easing(|t| 1. - (1. - t).powi(3)), |p, d| p.mt(px(-60. * (1. - d))).opacity(0.4 + 0.6 * d));
+    div().absolute().top(px(0.)).bottom(px(0.)).left(px(left)).right(px(0.)).overflow_hidden().flex().flex_col().items_center().child(slide)
 }
 
 /// The colour the window goes behind a dialog (the picker), as RGBA:
@@ -1972,12 +1996,13 @@ impl Acme {
             list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(what));
         }
         let mut panel = div()
-            .w(px(760.))
+            .w(px(680.))
             .max_w_full()
             .bg(rgb(t.panel_bg))
             .border_1()
+            .border_t_0()
             .border_color(rgb(t.panel_border))
-            .rounded(px(12.))
+            .rounded_b(px(12.))
             .shadow_lg()
             .flex()
             .flex_col()
@@ -1989,20 +2014,10 @@ impl Acme {
             None => panel.child(field).child(list),
         };
         // the window behind it goes quiet: the dialog is the whole of
-        // what there is to do while it is up
-        let veil = div()
-            .absolute()
-            .top(px(0.))
-            .left(px(0.))
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .bg(gpui::rgba(veil()))
-            .justify_center()
-            .child(panel)
-            // a little above the middle, where the eye goes first
-            .child(div().flex_none().h(px(110.)));
+        // what there is to do while it is up. It is a sheet, as a Mac
+        // app's dialog is: hung from the top of what it is about (the
+        // content, right of the sidebar), sliding down into place
+        let veil = div().absolute().top(px(0.)).left(px(0.)).size_full().bg(gpui::rgba(veil())).child(sheet(self.left(), "picker-sheet", panel));
         Some(deferred(veil).with_priority(2))
     }
 }

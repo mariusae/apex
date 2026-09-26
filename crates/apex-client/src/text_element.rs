@@ -502,6 +502,9 @@ pub struct Source {
     /// square says so, and a click on it takes the oldest); for a window's
     /// tag, that window is (its handle says so).
     pub notified: bool,
+    /// A window's tag with no body under it (acme collapsed it, or the
+    /// column has no room): drawn as the edge of a sheet in a stack.
+    pub sheet: bool,
     pub text: Text,
     pub sel: (usize, usize),
     pub origin: usize,
@@ -539,6 +542,7 @@ pub struct Prepaint {
     pulse: Option<f32>,
     fenced: bool,
     notified: bool,
+    sheet: bool,
 }
 
 /// The row to have at the top so that the row `q` is on starts `room`
@@ -896,6 +900,7 @@ impl Element for TextElement {
                 pulse: src.pulse,
                 fenced: src.fenced,
                 notified: src.notified,
+                sheet: src.sheet,
             })
         })
     }
@@ -917,7 +922,19 @@ impl Element for TextElement {
         let origin = point(bounds.left() + px(MARGIN), bounds.top());
 
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            window.paint_quad(fill(bounds, pal.bg));
+            if pp.sheet {
+                // the edge of a sheet in a stack of them, as Manifold
+                // draws what lies beneath the top one: in from the
+                // column's sides, its top corners rounded, a hairline
+                // round it, on the column's own ground
+                let th = crate::theme::theme();
+                window.paint_quad(fill(bounds, rgb(th.column)));
+                let card = Bounds::new(point(bounds.left() + px(3.), bounds.top()), size(bounds.size.width - px(6.), bounds.size.height + px(1.)));
+                let radii = gpui::Corners { top_left: px(6.), top_right: px(6.), bottom_left: px(0.), bottom_right: px(0.) };
+                window.paint_quad(gpui::quad(card, radii, pal.bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, pal.border, gpui::BorderStyle::Solid));
+            } else {
+                window.paint_quad(fill(bounds, pal.bg));
+            }
 
             let mut scrollbar = None;
             let mut layout_box = None;

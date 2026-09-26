@@ -272,6 +272,24 @@ pub fn set_fullscreen_tabs(on: bool) {
     let _ = std::fs::write(p, if on { "always\n" } else { "hover\n" });
 }
 
+/// View ▸ Show Sidebar (on by default): the sessions down the left, as
+/// vertical tabs, the one shown with its windows under it. Kept in the
+/// `sidebar` state file.
+static SIDEBAR: AtomicBool = AtomicBool::new(true);
+
+pub fn sidebar() -> bool {
+    SIDEBAR.load(Ordering::Relaxed)
+}
+
+pub fn set_sidebar(on: bool) {
+    SIDEBAR.store(on, Ordering::Relaxed);
+    let p = crate::shell::state_file().with_file_name("sidebar");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, if on { "shown\n" } else { "hidden\n" });
+}
+
 /// View ▸ Correct Terminal Contrast (on by default): a terminal's ink
 /// that does not read on its paper is moved until it does
 /// (`contrast.rs`). Kept in the `contrast` state file.
@@ -294,6 +312,8 @@ pub fn set_contrast(on: bool) {
 pub fn load() {
     let tabs = std::fs::read_to_string(crate::shell::state_file().with_file_name("fullscreen-tabs")).map(|s| s.trim() != "hover").unwrap_or(true);
     FULLSCREEN_TABS.store(tabs, Ordering::Relaxed);
+    let side = std::fs::read_to_string(crate::shell::state_file().with_file_name("sidebar")).map(|s| s.trim() != "hidden").unwrap_or(true);
+    SIDEBAR.store(side, Ordering::Relaxed);
     let contrast = std::fs::read_to_string(crate::shell::state_file().with_file_name("contrast")).map(|s| s.trim() != "off").unwrap_or(true);
     CONTRAST.store(contrast, Ordering::Relaxed);
     let m = match std::fs::read_to_string(file()).map(|s| s.trim().to_string()).as_deref() {

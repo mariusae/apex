@@ -1779,6 +1779,21 @@ impl Acme {
         cx.notify();
     }
 
+    /// A window picked in the sidebar: shown and landed on, as a
+    /// notification's window is; picking it is attending to it.
+    pub fn reveal_window(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        let _ = self.dismiss(w);
+        self.show(w);
+        self.node.warp = Some(Warp::NewWindow(w));
+        self.after();
+        cx.notify();
+    }
+
+    /// Does the window carry a notification this client shows?
+    pub fn window_notified(&self, w: WindowId) -> bool {
+        self.shown_notifications().any(|n| n.window == w)
+    }
+
     fn take_notification(&mut self, cx: &mut Context<Self>) {
         let Some(n) = self.notification_head() else { return };
         let _ = self.dismiss(n.window);
@@ -1919,8 +1934,8 @@ impl Acme {
         let font = font_for(false).line_height;
         let fonti = f32::from(font) as i32;
         let l = &self.node.state.layout;
-        let top = self.top();
-        let row = |x: i32, y: i32| point(px(x as f32), px(y as f32 + top));
+        let (top, left) = (self.top(), self.left());
+        let row = |x: i32, y: i32| point(px(x as f32 + left), px(y as f32 + top));
         let target = match p {
             Pending::Restore(at) => Some(at),
             Pending::Warp(Warp::NewWindow(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
@@ -2050,7 +2065,7 @@ impl Acme {
         }
         self.node.tiling = Box::new(ClientInfo { font, prop: font, mono, tags, bodies });
         // the OS window
-        let r = tiling::Rect::new(0, 0, f32::from(viewport.width) as i32, (f32::from(viewport.height) - self.top()) as i32);
+        let r = tiling::Rect::new(0, 0, (f32::from(viewport.width) - self.left()) as i32, (f32::from(viewport.height) - self.top()) as i32);
         if r.dx() > 0 && r.dy() > 0 && r != self.node.state.layout.r {
             let _ = self.node.resize_layout(&mut self.log, r);
         }
@@ -2107,11 +2122,28 @@ impl Acme {
     /// Where acme's area starts: below the title bar, or at the top when
     /// the window is full screen.
     pub fn top(&self) -> f32 {
-        if self.strip_hides() {
+        if self.strip_hides() || self.sidebar_shown() {
             0.
         } else {
             TITLEBAR_HEIGHT
         }
+    }
+
+    /// Where acme's area starts across: right of the sidebar, while it
+    /// shows. acme's layout is in its own coordinates, from the area's
+    /// corner; the pointer and the pages are in the window's.
+    pub fn left(&self) -> f32 {
+        if self.sidebar_shown() {
+            crate::shell::SIDEBAR_W
+        } else {
+            0.
+        }
+    }
+
+    /// The sidebar is up: chosen, and not in full screen with the strip
+    /// hiding, where the whole screen is acme's.
+    pub fn sidebar_shown(&self) -> bool {
+        crate::theme::sidebar() && !self.strip_hides()
     }
 
     /// Full screen with the strip not always shown: it hides, and comes
@@ -2144,7 +2176,7 @@ impl Acme {
     }
 
     fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
-        (f32::from(p.x) as i32, (f32::from(p.y) - self.top()) as i32)
+        ((f32::from(p.x) - self.left()) as i32, (f32::from(p.y) - self.top()) as i32)
     }
 
     /// An event from the in-process server.
@@ -2370,6 +2402,7 @@ impl Acme {
                 pulse,
                 fenced: false,
                 notified,
+                sheet: false,
                 text: apex_core::text::Text::new(""),
                 sel: (0, 0),
                 origin: 0,
@@ -2388,6 +2421,8 @@ impl Acme {
             pulse,
             fenced: self.fenced(),
             notified,
+            // a tag alone, its body folded away: a sheet's edge
+            sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.slot(w).is_some_and(|s| s.body.dy() <= 0)),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
@@ -3626,7 +3661,7 @@ impl Acme {
         let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih };
         // moveto: the pointer onto the item, so a click alone repeats it
         let ir = m.item_rect(lasti);
-        let center = point(px(((ir.x0 + ir.x1) / 2) as f32), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
+        let center = point(px(((ir.x0 + ir.x1) / 2) as f32 + self.left()), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
         crate::warp::move_to(window, center);
         self.pointer = Some(center);
         self.last_mouse = center;

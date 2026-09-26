@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use gpui::{anchored, deferred, div, point, prelude::*, px, rgb, Context, MouseButton};
+use gpui::{deferred, div, prelude::*, px, rgb, Context, MouseButton};
 
 use apex_core::*;
 use apex_server::providers::SessionUrl;
@@ -428,10 +428,12 @@ impl Acme {
         }
         let panel = div()
             .w(px(620.))
+            .max_w_full()
             .bg(rgb(t.panel_bg))
             .border_1()
+            .border_t_0()
             .border_color(rgb(t.panel_border))
-            .rounded(px(8.))
+            .rounded_b(px(12.))
             .shadow_lg()
             .flex()
             .flex_col()
@@ -439,7 +441,8 @@ impl Acme {
             .child(field)
             .child(list)
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));
-        Some(deferred(anchored().position(point(px(72.), px(self.top() + 6.))).child(panel)).with_priority(1))
+        // a sheet from the top of the content, as the picker is
+        Some(deferred(div().absolute().top(px(self.top())).left(px(0.)).size_full().child(crate::shell::sheet(self.left(), "finder-sheet", panel))).with_priority(1))
     }
 }
 
