@@ -30,8 +30,6 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
     ch(16) | ch(8) | ch(0)
 }
 
-pub const BUTTON_BORDER: f32 = 2.; // ButtonBorder
-
 pub fn rgb(hex: u32) -> Hsla {
     Rgba::from(gpui::rgb(hex)).into()
 }
@@ -50,52 +48,88 @@ pub fn palette(kind: Kind) -> Palette {
     }
 }
 
-/// A window's handle, in layers: a colour for what the text is, the
-/// stipples of what goes on behind it over that, and pjw's face over all
-/// for a window that wants the user. Any of the marks goes with any
-/// other: a live, working, notified window shows all three.
+/// A window's handle, as a Mac app marks a document: a small circle,
+/// hollow when the window is clean and filled when it is not (gold when
+/// the file has also changed on disk since); a process behind it rings
+/// it in the accent and lights its middle; work going on turns an arc
+/// round it, the system's spinner; a tool wanting the user puts an
+/// unread badge at the header's far end. Any mark goes with any other.
+/// The handle is acme's layout box all the same: B1, B2 and B3 on it do
+/// what they always have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Handle {
-    /// Clean (the tag's colour), dirty, or stale (dirty, and changed on
-    /// disk since).
-    pub base: u32,
-    /// Live, a process behind it: ░ in the dirty colour -- dirty, but
-    /// going on; a paler one on dark (`Theme::live_ink`) -- or in the
-    /// paper's over a dirty base, where the dirty colour would not show.
-    pub live: Option<u32>,
-    /// Working: ░ breathing between the colour work is drawn in (a
-    /// terminal's progress bar's) and the base.
-    pub pulse: Option<u32>,
-    /// Notified: pjw's face, in an ink the base does not hide.
-    pub face: Option<u32>,
+pub struct Dot {
+    /// Dirty or stale: the circle filled.
+    pub fill: Option<u32>,
+    /// The circle's ring: the secondary ink round a clean one, the accent
+    /// round a live one (outside the fill, when there is one).
+    pub ring: Option<u32>,
+    /// Live and clean: the accent in the middle.
+    pub core: Option<u32>,
+    /// Working: the arc turning.
+    pub spin: Option<u32>,
+    /// Notified: the badge.
+    pub badge: bool,
 }
 
-pub fn handle(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, pulse: Option<f32>, notified: bool) -> Handle {
-    let base = if stale {
-        th.stale
+pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, working: bool, notified: bool) -> Dot {
+    let fill = if stale {
+        Some(th.stale)
     } else if dirty {
-        th.dirty
+        Some(th.dirty)
     } else {
-        th.tag_bg
+        None
     };
-    let dark = base == th.dirty;
-    Handle {
-        base,
-        live: live.then_some(if dark { th.tag_bg } else { th.live_ink }),
-        pulse: pulse.map(|t| mix(th.work_ink, base, t * 0.85)),
-        face: notified.then_some(if dark { th.tag_bg } else { th.text }),
+    Dot {
+        fill,
+        ring: if live { Some(th.accent) } else if fill.is_none() { Some(th.text_dim) } else { None },
+        core: (live && fill.is_none()).then_some(th.accent),
+        spin: working.then_some(th.accent),
+        badge: notified,
     }
 }
 
-/// `x`, `y` (pixels into the handle) inked in a ░: a dot every other
-/// pixel on every other row, each such row shifted one from the last, on
-/// the even rows -- or, `odd`, on the odd rows, the lattice between.
-pub fn stippled(x: i32, y: i32, odd: bool) -> bool {
-    y % 2 == i32::from(odd) && x % 2 == (y / 2 + i32::from(odd)) % 2
+/// The circle's radius, and the ring's round a filled one, and the arc's.
+const DOT_R: f32 = 3.75;
+const RING_R: f32 = 5.;
+const SPIN_R: f32 = 5.25;
+
+fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
+    let circle = |r: f32| Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(2. * r), px(2. * r)));
+    if let Some(f) = d.fill {
+        window.paint_quad(fill(circle(DOT_R), rgb(f)).corner_radii(px(DOT_R)));
+    }
+    if let Some(ring) = d.ring {
+        let r = if d.fill.is_some() { RING_R } else { DOT_R };
+        window.paint_quad(gpui::quad(circle(r), px(r), gpui::transparent_black(), px(1.25), rgb(ring), gpui::BorderStyle::Solid));
+    }
+    if let Some(core) = d.core {
+        window.paint_quad(fill(circle(1.75), rgb(core)).corner_radii(px(1.75)));
+    }
+    if let Some(ink) = d.spin {
+        // a quarter and a bit of the circle, once round in 0.9 s
+        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis() % 900).unwrap_or(0);
+        let a0 = ms as f32 / 900. * std::f32::consts::TAU;
+        let a1 = a0 + 1.8;
+        let at = |a: f32| point(c.x + px(SPIN_R * a.cos()), c.y + px(SPIN_R * a.sin()));
+        let mut p = gpui::PathBuilder::stroke(px(1.5));
+        p.move_to(at(a0));
+        p.arc_to(point(px(SPIN_R), px(SPIN_R)), px(0.), false, true, at(a1));
+        if let Ok(path) = p.build() {
+            window.paint_path(path, rgb(ink));
+        }
+    }
 }
 
-/// pjw's face, as wide as it is high (its outline is 201 by 259).
-const PJW_RATIO: f32 = 201. / 259.;
+/// A drag grip, two columns of three dots: a column's box, and the
+/// session's.
+fn paint_grip(window: &mut Window, b: Bounds<Pixels>, ink: Hsla) {
+    let cx = b.left() + b.size.width / 2.;
+    let cy = b.top() + b.size.height / 2.;
+    for (dx, dy) in [(-2., -4.), (2., -4.), (-2., 0.), (2., 0.), (-2., 4.), (2., 4.)] {
+        let r = 0.9;
+        window.paint_quad(fill(Bounds::new(point(cx + px(dx - r), cy + px(dy - r)), size(px(2. * r), px(2. * r))), ink).corner_radii(px(r)));
+    }
+}
 
 pub struct FontSpec {
     pub font: Font,
@@ -103,11 +137,32 @@ pub struct FontSpec {
     pub line_height: Pixels,
 }
 
+/// The text faces: the system's own, SF Pro, for text, and SF Mono for
+/// a window set mono -- or Menlo, SF Mono's forebear, where SF Mono
+/// could not be loaded (`install_mono`).
 pub fn font_for(mono: bool) -> FontSpec {
     if mono {
-        FontSpec { font: unjoined(with_symbols(font("Menlo"))), size: px(12.), line_height: px(16.) }
+        let family = if SF_MONO.with(|c| c.get()) { SF_MONO_FAMILY } else { "Menlo" };
+        FontSpec { font: unjoined(with_symbols(font(family))), size: px(12.), line_height: px(16.) }
     } else {
-        FontSpec { font: unjoined(with_symbols(font("Lucida Grande"))), size: px(13.), line_height: px(17.) }
+        FontSpec { font: unjoined(with_symbols(font(".SystemUIFont"))), size: px(13.), line_height: px(18.) }
+    }
+}
+
+thread_local! {
+    static SF_MONO: Cell<bool> = const { Cell::new(false) };
+}
+
+/// SF Mono's family, as its file names it. The system keeps it out of
+/// reach by name (CoreText hands out Helvetica for "SF Mono" to anyone
+/// but Terminal and Xcode), so gpui is given the file itself.
+const SF_MONO_FAMILY: &str = ".SF NS Mono";
+
+/// Give gpui SF Mono from the system's own copy, for this process.
+pub fn install_mono(cx: &mut App) {
+    let Ok(bytes) = std::fs::read("/System/Library/Fonts/SFNSMono.ttf") else { return };
+    if cx.text_system().add_fonts(vec![std::borrow::Cow::Owned(bytes)]).is_ok() {
+        SF_MONO.with(|c| c.set(true));
     }
 }
 
@@ -120,7 +175,11 @@ pub fn font_for(mono: bool) -> FontSpec {
 /// `clig` and `calt` are the other ways a font joins letters. All three
 /// are named: gpui's `disable_ligatures` turns off `calt` alone.
 fn unjoined(f: Font) -> Font {
-    Font { features: gpui::FontFeatures(std::sync::Arc::new(UNJOINED.iter().map(|t| (t.to_string(), 0)).collect())), ..f }
+    let mut features: Vec<(String, u32)> = UNJOINED.iter().map(|t| (t.to_string(), 0)).collect();
+    // and a zero with a slash through it, where the face has one (SF
+    // Pro and SF Mono do: `zero`), so it is not an O
+    features.push(("zero".to_string(), 1));
+    Font { features: gpui::FontFeatures(std::sync::Arc::new(features)), ..f }
 }
 
 /// The features that join letters into one glyph, all off.
@@ -491,7 +550,7 @@ pub struct Prepaint {
 fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, q: usize, room: Pixels, height: Pixels) -> usize {
     let lh = fontspec.line_height;
     let text_len = text.len();
-    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.)));
+    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.), None));
     let cl = text.line_of(q.min(text_len));
     let Some(li) = line(cl) else { return 0 };
     let r = li.row_of(q);
@@ -528,19 +587,16 @@ fn shape(
     hl: Option<(usize, usize, HlKind)>,
     wrap_width: Option<Pixels>,
     y: Pixels,
+    dim_from: Option<usize>,
 ) -> LineInfo {
     let (disp, map) = expand(line_text, start);
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
     let white = rgb(crate::theme::theme().sweep_text);
-    let run = |len: usize, color: Hsla| TextRun {
-        len,
-        font: fontspec.font.clone(),
-        color,
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
+    let dimmed = rgb(crate::theme::theme().text_dim);
+    // a tag's name is set a weight heavier than the commands after it,
+    // as a title is over a toolbar's
+    let strong = Font { weight: gpui::FontWeight::MEDIUM, ..fontspec.font.clone() };
     let mut info = LineInfo {
         start,
         end,
@@ -552,29 +608,44 @@ fn shape(
         subs: Vec::new(),
         colors: Vec::new(),
     };
+    // the line cut where its ink or face changes: the sweep, and the
+    // secondary ink from `dim_from` on (a tag's commands after its name)
+    let n = disp.len();
+    let dim = dim_from.map(|q| if q <= start { 0 } else { info.to_disp(q.min(end)) });
+    let sweep = match hl {
+        Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
+        _ => None,
+    };
+    let mut cuts = vec![0, n];
+    cuts.extend(dim);
+    if let Some((a, b)) = sweep {
+        cuts.extend([a, b]);
+    }
+    cuts.sort_unstable();
+    cuts.dedup();
     let mut runs = Vec::new();
     let mut colors = Vec::new();
-    match hl {
-        Some((lo, hi, _)) if lo < end && hi > start && lo < hi => {
-            let dlo = info.to_disp(lo.max(start));
-            let dhi = info.to_disp(hi.min(end));
-            if dlo > 0 {
-                runs.push(run(dlo, black));
-                colors.push((0, dlo, black));
-            }
-            if dhi > dlo {
-                runs.push(run(dhi - dlo, white));
-                colors.push((dlo, dhi, white));
-            }
-            if disp.len() > dhi {
-                runs.push(run(disp.len() - dhi, black));
-                colors.push((dhi, disp.len(), black));
-            }
+    for w in cuts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if a >= b {
+            continue;
         }
-        _ => {
-            runs.push(run(disp.len(), black));
-            colors.push((0, disp.len(), black));
-        }
+        let swept = sweep.is_some_and(|(lo, hi)| a >= lo && b <= hi);
+        let secondary = dim.is_some_and(|d| a >= d);
+        let color = if swept {
+            white
+        } else if secondary {
+            dimmed
+        } else {
+            black
+        };
+        let face = if dim.is_some_and(|d| d > 0 && a < d) { strong.clone() } else { fontspec.font.clone() };
+        runs.push(TextRun { len: b - a, font: face, color, background_color: None, underline: None, strikethrough: None });
+        colors.push((a, b, color));
+    }
+    if runs.is_empty() {
+        runs.push(TextRun { len: 0, font: fontspec.font.clone(), color: black, background_color: None, underline: None, strikethrough: None });
+        colors.push((0, 0, black));
     }
     info.colors = colors;
     let shaped = window
@@ -692,8 +763,15 @@ impl Element for TextElement {
                 let mut y = px(0.);
                 let mut n = 0;
                 let mut wrapped = 0usize;
+                // a window's name in the primary ink and the rest of its
+                // tag in the secondary; a column's tag and the top row
+                // are all commands
+                let dim_from = match kind {
+                    Kind::WinTag => text.to_string().find([' ', '\t']).map(|b| text.to_string()[..b].chars().count()),
+                    _ => Some(0),
+                };
                 while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y);
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y, dim_from);
                     wrapped += li.subs.len().max(1);
                     y += li.height(lh);
                     lines.push(li);
@@ -706,7 +784,7 @@ impl Element for TextElement {
                 // line -- the view starts at the row it is on, the line
                 // wrapped from its own start whatever row is at the top --
                 // and down the rows to the bottom
-                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y));
+                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y, None));
                 let mut top = src.origin.min(text_len);
                 // a view being brought somewhere is at its row, not between;
                 // one whose selection is in view already (typing) stays
@@ -843,52 +921,34 @@ impl Element for TextElement {
 
             let mut scrollbar = None;
             let mut layout_box = None;
+            let mut badge = false;
             match pp.kind {
                 Kind::Body => {
+                    // the lane is acme's, B1, B2 and B3 all as ever; what
+                    // shows in it is a Mac scroller's thumb, slim and
+                    // rounded, with no track
                     let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
-                    window.paint_quad(fill(sb, pal.border));
                     // acme's: the runes shown, of all of them
                     let total = pp.text_len.max(1) as f32;
-                    let h = bounds.size.height;
+                    let h = bounds.size.height - px(6.);
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
-                    let (t0, t1) = (h * s0, h * s1);
-                    let thumb = Bounds::new(point(bounds.left(), bounds.top() + t0), size(px(SCROLLWID - 1.), (t1 - t0).max(px(2.))));
-                    window.paint_quad(fill(thumb, pal.bg));
+                    if s0 > 0. || s1 < 1. {
+                        let (t0, t1) = (h * s0, h * s1);
+                        let len = (t1 - t0).max(px(14.)).min(h);
+                        let top = (bounds.top() + px(3.) + t0).min(bounds.bottom() - px(3.) - len);
+                        let thumb = Bounds::new(point(bounds.left() + px(4.), top), size(px(5.), len));
+                        window.paint_quad(fill(thumb, pal.border).corner_radii(px(2.5)));
+                    }
                     scrollbar = Some(sb);
                 }
                 Kind::WinTag => {
                     let th = crate::theme::theme();
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
-                    window.paint_quad(fill(b, pal.border));
-                    let bb = px(BUTTON_BORDER);
-                    let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
-                    let h = handle(&th, pp.stale, pp.dirty, pp.live, pp.pulse, pp.notified);
-                    window.paint_quad(fill(inner, rgb(h.base)));
-                    // the stipples, each on its own half of a ░ lattice so
-                    // that both show when both are on
-                    for (ink, odd) in [(h.live, false), (h.pulse, true)] {
-                        let Some(ink) = ink else { continue };
-                        let (w, hh) = (f32::from(inner.size.width) as i32, f32::from(inner.size.height) as i32);
-                        for y in 0..hh {
-                            for x in 0..w {
-                                if stippled(x, y, odd) {
-                                    window.paint_quad(fill(Bounds::new(point(inner.left() + px(x as f32), inner.top() + px(y as f32)), size(px(1.), px(1.))), rgb(ink)));
-                                }
-                            }
-                        }
-                    }
-                    // pjw's face over the whole handle, frame and all
-                    if let Some(ink) = h.face {
-                        const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
-                        let fh = (b.size.height - px(2.)).min(b.size.width / PJW_RATIO);
-                        let fw = fh * PJW_RATIO;
-                        let at = point(b.left() + (b.size.width - fw) / 2., b.top() + (b.size.height - fh) / 2.);
-                        let _ = window.paint_svg(Bounds::new(at, size(fw, fh)), "pjw.svg".into(), Some(PJW), gpui::TransformationMatrix::unit(), rgb(ink), cx);
-                    }
+                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified);
+                    paint_dot(window, &d, point(b.left() + px(6.), b.top() + lh / 2.));
+                    badge = d.badge;
                     window.paint_quad(fill(
-                        // acme's line between tag and body is one device
-                        // pixel, unscaled (wind.c: r1.max.y = r1.min.y+1);
-                        // the row the tiling leaves for it is a logical one
+                        // a hairline under the header, one device pixel
                         Bounds::new(point(bounds.left(), bounds.bottom() - px(1.) / window.scale_factor()), size(bounds.size.width, px(1.) / window.scale_factor())),
                         pal.border,
                     ));
@@ -896,21 +956,21 @@ impl Element for TextElement {
                 }
                 Kind::ColTag => {
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
-                    window.paint_quad(fill(b, pal.border));
+                    paint_grip(window, b, rgb(crate::theme::theme().text_dim));
                     layout_box = Some(b);
                 }
                 Kind::Top => {
-                    // the upper-left square, the session's own: filled when
-                    // this client has lost its leases and only watches (a
-                    // notification is the tab's face and the window's
-                    // handle's; a click here still takes the oldest)
+                    // the session's own square, a grip like a column's; red
+                    // when this client has lost its leases and only watches
+                    // (a click still takes the oldest notification)
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
-                    window.paint_quad(fill(b, pal.border));
-                    let bb = px(BUTTON_BORDER);
-                    let inner = Bounds::new(point(b.left() + bb, b.top() + bb), size(b.size.width - bb * 2., b.size.height - bb * 2.));
                     let th = crate::theme::theme();
-                    let fillc = if pp.fenced { rgb(th.fenced) } else { pal.bg };
-                    window.paint_quad(fill(inner, fillc));
+                    if pp.fenced {
+                        let r = Bounds::new(point(b.left() + px(1.), b.top() + (lh - px(10.)) / 2.), size(px(10.), px(10.)));
+                        window.paint_quad(fill(r, rgb(th.fenced)).corner_radii(px(3.)));
+                    } else {
+                        paint_grip(window, b, rgb(th.text_dim));
+                    }
                     layout_box = Some(b);
                 }
             }
@@ -963,8 +1023,12 @@ impl Element for TextElement {
 
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, subst);
 
-                // the tick
-                if q0 == q1 && q0 >= line.start && q0 <= line.end {
+                // the tick, as a Mac text view's caret: a plain line, a
+                // little in from the row's top and bottom. A header's is
+                // left out where it only sits at its start, as every
+                // one's does until it is typed in or clicked in
+                let header = pp.kind != Kind::Body;
+                if q0 == q1 && q0 >= line.start && q0 <= line.end && !(header && q0 == 0) {
                     let d = line.to_disp(q0);
                     let mut sub = line.subs.len() - 1;
                     for (i, &(ds, de)) in line.subs.iter().enumerate() {
@@ -976,13 +1040,19 @@ impl Element for TextElement {
                     let (ds, _) = line.subs[sub];
                     let cx_ = origin.x + x(d) - x(ds);
                     let ty = ly + lh * sub as f32;
-                    let black = rgb(crate::theme::theme().text);
-                    window.paint_quad(fill(Bounds::new(point(cx_, ty), size(px(1.), lh)), black));
-                    window.paint_quad(fill(Bounds::new(point(cx_ - px(1.), ty), size(px(3.), px(3.))), black));
-                    window.paint_quad(fill(Bounds::new(point(cx_ - px(1.), ty + lh - px(3.)), size(px(3.), px(3.))), black));
+                    let ink = rgb(crate::theme::theme().text);
+                    window.paint_quad(fill(Bounds::new(point(cx_, ty + px(2.)), size(px(1.5), lh - px(4.))), ink).corner_radii(px(0.75)));
                 }
             }
 
+            // notified: an unread badge at the header's far end, over the
+            // tag's text, as Mail marks a message
+            if badge {
+                let th = crate::theme::theme();
+                let c = point(bounds.right() - px(11.), bounds.top() + lh / 2.);
+                window.paint_quad(fill(Bounds::new(point(c.x - px(6.), c.y - px(6.)), size(px(12.), px(12.))), pal.bg).corner_radii(px(6.)));
+                window.paint_quad(fill(Bounds::new(point(c.x - px(4.), c.y - px(4.)), size(px(8.), px(8.))), rgb(th.accent)).corner_radii(px(4.)));
+            }
             let layout = TextLayout {
                 bounds,
                 text_origin: origin,
@@ -1038,37 +1108,25 @@ mod row_tests {
 }
 
 #[cfg(test)]
-mod handle_tests {
-    use super::{handle, stippled};
+mod dot_tests {
+    use super::dot;
 
     #[test]
-    fn a_handle_is_a_colour_with_its_marks_laid_over_it() {
+    fn a_handle_is_a_circle_with_its_marks() {
         let th = crate::theme::theme();
-        // clean and dirty: a colour, and nothing over it
-        let clean = handle(&th, false, false, false, None, false);
-        assert_eq!((clean.base, clean.live, clean.pulse, clean.face), (th.tag_bg, None, None, None));
-        assert_eq!(handle(&th, false, true, false, None, false).base, th.dirty);
-        // live: the dirty colour stippled over clean, the paper's over dirty
-        assert_eq!(handle(&th, false, false, true, None, false).live, Some(th.live_ink));
-        assert_eq!(handle(&th, false, true, true, None, false).live, Some(th.tag_bg));
-        // working: a stipple from the progress blue at the top of its breath
-        assert_eq!(handle(&th, false, false, false, Some(0.), false).pulse, Some(th.work_ink));
+        // clean: a hollow circle; dirty and stale: filled
+        let clean = dot(&th, false, false, false, false, false);
+        assert_eq!((clean.fill, clean.ring, clean.core, clean.spin, clean.badge), (None, Some(th.text_dim), None, None, false));
+        assert_eq!(dot(&th, false, true, false, false, false).fill, Some(th.dirty));
+        assert_eq!(dot(&th, true, true, false, false, false).fill, Some(th.stale));
+        // live: the accent round it, and in its middle when clean
+        let live = dot(&th, false, false, true, false, false);
+        assert_eq!((live.ring, live.core), (Some(th.accent), Some(th.accent)));
+        let dirty_live = dot(&th, false, true, true, false, false);
+        assert_eq!((dirty_live.fill, dirty_live.ring, dirty_live.core), (Some(th.dirty), Some(th.accent), None));
         // all of it at once: each mark still there
-        let all = handle(&th, false, false, true, Some(0.), true);
-        assert!(all.live.is_some() && all.pulse.is_some() && all.face == Some(th.text), "{all:?}");
-    }
-
-    #[test]
-    fn the_two_stipples_are_a_quarter_each_and_never_on_one_pixel() {
-        let (mut even, mut odd) = (0, 0);
-        for y in 0..8 {
-            for x in 0..8 {
-                assert!(!(stippled(x, y, false) && stippled(x, y, true)), "{x},{y}");
-                even += i32::from(stippled(x, y, false));
-                odd += i32::from(stippled(x, y, true));
-            }
-        }
-        assert_eq!((even, odd), (16, 16));
+        let all = dot(&th, false, true, true, true, true);
+        assert!(all.fill.is_some() && all.ring.is_some() && all.spin.is_some() && all.badge, "{all:?}");
     }
 }
 

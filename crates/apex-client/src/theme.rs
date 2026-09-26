@@ -1,11 +1,11 @@
-//! The two themes: acme's colours (light), and a dark one of the same
-//! make. acme's philosophy is two tinted papers, a warm one for bodies
-//! and a cool one for tags, with selections a deeper tint of each, mid
-//! tone borders, and black ink; the dark theme keeps every relation and
-//! inverts the paper: deep warm and deep cool grounds, selections a
-//! deeper tint again but lit, the same mid tone borders, warm-white
-//! ink. Chosen in the View menu (Light, Dark, System); the choice is
-//! kept beside the other state files.
+//! The two themes, as a Mac app of now dresses (the modern-mac branch's
+//! experiment; acme's tinted papers are on main): a near-white paper for
+//! bodies and a quiet grey for the tags over them, as a window's content
+//! sits under its title bar; hairlines where acme has black borders; the
+//! system's selection blue; ink the system's label colours, primary and
+//! secondary; one accent, a blue, for what is going on. Its dark twin
+//! keeps every relation. Chosen in the View menu (Light, Dark, System);
+//! the choice is kept beside the other state files.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
@@ -26,6 +26,12 @@ pub struct Theme {
     pub tag_border: u32,
     /// The ink.
     pub text: u32,
+    /// The secondary ink: a tag's commands after its name, the column
+    /// tags and the top row, a sidebar row's second line.
+    pub text_dim: u32,
+    /// What is going on or chosen: live and working handles, a chosen
+    /// row, the focus.
+    pub accent: u32,
     /// The text over a B2/B3 sweep.
     pub sweep_text: u32,
     /// The borders between columns and windows (acme's black).
@@ -36,15 +42,6 @@ pub struct Theme {
     pub dirty: u32,
     pub stale: u32,
     pub fenced: u32,
-    /// A handle's stipples: live's, and the colour working's breathes
-    /// from. On light the dirty navy and the progress blue; on dark each
-    /// paler than those, since a dot a pixel wide shows by how much
-    /// lighter it is than the handle under it, and the dark ones were
-    /// half as far from the dark tag as the light ones are from the pale
-    /// (about 69 and 67 in CIELAB lightness from it, against light's 81
-    /// and 64).
-    pub live_ink: u32,
-    pub work_ink: u32,
     /// Work going on: the bar across the top of a terminal whose program
     /// says so (OSC 9;4), and on light the colour a working handle's stipple breathes from,
     /// so the two say the same thing. A blue chosen under a deuteranopia
@@ -94,115 +91,111 @@ pub struct Theme {
     pub menu_hl_text: u32,
 }
 
-/// acme's, from plan9port's acme.c and draw.h (see text_element.rs).
+/// A Mac app's light appearance: the system's label greys, a warm
+/// near-white paper, the selection and accent blues.
 pub const LIGHT: Theme = Theme {
-    body_bg: 0xFFFFEA,
-    body_sel: 0xEEEE9E,
-    body_border: 0x99994C,
-    tag_bg: 0xEAFFFF,
-    tag_sel: 0x9EEEEE,
-    tag_border: 0x8888CC,
-    text: 0x000000,
+    body_bg: 0xFCFCFB,
+    body_sel: 0xB9D7FB,
+    body_border: 0xC5C5C3,
+    tag_bg: 0xF2F2F0,
+    tag_sel: 0xC9DDF6,
+    tag_border: 0xD6D6D3,
+    text: 0x1D1D1F,
+    text_dim: 0x6E6E73,
+    accent: 0x2F6FEB,
     sweep_text: 0xFFFFFF,
-    border: 0x000000,
-    column: 0xFFFFFF,
-    dirty: 0x000099,
-    stale: 0xFFD700,
-    fenced: 0xAA0000,
-    live_ink: 0x000099,
-    work_ink: 0x1B4F9B,
-    progress: 0x1B4F9B,
-    exec_hl: 0xAA0000,
-    look_hl: 0x006600,
+    border: 0xDCDCD9,
+    column: 0xF7F7F5,
+    dirty: 0x3A3A3C,
+    stale: 0xE0A300,
+    fenced: 0xD93025,
+    progress: 0x2F6FEB,
+    exec_hl: 0xC8620A,
+    look_hl: 0x2F6FEB,
     cursor_tint_to: 0x000000,
-    // the strip tinted with acme's paper, so the bar and the rows agree
-    strip: 0xFFFFEA,
-    tab_outline_dim: 0xDCDCCB,
-    tab_outline: 0xC3C3B0,
-    tab_current_text: 0x000099,
-    tab_text: 0x555555,
-    tab_hover: 0xE0E0CC,
-    tab_dim: 0x9A9A9A,
-    tab_close_hover: 0x000000,
-    tab_fenced_text: 0x555555,
-    panel_bg: 0xF4F4F4,
-    panel_border: 0xC8C8C8,
-    panel_divider: 0xDDDDDD,
-    panel_text: 0x111111,
-    panel_text_dim: 0x555555,
-    panel_dim: 0x8A8A8A,
-    panel_pick: 0x9EEEEE,
-    panel_hover: 0xE4E4E4,
-    panel_chosen_bg: 0x000099,
+    strip: 0xEAEAE8,
+    tab_outline_dim: 0xDCDCD9,
+    tab_outline: 0xC8C8C5,
+    tab_current_text: 0x1D1D1F,
+    tab_text: 0x3A3A3C,
+    tab_hover: 0xE0E0DE,
+    tab_dim: 0x8E8E93,
+    tab_close_hover: 0x1D1D1F,
+    tab_fenced_text: 0x6E6E73,
+    panel_bg: 0xFFFFFF,
+    panel_border: 0xD2D2D0,
+    panel_divider: 0xE8E8E6,
+    panel_text: 0x1D1D1F,
+    panel_text_dim: 0x6E6E73,
+    panel_dim: 0x8E8E93,
+    panel_pick: 0xDCE8F9,
+    panel_hover: 0xF0F0EE,
+    panel_chosen_bg: 0x2F6FEB,
     panel_chosen_text: 0xFFFFFF,
-    panel_accent: 0x000099,
-    panel_danger_hover: 0xF0C0C0,
-    field_sel: 0xB4D5FE,
+    panel_accent: 0x2F6FEB,
+    panel_danger_hover: 0xF6D5D2,
+    field_sel: 0xB9D7FB,
     // xterm's, as the server sent them before the theme
     ansi: [0x000000, 0xCC241D, 0x3C8A2A, 0xB08A00, 0x1C4FD6, 0x9A2D9A, 0x0F8A8A, 0xBBBBBB, 0x555555, 0xFF5555, 0x55C055, 0xD6C000, 0x5580FF, 0xDD55DD, 0x33C0C0, 0xFFFFFF],
-    menu_bg: 0xD4FFD4,
-    menu_hl: 0x448844,
-    menu_border: 0x88CC88,
-    menu_text: 0x000000,
-    menu_hl_text: 0xD4FFD4,
+    menu_bg: 0xF6F6F5,
+    menu_hl: 0x2F6FEB,
+    menu_border: 0xD2D2D0,
+    menu_text: 0x1D1D1F,
+    menu_hl_text: 0xFFFFFF,
 };
 
-/// The same, on dark paper: bodies a deep warm ground, tags a deep
-/// cool one, selections the tints lit up, ink warm white; the mid tone
-/// borders and handle colours stand as they are where they read on
-/// dark, lifted where they would not (the dirty blue, the fenced red).
+/// The same in the dark appearance: the system's dark greys, the
+/// selection and accent blues lit for them.
 pub const DARK: Theme = Theme {
-    body_bg: 0x1E1E14,
-    body_sel: 0x5C5A2A,
-    body_border: 0x8A8A45,
-    tag_bg: 0x142426,
-    tag_sel: 0x2A6464,
-    tag_border: 0x8888CC,
-    text: 0xE8E8DC,
+    body_bg: 0x1E1E1F,
+    body_sel: 0x2F4E73,
+    body_border: 0x4A4A4C,
+    tag_bg: 0x28282A,
+    tag_sel: 0x33496A,
+    tag_border: 0x3A3A3C,
+    text: 0xE8E8EA,
+    text_dim: 0x98989D,
+    accent: 0x5B9BFF,
     sweep_text: 0xFFFFFF,
-    // the borders a mid warm grey: black would sink into the paper, the
-    // ink would shout; halfway between reads as a rule
-    border: 0x76766C,
-    column: 0x101010,
-    dirty: 0x6A6AF0,
-    stale: 0xFFD700,
-    fenced: 0xFF3030,
-    live_ink: 0xC8C8FF,
-    work_ink: 0x9CC8FF,
-    progress: 0x3355FF,
-    exec_hl: 0xB02020,
-    look_hl: 0x2E8B2E,
+    border: 0x333335,
+    column: 0x19191A,
+    dirty: 0xD8D8DA,
+    stale: 0xF2C230,
+    fenced: 0xFF5A4F,
+    progress: 0x5B9BFF,
+    exec_hl: 0xC8620A,
+    look_hl: 0x2F6FEB,
     cursor_tint_to: 0xFFFFFF,
-    strip: 0x1E1E14,
-    tab_outline_dim: 0x3E3E34,
-    tab_outline: 0x55554C,
-    tab_current_text: 0xA0A0FF,
-    tab_text: 0xB8B8B8,
-    tab_hover: 0x3A3A30,
-    tab_dim: 0x8A8A8A,
+    strip: 0x202022,
+    tab_outline_dim: 0x333335,
+    tab_outline: 0x48484A,
+    tab_current_text: 0xE8E8EA,
+    tab_text: 0xC8C8CC,
+    tab_hover: 0x2E2E30,
+    tab_dim: 0x8E8E93,
     tab_close_hover: 0xFFFFFF,
-    tab_fenced_text: 0xB8B8B8,
-    panel_bg: 0x262626,
-    panel_border: 0x484848,
-    panel_divider: 0x3A3A3A,
-    panel_text: 0xE6E6E6,
-    panel_text_dim: 0xB0B0B0,
-    panel_dim: 0x8E8E8E,
-    panel_pick: 0x2A6464,
-    panel_hover: 0x333333,
-    panel_chosen_bg: 0x5050D0,
+    tab_fenced_text: 0x98989D,
+    panel_bg: 0x2A2A2C,
+    panel_border: 0x444446,
+    panel_divider: 0x38383A,
+    panel_text: 0xE8E8EA,
+    panel_text_dim: 0xB0B0B4,
+    panel_dim: 0x8E8E93,
+    panel_pick: 0x2F4E73,
+    panel_hover: 0x333335,
+    panel_chosen_bg: 0x2F6FEB,
     panel_chosen_text: 0xFFFFFF,
-    panel_accent: 0xA0A0FF,
+    panel_accent: 0x5B9BFF,
     panel_danger_hover: 0x6A3030,
-    field_sel: 0x2A4A6A,
+    field_sel: 0x2F4E73,
     // the same hues, lit for the dark paper: black a shade of it, white
     // the ink, the rest lighter and a little softer; the bright ones
     // brighter still
-    ansi: [0x2A2A20, 0xE06060, 0x8AC26A, 0xD6B85A, 0x6A9EE6, 0xC07AC0, 0x5AB8B8, 0xC8C8BC, 0x6A6A5E, 0xF08080, 0xA8D88A, 0xF0D070, 0x8AB8F0, 0xD69AD6, 0x80D0D0, 0xE8E8DC],
-    menu_bg: 0x1C3A1C,
-    menu_hl: 0x448844,
-    menu_border: 0x5A9A5A,
-    menu_text: 0xE0F0E0,
+    ansi: [0x2A2A2C, 0xE06060, 0x8AC26A, 0xD6B85A, 0x6A9EE6, 0xC07AC0, 0x5AB8B8, 0xC8C8CC, 0x6A6A6E, 0xF08080, 0xA8D88A, 0xF0D070, 0x8AB8F0, 0xD69AD6, 0x80D0D0, 0xE8E8EA],
+    menu_bg: 0x2C2C2E,
+    menu_hl: 0x2F6FEB,
+    menu_border: 0x48484A,
+    menu_text: 0xE8E8EA,
     menu_hl_text: 0xFFFFFF,
 };
 
