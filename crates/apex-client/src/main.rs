@@ -382,10 +382,13 @@ impl Render for Acme {
                                 .into_any_element()
                         }
                     };
-                    // text and terminals take the I-beam, with the arrow
-                    // down the scrollbar; a page keeps its own pointer
+                    // text takes the I-beam, with the arrow down the
+                    // scrollbar; a terminal the arrow, as Terminal's is; a
+                    // page keeps its own pointer
                     let body = if matches!(win.body, Body::Web | Body::Html(_)) {
                         at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).child(lane(None, hold(CursorStyle::Arrow)))
+                    } else if matches!(win.body, Body::Term(_)) {
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow))
                     } else {
                         at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::IBeam)).child(lane(None, hold(CursorStyle::Arrow)))
                     };
