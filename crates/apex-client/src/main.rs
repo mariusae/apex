@@ -294,6 +294,12 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
+                // a folded window is a sheet in a stack: the border
+                // above it is the paper the stack lies on, not a rule
+                if s.body.dy() <= 0 && i > 0 {
+                    let b = apex_core::tiling::BORDER as f32;
+                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b, s.r.dx() as f32, b, t.body_bg));
+                }
                 area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()));
                 if s.body.dy() > 0 && strip {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));

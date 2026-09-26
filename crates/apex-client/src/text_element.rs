@@ -950,10 +950,10 @@ impl Element for TextElement {
                 // column's sides, its top corners rounded, a hairline
                 // round it, on the column's own ground
                 let th = crate::theme::theme();
-                window.paint_quad(fill(bounds, rgb(th.column)));
-                let card = Bounds::new(point(bounds.left() + px(3.), bounds.top()), size(bounds.size.width - px(6.), bounds.size.height + px(1.)));
-                let radii = gpui::Corners { top_left: px(6.), top_right: px(6.), bottom_left: px(0.), bottom_right: px(0.) };
-                window.paint_quad(gpui::quad(card, radii, pal.bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, pal.border, gpui::BorderStyle::Solid));
+                window.paint_quad(fill(bounds, rgb(th.body_bg)));
+                let card = Bounds::new(point(bounds.left() + px(2.), bounds.top() + px(1.)), size(bounds.size.width - px(4.), bounds.size.height + px(1.)));
+                let radii = gpui::Corners { top_left: px(7.), top_right: px(7.), bottom_left: px(0.), bottom_right: px(0.) };
+                window.paint_quad(gpui::quad(card, radii, pal.bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.tab_outline), gpui::BorderStyle::Solid));
             } else {
                 window.paint_quad(fill(bounds, pal.bg));
             }
@@ -977,7 +977,9 @@ impl Element for TextElement {
                     let th = crate::theme::theme();
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
                     let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified);
-                    paint_dot(window, &d, point(b.left() + px(6.), b.top() + lh / 2.));
+                    // on a sheet's edge, in from the sheet's rounded corner
+                    let dx = if pp.sheet { px(7.5) } else { px(6.) };
+                    paint_dot(window, &d, point(b.left() + dx, b.top() + lh / 2.));
                     badge = d.badge;
                     window.paint_quad(fill(
                         // a hairline under the header, one device pixel

@@ -63,7 +63,7 @@ pub enum WebEvent {
 fn theme_css() -> String {
     let t = crate::theme::theme();
     let hex = |c: u32| format!("#{c:06X}");
-    let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2C2C24, 0x4A4A40, 0x9A9A8E) } else { (0xE8E8DC, 0xC8C8B8, 0x6F6F60) };
+    let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2A2A2C, 0x3A3A3C, t.text_dim) } else { (0xF0F0EE, 0xDCDCD9, t.text_dim) };
     let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
     // a diff's added and removed lines (apex diff): pale, one tint each.
     // Removed is orange rather than red, which stays apart from the green
