@@ -483,7 +483,12 @@ impl Server {
     /// (or wants arrows on its alternate screen), else the scrollback.
     pub fn term_wheel(&mut self, log: &mut Log, id: TermId, delta: isize, at: Option<(u16, u16)>) {
         if let Some(h) = self.terms.get_mut(&id) {
-            if !h.wheel(delta, at) {
+            // the wheel at a cell, or the scrollbar (no cell)
+            let theirs = match at {
+                Some(_) => h.wheel(delta, at),
+                None => h.page(delta),
+            };
+            if !theirs {
                 h.scroll(delta);
             }
             self.publish_term(log, id);

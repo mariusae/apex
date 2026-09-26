@@ -439,6 +439,22 @@ impl TermHost {
         false
     }
 
+    /// The scrollbar as the program sees it, if it does: on the
+    /// alternate screen, where a full-screen program keeps no history
+    /// for the display to scroll through, a click up the bar is Page Up
+    /// and one down it Page Down -- one a click, however far down the bar
+    /// it was, as the program decides how far a page is. False when the
+    /// bar is ours to scroll the display with.
+    pub fn page(&self, delta: isize) -> bool {
+        if delta == 0 || !self.mode(Mode::AltScreen) {
+            return false;
+        }
+        let key = if delta < 0 { "pageup" } else { "pagedown" };
+        let k = TermKey { key: key.into(), text: None, shift: false, control: false, alt: false };
+        self.write(&encode_key(&k, self.mode(Mode::AppCursor)));
+        true
+    }
+
     pub fn window_size(&self) -> WindowSize {
         WindowSize { num_lines: self.rows, num_cols: self.cols, cell_width: CELL_W, cell_height: CELL_H }
     }

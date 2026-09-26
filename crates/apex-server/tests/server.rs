@@ -705,6 +705,11 @@ fn the_wheel_reaches_programs_that_read_the_mouse() {
     std::thread::sleep(Duration::from_millis(200));
     server.term_wheel(&mut log, t, 2, Some((0, 0)));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[B^[[B")), "{}", grid_text(&node));
+    // and the scrollbar, with no history to scroll there, is a page: B1
+    // up the bar Page Up, B3 down it Page Down, one each however far
+    server.term_wheel(&mut log, t, -12, None);
+    server.term_wheel(&mut log, t, 7, None);
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains("^[[5~^[[6~")), "{}", grid_text(&node));
 }
 
 #[test]

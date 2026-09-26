@@ -96,7 +96,8 @@ pub enum ClientMsg {
     TermFocus { term: TermId, focused: bool },
     /// The wheel over a terminal, `delta` lines (positive: down), `at`
     /// the cell under the pointer when it was the wheel (the program
-    /// may be reporting the mouse), none from the scrollbar.
+    /// may be reporting the mouse), none from the scrollbar (on the
+    /// alternate screen, a Page Up or Page Down to the program).
     TermScroll { term: TermId, delta: i64, at: Option<(u16, u16)> },
     /// Snarf the text between two `(column, history line)` positions of a
     /// terminal (the end exclusive); the answer is a `Snarf` proposal.
