@@ -75,10 +75,12 @@ fn theme_css() -> String {
     // its blue (its green scale is blue), removed in its orange
     let (add, del) = if crate::theme::is_dark() { (0x243145, 0x372E2C) } else { (0xE9F7FF, 0xFFF5E7) };
     let diff = format!(":root{{--apex-add:{};--apex-del:{}}}", hex(add), hex(del));
-    diff + &format!(
+    // the font set's faces and families (View ▸ Font), for a page's
+    // stylesheet to set itself in
+    diff + &crate::fonts::page_css() + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
          html{{background:{}}}\
-         .apex-copy{{position:absolute;top:4px;right:4px;font:11px \"Lucida Grande\",sans-serif;color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
+         .apex-copy{{position:absolute;top:4px;right:4px;font:11px var(--apex-font);color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
          pre:hover .apex-copy,.apex-copy:focus{{opacity:1}}",
         hex(t.body_bg), hex(t.text), hex(code_bg), hex(rule), hex(t.body_border), hex(link), hex(t.body_sel), hex(dim), hex(t.tag_bg),
         hex(t.body_bg), hex(dim), hex(t.body_bg), hex(rule)
@@ -1067,6 +1069,11 @@ impl Fetcher {
         let debug = std::env::var_os("APEX_WEB_DEBUG").is_some();
         if debug {
             eprintln!("web: apexfile request {url} (plane: {})", self.plane.is_some());
+        }
+        // the bundled fonts, from the client itself (`fonts::page_css`
+        // names them here, on the page's own scheme and origin)
+        if let Some((bytes, mime)) = url.strip_prefix("apexfile://localhost").and_then(crate::fonts::serve) {
+            return respond(responder, 200, mime, bytes.to_vec());
         }
         let path = match file_url_path(&format!("file://{}", url.strip_prefix("apexfile://").unwrap_or(&url))) {
             Some(p) => p,

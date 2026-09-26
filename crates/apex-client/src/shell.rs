@@ -20,7 +20,16 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona]);
+
+/// View ▸ Font ▸ a set chosen: kept, and everything set in it again --
+/// the menus remade with the mark, pages restyled, windows redrawn (and
+/// laid out again, their lines being another height), as a change of
+/// theme does.
+pub fn set_fonts(s: crate::fonts::Set, cx: &mut App) {
+    crate::fonts::set(s);
+    apply_theme(cx);
+}
 
 /// View ▸ Show Sidebar toggled: kept, the menus remade with the mark,
 /// every window laid out again.
@@ -81,8 +90,6 @@ pub const SIDEBAR_HEADER: f32 = 40.;
 pub const SIDEBAR_W: f32 = 236.;
 /// The top row's background (acme's tag colour): what the selected tab is.
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
-/// The system's UI font.
-pub const UI_FONT: &str = ".AppleSystemUIFont";
 
 pub fn menus() -> Vec<Menu> {
     vec![
@@ -149,6 +156,21 @@ pub fn menus() -> Vec<Menu> {
                     MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
                     MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
                     MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
+                    MenuItem::separator(),
+                    MenuItem::submenu(Menu {
+                        name: "Font".into(),
+                        disabled: false,
+                        items: {
+                            let f = crate::fonts::current();
+                            let mark = |s: crate::fonts::Set| if f == s { format!("{} ✓", s.title()) } else { s.title().to_string() };
+                            vec![
+                                MenuItem::action(mark(crate::fonts::Set::System), FontSystem),
+                                MenuItem::action(mark(crate::fonts::Set::Classic), FontClassic),
+                                MenuItem::action(mark(crate::fonts::Set::Go), FontGo),
+                                MenuItem::action(mark(crate::fonts::Set::Mona), FontMona),
+                            ]
+                        },
+                    }),
                     MenuItem::separator(),
                     MenuItem::action(side, ToggleSidebar),
                     MenuItem::action(contrast, ToggleContrast),
@@ -1409,7 +1431,7 @@ impl Acme {
                 .px(px(14.))
                 .py(px(8.))
                 .text_size(px(14.))
-                .font_family(UI_FONT)
+                .font_family(crate::fonts::ui())
                 .when(active, |d| d.bg(rgb(t.tag_bg)))
                 .child(div().w(px(80.)).text_color(rgb(t.panel_dim)).text_size(px(12.)).child(label.to_string()))
         };
@@ -1443,12 +1465,12 @@ impl Acme {
             );
         }
         let mut el = div().flex().flex_col().py(px(6.));
-        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child("New host"));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child("New host"));
         el = el.child(row("Provider", form.field == Field::Provider).child(pills));
         el = el.child(row("Host", form.field == Field::Host).child(field(&form.host, "user@host, a box name…", form.field == Field::Host)));
         let ready = form.host().is_some();
         let hint = if ready { "enter adds it and asks for its sessions  ·  ←→ providers  ·  esc back" } else { "type the host  ·  ←→ providers  ·  esc back" };
-        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(hint));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child(hint));
         el.into_any_element()
     }
 
@@ -1474,7 +1496,7 @@ impl Acme {
             .px(px(16.))
             .py(px(12.))
             .text_size(px(15.))
-            .font_family(UI_FONT)
+            .font_family(crate::fonts::ui())
             .child(div().flex_none().text_color(rgb(t.panel_dim)).child("⌕"))
             .child(div().flex_1().min_w_0().child(crate::field::field_view(&sel.filter, caret_on, &hint, true)));
         let mut list = div().id("picker-rows").flex().flex_col().px(px(8.)).pb(px(8.)).max_h(px(420.)).overflow_y_scroll();
@@ -1493,7 +1515,7 @@ impl Acme {
                 .py(px(7.))
                 .rounded(px(7.))
                 .text_size(px(14.))
-                .font_family(UI_FONT)
+                .font_family(crate::fonts::ui())
                 .text_color(rgb(ink))
                 .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
                 .when(!picked && row.pickable(), |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
@@ -1532,7 +1554,7 @@ impl Acme {
         }
         if rows.is_empty() && sel.connect.is_none() {
             let what = if sel.renaming.is_some() { "Type a name" } else { "Nothing matches" };
-            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(what));
+            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child(what));
         }
         let mut panel = div()
             .w(px(680.))

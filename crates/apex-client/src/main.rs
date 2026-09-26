@@ -16,6 +16,7 @@ mod attention;
 mod contrast;
 mod cursor;
 mod field;
+mod fonts;
 mod finder;
 mod menu;
 mod shell;
@@ -195,7 +196,7 @@ impl Render for Acme {
                 .justify_center()
                 .bg(gpui::rgb(t.body_bg))
                 .child(spinner)
-                .child(div().px(px(24.)).text_size(px(13.)).font_family(shell::UI_FONT).text_color(gpui::rgb(t.text_dim)).child(what));
+                .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
             let root = root.child(blank);
             let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
@@ -487,7 +488,8 @@ fn main() {
     gpui_platform::application().run(move |cx: &mut App| {
         cursor::install();
         text_element::install_symbols();
-        text_element::install_mono(cx);
+        fonts::load();
+        fonts::install(cx);
         pool::Pool::install(cx);
         theme::load();
         cx.set_menus(shell::menus());
@@ -496,6 +498,10 @@ fn main() {
         cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
         cx.on_action(|_: &shell::ToggleSidebar, cx| shell::toggle_sidebar(cx));
+        cx.on_action(|_: &shell::FontSystem, cx| shell::set_fonts(fonts::Set::System, cx));
+        cx.on_action(|_: &shell::FontClassic, cx| shell::set_fonts(fonts::Set::Classic, cx));
+        cx.on_action(|_: &shell::FontGo, cx| shell::set_fonts(fonts::Set::Go, cx));
+        cx.on_action(|_: &shell::FontMona, cx| shell::set_fonts(fonts::Set::Mona, cx));
         cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
@@ -833,7 +839,7 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
         .border_color(rgb(t.menu_border))
         .rounded(px(menu::RADIUS))
         .shadow_lg()
-        .font_family(shell::UI_FONT)
+        .font_family(crate::fonts::ui())
         .child(mark);
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);

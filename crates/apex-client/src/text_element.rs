@@ -159,33 +159,12 @@ pub struct FontSpec {
     pub line_height: Pixels,
 }
 
-/// The text faces: the system's own, SF Pro, for text, and SF Mono for
-/// a window set mono -- or Menlo, SF Mono's forebear, where SF Mono
-/// could not be loaded (`install_mono`).
+/// The text faces, as View ▸ Font has them (`fonts::text` for text
+/// windows and tags, `fonts::mono` for mono windows and terminals).
 pub fn font_for(mono: bool) -> FontSpec {
-    if mono {
-        let family = if SF_MONO.with(|c| c.get()) { SF_MONO_FAMILY } else { "Menlo" };
-        FontSpec { font: unjoined(with_symbols(font(family))), size: px(12.), line_height: px(16.) }
-    } else {
-        FontSpec { font: legible(unjoined(with_symbols(font(".SystemUIFont")))), size: px(14.), line_height: px(20.) }
-    }
-}
-
-thread_local! {
-    static SF_MONO: Cell<bool> = const { Cell::new(false) };
-}
-
-/// SF Mono's family, as its file names it. The system keeps it out of
-/// reach by name (CoreText hands out Helvetica for "SF Mono" to anyone
-/// but Terminal and Xcode), so gpui is given the file itself.
-const SF_MONO_FAMILY: &str = ".SF NS Mono";
-
-/// Give gpui SF Mono from the system's own copy, for this process.
-pub fn install_mono(cx: &mut App) {
-    let Ok(bytes) = std::fs::read("/System/Library/Fonts/SFNSMono.ttf") else { return };
-    if cx.text_system().add_fonts(vec![std::borrow::Cow::Owned(bytes)]).is_ok() {
-        SF_MONO.with(|c| c.set(true));
-    }
+    let spec = if mono { crate::fonts::mono() } else { crate::fonts::text() };
+    let f = Font { weight: spec.weight, ..unjoined(with_symbols(font(spec.family)), spec.features) };
+    FontSpec { font: f, size: spec.size, line_height: spec.line_height }
 }
 
 /// No ligatures from the font: every character its own glyph. Where a
@@ -196,21 +175,18 @@ pub fn install_mono(cx: &mut App) {
 /// `ff`. Lucida Grande joins ff, fi, fl, ffi and ffl by default (`liga`);
 /// `clig` and `calt` are the other ways a font joins letters. All three
 /// are named: gpui's `disable_ligatures` turns off `calt` alone.
-fn unjoined(f: Font) -> Font {
+///
+/// Then the set's own (`more`), which may turn one of those back on where
+/// it substitutes glyph for glyph and joins nothing (Monaspace's `calt`).
+fn unjoined(f: Font, more: &[(&str, u32)]) -> Font {
     let mut features: Vec<(String, u32)> = UNJOINED.iter().map(|t| (t.to_string(), 0)).collect();
     // and a zero with a slash through it, where the face has one (SF
     // Pro and SF Mono do: `zero`), so it is not an O
     features.push(("zero".to_string(), 1));
-    Font { features: gpui::FontFeatures(std::sync::Arc::new(features)), ..f }
-}
-
-/// SF Pro set for code, as it is set in an editor for it: its high
-/// legibility set (`ss06`: an I with bars, an l with a tail, a 1 with a
-/// flag, so none is taken for another) and tabular figures (`tnum`: every
-/// digit as wide as the next, so numbers line up down a column).
-fn legible(f: Font) -> Font {
-    let mut features: Vec<(String, u32)> = f.features.0.as_ref().clone();
-    features.extend([("ss06".to_string(), 1), ("tnum".to_string(), 1)]);
+    for (tag, v) in more {
+        features.retain(|(t, _)| t != tag);
+        features.push((tag.to_string(), *v));
+    }
     Font { features: gpui::FontFeatures(std::sync::Arc::new(features)), ..f }
 }
 

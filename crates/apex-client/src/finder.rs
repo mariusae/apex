@@ -24,7 +24,7 @@ use apex_core::*;
 use apex_server::providers::SessionUrl;
 
 use crate::app::Acme;
-use crate::shell::{BLINK, UI_FONT};
+use crate::shell::BLINK;
 
 /// How many closed files a session remembers.
 const KEEP: usize = 50;
@@ -361,7 +361,7 @@ impl Acme {
         let f = self.finder.as_ref()?;
         let picks = f.picks();
         let t = crate::theme::theme();
-        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&f.filter, f.caret_visible(), if f.all { "Go to a window in any tab, or a file closed lately…" } else { "Go to a window, or a file closed lately…" }, true));
+        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(crate::fonts::ui()).child(crate::field::field_view(&f.filter, f.caret_visible(), if f.all { "Go to a window in any tab, or a file closed lately…" } else { "Go to a window, or a file closed lately…" }, true));
         let mut list = div().id("finder-list").flex().flex_col().py(px(6.)).px(px(6.)).max_h(px(480.)).overflow_y_scroll();
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;
@@ -387,7 +387,7 @@ impl Acme {
                 .py(px(6.))
                 .rounded(px(6.))
                 .text_size(px(14.))
-                .font_family(UI_FONT)
+                .font_family(crate::fonts::ui())
                 .cursor_default()
                 .when(picked, |d| d.bg(rgb(t.panel_pick)))
                 .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
@@ -424,7 +424,7 @@ impl Acme {
             list = list.child(row);
         }
         if picks.is_empty() {
-            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child("Nothing matches"));
+            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child("Nothing matches"));
         }
         let panel = div()
             .w(px(620.))

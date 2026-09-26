@@ -11,7 +11,7 @@ use gpui::{div, prelude::*, px, rgb, BoxShadow, Context, FontWeight, MouseButton
 
 use crate::app::Acme;
 use crate::pool::Pool;
-use crate::shell::{pjw, SIDEBAR_HEADER, UI_FONT};
+use crate::shell::{pjw, SIDEBAR_HEADER};
 use crate::theme;
 
 /// How far the card sits in from the window's edges.
@@ -168,7 +168,7 @@ impl Acme {
                 cx.stop_propagation();
             });
         let shadow = BoxShadow { color: gpui::hsla(0., 0., 0., if dark { 0.5 } else { 0.10 }), offset: gpui::point(px(0.), px(2.)), blur_radius: px(8.), spread_radius: px(0.), inset: false };
-        let outer = div().id("sidebar").flex_none().w(px(crate::shell::SIDEBAR_W)).h_full().p(px(INSET)).font_family(UI_FONT);
+        let outer = div().id("sidebar").flex_none().w(px(crate::shell::SIDEBAR_W)).h_full().p(px(INSET)).font_family(crate::fonts::ui());
         let outer = if floating { outer } else { outer.bg(rgb(t.column)) };
         outer
             .child(

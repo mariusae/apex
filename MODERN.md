@@ -23,6 +23,14 @@ already do.
   added lines orange and blue. A grey header over each window, hairlines
   for acme's black borders. (rsms's Sublime schemes were the palette
   before; they are in the history.)
+- **Fonts** (View ▸ Font, `fonts.rs`), one choice for text windows and
+  tags, mono windows and terminals, the sidebar, sheets and menus, and
+  pages (previews, apex diff, as `--apex-font` and `--apex-mono`):
+  System (SF Pro with its high legibility set and tabular figures, 14/20;
+  Terminal's own SF Mono at Medium, 12/16, the Regular being thin),
+  Classic (Lucida Grande 13/17, Menlo 12/16), Go (Go 14/20, Go Mono
+  12/16, bundled) and Mona (Mona Sans 15/21, Monaspace Xenon 12/16 with
+  Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled).
 - **Tags as title bars.** The window's name in the primary ink, a
   medium weight; the commands after it in the secondary. Column tags
   and the top row are all secondary. A header's caret is not drawn

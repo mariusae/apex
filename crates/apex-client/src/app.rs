@@ -3619,7 +3619,7 @@ impl Acme {
         }
         // the items measured in the face the menu sets them in, the
         // system's at a menu's size
-        let face = gpui::font(crate::shell::UI_FONT);
+        let face = gpui::font(crate::fonts::ui());
         let run = |len: usize| gpui::TextRun { len, font: face.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
         let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), px(13.), &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
         let checked = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l));

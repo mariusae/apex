@@ -33,3 +33,20 @@
 
   To update: fetch `https://cdn.jsdelivr.net/npm/mermaid@VERSION/dist/mermaid.min.js`,
   gzip it as above, and change the version and hash here.
+
+- `fonts/`: the faces View ▸ Font's bundled sets use (`fonts.rs`),
+  copied unchanged from Manifold's `Frameworks/`, which fetches them
+  (`scripts/fetch-fonts.sh` there):
+  - `go/`: [Go](https://go.dev/blog/go-fonts) and Go Mono,
+    golang/image v0.46.0 `font/gofont/ttfs`, regular, bold and their
+    italics. BSD licence (`go/LICENSE`).
+  - `mona/`: [Mona Sans](https://github.com/github/mona-sans) v2.0.27,
+    the static OTFs: Regular, Medium, Bold, Italic, BoldItalic. SIL Open
+    Font License 1.1 (`mona/OFL.txt`).
+  - `monaspace/`: [Monaspace](https://github.com/githubnext/monaspace)
+    v1.400's statics: Xenon Regular and Bold, and Radon Italic and
+    BoldItalic (Xenon's italics in pages, as Manifold's are). SIL Open
+    Font License 1.1 (`monaspace/LICENSE`).
+
+  They go to gpui at launch and to pages from
+  `apexfile://localhost/.apex-font/FILE`, answered from the binary.
