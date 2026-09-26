@@ -10,11 +10,7 @@ use apex_core::{Cell, TermId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
-use crate::text_element::{font_for, mix, rgb, FontSpec, MARGIN, SCROLLWID};
-
-/// How far the cursor's cell is tinted from its background towards
-/// black: enough to find, not enough to shout.
-const CURSOR_TINT: f32 = 0.18;
+use crate::text_element::{font_for, rgb, FontSpec, MARGIN, SCROLLWID};
 
 pub struct TermLayout {
     pub bounds: Bounds<Pixels>,
@@ -64,6 +60,10 @@ pub struct Prepaint {
     row_text: Vec<String>,
     cols: u16,
     cursor: Option<(u16, u16)>,
+    /// The keys go here: the cursor is the accent's block, and whether it
+    /// shows just now (it blinks with the caret). None when they go
+    /// elsewhere, and the cursor is a hollow box.
+    keys: Option<bool>,
     exited: bool,
     /// What the scrollbar shows: the viewport's first row and how many
     /// rows it holds, out of the whole screen's.
@@ -130,6 +130,7 @@ impl Element for TermElement {
             let th = crate::theme::theme();
             let correct = crate::theme::contrast();
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
+            let keys = (acme.caret_term == Some(term)).then_some(acme.caret_on);
             // the selection, if it is in this terminal: acme's yellow
             let order = |a: (usize, u64), b: (usize, u64)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
             let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| order(a, b));
@@ -172,10 +173,12 @@ impl Element for TermElement {
                     let mut fgc = rgb(fg_rgb);
                     let mut bgc = bg_rgb.map(rgb);
                     if let Some((cx_, cy)) = cursor {
-                        if cx_ as usize == x && cy as usize == y {
-                            // the cursor: the cell's background tinted
-                            // down a little, the text as it is, not inverted
-                            bgc = Some(rgb(mix(bg_rgb.unwrap_or(th.body_bg), th.cursor_tint_to, CURSOR_TINT)));
+                        if cx_ as usize == x && cy as usize == y && keys == Some(true) {
+                            // the cursor where the keys go: the accent's
+                            // block, the character on it in white, as the
+                            // text caret is the accent where they go
+                            bgc = Some(rgb(th.accent));
+                            fgc = rgb(0xFFFFFF);
                         }
                     }
                     if let Some((b, f)) = highlight(x, y) {
@@ -216,7 +219,7 @@ impl Element for TermElement {
                 row_text.push(line.clone());
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
         })
     }
 
@@ -286,11 +289,14 @@ impl Element for TermElement {
                 let bar = Bounds::new(point(bounds.left() + px(SCROLLWID), bounds.top()), size((w * part).max(px(1.)), px(2.)));
                 window.paint_quad(fill(bar, rgb(th.progress)));
             }
-            if pp.exited {
+            // the keys elsewhere: a hollow box, as Terminal's inactive
+            // cursor is (in the ink once the program has ended)
+            if pp.keys.is_none() || pp.exited {
                 if let Some((cx_, cy)) = pp.cursor {
                     let x = origin.x + pp.cell_w * cx_ as f32;
                     let y = origin.y + lh * cy as f32;
-                    window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(th.text), BorderStyle::Solid));
+                    let ink = if pp.exited { th.text } else { th.text_dim };
+                    window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(ink), BorderStyle::Solid));
                 }
             }
             let layout = TermLayout {

@@ -401,6 +401,8 @@ pub struct Acme {
     /// been left alone -- a key, a click or the pointer coming to it
     /// start it again from solid.
     pub caret_view: Option<ViewId>,
+    /// The terminal the keys go to, whose cursor blinks with the caret.
+    pub caret_term: Option<TermId>,
     pub caret_on: bool,
     pub caret_since: std::time::Instant,
     /// The tab under the pointer, and since when: its status card shows
@@ -1591,6 +1593,7 @@ impl Acme {
             selector: None,
             tab_drag: None,
             caret_view: None,
+            caret_term: None,
             caret_on: true,
             caret_since: std::time::Instant::now(),
             tab_hovered: None,
@@ -1870,8 +1873,10 @@ impl Acme {
     /// the caret does.
     pub fn caret_tick(&mut self) -> bool {
         let view = self.key_view();
-        if view != self.caret_view {
+        let term = self.key_term();
+        if view != self.caret_view || term != self.caret_term {
             self.caret_view = view;
+            self.caret_term = term;
             self.caret_since = std::time::Instant::now();
             self.caret_on = true;
             return true;
@@ -1880,9 +1885,15 @@ impl Acme {
         let on = t < 500 || ((t - 500) / 530) % 2 == 1;
         if on != self.caret_on {
             self.caret_on = on;
-            return view.is_some();
+            return view.is_some() || term.is_some();
         }
         false
+    }
+
+    /// The terminal the keys go to: the one under the pointer, while
+    /// apex is in front (as `term_focus_now` tells the programs).
+    pub fn key_term(&self) -> Option<TermId> {
+        self.term_under_pointer.filter(|_| self.app_active)
     }
 
     /// The window the user is in: the one under the pointer, which has

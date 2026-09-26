@@ -51,8 +51,6 @@ pub struct Theme {
     pub progress: u32,
     pub exec_hl: u32,
     pub look_hl: u32,
-    /// What the terminal's cursor tints its cell towards.
-    pub cursor_tint_to: u32,
     // the title bar
     pub strip: u32,
     /// The line round a tab not in front -- which is the strip's own
@@ -112,7 +110,6 @@ pub const LIGHT: Theme = Theme {
     progress: 0x2F6FEB,
     exec_hl: 0xC8620A,
     look_hl: 0x2F6FEB,
-    cursor_tint_to: 0x000000,
     strip: 0xEAEAE8,
     tab_outline_dim: 0xDCDCD9,
     tab_outline: 0xC8C8C5,
@@ -165,7 +162,6 @@ pub const DARK: Theme = Theme {
     progress: 0x5B9BFF,
     exec_hl: 0xC8620A,
     look_hl: 0x2F6FEB,
-    cursor_tint_to: 0xFFFFFF,
     strip: 0x202022,
     tab_outline_dim: 0x333335,
     tab_outline: 0x48484A,
