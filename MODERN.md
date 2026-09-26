@@ -10,19 +10,17 @@ already do.
 
 ## What changed
 
-- **Look.** GitHub's palettes, both a step in from the extremes
-  (`theme.rs`): light is GitHub Light Colorblind with its canvas.subtle
-  (#f6f8fa) for the paper and a softer ink (#32383f), sheets and menus
-  white above it; dark is GitHub Dark Dimmed (#22272e, ink #adbac7) with
-  the colour-blind themes' orange-for-red and blue-for-green kept. From
-  Primer, as the GitHub VS Code theme draws them: the canvas and its subtle
-  grey, fg.default and fg.muted, accent.fg as the accent and caret and,
-  at 20%, the selection; and, where GitHub's other themes have red and
-  green, orange and blue -- B2's sweep orange and B3's blue, the
-  terminal's ANSI red and green orange and blue, apex diff's removed and
-  added lines orange and blue. A grey header over each window, hairlines
-  for acme's black borders. (rsms's Sublime schemes were the palette
-  before; they are in the history.)
+- **Look.** Four palettes to live with (View ▸ Theme, `theme.rs`), each a
+  light and a dark, the appearance (View: Light, Dark, System) choosing
+  which: Alabaster (tonsky's, light and dark), System (Xcode's Default
+  Light and Dark, the system blue), Classic (acme's make -- cream paper,
+  pale blue tags, a yellow selection -- toned down, in the hues of
+  go.dev's playground) and GitHub (Light Colorblind lifted off white,
+  and Dark Dimmed). Each is a handful of key colours from which the rest
+  follows (`make`); every one keeps orange-for-red and blue-for-green
+  where it matters (the terminal's ANSI, apex diff's lines) and B2's and
+  B3's sweeps apart under a deuteranopia simulation. A grey header over
+  each window, hairlines for acme's black borders.
 - **Fonts** (View ▸ Font, `fonts.rs`), one choice for text windows and
   tags, mono windows and terminals, the sidebar, sheets and menus, and
   pages (previews, apex diff, as `--apex-font` and `--apex-mono`):

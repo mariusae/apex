@@ -20,7 +20,14 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub]);
+
+/// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
+/// again, as a change of appearance does.
+pub fn set_palette(p: crate::theme::Palette, cx: &mut App) {
+    crate::theme::set_palette(p);
+    apply_theme(cx);
+}
 
 /// View ▸ Font ▸ a set chosen: kept, and everything set in it again --
 /// the menus remade with the mark, pages restyled, windows redrawn (and
@@ -157,6 +164,20 @@ pub fn menus() -> Vec<Menu> {
                     MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
                     MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
                     MenuItem::separator(),
+                    MenuItem::submenu(Menu {
+                        name: "Theme".into(),
+                        disabled: false,
+                        items: {
+                            let p = crate::theme::palette();
+                            let mark = |x: crate::theme::Palette| if p == x { format!("{} ✓", x.title()) } else { x.title().to_string() };
+                            vec![
+                                MenuItem::action(mark(crate::theme::Palette::Alabaster), PaletteAlabaster),
+                                MenuItem::action(mark(crate::theme::Palette::System), PaletteSystem),
+                                MenuItem::action(mark(crate::theme::Palette::Classic), PaletteClassic),
+                                MenuItem::action(mark(crate::theme::Palette::GitHub), PaletteGitHub),
+                            ]
+                        },
+                    }),
                     MenuItem::submenu(Menu {
                         name: "Font".into(),
                         disabled: false,

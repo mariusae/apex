@@ -1,11 +1,11 @@
-//! The two themes, as a Mac app of now dresses (the modern-mac branch's
-//! experiment; acme's tinted papers are on main): a near-white paper for
-//! bodies and a quiet grey for the tags over them, as a window's content
-//! sits under its title bar; hairlines where acme has black borders; the
-//! system's selection blue; ink the system's label colours, primary and
-//! secondary; one accent, a blue, for what is going on. Its dark twin
-//! keeps every relation. Chosen in the View menu (Light, Dark, System);
-//! the choice is kept beside the other state files.
+//! The themes, as a Mac app of now dresses (the modern-mac branch's
+//! experiment; acme's tinted papers are on main): four palettes to live
+//! with and choose among (View ▸ Theme: Alabaster, System, Go, GitHub),
+//! each a light and a dark, and the appearance choosing between those
+//! (View: Light, Dark, System). Every palette lays out the same way: a
+//! paper for bodies and a header for the tags over them, hairlines where
+//! acme has black borders, one accent for what is going on. The choices
+//! are kept beside the other state files.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
@@ -76,6 +76,10 @@ pub struct Theme {
     pub menu_border: u32,
     pub menu_text: u32,
     pub menu_hl_text: u32,
+    /// apex diff's added and removed lines' tints (blue and orange, as
+    /// the colour-blind themes have them).
+    pub diff_add: u32,
+    pub diff_del: u32,
 }
 
 /// GitHub Light Colorblind (Primer's `light_colorblind`, as the GitHub
@@ -128,6 +132,8 @@ pub const LIGHT: Theme = Theme {
     menu_border: 0xD0D7DE,
     menu_text: 0x24292F,
     menu_hl_text: 0xFFFFFF,
+    diff_add: 0xE9F7FF,
+    diff_del: 0xFFF5E7,
 };
 
 /// GitHub Dark Dimmed (Primer's `dark_dimmed`), GitHub's own dark that
@@ -178,7 +184,199 @@ pub const DARK: Theme = Theme {
     menu_border: 0x444C56,
     menu_text: 0xADBAC7,
     menu_hl_text: 0xFFFFFF,
+    diff_add: 0x243145,
+    diff_del: 0x372E2C,
 };
+
+/// The colours a palette chooses; the rest of a theme follows from them
+/// (`make`), as GitHub's are laid out: popovers (sheets, menus) on
+/// `popover`, a chosen row in `chosen` with white on it, B2 and B3's
+/// sweeps in white on `exec` and `look`.
+struct Keys {
+    paper: u32,
+    sel: u32,
+    thumb: u32,
+    header: u32,
+    header_sel: u32,
+    line: u32,
+    ink: u32,
+    dim: u32,
+    faint: u32,
+    accent: u32,
+    chosen: u32,
+    column: u32,
+    sidebar: u32,
+    dirty: u32,
+    stale: u32,
+    fenced: u32,
+    exec: u32,
+    look: u32,
+    popover: u32,
+    pick: u32,
+    hover: u32,
+    danger_hover: u32,
+    ansi: [u32; 16],
+    diff_add: u32,
+    diff_del: u32,
+}
+
+const fn make(k: Keys) -> Theme {
+    Theme {
+        body_bg: k.paper,
+        body_sel: k.sel,
+        body_border: k.thumb,
+        tag_bg: k.header,
+        tag_sel: k.header_sel,
+        tag_border: k.line,
+        text: k.ink,
+        text_dim: k.dim,
+        accent: k.accent,
+        sweep_text: 0xFFFFFF,
+        border: k.line,
+        column: k.column,
+        dirty: k.dirty,
+        stale: k.stale,
+        fenced: k.fenced,
+        progress: k.accent,
+        exec_hl: k.exec,
+        look_hl: k.look,
+        strip: k.sidebar,
+        panel_bg: k.popover,
+        panel_border: k.line,
+        panel_divider: k.line,
+        panel_text: k.ink,
+        panel_text_dim: k.dim,
+        panel_dim: k.faint,
+        panel_pick: k.pick,
+        panel_hover: k.hover,
+        panel_chosen_bg: k.chosen,
+        panel_chosen_text: 0xFFFFFF,
+        panel_accent: k.accent,
+        panel_danger_hover: k.danger_hover,
+        field_sel: k.sel,
+        ansi: k.ansi,
+        menu_bg: k.popover,
+        menu_hl: k.chosen,
+        menu_border: k.line,
+        menu_text: k.ink,
+        menu_hl_text: 0xFFFFFF,
+        diff_add: k.diff_add,
+        diff_del: k.diff_del,
+    }
+}
+
+/// The terminal's sixteen on light and on dark paper for every palette
+/// but GitHub's own: GitHub's colour-blind ones (orange for red, blue for
+/// green), since the reader is colour-blind whatever the paper.
+const ANSI_LIGHT: [u32; 16] = [0x24292F, 0xB35900, 0x0550AE, 0x4D2D00, 0x0969DA, 0x8250DF, 0x1B7C83, 0x6E7781, 0x57606A, 0x8A4600, 0x0969DA, 0x633C01, 0x218BFF, 0xA475F9, 0x3192AA, 0x8C959F];
+const ANSI_DARK: [u32; 16] = [0x545D68, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 0xB083F0, 0x39C5CF, 0x909DAB, 0x636E7B, 0xFFBC6F, 0x6CB6FF, 0xDAAA3F, 0x6CB6FF, 0xDCBDFB, 0x56D4DD, 0xCDD9E5];
+
+/// tonsky's Alabaster: #f7f7f7 paper and black ink, #bfdbfe selection,
+/// its active blue (#007acc) as the accent and caret, its grey (#777)
+/// for what is secondary, its red for B2 and blue for B3.
+pub const ALABASTER_LIGHT: Theme = make(Keys {
+    paper: 0xF7F7F7, sel: 0xBFDBFE, thumb: 0xCFCFCF, header: 0xEEEEEE, header_sel: 0xBAD4F5, line: 0xDDDDDD,
+    ink: 0x000000, dim: 0x777777, faint: 0x999999, accent: 0x007ACC, chosen: 0x007ACC, column: 0xF0F0F0, sidebar: 0xE9E9E9,
+    dirty: 0x333333, stale: 0xE09A30, fenced: 0xAA3731, exec: 0xAA3731, look: 0x325CC0,
+    popover: 0xFFFFFF, pick: 0xE3EEFD, hover: 0xEFEFEF, danger_hover: 0xF8E1E0, ansi: ANSI_LIGHT, diff_add: 0xE3ECFB, diff_del: 0xFFEFD6,
+});
+
+/// Alabaster Dark: #0e1415 paper, #cecece ink, #293334 selection, its
+/// amber (#cd974b) as the accent and caret, its punctuation's grey-green
+/// (#708b8d) for what is secondary.
+pub const ALABASTER_DARK: Theme = make(Keys {
+    paper: 0x0E1415, sel: 0x293334, thumb: 0x3A4A4C, header: 0x162022, header_sel: 0x2E3C3E, line: 0x243234,
+    ink: 0xCECECE, dim: 0x708B8D, faint: 0x5A6E70, accent: 0xCD974B, chosen: 0x3A6EA5, column: 0x0A0F10, sidebar: 0x121A1B,
+    dirty: 0xCECECE, stale: 0xDFDF8E, fenced: 0xCC3333, exec: 0xB03030, look: 0x3A6EA5,
+    popover: 0x162022, pick: 0x293334, hover: 0x1E2A2C, danger_hover: 0x2B1D1E, ansi: ANSI_DARK, diff_add: 0x16263A, diff_del: 0x33271A,
+});
+
+/// The system's, as Xcode's Default (Light) is: white paper, the label
+/// greys, Xcode's selection (#a4cdff), the system blue (#007aff).
+pub const XCODE_LIGHT: Theme = make(Keys {
+    paper: 0xFFFFFF, sel: 0xA4CDFF, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xB3D4FC, line: 0xDCDCDC,
+    ink: 0x1D1D1F, dim: 0x6E6E73, faint: 0x8E8E93, accent: 0x007AFF, chosen: 0x007AFF, column: 0xFAFAFA, sidebar: 0xEBEBEB,
+    dirty: 0x3A3A3C, stale: 0xE6A100, fenced: 0xFF3B30, exec: 0xD9480F, look: 0x007AFF,
+    popover: 0xFFFFFF, pick: 0xE1EEFF, hover: 0xF0F0F0, danger_hover: 0xFFE5E3, ansi: ANSI_LIGHT, diff_add: 0xE6F0FF, diff_del: 0xFFF1E0,
+});
+
+/// Xcode's Default (Dark): #1f1f24 paper, its selection (#515b70), the
+/// system blue on dark (#0a84ff).
+pub const XCODE_DARK: Theme = make(Keys {
+    paper: 0x1F1F24, sel: 0x515B70, thumb: 0x4A4A50, header: 0x292A30, header_sel: 0x3F4A63, line: 0x38383D,
+    ink: 0xDFDFE0, dim: 0x98989D, faint: 0x6C6C70, accent: 0x0A84FF, chosen: 0x0A84FF, column: 0x18181C, sidebar: 0x252529,
+    dirty: 0xDFDFE0, stale: 0xFFD60A, fenced: 0xFF453A, exec: 0xC2410C, look: 0x0A6CD8,
+    popover: 0x2C2C31, pick: 0x3F4A63, hover: 0x333338, danger_hover: 0x4A2A28, ansi: ANSI_DARK, diff_add: 0x1B2A44, diff_del: 0x3A2A1C,
+});
+
+/// Classic: acme's make -- cream paper, the tags a pale blue, a yellow
+/// selection -- in the hues of go.dev's playground, toned down: its
+/// #ffffdd paper warmed only a little off white, its ink (#202224) and
+/// secondary (#6e7072), Go blue (#007d9c) for the accent, Go's fuchsia
+/// (#ce3262) for B2.
+pub const CLASSIC_LIGHT: Theme = make(Keys {
+    paper: 0xFCFCF2, sel: 0xF1E9A6, thumb: 0xD4D4C4, header: 0xEAF4F7, header_sel: 0xBCE3ED, line: 0xD6DCDD,
+    ink: 0x202224, dim: 0x6E7072, faint: 0x8A8C8E, accent: 0x007D9C, chosen: 0x007D9C, column: 0xF5F5EA, sidebar: 0xE8EFF1,
+    dirty: 0x2F3A40, stale: 0xC79A00, fenced: 0xCE3262, exec: 0xCE3262, look: 0x007D9C,
+    popover: 0xFFFFFF, pick: 0xDDF1F6, hover: 0xF0F4F5, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
+});
+
+/// Classic's dark: go.dev's own (#202224 paper, the playground's output ink
+/// #e6e6e6, its dark link blue #50b7e0 as the accent), acme's dark
+/// yellow selection.
+pub const CLASSIC_DARK: Theme = make(Keys {
+    paper: 0x202224, sel: 0x4A4526, thumb: 0x4A4C4E, header: 0x2B2D2F, header_sel: 0x1F4B5A, line: 0x3A3C3E,
+    ink: 0xE6E6E6, dim: 0x9A9C9E, faint: 0x6E7072, accent: 0x50B7E0, chosen: 0x007D9C, column: 0x1A1B1D, sidebar: 0x26282A,
+    dirty: 0xE6E6E6, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xCE3262, look: 0x007D9C,
+    popover: 0x2B2D2F, pick: 0x1F4B5A, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
+});
+
+/// View ▸ Theme: which palette, each with its light and dark (which of
+/// those is the appearance's to say: Light, Dark, System).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Palette {
+    Alabaster,
+    System,
+    Classic,
+    GitHub,
+}
+
+pub const PALETTES: [Palette; 4] = [Palette::Alabaster, Palette::System, Palette::Classic, Palette::GitHub];
+
+impl Palette {
+    pub fn title(self) -> &'static str {
+        match self {
+            Palette::Alabaster => "Alabaster",
+            Palette::System => "System",
+            Palette::Classic => "Classic",
+            Palette::GitHub => "GitHub",
+        }
+    }
+    fn word(self) -> &'static str {
+        match self {
+            Palette::Alabaster => "alabaster",
+            Palette::System => "system",
+            Palette::Classic => "classic",
+            Palette::GitHub => "github",
+        }
+    }
+}
+
+static PALETTE: AtomicU8 = AtomicU8::new(3);
+
+pub fn palette() -> Palette {
+    PALETTES[PALETTE.load(Ordering::Relaxed) as usize % PALETTES.len()]
+}
+
+/// Chosen: kept in the `palette` state file.
+pub fn set_palette(p: Palette) {
+    PALETTE.store(PALETTES.iter().position(|x| *x == p).unwrap_or(3) as u8, Ordering::Relaxed);
+    let f = crate::shell::state_file().with_file_name("palette");
+    if let Some(d) = f.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(f, format!("{}\n", p.word()));
+}
 
 static MODE: AtomicU8 = AtomicU8::new(0);
 static SYSTEM_DARK: AtomicBool = AtomicBool::new(false);
@@ -220,7 +418,16 @@ pub fn is_dark() -> bool {
 }
 
 pub fn theme() -> &'static Theme {
-    if is_dark() { &DARK } else { &LIGHT }
+    match (palette(), is_dark()) {
+        (Palette::Alabaster, false) => &ALABASTER_LIGHT,
+        (Palette::Alabaster, true) => &ALABASTER_DARK,
+        (Palette::System, false) => &XCODE_LIGHT,
+        (Palette::System, true) => &XCODE_DARK,
+        (Palette::Classic, false) => &CLASSIC_LIGHT,
+        (Palette::Classic, true) => &CLASSIC_DARK,
+        (Palette::GitHub, false) => &LIGHT,
+        (Palette::GitHub, true) => &DARK,
+    }
 }
 
 /// The terminal's colours as the daemon should answer programs that
@@ -276,6 +483,10 @@ pub fn load() {
     SIDEBAR.store(side, Ordering::Relaxed);
     let contrast = std::fs::read_to_string(crate::shell::state_file().with_file_name("contrast")).map(|s| s.trim() != "off").unwrap_or(true);
     CONTRAST.store(contrast, Ordering::Relaxed);
+    let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
+    if let Some(i) = PALETTES.iter().position(|p| p.word() == pal.trim()) {
+        PALETTE.store(i as u8, Ordering::Relaxed);
+    }
     let m = match std::fs::read_to_string(file()).map(|s| s.trim().to_string()).as_deref() {
         Ok("dark") => Mode::Dark,
         Ok("system") => Mode::System,
