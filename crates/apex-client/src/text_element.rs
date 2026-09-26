@@ -52,8 +52,8 @@ pub fn palette(kind: Kind) -> Palette {
 /// hollow when the window is clean and filled when it is not (gold when
 /// the file has also changed on disk since); a process behind it rings
 /// it in the accent and lights its middle; work going on turns an arc
-/// round it, the system's spinner; a tool wanting the user puts an
-/// unread badge at the header's far end. Any mark goes with any other.
+/// round it, the system's spinner; a tool wanting the user tints the
+/// header and puts pjw's face at its far end. Any mark goes with any other.
 /// The handle is acme's layout box all the same: B1, B2 and B3 on it do
 /// what they always have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +67,7 @@ pub struct Dot {
     pub core: Option<u32>,
     /// Working: the arc turning.
     pub spin: Option<u32>,
-    /// Notified: the badge.
+    /// Notified: the header tinted, pjw's face at its end.
     pub badge: bool,
 }
 
@@ -949,6 +949,17 @@ impl Element for TextElement {
         let lh = pp.fontspec.line_height;
         let origin = point(bounds.left() + px(MARGIN), bounds.top());
 
+        // a notified window's header in a pale tint of the accent, as
+        // Mail tints a flagged row: the whole bar says it wants the user.
+        // Pale enough that a selection in the tag still shows on it (8 to
+        // 9 in CIELAB from the plain header and from the tag's selection
+        // on light, 11 to 13 on dark, under a deuteranopia simulation too)
+        let header_bg = if pp.kind == Kind::WinTag && pp.notified {
+            let th = crate::theme::theme();
+            rgb(mix(th.tag_bg, th.accent, if crate::theme::is_dark() { 0.14 } else { 0.10 }))
+        } else {
+            pal.bg
+        };
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             if pp.sheet {
                 // the edge of a sheet in a stack of them, as Manifold
@@ -959,9 +970,9 @@ impl Element for TextElement {
                 window.paint_quad(fill(bounds, rgb(th.body_bg)));
                 let card = Bounds::new(point(bounds.left() + px(2.), bounds.top() + px(1.)), size(bounds.size.width - px(4.), bounds.size.height + px(1.)));
                 let radii = gpui::Corners { top_left: px(7.), top_right: px(7.), bottom_left: px(0.), bottom_right: px(0.) };
-                window.paint_quad(gpui::quad(card, radii, pal.bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.tab_outline), gpui::BorderStyle::Solid));
+                window.paint_quad(gpui::quad(card, radii, header_bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.tab_outline), gpui::BorderStyle::Solid));
             } else {
-                window.paint_quad(fill(bounds, pal.bg));
+                window.paint_quad(fill(bounds, header_bg));
             }
 
             let mut scrollbar = None;
@@ -1085,13 +1096,18 @@ impl Element for TextElement {
                 }
             }
 
-            // notified: an unread badge at the header's far end, over the
-            // tag's text, as Mail marks a message
+            // notified: pjw's face at the header's far end, in the accent,
+            // over the tag's text on a patch of the header -- the face the
+            // session's row wears in the sidebar, here on its window
             if badge {
                 let th = crate::theme::theme();
-                let c = point(bounds.right() - px(11.), bounds.top() + lh / 2.);
-                window.paint_quad(fill(Bounds::new(point(c.x - px(6.), c.y - px(6.)), size(px(12.), px(12.))), pal.bg).corner_radii(px(6.)));
-                window.paint_quad(fill(Bounds::new(point(c.x - px(4.), c.y - px(4.)), size(px(8.), px(8.))), rgb(th.accent)).corner_radii(px(4.)));
+                const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
+                let fh = (lh - px(2.)).min(px(15.));
+                let fw = fh * (201. / 259.);
+                let at = point(bounds.right() - px(8.) - fw, bounds.top() + (lh - fh) / 2.);
+                // the patch stops short of the right edge, a sheet's line
+                window.paint_quad(fill(Bounds::new(point(at.x - px(5.), bounds.top() + px(2.)), size(fw + px(9.), lh - px(2.))), header_bg));
+                let _ = window.paint_svg(Bounds::new(at, size(fw, fh)), "pjw.svg".into(), Some(PJW), gpui::TransformationMatrix::unit(), rgb(th.accent), cx);
             }
             let layout = TextLayout {
                 bounds,

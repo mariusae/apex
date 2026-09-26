@@ -23,8 +23,10 @@ already do.
   while it only rests at the start.
 - **Handles as document dots** (`text_element::dot`): hollow clean,
   filled dirty, gold stale; live rings it in the accent and lights its
-  middle; working turns a spinner's arc round it; notified is an unread
-  badge at the header's end. Column and session boxes are drag grips.
+  middle; working turns a spinner's arc round it. A notified window's
+  header takes a pale tint of the accent, as Mail tints a flagged row,
+  with pjw's face in the accent at its end (and by the window's row in
+  the sidebar, as by the session's). Column and session boxes are drag grips.
   All still acme's layout boxes: B1, B2 and B3 on them as ever.
 - **Scrollers.** acme's lane, drawn as a slim rounded thumb with no
   track (`paint_scroller`), in text, terminal and page windows alike.
