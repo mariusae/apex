@@ -10,10 +10,12 @@ already do.
 
 ## What changed
 
-- **Look.** A Mac app's palette (`theme.rs`): a near-white paper, a grey
-  header over each window, hairlines for acme's black borders, the
-  system's selection blue and label greys, one accent blue. B2's sweep
-  is amber and B3's blue, apart for a reader with deuteranopia. Text is
+- **Look.** rsms's Sublime schemes (github.com/rsms/sublime-theme) for
+  the palette (`theme.rs`): bright's near-white paper and black ink, its
+  blue2 accent and caret, its selection; dark's near-black paper and
+  soft white ink, its pink cursor as the accent, its selection blue. A
+  grey header over each window, hairlines for acme's black borders; B2's
+  sweep a red and B3's a blue, apart for a reader with deuteranopia. Text is
   SF Pro 14/20 set as an editor sets it for code: its high legibility
   set (`ss06`: I, l and 1 each unlike the others) and tabular figures
   (`tnum`); mono is SF Mono 12/16 (loaded from the system's own file,
