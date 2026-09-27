@@ -138,6 +138,32 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   the address the page follows -- only not drawn. `Web` with nothing
   given or selected makes a blank page, its address field ready to type
   in (the core allows a web window with no address for it).
+- **Letting a session go.** The pointer on a session's row in the
+  sidebar shows an × (in place of the pjw a notified one wears), as the
+  tabs had: the tab goes, the session stays on its host.
+- **Column edges.** The line between two columns takes the ↔ pointer, and
+  a drag of it moves only the line (`tiling::rowmovecol`, what the
+  column box's resize does): the columns either side wider and narrower,
+  never shuffled, and a click on it does nothing.
+- **Placement preview.** While a handle is held -- a window's, a
+  stashed one's, a column's, or the line between columns -- where it
+  would land were it let go now is shaded in the accent, as Manifold
+  shows where a dragged sheet would go. It is the drop itself, done on a
+  copy of the layout (`Node::drag_window_preview` and its kin), so what
+  is shown is what happens.
+- **Restarting the server** (`restart.rs`), as Manifold offers: an
+  attach that finds this machine's server of another version (which
+  this Apex cannot talk to) offers, once a launch, to restart it, and
+  Apex ▸ Restart Server… does whenever asked; both say first what goes
+  with it (the sessions' windows, terminals and the programs in them,
+  changes not saved -- counted, when it can) and that the tabs stay,
+  each attaching to a fresh session of its name. A server of this
+  protocol is asked to stop; one of another, which may not read our
+  Stop as a Stop, is signalled, once the process at its socket's far
+  end is seen to be an apex server on that socket
+  (`remote::stop_any`). Nothing starts a second server over an old one
+  any more: that took its socket and left it running, unreachable,
+  with its sessions (`ensure_daemon`).
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the

@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack, RestartServer]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -107,6 +107,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("About Apex", About),
                 MenuItem::separator(),
                 MenuItem::action("Install apex Command…", InstallCli),
+                MenuItem::action("Restart Server…", RestartServer),
                 MenuItem::separator(),
                 MenuItem::action("Hide Apex", HideApp),
                 MenuItem::separator(),
@@ -411,8 +412,14 @@ pub fn plan(socket: &Path) -> std::io::Result<(SessionUrl, Option<WindowBounds>)
 /// last resort run one inside this process, which then lives only as
 /// long as the app.
 pub fn ensure_daemon(socket: &Path) -> std::io::Result<()> {
-    if list_sessions(socket).is_ok() {
-        return Ok(());
+    match list_sessions(socket) {
+        Ok(_) => return Ok(()),
+        // a daemon of another version is there, with its sessions: not
+        // one to start another over (which would take its socket and
+        // leave it running, unreachable), but one to restart when the
+        // user says so
+        Err(e) if e.kind() == std::io::ErrorKind::Unsupported => return Err(e),
+        Err(_) => {}
     }
     let mut candidates = Vec::new();
     if let Ok(exe) = std::env::current_exe() {

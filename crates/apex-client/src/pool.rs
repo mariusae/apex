@@ -386,6 +386,16 @@ impl Pool {
             Err(e) => {
                 let why = e.to_string();
                 crate::shell::log_line(&format!("{id} ({asked}): {why}"));
+                // this machine's server is from another version: offer to
+                // restart it (once a launch), in the window on this tab or
+                // any other
+                if e.kind() == std::io::ErrorKind::Unsupported && asked.is_local() {
+                    let h = Self::waiting_on(cx, id).or_else(|| cx.windows().into_iter().find_map(|w| w.downcast::<crate::app::Acme>()));
+                    if let Some(h) = h {
+                        let why = why.clone();
+                        let _ = h.update(cx, |acme, window, cx| acme.offer_restart(&why, window, cx));
+                    }
+                }
                 match Self::waiting_on(cx, id) {
                     Some(h) => {
                         Self::set(cx, id, State::Down(why.clone()));

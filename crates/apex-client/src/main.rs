@@ -22,6 +22,7 @@ mod menu;
 mod shell;
 mod sidebar;
 mod miniature;
+mod restart;
 mod switcher;
 mod webbar;
 mod term_element;
@@ -122,6 +123,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
             .on_action(cx.listener(|this, _: &shell::StashNext, _, cx| this.stash_walk_step(false, cx)))
+            .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
             .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
@@ -243,9 +245,11 @@ impl Render for Acme {
         // page's own
         use gpui::CursorStyle;
         let dragging = self.dragging_box();
-        let hold = |c: CursorStyle| if dragging { CursorStyle::ClosedHand } else { c };
+        // the line between columns held: the pointer says left and right
+        let held = if self.dragging_edge() { CursorStyle::ResizeLeftRight } else { CursorStyle::ClosedHand };
+        let hold = |c: CursorStyle| if dragging { held } else { c };
         let pointer = if dragging {
-            CursorStyle::ClosedHand
+            held
         } else if self.over_page(window) {
             cursor::NATIVE_CURSOR // the page's own, set as it asks
         } else {
@@ -436,6 +440,31 @@ impl Render for Acme {
                     area = area.child(body);
                 }
             }
+        }
+        // the lines between the columns: a drag of one makes the columns
+        // on either side wider and narrower (the column's box moves it
+        // too, and more)
+        for (ci, col) in l.cols.iter().enumerate() {
+            if ci == 0 || !l.shows(ci) || l.full.is_some() {
+                continue;
+            }
+            let c = col.id;
+            let edge = div().size_full().cursor(hold(CursorStyle::ResizeLeftRight)).on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_edge(c, e.position, cx)),
+            );
+            area = area.child(at(col.r.x0 - 6, col.r.y0, 7, col.r.dy(), edge.into_any_element()));
+        }
+        // where what is held would land: shaded, as Manifold shows where
+        // a dragged sheet would go
+        if let Some(r) = self.drag_preview() {
+            let shade = div()
+                .size_full()
+                .rounded(px(6.))
+                .bg(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.12))
+                .border_2()
+                .border_color(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.6));
+            area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), shade.into_any_element()));
         }
         // the stash brought out: its tags, live, stacked over the column's
         // foot as sheets drawn out of the pile, each with its handle

@@ -66,6 +66,9 @@ struct Drag {
 enum BoxTarget {
     Win(WindowId),
     Col(ColumnId),
+    /// The line on a column's left, dragged to make the columns wider
+    /// or narrower.
+    Edge(ColumnId),
 }
 
 #[derive(Default)]
@@ -411,6 +414,8 @@ pub struct Acme {
     pub switcher: Option<crate::switcher::Switcher>,
     /// ⌘E, ⌘ still held: the walk through a column's stash.
     pub stash_walk: Option<crate::switcher::StashWalk>,
+    /// The sidebar's session row under the pointer: its × shows.
+    pub sidebar_hover: Option<crate::pool::TabId>,
     /// A web window's address being typed in its header.
     pub url_edit: Option<crate::webbar::UrlEdit>,
     /// Blank web windows already given their address field.
@@ -1574,6 +1579,7 @@ impl Acme {
             switcher: None,
             stash_walk: None,
             url_edit: None,
+            sidebar_hover: None,
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
             waiting: None,
@@ -1921,6 +1927,39 @@ impl Acme {
     /// A layout box is held: acme shows the box cursor.
     pub fn dragging_box(&self) -> bool {
         self.mouse.box_drag.is_some()
+    }
+
+    /// The line between two columns is held.
+    pub fn dragging_edge(&self) -> bool {
+        matches!(self.mouse.box_drag, Some((BoxTarget::Edge(_), _, _)))
+    }
+
+    /// The line on column `c`'s left pressed.
+    pub fn press_edge(&mut self, c: ColumnId, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.mouse.b1.is_none() {
+            self.mouse.box_drag = Some((BoxTarget::Edge(c), MouseButton::Left, pos));
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    /// Where what is being dragged would land were it let go now, in the
+    /// area's coordinates: a window, a column, or the column right of a
+    /// line (Manifold's placement preview).
+    pub fn drag_preview(&self) -> Option<tiling::Rect> {
+        let (bt, b, start) = self.mouse.box_drag?;
+        let but = match b {
+            MouseButton::Left => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Navigate(_) => return None,
+            _ => 3,
+        };
+        let (op, p) = (self.row_pt(start), self.row_pt(self.last_mouse));
+        match bt {
+            BoxTarget::Win(w) => self.node.drag_window_preview(w, but, op, p),
+            BoxTarget::Col(c) => self.node.drag_column_preview(c, but, op, p),
+            BoxTarget::Edge(c) => self.node.column_edge_preview(c, p.0),
+        }
     }
 
     /// The mouse move acme would make after the last layout change.
@@ -3032,6 +3071,10 @@ impl Acme {
         if self.stash_tick(pos) {
             cx.notify();
         }
+        // a box held: where it would land follows the pointer
+        if self.mouse.box_drag.is_some() {
+            cx.notify();
+        }
         if self.menu.is_some() {
             self.menu_track(pos);
             self.last_mouse = pos;
@@ -3153,6 +3196,9 @@ impl Acme {
                 let r = match bt {
                     BoxTarget::Win(w) => self.node.drag_window(&mut self.log, w, but, op, p),
                     BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, but, op, p),
+                    // the line goes where it is let go; a click moves nothing
+                    BoxTarget::Edge(c) if (p.0 - op.0).abs() >= 2 => self.node.move_column_edge(&mut self.log, c, p.0),
+                    BoxTarget::Edge(_) => Ok(()),
                 };
                 if let Err(err) = r {
                     eprintln!("layout: {err}");

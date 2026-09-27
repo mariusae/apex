@@ -77,7 +77,37 @@ impl Acme {
                 .gap(px(8.))
                 .child(avatar)
                 .child(text);
-            if notified {
+            // the pointer on the row: an × to let the session go, as a
+            // tab's had (the session stays on its host; the tab goes)
+            if self.sidebar_hover == Some(id) {
+                row = row.child(
+                    div()
+                        .id(("session-close", i))
+                        .flex_none()
+                        .size(px(18.))
+                        .rounded(px(5.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(14.))
+                        .text_color(rgb(t.text_dim))
+                        .hover(move |s| s.bg(rgb(theme::step(if current { chosen } else { hover }, 1))).text_color(rgb(t.text)))
+                        .child("×")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, window, cx| {
+                                if current {
+                                    this.close_current_session(window, cx);
+                                } else {
+                                    crate::pool::Pool::let_go(cx, id);
+                                }
+                                this.sidebar_hover = None;
+                                cx.notify();
+                                cx.stop_propagation();
+                            }),
+                        ),
+                );
+            } else if notified {
                 row = row.child(div().flex_none().child(pjw(14., t.text)));
             }
             row = if current {
@@ -87,6 +117,14 @@ impl Acme {
             };
             let url = u.clone();
             row = row
+                .on_hover(cx.listener(move |this, over: &bool, _, cx| {
+                    if *over {
+                        this.sidebar_hover = Some(id);
+                    } else if this.sidebar_hover == Some(id) {
+                        this.sidebar_hover = None;
+                    }
+                    cx.notify();
+                }))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
