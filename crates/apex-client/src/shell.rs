@@ -393,10 +393,18 @@ pub fn log_line(what: &str) {
 /// first existing local session; else a new `default`. The sessions
 /// beside it come back as its tabs, from what the pool remembers.
 pub fn plan(socket: &Path) -> std::io::Result<(SessionUrl, Option<WindowBounds>)> {
-    let existing = list_sessions(socket)?;
     let again = remembered()
         .iter()
         .find_map(|r| SessionUrl::parse(&r.url).map(|u| (u, r.frame.map(|b| if r.fullscreen { WindowBounds::Fullscreen(b) } else { WindowBounds::Windowed(b) }))));
+    let existing = match list_sessions(socket) {
+        Ok(existing) => existing,
+        // a daemon of another version: the window opens on what it would
+        // have, says why it cannot attach, and offers to restart it
+        Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
+            return Ok(again.unwrap_or_else(|| (SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None)));
+        }
+        Err(e) => return Err(e),
+    };
     if let Some(one) = again {
         return Ok(one);
     }
@@ -503,6 +511,32 @@ pub fn install_cli() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_daemon_of_another_version_is_not_started_over() {
+        use apex_server::proto::{write_frame, ServerMsg, PROTOCOL};
+        let dir = std::env::temp_dir().join(format!("apex-ensure-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("stale.sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for mut s in listener.incoming().flatten() {
+                let _ = write_frame(&mut s, &ServerMsg::Build { protocol: PROTOCOL - 1, id: "old".into() });
+                held.push(s);
+            }
+        });
+        // it answers, of another version: said so, and no daemon started
+        // over it (which would take its socket)
+        let e = ensure_daemon(&path).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::Unsupported);
+        assert_eq!(list_sessions(&path).unwrap_err().kind(), std::io::ErrorKind::Unsupported);
+        // and the window opens on the session it would have had
+        let (url, _) = plan(&path).unwrap();
+        assert!(url.is_local());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_login_shells_path_is_adopted() {

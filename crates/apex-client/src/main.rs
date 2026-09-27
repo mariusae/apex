@@ -646,6 +646,7 @@ fn main() {
         });
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
         // apex has one window; everything else it has open is a tab in it
+        let mut stale: Option<String> = None;
         let (target, frame): (Target, Option<WindowBounds>) = if local {
             (Target::Local(files.clone()), None)
         } else if let Some(cmd) = via.clone() {
@@ -662,9 +663,18 @@ fn main() {
             let d = apex_server::providers::Dest::parse(&dest);
             (Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default(), id: None }, files: files.clone() }, None)
         } else {
-            if let Err(e) = shell::ensure_daemon(&socket) {
-                eprintln!("apex-ui: {e}");
-                std::process::exit(1);
+            match shell::ensure_daemon(&socket) {
+                Ok(()) => {}
+                // a daemon of another version: the window opens, says so
+                // and offers to restart it
+                Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
+                    shell::log_line(&format!("the daemon: {e}"));
+                    stale = Some(e.to_string());
+                }
+                Err(e) => {
+                    eprintln!("apex-ui: {e}");
+                    std::process::exit(1);
+                }
             }
             match &session {
                 Some(s) => (Target::Url { url: SessionUrl::local(s), files: files.clone() }, None),
@@ -684,6 +694,9 @@ fn main() {
             _ => None,
         };
         let opened = open_window(cx, target, frame);
+        if let (Some(why), Some(h)) = (stale.take(), opened) {
+            let _ = h.update(cx, |acme, window, cx| acme.offer_restart(&why, window, cx));
+        }
         if let Some(files) = start {
             if let Some(tab) = opened.and_then(|h| h.read(cx).ok().map(|a| a.tab)) {
                 pool::Pool::start(cx, tab, pool::Why::Attaching, false, files);

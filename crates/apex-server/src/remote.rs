@@ -1035,6 +1035,35 @@ fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Optio
 mod tests {
     use super::*;
 
+    /// A daemon of another version on a socket of its own: it says its
+    /// build to each connection and then keeps it open.
+    pub(crate) fn stale_daemon(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("stale.sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for mut s in listener.incoming().flatten() {
+                let _ = crate::proto::write_frame(&mut s, &ServerMsg::Build { protocol: crate::proto::PROTOCOL - 1, id: "old".into() });
+                held.push(s);
+            }
+        });
+        path
+    }
+
+    #[test]
+    fn a_daemon_of_another_version_is_not_signalled_unless_it_is_one() {
+        let dir = std::env::temp_dir().join(format!("apex-stale-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = stale_daemon(&dir);
+        let e = list_sessions(&path).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::Unsupported);
+        // the process at the far end is this test, no apex server: left be
+        let e = stop_any(&path).unwrap_err();
+        assert!(e.to_string().contains("not an apex server"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn another_protocol_is_refused_with_advice() {
         // the same protocol from any build is fine; another protocol is not
