@@ -224,7 +224,9 @@ impl Acme {
         let glass = floating && self.on_glass();
         let outer = div().id("sidebar").flex_none().h_full().font_family(crate::fonts::ui());
         let outer = if glass { outer.w_full() } else { outer.w(px(crate::shell::SIDEBAR_W)).p(px(INSET)) };
-        let outer = if floating { outer } else { outer.bg(rgb(t.column)) };
+        // pinned, round the card: the ground the windows stand on, as
+        // under the column tags and between the cards
+        let outer = if floating { outer } else { outer.bg(rgb(crate::text_element::ground(&t))) };
         outer
             .child(
                 div()
