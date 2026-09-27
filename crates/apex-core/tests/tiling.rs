@@ -549,10 +549,10 @@ fn button_2_makes_a_column_as_wide_as_can_be_and_the_others_strips() {
 }
 
 #[test]
-fn button_3_gives_a_column_the_row_and_a_click_on_its_box_brings_the_others_back_as_strips() {
+fn a_column_given_the_row_comes_back_as_strips_at_a_click_on_its_box() {
     let mut l = three();
     let id = l.cols[1].id;
-    rowgrow(&mut l, 1, 3, &info());
+    rowfull(&mut l, 1, &info());
     assert_eq!(l.full, Some(id));
     assert_eq!((l.cols[1].r.x0, l.cols[1].r.x1), (0, 1000));
     assert!(l.shows(1) && !l.shows(0) && !l.shows(2));
@@ -575,8 +575,9 @@ fn a_click_on_a_columns_box_grows_it_and_a_drag_still_moves_it() {
     // a click: under five pixels of movement
     assert_eq!(rowdragcol(&mut l, 2, 1, (x, 30), (x + 2, 31), &info()), Some(Warp::ColButton(id)));
     assert!(widths(&l)[2] > before[2]);
-    // B3 then a drag: the row comes back before the box is moved
-    rowdragcol(&mut l, 2, 3, (x, 30), (x, 30), &info());
+    // given the row (as B3 once did) then a drag: the row comes back
+    // before the box is moved
+    rowfull(&mut l, 2, &info());
     assert_eq!(l.full, Some(id));
     rowdragcol(&mut l, 2, 1, (3, 30), (600, 30), &info());
     assert_eq!(l.full, None);
@@ -587,7 +588,7 @@ fn a_click_on_a_columns_box_grows_it_and_a_drag_still_moves_it() {
 fn a_row_with_a_full_column_resizes_it_and_lays_out_before_it_adds_or_closes() {
     let mut l = three();
     let id = l.cols[0].id;
-    rowgrow(&mut l, 0, 3, &info());
+    rowfull(&mut l, 0, &info());
     // the window grows: the full column is the row still
     rowresize(&mut l, Rect::new(0, 0, 1400, 900), &info());
     assert_eq!(l.full, Some(id));
@@ -600,7 +601,7 @@ fn a_row_with_a_full_column_resizes_it_and_lays_out_before_it_adds_or_closes() {
     tiles(&l);
     assert!(l.cols[1].r.dx() > STRIP && l.cols[0].r.dx() > STRIP, "{:?}", widths(&l));
     // closing one, from a hidden row too
-    rowgrow(&mut l, 0, 3, &info());
+    rowfull(&mut l, 0, &info());
     rowclose(&mut l, 3, &info());
     assert_eq!(l.full, None);
     tiles(&l);
@@ -698,7 +699,7 @@ fn strips_left_by_button_2_or_3_come_back_at_the_widths_they_had() {
     assert!(near(l.cols[3].r.dx(), before[3]), "{before:?} -> {:?}", widths(&l));
     // B3, then the row back as strips: each strip remembers its column
     let (mut l, before) = four();
-    rowgrow(&mut l, 1, 3, &info());
+    rowfull(&mut l, 1, &info());
     rowgrow(&mut l, 1, 1, &info());
     assert_eq!(widths(&l)[0], STRIP);
     rowgrow(&mut l, 0, 1, &info());
@@ -750,7 +751,7 @@ fn uncovering_a_column_brings_it_out_of_a_strip_or_from_behind_a_full_one() {
     assert_eq!(widths(&l), now);
     // hidden behind a column given the row: out, at the width it had
     let (mut l, before) = four();
-    rowgrow(&mut l, 1, 3, &info());
+    rowfull(&mut l, 1, &info());
     uncover(&mut l, 3, &info());
     assert_eq!(l.full, None);
     tiles(&l);
@@ -799,4 +800,41 @@ fn a_drags_preview_is_where_the_drop_puts_it() {
     n.drag_window(&mut log, w1, 1, op, p).unwrap();
     assert_ne!(n.state.layout, before);
     assert_eq!(Some(shown), n.state.layout.slot(w1).map(|s| s.r));
+}
+
+#[test]
+fn a_columns_box_answers_as_a_windows_does() {
+    // B3: the column goes to a strip where it stands, its neighbours
+    // taking its width
+    let (mut l, before) = four();
+    rowgrow(&mut l, 1, 3, &info());
+    tiles(&l);
+    assert_eq!(widths(&l)[1], STRIP);
+    assert!(widths(&l)[0] > before[0] && widths(&l)[2] > before[2], "{before:?} -> {:?}", widths(&l));
+    // B1 on it: back at the width it had
+    rowgrow(&mut l, 1, 1, &info());
+    tiles(&l);
+    assert!(near(widths(&l)[1], before[1]), "{before:?} -> {:?}", widths(&l));
+    // B2: the others to strips; B2 again on the one with room: all back
+    let (mut l, before) = four();
+    rowgrow(&mut l, 2, 2, &info());
+    assert!([0, 1, 3].iter().all(|&j| widths(&l)[j] == STRIP));
+    rowgrow(&mut l, 2, 2, &info());
+    tiles(&l);
+    for j in [0, 1, 3] {
+        assert!(near(widths(&l)[j], before[j]), "{before:?} -> {:?}", widths(&l));
+    }
+    // B2 on a strip: it comes back alone
+    let (mut l, _) = four();
+    rowgrow(&mut l, 1, 3, &info());
+    rowgrow(&mut l, 1, 2, &info());
+    tiles(&l);
+    assert!(widths(&l)[1] > 600, "{:?}", widths(&l));
+    assert!([0, 2, 3].iter().all(|&j| widths(&l)[j] == STRIP));
+    // B3 on the last column with room: the strip nearest it comes back
+    // in its place, the row never all strips
+    rowgrow(&mut l, 1, 3, &info());
+    tiles(&l);
+    assert_eq!(widths(&l)[1], STRIP);
+    assert!(widths(&l).iter().filter(|&&w| w > STRIP).count() == 1, "{:?}", widths(&l));
 }

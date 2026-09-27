@@ -629,35 +629,30 @@ fn notifications_are_a_windows_and_go_with_it() {
 }
 
 #[test]
-fn a_column_given_the_whole_row_is_replicated_and_new_windows_land_in_it() {
+fn a_column_put_away_is_replicated_and_new_windows_land_beside_it() {
     let (mut log, mut node, _) = session();
     let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
-    assert!(cols.len() >= 2, "a session starts with columns to hide");
+    assert!(cols.len() >= 2, "a session starts with columns to put away");
     let (first, second) = (cols[0], cols[1]);
     let r = node.state.layout.cols[0].r;
     let at = (r.x0 + 3, r.y0 + 3);
-    // B3 on the first column's box: the row is it, and a follower agrees
+    // B3 on the first column's box: a strip, as B3 stashes a window, and a
+    // follower agrees
     node.drag_column(&mut log, first, 3, at, at).unwrap();
-    assert_eq!(node.state.layout.full, Some(first));
-    assert_eq!((node.state.layout.cols[0].r.x0, node.state.layout.cols[0].r.x1), (node.state.layout.r.x0, node.state.layout.r.x1));
-    assert_eq!(follower(&log).state.layout.full, Some(first));
-    assert_eq!(follower(&log).state.hash(), node.state.hash());
-    // a window meant for the hidden column lands where it can be seen
-    let w = node.new_window(&mut log, second, "/tmp/meant-for-the-hidden-column", "").unwrap();
-    assert_eq!(node.state.layout.column_of(w), Some(first));
-    // B1 on the box again: the others come back, as strips
-    node.drag_column(&mut log, first, 1, at, at).unwrap();
+    assert!(tiling::is_strip(node.state.layout.cols[0].r), "{:?}", node.state.layout.cols[0].r);
     assert_eq!(node.state.layout.full, None);
-    assert!(tiling::is_strip(node.state.layout.cols[1].r), "{:?}", node.state.layout.cols[1].r);
     assert_eq!(follower(&log).state.hash(), node.state.hash());
-    // the width each strip remembers is the session's, not the leader's
-    assert!(node.state.layout.cols[1].restore > 0);
-    assert_eq!(follower(&log).state.layout.cols[1].restore, node.state.layout.cols[1].restore);
-    // B4 on the strip's box brings it back, and a follower agrees on that too
-    let s = node.state.layout.cols[1].r;
+    // the width it remembers is the session's, not the leader's
+    assert!(node.state.layout.cols[0].restore > 0);
+    assert_eq!(follower(&log).state.layout.cols[0].restore, node.state.layout.cols[0].restore);
+    // a window meant for the strip lands where it can be seen
+    let w = node.new_window(&mut log, first, "/tmp/meant-for-the-strip", "").unwrap();
+    assert_eq!(node.state.layout.column_of(w), Some(second));
+    // B1 on the strip's box brings it back, and a follower agrees
+    let s = node.state.layout.cols[0].r;
     let on = (s.x0 + 3, s.y0 + 3);
-    node.drag_column(&mut log, second, 4, on, on).unwrap();
-    assert!(!tiling::is_strip(node.state.layout.cols[1].r));
+    node.drag_column(&mut log, first, 1, on, on).unwrap();
+    assert!(!tiling::is_strip(node.state.layout.cols[0].r));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
 

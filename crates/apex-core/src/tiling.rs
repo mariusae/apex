@@ -1055,19 +1055,16 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
     if but == 1 && l.full.is_none() && is_strip(l.cols[ci].r) && rowrestore(l, ci, info) {
         return;
     }
+    // as a window's box does: B3 puts this column away (a strip, a sheet
+    // at its place), B2 on a strip brings it back alone, B2 on the only
+    // column with room brings the others back
     if but == 3 {
-        // the widths the others had, to come back to
-        for j in 0..n {
-            if j != ci && l.full.is_none() && !is_strip(l.cols[j].r) {
-                let width = l.cols[j].r.dx();
-                remember(l, j, width);
-            }
-        }
-        l.full = Some(l.cols[ci].id);
-        let mut r = l.cols[ci].r;
-        r.x0 = row.x0;
-        r.x1 = row.x1;
-        colresize(l, ci, r, info);
+        reveal(l, info);
+        rowstrip(l, ci, info);
+        return;
+    }
+    if but == 2 && l.full.is_none() && !is_strip(l.cols[ci].r) && (0..n).all(|j| j == ci || is_strip(l.cols[j].r)) && n > 1 {
+        rowrestore_all(l, ci, info);
         return;
     }
     // the width the columns share, the borders between them taken out
@@ -1120,6 +1117,93 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
     }
     w[ci] = w[ci].max(STRIP);
     rowpack(l, &w, info);
+}
+
+/// B3 on a column's box: it goes to a strip where it stands, its width to
+/// the columns with room either side of it (nearest first), remembered
+/// for its coming back. The last column with room gives way to the strip
+/// nearest it instead -- the row is never all strips -- and a row of one
+/// column keeps it.
+pub fn rowstrip(l: &mut Layout, ci: usize, info: &dyn Info) {
+    let n = l.cols.len();
+    if n < 2 || is_strip(l.cols[ci].r) {
+        return;
+    }
+    let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    remember(l, ci, w[ci]);
+    let spare = w[ci] - STRIP;
+    w[ci] = STRIP;
+    if wide.len() == 1 {
+        // the last with room: the strip nearest it comes back in its place
+        let near = (0..n).filter(|&j| j != ci).min_by_key(|&j| j.abs_diff(ci)).unwrap_or(ci);
+        w[near] += spare;
+        l.cols[near].restore = 0;
+        rowpack(l, &w, info);
+        return;
+    }
+    // the columns with room either side, nearest first, sharing it
+    let left = (0..ci).rev().find(|&j| !is_strip(l.cols[j].r));
+    let right = (ci + 1..n).find(|&j| !is_strip(l.cols[j].r));
+    match (left, right) {
+        (Some(a), Some(b)) => {
+            w[a] += spare / 2;
+            w[b] += spare - spare / 2;
+        }
+        (Some(a), None) | (None, Some(a)) => w[a] += spare,
+        (None, None) => {}
+    }
+    rowpack(l, &w, info);
+}
+
+/// Every strip back at the width it had at once (a fifth of the row when
+/// it has none), column `ci` keeping the rest: B2 on the one column with
+/// room, as B2 on the one window laid out brings back its stash.
+fn rowrestore_all(l: &mut Layout, ci: usize, info: &dyn Info) {
+    let n = l.cols.len();
+    let row = l.r.dx() as i64;
+    let total = (l.r.dx() - (n as i32 - 1) * BORDER).max(0);
+    let had = |c: &Column| match c.restore {
+        s if s > 0 => ((s as i64 * row + SHARE_UNIT / 2) / SHARE_UNIT) as i32,
+        _ => (row / 5) as i32,
+    };
+    let mut w: Vec<i32> = l.cols.iter().map(|c| if is_strip(c.r) { had(c).max(STRIP) } else { c.r.dx() }).collect();
+    let others: i32 = (0..n).filter(|&j| j != ci).map(|j| w[j]).sum();
+    // what is left is ci's; too little, and the others give in proportion
+    let room = total - others;
+    if room < MINCOL {
+        let scale = (total - MINCOL).max(0) as f64 / others.max(1) as f64;
+        for j in 0..n {
+            if j != ci {
+                w[j] = ((w[j] as f64 * scale) as i32).max(STRIP);
+            }
+        }
+    }
+    w[ci] = total - (0..n).filter(|&j| j != ci).map(|j| w[j]).sum::<i32>();
+    for c in l.cols.iter_mut() {
+        c.restore = 0;
+    }
+    rowpack(l, &w, info);
+}
+
+/// B3 as it was: column `ci` given the whole row, the others hidden
+/// behind it (`Layout::full`) until a click on its box lays the row out
+/// again. Nothing does this now (B3 puts a column away, as it does a
+/// window); a layout an older apex left so is still drawn and undone.
+pub fn rowfull(l: &mut Layout, ci: usize, info: &dyn Info) {
+    let n = l.cols.len();
+    let row = l.r;
+    for j in 0..n {
+        if j != ci && l.full.is_none() && !is_strip(l.cols[j].r) {
+            let width = l.cols[j].r.dx();
+            remember(l, j, width);
+        }
+    }
+    l.full = Some(l.cols[ci].id);
+    let mut r = l.cols[ci].r;
+    r.x0 = row.x0;
+    r.x1 = row.x1;
+    colresize(l, ci, r, info);
 }
 
 /// The narrowest a column keeps for its text when it gives width to
