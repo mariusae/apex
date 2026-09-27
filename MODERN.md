@@ -104,11 +104,13 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   light scrim; a 48-point search row with a magnifying glass, rows 34
   high with the title at 13.5 and what follows in the secondary ink, the
   chosen row in the accent with white words.
-- **The stash** (`tiling::colstash` and its kin, the core's). There is no
-  maximise: B3 on a window's box puts it away in its column's stash, its
-  space going to a neighbour as a closed window's does, and B2 puts away
-  every other window in the column, so the one has it all (B2 on one
-  alone brings them all back). The stash shows as the edges of a stack
+- **Stashing and maximizing** (`tiling::colstash`, `colmaximize` and
+  their kin, the core's) are two things, B3 the one and B2 the other.
+  B2 on a window's box maximizes it, as acme's B2 does: the others in
+  the column down to their tags, none stashed; B1 on the maximized
+  window's box gives each back the size it had (`Slot::premax`,
+  protocol 36). B3 on a window's box puts it away in its column's stash,
+  its space going to a neighbour as a closed window's does. The stash shows as the edges of a stack
   of paper peeking out under the column's windows, a few pixels a sheet,
   which the tiling leaves room for (`tiling::floor`). The pointer on
   them, no button held, brings the stash out at once: the
@@ -116,7 +118,7 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   column's order as sheets drawn out of the pile, put away a moment
   after the pointer leaves. Their handles: B1 brings one back where it
   was (under the window it was under, at the share of the column it
-  had), B2 back alone (the rest put away), a drag back where it is let
+  had), B2 back maximized, a drag back where it is let
   go, in any column. Their text is a tag's: B2 runs Del or Put there, B3
   looks. A stashed window is never a dead end: whatever goes to it (a
   Look, the plumber, the finder, the sidebar, a notification) brings it
@@ -242,20 +244,30 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   its slash, a file with a space after, as acme's ^F does. No more lists
   in +Errors.
 - **Columns answer as windows do.** B1 on a column's box grows it a
-  little; B2 puts the others away, and B2 on the one column with room
-  brings them all back; B3 (or B4) puts this one away, its width to the
-  columns either side of where it stood (the last with room gives way
-  to the strip put away last). A column put away goes to the row's
+  little. B2 maximizes it: the others minimized where they stand, as a
+  maximized window leaves the others their tags, each remembering its
+  width; B1 on the maximized column's box brings them all back. A column
+  is minimized too when a drag on the line beside it takes it past half
+  the least a column may be, as a window dragged over goes down to its
+  tag, or when a neighbour's B1 squeezes it. A minimized column is a
+  slim card on its side where it stands, among the others in their
+  order, its outline rounded as a folded window's tag is, each window's
+  handle down it where the window stands: a click on a handle brings the
+  column back and lands on that window, and B1 anywhere else on it
+  brings it back where it stands.
+  B3 (or B4) stashes a column: its width to the columns either side of
+  where it stood (the last with room gives way to the minimized one
+  nearest it, else the one stashed last), and it goes to the row's
   right, as a window goes to its column's foot: a strip there, after
-  those already put away (`Column::after`, protocol 35, remembers the
-  column it stood right of). It comes back where it stood, at the width
-  it had, taken first from the columns holding width for strips;
-  columns put away one after another come back in the order they stood,
-  whichever comes back first. A strip is drawn as the edges of sheets
-  on their sides, and the whole of it is its column's box: B1 brings it
-  back, B2 back alone, a drag moves it. The pointer on a strip brings out a slice of
-  its column, live, as wide as it would come back (`strips.rs`); a click
-  there brings it back. B3 no longer gives a column the whole row.
+  those already stashed (`Column::stashed`, protocol 36; `Column::after`
+  remembers the column it stood right of). It comes back where it stood,
+  at the width it had, taken first from the columns holding width for
+  strips; columns stashed one after another come back in the order they
+  stood, whichever comes back first. A stashed strip is drawn as the
+  edges of sheets on their sides, and the whole of it is its column's
+  box: B1 brings it back, B2 back and maximized, a drag moves it. The
+  pointer on it brings out a slice of its column, live, as wide as it
+  would come back (`strips.rs`); a click there brings it back.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the

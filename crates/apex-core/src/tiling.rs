@@ -21,8 +21,9 @@ use crate::state::{Column, Layout, Slot, Stashed};
 pub const BORDER: i32 = 2;
 /// acme's `Scrollwid`: the layout box and scrollbar width.
 pub const SCROLLWID: i32 = 12;
-/// A column squeezed as far as it goes (B2 on another column's box): its
-/// box, and its windows' boxes down it, with no room for any text. The
+/// A column squeezed as far as it goes (minimized by B2 on another
+/// column's box, or stashed by B3 on its own): its box, and its windows'
+/// boxes down it, with no room for any text. The
 /// width acme's windows squeezed to their tags have, turned on its side.
 pub const STRIP: i32 = SCROLLWID + BORDER;
 
@@ -1289,9 +1290,9 @@ pub fn rowbringback(l: &mut Layout, ci: usize, info: &dyn Info) {
     l.cols[at].stashed = false;
 }
 
-/// Every strip back at the width it had at once (a fifth of the row when
-/// it has none), column `ci` keeping the rest: B2 on the one column with
-/// room, as B2 on the one window laid out brings back its stash.
+/// Every minimized strip back at the width it had at once (a fifth of
+/// the row when it has none), column `ci` keeping the rest, the stashed
+/// left as they are: B1 on the column B2 maximized.
 fn rowrestore_all(l: &mut Layout, ci: usize, info: &dyn Info) {
     let n = l.cols.len();
     let row = l.r.dx() as i64;

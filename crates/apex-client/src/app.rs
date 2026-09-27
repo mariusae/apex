@@ -2713,7 +2713,7 @@ impl Acme {
             }
             None => 0.,
         };
-        // a tag in a strip (a column squeezed by B2 on another's box) is its
+        // a tag in a strip (a column minimized or stashed) is its
         // box alone: no text laid out in no width, and nothing it would
         // scroll to is taken, so it is still wanted when the column is wide
         let layout = &self.node.state.layout;

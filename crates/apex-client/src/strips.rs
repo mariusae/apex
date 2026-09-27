@@ -1,10 +1,16 @@
-//! A column put away (B3 or B4 on its box, or B2 on another's) is a strip
-//! at the row's right, as a window put away goes to its column's foot:
-//! drawn as the edges of sheets stood on their sides, the whole of it its
-//! column's box -- B1 brings it back where it stood, B2 back alone, a
-//! drag moves it, as on any column's box. The pointer on it brings out a
-//! slice of the column, live, as wide as it would come back, beside the
-//! strip; a click there brings it back.
+//! A column is a strip two ways, as a window is shown two ways when it
+//! has not its room. Stashed (B3 on its box) it stands at the row's
+//! right, as a window stashed goes to its column's foot: drawn as the
+//! edges of sheets stood on their sides, the whole of it its column's
+//! box -- B1 brings it back where it stood, B2 back and maximized, a drag
+//! moves it. The pointer on it brings out a slice of the column, live,
+//! as wide as it would come back, beside the strip; a click there brings
+//! it back. Minimized (B2 on another's box, a drag, a neighbour's growth)
+//! it stands where it is, among the others in their order, as a folded
+//! window keeps its tag: a slim card on its side, its outline rounded,
+//! each window's handle down it where the window stands. A click on a
+//! handle brings the column back and lands on that window; anywhere else
+//! on it is the column's box.
 
 use gpui::prelude::*;
 use gpui::{canvas, div, px, rgb, AnyElement, Context, MouseButton, Pixels, Point};
@@ -21,7 +27,8 @@ impl Acme {
     pub fn strip_tick(&mut self, p: Point<Pixels>, held: bool) -> bool {
         let (x, y) = self.row_pt(p);
         let l = &self.node.state.layout;
-        let on_strip = (0..l.cols.len()).find(|&ci| l.shows(ci) && tiling::is_strip(l.cols[ci].r) && l.cols[ci].r.contains(x, y)).map(|ci| l.cols[ci].id);
+        // stashed ones only: a minimized one shows its handles
+        let on_strip = (0..l.cols.len()).find(|&ci| l.shows(ci) && l.cols[ci].stashed && tiling::is_strip(l.cols[ci].r) && l.cols[ci].r.contains(x, y)).map(|ci| l.cols[ci].id);
         if let Some(open) = self.strip_open {
             let over_slice = self.strip_slice_rect(open).is_some_and(|r| r.contains(x, y));
             if on_strip == Some(open) || over_slice || held {
@@ -98,6 +105,65 @@ impl Acme {
             .on_mouse_down(MouseButton::Middle, press(MouseButton::Middle))
             .on_mouse_down(MouseButton::Right, press(MouseButton::Right))
             .into_any_element()
+    }
+
+    /// Window `w`'s handle as its tag shows it.
+    fn window_dot(&self, w: apex_core::WindowId) -> crate::text_element::Dot {
+        let t = crate::theme::theme();
+        let live = self.node.window_live(w) || self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web);
+        crate::text_element::dot(&t, false, self.node.window_unsaved(w), live, self.node.window_working(w), self.window_notified(w))
+    }
+
+    /// Minimized column `ci`'s drawing: a slim card on its side, where it
+    /// stands, each window's handle down it where the window is.
+    pub fn minimized_element(&self, ci: usize, cx: &mut Context<Self>) -> AnyElement {
+        let t = crate::theme::theme();
+        let col = &self.node.state.layout.cols[ci];
+        let c = col.id;
+        let notified = col.all_windows().any(|w| self.window_notified(w));
+        let card = if notified { crate::text_element::mix(t.tag_bg, t.accent, 0.12) } else { t.tag_bg };
+        let line = t.body_border;
+        let font = f32::from(crate::text_element::tag_line_height());
+        let handles: Vec<(apex_core::WindowId, f32)> = col.wins.iter().map(|s| (s.window, (s.r.y0 - col.r.y0) as f32)).collect();
+        let dots: Vec<(f32, crate::text_element::Dot)> = handles.iter().map(|&(w, y)| (y + font / 2., self.window_dot(w))).collect();
+        let drawn = canvas(
+            |_, _, _| {},
+            move |b, _, window, _| {
+                let r = gpui::Bounds::new(gpui::point(b.left() + px(1.), b.top() + px(1.)), gpui::size(b.size.width - px(2.), b.size.height - px(2.)));
+                window.paint_quad(gpui::quad(r, px(5.), gpui::rgb(card), px(1.), gpui::rgb(line), gpui::BorderStyle::Solid));
+                for (y, d) in &dots {
+                    crate::text_element::paint_dot(window, d, gpui::point(b.left() + b.size.width / 2., b.top() + px(*y)));
+                }
+            },
+        )
+        .size_full();
+        let press = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_col_box(c, b, e.position, cx));
+        let mut el = div()
+            .id(("minimized", ci))
+            .relative()
+            .size_full()
+            .cursor(gpui::CursorStyle::OpenHand)
+            .child(drawn)
+            .on_mouse_down(MouseButton::Left, press(MouseButton::Left))
+            .on_mouse_down(MouseButton::Middle, press(MouseButton::Middle))
+            .on_mouse_down(MouseButton::Right, press(MouseButton::Right));
+        // each handle its window's box, as a folded window's is
+        for (k, &(w, y)) in handles.iter().enumerate() {
+            let hit = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, b, e.position, cx));
+            el = el.child(
+                div()
+                    .id(("minimized-handle", ci * 1000 + k))
+                    .absolute()
+                    .left(px(0.))
+                    .top(px(y))
+                    .w_full()
+                    .h(px(font))
+                    .on_mouse_down(MouseButton::Left, hit(MouseButton::Left))
+                    .on_mouse_down(MouseButton::Middle, hit(MouseButton::Middle))
+                    .on_mouse_down(MouseButton::Right, hit(MouseButton::Right)),
+            );
+        }
+        el.into_any_element()
     }
 
     /// The slice of the strip under the pointer: the column, live, as it

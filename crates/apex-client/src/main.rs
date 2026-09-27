@@ -302,7 +302,7 @@ impl Render for Acme {
             if !l.shows(ci) {
                 continue;
             }
-            // squeezed to a strip (B2 on another column's box): its box and
+            // a strip (minimized, or stashed at the right): its box and
             // its windows' boxes down it, tags without text, bodies without
             // anything in them -- no text to wrap into a strip's width, no
             // terminal to shrink to one column, no page to squeeze
@@ -310,10 +310,12 @@ impl Render for Acme {
             // the column on the ground: its windows are cards on it, the
             // ground showing between them where acme drew black borders
             area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, ground));
-            // put away: a strip, the edges of sheets on their sides, the
-            // whole of it the column's box (`strips.rs`)
+            // a strip (`strips.rs`): stashed, the edges of sheets on their
+            // sides, the whole of it the column's box; minimized, a slim
+            // card where it stands, its windows' handles down it
             if strip {
-                area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), col.r.dy(), self.strip_element(ci, cx)));
+                let el = if col.stashed { self.strip_element(ci, cx) } else { self.minimized_element(ci, cx) };
+                area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), col.r.dy(), el));
                 continue;
             }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
@@ -478,8 +480,8 @@ impl Render for Acme {
         }
         // the stash brought out: its tags, live, stacked over the column's
         // foot as sheets drawn out of the pile, each with its handle
-        // (B1 back where it was, B2 back alone, a drag back where it is
-        // let go) and its text (B2 runs Del or Put there as anywhere)
+        // (B1 back where it was, B2 back maximized, a drag back where it
+        // is let go) and its text (B2 runs Del or Put there as anywhere)
         if let Some(ci) = self.stash_open.and_then(|c| l.column_index(c)) {
             if let Some((band, rows)) = self.stash_geometry(ci) {
                 let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0) - 6;
