@@ -47,6 +47,11 @@ use app::Acme;
 use term_element::TermElement;
 use text_element::TextElement;
 
+/// A window's card inset in its space, across and down: the ground shows
+/// between cards where acme drew its borders.
+const CARD_X: i32 = 3;
+const CARD_Y: i32 = 1;
+
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(loc) = self.pending_switch.take() {
@@ -92,7 +97,7 @@ impl Render for Acme {
         let root = div()
             .id("apex")
             .size_full()
-            .bg(gpui::rgb(t.border))
+            .bg(gpui::rgb(text_element::ground(&t)))
             .flex()
             .flex_col()
             .track_focus(&self.focus)
@@ -239,16 +244,6 @@ impl Render for Acme {
         let at = |x: i32, y: i32, w: i32, h: i32, el: gpui::AnyElement| {
             div().absolute().left(px(x as f32)).top(px(y as f32)).w(px(w.max(0) as f32)).h(px(h.max(0) as f32)).overflow_hidden().child(el)
         };
-        // acme's Border is scalesize(display, 2): 2 device pixels at 1x,
-        // (2*dpi+66)/133 above (devdraw says 110 per unit of scale), 3 at
-        // 2x; the tiling's gap is 2 logical pixels, 4 at 2x. The gaps stay
-        // as laid out (integer logical pixels, crisp text), and the device
-        // pixels beyond acme's are painted over in the neighbour's colour:
-        // a window's or a column's tag reaches up, a column's contents
-        // reach left, so the black that shows is acme's
-        let scale = window.scale_factor();
-        let acme_border = if scale <= 1. { 2. } else { ((2. * (scale * 110.).floor() + 66.) / 133.).floor() };
-        let extra = ((apex_core::tiling::BORDER as f32 * scale - acme_border).max(0.) / scale).min(apex_core::tiling::BORDER as f32);
         let fill = |x: f32, y: f32, w: f32, h: f32, c: u32| div().absolute().left(px(x)).top(px(y)).w(px(w.max(0.))).h(px(h.max(0.))).bg(gpui::rgb(c));
         // the system's pointers, as a Mac app's (the innermost hitbox's
         // style wins): the arrow over text as over everything else -- in
@@ -286,6 +281,10 @@ impl Render for Acme {
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)));
+        // the ground the windows stand on, and the one the keys go to
+        let ground = text_element::ground(&t);
+        let key_window = self.caret_view.and_then(|v| v.window()).or_else(|| self.caret_term.and_then(|t| self.node.state.windows.values().find(|w| w.body == Body::Term(t)).map(|w| w.id)));
+        let mut rings = Vec::new();
         for (ci, col) in l.cols.iter().enumerate() {
             // hidden behind a column grown to the whole row (B3 on its box)
             if !l.shows(ci) {
@@ -296,57 +295,9 @@ impl Render for Acme {
             // anything in them -- no text to wrap into a strip's width, no
             // terminal to shrink to one column, no page to squeeze
             let strip = apex_core::tiling::is_strip(col.r);
-            // acme's colinit: the column is white where no window is, the
-            // tail below its last window (or its tag and the border under
-            // it); everywhere else the black root is the borders between
-            // the tag and the windows and between the windows
-            let tail = col.wins.last().map(|s| s.r.y1).unwrap_or(col.r.y0 + font + apex_core::tiling::BORDER);
-            // the column on the body's paper, as acme's is on white: what
-            // the windows leave -- a body's last part line, the gaps
-            // between them -- is paper, not the rule's grey; a hairline
-            // where each window meets the one above it says where it
-            // starts, folded to its tag or not
-            area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, t.body_bg));
-            for s in col.wins.iter() {
-                let b = apex_core::tiling::BORDER as f32;
-                let hair = 1. / scale;
-                area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b / 2. - hair / 2., s.r.dx() as f32, hair, t.border));
-            }
-            if tail < col.r.y1 {
-                area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::rgb(t.column)).into_any_element()));
-            }
-            if extra > 0. {
-                // the borders trimmed to acme's: above the column tag and
-                // each window's tag (their colour), and, for a column with
-                // one to its left, along its left edge in what is there
-                let (x0, w, e) = (col.r.x0 as f32, col.r.dx() as f32, extra);
-                let left = if col.r.x0 > 0 { e } else { 0. };
-                area = area.child(fill(x0, col.r.y0 as f32 - e, w, e, t.tag_bg));
-                if left > 0. {
-                    area = area.child(fill(x0 - left, col.r.y0 as f32 - e, left, (font as f32) + e, t.tag_bg));
-                    if tail < col.r.y1 {
-                        area = area.child(fill(x0 - left, tail as f32, left, (col.r.y1 - tail) as f32, t.column));
-                    }
-                }
-                for (i, s) in col.wins.iter().enumerate() {
-                    if !col.safe && i > 0 {
-                        continue;
-                    }
-                    let Ok(win) = self.node.state.window(s.window) else { continue };
-                    let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - e, s.r.dx() as f32, e, t.tag_bg));
-                    if left > 0. {
-                        area = area.child(fill(x0 - left, s.r.y0 as f32 - e, left, tag_h as f32 + e, t.tag_bg));
-                        if s.body.dy() > 0 {
-                            let c = match win.body {
-                                Body::Web | Body::Html(_) => 0xffffff,
-                                _ => t.body_bg,
-                            };
-                            area = area.child(fill(x0 - left, s.body.y0 as f32, left, s.body.dy() as f32, c));
-                        }
-                    }
-                }
-            }
+            // the column on the ground: its windows are cards on it, the
+            // ground showing between them where acme drew black borders
+            area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, ground));
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
             // the stash: the edges of the sheets put away, peeking out
             // under the column's windows as a stack of paper does, each
@@ -356,7 +307,7 @@ impl Render for Acme {
                 let n = col.stash.len().min(apex_core::tiling::STASH_EDGES);
                 let notified = col.stash.iter().any(|s| self.window_notified(s.slot.window));
                 let edge = if notified { text_element::mix(t.tag_bg, t.accent, 0.10) } else { t.tag_bg };
-                let (paper, line) = (t.body_bg, t.body_border);
+                let (paper, line) = (ground, t.body_border);
                 let sheets = canvas(
                     |_, _, _| {},
                     move |b, _, window, _| {
@@ -381,15 +332,28 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
+                // a card inset in the window's space, the ground round it:
+                // the tag its top (and all of it when folded), the body
+                // the rest
+                let folded = s.body.dy() <= 0;
+                let (tx, ty, tw) = (s.r.x0 + CARD_X, s.r.y0 + CARD_Y, s.r.dx() - 2 * CARD_X);
+                let th = if folded { tag_h - 2 * CARD_Y } else { tag_h - CARD_Y };
+                let (bx, bw, bh) = (s.body.x0 + CARD_X, s.body.dx() - 2 * CARD_X, s.body.dy() - CARD_Y);
                 if win.body == Body::Web && !strip {
                     // a page's header: its handle, back and forward, and
                     // its address, in the tag's place
-                    area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, self.web_header(w, tag_h as f32, cx)));
+                    area = area.child(at(tx, ty, tw, th, self.web_header(w, th as f32, cx)));
                 } else {
-                    area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                    area = area.child(at(tx, ty, tw, th, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                }
+                // the window the keys go to: a soft ring round its card,
+                // drawn over it once every window is
+                if key_window == Some(w) {
+                    let ring = div().size_full().rounded(px(text_element::CARD_RADIUS)).border(px(1.5)).border_color(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.55));
+                    rings.push(at(tx, ty, tw, s.r.y1 - CARD_Y - ty, ring.into_any_element()));
                 }
                 if s.body.dy() > 0 && strip {
-                    area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
+                    area = area.child(at(bx, s.body.y0, bw, bh, div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
                 } else if s.body.dy() > 0 {
                     let body = match win.body {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
@@ -449,15 +413,18 @@ impl Render for Acme {
                     // the arrow over text and terminals, and down the
                     // scrollbar; a page keeps its own pointer
                     let body = if matches!(win.body, Body::Web | Body::Html(_)) {
-                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).child(lane(None, hold(CursorStyle::Arrow)))
+                        at(bx, s.body.y0, bw, bh, body).child(lane(None, hold(CursorStyle::Arrow)))
                     } else if matches!(win.body, Body::Term(_)) {
-                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow))
+                        at(bx, s.body.y0, bw, bh, body).cursor(hold(CursorStyle::Arrow))
                     } else {
-                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
+                        at(bx, s.body.y0, bw, bh, body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
                     };
                     area = area.child(body);
                 }
             }
+        }
+        for r in rings {
+            area = area.child(r);
         }
         // the lines between the columns: a drag of one makes the columns
         // on either side wider and narrower (the column's box moves it

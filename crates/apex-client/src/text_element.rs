@@ -40,6 +40,20 @@ pub struct Palette {
     pub border: Hsla,
 }
 
+/// The ground the windows stand on: what shows between them (they are
+/// cards on it), under the column tags and the top row. A step below the
+/// tags in light, below the paper in dark.
+/// The radius of a card's corners (a window on the ground).
+pub const CARD_RADIUS: f32 = 7.;
+
+pub fn ground(t: &crate::theme::Theme) -> u32 {
+    if crate::theme::is_dark() {
+        mix(t.body_bg, 0x000000, 0.28)
+    } else {
+        mix(t.tag_bg, t.text, 0.07)
+    }
+}
+
 pub fn palette(kind: Kind) -> Palette {
     let t = crate::theme::theme();
     match kind {
@@ -516,6 +530,12 @@ pub struct Source {
     /// square says so, and a click on it takes the oldest); for a window's
     /// tag, that window is (its handle says so).
     pub notified: bool,
+    /// The pointer is on it: a tag's commands at their full secondary ink,
+    /// faint otherwise.
+    pub hovered: bool,
+    /// Its outer corners rounded, as the top (a tag) or the foot (a body)
+    /// of a card: (top, bottom).
+    pub round: (bool, bool),
     /// A stashed window's tag, shown over its column's foot while the
     /// stash is brought out: drawn as a sheet drawn out of the stack.
     pub sheet: bool,
@@ -564,6 +584,8 @@ pub struct Prepaint {
     pulse: Option<f32>,
     fenced: bool,
     notified: bool,
+    hovered: bool,
+    round: (bool, bool),
     sheet: bool,
     key_caret: Option<bool>,
 }
@@ -604,6 +626,17 @@ fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, w
     0
 }
 
+/// How a tag's text is inked: its name's directory (up to `dir_end`) in
+/// the secondary ink, its last part (up to `name_end`) in the primary and
+/// a weight heavier, and the commands after it in `rest` -- faint until
+/// the pointer is on the tag. Offsets are the text's, in characters.
+#[derive(Clone, Copy)]
+pub struct Tint {
+    pub dir_end: usize,
+    pub name_end: usize,
+    pub rest: Hsla,
+}
+
 fn shape(
     window: &Window,
     line_text: &str,
@@ -614,7 +647,7 @@ fn shape(
     hl: Option<(usize, usize, HlKind)>,
     wrap_width: Option<Pixels>,
     y: Pixels,
-    dim_from: Option<usize>,
+    tint: Option<Tint>,
 ) -> LineInfo {
     let (disp, map) = expand(line_text, start);
     let disp: SharedString = disp.into();
@@ -635,16 +668,19 @@ fn shape(
         subs: Vec::new(),
         colors: Vec::new(),
     };
-    // the line cut where its ink or face changes: the sweep, and the
-    // secondary ink from `dim_from` on (a tag's commands after its name)
+    // the line cut where its ink or face changes: the sweep, and a tag's
+    // parts -- its name's directory, its last part, the commands after
     let n = disp.len();
-    let dim = dim_from.map(|q| if q <= start { 0 } else { info.to_disp(q.min(end)) });
+    let at = |q: usize| if q <= start { 0 } else { info.to_disp(q.min(end)) };
+    let dir = tint.map(|t| at(t.dir_end));
+    let dim = tint.map(|t| at(t.name_end));
     let sweep = match hl {
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
     };
     let mut cuts = vec![0, n];
     cuts.extend(dim);
+    cuts.extend(dir);
     if let Some((a, b)) = sweep {
         cuts.extend([a, b]);
     }
@@ -658,15 +694,18 @@ fn shape(
             continue;
         }
         let swept = sweep.is_some_and(|(lo, hi)| a >= lo && b <= hi);
-        let secondary = dim.is_some_and(|d| a >= d);
+        let command = dim.is_some_and(|d| a >= d);
+        let folder = dir.is_some_and(|d| a < d) && !command;
         let color = if swept {
             white
-        } else if secondary {
+        } else if command {
+            tint.map(|t| t.rest).unwrap_or(dimmed)
+        } else if folder {
             dimmed
         } else {
             black
         };
-        let face = if dim.is_some_and(|d| d > 0 && a < d) { strong.clone() } else { fontspec.font.clone() };
+        let face = if dim.is_some_and(|d| d > 0 && a < d) && !folder { strong.clone() } else { fontspec.font.clone() };
         runs.push(TextRun { len: b - a, font: face, color, background_color: None, underline: None, strikethrough: None });
         colors.push((a, b, color));
     }
@@ -790,15 +829,26 @@ impl Element for TextElement {
                 let mut y = px(0.);
                 let mut n = 0;
                 let mut wrapped = 0usize;
-                // a window's name in the primary ink and the rest of its
-                // tag in the secondary; a column's tag and the top row
-                // are all commands
-                let dim_from = match kind {
-                    Kind::WinTag => text.to_string().find([' ', '\t']).map(|b| text.to_string()[..b].chars().count()),
-                    _ => Some(0),
+                // a window's name: its directory in the secondary ink, its
+                // last part in the primary; the commands after it (and a
+                // column's tag and the top row, all commands) faint until
+                // the pointer is on the tag
+                let th = crate::theme::theme();
+                let under = if kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
+                let rest = if src.hovered { rgb(th.text_dim) } else { rgb(mix(th.text_dim, under, 0.45)) };
+                let tint = match kind {
+                    Kind::WinTag => {
+                        let whole = text.to_string();
+                        let name = &whole[..whole.find([' ', '\t']).unwrap_or(whole.len())];
+                        let name_end = name.chars().count();
+                        let trimmed = name.trim_end_matches('/');
+                        let dir_end = trimmed.rfind('/').map(|i| trimmed[..=i].chars().count()).unwrap_or(0);
+                        Some(Tint { dir_end, name_end, rest })
+                    }
+                    _ => Some(Tint { dir_end: 0, name_end: 0, rest }),
                 };
                 while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y, dim_from);
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y, tint);
                     wrapped += li.subs.len().max(1);
                     y += li.height(lh);
                     lines.push(li);
@@ -924,6 +974,8 @@ impl Element for TextElement {
                 pulse: src.pulse,
                 fenced: src.fenced,
                 notified: src.notified,
+                hovered: src.hovered,
+                round: src.round,
                 sheet: src.sheet,
                 key_caret: src.key_caret,
             })
@@ -970,7 +1022,12 @@ impl Element for TextElement {
                 let radii = gpui::Corners { top_left: px(7.), top_right: px(7.), bottom_left: px(0.), bottom_right: px(0.) };
                 window.paint_quad(gpui::quad(card, radii, header_bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.body_border), gpui::BorderStyle::Solid));
             } else {
-                window.paint_quad(fill(bounds, header_bg));
+                // a card's corners where it has them; the column tags and the
+                // top row on the ground, with no card of their own
+                let r = px(CARD_RADIUS);
+                let radii = gpui::Corners { top_left: if pp.round.0 { r } else { px(0.) }, top_right: if pp.round.0 { r } else { px(0.) }, bottom_left: if pp.round.1 { r } else { px(0.) }, bottom_right: if pp.round.1 { r } else { px(0.) } };
+                let bg = if matches!(pp.kind, Kind::ColTag | Kind::Top) { rgb(ground(&crate::theme::theme())) } else { header_bg };
+                window.paint_quad(fill(bounds, bg).corner_radii(radii));
             }
 
             let mut scrollbar = None;
@@ -997,11 +1054,6 @@ impl Element for TextElement {
                     // the stash and the column's line up
                     paint_dot(window, &d, point(b.left() + px(7.5), b.top() + lh / 2.));
                     badge = d.badge;
-                    window.paint_quad(fill(
-                        // a hairline under the header, one device pixel
-                        Bounds::new(point(bounds.left(), bounds.bottom() - px(1.) / window.scale_factor()), size(bounds.size.width, px(1.) / window.scale_factor())),
-                        pal.border,
-                    ));
                     layout_box = Some(b);
                 }
                 Kind::ColTag => {
@@ -1064,7 +1116,8 @@ impl Element for TextElement {
                         }
                         if let (Some(x0), Some(x1)) = (x0, x1) {
                             let sy = ly + lh * i as f32;
-                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy), point(origin.x + x1, sy + lh)), color));
+                            // softly rounded, as a modern editor's selection is
+                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy), point(origin.x + x1, sy + lh)), color).corner_radii(px(3.)));
                         }
                     }
                 }

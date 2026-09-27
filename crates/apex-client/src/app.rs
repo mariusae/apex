@@ -555,6 +555,8 @@ pub struct Acme {
     /// The native views of web windows (WEB.md §2).
     pub webs: Webs,
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
+    /// The tag, column tag or top row the pointer is on.
+    pub hover_view: Option<ViewId>,
     /// ⌘ or ⌥ held over text: what a click would take there.
     pub hint: Option<(ViewId, usize, usize, HlKind)>,
     mouse: Mouse,
@@ -1651,6 +1653,7 @@ impl Acme {
             webs: Webs::new(None, None),
             hl: None,
             hint: None,
+            hover_view: None,
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
             typed_start: HashMap::new(),
@@ -2614,6 +2617,8 @@ impl Acme {
                 pulse,
                 fenced: false,
                 notified,
+                hovered: false,
+                round: (false, false),
                 sheet: false,
                 key_caret: None,
                 text: apex_core::text::Text::new(""),
@@ -2635,6 +2640,15 @@ impl Acme {
             pulse,
             fenced: self.fenced(),
             notified,
+            // a tag with the pointer on it shows its commands plainly
+            hovered: self.hover_view == Some(view),
+            // a card's outer corners: a tag's top (and foot, folded to its
+            // tag), a body's foot
+            round: match view {
+                ViewId::Tag(w) => (true, layout.slot(w).is_none_or(|s| s.body.dy() <= 0)),
+                ViewId::Body(_) => (false, true),
+                _ => (false, false),
+            },
             // a stashed window's tag, shown over its column's foot: a
             // sheet out of the stack (a tag folded in place is a tag)
             sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.is_stashed(w)),
@@ -3116,6 +3130,15 @@ impl Acme {
             cx.notify();
         }
         if self.update_hint(pos) {
+            cx.notify();
+        }
+        // the tag under the pointer: its commands come up
+        let over = match self.locate(pos) {
+            Some((Target::View(v @ (ViewId::Tag(_) | ViewId::ColTag(_) | ViewId::Top)), _)) => Some(v),
+            _ => None,
+        };
+        if over != self.hover_view {
+            self.hover_view = over;
             cx.notify();
         }
         // a box held: where it would land follows the pointer
