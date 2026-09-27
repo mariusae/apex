@@ -2174,7 +2174,13 @@ impl Acme {
             return was;
         }
         let within_y = p.y >= px(0.) && p.y <= size.height;
-        let at_edge = within_y && p.x <= px(6.) && p.x >= px(-60.);
+        // only the very edge brings it out -- the last point before the
+        // screen's, or past the window's left side -- and never while a
+        // button is held: moving a window or sweeping text towards the
+        // left is not asking for it
+        let m = &self.mouse;
+        let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
+        let at_edge = within_y && !held && p.x <= px(0.5) && p.x >= px(-60.);
         if at_edge {
             self.sidebar_leaving = None;
             if !self.sidebar_out {

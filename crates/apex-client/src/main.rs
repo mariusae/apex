@@ -425,8 +425,8 @@ impl Render for Acme {
                     me3.update(cx, |acme, _| {
                         acme.webs.set_holes(&holes);
                         // the pages go quiet with the rest while the
-                        // picker has the window
-                        acme.webs.set_veil(acme.selector.is_some().then(shell::veil));
+                        // picker or the finder has the window
+                        acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some()).then(shell::veil));
                     });
                 },
                 |_, _, _, _| {},

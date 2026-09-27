@@ -547,23 +547,91 @@ pub fn pjw(h: f32, ink: u32) -> impl IntoElement {
     gpui::svg().data(PJW).flex_none().h(px(h)).w(px((h * RATIO).round())).text_color(rgb(ink))
 }
 
-/// A Mac sheet: `panel` hung from the top edge of the content (right of
-/// the sidebar's `left`), centred across it, sliding down out from under
-/// the edge as it opens -- about a sixth of a second, easing out.
-pub fn sheet(left: f32, id: &'static str, panel: gpui::Div) -> impl IntoElement {
-    use gpui::{Animation, AnimationExt};
-    let slide = panel.with_animation(id, Animation::new(std::time::Duration::from_millis(170)).with_easing(|t| 1. - (1. - t).powi(3)), |p, d| p.mt(px(-60. * (1. - d))).opacity(0.4 + 0.6 * d));
-    div().absolute().top(px(0.)).bottom(px(0.)).left(px(left)).right(px(0.)).overflow_hidden().flex().flex_col().items_center().child(slide)
+/// Manifold's command palette, which ⌘T's picker and the finder are
+/// drawn as: `panel` centred across the window, its top 30% of the way
+/// down, over a light scrim (`veil`).
+pub fn palette_place(panel: impl IntoElement) -> gpui::Div {
+    div().absolute().top(px(0.)).left(px(0.)).size_full().bg(gpui::rgba(veil())).flex().flex_col().items_center().child(div().flex_none().h(gpui::relative(0.3))).child(panel)
+}
+
+/// The palette's card, as Manifold's: 560 wide (less on a narrow
+/// window), rounded 12, a half-pixel hairline round it and a soft shadow
+/// under it.
+pub fn palette_panel() -> gpui::Div {
+    let t = crate::theme::theme();
+    let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(6.)), blur_radius: px(24.), spread_radius: px(0.), inset: false };
+    div()
+        .w(px(560.))
+        .max_w(gpui::relative(0.92))
+        .bg(rgb(t.panel_bg))
+        .border(px(0.5))
+        .border_color(rgb(t.panel_border))
+        .rounded(px(12.))
+        .shadow(vec![shadow])
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .font_family(crate::fonts::ui())
+}
+
+const GLASS: &[u8] = include_bytes!("../assets/glass.svg");
+
+/// The palette's search row: a magnifying glass, then the field, 15
+/// high in a row 48 high.
+pub fn palette_field(field: impl IntoElement) -> gpui::Div {
+    let t = crate::theme::theme();
+    div()
+        .flex_none()
+        .h(px(48.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .px(px(16.))
+        .text_size(px(15.))
+        .child(gpui::svg().data(GLASS).flex_none().size(px(14.)).text_color(rgb(t.panel_dim)))
+        .child(div().flex_1().min_w_0().child(field))
+}
+
+/// A palette row: 34 high and rounded 7, the icon's column, the title
+/// at 13.5 and what follows it at 12 in the secondary ink -- white on
+/// the accent when it is the one chosen.
+pub fn palette_row(picked: bool) -> gpui::Div {
+    let t = crate::theme::theme();
+    div()
+        .flex_none()
+        .h(px(34.))
+        .px(px(12.))
+        .rounded(px(7.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(10.))
+        .text_size(px(13.5))
+        .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
+        .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
+        .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
+}
+
+/// A palette row's secondary words' ink: the secondary, or white a
+/// little faded on the chosen row.
+pub fn palette_dim(picked: bool) -> gpui::Hsla {
+    if picked {
+        gpui::hsla(0., 0., 1., 0.8)
+    } else {
+        crate::text_element::rgb(crate::theme::theme().panel_dim)
+    }
 }
 
 /// The colour the window goes behind a dialog (the picker), as RGBA:
 /// gpui's veil and the one laid over each page (`Webs::set_veil`) are
 /// this one colour, so a page goes as quiet as the text beside it.
 pub fn veil() -> u32 {
+    // Manifold's scrim: the light a white haze, the dark a shade
     if crate::theme::is_dark() {
-        0x00000099
+        0x0000004D
     } else {
-        0x33332899
+        0xE6E6E659
     }
 }
 
@@ -1511,59 +1579,24 @@ impl Acme {
         };
         let caret_on = sel.caret_visible();
         // the field: a glass at the left, then what is typed
-        let field = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(10.))
-            .px(px(16.))
-            .py(px(12.))
-            .text_size(px(15.))
-            .font_family(crate::fonts::ui())
-            .child(div().flex_none().text_color(rgb(t.panel_dim)).child("⌕"))
-            .child(div().flex_1().min_w_0().child(crate::field::field_view(&sel.filter, caret_on, &hint, true)));
-        let mut list = div().id("picker-rows").flex().flex_col().px(px(8.)).pb(px(8.)).max_h(px(420.)).overflow_y_scroll();
+        let field = palette_field(crate::field::field_view(&sel.filter, caret_on, &hint, true));
+        let mut list = div().id("picker-rows").flex().flex_col().px(px(6.)).pb(px(6.)).max_h(px(10. * 34.)).overflow_y_scroll();
         for (i, row) in rows.iter().enumerate() {
             let picked = i == sel.cursor && row.pickable();
-            let dim = if picked { t.panel_chosen_text } else { t.panel_dim };
-            let ink = if picked { t.panel_chosen_text } else { t.panel_text };
+            let dim = palette_dim(picked);
             let r = row.clone();
-            let mut el = div()
+            let mut el = palette_row(picked)
                 .id(("picker-row", i))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(10.))
-                .px(px(10.))
-                .py(px(7.))
-                .rounded(px(7.))
-                .text_size(px(14.))
-                .font_family(crate::fonts::ui())
-                .text_color(rgb(ink))
-                .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
-                .when(!picked && row.pickable(), |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
-                // the glyph, in a ring as the screenshots have it
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(18.))
-                        .h(px(18.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .border_1()
-                        .border_color(rgb(dim))
-                        .text_size(px(11.))
-                        .text_color(rgb(dim))
-                        .child(row.glyph()),
-                )
+                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(13.)).text_color(dim).child(row.glyph()))
                 .child(div().flex_none().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.title()))
-                .when_some(row.where_(), |d, w| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(w)))
-                // what picking it does, in the dim words at the right of
-                // the name, as the screenshots have it
-                .child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(row.action()))
+                .when_some(row.where_(), |d, w| d.child(div().flex_none().text_size(px(12.)).text_color(dim).child(w)))
+                // what picking it does, in the secondary words after the
+                // name, as Manifold's "Action"
+                .when(!row.title().starts_with(&row.action()), |d| d.child(div().flex_none().text_size(px(12.)).text_color(dim).child(row.action())))
                 .child(div().flex_1());
+            if !row.pickable() {
+                el = el.text_color(dim);
+            }
             if row.pickable() {
                 el = el.cursor_default().on_mouse_down(
                     MouseButton::Left,
@@ -1579,30 +1612,16 @@ impl Acme {
             let what = if sel.renaming.is_some() { "Type a name" } else { "Nothing matches" };
             list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child(what));
         }
-        let mut panel = div()
-            .w(px(680.))
-            .max_w_full()
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_t_0()
-            .border_color(rgb(t.panel_border))
-            .rounded_b(px(12.))
-            .shadow_lg()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
+        let mut panel = palette_panel()
             .child(self.overlay_mark())
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));
         panel = match &sel.connect {
             Some(form) => panel.child(self.connect_form(form, caret_on, cx)),
             None => panel.child(field).child(list),
         };
-        // the window behind it goes quiet: the dialog is the whole of
-        // what there is to do while it is up. It is a sheet, as a Mac
-        // app's dialog is: hung from the top of what it is about (the
-        // content, right of the sidebar), sliding down into place
-        let veil = div().absolute().top(px(0.)).left(px(0.)).size_full().bg(gpui::rgba(veil())).child(sheet(self.left(), "picker-sheet", panel));
-        Some(deferred(veil).with_priority(2))
+        // Manifold's palette: centred across the window, a light scrim
+        // behind it
+        Some(deferred(palette_place(panel)).with_priority(2))
     }
 }
 

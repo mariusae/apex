@@ -23,7 +23,7 @@ already do.
   B3's sweeps apart under a deuteranopia simulation. A grey header over
   each window, hairlines for acme's black borders.
 - **Fonts** (View ▸ Font, `fonts.rs`), one choice for text windows and
-  tags, mono windows and terminals, the sidebar, sheets and menus, and
+  tags, mono windows and terminals, the sidebar, the palettes and menus, and
   pages (previews, apex diff, as `--apex-font` and `--apex-mono`):
   System (SF Pro with its high legibility set and tabular figures, 14/20;
   Terminal's own SF Mono at Medium, 12/16, the Regular being thin),
@@ -66,13 +66,19 @@ already do.
   it, as taking a notification does. New Session opens the picker.
   Pinned (⌃⌘S, View ▸ Show/Hide Sidebar), it stands beside the content;
   unpinned, the content has the whole window and the sidebar floats over
-  it without moving it, brought by the pointer at the window's left edge
-  (or leaving by it) and put away a tenth of a second after the pointer
+  it without moving it, brought by the pointer at the very edge -- the
+  window's last column of points, or leaving by it -- and never while a
+  button is held (moving windows or sweeping text leftwards is not
+  asking for it), and put away a tenth of a second after the pointer
   is 8 pixels past it, sliding in and out as Manifold's does. The
   window's buttons show only with it. There is no tab strip and no title
   bar, so full screen is the whole screen.
-- **Sheets.** The picker and the finder hang from the top edge of the
-  content, square above and rounded below, and slide down into place.
+- **Palettes.** The picker (⌘T) and the finder are Manifold's command
+  palette: a card 560 wide centred across the window, its top 30% of
+  the way down, rounded 12 with a hairline and a soft shadow, over a
+  light scrim; a 48-point search row with a magnifying glass, rows 34
+  high with the title at 13.5 and what follows in the secondary ink, the
+  chosen row in the accent with white words.
 - **Stacks.** A window folded to its tag is drawn as the edge of a sheet
   in a stack, Manifold's stack of paper, on the body's paper.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
