@@ -185,8 +185,13 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   the sweep's ink, the pointer a hand; ⌥ held, what a ⌥-click (B2) would
   run, on a pill in B2's. In tags as in bodies, and only with the
   modifier held.
-- **Tag lines** are two pixels taller than a body's, the text centred in
-  them (`TAG_PAD`): the tiling's font height is theirs.
+- **Tag lines** are four pixels taller than a body's (`TAG_PAD`): the
+  tiling's font height is theirs. Text is centred by its ink, not by
+  the face's ascent and descent (`ink_lift`: a face keeps room over its
+  ascenders for accents, so text centred the usual way sits low), so
+  there is as much air over the ascenders as under the descenders, in a
+  pill as in a line; a folded window's card, a little shorter than the
+  line, has its line and handle centred in it.
 - **⌘⇧P** (`commands.rs`) is a palette of commands to run in the window
   under the pointer: the words in its tag, its tools (the B4 menu's),
   what was run lately anywhere in the session, and apex's own, fuzzy-

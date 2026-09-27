@@ -712,12 +712,12 @@ fn overview() -> ! {
     println!("Usage:\n\n\tapex [-socket=PATH] [-session=NAME] [-ensure-server] <command> [arguments]\n");
     println!("The commands are:\n");
     for c in COMMANDS {
-        println!("\t{:<16}{}", c.name, c.short);
+        println!("\t{:<19}{}", c.name, c.short);
     }
     println!("\nUse \"apex help <command>\" for more information about a command.\n");
     println!("Additional help topics:\n");
     for (t, s, _) in TOPICS {
-        println!("\t{:<16}{}", t, s);
+        println!("\t{:<19}{}", t, s);
     }
     println!("\nUse \"apex help <topic>\" for more information about that topic.\n");
     println!("The flags apply to every command:\n");

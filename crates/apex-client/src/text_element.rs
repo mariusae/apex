@@ -43,10 +43,13 @@ pub struct Palette {
 /// The ground the windows stand on: what shows between them (they are
 /// cards on it), under the column tags and the top row. A step below the
 /// tags in light, below the paper in dark.
-/// A tag's line, a little taller than a body's: the text centred in it,
-/// some air above and below. The tiling's font height (a tag's, a column
-/// tag's, the top row's) is this.
-pub const TAG_PAD: f32 = 2.;
+/// A tag's line, a little taller than a body's: the text's ink centred
+/// in it (`ink_lift`), as much air over the ascenders as under the
+/// descenders, and enough of it that a folded window's card (the line
+/// less the card's inset top and bottom) still has some round its text.
+/// The tiling's font height (a tag's, a column tag's, the top row's) is
+/// this.
+pub const TAG_PAD: f32 = 4.;
 
 pub fn tag_line_height() -> Pixels {
     font_for(false).line_height + px(TAG_PAD)
@@ -295,6 +298,31 @@ struct Subst {
 
 thread_local! {
     static SUBST: Cell<Option<Option<Subst>>> = const { Cell::new(None) };
+    static LIFT: std::cell::RefCell<std::collections::HashMap<(String, u32), f32>> = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// How far a line's glyphs are lifted so their ink sits in the middle of
+/// the line. gpui centres a face's ascent and descent in the line, and a
+/// face keeps more room over its ascenders (for accents) than under its
+/// descenders, so text centred so sits low: System at 14 points, 1.4
+/// pixels. Measured once per face and size, from the tallest ascender
+/// and deepest descender among a few letters; to the device's pixel.
+fn ink_lift(window: &Window, fs: &FontSpec) -> Pixels {
+    let key = (fs.font.family.to_string(), f32::from(fs.size).to_bits());
+    let lift = LIFT.with(|m| m.borrow().get(&key).copied()).unwrap_or_else(|| {
+        let ts = window.text_system();
+        let id = ts.resolve_font(&fs.font);
+        let (asc, desc) = (f32::from(ts.ascent(id, fs.size)), f32::from(ts.descent(id, fs.size)).abs());
+        // typographic bounds are y-up from the baseline
+        let bounds = |cs: &str| cs.chars().filter_map(|c| ts.typographic_bounds(id, fs.size, c).ok()).collect::<Vec<_>>();
+        let top = bounds("bdfhklI").iter().map(|b| f32::from(b.origin.y + b.size.height)).fold(0., f32::max);
+        let bottom = bounds("gjpqy").iter().map(|b| -f32::from(b.origin.y)).fold(0., f32::max);
+        let lift = if top > 0. && bottom > 0. { (((asc - top) - (desc - bottom)) / 2.).clamp(0., f32::from(fs.line_height) / 4.) } else { 0. };
+        LIFT.with(|m| m.borrow_mut().insert(key, lift));
+        lift
+    });
+    let scale = window.scale_factor();
+    px((lift * scale).round() / scale)
 }
 
 fn slashed_zero(window: &Window, cx: &App) -> Option<Subst> {
@@ -341,9 +369,10 @@ fn paint_glyphs(
     line_height: Pixels,
     colors: &[(usize, usize, Hsla)],
     subst: Option<Subst>,
+    lift: Pixels,
 ) {
     let padding_top = (line_height - layout.ascent - layout.descent) / 2.;
-    let baseline = padding_top + layout.ascent;
+    let baseline = padding_top + layout.ascent - lift;
     let mut sub = 0usize;
     let mut sub_x = px(0.);
     let mut ci = 0usize;
@@ -1015,7 +1044,11 @@ impl Element for TextElement {
         let subst = if pp.fontspec.font.family == font_for(false).font.family { slashed_zero(window, cx) } else { None };
         let pal = palette(pp.kind);
         let lh = pp.fontspec.line_height;
-        let origin = point(bounds.left() + px(MARGIN), bounds.top());
+        let lift = ink_lift(window, &pp.fontspec);
+        // a folded window's tag is its card, a little shorter than the
+        // line: the line centred in it, clipped as much top as bottom
+        let shift = if pp.kind != Kind::Body { (bounds.size.height - lh).min(px(0.)) / 2. } else { px(0.) };
+        let origin = point(bounds.left() + px(MARGIN), bounds.top() + shift);
 
         // a notified window's header in a pale tint of the accent, as
         // Mail tints a flagged row: the whole bar says it wants the user.
@@ -1074,7 +1107,7 @@ impl Element for TextElement {
                 }
                 Kind::WinTag => {
                     let th = crate::theme::theme();
-                    let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
+                    let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
                     let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified);
                     // in from the edge as far as a stashed window's sheet
                     // puts it (in from its rounded corner), so the dots of
@@ -1084,7 +1117,7 @@ impl Element for TextElement {
                     layout_box = Some(b);
                 }
                 Kind::ColTag => {
-                    let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
+                    let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
                     paint_grip(window, b, rgb(crate::theme::theme().text_dim));
                     layout_box = Some(b);
                 }
@@ -1092,7 +1125,7 @@ impl Element for TextElement {
                     // the session's own square: nothing to drag, so no grip;
                     // red when this client has lost its leases and only
                     // watches, and a click takes the oldest notification
-                    let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
+                    let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
                     if pp.fenced {
                         let th = crate::theme::theme();
                         let r = Bounds::new(point(b.left() + px(1.), b.top() + (lh - px(10.)) / 2.), size(px(10.), px(10.)));
@@ -1174,7 +1207,7 @@ impl Element for TextElement {
                     }
                 }
 
-                paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, subst);
+                paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, subst, lift);
 
                 // the tick, as a Mac text view's caret: a plain line, a
                 // little in from the row's top and bottom. A header's is
@@ -1216,7 +1249,7 @@ impl Element for TextElement {
                 const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
                 let fh = (lh - px(2.)).min(px(15.));
                 let fw = fh * (201. / 259.);
-                let at = point(bounds.right() - px(8.) - fw, bounds.top() + (lh - fh) / 2.);
+                let at = point(bounds.right() - px(8.) - fw, origin.y + (lh - fh) / 2.);
                 // the patch stops short of the right edge, a sheet's line
                 window.paint_quad(fill(Bounds::new(point(at.x - px(5.), bounds.top() + px(2.)), size(fw + px(9.), lh - px(2.))), header_bg));
                 let _ = window.paint_svg(Bounds::new(at, size(fw, fh)), "pjw.svg".into(), Some(PJW), gpui::TransformationMatrix::unit(), rgb(th.accent), cx);
