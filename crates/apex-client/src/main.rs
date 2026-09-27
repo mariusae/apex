@@ -141,6 +141,8 @@ impl Render for Acme {
             .on_action(cx.listener(|_, _: &shell::ToggleFullScreen, window, _| window.toggle_fullscreen()))
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
+            // a force click is B3
+            .on_mouse_pressure(cx.listener(Self::mouse_pressure))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))

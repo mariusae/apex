@@ -3759,6 +3759,39 @@ impl Acme {
     }
 
     /// `logical_button` without recording it.
+    /// A force click (a trackpad pressed hard, macOS's "look up"): B3.
+    /// The press so far was B1's; at the deep press it becomes a B3 press
+    /// where it is, and its release is B3's -- a Look, or what the
+    /// plumber opens. Only a press that has not swept anything yet, and
+    /// only once a press.
+    pub fn mouse_pressure(&mut self, e: &gpui::MousePressureEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if e.stage != gpui::PressureStage::Force || self.mouse.left_as != Some(MouseButton::Left) {
+            return;
+        }
+        let swept = match self.mouse.b1 {
+            Some(Drag { view, anchor }) => self.node.state.buffer(match self.node.view_buffer(view) {
+                Ok(b) => b,
+                Err(_) => return,
+            }).map(|b| {
+                let v = b.view(view);
+                v.q0 != anchor || v.q1 != anchor
+            }).unwrap_or(false),
+            None if self.mouse.term_drag.is_some() => self.term_sel.is_some_and(|(_, a, b)| a != b),
+            None => return,
+        };
+        if swept {
+            return;
+        }
+        // B1's press is let go of, unfinished; B3's is made in its place
+        self.mouse.b1 = None;
+        self.mouse.term_drag = None;
+        self.term_sel = None;
+        self.mouse.left_as = None;
+        let down = MouseDownEvent { button: MouseButton::Left, position: e.position, modifiers: gpui::Modifiers { platform: true, ..Default::default() }, click_count: 1, first_mouse: false };
+        self.mouse_down(&down, window, cx);
+        cx.notify();
+    }
+
     fn logical_button_peek(&self, e: &MouseDownEvent) -> MouseButton {
         if e.button != MouseButton::Left {
             return e.button;
