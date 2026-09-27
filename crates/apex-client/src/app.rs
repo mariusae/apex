@@ -455,8 +455,6 @@ pub struct Acme {
     /// foot: by the pointer resting on its sheets' edges a moment, and
     /// put away a moment after it leaves them.
     pub stash_open: Option<ColumnId>,
-    /// The column whose sheets the pointer is resting on, and since when.
-    stash_resting: Option<(ColumnId, std::time::Instant)>,
     /// When the pointer left the stash brought out.
     stash_leaving: Option<std::time::Instant>,
     /// Whether the window's buttons show just now: with the sidebar.
@@ -1563,7 +1561,6 @@ impl Acme {
             sidebar_moved: None,
             sidebar_leaving: None,
             stash_open: None,
-            stash_resting: None,
             stash_leaving: None,
             lights_shown: None,
             native_bar_hidden: false,
@@ -2261,11 +2258,10 @@ impl Acme {
     }
 
     /// The stash under the pointer (`p`, in the window's coordinates):
-    /// brought out once the pointer has rested on a column's sheets a
-    /// quarter of a second with no button held -- passing over them on
-    /// the way to the bottom of a window, or dragging, is not asking for
-    /// it -- and put away a moment after the pointer leaves it. True when
-    /// it came or went.
+    /// brought out the moment the pointer is on a column's sheets with no
+    /// button held (dragging over them is not asking for it), and put
+    /// away a moment after the pointer leaves it. True when it came or
+    /// went.
     pub fn stash_tick(&mut self, p: Point<Pixels>) -> bool {
         let m = &self.mouse;
         let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
@@ -2292,35 +2288,21 @@ impl Acme {
                 Some(t) if t.elapsed() >= std::time::Duration::from_millis(150) => {
                     self.stash_open = None;
                     self.stash_leaving = None;
-                    self.stash_resting = None;
                     true
                 }
                 Some(_) => false,
             };
         }
         if held {
-            self.stash_resting = None;
             return false;
         }
         let under = (0..l.cols.len()).find(|&ci| self.stash_geometry(ci).is_some_and(|(b, _)| x >= b.x0 && x < b.x1 && y >= b.y0 && y <= b.y1 + 2)).map(|ci| l.cols[ci].id);
-        match (under, self.stash_resting) {
-            (None, _) => {
-                self.stash_resting = None;
-                false
+        match under {
+            Some(c) => {
+                self.stash_open = Some(c);
+                true
             }
-            (Some(c), Some((r, t))) if r == c => {
-                if t.elapsed() >= std::time::Duration::from_millis(250) {
-                    self.stash_open = Some(c);
-                    self.stash_resting = None;
-                    true
-                } else {
-                    false
-                }
-            }
-            (Some(c), _) => {
-                self.stash_resting = Some((c, std::time::Instant::now()));
-                false
-            }
+            None => false,
         }
     }
 

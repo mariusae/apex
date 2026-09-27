@@ -87,8 +87,8 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   every other window in the column, so the one has it all (B2 on one
   alone brings them all back). The stash shows as the edges of a stack
   of paper peeking out under the column's windows, a few pixels a sheet,
-  which the tiling leaves room for (`tiling::floor`). The pointer resting
-  there a quarter of a second, no button held, brings the stash out: the
+  which the tiling leaves room for (`tiling::floor`). The pointer on
+  them, no button held, brings the stash out at once: the
   stashed windows' tags, live, stacked over the column's foot in the
   column's order as sheets drawn out of the pile, put away a moment
   after the pointer leaves. Their handles: B1 brings one back where it
