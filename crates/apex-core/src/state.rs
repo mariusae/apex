@@ -241,6 +241,9 @@ pub struct Term {
     /// is: the bar across the top of the terminal.
     pub working: bool,
     pub progress: Option<u8>,
+    /// The shell's prompt marks (OSC 133): each command's prompt,
+    /// output and end.
+    pub marks: Vec<PromptMark>,
 }
 
 // ---- meta -------------------------------------------------------------------
@@ -563,6 +566,7 @@ impl State {
                         total: *rows as u64,
                         working: false,
                         progress: None,
+                        marks: Vec::new(),
                     },
                 );
             }
@@ -600,6 +604,7 @@ impl State {
                         t.working = *going;
                         t.progress = *at;
                     }
+                    TermOp::Marks { marks } => t.marks = marks.clone(),
                     TermOp::Create { .. } => unreachable!(),
                 }
             }
@@ -757,6 +762,7 @@ impl State {
                 }
             }
             h.update(&[t.cursor.0 as u8, t.cursor.1 as u8, t.cursor_visible as u8]);
+            h.update(&postcard::to_stdvec(&t.marks).unwrap_or_default());
             h.update(&t.exit.unwrap_or(-1).to_le_bytes());
         }
         h.update(b"meta");

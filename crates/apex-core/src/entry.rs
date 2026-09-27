@@ -228,6 +228,21 @@ pub enum TermOp {
     /// along when it gives a percentage. The window's handle pulses
     /// while it does, and its terminal carries a bar.
     Progress { going: bool, at: Option<u8> },
+    /// The shell's prompt marks (OSC 133, its semantic prompts), each
+    /// command's: the whole list, as it now stands.
+    Marks { marks: Vec<PromptMark> },
+}
+
+/// A command as the shell marked it (OSC 133): the history line its
+/// prompt began on (`A`), the line its output began on (`C`), the line
+/// it ended on and how it exited (`D`) -- lines as `TermOp::View` counts
+/// them, the oldest kept being 0.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct PromptMark {
+    pub prompt: u64,
+    pub output: Option<u64>,
+    pub end: Option<u64>,
+    pub exit: Option<i32>,
 }
 
 // ---- meta -----------------------------------------------------------------
