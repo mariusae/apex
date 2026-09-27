@@ -1005,16 +1005,14 @@ impl Element for TextElement {
                     layout_box = Some(b);
                 }
                 Kind::Top => {
-                    // the session's own square, a grip like a column's; red
-                    // when this client has lost its leases and only watches
-                    // (a click still takes the oldest notification)
+                    // the session's own square: nothing to drag, so no grip;
+                    // red when this client has lost its leases and only
+                    // watches, and a click takes the oldest notification
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
-                    let th = crate::theme::theme();
                     if pp.fenced {
+                        let th = crate::theme::theme();
                         let r = Bounds::new(point(b.left() + px(1.), b.top() + (lh - px(10.)) / 2.), size(px(10.), px(10.)));
                         window.paint_quad(fill(r, rgb(th.fenced)).corner_radii(px(3.)));
-                    } else {
-                        paint_grip(window, b, rgb(th.text_dim));
                     }
                     layout_box = Some(b);
                 }

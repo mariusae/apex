@@ -267,7 +267,7 @@ impl Render for Acme {
         let mut area = rest(div().relative()).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
-        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)));
         for (ci, col) in l.cols.iter().enumerate() {
             // hidden behind a column grown to the whole row (B3 on its box)
             if !l.shows(ci) {

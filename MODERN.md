@@ -41,7 +41,8 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   middle; working turns a spinner's arc round it. A notified window's
   header takes a pale tint of the accent, as Mail tints a flagged row,
   with pjw's face in the accent at its end (and by the window's row in
-  the sidebar, as by the session's). Column and session boxes are drag grips.
+  the sidebar, as by the session's). Column boxes are drag grips; the
+  session's square, having nothing to drag, is bare (red when fenced).
   All still acme's layout boxes: B1 on them as ever, B2 and B3 on a
   window's as the stash has them.
 - **The caret says where the keys go.** Every text's caret is a plain
