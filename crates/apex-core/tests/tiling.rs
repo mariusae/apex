@@ -930,3 +930,19 @@ fn a_columns_box_answers_as_a_windows_does() {
     rowgrow(&mut l, 0, 2, &info());
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
 }
+
+#[test]
+fn putting_a_column_away_leaves_the_pointer_be() {
+    let (mut l, _) = four();
+    let r = l.cols[1].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    // B3 on its box: no warp to the strip, whose slice the pointer would
+    // bring out at once
+    assert_eq!(rowdragcol(&mut l, 1, 3, at, at, &info()), None);
+    assert!(is_strip(l.column(ColumnId(2)).unwrap().r));
+    // B1 on the strip: back, and the pointer goes to its box
+    let ci = ix(&l, 2);
+    let s = l.cols[ci].r;
+    let on = (s.x0 + 3, s.y0 + 3);
+    assert_eq!(rowdragcol(&mut l, ci, 1, on, on, &info()), Some(Warp::ColButton(ColumnId(2))));
+}

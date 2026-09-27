@@ -853,8 +853,11 @@ impl Element for TextElement {
         cx: &mut App,
     ) -> Option<Prepaint> {
         let view = self.view;
-        self.acme.update(cx, |acme, _cx| {
+        self.acme.update(cx, |acme, cx| {
             let src = acme.source(view)?;
+            // the top row wears pjw while any session wants the user,
+            // this one or another in the sidebar
+            let any_notified = src.kind == Kind::Top && crate::pool::Pool::tabs(cx).iter().any(|t| acme.tab_notified(t.id, cx));
             let kind = src.kind;
             let mut fontspec = font_for(src.mono && kind == Kind::Body);
             // a tag's line a little taller than a body's
@@ -1021,7 +1024,7 @@ impl Element for TextElement {
                 live: src.live,
                 pulse: src.pulse,
                 fenced: src.fenced,
-                notified: src.notified,
+                notified: src.notified || any_notified,
                 round: src.round,
                 scroller: src.scroller,
                 sheet: src.sheet,
@@ -1122,6 +1125,7 @@ impl Element for TextElement {
                     layout_box = Some(b);
                 }
                 Kind::Top => {
+                    badge = pp.notified;
                     // the session's own square: nothing to drag, so no grip;
                     // red when this client has lost its leases and only
                     // watches, and a click takes the oldest notification
@@ -1243,9 +1247,12 @@ impl Element for TextElement {
 
             // notified: pjw's face at the header's far end, in the accent,
             // over the tag's text on a patch of the header -- the face the
-            // session's row wears in the sidebar, here on its window
+            // session's row wears in the sidebar, here on its window; and
+            // at the top row's end, the window's top right, while any
+            // session is notified
             if badge {
                 let th = crate::theme::theme();
+                let header_bg = if pp.kind == Kind::Top { rgb(ground(&th)) } else { header_bg };
                 const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
                 let fh = (lh - px(2.)).min(px(15.));
                 let fw = fh * (201. / 259.);

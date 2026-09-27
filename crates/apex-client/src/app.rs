@@ -1893,6 +1893,12 @@ impl Acme {
         self.app_active
     }
 
+    /// The window with the keys' caret (its card ringed): a text's, or a
+    /// terminal's.
+    pub fn key_window(&self) -> Option<WindowId> {
+        self.caret_view.and_then(|v| v.window()).or_else(|| self.caret_term.and_then(|t| self.node.state.windows.values().find(|w| w.body == apex_core::Body::Term(t)).map(|w| w.id)))
+    }
+
     /// The view the keys go to, as `key_down` finds it: the text under
     /// the pointer; over a page's scrollbar or no text at all, the last
     /// text selected in; over a terminal, none of acme's (the terminal
@@ -3040,6 +3046,17 @@ impl Acme {
         if let (Target::View(ViewId::Top), Region::LayoutBox, MouseButton::Left) = (target, region, button) {
             if self.notification_head().is_some() {
                 self.take_notification(cx);
+                return;
+            }
+        }
+        // the top row past its text, bare ground: B1 there moves the Mac
+        // window, as a title bar does
+        if let (Target::View(ViewId::Top), Region::Text(q), MouseButton::Left) = (target, region, button) {
+            let plain = !(e.modifiers.platform || e.modifiers.alt || e.modifiers.control || e.modifiers.shift);
+            let at_end = self.text_of(ViewId::Top).is_some_and(|t| q >= t.len() || t.char_at(q) == '\n');
+            let past = self.layouts.get(&ViewId::Top).and_then(|l| l.point_of(q)).is_some_and(|p| e.position.x > p.x + px(6.));
+            if plain && e.click_count == 1 && at_end && past {
+                window.start_window_move();
                 return;
             }
         }

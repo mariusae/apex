@@ -9,7 +9,7 @@
 //! ^F does.
 
 use gpui::prelude::*;
-use gpui::{deferred, div, px, rgb, AnyElement, Context, MouseButton};
+use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Context, MouseButton};
 
 use apex_core::ViewId;
 use apex_server::proto::Candidates;
@@ -208,10 +208,11 @@ impl Acme {
         let mono = self.node.state.window(c.view.window()?).is_ok_and(|w| w.mono);
         let font = crate::text_element::font_for(mono).font.family.clone();
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
+        // under the name's line, or over it where the window has no room
+        // below (at the window's foot): `anchored` turns it about the
+        // line's top, and keeps it inside the window
+        let place = |panel: gpui::Div| deferred(anchored().position(point(at.x - px(6.), at.y - px(2.))).offset(point(px(0.), lh + px(4.))).child(panel)).with_priority(2).into_any_element();
         let panel = div()
-            .absolute()
-            .left(at.x - px(6.))
-            .top(at.y + lh + px(2.))
             .min_w(px(160.))
             .max_w(px(420.))
             .p(px(4.))
@@ -226,7 +227,7 @@ impl Acme {
             .flex_col()
             .child(self.overlay_mark());
         if c.none.is_some() {
-            return Some(deferred(panel.child(div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child("No matches"))).with_priority(2).into_any_element());
+            return Some(place(panel.child(div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child("No matches"))));
         }
         let (typed, _) = self.completion_typed()?;
         let matching = c.matching(&typed);
@@ -269,7 +270,7 @@ impl Acme {
         if matching.len() > ROWS {
             panel = panel.child(div().px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", matching.len() - ROWS)));
         }
-        Some(deferred(panel).with_priority(2).into_any_element())
+        Some(place(panel))
     }
 }
 

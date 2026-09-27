@@ -1490,6 +1490,11 @@ pub fn rowdragcol(l: &mut Layout, ci: usize, but: i32, op: (i32, i32), p: (i32, 
     if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
         // a click, not a drag: the column grows, as a window's box does
         rowgrow(l, ci, but, info);
+        // put away: the pointer stays where it is -- taken to the strip,
+        // it would bring the column straight out again
+        if l.column(id).is_some_and(|c| is_strip(c.r)) {
+            return None;
+        }
         return Some(Warp::ColButton(id));
     }
     // dragged out of a hidden row: the row comes back first

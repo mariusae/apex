@@ -324,14 +324,13 @@ fn standing(r: f32, w: f32, h: f32, font: f32) -> Tilt {
 }
 
 impl Acme {
-    /// The column ⌘E is about: the one under the pointer, else the last
-    /// one worked in, else the first with a stash.
+    /// The column ⌘E is about: the active one -- the column of the window
+    /// the keys go to, else the last one worked in -- and only when it
+    /// has windows put away; never another column's.
     fn stash_walk_column(&self) -> Option<apex_core::ColumnId> {
         let l = &self.node.state.layout;
-        let (x, y) = self.row_pt(self.last_mouse);
-        let under = (0..l.cols.len()).find(|&ci| l.shows(ci) && l.cols[ci].r.contains(x, y)).map(|ci| l.cols[ci].id);
-        let has = |c: apex_core::ColumnId| l.column(c).is_some_and(|c| !c.stash.is_empty());
-        under.filter(|&c| has(c)).or(self.node.activecol.filter(|&c| has(c))).or_else(|| l.cols.iter().find(|c| !c.stash.is_empty()).map(|c| c.id))
+        let keys = self.key_window().and_then(|w| l.column_of(w));
+        keys.or(self.node.activecol).filter(|&c| l.column(c).is_some_and(|c| !c.stash.is_empty()))
     }
 
     /// ⌘E (`back`: ⇧⌘E): the stack brought up, the first stashed window

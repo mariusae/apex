@@ -288,7 +288,7 @@ impl Render for Acme {
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)));
         // the ground the windows stand on, and the one the keys go to
         let ground = text_element::ground(&t);
-        let key_window = self.caret_view.and_then(|v| v.window()).or_else(|| self.caret_term.and_then(|t| self.node.state.windows.values().find(|w| w.body == Body::Term(t)).map(|w| w.id)));
+        let key_window = self.key_window();
         let mut rings = Vec::new();
         for (ci, col) in l.cols.iter().enumerate() {
             // hidden behind a column grown to the whole row (B3 on its box)

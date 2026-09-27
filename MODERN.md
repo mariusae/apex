@@ -43,6 +43,9 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   with pjw's face in the accent at its end (and by the window's row in
   the sidebar, as by the session's). Column boxes are drag grips; the
   session's square, having nothing to drag, is bare (red when fenced).
+  B1 on the top row past its text drags the Mac window, as a title bar
+  does. While any session wants the user -- this one or one in the
+  sidebar -- pjw's face is at the top row's end, the window's top right.
   All still acme's layout boxes: B1 on them as ever, B2 and B3 on a
   window's as the stash has them.
 - **The caret says where the keys go.** Every text's caret is a plain
@@ -137,8 +140,9 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   Letting go of ⌘ brings the chosen window back where it was (B1's
   recall), its card settling flat onto where it lands as the rest fade;
   a click on a card does the same; escape settles the front card back
-  as the column. The column is the one under the pointer, else the last
-  worked in, else the first with a stash. View ▸ Bring Back from Stash
+  as the column. The column is the active one -- the window with the
+  keys' caret's, else the last worked in -- and ⌘E does nothing when it
+  has no stash, whatever other columns have. View ▸ Bring Back from Stash
   does the same (a click or escape to finish).
 - **Web windows** (`webbar.rs`) have a header of their own in the tag's
   place, as the Claude app's browser does: the handle (every button and
@@ -221,7 +225,8 @@ which changes what B2 and B3 do on a window's box, and so is the core's
 - **^F completes inline** (`completion.rs`): the path fragment before
   the caret goes to the server (`Candidates`, protocol 34, answered to
   the asker alone), what its candidates share is typed in at once, and
-  when more than one is left they are listed under the caret. Typing
+  when more than one is left they are listed under the caret (over its
+  line, when the window's foot leaves no room below). Typing
   goes on into the text and narrows the list; ↑ ↓ choose; return or tab
   takes the one chosen, and a directory's own names come up next; a
   slash typed asks for the next directory's; escape or a click elsewhere
