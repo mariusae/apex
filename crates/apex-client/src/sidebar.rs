@@ -65,8 +65,14 @@ impl Acme {
             if let Some(s) = second {
                 text = text.child(div().truncate().text_size(px(11.)).line_height(px(13.)).text_color(rgb(t.text_dim)).child(s));
             }
+            // where the row is drawn: its preview stands beside it
+            let rows = self.sidebar_rows.clone();
             let mut row = div()
                 .id(("session", i))
+                .relative()
+                .child(gpui::canvas(move |b, _, _| {
+                    rows.borrow_mut().insert(id, b);
+                }, |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
                 .flex_none()
                 .min_h(px(ROW_H))
                 .py(px(4.))

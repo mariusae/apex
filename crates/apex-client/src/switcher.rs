@@ -527,3 +527,41 @@ impl Acme {
         Some(overlay.into_any_element())
     }
 }
+
+impl Acme {
+    /// The pointer on a session's row in the sidebar (not the one shown):
+    /// its window, live, beside the row, as ctrl-tab's cards draw it.
+    pub fn session_preview(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let id = self.sidebar_hover.filter(|id| *id != self.tab)?;
+        let row = self.sidebar_rows.borrow().get(&id).copied()?;
+        let t = crate::theme::theme();
+        let parked = Pool::parked_nodes(cx);
+        let node = parked.iter().find(|(p, _, _)| *p == id).map(|(_, _, n)| *n)?;
+        let mini = snapshot(node, &t);
+        let l = &node.state.layout;
+        let (cw, ch) = (l.r.x1.max(1) as f32, l.r.y1.max(1) as f32);
+        let w = 320f32;
+        let h = w * ch / cw;
+        let x = f32::from(row.right()) + 10.;
+        let y = (f32::from(row.top()) - 8.).max(8.);
+        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.25), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false };
+        let body = gpui::canvas(|_, _, _| {}, move |b, _, window, cx| mini.paint(b, window, cx)).size_full();
+        Some(
+            div()
+                .absolute()
+                .left(px(x))
+                .top(px(y))
+                .w(px(w))
+                .h(px(h))
+                .rounded(px(10.))
+                .overflow_hidden()
+                .bg(rgb(t.body_bg))
+                .border(px(0.5))
+                .border_color(rgb(t.panel_border))
+                .shadow(vec![shadow])
+                .child(body)
+                .child(self.overlay_mark())
+                .into_any_element(),
+        )
+    }
+}

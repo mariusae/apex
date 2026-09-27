@@ -414,8 +414,11 @@ pub struct Acme {
     pub switcher: Option<crate::switcher::Switcher>,
     /// ⌘E, ⌘ still held: the walk through a column's stash.
     pub stash_walk: Option<crate::switcher::StashWalk>,
-    /// The sidebar's session row under the pointer: its × shows.
+    /// The sidebar's session row under the pointer: its × shows, and a
+    /// preview of the session beside it.
     pub sidebar_hover: Option<crate::pool::TabId>,
+    /// Where each session's row was drawn in the sidebar.
+    pub sidebar_rows: std::rc::Rc<std::cell::RefCell<HashMap<crate::pool::TabId, gpui::Bounds<Pixels>>>>,
     /// Errors just written, shown as toasts by their columns.
     pub toasts: Vec<crate::toasts::Toast>,
     /// +Errors windows the user has open (brought back from a toast):
@@ -1599,6 +1602,7 @@ impl Acme {
             toasts: Vec::new(),
             errors_open: std::collections::HashSet::new(),
             sidebar_hover: None,
+            sidebar_rows: Default::default(),
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
             waiting: None,

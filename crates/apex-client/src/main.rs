@@ -219,6 +219,10 @@ impl Render for Acme {
                 Some(o) => root.child(gpui::deferred(o).with_priority(3)),
                 None => root,
             };
+            let root = match self.session_preview(cx) {
+                Some(p) => root.child(gpui::deferred(p).with_priority(3)),
+                None => root,
+            };
             let root = match slide {
                 Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
                 None => root,
@@ -533,6 +537,11 @@ impl Render for Acme {
         // ctrl-tab's cards, over everything
         let root = match self.switcher_overlay(window, cx) {
             Some(o) => root.child(gpui::deferred(o).with_priority(3)),
+            None => root,
+        };
+        // a session under the pointer in the sidebar: its window, live
+        let root = match self.session_preview(cx) {
+            Some(p) => root.child(gpui::deferred(p).with_priority(3)),
             None => root,
         };
         let root = match slide {
