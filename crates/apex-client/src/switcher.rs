@@ -255,6 +255,9 @@ pub struct StashWalk {
     /// Letting go: the card settling, since when, and the rectangle it
     /// settles on (in the column's window space).
     closing: Option<(usize, Instant, (f32, f32, f32, f32))>,
+    /// Brought up with ⌘ down (⌘E), so ⌘ coming up ends it; from the
+    /// menu, a click or escape does.
+    pub held: bool,
 }
 
 /// How long the stack takes to come up, and a card to settle.
@@ -345,7 +348,8 @@ impl Acme {
             let entries: Vec<apex_core::WindowId> = c.stash.iter().rev().map(|s| s.slot.window).collect();
             self.stash_open = None;
             let now = Instant::now();
-            self.stash_walk = Some(StashWalk { col, entries, index: 1, from: (0., now), opened: now, closing: None });
+            let held = crate::web::modifiers_down().0;
+            self.stash_walk = Some(StashWalk { col, entries, index: 1, from: (0., now), opened: now, closing: None, held });
             cx.notify();
             return;
         }

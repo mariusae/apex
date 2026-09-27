@@ -57,6 +57,11 @@ impl Glide {
         Some(lerp(*a, *b, k))
     }
 
+    /// Where window `w` is drawn this instant, while it is on its way.
+    pub fn drawn_at(&self, w: WindowId) -> Option<Rect> {
+        self.now_w(w).map(|(r, _)| r)
+    }
+
     /// Is window `w` on its way somewhere?
     pub fn gliding(&self, w: WindowId) -> bool {
         self.moving_w.contains_key(&w)

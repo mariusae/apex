@@ -409,7 +409,9 @@ pub struct Acme {
     /// drawn this frame: holes cut in the web views,
     /// which are native views above everything gpui paints, so the
     /// overlays show through them and the pages stay live around them.
-    pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
+    /// Each overlay's bounds this frame, and how far past them its hole
+    /// in the pages reaches (its shadow's room).
+    pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
     /// ⌘E, ⌘ still held: the walk through a column's stash.
@@ -992,6 +994,13 @@ impl Acme {
     /// frame (`overlay_bounds`), for the holes in the web views. Zero
     /// size, so it takes no clicks.
     pub fn overlay_mark(&self) -> gpui::AnyElement {
+        self.overlay_mark_by(px(18.))
+    }
+
+    /// An overlay's mark whose hole reaches `margin` past it: the panels'
+    /// shadows want room; the floating sidebar's hole is its card alone,
+    /// or the page beside it would show a band of bare paper.
+    pub fn overlay_mark_by(&self, margin: Pixels) -> gpui::AnyElement {
         use gpui::prelude::*;
         let rc = self.overlay_bounds.clone();
         gpui::div()
@@ -1000,7 +1009,7 @@ impl Acme {
             .left(px(0.))
             .size_full()
             .child(gpui::canvas(
-                move |b, _, _| rc.borrow_mut().push(b),
+                move |b, _, _| rc.borrow_mut().push((b, margin)),
                 |_, _, _, _| {},
             ).size_full())
             .into_any_element()
@@ -1537,6 +1546,16 @@ impl Acme {
                                 // page a tab shows while it comes up
                                 if acme.web_focus_tick(window) || acme.any_working() || acme.waiting.is_some() {
                                     cx.notify();
+                                }
+                                // a walk whose key came up where gpui did not
+                                // hear it (a page had the keys): ended as the
+                                // key coming up ends it
+                                let (cmd, ctrl) = crate::web::modifiers_down();
+                                if acme.stash_walk.as_ref().is_some_and(|s| s.held && !s.settling()) && !cmd {
+                                    acme.stash_walk_commit(cx);
+                                }
+                                if acme.switcher.is_some() && !ctrl {
+                                    acme.switcher_commit(window, cx);
                                 }
                                 if acme.caret_tick() {
                                     cx.notify();
@@ -2107,6 +2126,15 @@ impl Acme {
             _ => None,
         };
         if onto.is_some_and(|x| self.glide.gliding(x)) {
+            // a window's box clicked: the pointer rides on its handle all
+            // the way, as it stays on a column's box
+            if let (Pending::Warp(Warp::WinButton(_)), Some(r)) = (p, onto.and_then(|x| self.glide.drawn_at(x))) {
+                let fonti = f32::from(crate::text_element::tag_line_height()) as i32;
+                let at = point(px((r.x0 + SCROLLWID / 2) as f32 + self.left()), px((r.y0 + fonti / 2) as f32 + self.top()));
+                crate::warp::move_to(window, at);
+                self.pointer = Some(at);
+                self.last_mouse = at;
+            }
             window.request_animation_frame();
             return;
         }
@@ -2194,7 +2222,9 @@ impl Acme {
             return false;
         }
         self.web_events();
-        if !self.overlay_up() {
+        if self.overlay_up() {
+            self.webs.unfocus(window);
+        } else {
             self.webs.focus_tick(window);
         }
         // a page keeps the pointer's moves to itself: the window it is in
@@ -3920,7 +3950,8 @@ impl Acme {
     /// Is a gpui overlay up that a native view would hide?
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some()
+        // and a walk held open by a modifier: the key coming up ends it
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.stash_walk.is_some() || self.switcher.is_some()
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):

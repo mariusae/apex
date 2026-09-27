@@ -220,7 +220,7 @@ impl Acme {
                     .relative()
                     .size_full()
                     .rounded(px(10.))
-                    .when(floating, |d| d.child(self.overlay_mark()))
+                    .when(floating, |d| d.child(self.overlay_mark_by(px(0.))))
                     .bg(rgb(card))
                     .border_1()
                     .border_color(rgb(t.border))

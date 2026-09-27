@@ -470,7 +470,7 @@ impl Webs {
     /// so gpui's overlay shows through and the page stays live around
     /// it. No overlay over a view, no mask.
     #[cfg(target_os = "macos")]
-    pub fn set_holes(&mut self, holes: &[Bounds<Pixels>]) {
+    pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)]) {
         use objc::runtime::Object;
         use objc::{class, msg_send, sel, sel_impl};
         use wry::WebViewExtMacOS;
@@ -488,8 +488,7 @@ impl Webs {
         }
         #[link(name = "QuartzCore", kind = "framework")]
         extern "C" {}
-        // the panels' shadows reach past their bounds
-        let margin = gpui::px(18.);
+        // the panels' shadows reach past their bounds, each its own way
         for h in self.hosts.values_mut() {
             let Some(vb) = h.bounds else { continue };
             if !h.shown {
@@ -497,7 +496,7 @@ impl Webs {
             }
             let local: Vec<(f64, f64, f64, f64)> = holes
                 .iter()
-                .filter_map(|o| {
+                .filter_map(|&(o, margin)| {
                     let x0 = (o.origin.x - margin).max(vb.origin.x);
                     let y0 = (o.origin.y - margin).max(vb.origin.y);
                     let x1 = (o.origin.x + o.size.width + margin).min(vb.origin.x + vb.size.width);
@@ -544,7 +543,7 @@ impl Webs {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn set_holes(&mut self, _holes: &[Bounds<Pixels>]) {}
+    pub fn set_holes(&mut self, _holes: &[(Bounds<Pixels>, Pixels)]) {}
 
     /// A dialog has the window, and the window goes quiet behind it: gpui
     /// paints its veil over everything it draws, but a page is a native
@@ -655,6 +654,14 @@ impl Webs {
             None => focus_ui(window),
         }
         self.focused = over;
+    }
+
+    /// The keyboard back to gpui's view, whatever page the pointer is on:
+    /// while an overlay is up (a walk ⌘ or control holds open ends when
+    /// that key comes up, and a page with the keys would hear it instead).
+    pub fn unfocus(&mut self, window: &Window) {
+        focus_ui(window);
+        self.focused = None;
     }
 
     fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
@@ -1169,6 +1176,22 @@ pub fn focus_ui(window: &Window) {
 
 #[cfg(not(target_os = "macos"))]
 pub fn focus_ui(_window: &Window) {}
+
+/// Whether ⌘ and control are down now, asked of the system rather than
+/// of the events gpui was sent: a page that had the keys hears a
+/// modifier come up, and gpui never does.
+#[cfg(target_os = "macos")]
+pub fn modifiers_down() -> (bool, bool) {
+    use objc::{class, msg_send, sel, sel_impl};
+    // SAFETY: a class method answering the current modifier flags
+    let flags: u64 = unsafe { msg_send![class!(NSEvent), modifierFlags] };
+    (flags & (1 << 20) != 0, flags & (1 << 18) != 0)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn modifiers_down() -> (bool, bool) {
+    (true, true)
+}
 
 /// AppKit's own title bar container, shown or not. In full screen AppKit
 /// slides it down with the menu bar when the pointer reaches the top, an
