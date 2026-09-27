@@ -411,6 +411,10 @@ pub struct Acme {
     pub switcher: Option<crate::switcher::Switcher>,
     /// ⌘E, ⌘ still held: the walk through a column's stash.
     pub stash_walk: Option<crate::switcher::StashWalk>,
+    /// A web window's address being typed in its header.
+    pub url_edit: Option<crate::webbar::UrlEdit>,
+    /// Blank web windows already given their address field.
+    pub url_asked: std::collections::HashSet<WindowId>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
     /// The tab shown has nothing of its own yet -- its link is being
@@ -1569,6 +1573,8 @@ impl Acme {
             overlay_bounds: Default::default(),
             switcher: None,
             stash_walk: None,
+            url_edit: None,
+            url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
             waiting: None,
             close_requested: false,
@@ -2082,7 +2088,9 @@ impl Acme {
         let mut tags = HashMap::new();
         let mut bodies = HashMap::new();
         for (w, win) in &self.node.state.windows {
-            if !win.tagexpand {
+            if win.body == Body::Web {
+                tags.insert(*w, (1, false)); // a page's header is one line
+            } else if !win.tagexpand {
                 tags.insert(*w, (1, false)); // acme: Up in the tag shrank it to one line
             } else if let Some((n, nl)) = self.tag_need.get(&ViewId::Tag(*w)) {
                 tags.insert(*w, (*n as i32, *nl));
@@ -2786,6 +2794,8 @@ impl Acme {
         // view that had it went and left it there: not only while pages
         // are up, since the loss outlives them
         crate::web::focus_ui(window);
+        // a click off the address being typed leaves it as it was
+        self.url_edit = None;
         if self.finder.is_some() {
             self.close_finder(cx); // a click anywhere else dismisses it
             return;
@@ -3639,7 +3649,19 @@ impl Acme {
 
     /// Is a gpui overlay up that a native view would hide?
     fn overlay_up(&self) -> bool {
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some()
+        // an address being typed keeps the keys from the pages too
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some()
+    }
+
+    /// A web window's handle pressed (its header draws it, not a tag):
+    /// acme's box, as any window's.
+    pub fn press_handle(&mut self, w: WindowId, button: MouseButton, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        self.url_edit = None;
+        if self.mouse.b1.is_none() {
+            self.mouse.box_drag = Some((BoxTarget::Win(w), button, pos));
+        }
+        cx.stop_propagation();
+        cx.notify();
     }
 
     /// What the pages did: a navigation moves the window's name and the
@@ -3922,6 +3944,11 @@ impl Acme {
             self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
             return;
         }
+        if self.url_edit.is_some() {
+            let ks = &e.keystroke;
+            self.url_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            return;
+        }
         if self.selector.is_some() {
             let ks = &e.keystroke;
             self.selector_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
@@ -4022,7 +4049,7 @@ impl Acme {
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
         // an overlay (the session picker, the finder) has the keyboard:
         // the Edit menu works on its field, not on the text below
-        if self.selector.is_some() || self.finder.is_some() {
+        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() {
             self.overlay_edit(what, cx);
             return;
         }

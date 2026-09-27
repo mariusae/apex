@@ -93,7 +93,7 @@ const DOT_R: f32 = 3.75;
 const RING_R: f32 = 5.;
 const SPIN_R: f32 = 5.25;
 
-fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
+pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
     let circle = |r: f32| Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(2. * r), px(2. * r)));
     if let Some(f) = d.fill {
         window.paint_quad(fill(circle(DOT_R), rgb(f)).corner_radii(px(DOT_R)));

@@ -1261,6 +1261,10 @@ impl Acme {
                 None => Some(&mut sel.filter),
             };
         }
+        if let Some(e) = self.url_edit.as_mut() {
+            e.caret_since = std::time::Instant::now();
+            return Some(&mut e.field);
+        }
         if let Some(f) = self.finder.as_mut() {
             f.caret_since = std::time::Instant::now();
             return Some(&mut f.filter);

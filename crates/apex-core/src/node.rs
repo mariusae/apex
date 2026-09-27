@@ -504,7 +504,9 @@ impl Node {
         let rest = self.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
         let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
         self.set_content(log, tag, &format!("{url} {rest}"))?;
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: Some(Loc { session: None, name: from, pos: Pos::Keep }), to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
+        // a blank page was nowhere to come back to
+        let from = (!from.is_empty()).then(|| Loc { session: None, name: from, pos: Pos::Keep });
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
         Ok(())
     }
 
@@ -1738,14 +1740,12 @@ impl Node {
             }
             "Web" => {
                 // a web window on the URL given, else the selected text: a
-                // file:// URL or a path is the host's file (apexfile://)
+                // file:// URL or a path is the host's file (apexfile://);
+                // with neither, a blank page, its address to be typed
                 let arg = text.trim().strip_prefix("Web").map(str::trim).unwrap_or("").to_string();
                 let target = if !arg.is_empty() { arg } else { self.seltext.and_then(|v| self.selected_text(v).ok()).unwrap_or_default().trim().to_string() };
-                if target.is_empty() {
-                    return Err(CoreError::Missing("Web needs a URL or a file, given or selected".into()));
-                }
                 let dir = win.map(|w| self.window_name(w)).and_then(|n| std::path::Path::new(&n).parent().map(|d| d.display().to_string())).unwrap_or_default();
-                let url = web_url(&target, &dir);
+                let url = if target.is_empty() { String::new() } else { web_url(&target, &dir) };
                 let col = win.and_then(|w| self.column_of(w).ok()).or_else(|| self.state.layout.cols.first().map(|c| c.id)).ok_or_else(|| CoreError::Missing("no column".into()))?;
                 let w = self.open_web_window(log, col, &url)?;
                 self.seltext = Some(ViewId::Body(w));

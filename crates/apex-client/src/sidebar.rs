@@ -205,7 +205,11 @@ impl Acme {
             // stashed ones too, where they stand in the column, their
             // names in the secondary ink (a click brings one back)
             for (w, stashed) in apex_core::tiling::stash_order(col) {
-                let name = self.node.window_name(w);
+                let mut name = self.node.window_name(w);
+                // a blank page, its address not yet typed
+                if name.is_empty() && self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web) {
+                    name = "New page".into();
+                }
                 let (label, dir) = split_name(&name);
                 let d = crate::text_element::dot(
                     t,

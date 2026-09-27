@@ -23,6 +23,7 @@ mod shell;
 mod sidebar;
 mod miniature;
 mod switcher;
+mod webbar;
 mod term_element;
 mod pool;
 mod text_element;
@@ -358,7 +359,13 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                if win.body == Body::Web && !strip {
+                    // a page's header: its handle, back and forward, and
+                    // its address, in the tag's place
+                    area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, self.web_header(w, tag_h as f32, cx)));
+                } else {
+                    area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                }
                 if s.body.dy() > 0 && strip {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
                 } else if s.body.dy() > 0 {
@@ -446,6 +453,12 @@ impl Render for Acme {
             }
         }
         // ⌘E's cards, over their column
+        // a blank page just made: its address to be typed, at once
+        let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Web && !self.url_asked.contains(*w) && self.node.window_name(**w).is_empty()).map(|(w, _)| *w);
+        if let Some(w) = blank {
+            self.url_asked.insert(w);
+            self.url_edit_start(w, cx);
+        }
         if self.stash_walk.as_ref().is_some_and(|s| s.done()) {
             self.stash_walk = None;
         }

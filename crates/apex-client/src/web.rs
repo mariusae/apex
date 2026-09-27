@@ -399,6 +399,7 @@ impl Drop for Webs {
 }
 
 /// What Back, Fwd and Get do in a web window's tag.
+#[derive(Clone, Copy)]
 pub enum Nav {
     Back,
     Fwd,

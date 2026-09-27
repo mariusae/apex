@@ -128,6 +128,16 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   as the column. The column is the one under the pointer, else the last
   worked in, else the first with a stash. View ▸ Bring Back from Stash
   does the same (a click or escape to finish).
+- **Web windows** (`webbar.rs`) have a header of their own in the tag's
+  place, as the Claude app's browser does: the handle (every button and
+  drag of it as any window's -- it moves, grows, stashes), back and
+  forward, and the address, and nothing else. A click in the address
+  takes it for typing (all selected); return goes there (a bare host
+  gets https://, a path is the host's file), escape or a click elsewhere
+  leaves it. The tag is still the core's underneath -- its first word
+  the address the page follows -- only not drawn. `Web` with nothing
+  given or selected makes a blank page, its address field ready to type
+  in (the core allows a web window with no address for it).
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the
