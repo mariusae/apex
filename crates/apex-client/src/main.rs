@@ -274,14 +274,12 @@ impl Render for Acme {
             // the windows leave -- a body's last part line, the gaps
             // between them -- is paper, not the rule's grey; a hairline
             // where each window meets the one above it says where it
-            // starts (not above a folded one, whose sheet's edge does)
+            // starts, folded to its tag or not
             area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, t.body_bg));
-            for (i, s) in col.wins.iter().enumerate() {
-                if s.body.dy() > 0 || i == 0 {
-                    let b = apex_core::tiling::BORDER as f32;
-                    let hair = 1. / scale;
-                    area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b / 2. - hair / 2., s.r.dx() as f32, hair, t.border));
-                }
+            for s in col.wins.iter() {
+                let b = apex_core::tiling::BORDER as f32;
+                let hair = 1. / scale;
+                area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b / 2. - hair / 2., s.r.dx() as f32, hair, t.border));
             }
             if tail < col.r.y1 {
                 area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::rgb(t.column)).into_any_element()));
@@ -319,6 +317,32 @@ impl Render for Acme {
                 }
             }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+            // the stash: the edges of the sheets put away, peeking out
+            // under the column's windows as a stack of paper does, each
+            // further one narrower and lower; in the accent's tint when
+            // one of them wants the user
+            if let Some((band, _)) = self.stash_geometry(ci) {
+                let n = col.stash.len().min(apex_core::tiling::STASH_EDGES);
+                let notified = col.stash.iter().any(|s| self.window_notified(s.slot.window));
+                let edge = if notified { text_element::mix(t.tag_bg, t.accent, 0.10) } else { t.tag_bg };
+                let (paper, line) = (t.body_bg, t.body_border);
+                let sheets = canvas(
+                    |_, _, _| {},
+                    move |b, _, window, _| {
+                        window.paint_quad(gpui::fill(b, gpui::rgb(paper)));
+                        let top = b.top() + px(apex_core::tiling::BORDER as f32);
+                        for i in (0..n).rev() {
+                            let inset = px(2. + 4. * i as f32);
+                            let bottom = top + px((apex_core::tiling::STASH_EDGE * (i as i32 + 1)) as f32);
+                            let r = gpui::Bounds::new(gpui::point(b.left() + inset, top - px(4.)), gpui::size(b.size.width - inset * 2., bottom - top + px(4.)));
+                            let radii = gpui::Corners { top_left: px(0.), top_right: px(0.), bottom_left: px(5.), bottom_right: px(5.) };
+                            window.paint_quad(gpui::quad(r, radii, gpui::rgb(edge), gpui::Edges { top: px(0.), left: px(1.), right: px(1.), bottom: px(1.) }, gpui::rgb(line), gpui::BorderStyle::Solid));
+                        }
+                    },
+                )
+                .size_full();
+                area = area.child(at(band.x0, band.y0, band.dx(), band.dy(), sheets.into_any_element()).cursor(hold(CursorStyle::Arrow)));
+            }
             for (i, s) in col.wins.iter().enumerate() {
                 if !col.safe && i > 0 {
                     continue; // obscured by the full-column window
@@ -395,6 +419,21 @@ impl Render for Acme {
                         at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
                     };
                     area = area.child(body);
+                }
+            }
+        }
+        // the stash brought out: its tags, live, stacked over the column's
+        // foot as sheets drawn out of the pile, each with its handle
+        // (B1 back where it was, B2 back alone, a drag back where it is
+        // let go) and its text (B2 runs Del or Put there as anywhere)
+        if let Some(ci) = self.stash_open.and_then(|c| l.column_index(c)) {
+            if let Some((band, rows)) = self.stash_geometry(ci) {
+                let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0) - 6;
+                let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(-2.)), blur_radius: px(12.), spread_radius: px(0.), inset: false };
+                let card = div().size_full().bg(gpui::rgb(t.body_bg)).rounded_t(px(9.)).shadow(vec![shadow]).child(self.overlay_mark());
+                area = area.child(at(band.x0, top, band.dx(), band.y1 - top, card.into_any_element()).cursor(hold(CursorStyle::Arrow)));
+                for (w, r) in rows {
+                    area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 }
             }
         }

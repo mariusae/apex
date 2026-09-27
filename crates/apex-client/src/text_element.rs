@@ -516,8 +516,8 @@ pub struct Source {
     /// square says so, and a click on it takes the oldest); for a window's
     /// tag, that window is (its handle says so).
     pub notified: bool,
-    /// A window's tag with no body under it (acme collapsed it, or the
-    /// column has no room): drawn as the edge of a sheet in a stack.
+    /// A stashed window's tag, shown over its column's foot while the
+    /// stash is brought out: drawn as a sheet drawn out of the stack.
     pub sheet: bool,
     /// The keys go here: its caret is the blue one, and whether it shows
     /// just now (it blinks). None for any other view, whose caret is the
@@ -987,9 +987,9 @@ impl Element for TextElement {
                     let th = crate::theme::theme();
                     let b = Bounds::new(bounds.origin, size(px(SCROLLWID), lh));
                     let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified);
-                    // in from the edge as far as a folded window's sheet puts
-                    // it (in from its rounded corner), so the dots of the
-                    // folded and the open line up down a column
+                    // in from the edge as far as a stashed window's sheet
+                    // puts it (in from its rounded corner), so the dots of
+                    // the stash and the column's line up
                     paint_dot(window, &d, point(b.left() + px(7.5), b.top() + lh / 2.));
                     badge = d.badge;
                     window.paint_quad(fill(

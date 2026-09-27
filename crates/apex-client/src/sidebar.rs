@@ -202,8 +202,9 @@ impl Acme {
         let mut rows = div().flex().flex_col().pb(px(4.));
         let l = &self.node.state.layout;
         for col in &l.cols {
-            for s in &col.wins {
-                let w = s.window;
+            // stashed ones too, where they stand in the column, their
+            // names in the secondary ink (a click brings one back)
+            for (w, stashed) in apex_core::tiling::stash_order(col) {
                 let name = self.node.window_name(w);
                 let (label, dir) = split_name(&name);
                 let d = crate::text_element::dot(
@@ -227,7 +228,7 @@ impl Acme {
                     .cursor_default()
                     .hover(move |s| s.bg(rgb(hover)))
                     .child(dot_element(&d))
-                    .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(label))
+                    .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(if stashed { t.text_dim } else { t.text })).child(label))
                     .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(dir))
                     .when(d.badge, |r| r.child(div().flex_none().child(pjw(12., t.accent))))
                     .on_mouse_down(

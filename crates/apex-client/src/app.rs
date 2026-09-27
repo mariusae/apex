@@ -451,6 +451,14 @@ pub struct Acme {
     pub sidebar_moved: Option<std::time::Instant>,
     /// When the pointer left it: it goes a tenth of a second after.
     pub sidebar_leaving: Option<std::time::Instant>,
+    /// The column whose stash is brought out, its tags shown over its
+    /// foot: by the pointer resting on its sheets' edges a moment, and
+    /// put away a moment after it leaves them.
+    pub stash_open: Option<ColumnId>,
+    /// The column whose sheets the pointer is resting on, and since when.
+    stash_resting: Option<(ColumnId, std::time::Instant)>,
+    /// When the pointer left the stash brought out.
+    stash_leaving: Option<std::time::Instant>,
     /// Whether the window's buttons show just now: with the sidebar.
     pub lights_shown: Option<bool>,
     /// Whether AppKit's title bar container is hidden (full screen).
@@ -1500,6 +1508,10 @@ impl Acme {
                                     if acme.sidebar_tick(p, window.viewport_size()) {
                                         cx.notify();
                                     }
+                                    // the stash, too: resting is no move
+                                    if acme.stash_tick(p) {
+                                        cx.notify();
+                                    }
                                 }
                                 if acme.tabs_tick(cx) {
                                     cx.notify();
@@ -1550,6 +1562,9 @@ impl Acme {
             sidebar_out: false,
             sidebar_moved: None,
             sidebar_leaving: None,
+            stash_open: None,
+            stash_resting: None,
+            stash_leaving: None,
             lights_shown: None,
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
@@ -2226,6 +2241,89 @@ impl Acme {
         }
     }
 
+    /// Column `ci`'s stash as it shows, in the area's coordinates: the
+    /// band its sheets' edges take at the foot, and the rows its tags
+    /// stand in when it is brought out, in the column's order, rising
+    /// from the foot over the column. None without a stash.
+    pub fn stash_geometry(&self, ci: usize) -> Option<(tiling::Rect, Vec<(WindowId, tiling::Rect)>)> {
+        let l = &self.node.state.layout;
+        let c = l.cols.get(ci)?;
+        if c.stash.is_empty() || !l.shows(ci) {
+            return None;
+        }
+        let font = f32::from(crate::text_element::font_for(false).line_height) as i32;
+        let band = tiling::Rect::new(c.r.x0, tiling::floor(c), c.r.x1, c.r.y1);
+        let order: Vec<WindowId> = tiling::stash_order(c).into_iter().filter(|&(_, st)| st).map(|(w, _)| w).collect();
+        let step = font + tiling::BORDER;
+        let top = (c.r.y1 - step * order.len() as i32).max(c.r.y0 + font);
+        let rows = order.into_iter().enumerate().map(|(i, w)| (w, tiling::Rect::new(c.r.x0, top + step * i as i32, c.r.x1, top + step * i as i32 + font))).collect();
+        Some((band, rows))
+    }
+
+    /// The stash under the pointer (`p`, in the window's coordinates):
+    /// brought out once the pointer has rested on a column's sheets a
+    /// quarter of a second with no button held -- passing over them on
+    /// the way to the bottom of a window, or dragging, is not asking for
+    /// it -- and put away a moment after the pointer leaves it. True when
+    /// it came or went.
+    pub fn stash_tick(&mut self, p: Point<Pixels>) -> bool {
+        let m = &self.mouse;
+        let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
+        let (x, y) = self.row_pt(p);
+        let l = &self.node.state.layout;
+        if let Some(open) = self.stash_open {
+            let geo = l.column_index(open).and_then(|ci| self.stash_geometry(ci));
+            let Some((band, rows)) = geo else {
+                self.stash_open = None;
+                self.stash_leaving = None;
+                return true;
+            };
+            let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0);
+            let over = x >= band.x0 && x < band.x1 && y >= top && y <= band.y1 + 2;
+            if over || held {
+                self.stash_leaving = None;
+                return false;
+            }
+            return match self.stash_leaving {
+                None => {
+                    self.stash_leaving = Some(std::time::Instant::now());
+                    false
+                }
+                Some(t) if t.elapsed() >= std::time::Duration::from_millis(150) => {
+                    self.stash_open = None;
+                    self.stash_leaving = None;
+                    self.stash_resting = None;
+                    true
+                }
+                Some(_) => false,
+            };
+        }
+        if held {
+            self.stash_resting = None;
+            return false;
+        }
+        let under = (0..l.cols.len()).find(|&ci| self.stash_geometry(ci).is_some_and(|(b, _)| x >= b.x0 && x < b.x1 && y >= b.y0 && y <= b.y1 + 2)).map(|ci| l.cols[ci].id);
+        match (under, self.stash_resting) {
+            (None, _) => {
+                self.stash_resting = None;
+                false
+            }
+            (Some(c), Some((r, t))) if r == c => {
+                if t.elapsed() >= std::time::Duration::from_millis(250) {
+                    self.stash_open = Some(c);
+                    self.stash_resting = None;
+                    true
+                } else {
+                    false
+                }
+            }
+            (Some(c), _) => {
+                self.stash_resting = Some((c, std::time::Instant::now()));
+                false
+            }
+        }
+    }
+
     fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
         ((f32::from(p.x) - self.left()) as i32, (f32::from(p.y) - self.top()) as i32)
     }
@@ -2473,8 +2571,9 @@ impl Acme {
             pulse,
             fenced: self.fenced(),
             notified,
-            // a tag alone, its body folded away: a sheet's edge
-            sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.slot(w).is_some_and(|s| s.body.dy() <= 0)),
+            // a stashed window's tag, shown over its column's foot: a
+            // sheet out of the stack (a tag folded in place is a tag)
+            sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.is_stashed(w)),
             // the keys' view: its caret the blue one, blinking
             key_caret: (self.caret_view == Some(view)).then_some(self.caret_on),
             text: buf.text.clone(),
@@ -2520,6 +2619,18 @@ impl Acme {
     // ---- hit testing ---------------------------------------------------------
 
     fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
+        // the stash brought out lies over everything in its column
+        if self.stash_open.is_some() {
+            for (v, l) in &self.layouts {
+                if !matches!(v, ViewId::Tag(w) if self.node.state.layout.is_stashed(*w)) || !l.bounds.contains(&pos) {
+                    continue;
+                }
+                if l.layout_box.is_some_and(|b| b.contains(&pos)) {
+                    return Some((Target::View(*v), Region::LayoutBox));
+                }
+                return Some((Target::View(*v), Region::Text(l.offset_at(pos))));
+            }
+        }
         if let Some((w, _)) = self.web_bars.iter().find(|(_, b)| b.contains(&pos)) {
             return Some((Target::Web(*w), Region::WebScrollbar));
         }
@@ -2921,6 +3032,9 @@ impl Acme {
             cx.notify();
         }
         if self.sidebar_tick(pos, window.viewport_size()) {
+            cx.notify();
+        }
+        if self.stash_tick(pos) {
             cx.notify();
         }
         if self.menu.is_some() {

@@ -205,8 +205,8 @@ fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label:
     let tab = label.map(|l| (id, l));
     let mut out = Vec::new();
     for col in &node.state.layout.cols {
-        for slot in &col.wins {
-            let w = slot.window;
+        // stashed ones as well, where they stand: going to one brings it back
+        for (w, _) in apex_core::tiling::stash_order(col) {
             let name = node.window_name(w);
             if name.is_empty() {
                 continue;

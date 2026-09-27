@@ -1,12 +1,13 @@
 # apex as a modern Mac app (the `modern-mac` branch)
 
-An experiment in the UI alone, after Manifold (`~/src/manifold`). What
-makes apex apex is untouched: acme's tiling and its rectangles (which
-are shared state, in the log), tags that are text you type into and
-B2, the three buttons and their chords, plumbing, the sessions and the
+An experiment in the UI, after Manifold (`~/src/manifold`). What makes
+apex apex is untouched: acme's tiling and its rectangles (which are
+shared state, in the log), tags that are text you type into and B2,
+the three buttons and their chords, plumbing, the sessions and the
 daemon. Everything here is drawn inside the rectangles the tiling
-gives, or beside them; nothing asks the core for anything it did not
-already do.
+gives, or beside them, with one deliberate exception: the stash (below),
+which changes what B2 and B3 do on a window's box, and so is the core's
+(`Column::stash`, protocol 32).
 
 ## What changed
 
@@ -41,7 +42,8 @@ already do.
   header takes a pale tint of the accent, as Mail tints a flagged row,
   with pjw's face in the accent at its end (and by the window's row in
   the sidebar, as by the session's). Column and session boxes are drag grips.
-  All still acme's layout boxes: B1, B2 and B3 on them as ever.
+  All still acme's layout boxes: B1 on them as ever, B2 and B3 on a
+  window's as the stash has them.
 - **The caret says where the keys go.** Every text's caret is a plain
   dark line, but the one the keys go to (acme's rule: the text under the
   pointer, else the last selected in; none while apex is not in front)
@@ -79,8 +81,28 @@ already do.
   light scrim; a 48-point search row with a magnifying glass, rows 34
   high with the title at 13.5 and what follows in the secondary ink, the
   chosen row in the accent with white words.
-- **Stacks.** A window folded to its tag is drawn as the edge of a sheet
-  in a stack, Manifold's stack of paper, on the body's paper.
+- **The stash** (`tiling::colstash` and its kin, the core's). There is no
+  maximise: B3 on a window's box puts it away in its column's stash, its
+  space going to a neighbour as a closed window's does, and B2 puts away
+  every other window in the column, so the one has it all (B2 on one
+  alone brings them all back). The stash shows as the edges of a stack
+  of paper peeking out under the column's windows, a few pixels a sheet,
+  which the tiling leaves room for (`tiling::floor`). The pointer resting
+  there a quarter of a second, no button held, brings the stash out: the
+  stashed windows' tags, live, stacked over the column's foot in the
+  column's order as sheets drawn out of the pile, put away a moment
+  after the pointer leaves. Their handles: B1 brings one back where it
+  was (under the window it was under, at the share of the column it
+  had), B2 back alone (the rest put away), a drag back where it is let
+  go, in any column. Their text is a tag's: B2 runs Del or Put there, B3
+  looks. A stashed window is never a dead end: whatever goes to it (a
+  Look, the plumber, the finder, the sidebar, a notification) brings it
+  back where it was; and a column with a stash is never blank -- when
+  its last window laid out is put away or closed, the stashed one
+  nearest it comes back. Folded windows (a tag squeezed in place by a
+  neighbour's growth or a drag) are acme's, and plain tags. The sidebar
+  and the finder list stashed windows where they stand, the sidebar's
+  names in the secondary ink; `apex win list` does too.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the
