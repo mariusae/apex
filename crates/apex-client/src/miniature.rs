@@ -184,42 +184,134 @@ pub fn snapshot_window(node: &Node, w: WindowId, width: f32, height: f32, t: &Th
     m
 }
 
+/// Where a card is drawn, leaning back as a sheet in a stack does: its
+/// top edge at (`left`, `top`) and `width` across, its sides drawing in
+/// by `slope` for each pixel down, its rows `vs` as tall as they are
+/// wide (a card seen at an angle is shorter), and nothing below
+/// `height`. Flat is a slope of 0 and a `vs` of 1.
+#[derive(Clone, Copy, Debug)]
+pub struct Tilt {
+    pub left: f32,
+    pub top: f32,
+    pub width: f32,
+    pub slope: f32,
+    pub vs: f32,
+    pub height: f32,
+}
+
+impl Tilt {
+    /// A tilt part of the way (`k`, 0 to 1) from `a` to `b`.
+    pub fn lerp(a: Tilt, b: Tilt, k: f32) -> Tilt {
+        let l = |x: f32, y: f32| x + (y - x) * k;
+        Tilt { left: l(a.left, b.left), top: l(a.top, b.top), width: l(a.width, b.width), slope: l(a.slope, b.slope), vs: l(a.vs, b.vs), height: l(a.height, b.height) }
+    }
+
+    /// How far down the card (on the screen) content row `y` lands, for
+    /// content `w` wide.
+    fn down(&self, w: f32, y: f32) -> f32 {
+        y * self.width / w * self.vs
+    }
+
+    /// Content point (`x`, `y`) on the screen, for content `w` wide.
+    fn at(&self, w: f32, x: f32, y: f32) -> (f32, f32) {
+        let d = self.down(w, y);
+        let inset = self.slope * d;
+        (self.left + inset + x * (self.width - 2. * inset) / w, self.top + d)
+    }
+
+    /// Screen pixels per content pixel across, at content row `y`.
+    fn across(&self, w: f32, y: f32) -> f32 {
+        (self.width - 2. * self.slope * self.down(w, y)) / w
+    }
+
+    /// The card's outline on the screen: top left, top right, bottom
+    /// right, bottom left.
+    pub fn corners(&self) -> [(f32, f32); 4] {
+        let inset = self.slope * self.height;
+        let b = self.top + self.height;
+        [(self.left, self.top), (self.left + self.width, self.top), (self.left + self.width - inset, b), (self.left + inset, b)]
+    }
+}
+
+pub fn quad(window: &mut Window, c: [(f32, f32); 4], color: gpui::Hsla) {
+    let mut p = gpui::PathBuilder::fill();
+    p.move_to(point(px(c[0].0), px(c[0].1)));
+    for &(x, y) in &c[1..] {
+        p.line_to(point(px(x), px(y)));
+    }
+    p.close();
+    if let Ok(path) = p.build() {
+        window.paint_path(path, color);
+    }
+}
+
 impl Mini {
     /// Painted into `b`, scaled to fit its width.
     pub fn paint(&self, b: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
-        let s = f32::from(b.size.width) / self.w;
-        let at = |x: f32, y: f32| point(b.left() + px(x * s), b.top() + px(y * s));
-        window.with_content_mask(Some(ContentMask { bounds: b }), |window| {
-            for &(x, y, w, h, c) in &self.fills {
-                window.paint_quad(gpui::fill(Bounds::new(at(x, y), size(px(w * s), px(h * s))), rgb(c)));
-            }
-            let prop = font_for(false);
-            let mono = font_for(true);
-            for l in &self.lines {
-                let fs = if l.mono { &mono } else { &prop };
-                let text: String = l.runs.iter().map(|(s, _)| s.as_str()).collect();
-                if text.trim().is_empty() {
-                    continue;
-                }
-                let runs: Vec<gpui::TextRun> = l
-                    .runs
-                    .iter()
-                    .filter(|(s, _)| !s.is_empty())
-                    .map(|(s, c)| gpui::TextRun {
-                        len: s.len(),
-                        font: fs.font.clone(),
-                        color: rgb(*c),
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    })
-                    .collect();
-                let clip = Bounds::new(at(l.clip.0, l.clip.1), size(px(l.clip.2 * s), px(l.clip.3 * s)));
-                let shaped = window.text_system().shape_line(text.into(), fs.size * s, &runs, None);
-                window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
-                    let _ = shaped.paint(at(l.x, l.y), fs.line_height * s, gpui::TextAlign::Left, None, window, cx);
-                });
-            }
-        });
+        let t = Tilt { left: f32::from(b.left()), top: f32::from(b.top()), width: f32::from(b.size.width), slope: 0., vs: 1., height: f32::from(b.size.height) };
+        self.paint_tilted(t, 1., window, cx);
     }
+
+    /// Painted as `t` has it, at `alpha`.
+    pub fn paint_tilted(&self, t: Tilt, alpha: f32, window: &mut Window, cx: &mut App) {
+        let w = self.w;
+        // the content rows that show: those above the card's `height`
+        let ymax = t.height / (t.width / w * t.vs).max(1e-3);
+        let ink = |c: u32| rgb(c).opacity(alpha);
+        for &(x, y, fw, fh, c) in &self.fills {
+            if y >= ymax {
+                continue;
+            }
+            let y1 = (y + fh).min(ymax);
+            let (a, b, cc, d) = (t.at(w, x, y), t.at(w, x + fw, y), t.at(w, x + fw, y1), t.at(w, x, y1));
+            quad(window, [a, b, cc, d], ink(c));
+        }
+        let prop = font_for(false);
+        let mono = font_for(true);
+        for l in &self.lines {
+            if l.y >= ymax {
+                continue;
+            }
+            let fs = if l.mono { &mono } else { &prop };
+            let text: String = l.runs.iter().map(|(s, _)| s.as_str()).collect();
+            if text.trim().is_empty() {
+                continue;
+            }
+            let runs: Vec<gpui::TextRun> = l
+                .runs
+                .iter()
+                .filter(|(s, _)| !s.is_empty())
+                .map(|(s, c)| gpui::TextRun { len: s.len(), font: fs.font.clone(), color: ink(*c), background_color: None, underline: None, strikethrough: None })
+                .collect();
+            let lh = f32::from(fs.line_height);
+            // the row's own scale: narrower further down a leaning card
+            let k = t.across(w, l.y + lh / 2.);
+            let (x0, y0) = t.at(w, l.x, l.y);
+            // the window's clip, as the rectangle round where it lands
+            let (c0, c1) = (t.at(w, l.clip.0, l.clip.1), t.at(w, l.clip.0 + l.clip.2, (l.clip.1 + l.clip.3).min(ymax)));
+            let clip = Bounds::new(point(px(c0.0), px(c0.1)), size(px((c1.0 - c0.0).max(0.)), px((c1.1 - c0.1).max(0.))));
+            let shaped = window.text_system().shape_line(text.into(), fs.size * k, &runs, None);
+            window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                let _ = shaped.paint(point(px(x0), px(y0)), px(lh * t.width / w * t.vs), gpui::TextAlign::Left, None, window, cx);
+            });
+        }
+    }
+}
+
+/// Column `ci`'s windows as they stand, drawn small: its window space
+/// (below its tag) as content `w` by `h`, for ⌘E's card of what shows.
+pub fn snapshot_column(node: &Node, ci: usize, t: &Theme) -> Option<(Mini, f32)> {
+    let c = node.state.layout.cols.get(ci)?;
+    let font = f32::from(font_for(false).line_height);
+    let (x0, y0) = (c.r.x0 as f32, c.r.y0 as f32 + font);
+    let (w, h) = (c.r.dx() as f32, (c.r.y1 as f32 - y0).max(1.));
+    let mut m = Mini { w, fills: vec![(0., 0., w, h, t.body_bg)], lines: Vec::new() };
+    for s in &c.wins {
+        let r = s.r;
+        let tag_h = if s.body.dy() > 0 { s.body.y0 - r.y0 } else { r.dy() };
+        m.fills.push((0., r.y0 as f32 - y0 - 1., w, 1., t.body_border));
+        let body = (s.body.dy() > 0).then(|| (s.body.x0 as f32 - x0, s.body.y0 as f32 - y0, s.body.dx() as f32, s.body.dy() as f32));
+        window_into(&mut m, node, s.window, (r.x0 as f32 - x0, r.y0 as f32 - y0, r.dx() as f32, tag_h as f32), body, t);
+    }
+    Some((m, h))
 }

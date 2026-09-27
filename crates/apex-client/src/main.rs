@@ -446,6 +446,9 @@ impl Render for Acme {
             }
         }
         // ⌘E's cards, over their column
+        if self.stash_walk.as_ref().is_some_and(|s| s.done()) {
+            self.stash_walk = None;
+        }
         if let Some(o) = self.stash_walk_overlay(&l, window, cx) {
             area = area.child(o);
         }

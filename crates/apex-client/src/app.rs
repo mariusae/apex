@@ -3912,8 +3912,7 @@ impl Acme {
             }
             if self.stash_walk.is_some() {
                 if ks.key == "escape" {
-                    self.stash_walk = None;
-                    cx.notify();
+                    self.stash_walk_cancel(cx);
                 }
                 return;
             }
