@@ -2724,6 +2724,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         let old = fake_node(&tmp.join("old"), "v16.20.2");
         let new = fake_node(&tmp.join("new"), "v24.18.1");
+        // a home of its own: the node another program keeps under the real
+        // one (Zed's) would otherwise be found and answer for PATH
+        let home = std::env::var_os("HOME");
+        std::env::set_var("HOME", &tmp);
 
         // nothing but an old node on PATH: no npx to use, and the
         // reason named is the node and its version
@@ -2742,6 +2746,10 @@ mod tests {
         std::env::set_var("PATH", format!("{}:{}", new.display(), old.display()));
         assert_eq!(npx().unwrap(), (new.join("npx"), None));
 
+        match home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
