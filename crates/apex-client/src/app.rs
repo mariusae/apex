@@ -543,6 +543,8 @@ pub struct Acme {
     /// The native views of web windows (WEB.md §2).
     pub webs: Webs,
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
+    /// ⌘ or ⌥ held over text: what a click would take there.
+    pub hint: Option<(ViewId, usize, usize, HlKind)>,
     mouse: Mouse,
     want_visible: HashSet<ViewId>,
     typed_start: HashMap<ViewId, usize>,
@@ -1627,6 +1629,7 @@ impl Acme {
             web_bars: HashMap::new(),
             webs: Webs::new(None, None),
             hl: None,
+            hint: None,
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
             typed_start: HashMap::new(),
@@ -2552,6 +2555,7 @@ impl Acme {
             _ => false,
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
+        let hint = self.hint.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         // a body scrolled by the pixel: moved up by its scroll into the top
         // row, and down by any pull past the start; forgotten once the
         // session's origin is not the one it was scrolled from
@@ -2589,6 +2593,7 @@ impl Acme {
                 sel: (0, 0),
                 origin: 0,
                 hl: None,
+            hint: None,
                 want_visible: false,
                 show_at: None,
             });
@@ -2612,6 +2617,7 @@ impl Acme {
             sel: (v.q0, v.q1),
             origin: v.origin,
             hl,
+            hint,
             want_visible: self.want_visible.remove(&view),
             show_at: self.show_at.remove(&view),
         })
@@ -3071,6 +3077,9 @@ impl Acme {
         if self.stash_tick(pos) {
             cx.notify();
         }
+        if self.update_hint(pos) {
+            cx.notify();
+        }
         // a box held: where it would land follows the pointer
         if self.mouse.box_drag.is_some() {
             cx.notify();
@@ -3299,6 +3308,11 @@ impl Acme {
         // is typing, so none hides it
         if e.modifiers.control != prev.control {
             cx.set_cursor_hide_mode(if e.modifiers.control { gpui::CursorHideMode::Never } else { gpui::CursorHideMode::OnTyping });
+        }
+        // ⌘ or ⌥ pressed or let go over text: the underline follows
+        let at = self.last_mouse;
+        if self.update_hint(at) {
+            cx.notify();
         }
         // control let go: the ctrl-tab walk ends where it stands
         if self.switcher.is_some() && !e.modifiers.control {
@@ -3759,6 +3773,42 @@ impl Acme {
     }
 
     /// `logical_button` without recording it.
+    /// ⌘ held (⌘-click is B3) or ⌥ (⌥-click is B2), no button down:
+    /// what a click at `pos` would take is underlined, as an editor
+    /// underlines a link under ⌘ -- the selection when the pointer is in
+    /// it, else the word B3 would look for or open, or the one B2 would
+    /// run. True when it changed.
+    pub fn update_hint(&mut self, pos: Point<Pixels>) -> bool {
+        let m = self.mouse.mods;
+        let held = self.mouse.b1.is_some() || self.mouse.b2.is_some() || self.mouse.b3.is_some() || self.mouse.box_drag.is_some();
+        let kind = if held || m.shift || m.control {
+            None
+        } else if m.platform && !m.alt {
+            Some(HlKind::Look)
+        } else if m.alt && !m.platform {
+            Some(HlKind::Exec)
+        } else {
+            None
+        };
+        let new = kind.and_then(|k| match self.locate(pos) {
+            Some((Target::View(v), Region::Text(off))) => {
+                let d = Drag { view: v, anchor: off };
+                let (a, z) = match self.explicit_range_at(d) {
+                    Some((_, r)) => r,
+                    None => {
+                        let t = self.text_of(v)?;
+                        expand(&t, off, if k == HlKind::Exec { is_exec_char } else { is_file_char })
+                    }
+                };
+                (a < z).then_some((v, a, z, k))
+            }
+            _ => None,
+        });
+        let changed = new != self.hint;
+        self.hint = new;
+        changed
+    }
+
     /// A force click (a trackpad pressed hard, macOS's "look up"): B3.
     /// The press so far was B1's; at the deep press it becomes a B3 press
     /// where it is, and its release is B3's -- a Look, or what the

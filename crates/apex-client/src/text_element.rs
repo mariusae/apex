@@ -527,6 +527,9 @@ pub struct Source {
     pub sel: (usize, usize),
     pub origin: usize,
     pub hl: Option<(usize, usize, HlKind)>,
+    /// What a click would take here with the modifier held (⌘: B3's,
+    /// ⌥: B2's), underlined.
+    pub hint: Option<(usize, usize, HlKind)>,
     pub want_visible: bool,
     /// Bring this position on screen when it is not: acme's `textshow`,
     /// the position `quarters` quarters of the window down (one for new
@@ -554,6 +557,7 @@ pub struct Prepaint {
     first_line: usize,
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
+    hint: Option<(usize, usize, HlKind)>,
     dirty: bool,
     stale: bool,
     live: bool,
@@ -913,6 +917,7 @@ impl Element for TextElement {
                 first_line: first,
                 sel: src.sel,
                 hl: src.hl,
+                hint: src.hint,
                 dirty: src.dirty,
                 stale: src.stale,
                 live: src.live,
@@ -1065,6 +1070,26 @@ impl Element for TextElement {
                 }
 
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, subst);
+
+                // what a click with the modifier held would take: underlined,
+                // as a link is -- the accent for B3's, the ink for B2's
+                if let Some((a, b, kind)) = pp.hint {
+                    let lo = a.max(line.start);
+                    let hi = b.min(line.end);
+                    if lo < hi {
+                        let th = crate::theme::theme();
+                        let color = rgb(if kind == HlKind::Look { th.accent } else { th.text });
+                        let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                            let (s, e) = (dlo.max(ds), dhi.min(de));
+                            if s < e {
+                                let sy = ly + lh * i as f32;
+                                let y = sy + lh - px(3.);
+                                window.paint_quad(fill(Bounds::from_corners(point(origin.x + x(s) - x(ds), y), point(origin.x + x(e) - x(ds), y + px(1.5))), color));
+                            }
+                        }
+                    }
+                }
 
                 // the tick, as a Mac text view's caret: a plain line, a
                 // little in from the row's top and bottom. A header's is

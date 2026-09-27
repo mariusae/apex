@@ -249,9 +249,13 @@ impl Render for Acme {
         let dragging = self.dragging_box();
         // the line between columns held: the pointer says left and right
         let held = if self.dragging_edge() { CursorStyle::ResizeLeftRight } else { CursorStyle::ClosedHand };
-        let hold = |c: CursorStyle| if dragging { held } else { c };
+        // over what a ⌘- or ⌥-click would take: the link's hand
+        let hinting = self.hint.is_some();
+        let hold = |c: CursorStyle| if dragging { held } else if hinting { CursorStyle::PointingHand } else { c };
         let pointer = if dragging {
             held
+        } else if hinting {
+            CursorStyle::PointingHand
         } else if self.over_page(window) {
             cursor::NATIVE_CURSOR // the page's own, set as it asks
         } else {
