@@ -416,6 +416,8 @@ pub struct Acme {
     pub stash_walk: Option<crate::switcher::StashWalk>,
     /// The sidebar's session row under the pointer: its × shows.
     pub sidebar_hover: Option<crate::pool::TabId>,
+    /// Windows on their way to where the tiling put them.
+    pub glide: crate::glide::Glide,
     /// ⌘⇧P: the palette of commands to run.
     pub commands: Option<crate::commands::Commands>,
     /// A web window's address being typed in its header.
@@ -1584,6 +1586,7 @@ impl Acme {
             stash_walk: None,
             url_edit: None,
             commands: None,
+            glide: Default::default(),
             sidebar_hover: None,
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
@@ -2621,8 +2624,9 @@ impl Acme {
             origin: v.origin,
             hl,
             hint,
-            want_visible: self.want_visible.remove(&view),
-            show_at: self.show_at.remove(&view),
+            // a window on its way scrolls to what it must show once it lands
+            want_visible: !view.window().is_some_and(|w| self.glide.gliding(w)) && self.want_visible.remove(&view),
+            show_at: if view.window().is_some_and(|w| self.glide.gliding(w)) { None } else { self.show_at.remove(&view) },
         })
     }
 
@@ -2645,6 +2649,11 @@ impl Acme {
     }
 
     pub fn term_resize(&mut self, term: TermId, cols: u16, rows: u16) {
+        // a window on its way keeps its terminal's size until it lands
+        let w = self.node.state.windows.values().find(|w| w.body == Body::Term(term)).map(|w| w.id);
+        if w.is_some_and(|w| self.glide.gliding(w)) {
+            return;
+        }
         match &mut self.backend {
             Backend::Local(server) => server.term_resize(&mut self.log, term, cols, rows),
             Backend::Remote(link) => {

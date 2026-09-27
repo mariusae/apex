@@ -22,6 +22,7 @@ mod menu;
 mod shell;
 mod sidebar;
 mod commands;
+mod glide;
 mod miniature;
 mod restart;
 mod switcher;
@@ -225,7 +226,11 @@ impl Render for Acme {
         }
 
         // acme's tiling placed everything; draw each piece where it says
-        let l = self.node.state.layout.clone();
+        // the tiling's layout, with whatever has just moved on its way
+        let l = self.glided_layout();
+        if self.glide.any() {
+            window.request_animation_frame();
+        }
         let at = |x: i32, y: i32, w: i32, h: i32, el: gpui::AnyElement| {
             div().absolute().left(px(x as f32)).top(px(y as f32)).w(px(w.max(0) as f32)).h(px(h.max(0) as f32)).overflow_hidden().child(el)
         };
