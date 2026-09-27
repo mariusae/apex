@@ -109,30 +109,150 @@ fn closing_a_window_extends_the_next_one_up_and_names_it_for_the_mouse() {
 }
 
 #[test]
-fn button_3_fills_the_column_and_marks_it_unsafe() {
+fn button_3_stashes_a_window_and_its_neighbour_takes_the_space() {
     let mut l = row();
     add(&mut l, 0, 1, None);
     add(&mut l, 0, 2, None);
-    let first_y0 = l.cols[0].wins[0].r.y0;
-    colgrow(&mut l, 0, 1, 3, &info());
-    assert!(!l.cols[0].safe);
-    // the grown window moved to the top and fills the column
-    assert_eq!(l.cols[0].wins[0].window, WindowId(2));
-    assert_eq!(l.cols[0].wins[0].r, Rect::new(0, first_y0, 1000, 700));
-    // the obscured window shows no lines
-    assert_eq!(l.cols[0].wins[1].fr_maxlines(FONT), 0);
-    // adding another window first repacks the column (it is unsafe): the
-    // full window and the new one share it, the other is a tag at the
-    // bottom, and nothing overlaps
-    let i = add(&mut l, 0, 3, None);
-    assert!(l.cols[0].safe);
-    assert_eq!(i, 1);
-    assert!(l.cols[0].wins[0].fr_maxlines(FONT) >= 1, "{:?}", l.cols[0].wins[0]);
-    assert!(l.cols[0].wins[1].fr_maxlines(FONT) >= 1, "{:?}", l.cols[0].wins[1]);
+    add(&mut l, 0, 3, None);
+    let at = |l: &Layout, i: usize| {
+        let r = l.cols[0].wins[i].r;
+        (r.x0 + 3, r.y0 + 3)
+    };
+    let p = at(&l, 1);
+    assert_eq!(coldragwin(&mut l, 0, 1, 3, p, p, &info()), None);
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 3]);
+    assert_eq!(l.cols[0].stash.len(), 1);
+    assert_eq!(l.cols[0].stash[0].slot.window, WindowId(2));
+    assert_eq!(l.cols[0].stash[0].above, Some(WindowId(1)));
+    // the windows stop above the stash's sheets, abutting
+    assert_eq!(stash_band(&l.cols[0]), BORDER + STASH_EDGE);
+    assert_eq!(l.cols[0].wins.last().unwrap().r.y1, 700 - stash_band(&l.cols[0]));
     for pair in l.cols[0].wins.windows(2) {
-        assert!(pair[0].r.y1 + BORDER <= pair[1].r.y0, "{:?} above {:?}", pair[0], pair[1]);
+        assert_eq!(pair[0].r.y1 + BORDER, pair[1].r.y0);
     }
-    assert!(l.cols[0].wins.last().unwrap().r.y1 <= 700);
+    assert_eq!(stash_order(&l.cols[0]), vec![(WindowId(1), false), (WindowId(2), true), (WindowId(3), false)]);
+}
+
+#[test]
+fn the_last_window_laid_out_is_not_stashed_into_a_blank_column() {
+    let mut l = row();
+    add(&mut l, 0, 1, None);
+    let before = l.clone();
+    colstash(&mut l, 0, 0, &info());
+    assert_eq!(l, before);
+}
+
+#[test]
+fn stashing_the_last_window_laid_out_brings_back_the_nearest() {
+    let mut l = row();
+    for w in 1..=4 {
+        add(&mut l, 0, w, None);
+    }
+    // B2 on 3: 1, 2 and 4 put away
+    colstash_others(&mut l, 0, 2, &info());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![3]);
+    assert_eq!(l.cols[0].stash.len(), 3);
+    // it has the column, down to the sheets
+    let s = l.cols[0].wins[0];
+    assert_eq!(s.r.y0, FONT + BORDER + FONT + BORDER);
+    assert_eq!(s.r.y1, 700 - stash_band(&l.cols[0]));
+    // B3 on it: the column is never blank; the nearest below it (4, as
+    // near as 2 and looked for first) comes back and has the column
+    colstash(&mut l, 0, 0, &info());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![4]);
+    assert_eq!(l.cols[0].wins[0].r.y1, 700 - stash_band(&l.cols[0]));
+    assert_eq!(stash_order(&l.cols[0]).iter().map(|&(w, st)| (w.0, st)).collect::<Vec<_>>(), vec![(1, true), (2, true), (3, true), (4, false)]);
+}
+
+#[test]
+fn a_recalled_window_comes_back_where_it_was_at_its_share() {
+    let mut l = row();
+    for w in 1..=3 {
+        add(&mut l, 0, w, None);
+    }
+    let dy = l.cols[0].wins[1].r.dy();
+    colstash(&mut l, 0, 1, &info());
+    colrecall(&mut l, 0, 0, false, &info());
+    assert!(l.cols[0].stash.is_empty());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert!((l.cols[0].wins[1].r.dy() - dy).abs() <= FONT, "{dy} -> {:?}", wins(&l, 0));
+    assert_eq!(l.cols[0].wins.last().unwrap().r.y1, 700);
+    for pair in l.cols[0].wins.windows(2) {
+        assert_eq!(pair[0].r.y1 + BORDER, pair[1].r.y0);
+    }
+}
+
+#[test]
+fn recalled_after_a_button_2_each_goes_back_to_its_place() {
+    let mut l = row();
+    for w in 1..=5 {
+        add(&mut l, 0, w, None);
+    }
+    // B2 on 3, then 2 and 4 back, in the other order
+    colstash_others(&mut l, 0, 2, &info());
+    let si = |l: &Layout, w: u64| l.cols[0].stash.iter().position(|s| s.slot.window == WindowId(w)).unwrap();
+    let i = si(&l, 4);
+    colrecall(&mut l, 0, i, false, &info());
+    let i = si(&l, 2);
+    colrecall(&mut l, 0, i, false, &info());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![2, 3, 4]);
+    assert_eq!(stash_order(&l.cols[0]).iter().map(|&(w, _)| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+    // B2 on one alone brings every one back, in order
+    let mut m = row();
+    for w in 1..=5 {
+        add(&mut m, 0, w, None);
+    }
+    colstash_others(&mut m, 0, 2, &info());
+    colstash_others(&mut m, 0, 0, &info());
+    assert!(m.cols[0].stash.is_empty());
+    assert_eq!(wins(&m, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+    assert_eq!(m.cols[0].wins.last().unwrap().r.y1, 700);
+}
+
+#[test]
+fn a_window_recalled_alone_puts_the_others_away() {
+    let mut l = row();
+    for w in 1..=3 {
+        add(&mut l, 0, w, None);
+    }
+    colstash(&mut l, 0, 0, &info());
+    colrecall(&mut l, 0, 0, true, &info());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1]);
+    assert_eq!(stash_order(&l.cols[0]).iter().map(|&(w, st)| (w.0, st)).collect::<Vec<_>>(), vec![(1, false), (2, true), (3, true)]);
+}
+
+#[test]
+fn a_window_leaving_hands_its_place_on_and_a_blank_column_gets_its_nearest() {
+    let mut l = row();
+    for w in 1..=3 {
+        add(&mut l, 0, w, None);
+    }
+    // 2 and 3 away under 1; then 1 leaves (closed): 2 is now at the top,
+    // and comes back to fill the column
+    colstash_others(&mut l, 0, 0, &info());
+    let above = stash_above(&l.cols[0], WindowId(1));
+    colclose(&mut l, 0, 0, &info());
+    left(&mut l, 0, WindowId(1), above, &info());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![2]);
+    assert_eq!(l.cols[0].stash.len(), 1);
+    assert_eq!(l.cols[0].stash[0].above, Some(WindowId(2)));
+    assert_eq!(l.cols[0].wins[0].r.y1, 700 - stash_band(&l.cols[0]));
+    // the last stashed one taken out: the sheets go, the window has the
+    // whole column
+    unstash(&mut l, 0, 0, &info());
+    assert!(l.cols[0].stash.is_empty());
+    assert_eq!(l.cols[0].wins[0].r.y1, 700);
+}
+
+#[test]
+fn a_stash_shows_a_few_edges_however_many_are_in_it() {
+    let mut l = row();
+    for w in 1..=6 {
+        add(&mut l, 0, w, None);
+    }
+    colstash_others(&mut l, 0, 0, &info());
+    assert_eq!(l.cols[0].stash.len(), 5);
+    assert_eq!(stash_band(&l.cols[0]), BORDER + STASH_EDGE * STASH_EDGES as i32);
 }
 
 #[test]
@@ -295,7 +415,7 @@ fn arrange_entries_replay_identically() {
     f.catch_up(&log).unwrap();
     assert_eq!(f.state.hash(), n.state.hash());
     assert_eq!(f.state.layout, n.state.layout);
-    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, restore: 0, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0 }] };
+    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, restore: 0, stash: Vec::new(), wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0 }] };
 }
 
 #[test]
@@ -307,8 +427,13 @@ fn showing_a_window_with_no_lines_grows_it() {
     let col = n.init_session(&mut log).unwrap();
     let w1 = n.new_window(&mut log, col, "a", "x\n").unwrap();
     let w2 = n.new_window(&mut log, col, "b", "y\n").unwrap();
-    // button 3 on w1's box: w2 is obscured, showing no lines
-    n.grow_window(&mut log, w1, 3).unwrap();
+    // button 1 on w1's box until w2 is its tag, showing no lines
+    for _ in 0..40 {
+        if n.state.layout.slot(w2).unwrap().fr_maxlines(17) == 0 {
+            break;
+        }
+        n.grow_window(&mut log, w1, 1).unwrap();
+    }
     assert_eq!(n.state.layout.slot(w2).unwrap().fr_maxlines(17), 0);
     n.reveal(&mut log, w2).unwrap();
     assert!(n.state.layout.slot(w2).unwrap().fr_maxlines(17) >= 1);
@@ -317,6 +442,18 @@ fn showing_a_window_with_no_lines_grows_it() {
     let before = n.state.layout.clone();
     n.reveal(&mut log, w2).unwrap();
     assert_eq!(n.state.layout, before);
+    // button 3 on w2's box puts it away; showing it brings it back
+    n.grow_window(&mut log, w2, 3).unwrap();
+    assert!(n.state.layout.is_stashed(w2));
+    n.reveal(&mut log, w2).unwrap();
+    assert!(!n.state.layout.is_stashed(w2));
+    assert!(n.state.layout.slot(w2).unwrap().fr_maxlines(17) >= 1);
+    // closing a stashed window takes it out of the stash
+    n.grow_window(&mut log, w2, 3).unwrap();
+    n.delete_window(&mut log, w2).unwrap();
+    let c = n.state.layout.column(col).unwrap();
+    assert!(c.stash.is_empty());
+    assert_eq!(c.wins.len(), 1);
 }
 
 #[test]
@@ -586,12 +723,13 @@ fn a_click_on_a_windows_box_in_a_strip_brings_the_column_back_and_the_next_grows
     assert!(near(l.cols[0].r.dx(), before[0]), "{before:?} -> {:?}", widths(&l));
     let back = heights(&l);
     assert!(l.cols[0].wins[0].r.dy() > FONT, "the other window is not squeezed yet: {back:?}");
-    // the second: the window grows, as big as can be for B2
+    // the second: B2 puts the other window away, and this one has the column
     let s = l.cols[0].wins[1].r;
     let at = (s.x0 + 3, s.y0 + 3);
     coldragwin(&mut l, 0, 1, 2, at, at, &info());
-    assert_eq!(l.cols[0].wins[0].r.dy(), FONT, "the other window is its tag: {:?}", heights(&l));
-    assert!(l.cols[0].wins[1].r.dy() > 600);
+    assert_eq!(l.cols[0].wins.len(), 1, "the other window is stashed: {:?}", heights(&l));
+    assert_eq!(l.cols[0].stash.len(), 1);
+    assert!(l.cols[0].wins[0].r.dy() > 600);
     // a window's box in a column with room still just grows the window
     let widths_now = widths(&l);
     let s = l.cols[2].wins[0].r;
