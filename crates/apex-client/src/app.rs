@@ -416,6 +416,11 @@ pub struct Acme {
     pub stash_walk: Option<crate::switcher::StashWalk>,
     /// The sidebar's session row under the pointer: its × shows.
     pub sidebar_hover: Option<crate::pool::TabId>,
+    /// Errors just written, shown as toasts by their columns.
+    pub toasts: Vec<crate::toasts::Toast>,
+    /// +Errors windows the user has open (brought back from a toast):
+    /// errors written there are seen there.
+    pub errors_open: std::collections::HashSet<WindowId>,
     /// Windows on their way to where the tiling put them.
     pub glide: crate::glide::Glide,
     /// ⌘⇧P: the palette of commands to run.
@@ -1531,6 +1536,10 @@ impl Acme {
                                 if acme.tabs_tick(cx) {
                                     cx.notify();
                                 }
+                                // toasts go by themselves after a while
+                                if !acme.toasts.is_empty() {
+                                    cx.notify();
+                                }
                             }
                         });
                     }
@@ -1587,6 +1596,8 @@ impl Acme {
             url_edit: None,
             commands: None,
             glide: Default::default(),
+            toasts: Vec::new(),
+            errors_open: std::collections::HashSet::new(),
             sidebar_hover: None,
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
@@ -1654,6 +1665,12 @@ impl Acme {
         let _ = self.node.update_tags(&mut self.log);
         self.track_closed();
         for (v, q) in self.node.take_shows() {
+            // errors just written: a toast, the +Errors window stashed
+            if let ViewId::Body(w) = v {
+                if self.toast_errors(w) {
+                    continue;
+                }
+            }
             self.show_at.insert(v, (q, 1));
         }
         // Looks in pages: found in their views

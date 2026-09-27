@@ -26,6 +26,7 @@ mod glide;
 mod miniature;
 mod restart;
 mod switcher;
+mod toasts;
 mod webbar;
 mod term_element;
 mod pool;
@@ -493,6 +494,10 @@ impl Render for Acme {
                     area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 }
             }
+        }
+        // errors just written, by their columns' feet
+        for toast in self.toasts_overlay(&l, cx) {
+            area = area.child(toast);
         }
         // ⌘E's cards, over their column
         // a blank page just made: its address to be typed, at once
