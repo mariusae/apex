@@ -494,8 +494,6 @@ pub struct Acme {
     pub stash_open: Option<ColumnId>,
     /// When the pointer left the stash brought out.
     stash_leaving: Option<std::time::Instant>,
-    /// Whether the window's buttons show just now: with the sidebar.
-    pub lights_shown: Option<bool>,
     /// Whether AppKit's title bar container is hidden (full screen).
     pub native_bar_hidden: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
@@ -1639,7 +1637,6 @@ impl Acme {
             strip_open: None,
             strip_leaving: None,
             stash_leaving: None,
-            lights_shown: None,
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
             switcher: None,

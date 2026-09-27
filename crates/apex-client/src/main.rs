@@ -200,10 +200,9 @@ impl Render for Acme {
         let glass = self.glass_tick(slide, window, cx);
         let slide = slide.filter(|_| !glass);
         let lights = side || (self.sidebar_out && !glass);
-        if self.lights_shown != Some(lights) {
-            web::set_traffic_lights(window, lights);
-            self.lights_shown = Some(lights);
-        }
+        // every frame, the buttons as they are looked at (cheaply): AppKit
+        // can make them anew behind our back
+        web::set_traffic_lights(window, lights);
         if slide.is_some_and(|t| t < 1.) {
             window.request_animation_frame();
         }

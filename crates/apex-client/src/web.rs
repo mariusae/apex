@@ -1256,8 +1256,17 @@ pub fn set_traffic_lights(window: &Window, visible: bool) {
             if b.is_null() {
                 continue;
             }
-            let animator: *mut Object = msg_send![b, animator];
+            // as they are, not as they were last set: AppKit makes the
+            // buttons anew now and then (a child window come or gone, the
+            // key window changed), shown and enabled -- what is told only
+            // on a change would leave them showing. Enabled is the mark:
+            // set at once, where the alpha fades
             let alpha: f64 = if visible { 1. } else { 0. };
+            let enabled: bool = msg_send![b, isEnabled];
+            if enabled == visible {
+                continue;
+            }
+            let animator: *mut Object = msg_send![b, animator];
             let _: () = msg_send![animator, setAlphaValue: alpha];
             let _: () = msg_send![b, setEnabled: visible];
         }

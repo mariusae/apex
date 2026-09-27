@@ -47,8 +47,21 @@ impl Render for SidebarPanel {
 pub struct Glass {
     panel: usize,
     main: usize,
-    shown: bool,
+    /// A child of the main window (in front, moving with it).
+    attached: bool,
+    /// What the window server was last told: the frame on screen, the
+    /// alpha, whether clicks pass through.
+    frame: Option<[f64; 4]>,
+    alpha: f32,
+    through: bool,
 }
+
+/// The alpha of the panel put away. Not none: a window no one can see
+/// has gpui stop drawing it (its display link goes with its visibility),
+/// and it would start again only when AppKit got round to saying it is
+/// seen -- a stutter each time the sidebar came. So it stays, too faint
+/// to see, and lets the clicks through.
+const AWAY: f32 = 0.004;
 
 pub enum GlassState {
     Untried,
@@ -63,19 +76,25 @@ impl Acme {
     /// placed and shown, or put away. True when the panel has the sidebar,
     /// so the window draws none of its own.
     pub fn glass_tick(&mut self, slide: Option<f32>, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        match (&mut self.glass, slide) {
-            (GlassState::Ready(g), Some(t)) => {
+        let pinned = self.sidebar_shown();
+        match &mut self.glass {
+            // pinned: the sidebar is the window's own
+            GlassState::Ready(g) if pinned => {
+                detach(g);
+                false
+            }
+            // floating: the panel always there, in or put away
+            GlassState::Ready(g) => {
+                let t = slide.unwrap_or(0.);
                 let inset = px(crate::sidebar::INSET);
                 let size = window.viewport_size();
                 let r = Bounds::new(gpui::point(inset - px(24. * (1. - t)), inset), gpui::size(px(crate::shell::SIDEBAR_W) - inset * 2., size.height - inset * 2.));
-                place(g, window, r, t);
-                true
+                place(g, window, r, if slide.is_some() { t.max(AWAY) } else { AWAY }, slide.is_none());
+                slide.is_some()
             }
-            (GlassState::Ready(g), None) => {
-                hide(g);
-                false
-            }
-            (GlassState::Untried, Some(_)) => {
+            // made as soon as the sidebar floats, not when it is first
+            // brought
+            GlassState::Untried if !pinned => {
                 if !supported() {
                     self.glass = GlassState::Unavailable;
                     return false;
@@ -106,7 +125,7 @@ impl Acme {
                     });
                     let state = match opened {
                         Ok(handle) => match handle.read_with(cx, |p, _| p.panel) {
-                            Ok(panel) if panel != 0 => GlassState::Ready(Glass { panel, main, shown: false }),
+                            Ok(panel) if panel != 0 => GlassState::Ready(Glass { panel, main, attached: false, frame: None, alpha: -1., through: false }),
                             _ => {
                                 let _ = handle.update(cx, |_, window, _| window.remove_window());
                                 GlassState::Unavailable
@@ -256,8 +275,9 @@ mod mac {
     }
 
     /// The panel at `r` (in the main window's view, top left first),
-    /// `alpha` opaque, over the main window.
-    pub fn place(g: &mut Glass, main: &Window, r: Bounds<Pixels>, alpha: f32) {
+    /// `alpha` opaque, over the main window; the clicks passing `through`
+    /// it when it is put away. Only what changed is sent.
+    pub fn place(g: &mut Glass, main: &Window, r: Bounds<Pixels>, alpha: f32, through: bool) {
         let Some((main_window, main_view)) = native(main) else { return };
         let panel = g.panel as *mut Object;
         let local = R { origin: P { x: f32::from(r.origin.x) as f64, y: f32::from(r.origin.y) as f64 }, size: P { x: f32::from(r.size.width) as f64, y: f32::from(r.size.height) as f64 } };
@@ -266,19 +286,34 @@ mod mac {
             let nil: *mut Object = std::ptr::null_mut();
             let in_window: R = msg_send![main_view, convertRect: local toView: nil];
             let on_screen: R = msg_send![main_window, convertRectToScreen: in_window];
-            let _: () = msg_send![panel, setFrame: on_screen display: true];
-            let _: () = msg_send![panel, setAlphaValue: alpha as f64];
-            if !g.shown {
+            let frame = [on_screen.origin.x, on_screen.origin.y, on_screen.size.x, on_screen.size.y];
+            if g.frame != Some(frame) {
+                let resized = g.frame.is_none_or(|f| f[2] != frame[2] || f[3] != frame[3]);
+                let _: () = msg_send![panel, setFrame: on_screen display: false];
+                if resized {
+                    let _: () = msg_send![panel, invalidateShadow];
+                }
+                g.frame = Some(frame);
+            }
+            if g.alpha != alpha {
+                let _: () = msg_send![panel, setAlphaValue: alpha as f64];
+                g.alpha = alpha;
+            }
+            if g.through != through {
+                let _: () = msg_send![panel, setIgnoresMouseEvents: through];
+                g.through = through;
+            }
+            if !g.attached {
                 let _: () = msg_send![main_window, addChildWindow: panel ordered: ABOVE];
                 let _: () = msg_send![panel, orderFront: nil];
-                g.shown = true;
+                g.attached = true;
             }
-            let _: () = msg_send![panel, invalidateShadow];
         }
     }
 
-    pub fn hide(g: &mut Glass) {
-        if !g.shown {
+    /// The panel gone altogether (the sidebar pinned).
+    pub fn detach(g: &mut Glass) {
+        if !g.attached {
             return;
         }
         let (panel, main) = (g.panel as *mut Object, g.main as *mut Object);
@@ -288,7 +323,7 @@ mod mac {
             let _: () = msg_send![main, removeChildWindow: panel];
             let _: () = msg_send![panel, orderOut: nil];
         }
-        g.shown = false;
+        g.attached = false;
     }
 
     /// The main window moved as its title bar would be, by the press
@@ -306,7 +341,7 @@ mod mac {
 }
 
 #[cfg(target_os = "macos")]
-use mac::{drag, hide, install, ns_window, place, supported};
+use mac::{detach, drag, install, ns_window, place, supported};
 
 #[cfg(not(target_os = "macos"))]
 fn supported() -> bool {
@@ -321,8 +356,8 @@ fn install(_: &Window, _: usize) -> Option<usize> {
     None
 }
 #[cfg(not(target_os = "macos"))]
-fn place(_: &mut Glass, _: &Window, _: Bounds<Pixels>, _: f32) {}
+fn place(_: &mut Glass, _: &Window, _: Bounds<Pixels>, _: f32, _: bool) {}
 #[cfg(not(target_os = "macos"))]
-fn hide(_: &mut Glass) {}
+fn detach(_: &mut Glass) {}
 #[cfg(not(target_os = "macos"))]
 fn drag(_: usize) {}
