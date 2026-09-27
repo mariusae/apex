@@ -6,7 +6,7 @@ use gpui::{
     Window,
 };
 
-use apex_core::{Cell, TermId, WindowId};
+use apex_core::{Cell, TermId, ViewId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
@@ -74,6 +74,9 @@ pub struct Prepaint {
     /// The rows on screen where a command the shell marked (OSC 133)
     /// has its prompt, having failed.
     failed: Vec<usize>,
+    /// How much of the scroller's thumb shows, and whether that is
+    /// changing (an overlay scroller, `Acme::scroller`).
+    scroller: (f32, bool),
 }
 
 pub struct TermElement {
@@ -127,8 +130,11 @@ impl Element for TermElement {
         let cols = (((bounds.size.width - px(MARGIN) - px(4.)) / cell_w).floor() as u16).max(2);
         let rows_n = ((bounds.size.height / lh).floor() as u16).max(1);
         let term = self.term;
+        let win = self.window;
         self.acme.update(cx, |acme, _| {
             acme.term_resize(term, cols, rows_n);
+            let at = acme.node.state.terms.get(&term).map(|t| t.top)?;
+            let scroller = acme.scroller(ViewId::Body(win), at);
             let t = acme.node.state.terms.get(&term)?;
             let th = crate::theme::theme();
             let correct = crate::theme::contrast();
@@ -214,7 +220,7 @@ impl Element for TermElement {
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
             let failed = t.marks.iter().filter(|m| m.exit.is_some_and(|e| e != 0) && m.prompt >= top && m.prompt < top + t.rows as u64).map(|m| (m.prompt - top) as usize).collect();
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller })
         })
     }
 
@@ -240,7 +246,15 @@ impl Element for TermElement {
             let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
             let (top, shown, total) = pp.view;
             let total = total.max(1);
-            crate::text_element::paint_scroller(window, sb, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, rgb(th.body_border));
+            // an overlay scroller: seen while the view moves or the pointer
+            // is in the lane, fading after
+            let (shows, fading) = pp.scroller;
+            if shows > 0. {
+                crate::text_element::paint_scroller(window, sb, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, rgb(th.body_border).opacity(shows));
+            }
+            if fading {
+                window.request_animation_frame();
+            }
             // a command that failed: a mark in the gutter by its prompt,
             // in the terminal's own red
             for &row in &pp.failed {

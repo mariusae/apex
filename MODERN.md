@@ -61,7 +61,18 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   what drags (a window's handle, a column's box, the session's) and the
   closed hand everywhere while one is held; a page keeps its own.
 - **Scrollers.** acme's lane, drawn as a slim rounded thumb with no
-  track (`paint_scroller`), in text, terminal and page windows alike.
+  track (`paint_scroller`), in text, terminal and page windows alike --
+  and, as macOS's overlay scrollers, only while its text moves, while the
+  pointer is in the lane or dragging it, fading a second after
+  (`Acme::scroller`). The lane works the same when the thumb is away.
+- **Cards on a ground.** Each window is a card inset in its space, its
+  outer corners rounded, on a ground a step below it that shows where
+  acme drew black borders and under the column tags and the top row; no
+  hairlines, tone parting a tag from its body. A window's tag inks its
+  name's directory in the secondary, its last part in the primary, and
+  its commands faintly until the pointer is on the tag (the column tags
+  and the top row likewise). Selections and sweeps are softly rounded.
+  The window the keys go to has a soft ring in the accent.
 - **Sidebar, and no title bar** (`sidebar.rs`), as Manifold's: the
   sessions as vertical tabs in a card inset from the window's edges, the
   window's buttons on its top row. The shown session lists its windows,

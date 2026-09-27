@@ -380,12 +380,19 @@ impl Render for Acme {
                                 move |bounds, _, cx| {
                                     me_bar.update(cx, |acme, _| {
                                         acme.web_bars.insert(w, bounds);
-                                        acme.webs.thumb(w)
+                                        let (t0, t1) = acme.webs.thumb(w);
+                                        (t0, t1, acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64))
                                     })
                                 },
-                                move |bounds, (t0, t1), window, _| {
+                                move |bounds, (t0, t1, (shows, fading)), window, _| {
                                     window.paint_quad(gpui::fill(bounds, gpui::rgb(bar_bg)));
-                                    text_element::paint_scroller(window, bounds, t0 as f32, t1 as f32, text_element::rgb(thumb));
+                                    // an overlay scroller, as a text's is
+                                    if shows > 0. {
+                                        text_element::paint_scroller(window, bounds, t0 as f32, t1 as f32, text_element::rgb(thumb).opacity(shows));
+                                    }
+                                    if fading {
+                                        window.request_animation_frame();
+                                    }
                                 },
                             )
                             .w(px(sw))

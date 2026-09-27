@@ -557,6 +557,13 @@ pub struct Acme {
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
     /// The tag, column tag or top row the pointer is on.
     pub hover_view: Option<ViewId>,
+    /// The scroller lane the pointer is in: a text's, or a terminal's or
+    /// page's (by its window's body).
+    lane_hover: Option<ViewId>,
+    /// Each scroller's last position and when it last moved: its thumb
+    /// shows while it moves and fades after.
+    scroll_pos: HashMap<ViewId, u64>,
+    scrolled_at: HashMap<ViewId, std::time::Instant>,
     /// ⌘ or ⌥ held over text: what a click would take there.
     pub hint: Option<(ViewId, usize, usize, HlKind)>,
     mouse: Mouse,
@@ -1654,6 +1661,9 @@ impl Acme {
             hl: None,
             hint: None,
             hover_view: None,
+            lane_hover: None,
+            scroll_pos: HashMap::new(),
+            scrolled_at: HashMap::new(),
             mouse: Mouse::default(),
             want_visible: HashSet::new(),
             typed_start: HashMap::new(),
@@ -2559,6 +2569,14 @@ impl Acme {
 
     pub fn source(&mut self, view: ViewId) -> Option<Source> {
         let b = self.node.view_buffer(view).ok()?;
+        // a body's scroller, shown as it moves
+        let scroller = match view {
+            ViewId::Body(_) => {
+                let at = self.node.state.buffer(b).ok()?.view(view).origin as u64;
+                self.scroller(view, at)
+            }
+            _ => (0., false),
+        };
         let buf = self.node.state.buffer(b).ok()?;
         let v = buf.view(view);
         let (mono, dirty, stale, live, pulse) = match view {
@@ -2619,6 +2637,7 @@ impl Acme {
                 notified,
                 hovered: false,
                 round: (false, false),
+                scroller: (0., false),
                 sheet: false,
                 key_caret: None,
                 text: apex_core::text::Text::new(""),
@@ -2640,6 +2659,7 @@ impl Acme {
             pulse,
             fenced: self.fenced(),
             notified,
+            scroller,
             // a tag with the pointer on it shows its commands plainly
             hovered: self.hover_view == Some(view),
             // a card's outer corners: a tag's top (and foot, folded to its
@@ -3130,6 +3150,16 @@ impl Acme {
             cx.notify();
         }
         if self.update_hint(pos) {
+            cx.notify();
+        }
+        // a scroller's lane under the pointer: its thumb shows
+        let lane = match self.locate(pos) {
+            Some((Target::View(v), Region::Scrollbar)) => Some(v),
+            Some((Target::Term(w, _), Region::TermScrollbar)) | Some((Target::Web(w), Region::WebScrollbar)) => Some(ViewId::Body(w)),
+            _ => None,
+        };
+        if lane != self.lane_hover {
+            self.lane_hover = lane;
             cx.notify();
         }
         // the tag under the pointer: its commands come up
@@ -3903,6 +3933,31 @@ impl Acme {
         let changed = new != self.hint;
         self.hint = new;
         changed
+    }
+
+    /// How much of a scroller's thumb shows, as macOS's overlay scrollers
+    /// do: all of it while its text (terminal, page) moves, while the
+    /// pointer is in its lane or dragging it; fading a second after it
+    /// stopped; none otherwise. `key` names the scroller (a text, or a
+    /// window's body), `at` where it is now. And whether it is changing,
+    /// to be drawn again.
+    pub fn scroller(&mut self, key: ViewId, at: u64) -> (f32, bool) {
+        if self.scroll_pos.insert(key, at).is_some_and(|was| was != at) {
+            self.scrolled_at.insert(key, std::time::Instant::now());
+        }
+        let held = self.lane_hover == Some(key)
+            || matches!(self.mouse.scrolling, Some((t, _, _)) if match t {
+                Target::View(v) => v == key,
+                Target::Term(w, _) | Target::Web(w) => ViewId::Body(w) == key,
+            });
+        if held {
+            return (1., false);
+        }
+        match self.scrolled_at.get(&key).map(|t| t.elapsed().as_secs_f32()) {
+            Some(e) if e < 0.8 => (1., true),
+            Some(e) if e < 1.1 => (1. - (e - 0.8) / 0.3, true),
+            _ => (0., false),
+        }
     }
 
     /// A force click (a trackpad pressed hard, macOS's "look up"): B3.

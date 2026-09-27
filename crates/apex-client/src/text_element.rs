@@ -536,6 +536,9 @@ pub struct Source {
     /// Its outer corners rounded, as the top (a tag) or the foot (a body)
     /// of a card: (top, bottom).
     pub round: (bool, bool),
+    /// A body's scroller: how much of its thumb shows, and whether that
+    /// is changing (drawn again soon).
+    pub scroller: (f32, bool),
     /// A stashed window's tag, shown over its column's foot while the
     /// stash is brought out: drawn as a sheet drawn out of the stack.
     pub sheet: bool,
@@ -586,6 +589,7 @@ pub struct Prepaint {
     notified: bool,
     hovered: bool,
     round: (bool, bool),
+    scroller: (f32, bool),
     sheet: bool,
     key_caret: Option<bool>,
 }
@@ -976,6 +980,7 @@ impl Element for TextElement {
                 notified: src.notified,
                 hovered: src.hovered,
                 round: src.round,
+                scroller: src.scroller,
                 sheet: src.sheet,
                 key_caret: src.key_caret,
             })
@@ -1042,7 +1047,15 @@ impl Element for TextElement {
                     // acme's: the runes shown, of all of them
                     let total = pp.text_len.max(1) as f32;
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
-                    paint_scroller(window, sb, s0, s1, pal.border);
+                    // an overlay scroller: seen while the text moves or the
+                    // pointer is in the lane, fading after
+                    let (shows, fading) = pp.scroller;
+                    if shows > 0. {
+                        paint_scroller(window, sb, s0, s1, pal.border.opacity(shows));
+                    }
+                    if fading {
+                        window.request_animation_frame();
+                    }
                     scrollbar = Some(sb);
                 }
                 Kind::WinTag => {
