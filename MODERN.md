@@ -128,20 +128,21 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   neighbour's growth or a drag) are acme's, and plain tags. The sidebar
   and the finder list stashed windows where they stand, the sidebar's
   names in the secondary ink; `apex win list` does too.
-- **ctrl-tab** (`switcher.rs`, `miniature.rs`) is Manifold's ⌘E over the
-  sessions: while control is held the whole window is a row of cards,
-  one a session, each its session's window drawn small and live from
-  its replica (the shown one's and the parked ones'; pages are their
-  paper and name, their native views being the shown session's alone),
-  the chosen one in the middle with an accent edge and its neighbours a
-  little smaller and fainter running off the sides, sliding as the
-  choice moves. The presses walk the sessions most recently shown first
-  (ctrl-shift-tab back); letting go of control switches to the chosen
-  one, as does a click on a card; escape leaves things be. The cards
-  come up only once control has been held 150 ms: a quick ctrl-tab goes
-  to the last session without them flashing up, as the system's app
-  switcher does. Nothing is
-  switched while walking.
+- **ctrl-tab** (`switcher.rs`) walks the sessions live: each press
+  shows the next one in the window at once, sliding in from the right
+  over the one it replaces (which slides out to the left, drawn from its
+  replica for the moment it takes; ctrl-shift-tab the other way), and
+  the walk goes on while control is held; letting go leaves the window
+  where it came to, and escape goes back to where the walk began. The
+  presses walk the sessions most recently settled on first; the ones
+  passed on the way are not taken as settled on. A session not
+  connected yet is being connected as it is passed.
+- **⌘⇧\\ shows every session** (View ▸ Show All Sessions), as Mission
+  Control shows the windows: a grid of cards over the window, as large
+  as the window allows, each its session's window drawn small and live
+  from its replica (the shown one's edge in the accent, a notified one
+  wearing pjw), in the sidebar's order. A click on one goes to it;
+  escape, a click off the cards or ⌘⇧\\ again leaves things be.
 - **⌘E** (`switcher.rs`) brings a column's stash up as a stack of cards
   leaning back within the column, as Safari once showed its tabs, each a
   live preview (`miniature.rs` draws them through the lean: each row

@@ -414,6 +414,9 @@ pub struct Acme {
     pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
+    /// A session sliding in (ctrl-tab), and the overview up (⌘⇧\).
+    pub switch_slide: Option<crate::switcher::SwitchSlide>,
+    pub overview: Option<crate::switcher::Overview>,
     /// ⌘E, ⌘ still held: the walk through a column's stash.
     pub stash_walk: Option<crate::switcher::StashWalk>,
     /// The sidebar's session row under the pointer: its × shows, and a
@@ -1640,6 +1643,8 @@ impl Acme {
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
             switcher: None,
+            switch_slide: None,
+            overview: None,
             stash_walk: None,
             url_edit: None,
             commands: None,
@@ -3954,7 +3959,7 @@ impl Acme {
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
         // and a walk held open by a modifier: the key coming up ends it
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.stash_walk.is_some() || self.switcher.is_some()
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.stash_walk.is_some() || self.switcher.is_some() || self.overview.is_some()
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):
@@ -4321,6 +4326,14 @@ impl Acme {
         // held; escape then goes back to where it began
         {
             let ks = &e.keystroke;
+            // the overview up: escape puts it away; the keys are its
+            if self.overview.is_some() {
+                if ks.key == "escape" {
+                    self.overview = None;
+                    cx.notify();
+                }
+                return;
+            }
             if ks.modifiers.control && ks.key == "tab" {
                 self.switcher_step(ks.modifiers.shift, window, cx);
                 return;

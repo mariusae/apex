@@ -141,6 +141,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Commands, _, cx| this.open_commands(cx)))
             .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
             .on_action(cx.listener(|this, _: &shell::UnstashAll, _, cx| this.unstash_all(cx)))
+            .on_action(cx.listener(|this, _: &shell::ShowOverview, _, cx| this.toggle_overview(cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
@@ -208,6 +209,11 @@ impl Render for Acme {
             window.request_animation_frame();
         }
         let root = if side { root.flex_row().child(self.sidebar(false, cx)) } else { root };
+        // ctrl-tab: the session just gone to sliding in over the one it
+        // replaced, which slides out beside it
+        let vp = window.viewport_size();
+        let area_left = self.left();
+        let (slide_off, outgoing) = self.switch_slide(window, area_left, f32::from(vp.width) - area_left, f32::from(vp.height));
         // what fills the rest: across from a pinned sidebar, or all of it
         let rest = move |d: gpui::Div| if side { d.flex_1().min_w_0().h_full() } else { d.flex_1().min_h_0().w_full() };
         // a tab with nothing attached to it: no acme, just the page and
@@ -227,13 +233,17 @@ impl Render for Acme {
                 .bg(gpui::rgb(t.body_bg))
                 .child(spinner)
                 .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
-            let root = root.child(blank);
+            let root = root.child(blank.relative().left(px(slide_off)));
+            let root = match outgoing {
+                Some(o) => root.child(o),
+                None => root,
+            };
             let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
                 None => root,
             };
-            // ctrl-tab's cards, over everything
-            let root = match self.switcher_overlay(window, cx) {
+            // the overview (⌘⇧\), over everything
+            let root = match self.overview_overlay(window, cx) {
                 Some(o) => root.child(gpui::deferred(o).with_priority(3)),
                 None => root,
             };
@@ -290,7 +300,7 @@ impl Render for Acme {
                 None => d.h_full(),
             }
         };
-        let mut area = rest(div().relative()).overflow_hidden().cursor(pointer);
+        let mut area = rest(div().relative().left(px(slide_off))).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
         area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)));
@@ -521,6 +531,10 @@ impl Render for Acme {
         let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
         let root = root.child(area);
+        let root = match outgoing {
+            Some(o) => root.child(o),
+            None => root,
+        };
         let root = match self.selector_panel(cx) {
             Some(panel) => root.child(panel),
             None => root,
@@ -538,8 +552,8 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        // ctrl-tab's cards, over everything
-        let root = match self.switcher_overlay(window, cx) {
+        // the overview (⌘⇧\), over everything
+        let root = match self.overview_overlay(window, cx) {
             Some(o) => root.child(gpui::deferred(o).with_priority(3)),
             None => root,
         };

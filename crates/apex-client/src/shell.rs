@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack, UnstashAll, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack, UnstashAll, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -200,6 +200,7 @@ pub fn menus() -> Vec<Menu> {
                     MenuItem::action(side, ToggleSidebar),
                     MenuItem::action("Bring Back from Stash", StashNext),
                     MenuItem::action("Bring Back All from Stash", UnstashAll),
+                    MenuItem::action("Show All Sessions", ShowOverview),
                     MenuItem::action(contrast, ToggleContrast),
                 ]
             },
@@ -235,6 +236,8 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, None),
         KeyBinding::new("cmd-e", StashNext, None),
         KeyBinding::new("alt-cmd-e", UnstashAll, None),
+        KeyBinding::new("cmd-shift-\\", ShowOverview, None),
+        KeyBinding::new("cmd-|", ShowOverview, None),
         KeyBinding::new("cmd-shift-e", StashBack, None),
         KeyBinding::new("cmd-}", NextTab, None),
         KeyBinding::new("cmd-,", Profile, None),
