@@ -589,6 +589,19 @@ impl Node {
         self.arrange(log, &l)
     }
 
+    /// Every window in column `col`'s stash back where it was.
+    pub fn unstash_all(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
+        let ci = self.column_index(col)?;
+        if self.state.layout.cols[ci].stash.is_empty() {
+            return Ok(());
+        }
+        let mut l = self.state.layout.clone();
+        tiling::colrecall_all(&mut l, ci, &*self.tiling);
+        self.arrange(log, &l)?;
+        self.activecol = Some(col);
+        Ok(())
+    }
+
     /// A click on a window's layout box: button 1 grows it a bit (acme's
     /// `colgrow`) -- or, on the window 2 maximized, gives the others back
     /// their sizes -- 2 maximizes it (the others down to their tags), 3

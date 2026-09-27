@@ -7,7 +7,10 @@
 //! order is the one when control was pressed and holds while it is
 //! held, so the presses walk the list rather than bouncing between the
 //! last two. Letting go of control switches to the one chosen (a click
-//! on a card does too); escape leaves things be.
+//! on a card does too); escape leaves things be. The cards come up only
+//! once control has been held a moment (`HOLD`): a quick ctrl-tab, let go
+//! at once, goes to the last session without them flashing up, as the
+//! system's app switcher does.
 
 use std::time::{Duration, Instant};
 
@@ -22,6 +25,8 @@ use crate::pool::{Pool, TabId};
 const SLIDE: Duration = Duration::from_millis(220);
 /// The label over a card: its session's initial and name.
 const LABEL: f32 = 26.;
+/// How long control is held before the cards come up.
+const HOLD: Duration = Duration::from_millis(150);
 
 pub struct Switcher {
     /// The connected sessions (the tabs), most recently shown first as
@@ -32,6 +37,8 @@ pub struct Switcher {
     /// Where the cards were when the choice last moved, and when: they
     /// slide from there.
     from: (f32, Instant),
+    /// When ctrl-tab was first pressed: the cards show `HOLD` after.
+    opened: Instant,
 }
 
 impl Switcher {
@@ -66,7 +73,19 @@ impl Acme {
     pub fn switcher_step(&mut self, back: bool, _window: &mut Window, cx: &mut Context<Self>) {
         if self.switcher.is_none() {
             let entries = self.switcher_entries(cx);
-            self.switcher = Some(Switcher { entries, index: 0, from: (0., Instant::now()) });
+            let now = Instant::now();
+            self.switcher = Some(Switcher { entries, index: 0, from: (0., now), opened: now });
+            // drawn again when the cards are to come up, if control is
+            // still held then
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(HOLD).await;
+                let _ = this.update(cx, |a, cx| {
+                    if a.switcher.is_some() {
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
         }
         let Some(s) = self.switcher.as_mut() else { return };
         let n = s.entries.len();
@@ -100,6 +119,10 @@ impl Acme {
     /// The cards, over the whole window, while control is held.
     pub fn switcher_overlay(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let s = self.switcher.as_ref()?;
+        // not until control has been held a moment
+        if s.opened.elapsed() < HOLD {
+            return None;
+        }
         let t = crate::theme::theme();
         let dark = crate::theme::is_dark();
         let vp = window.viewport_size();
@@ -334,6 +357,18 @@ impl Acme {
         let l = &self.node.state.layout;
         let keys = self.key_window().and_then(|w| l.column_of(w));
         keys.or(self.node.activecol).filter(|&c| l.column(c).is_some_and(|c| !c.stash.is_empty()))
+    }
+
+    /// ⌥⌘E: the active column's whole stash back where it was, as ⌘E's
+    /// walk would bring back one.
+    pub fn unstash_all(&mut self, cx: &mut Context<Self>) {
+        if self.stash_walk.is_some() {
+            return;
+        }
+        let Some(col) = self.stash_walk_column() else { return };
+        let _ = self.node.unstash_all(&mut self.log, col);
+        self.after();
+        cx.notify();
     }
 
     /// ⌘E (`back`: ⇧⌘E): the stack brought up, the first stashed window

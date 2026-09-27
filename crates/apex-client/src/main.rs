@@ -140,6 +140,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
             .on_action(cx.listener(|this, _: &shell::Commands, _, cx| this.open_commands(cx)))
             .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
+            .on_action(cx.listener(|this, _: &shell::UnstashAll, _, cx| this.unstash_all(cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))

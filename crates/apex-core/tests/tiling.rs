@@ -245,6 +245,19 @@ fn recalled_after_a_button_2_each_goes_back_to_its_place() {
 }
 
 #[test]
+fn a_whole_stash_comes_back_in_order() {
+    let mut l = row();
+    for w in 1..=5 {
+        add(&mut l, 0, w, None);
+    }
+    stash_all_but(&mut l, 0, 3);
+    colrecall_all(&mut l, 0, &info());
+    assert!(l.cols[0].stash.is_empty());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+    assert_eq!(l.cols[0].wins.last().unwrap().r.y1, 700);
+}
+
+#[test]
 fn a_window_recalled_alone_is_maximized() {
     let mut l = row();
     for w in 1..=3 {

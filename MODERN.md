@@ -137,7 +137,10 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   little smaller and fainter running off the sides, sliding as the
   choice moves. The presses walk the sessions most recently shown first
   (ctrl-shift-tab back); letting go of control switches to the chosen
-  one, as does a click on a card; escape leaves things be. Nothing is
+  one, as does a click on a card; escape leaves things be. The cards
+  come up only once control has been held 150 ms: a quick ctrl-tab goes
+  to the last session without them flashing up, as the system's app
+  switcher does. Nothing is
   switched while walking.
 - **⌘E** (`switcher.rs`) brings a column's stash up as a stack of cards
   leaning back within the column, as Safari once showed its tabs, each a
@@ -153,7 +156,9 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   as the column. The column is the active one -- the window with the
   keys' caret's, else the last worked in -- and ⌘E does nothing when it
   has no stash, whatever other columns have. View ▸ Bring Back from Stash
-  does the same (a click or escape to finish).
+  does the same (a click or escape to finish). ⌥⌘E (View ▸ Bring Back
+  All from Stash) brings the same column's whole stash back at once,
+  each window where it was.
 - **Web windows** (`webbar.rs`) have a header of their own in the tag's
   place, as the Claude app's browser does: the handle (every button and
   drag of it as any window's -- it moves, grows, stashes), back and

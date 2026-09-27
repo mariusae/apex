@@ -728,6 +728,18 @@ pub fn colrecall(l: &mut Layout, ci: usize, si: usize, alone: bool, info: &dyn I
     }
 }
 
+/// Every stashed window in column `ci` back where it was (⌥⌘E): the one
+/// highest in the column's order first, so each comes back beside one
+/// already there.
+pub fn colrecall_all(l: &mut Layout, ci: usize, info: &dyn Info) {
+    while !l.cols[ci].stash.is_empty() {
+        let order = stash_order(&l.cols[ci]);
+        let Some(x) = order.iter().find(|&&(_, st)| st).map(|&(x, _)| x) else { break };
+        let Some(si) = l.cols[ci].stash.iter().position(|s| s.slot.window == x) else { break };
+        colrecall(l, ci, si, false, info);
+    }
+}
+
 /// Window `w`, which was under `above`, has left column `ci` (closed, or
 /// moved to another): the stashed windows under it go under `above`
 /// instead, and a column left with none laid out gets the nearest back.
