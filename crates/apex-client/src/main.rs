@@ -88,7 +88,7 @@ impl Render for Acme {
         self.term_layouts.clear();
         self.web_bars.clear();
         let me = cx.entity();
-        let font = f32::from(text_element::font_for(false).line_height) as i32;
+        let font = f32::from(text_element::tag_line_height()) as i32;
 
         let t = theme::theme();
         // the overlays record where they land this frame; the last thing

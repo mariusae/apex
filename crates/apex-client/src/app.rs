@@ -566,6 +566,8 @@ pub struct Acme {
     scrolled_at: HashMap<ViewId, std::time::Instant>,
     /// ⌘ or ⌥ held over text: what a click would take there.
     pub hint: Option<(ViewId, usize, usize, HlKind)>,
+    /// The word the pointer is on in a tag, on a faint pill.
+    pub word_pill: Option<(ViewId, usize, usize)>,
     mouse: Mouse,
     want_visible: HashSet<ViewId>,
     typed_start: HashMap<ViewId, usize>,
@@ -1661,6 +1663,7 @@ impl Acme {
             hl: None,
             hint: None,
             hover_view: None,
+            word_pill: None,
             lane_hover: None,
             scroll_pos: HashMap::new(),
             scrolled_at: HashMap::new(),
@@ -2050,7 +2053,7 @@ impl Acme {
             return; // the frame after this one has the layouts to use
         }
         self.pending = None;
-        let font = font_for(false).line_height;
+        let font = crate::text_element::tag_line_height();
         let fonti = f32::from(font) as i32;
         let l = &self.node.state.layout;
         let (top, left) = (self.top(), self.left());
@@ -2165,7 +2168,10 @@ impl Acme {
     /// tag changed shape (acme's winsettag), and follow the OS window's
     /// size (rowresize).
     pub fn measure(&mut self, viewport: gpui::Size<Pixels>) {
-        let font = f32::from(font_for(false).line_height) as i32;
+        // a tag's line (the tiling's font height) a little taller than a
+        // body's
+        let prop = f32::from(font_for(false).line_height) as i32;
+        let font = f32::from(crate::text_element::tag_line_height()) as i32;
         let mono = f32::from(font_for(true).line_height) as i32;
         let mut tags = HashMap::new();
         let mut bodies = HashMap::new();
@@ -2184,7 +2190,7 @@ impl Acme {
             };
             bodies.insert(*w, (win.mono, lines, term));
         }
-        self.node.tiling = Box::new(ClientInfo { font, prop: font, mono, tags, bodies });
+        self.node.tiling = Box::new(ClientInfo { font, prop, mono, tags, bodies });
         // the OS window
         let r = tiling::Rect::new(0, 0, (f32::from(viewport.width) - self.left()) as i32, (f32::from(viewport.height) - self.top()) as i32);
         if r.dx() > 0 && r.dy() > 0 && r != self.node.state.layout.r {
@@ -2341,7 +2347,7 @@ impl Acme {
         if c.stash.is_empty() || !l.shows(ci) {
             return None;
         }
-        let font = f32::from(crate::text_element::font_for(false).line_height) as i32;
+        let font = f32::from(crate::text_element::tag_line_height()) as i32;
         let band = tiling::Rect::new(c.r.x0, tiling::floor(c), c.r.x1, c.r.y1);
         let order: Vec<WindowId> = tiling::stash_order(c).into_iter().filter(|&(_, st)| st).map(|(w, _)| w).collect();
         let step = font + tiling::BORDER;
@@ -2604,6 +2610,7 @@ impl Acme {
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         let hint = self.hint.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
+        let word_pill = self.word_pill.and_then(|(pv, lo, hi)| if pv == view { Some((lo, hi)) } else { None });
         // a body scrolled by the pixel: moved up by its scroll into the top
         // row, and down by any pull past the start; forgotten once the
         // session's origin is not the one it was scrolled from
@@ -2645,6 +2652,7 @@ impl Acme {
                 origin: 0,
                 hl: None,
             hint: None,
+                word_pill: None,
                 want_visible: false,
                 show_at: None,
             });
@@ -2679,6 +2687,7 @@ impl Acme {
             origin: v.origin,
             hl,
             hint,
+            word_pill,
             // a window on its way scrolls to what it must show once it lands
             want_visible: !view.window().is_some_and(|w| self.glide.gliding(w)) && self.want_visible.remove(&view),
             show_at: if view.window().is_some_and(|w| self.glide.gliding(w)) { None } else { self.show_at.remove(&view) },
@@ -3930,8 +3939,21 @@ impl Acme {
             }
             _ => None,
         });
-        let changed = new != self.hint;
+        // no modifier: the word the pointer is on in a tag, which B2 (or
+        // B3) would take, on a faint pill
+        let pill = match (&new, held) {
+            (None, false) => match self.locate(pos) {
+                Some((Target::View(v @ (ViewId::Tag(_) | ViewId::ColTag(_) | ViewId::Top)), Region::Text(off))) => {
+                    let t = self.text_of(v);
+                    t.map(|t| expand(&t, off, is_exec_char)).filter(|(a, z)| a < z).map(|(a, z)| (v, a, z))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let changed = new != self.hint || pill != self.word_pill;
         self.hint = new;
+        self.word_pill = pill;
         changed
     }
 

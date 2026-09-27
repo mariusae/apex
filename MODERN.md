@@ -179,10 +179,14 @@ which changes what B2 and B3 do on a window's box, and so is the core's
 - **Force click is B3.** A trackpad pressed hard (macOS's "look up")
   turns the B1 press it began as into a B3 press where it is, before
   anything is swept: its release looks, or opens what the plumber finds.
-- **⌘-hover** underlines, in the accent, what a ⌘-click (B3) would take
-  under the pointer -- the selection when the pointer is in it, else the
-  word it would look for or open -- and the pointer is a hand; ⌥-hover
-  underlines, in the ink, what a ⌥-click (B2) would run.
+- **Pills.** ⌘ held puts what a ⌘-click (B3) would take under the
+  pointer -- the selection when the pointer is in it, else the word it
+  would look for or open -- on a pill tinted with the accent, the pointer
+  a hand; ⌥ held, what a ⌥-click (B2) would run, on a neutral one. With
+  no modifier, the word the pointer is on in a tag sits on a faint pill,
+  saying it can be clicked.
+- **Tag lines** are two pixels taller than a body's, the text centred in
+  them (`TAG_PAD`): the tiling's font height is theirs.
 - **⌘⇧P** (`commands.rs`) is a palette of commands to run in the window
   under the pointer: the words in its tag, its tools (the B4 menu's),
   what was run lately anywhere in the session, and apex's own, fuzzy-

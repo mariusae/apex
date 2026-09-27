@@ -43,6 +43,15 @@ pub struct Palette {
 /// The ground the windows stand on: what shows between them (they are
 /// cards on it), under the column tags and the top row. A step below the
 /// tags in light, below the paper in dark.
+/// A tag's line, a little taller than a body's: the text centred in it,
+/// some air above and below. The tiling's font height (a tag's, a column
+/// tag's, the top row's) is this.
+pub const TAG_PAD: f32 = 2.;
+
+pub fn tag_line_height() -> Pixels {
+    font_for(false).line_height + px(TAG_PAD)
+}
+
 /// The radius of a card's corners (a window on the ground).
 pub const CARD_RADIUS: f32 = 7.;
 
@@ -551,8 +560,10 @@ pub struct Source {
     pub origin: usize,
     pub hl: Option<(usize, usize, HlKind)>,
     /// What a click would take here with the modifier held (⌘: B3's,
-    /// ⌥: B2's), underlined.
+    /// ⌥: B2's), on a pill.
     pub hint: Option<(usize, usize, HlKind)>,
+    /// In a tag, the word the pointer is on, on a faint pill.
+    pub word_pill: Option<(usize, usize)>,
     pub want_visible: bool,
     /// Bring this position on screen when it is not: acme's `textshow`,
     /// the position `quarters` quarters of the window down (one for new
@@ -581,6 +592,7 @@ pub struct Prepaint {
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
     hint: Option<(usize, usize, HlKind)>,
+    word_pill: Option<(usize, usize)>,
     dirty: bool,
     stale: bool,
     live: bool,
@@ -773,7 +785,8 @@ impl Element for TextElement {
             (window.request_layout(style, [], cx), ())
         } else {
             let text: SharedString = self.acme.read(cx).view_text(self.view).into();
-            let fontspec = font_for(false);
+            let mut fontspec = font_for(false);
+            fontspec.line_height = tag_line_height();
             let id = window.request_measured_layout(
                 style,
                 move |known: Size<Option<Pixels>>, avail: Size<AvailableSpace>, window, _cx| {
@@ -816,7 +829,11 @@ impl Element for TextElement {
         self.acme.update(cx, |acme, _cx| {
             let src = acme.source(view)?;
             let kind = src.kind;
-            let fontspec = font_for(src.mono && kind == Kind::Body);
+            let mut fontspec = font_for(src.mono && kind == Kind::Body);
+            // a tag's line a little taller than a body's
+            if kind != Kind::Body {
+                fontspec.line_height = tag_line_height();
+            }
             let lh = fontspec.line_height;
             let wrap = Some((bounds.size.width - px(MARGIN) - px(4.)).max(px(10.)));
             let height = bounds.size.height;
@@ -972,6 +989,7 @@ impl Element for TextElement {
                 sel: src.sel,
                 hl: src.hl,
                 hint: src.hint,
+                word_pill: src.word_pill,
                 dirty: src.dirty,
                 stale: src.stale,
                 live: src.live,
@@ -1101,6 +1119,34 @@ impl Element for TextElement {
                         None => (0, 0, pal.sel),
                     },
                 ];
+                // pills under the text: what a click with ⌘ (B3, in the
+                // accent) or ⌥ (B2) held would take, else the word the
+                // pointer is on in a tag -- a faint one, saying it can be
+                // clicked
+                {
+                    let th = crate::theme::theme();
+                    let under = if pp.kind == Kind::Body { th.body_bg } else if matches!(pp.kind, Kind::ColTag | Kind::Top) { ground(&th) } else { th.tag_bg };
+                    let pill = match (pp.hint, pp.word_pill) {
+                        (Some((a, b, HlKind::Look)), _) => Some((a, b, mix(under, th.accent, 0.22))),
+                        (Some((a, b, HlKind::Exec)), _) => Some((a, b, mix(under, th.text, 0.14))),
+                        (None, Some((a, b))) => Some((a, b, mix(under, th.text, 0.08))),
+                        _ => None,
+                    };
+                    if let Some((a, b, color)) = pill {
+                        let (lo, hi) = (a.max(line.start), b.min(line.end));
+                        if lo < hi {
+                            let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                            for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                                let (s, e) = (dlo.max(ds), dhi.min(de));
+                                if s < e {
+                                    let sy = ly + lh * i as f32;
+                                    let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(3.), sy + px(1.)), point(origin.x + x(e) - x(ds) + px(3.), sy + lh - px(1.)));
+                                    window.paint_quad(fill(r, rgb(color)).corner_radii(px(5.)));
+                                }
+                            }
+                        }
+                    }
+                }
                 for (a, b, color) in ranges {
                     if a >= b {
                         continue;
@@ -1136,26 +1182,6 @@ impl Element for TextElement {
                 }
 
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, subst);
-
-                // what a click with the modifier held would take: underlined,
-                // as a link is -- the accent for B3's, the ink for B2's
-                if let Some((a, b, kind)) = pp.hint {
-                    let lo = a.max(line.start);
-                    let hi = b.min(line.end);
-                    if lo < hi {
-                        let th = crate::theme::theme();
-                        let color = rgb(if kind == HlKind::Look { th.accent } else { th.text });
-                        let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
-                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                            let (s, e) = (dlo.max(ds), dhi.min(de));
-                            if s < e {
-                                let sy = ly + lh * i as f32;
-                                let y = sy + lh - px(3.);
-                                window.paint_quad(fill(Bounds::from_corners(point(origin.x + x(s) - x(ds), y), point(origin.x + x(e) - x(ds), y + px(1.5))), color));
-                            }
-                        }
-                    }
-                }
 
                 // the tick, as a Mac text view's caret: a plain line, a
                 // little in from the row's top and bottom. A header's is

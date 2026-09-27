@@ -372,7 +372,7 @@ impl Acme {
         }
         // where the card settles: the window's place now, in the column's
         // window space; the whole of it for the front card
-        let font = f32::from(crate::text_element::font_for(false).line_height);
+        let font = f32::from(crate::text_element::tag_line_height());
         let l = &self.node.state.layout;
         let target = l.column(col).map(|c| {
             let (x0, y0) = (c.r.x0 as f32, c.r.y0 as f32 + font);
@@ -408,7 +408,7 @@ impl Acme {
         let c = &l.cols[ci];
         let t = crate::theme::theme();
         let dark = crate::theme::is_dark();
-        let font = f32::from(crate::text_element::font_for(false).line_height);
+        let font = f32::from(crate::text_element::tag_line_height());
         let (x0, y0) = (c.r.x0 as f32, c.r.y0 as f32 + font);
         let (cw, ch) = (c.r.dx() as f32, (c.r.y1 as f32 - y0).max(1.));
         if s.moving() {
