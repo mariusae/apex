@@ -71,6 +71,9 @@ pub struct Prepaint {
     /// A program at work (OSC 9;4), as far along as it says: the bar
     /// across the top. Full width while it does not say.
     progress: Option<Option<u8>>,
+    /// The rows on screen where a command the shell marked (OSC 133)
+    /// has its prompt, having failed.
+    failed: Vec<usize>,
 }
 
 pub struct TermElement {
@@ -210,7 +213,8 @@ impl Element for TermElement {
                 row_text.push(line.clone());
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
+            let failed = t.marks.iter().filter(|m| m.exit.is_some_and(|e| e != 0) && m.prompt >= top && m.prompt < top + t.rows as u64).map(|m| (m.prompt - top) as usize).collect();
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed })
         })
     }
 
@@ -237,6 +241,13 @@ impl Element for TermElement {
             let (top, shown, total) = pp.view;
             let total = total.max(1);
             crate::text_element::paint_scroller(window, sb, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, rgb(th.body_border));
+            // a command that failed: a mark in the gutter by its prompt,
+            // in the terminal's own red
+            for &row in &pp.failed {
+                let y = origin.y + lh * row as f32;
+                let bar = Bounds::new(point(origin.x - px(3.5), y + px(2.)), size(px(2.5), lh - px(4.)));
+                window.paint_quad(fill(bar, rgb(th.ansi[1])).corner_radii(px(1.)));
+            }
             for (i, row) in pp.rows.iter().enumerate() {
                 let y = origin.y + lh * i as f32;
                 for &(x, n, c) in &row.bgs {

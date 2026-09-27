@@ -165,6 +165,39 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   (`remote::stop_any`). Nothing starts a second server over an old one
   any more: that took its socket and left it running, unreachable,
   with its sessions (`ensure_daemon`).
+- **Force click is B3.** A trackpad pressed hard (macOS's "look up")
+  turns the B1 press it began as into a B3 press where it is, before
+  anything is swept: its release looks, or opens what the plumber finds.
+- **⌘-hover** underlines, in the accent, what a ⌘-click (B3) would take
+  under the pointer -- the selection when the pointer is in it, else the
+  word it would look for or open -- and the pointer is a hand; ⌥-hover
+  underlines, in the ink, what a ⌥-click (B2) would run.
+- **⌘⇧P** (`commands.rs`) is a palette of commands to run in the window
+  under the pointer: the words in its tag, its tools (the B4 menu's),
+  what was run lately anywhere in the session, and apex's own, fuzzy-
+  matched; return runs one there as B2 would, or what was typed. Go to
+  in All Tabs moves to ⌘⇧O.
+- **Windows glide** (`glide.rs`): what the tiling moves -- a grow, a
+  stash or a recall, a drag, a close -- is drawn part of the way from
+  where it was to where it is, for a sixth of a second; one that appears
+  opens down from its top. Resizing the OS window or switching session
+  snaps. A gliding window's terminal keeps its size, and its text its
+  scroll, until it lands.
+- **Errors as toasts** (`toasts.rs`): a command's errors still go to its
+  +Errors window, but that window goes to its column's stash and what
+  was written shows in a toast at the column's foot, with Show All (the
+  window brought back) and ×; it goes after eight seconds unless the
+  pointer is on it. An +Errors window brought back is written to as
+  before.
+- **Session previews**: the pointer on a session in the sidebar (not the
+  one shown) brings its window up beside the row, live, as ctrl-tab's
+  cards draw it.
+- **Prompt marks** (OSC 133): with `eval "$(apex shell-integration zsh)"`
+  (or `bash`) in the shell's startup file, the shell marks each
+  command's prompt, output and end, and the terminal carries the marks
+  (`TermOp::Marks`, protocol 33): ⌘↑ ⌘↓ go from prompt to prompt, a
+  command that failed has a mark in the gutter by its prompt, in the
+  terminal's red, and ⌘⇧C copies the last command's output.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the

@@ -3627,6 +3627,13 @@ impl Acme {
         }
         let Some(t) = self.term_of(w) else { return };
         let (p0, p1) = ((a.0 as u16, a.1), (b.0 as u16, b.1));
+        self.term_snarf(t, p0, p1, cx);
+    }
+
+    /// The text of terminal `t` from `p0` to `p1` (column, history line;
+    /// the end exclusive) to the snarf buffer and the clipboard: the
+    /// server has the scrollback.
+    fn term_snarf(&mut self, t: TermId, p0: (u16, u64), p1: (u16, u64), cx: &mut Context<Self>) {
         self.snarf_wanted = Some(self.node.state.layout.snarf.clone());
         match &mut self.backend {
             Backend::Local(server) => {
@@ -3638,6 +3645,34 @@ impl Acme {
         }
         self.after();
         self.settle_snarf(cx);
+    }
+
+    /// ⌘↑ (⌘↓): the terminal's view to the prompt above (below) the
+    /// one at its top, as the shell marked them (OSC 133).
+    fn term_jump(&mut self, t: TermId, up: bool) {
+        let Some(term) = self.node.state.terms.get(&t) else { return };
+        let top = term.top;
+        let to = if up {
+            term.marks.iter().rev().map(|m| m.prompt).find(|&p| p < top)
+        } else {
+            term.marks.iter().map(|m| m.prompt).find(|&p| p > top)
+        };
+        if let Some(to) = to {
+            self.term_scroll(t, to as isize - top as isize);
+        }
+    }
+
+    /// ⌘⇧C: the output of the last command the shell marked as ended, to
+    /// the snarf buffer and the clipboard.
+    fn term_copy_last(&mut self, t: TermId, cx: &mut Context<Self>) {
+        let Some(term) = self.node.state.terms.get(&t) else { return };
+        let last = term.marks.iter().rev().find_map(|m| match (m.output, m.end) {
+            (Some(a), Some(b)) if b > a => Some((a, b)),
+            _ => None,
+        });
+        if let Some((a, b)) = last {
+            self.term_snarf(t, (0, a), (0, b), cx);
+        }
     }
 
     /// A terminal copy is waiting for the server's text: once the snarf
@@ -4142,7 +4177,13 @@ impl Acme {
         let m = ks.modifiers;
         match target {
             Target::Term(_, t) => {
-                if m.platform && ks.key == "v" {
+                // the shell's prompt marks (OSC 133): ⌘↑ ⌘↓ from prompt to
+                // prompt, ⌘⇧C the last command's output
+                if m.platform && !m.shift && (ks.key == "up" || ks.key == "down") {
+                    self.term_jump(t, ks.key == "up");
+                } else if m.platform && m.shift && ks.key == "c" {
+                    self.term_copy_last(t, cx);
+                } else if m.platform && ks.key == "v" {
                     if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
                         self.term_paste(t, text);
                     }
