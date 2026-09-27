@@ -251,8 +251,9 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   the least a column may be, as a window dragged over goes down to its
   tag, or when a neighbour's B1 squeezes it. A minimized column is a
   slim card on its side where it stands, among the others in their
-  order, its outline rounded as a folded window's tag is, each window's
-  handle down it where the window stands: a click on a handle brings the
+  order, its outline rounded as a folded window's tag is, the column's
+  grip at its top (it is the column's box, and says it is a column),
+  each window's handle down it where the window stands: a click on a handle brings the
   column back and lands on that window, and B1 anywhere else on it
   brings it back where it stands.
   B3 (or B4) stashes a column: its width to the columns either side of

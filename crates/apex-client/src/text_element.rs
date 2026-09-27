@@ -170,7 +170,7 @@ pub fn paint_scroller(window: &mut Window, lane: Bounds<Pixels>, s0: f32, s1: f3
 
 /// A drag grip, two columns of three dots: a column's box, and the
 /// session's.
-fn paint_grip(window: &mut Window, b: Bounds<Pixels>, ink: Hsla) {
+pub fn paint_grip(window: &mut Window, b: Bounds<Pixels>, ink: Hsla) {
     let cx = b.left() + b.size.width / 2.;
     let cy = b.top() + b.size.height / 2.;
     for (dx, dy) in [(-2., -4.), (2., -4.), (-2., 0.), (2., 0.), (-2., 4.), (2., 4.)] {

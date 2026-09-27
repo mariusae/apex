@@ -8,7 +8,9 @@
 //! it back. Minimized (B2 on another's box, a drag, a neighbour's growth)
 //! it stands where it is, among the others in their order, as a folded
 //! window keeps its tag: a slim card on its side, its outline rounded,
-//! each window's handle down it where the window stands. A click on a
+//! the column's grip at its top where the column's tag would be (it is
+//! the column's box, and says it is a column), each window's handle down
+//! it where the window stands. A click on a
 //! handle brings the column back and lands on that window; anywhere else
 //! on it is the column's box.
 
@@ -123,6 +125,7 @@ impl Acme {
         let notified = col.all_windows().any(|w| self.window_notified(w));
         let card = if notified { crate::text_element::mix(t.tag_bg, t.accent, 0.12) } else { t.tag_bg };
         let line = t.body_border;
+        let grip = crate::text_element::rgb(t.text_dim);
         let font = f32::from(crate::text_element::tag_line_height());
         let handles: Vec<(apex_core::WindowId, f32)> = col.wins.iter().map(|s| (s.window, (s.r.y0 - col.r.y0) as f32)).collect();
         let dots: Vec<(f32, crate::text_element::Dot)> = handles.iter().map(|&(w, y)| (y + font / 2., self.window_dot(w))).collect();
@@ -131,6 +134,8 @@ impl Acme {
             move |b, _, window, _| {
                 let r = gpui::Bounds::new(gpui::point(b.left() + px(1.), b.top() + px(1.)), gpui::size(b.size.width - px(2.), b.size.height - px(2.)));
                 window.paint_quad(gpui::quad(r, px(5.), gpui::rgb(card), px(1.), gpui::rgb(line), gpui::BorderStyle::Solid));
+                // the column's grip on its tag's row, as a column tag has it
+                crate::text_element::paint_grip(window, gpui::Bounds::new(b.origin, gpui::size(b.size.width, px(font))), grip);
                 for (y, d) in &dots {
                     crate::text_element::paint_dot(window, d, gpui::point(b.left() + b.size.width / 2., b.top() + px(*y)));
                 }
