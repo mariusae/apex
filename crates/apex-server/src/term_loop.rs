@@ -29,13 +29,16 @@ pub enum Label {
     Name(String),
     /// OSC 7: the shell's working directory, a `file://` URL or a path.
     Cwd(String),
+    /// OSC 133 (a semantic prompt): `A` a prompt begins, `B` the command
+    /// line begins, `C` its output begins, `D` it ended, with its status.
+    Mark(u8, Option<i32>),
 }
 
 /// Cut labels out of `new` (with what an earlier call held back in
 /// `carry`): the bytes for the parser, and the labels found. An OSC that
 /// has not ended yet is held back, so a label split across reads is still
 /// one label.
-pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<Label>) {
+pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<(usize, Label)>) {
     let mut data = std::mem::take(carry);
     data.extend_from_slice(new);
     let mut out = Vec::with_capacity(data.len());
@@ -83,10 +86,16 @@ pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<Label>) {
             Some((body_end, next)) => {
                 let body = &data[start..body_end];
                 let lossy = |b: &[u8]| String::from_utf8_lossy(b).to_string();
+                // each label where it fell in what the parser is given
                 if let Some(t) = body.strip_prefix(b";") {
-                    labels.push(Label::Name(lossy(t)));
+                    labels.push((out.len(), Label::Name(lossy(t))));
                 } else if let Some(t) = body.strip_prefix(b"7;") {
-                    labels.push(Label::Cwd(lossy(t)));
+                    labels.push((out.len(), Label::Cwd(lossy(t))));
+                } else if let Some(t) = body.strip_prefix(b"133;") {
+                    let mut parts = t.split(|&c| c == b';');
+                    let kind = parts.next().and_then(|k| k.first().copied()).unwrap_or(0);
+                    let exit = parts.next().and_then(|e| std::str::from_utf8(e).ok()).and_then(|e| e.trim().parse().ok());
+                    labels.push((out.len(), Label::Mark(kind, exit)));
                 } else {
                     out.extend_from_slice(&data[i..next]);
                 }
@@ -121,6 +130,9 @@ pub enum Msg {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Report {
     Label(Label),
+    /// A prompt mark (OSC 133), the history line the cursor was on then,
+    /// and the status a `D` gave.
+    Mark(u8, u64, Option<i32>),
     /// The title (OSC 0, OSC 2).
     Title(String),
     /// OSC 52: text for the snarf buffer.
@@ -310,16 +322,35 @@ impl EventLoop {
             };
             any = true;
             let (bytes, labels) = scan(&mut self.carry, &buf[..got]);
-            for l in labels {
-                (self.report)(Report::Label(l));
+            // the bytes go in up to each prompt mark, so its line is the
+            // cursor's there and then
+            let mut events = Vec::new();
+            let mut fed = 0;
+            for (at, l) in labels {
+                match l {
+                    Label::Mark(kind, exit) => {
+                        let line = match self.terminal.lock() {
+                            Ok(mut t) => {
+                                t.write(&bytes[fed..at]);
+                                events.extend(t.events());
+                                let (history, _, _) = t.size();
+                                history + t.screen().cursor.1 as u64
+                            }
+                            Err(_) => return false,
+                        };
+                        fed = at;
+                        (self.report)(Report::Mark(kind, line, exit));
+                    }
+                    l => (self.report)(Report::Label(l)),
+                }
             }
-            let events = match self.terminal.lock() {
+            match self.terminal.lock() {
                 Ok(mut t) => {
-                    t.write(&bytes);
-                    t.events()
+                    t.write(&bytes[fed..]);
+                    events.extend(t.events());
                 }
                 Err(_) => return false,
-            };
+            }
             let mut answers: Vec<u8> = Vec::new();
             for e in events {
                 match e {
@@ -355,7 +386,7 @@ mod tests {
         for c in chunks {
             let (o, l) = scan(&mut carry, c);
             out.extend(o);
-            labels.extend(l);
+            labels.extend(l.into_iter().map(|(_, l)| l));
         }
         out.extend(carry);
         (out, labels)

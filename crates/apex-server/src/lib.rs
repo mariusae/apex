@@ -475,6 +475,11 @@ impl Server {
     pub fn term_clear(&mut self, log: &mut Log, id: TermId) {
         if let Some(h) = self.terms.get_mut(&id) {
             h.clear_history();
+            // the history the marks were in is gone with them
+            if !h.marks.is_empty() {
+                h.marks.clear();
+                let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Marks { marks: Vec::new() }));
+            }
             self.publish_term(log, id);
         }
     }
@@ -594,6 +599,40 @@ impl Server {
                     }
                     // plan9port's label is the title too
                     TermEvent::Name(t) => h.title = Some(t),
+                    // OSC 133: a command marked -- its prompt, its output,
+                    // its end and how it went -- for the terminal to carry
+                    TermEvent::Mark(kind, line, exit) => {
+                        let before = h.marks.clone();
+                        match kind {
+                            b'A' => {
+                                if h.marks.last().is_none_or(|m| m.prompt != line) {
+                                    h.marks.push(apex_core::PromptMark { prompt: line, output: None, end: None, exit: None });
+                                }
+                                // a long history keeps its latest commands
+                                let n = h.marks.len();
+                                if n > 1000 {
+                                    h.marks.drain(..n - 1000);
+                                }
+                            }
+                            b'C' => {
+                                if let Some(m) = h.marks.last_mut() {
+                                    m.output = Some(line);
+                                }
+                            }
+                            b'D' => {
+                                if let Some(m) = h.marks.last_mut() {
+                                    if m.end.is_none() {
+                                        m.end = Some(line);
+                                        m.exit = exit;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        if h.marks != before {
+                            let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Marks { marks: h.marks.clone() }));
+                        }
+                    }
                     // OSC 7: the directory, for the name and for B2/B3 there
                     TermEvent::Cwd(s) => {
                         if let Some(p) = term::cwd_path(&s) {

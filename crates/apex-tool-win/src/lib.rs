@@ -513,7 +513,7 @@ impl Win {
         let (bytes, labels) = scan(&mut self.carry, &bytes);
         if !labels.is_empty() {
             let was = self.window_name();
-            for l in labels {
+            for (_, l) in labels {
                 match l {
                     Label::Name(t) => self.title = Some(t),
                     Label::Cwd(s) => {
@@ -521,6 +521,8 @@ impl Win {
                             self.cwd = Some(p);
                         }
                     }
+                    // win's text window has no prompts to mark
+                    Label::Mark(..) => {}
                 }
             }
             let now = self.window_name();

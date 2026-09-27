@@ -33,6 +33,9 @@ pub enum TermEvent {
     Exit(i32),
     Name(String),
     Cwd(String),
+    /// OSC 133: a prompt mark, the history line it was made on, and the
+    /// status an end gave.
+    Mark(u8, u64, Option<i32>),
 }
 
 /// The size of a cell as a program is told (`TIOCGWINSZ` pixels, and
@@ -254,6 +257,8 @@ pub struct TermHost {
     /// along it said it is: the window's handle pulses while it is.
     pub working: bool,
     pub progress: Option<u8>,
+    /// The commands the shell has marked (OSC 133), the latest last.
+    pub marks: Vec<apex_core::PromptMark>,
 }
 
 struct Published {
@@ -314,6 +319,8 @@ impl TermHost {
             let ev = match r {
                 Report::Label(Label::Name(s)) => TermEvent::Name(s),
                 Report::Label(Label::Cwd(s)) => TermEvent::Cwd(s),
+                Report::Label(Label::Mark(kind, exit)) => TermEvent::Mark(kind, 0, exit),
+                Report::Mark(kind, line, exit) => TermEvent::Mark(kind, line, exit),
                 Report::Title(t) => TermEvent::Title(t),
                 Report::Clipboard(t) => TermEvent::Clipboard(t),
                 Report::Bell => TermEvent::Bell,
@@ -328,7 +335,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), pty, report).map_err(|e| e.to_string())?;
         let notifier = event_loop.channel();
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new() })
     }
 
     pub fn write(&self, data: &[u8]) {

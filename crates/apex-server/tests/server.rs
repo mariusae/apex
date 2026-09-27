@@ -1252,3 +1252,25 @@ fn a_program_at_work_pulses_its_windows_handle() {
     type_in(&mut server, &mut log, "exit\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !n.window_working(w)), "the shell went and took its work with it");
 }
+
+#[test]
+fn a_shells_prompt_marks_reach_the_terminal() {
+    // OSC 133, as a shell's integration writes it: A the prompt, C the
+    // output, D the end with its status
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().copied().next().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
+    let cmd = "printf '\\033]133;A\\007> \\033]133;C\\007out\\n\\033]133;D;1\\007'\r";
+    for c in cmd.chars() {
+        server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+    }
+    let marked = |n: &Node| n.state.terms.get(&t).is_some_and(|t| t.marks.iter().any(|m| m.exit == Some(1)));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, marked), "{:?}", node.state.terms[&t].marks);
+    let m = *node.state.terms[&t].marks.iter().find(|m| m.exit == Some(1)).unwrap();
+    // the output began on the prompt's line (the printf's '> ' then out),
+    // and ended a line below it
+    assert_eq!(m.output, Some(m.prompt));
+    assert_eq!(m.end, Some(m.prompt + 1));
+}

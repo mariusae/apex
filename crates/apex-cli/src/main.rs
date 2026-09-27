@@ -166,6 +166,18 @@ the command works there." },
 Stop asks the daemon to exit. Every session ends with it: unsaved text
 is lost, terminals are closed. Use it to let a daemon of an old build go
 before attaching with a new one (see apex help sessions)." },
+    Cmd { name: "shell-integration", usage: "apex shell-integration zsh|bash", short: "print what a shell's startup file sources for prompt marks", flags: &[], run: shell_integration, long: "\
+Shell-integration prints a few lines for a shell's startup file (zsh's
+~/.zshrc, bash's ~/.bashrc), to be sourced there:
+
+    eval \"$(apex shell-integration zsh)\"
+
+In an apex terminal the shell then marks each command (OSC 133, its
+semantic prompts): where its prompt begins, where its output begins,
+and where it ends and how it exited, and says its directory (OSC 7). The
+terminal jumps from prompt to prompt (cmd-up, cmd-down), marks a command
+that failed beside its prompt, and copies the last command's output
+(cmd-shift-C). Anywhere else the lines do nothing." },
     Cmd { name: "new-session", usage: "apex new-session NAME", short: "make a session", flags: &[], run: new_session, long: "\
 New-session makes a session labelled NAME on the daemon, starting a
 daemon if none answers. A label starts with a letter, then lowercase
@@ -795,6 +807,55 @@ fn ls(ctx: &Ctx, _: &Parsed) -> R {
     }
     Ok(())
 }
+
+/// What `eval "$(apex shell-integration zsh)"` sources: OSC 133 marks
+/// round each command, and OSC 7, in apex terminals only.
+fn shell_integration(_: &Ctx, p: &Parsed) -> R {
+    let script = match p.args.first().map(String::as_str) {
+        Some("zsh") => ZSH_INTEGRATION,
+        Some("bash") => BASH_INTEGRATION,
+        _ => return Err("usage: apex shell-integration zsh|bash".into()),
+    };
+    print!("{script}");
+    Ok(())
+}
+
+const ZSH_INTEGRATION: &str = r#"# apex: prompt marks (OSC 133) and the directory (OSC 7), in apex terminals
+if [[ "$TERM_PROGRAM" == apex ]]; then
+  _apex_precmd() {
+    local s=$?
+    [[ -n "$_apex_ran" ]] && printf '\e]133;D;%s' "$s"
+    _apex_ran=
+    printf '\e]7;file://%s%s' "$HOST" "$PWD"
+    printf '\e]133;A'
+  }
+  _apex_preexec() { _apex_ran=1; printf '\e]133;C'; }
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd _apex_precmd
+  add-zsh-hook preexec _apex_preexec
+fi
+"#;
+
+const BASH_INTEGRATION: &str = r#"# apex: prompt marks (OSC 133) and the directory (OSC 7), in apex terminals
+if [ "$TERM_PROGRAM" = apex ]; then
+  _apex_prompt() {
+    local s=$?
+    [ -n "$_apex_ran" ] && printf '\e]133;D;%s' "$s"
+    _apex_ran=
+    printf '\e]7;file://%s%s' "$HOSTNAME" "$PWD"
+    printf '\e]133;A'
+  }
+  _apex_preexec() {
+    [ -n "$COMP_LINE" ] && return
+    [ "$BASH_COMMAND" = _apex_prompt ] && return
+    [ -n "$_apex_ran" ] && return
+    _apex_ran=1
+    printf '\e]133;C'
+  }
+  PROMPT_COMMAND="_apex_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+  trap _apex_preexec DEBUG
+fi
+"#;
 
 fn stop(ctx: &Ctx, _: &Parsed) -> R {
     // whatever its version: an old daemon may not read our Stop as one
