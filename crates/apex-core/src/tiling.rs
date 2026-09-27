@@ -981,9 +981,43 @@ pub fn rowresize(l: &mut Layout, r: Rect, info: &dyn Info) {
     l.r = r;
     let mut r = r;
     r.y0 += font + BORDER; // the top row's tag, then a border
+    let n = l.cols.len();
+    // strips stay strips: a column put away keeps a strip's width, and
+    // the columns with room share the rest as they shared it before
+    // (scaled with the rest, a strip would come out of it, and the last
+    // column -- a strip, at the row's right -- would take what is over)
+    let strips = l.cols.iter().filter(|c| is_strip(c.r)).count();
+    let open: i32 = l.cols.iter().filter(|c| !is_strip(c.r)).map(|c| c.r.dx().max(0)).sum();
+    if strips > 0 && strips < n && open > 0 && or.dx() > 0 {
+        let total = (r.dx() - (n as i32 - 1) * BORDER).max(0);
+        let room = (total - strips as i32 * STRIP).max(0);
+        let last_open = (0..n).rev().find(|&j| !is_strip(l.cols[j].r)).unwrap_or(n - 1);
+        let mut given = 0;
+        let w: Vec<i32> = (0..n)
+            .map(|j| {
+                if is_strip(l.cols[j].r) {
+                    STRIP
+                } else if j == last_open {
+                    (room - given).max(STRIP)
+                } else {
+                    let x = (l.cols[j].r.dx().max(0) as i64 * room as i64 / open as i64) as i32;
+                    given += x;
+                    x.max(STRIP)
+                }
+            })
+            .collect();
+        let mut x = r.x0;
+        for (j, &width) in w.iter().enumerate() {
+            let mut r1 = r;
+            r1.x0 = x;
+            r1.x1 = if j == n - 1 { r.x1 } else { x + width };
+            colresize(l, j, r1, info);
+            x = r1.x1 + BORDER;
+        }
+        return;
+    }
     let mut r1 = r;
     r1.x1 = r1.x0;
-    let n = l.cols.len();
     for i in 0..n {
         r1.x0 = r1.x1;
         // the test should not be necessary, but guarantee we don't lose a pixel

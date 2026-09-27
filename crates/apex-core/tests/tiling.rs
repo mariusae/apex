@@ -946,3 +946,28 @@ fn putting_a_column_away_leaves_the_pointer_be() {
     let on = (s.x0 + 3, s.y0 + 3);
     assert_eq!(rowdragcol(&mut l, ci, 1, on, on, &info()), Some(Warp::ColButton(ColumnId(2))));
 }
+
+#[test]
+fn resizing_the_row_keeps_strips_strips() {
+    // two put away at the right, the others sharing the rest
+    let (mut l, _) = four();
+    rowgrow(&mut l, 0, 4, &info());
+    rowgrow(&mut l, 0, 4, &info());
+    assert_eq!(ids(&l), vec![3, 4, 1, 2]);
+    let (a, b) = (wid(&l, 3), wid(&l, 4));
+    for r in [Rect::new(0, 0, 1600, 900), Rect::new(0, 0, 700, 900), Rect::new(0, 0, 1000, 900)] {
+        rowresize(&mut l, r, &info());
+        tiles(&l);
+        assert_eq!((wid(&l, 1), wid(&l, 2)), (STRIP, STRIP), "{r:?}: {:?}", widths(&l));
+        assert_eq!(l.cols[3].r.x1, r.x1);
+        // the open ones in the proportion they had
+        let (a2, b2) = (wid(&l, 3), wid(&l, 4));
+        let share = |x: i32, y: i32| x as f64 / (x + y) as f64;
+        assert!((share(a2, b2) - share(a, b)).abs() < 0.01, "{r:?}: {a}/{b} -> {a2}/{b2}");
+    }
+    // and each comes back where it stood, as it would have
+    let ci = ix(&l, 1);
+    rowgrow(&mut l, ci, 1, &info());
+    assert_eq!(ids(&l), vec![1, 3, 4, 2]);
+    assert!(wid(&l, 1) > STRIP);
+}
