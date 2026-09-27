@@ -185,7 +185,11 @@ impl Acme {
     /// called before the frame clears the layouts to draw them again.
     pub fn completion_anchor(&mut self) {
         let Some(c) = self.completion.as_ref() else { return };
-        let anchor = self.layouts.get(&c.view).and_then(|l| l.point_of(c.start).map(|p| (p, l.line_height)));
+        // at the name's start; failing that, just past the rune before it
+        let anchor = self.layouts.get(&c.view).and_then(|l| {
+            let p = l.point_of(c.start).or_else(|| c.start.checked_sub(1).and_then(|q| l.point_of(q)).map(|p| gpui::point(p.x + px(8.), p.y)))?;
+            Some((p, l.line_height))
+        });
         if let (Some(c), Some(a)) = (self.completion.as_mut(), anchor) {
             c.anchor = Some(a);
         }

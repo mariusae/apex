@@ -457,11 +457,13 @@ impl TextLayout {
     }
 
     /// Where a rune is drawn, if it is on screen: the top-left of its
-    /// glyph, in window coordinates. (The first line's rows above the top
-    /// one are laid out too, and are not on screen.)
+    /// glyph, in window coordinates -- or, at a line's end (before its
+    /// newline, where a caret sits after the last word), just past its
+    /// last. (The first line's rows above the top one are laid out too,
+    /// and are not on screen.)
     pub fn point_of(&self, off: usize) -> Option<Point<Pixels>> {
         let lh = self.line_height;
-        let line = self.lines.iter().find(|l| l.start <= off && (off < l.end || (off == l.end && !l.has_newline)))?;
+        let line = self.lines.iter().find(|l| l.start <= off && off <= l.end)?;
         let d = line.to_disp(off);
         let p = line.layout.position_for_index(d, lh)?;
         if line.y + p.y + lh <= px(0.) {
