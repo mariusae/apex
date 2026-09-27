@@ -224,12 +224,18 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   its slash, a file with a space after, as acme's ^F does. No more lists
   in +Errors.
 - **Columns answer as windows do.** B1 on a column's box grows it a
-  little; B2 puts the others away (strips), and B2 on the one column
-  with room brings them all back; B3 puts this one away, where it stands,
-  its width to its neighbours (the last with room gives way to the strip
-  nearest it). A strip is drawn as the edges of sheets on their sides,
-  and the whole of it is its column's box: B1 brings it back, B2 back
-  alone, a drag moves it. The pointer on a strip brings out a slice of
+  little; B2 puts the others away, and B2 on the one column with room
+  brings them all back; B3 (or B4) puts this one away, its width to the
+  columns either side of where it stood (the last with room gives way
+  to the strip put away last). A column put away goes to the row's
+  right, as a window goes to its column's foot: a strip there, after
+  those already put away (`Column::after`, protocol 35, remembers the
+  column it stood right of). It comes back where it stood, at the width
+  it had, taken first from the columns holding width for strips;
+  columns put away one after another come back in the order they stood,
+  whichever comes back first. A strip is drawn as the edges of sheets
+  on their sides, and the whole of it is its column's box: B1 brings it
+  back, B2 back alone, a drag moves it. The pointer on a strip brings out a slice of
   its column, live, as wide as it would come back (`strips.rs`); a click
   there brings it back. B3 no longer gives a column the whole row.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,

@@ -1,9 +1,10 @@
-//! A column put away (B3 on its box, or squeezed by B2 on another's, or
-//! collapsed by B4) is a strip: drawn as the edges of sheets stood on
-//! their sides, the whole of it its column's box -- B1 brings it back,
-//! B2 back alone, a drag moves it, as on any column's box. The pointer on
-//! it brings out a slice of the column, live, as wide as it would come
-//! back, beside the strip; a click there brings it back.
+//! A column put away (B3 or B4 on its box, or B2 on another's) is a strip
+//! at the row's right, as a window put away goes to its column's foot:
+//! drawn as the edges of sheets stood on their sides, the whole of it its
+//! column's box -- B1 brings it back where it stood, B2 back alone, a
+//! drag moves it, as on any column's box. The pointer on it brings out a
+//! slice of the column, live, as wide as it would come back, beside the
+//! strip; a click there brings it back.
 
 use gpui::prelude::*;
 use gpui::{canvas, div, px, rgb, AnyElement, Context, MouseButton, Pixels, Point};

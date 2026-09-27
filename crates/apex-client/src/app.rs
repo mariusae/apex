@@ -2990,9 +2990,9 @@ impl Acme {
         }
         if matches!(self.logical_button_peek(e), MouseButton::Navigate(_)) {
             let button = self.logical_button(e);
-            // B4 on a column's box: the column collapses into its side, or a
-            // strip comes back, when the button comes up (a column has no
-            // tools menu)
+            // B4 on a column's box: the column put away at the row's right,
+            // or a strip back where it stood, when the button comes up (a
+            // column has no tools menu)
             if let Some((Target::View(ViewId::ColTag(c)), Region::LayoutBox)) = self.locate(e.position) {
                 self.mouse.box_drag = Some((BoxTarget::Col(c), button, e.position));
                 cx.notify();
