@@ -31,7 +31,7 @@ impl TermLayout {
 }
 
 /// A cell's colour as the theme has it (entry.rs on the packing).
-fn color_rgb(packed: u32, th: &crate::theme::Theme) -> u32 {
+pub(crate) fn color_rgb(packed: u32, th: &crate::theme::Theme) -> u32 {
     match packed >> 24 {
         0xfe => th.ansi[(packed & 0xf) as usize],
         0xfd => if packed & 1 == 0 { th.text } else { th.body_bg },

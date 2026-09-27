@@ -21,6 +21,7 @@ mod finder;
 mod menu;
 mod shell;
 mod sidebar;
+mod miniature;
 mod switcher;
 mod term_element;
 mod pool;
@@ -200,6 +201,11 @@ impl Render for Acme {
             let root = root.child(blank);
             let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
+                None => root,
+            };
+            // ctrl-tab's cards, over everything
+            let root = match self.switcher_overlay(window, cx) {
+                Some(o) => root.child(gpui::deferred(o).with_priority(3)),
                 None => root,
             };
             let root = match slide {
@@ -449,6 +455,11 @@ impl Render for Acme {
         };
         let root = match self.finder_panel(cx) {
             Some(panel) => root.child(panel),
+            None => root,
+        };
+        // ctrl-tab's cards, over everything
+        let root = match self.switcher_overlay(window, cx) {
+            Some(o) => root.child(gpui::deferred(o).with_priority(3)),
             None => root,
         };
         let root = match slide {

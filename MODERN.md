@@ -103,6 +103,17 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   neighbour's growth or a drag) are acme's, and plain tags. The sidebar
   and the finder list stashed windows where they stand, the sidebar's
   names in the secondary ink; `apex win list` does too.
+- **ctrl-tab** (`switcher.rs`, `miniature.rs`) is Manifold's ⌘E over the
+  sessions: while control is held the whole window is a row of cards,
+  one a session, each its session's window drawn small and live from
+  its replica (the shown one's and the parked ones'; pages are their
+  paper and name, their native views being the shown session's alone),
+  the chosen one in the middle with an accent edge and its neighbours a
+  little smaller and fainter running off the sides, sliding as the
+  choice moves. The presses walk the sessions most recently shown first
+  (ctrl-shift-tab back); letting go of control switches to the chosen
+  one, as does a click on a card; escape leaves things be. Nothing is
+  switched while walking.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the
