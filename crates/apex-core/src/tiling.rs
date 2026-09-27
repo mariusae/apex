@@ -314,7 +314,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
             // maxlines from what fits
             let bf = info.body_font_height(id).max(1);
             let body_dy = (r.dy() - font - 1).max(0);
-            Slot { window: id, r, body: Rect::new(r.x0, (r.y0 + font + 1).min(r.y1), r.x1, r.y1), taglines: 1, nlines: 0, frmax: body_dy / bf, maxlines: body_dy / bf, extra: 0, share: 0 }
+            Slot { window: id, r, body: Rect::new(r.x0, (r.y0 + font + 1).min(r.y1), r.x1, r.y1), taglines: 1, nlines: 0, frmax: body_dy / bf, maxlines: body_dy / bf, extra: 0, share: 0, premax: 0 }
         }
         Adding::Existing(s) => s,
     };
@@ -640,40 +640,52 @@ fn raise_nearest(l: &mut Layout, ci: usize, order: &[(WindowId, bool)], w: Windo
     }
 }
 
-/// B2 on a window's box: every other window in the column put away, and
-/// it has the column. B2 on one that has it already brings them all back
-/// where they were.
-pub fn colstash_others(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
-    let font = info.font_height().max(1);
-    let n = l.cols[ci].wins.len();
-    if n == 1 {
-        while !l.cols[ci].stash.is_empty() {
-            // the one under the top of the order first, so each comes
-            // back beside one already there
-            let order = stash_order(&l.cols[ci]);
-            let Some(x) = order.iter().find(|&&(_, st)| st).map(|&(x, _)| x) else { break };
-            let Some(si) = l.cols[ci].stash.iter().position(|s| s.slot.window == x) else { break };
-            colrecall(l, ci, si, false, info);
+/// Is window `wi` the one B2 gave its column: every other window laid
+/// out down to its tag, and the shares they had kept to go back to.
+pub fn is_maximized_win(c: &Column, wi: usize) -> bool {
+    c.wins.len() > 1 && c.wins.iter().enumerate().all(|(j, s)| j == wi || s.body.dy() <= 0) && c.wins.iter().any(|s| s.premax > 0)
+}
+
+/// B2 on a window's box: maximized -- as big as it can be, the others in
+/// the column down to their tags, as acme's B2 -- and not stashed: the
+/// share each had kept, for B1 on its box to give back.
+pub fn colmaximize(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
+    if !is_maximized_win(&l.cols[ci], wi) {
+        sync_shares(l, ci);
+        for s in l.cols[ci].wins.iter_mut() {
+            s.premax = s.share.max(1);
         }
-        return;
     }
-    fresh_shares(l, ci);
-    let w = l.cols[ci].wins[wi].window;
-    let others: Vec<(Slot, Option<WindowId>)> = l.cols[ci].wins.iter().filter(|s| s.window != w).map(|s| (*s, stash_above(&l.cols[ci], s.window))).collect();
-    l.cols[ci].wins.retain(|s| s.window == w);
-    for (slot, above) in others {
-        l.cols[ci].stash.push(Stashed { slot, above });
+    colgrow(l, ci, wi, 2, info);
+}
+
+/// B1 on the box of the window B2 maximized: every window in the column
+/// back at the share it had before.
+pub fn colunmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
+    let c = &mut l.cols[ci];
+    for s in c.wins.iter_mut() {
+        if s.premax > 0 {
+            s.share = s.premax;
+        }
+        s.premax = 0;
     }
-    let mut r = l.cols[ci].r;
-    r.y0 += font + BORDER;
-    r.y1 = floor(&l.cols[ci]);
-    winresize(l, ci, 0, r, true, info);
+    // the shares made whole again (a window may have come or gone)
+    let total: i64 = c.wins.iter().map(|s| s.share.max(1) as i64).sum();
+    let n = c.wins.len();
+    let mut given = 0i64;
+    for (k, s) in c.wins.iter_mut().enumerate() {
+        let share = if k == n - 1 { SHARE_UNIT - given } else { s.share.max(1) as i64 * SHARE_UNIT / total.max(1) };
+        s.share = share.max(1) as i32;
+        given += share;
+    }
+    let cr = l.cols[ci].r;
+    colresize(l, ci, cr, info);
     l.cols[ci].safe = true;
 }
 
 /// A stashed window brought back: under the window it was under, with
 /// the share of the column it had, the others giving it up in proportion
-/// -- or, `alone`, as the only one, the rest put away.
+/// -- or, `alone`, maximized (the others down to their tags).
 pub fn colrecall(l: &mut Layout, ci: usize, si: usize, alone: bool, info: &dyn Info) {
     fresh_shares(l, ci);
     let Stashed { mut slot, above } = l.cols[ci].stash.remove(si);
@@ -709,7 +721,7 @@ pub fn colrecall(l: &mut Layout, ci: usize, si: usize, alone: bool, info: &dyn I
     if alone {
         if let Some(wi) = l.cols[ci].wins.iter().position(|s| s.window == w) {
             if l.cols[ci].wins.len() > 1 {
-                colstash_others(l, ci, wi, info);
+                colmaximize(l, ci, wi, info);
             }
         }
     }
@@ -787,13 +799,16 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
             rowgrow(l, ci, 1, info);
             return Some(Warp::WinButton(w));
         }
-        // B2 puts the others away, B3 this one; B1 grows it a little
+        // B2 maximizes it (the others down to their tags), and B1 on it
+        // then gives them back their sizes; B3 stashes it; B1 otherwise
+        // grows it a little
         match but {
-            2 => colstash_others(l, ci, wi, info),
+            2 => colmaximize(l, ci, wi, info),
             3 => {
                 colstash(l, ci, wi, info);
                 return None;
             }
+            1 if is_maximized_win(&l.cols[ci], wi) => colunmaximize(l, ci, info),
             _ => colgrow(l, ci, wi, but, info),
         }
         return Some(Warp::WinButton(w));
@@ -953,7 +968,7 @@ pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> 
     match c {
         AddingCol::New { id, tag } => {
             // colinit
-            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new(), restore: 0, stash: Vec::new(), after: None });
+            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new(), restore: 0, stash: Vec::new(), stashed: false, after: None });
         }
         AddingCol::Existing(c) => {
             l.cols.insert(i, c);
@@ -1093,37 +1108,24 @@ pub fn rowgrow(l: &mut Layout, mut ci: usize, but: i32, info: &dyn Info) {
         }
         return;
     }
-    // button 1 on a strip brings it back, as B4 does: one way back, and
-    // no strip left between two columns with room
+    // as a window's box does. B1 on a strip brings it back (a stashed
+    // one where it stood, a minimized one where it stands), and on the
+    // column B2 maximized, every minimized one; B3 stashes the column;
+    // B2 maximizes it
     if but == 1 && l.full.is_none() && is_strip(l.cols[ci].r) {
         rowbringback(l, ci, info);
         return;
     }
-    // as a window's box does: B3 puts this column away (a strip, a sheet
-    // at its place), B2 on a strip brings it back alone, B2 on the only
-    // column with room brings the others back
+    if but == 1 && is_maximized_col(l, ci) {
+        rowunmaximize(l, ci, info);
+        return;
+    }
     if but == 3 {
         rowputaway(l, ci, info);
         return;
     }
-    if but == 2 && n > 1 {
-        let id = l.cols[ci].id;
-        // on a strip: back first, then alone
-        if is_strip(l.cols[ci].r) {
-            rowbringback(l, ci, info);
-        } else if (0..n).all(|j| j == ci || is_strip(l.cols[j].r)) {
-            // on the only one with room: every strip back where it was
-            rowbringback_all(l, id, info);
-            return;
-        }
-        // the others put away, left to right, so they stand at the right
-        // in the order they stood
-        let others: Vec<ColumnId> = l.cols.iter().filter(|c| c.id != id && !is_strip(c.r)).map(|c| c.id).collect();
-        for o in others {
-            if let Some(j) = l.column_index(o) {
-                rowputaway(l, j, info);
-            }
-        }
+    if but == 2 {
+        rowmaximize(l, ci, info);
         return;
     }
     // the width the columns share, the borders between them taken out
@@ -1173,15 +1175,17 @@ pub fn rowgrow(l: &mut Layout, mut ci: usize, but: i32, info: &dyn Info) {
 /// column keeps it.
 pub fn rowputaway(l: &mut Layout, ci: usize, info: &dyn Info) {
     let n = l.cols.len();
-    if n < 2 || ci >= n || is_strip(l.cols[ci].r) {
+    if n < 2 || ci >= n || l.cols[ci].stashed {
         return;
     }
     let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
-    if wide.len() == 1 {
-        // the last with room: the strip put away last comes back first,
-        // and then this one goes as any other
+    if wide == [ci] {
+        // the last with room: the minimized one nearest it comes back in
+        // its place, else the one stashed last; and then this one goes as
+        // any other
         let id = l.cols[ci].id;
-        let Some(back) = (0..n).rev().find(|&j| j != ci && is_strip(l.cols[j].r)) else { return };
+        let minimized = (0..n).filter(|&j| j != ci && !l.cols[j].stashed).min_by_key(|&j| j.abs_diff(ci));
+        let Some(back) = minimized.or_else(|| (0..n).rev().find(|&j| j != ci && l.cols[j].stashed)) else { return };
         rowbringback(l, back, info);
         if let Some(ci) = l.column_index(id) {
             rowputaway(l, ci, info);
@@ -1212,6 +1216,7 @@ pub fn rowputaway(l: &mut Layout, ci: usize, info: &dyn Info) {
         (None, None) => {}
     }
     // to the row's right, after the strips there
+    l.cols[ci].stashed = true;
     let c = l.cols.remove(ci);
     w.remove(ci);
     l.cols.push(c);
@@ -1224,7 +1229,7 @@ pub fn rowputaway(l: &mut Layout, ci: usize, info: &dyn Info) {
 /// one after another come back in the order they stood, whichever comes
 /// back first. None at the row's left.
 fn stood_after(l: &Layout, ci: usize) -> Option<ColumnId> {
-    let group: Vec<usize> = (0..l.cols.len()).filter(|&j| j != ci && is_strip(l.cols[j].r) && back_at(l, &l.cols[j]) == ci).collect();
+    let group: Vec<usize> = (0..l.cols.len()).filter(|&j| j != ci && l.cols[j].stashed && back_at(l, &l.cols[j]) == ci).collect();
     // of the strips coming back just left of it, the one no other comes
     // back right of
     let followed = |j: usize| group.iter().any(|&k| l.cols[k].after == Some(l.cols[j].id));
@@ -1238,13 +1243,9 @@ fn stood_after(l: &Layout, ci: usize) -> Option<ColumnId> {
 /// right of, when that one has room; right of where that one would come
 /// back, when it is put away too; at the left when it stood there.
 fn back_at(l: &Layout, c: &Column) -> usize {
-    back_among(l, c, &[])
-}
-
-/// `back_at`, the columns `back` counted as back already (their strips
-/// not yet widened).
-fn back_among(l: &Layout, c: &Column, back: &[ColumnId]) -> usize {
-    let open = |j: usize| !is_strip(l.cols[j].r) || back.contains(&l.cols[j].id);
+    // the columns in their order (with room or minimized) are those
+    // before the stashed ones
+    let open = |j: usize| !l.cols[j].stashed;
     let wide_end = (0..l.cols.len()).find(|&j| !open(j)).unwrap_or(l.cols.len());
     let mut after = c.after;
     let mut seen = 0;
@@ -1269,9 +1270,9 @@ pub fn rowbringback(l: &mut Layout, ci: usize, info: &dyn Info) {
     if ci >= l.cols.len() || !is_strip(l.cols[ci].r) {
         return;
     }
-    // one left where it stood (a layout from before strips went to the
-    // right) comes back there
-    if (ci + 1..l.cols.len()).any(|j| !is_strip(l.cols[j].r)) {
+    // minimized (or left where it stood by an older apex): back where
+    // it stands
+    if !l.cols[ci].stashed {
         restore_one(l, ci, info);
         l.cols[ci].after = None;
         return;
@@ -1285,33 +1286,8 @@ pub fn rowbringback(l: &mut Layout, ci: usize, info: &dyn Info) {
     rowpack(l, &w, info);
     restore_one(l, at, info);
     l.cols[at].after = None;
+    l.cols[at].stashed = false;
 }
-
-/// B2 on the only column with room: every strip back where it stood, at
-/// the width it had, the column keeping the rest.
-fn rowbringback_all(l: &mut Layout, keep: ColumnId, info: &dyn Info) {
-    // back to their places first, in the order they were put away
-    let strips: Vec<ColumnId> = l.cols.iter().filter(|c| is_strip(c.r)).map(|c| c.id).collect();
-    let mut back = Vec::new();
-    for s in strips {
-        let Some(ci) = l.column_index(s) else { continue };
-        let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
-        let c = l.cols.remove(ci);
-        w.remove(ci);
-        let at = back_among(l, &c, &back).min(l.cols.len());
-        back.push(s);
-        l.cols.insert(at, c);
-        w.insert(at, STRIP);
-        rowpack(l, &w, info);
-    }
-    for c in l.cols.iter_mut() {
-        c.after = None;
-    }
-    if let Some(k) = l.column_index(keep) {
-        rowrestore_all(l, k, info);
-    }
-}
-
 
 /// Every strip back at the width it had at once (a fifth of the row when
 /// it has none), column `ci` keeping the rest: B2 on the one column with
@@ -1324,7 +1300,7 @@ fn rowrestore_all(l: &mut Layout, ci: usize, info: &dyn Info) {
         s if s > 0 => ((s as i64 * row + SHARE_UNIT / 2) / SHARE_UNIT) as i32,
         _ => (row / 5) as i32,
     };
-    let mut w: Vec<i32> = l.cols.iter().map(|c| if is_strip(c.r) || c.restore > 0 { had(c).max(STRIP) } else { c.r.dx() }).collect();
+    let mut w: Vec<i32> = l.cols.iter().map(|c| if c.stashed { STRIP } else if is_strip(c.r) || c.restore > 0 { had(c).max(STRIP) } else { c.r.dx() }).collect();
     let others: i32 = (0..n).filter(|&j| j != ci).map(|j| w[j]).sum();
     // what is left is ci's; too little, and the others give in proportion
     let room = total - others;
@@ -1337,10 +1313,59 @@ fn rowrestore_all(l: &mut Layout, ci: usize, info: &dyn Info) {
         }
     }
     w[ci] = total - (0..n).filter(|&j| j != ci).map(|j| w[j]).sum::<i32>();
-    for c in l.cols.iter_mut() {
+    for c in l.cols.iter_mut().filter(|c| !c.stashed) {
         c.restore = 0;
     }
     rowpack(l, &w, info);
+}
+
+/// Is column `ci` the one B2 maximized: the only one with room, the
+/// others minimized (the stashed apart).
+pub fn is_maximized_col(l: &Layout, ci: usize) -> bool {
+    !is_strip(l.cols[ci].r) && (0..l.cols.len()).any(|j| j != ci && !l.cols[j].stashed) && (0..l.cols.len()).all(|j| j == ci || l.cols[j].stashed || is_strip(l.cols[j].r))
+}
+
+/// B2 on a column's box: maximized -- as wide as it can be, the others
+/// minimized where they stand, as a window's B2 leaves the others their
+/// tags -- and not stashed. Each keeps the width it had (the maximized
+/// one too) for B1 on its box to give back. A strip is brought back
+/// first.
+pub fn rowmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
+    let n = l.cols.len();
+    if n < 2 || l.full.is_some() {
+        return;
+    }
+    let id = l.cols[ci].id;
+    if is_strip(l.cols[ci].r) {
+        rowbringback(l, ci, info);
+    }
+    let Some(ci) = l.column_index(id) else { return };
+    if is_maximized_col(l, ci) {
+        return;
+    }
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    for j in 0..n {
+        if l.cols[j].stashed || is_strip(l.cols[j].r) {
+            continue;
+        }
+        if j == ci {
+            if l.cols[j].restore == 0 {
+                remember(l, j, w[j]);
+            }
+        } else {
+            remember(l, j, w[j]);
+            w[j] = STRIP;
+        }
+    }
+    let total = (l.r.dx() - (n as i32 - 1) * BORDER).max(0);
+    w[ci] = total - (0..n).filter(|&j| j != ci).map(|j| w[j]).sum::<i32>();
+    rowpack(l, &w, info);
+}
+
+/// B1 on the box of the column B2 maximized: the minimized ones back at
+/// the widths they had, it at the rest.
+pub fn rowunmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
+    rowrestore_all(l, ci, info);
 }
 
 /// B3 as it was: column `ci` given the whole row, the others hidden
@@ -1495,6 +1520,7 @@ fn reveal(l: &mut Layout, info: &dyn Info) {
     let afters: Vec<Option<ColumnId>> = going.iter().map(|&j| stood_after(l, j)).collect();
     for (&j, a) in going.iter().zip(afters) {
         l.cols[j].after = a;
+        l.cols[j].stashed = true;
     }
     let full = l.cols[fi].id;
     let going: Vec<ColumnId> = going.iter().map(|&j| l.cols[j].id).collect();
@@ -1568,11 +1594,28 @@ pub fn rowmovecol(l: &mut Layout, ci: usize, x: i32, info: &dyn Info) {
     let cr = l.cols[ci].r;
     let d = l.cols[ci - 1].r;
     let mut x = x;
-    if x < d.x0 + 80 + SCROLLWID {
-        x = d.x0 + 80 + SCROLLWID;
+    // each side at least the least a column may be; taken past half of
+    // that, a column is minimized (a strip where it stands, remembering
+    // its width), as a window dragged over goes down to its tag
+    if x < d.x0 + MINCOL {
+        x = if x < d.x0 + MINCOL / 2 {
+            if !is_strip(d) {
+                remember(l, ci - 1, d.dx());
+            }
+            d.x0 + STRIP
+        } else {
+            d.x0 + MINCOL
+        };
     }
-    if x > cr.x1 - 80 - SCROLLWID {
-        x = cr.x1 - 80 - SCROLLWID;
+    if x > cr.x1 - BORDER - MINCOL {
+        x = if x > cr.x1 - BORDER - MINCOL / 2 {
+            if !is_strip(cr) {
+                remember(l, ci, cr.dx());
+            }
+            cr.x1 - BORDER - STRIP
+        } else {
+            cr.x1 - BORDER - MINCOL
+        };
     }
     let mut r = d;
     r.x1 = x;

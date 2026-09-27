@@ -109,10 +109,15 @@ pub struct Slot {
     /// the rectangles.
     #[serde(default)]
     pub share: i32,
+    /// Given its column by B2 on another's box (or on its own): the share
+    /// it had before, which B1 on the maximized window's box gives back.
+    /// Zero otherwise.
+    #[serde(default)]
+    pub premax: i32,
 }
 
-/// A window put away in its column's stash (B3 on its box, or B2 on
-/// another's): out of the tiling, drawn as a sheet's edge at the
+/// A window put away in its column's stash (B3 on its box): out of the
+/// tiling, drawn as a sheet's edge at the
 /// column's foot, and brought back where it was, at the size it had.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Stashed {
@@ -135,16 +140,23 @@ pub struct Column {
     pub r: Rect,
     pub safe: bool,
     pub wins: Vec<Slot>,
-    /// The width it had when it last became a strip (collapsed by B4,
-    /// squeezed by B2, hidden by B3), as a share of the row in parts per
-    /// million: what bringing it back gives it. Zero when there is none.
+    /// The width it had when it last became a strip (minimized by B2 on
+    /// another's box or by a drag, stashed by B3), as a share of the row
+    /// in parts per million: what bringing it back gives it. For a
+    /// column with room, the width it had before it took a strip's (or
+    /// was maximized), which it goes back to. Zero when there is none.
     #[serde(default)]
     pub restore: i32,
     /// The windows put away, in the order they went.
     #[serde(default)]
     pub stash: Vec<Stashed>,
-    /// Put away (a strip at the row's right, B3 on its box): the column
-    /// it stood right of, which it comes back beside; None at the left.
+    /// Stashed (B3 on its box): a strip at the row's right, after those
+    /// already there. A strip that is not stashed is minimized: where it
+    /// stands, among the others in their order.
+    #[serde(default)]
+    pub stashed: bool,
+    /// Stashed: the column it stood right of, which it comes back
+    /// beside; None at the left.
     #[serde(default)]
     pub after: Option<ColumnId>,
 }
@@ -738,7 +750,7 @@ impl State {
         for c in &self.layout.cols {
             h.update(&c.id.0.to_le_bytes());
             h.update(&c.tag.0.to_le_bytes());
-            h.update(&postcard::to_stdvec(&(c.r, c.safe, c.restore, c.after)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(c.r, c.safe, c.restore, c.stashed, c.after)).unwrap_or_default());
             for s in &c.wins {
                 h.update(&postcard::to_stdvec(s).unwrap_or_default());
             }

@@ -142,14 +142,22 @@ fn the_last_window_laid_out_is_not_stashed_into_a_blank_column() {
     assert_eq!(l, before);
 }
 
+/// Every window in column `ci` but `keep` stashed, top to bottom, as
+/// B3 on each would.
+fn stash_all_but(l: &mut Layout, ci: usize, keep: u64) {
+    while let Some(wi) = l.cols[ci].wins.iter().position(|s| s.window != WindowId(keep)) {
+        colstash(l, ci, wi, &info());
+    }
+}
+
 #[test]
 fn stashing_the_last_window_laid_out_brings_back_the_nearest() {
     let mut l = row();
     for w in 1..=4 {
         add(&mut l, 0, w, None);
     }
-    // B2 on 3: 1, 2 and 4 put away
-    colstash_others(&mut l, 0, 2, &info());
+    // 1, 2 and 4 stashed
+    stash_all_but(&mut l, 0, 3);
     assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![3]);
     assert_eq!(l.cols[0].stash.len(), 3);
     // it has the column, down to the sheets
@@ -162,6 +170,43 @@ fn stashing_the_last_window_laid_out_brings_back_the_nearest() {
     assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![4]);
     assert_eq!(l.cols[0].wins[0].r.y1, 700 - stash_band(&l.cols[0]));
     assert_eq!(stash_order(&l.cols[0]).iter().map(|&(w, st)| (w.0, st)).collect::<Vec<_>>(), vec![(1, true), (2, true), (3, true), (4, false)]);
+}
+
+#[test]
+fn button_2_maximizes_a_window_and_button_1_on_it_gives_the_others_back() {
+    let mut l = row();
+    for w in 1..=3 {
+        add(&mut l, 0, w, None);
+    }
+    let heights = |l: &Layout| l.cols[0].wins.iter().map(|s| s.r.dy()).collect::<Vec<_>>();
+    let before = heights(&l);
+    let click = |l: &mut Layout, wi: usize, but: i32| {
+        let s = l.cols[0].wins[wi].r;
+        let at = (s.x0 + 3, s.y0 + 3);
+        coldragwin(l, 0, wi, but, at, at, &info())
+    };
+    // B2 on 2: it has the column, the others down to their tags -- none
+    // stashed
+    assert_eq!(click(&mut l, 1, 2), Some(Warp::WinButton(WindowId(2))));
+    assert!(l.cols[0].stash.is_empty());
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert!(l.cols[0].wins[0].body.dy() <= 0 && l.cols[0].wins[2].body.dy() <= 0, "{:?}", heights(&l));
+    assert!(is_maximized_win(&l.cols[0], 1));
+    // B2 again changes nothing
+    let max = l.clone();
+    click(&mut l, 1, 2);
+    assert_eq!(l, max);
+    // B1 on it: every window back at the size it had
+    click(&mut l, 1, 1);
+    let after = heights(&l);
+    for (a, b) in before.iter().zip(&after) {
+        assert!((a - b).abs() <= FONT, "{before:?} -> {after:?}");
+    }
+    assert!(!is_maximized_win(&l.cols[0], 1));
+    assert_eq!(l.cols[0].wins.last().unwrap().r.y1, 700);
+    // B3 still stashes
+    click(&mut l, 1, 3);
+    assert_eq!(l.cols[0].stash.len(), 1);
 }
 
 #[test]
@@ -188,8 +233,8 @@ fn recalled_after_a_button_2_each_goes_back_to_its_place() {
     for w in 1..=5 {
         add(&mut l, 0, w, None);
     }
-    // B2 on 3, then 2 and 4 back, in the other order
-    colstash_others(&mut l, 0, 2, &info());
+    // all but 3 stashed, then 2 and 4 back, in the other order
+    stash_all_but(&mut l, 0, 3);
     let si = |l: &Layout, w: u64| l.cols[0].stash.iter().position(|s| s.slot.window == WindowId(w)).unwrap();
     let i = si(&l, 4);
     colrecall(&mut l, 0, i, false, &info());
@@ -197,28 +242,21 @@ fn recalled_after_a_button_2_each_goes_back_to_its_place() {
     colrecall(&mut l, 0, i, false, &info());
     assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![2, 3, 4]);
     assert_eq!(stash_order(&l.cols[0]).iter().map(|&(w, _)| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
-    // B2 on one alone brings every one back, in order
-    let mut m = row();
-    for w in 1..=5 {
-        add(&mut m, 0, w, None);
-    }
-    colstash_others(&mut m, 0, 2, &info());
-    colstash_others(&mut m, 0, 0, &info());
-    assert!(m.cols[0].stash.is_empty());
-    assert_eq!(wins(&m, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
-    assert_eq!(m.cols[0].wins.last().unwrap().r.y1, 700);
 }
 
 #[test]
-fn a_window_recalled_alone_puts_the_others_away() {
+fn a_window_recalled_alone_is_maximized() {
     let mut l = row();
     for w in 1..=3 {
         add(&mut l, 0, w, None);
     }
     colstash(&mut l, 0, 0, &info());
     colrecall(&mut l, 0, 0, true, &info());
-    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1]);
-    assert_eq!(stash_order(&l.cols[0]).iter().map(|&(w, st)| (w.0, st)).collect::<Vec<_>>(), vec![(1, false), (2, true), (3, true)]);
+    // back, and given the column: the others down to their tags, not
+    // stashed
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert!(l.cols[0].stash.is_empty());
+    assert!(is_maximized_win(&l.cols[0], 0));
 }
 
 #[test]
@@ -229,7 +267,7 @@ fn a_window_leaving_hands_its_place_on_and_a_blank_column_gets_its_nearest() {
     }
     // 2 and 3 away under 1; then 1 leaves (closed): 2 is now at the top,
     // and comes back to fill the column
-    colstash_others(&mut l, 0, 0, &info());
+    stash_all_but(&mut l, 0, 1);
     let above = stash_above(&l.cols[0], WindowId(1));
     colclose(&mut l, 0, 0, &info());
     left(&mut l, 0, WindowId(1), above, &info());
@@ -250,7 +288,7 @@ fn a_stash_shows_a_few_edges_however_many_are_in_it() {
     for w in 1..=6 {
         add(&mut l, 0, w, None);
     }
-    colstash_others(&mut l, 0, 0, &info());
+    stash_all_but(&mut l, 0, 1);
     assert_eq!(l.cols[0].stash.len(), 5);
     assert_eq!(stash_band(&l.cols[0]), BORDER + STASH_EDGE * STASH_EDGES as i32);
 }
@@ -366,9 +404,12 @@ fn dragging_a_column_box_resizes_against_its_left_neighbour() {
     assert_eq!(warp, Some(Warp::ColButton(ColumnId(2))));
     assert_eq!(l.cols[0].r.x1, 300);
     assert_eq!(l.cols[1].r.x0, 300 + BORDER);
-    // never narrower than 80 + Scrollwid
-    rowdragcol(&mut l, 1, 1, (302, 30), (10, 30), &info());
+    // never narrower than 80 + Scrollwid, short of half that
+    rowdragcol(&mut l, 1, 1, (302, 30), (60, 30), &info());
     assert_eq!(l.cols[0].r.x1, 80 + SCROLLWID);
+    // past it: the neighbour minimized where it stands
+    rowdragcol(&mut l, 1, 1, (94, 30), (10, 30), &info());
+    assert!(is_strip(l.cols[0].r) && !l.cols[0].stashed);
 }
 
 #[test]
@@ -415,7 +456,7 @@ fn arrange_entries_replay_identically() {
     f.catch_up(&log).unwrap();
     assert_eq!(f.state.hash(), n.state.hash());
     assert_eq!(f.state.layout, n.state.layout);
-    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, restore: 0, stash: Vec::new(), after: None, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0 }] };
+    let _ = Column { id: ColumnId(0), tag: BufferId(0), r: Rect::default(), safe: true, restore: 0, stash: Vec::new(), stashed: false, after: None, wins: vec![Slot { window: w2, r: Rect::default(), body: Rect::default(), taglines: 1, nlines: 0, frmax: 0, maxlines: 0, extra: 0, share: 0, premax: 0 }] };
 }
 
 #[test]
@@ -548,18 +589,19 @@ fn button_1_on_a_columns_box_widens_it_at_its_neighbours_expense() {
 }
 
 #[test]
-fn button_2_makes_a_column_as_wide_as_can_be_and_the_others_strips() {
+fn button_2_maximizes_a_column_and_minimizes_the_others_where_they_stand() {
     let mut l = three();
     rowgrow(&mut l, 1, 2, &info());
     tiles(&l);
-    // the others put away at the row's right, in the order they stood
-    assert_eq!(ids(&l), vec![2, 1, 3]);
-    assert_eq!(widths(&l), vec![1000 - 2 * STRIP - 2 * BORDER, STRIP, STRIP]);
+    // the others minimized in place, in their order: not stashed
+    assert_eq!(ids(&l), vec![1, 2, 3]);
+    assert_eq!(widths(&l), vec![STRIP, 1000 - 2 * STRIP - 2 * BORDER, STRIP]);
+    assert!(l.cols.iter().all(|c| !c.stashed));
+    assert!(is_maximized_col(&l, 1));
     // a strip is its box: its windows' tags are a line each
-    assert!(is_strip(l.cols[1].r));
-    assert!(l.cols[1].wins.iter().all(|s| s.taglines == 1));
-    // and a click on a strip's box brings it back where it stood
-    rowgrow(&mut l, 1, 1, &info());
+    assert!(l.cols[0].wins.iter().all(|s| s.taglines == 1));
+    // a click on a minimized one brings it back where it stands
+    rowgrow(&mut l, 0, 1, &info());
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3]);
     assert!(wid(&l, 1) > STRIP + 100, "{:?}", widths(&l));
@@ -673,17 +715,6 @@ fn button_4_puts_a_column_away_at_the_rows_right_and_the_last_with_room_stays() 
     tiles(&l);
     assert_eq!(ids(&l), vec![4, 1, 2, 3]);
     assert_eq!(widths(&l).iter().filter(|&&w| w > STRIP).count(), 1, "{:?}", widths(&l));
-    // B2 on it, the one with room: every strip back where it stood, near
-    // the width it had (this one keeps enough for its text, and the
-    // others give a little for it)
-    rowgrow(&mut l, 0, 2, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    let w = widths(&l);
-    for j in 0..3 {
-        assert!((w[j] - before[j]).abs() <= before[j] / 20 + 2, "{before:?} -> {w:?}");
-    }
-    assert!(w[3] >= before[3], "{before:?} -> {w:?}");
 }
 
 #[test]
@@ -757,16 +788,16 @@ fn columns_put_away_one_after_another_come_back_in_the_order_they_stood() {
 
 #[test]
 fn strips_left_by_button_2_or_3_come_back_at_the_widths_they_had() {
+    // minimized by B2 on another: back where it stands
     let (mut l, before) = four();
     rowgrow(&mut l, 2, 2, &info());
-    assert_eq!(ids(&l), vec![3, 1, 2, 4]);
+    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     for id in [1, 2, 4] {
         assert_eq!(wid(&l, id), STRIP);
     }
-    let ci = ix(&l, 4);
-    rowgrow(&mut l, ci, 1, &info());
+    rowgrow(&mut l, 3, 1, &info());
     tiles(&l);
-    assert_eq!(ids(&l), vec![3, 4, 1, 2]);
+    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!(near(wid(&l, 4), before[3]), "{before:?} -> {:?}", widths(&l));
     // given the row, then the row back as strips: each strip remembers
     // its column
@@ -803,13 +834,14 @@ fn a_click_on_a_windows_box_in_a_strip_brings_the_column_back_and_the_next_grows
     assert!(near(l.cols[0].r.dx(), before[0]), "{before:?} -> {:?}", widths(&l));
     let back = heights(&l);
     assert!(l.cols[0].wins[0].r.dy() > FONT, "the other window is not squeezed yet: {back:?}");
-    // the second: B2 puts the other window away, and this one has the column
+    // the second: B2 maximizes it, the other down to its tag
     let s = l.cols[0].wins[1].r;
     let at = (s.x0 + 3, s.y0 + 3);
     coldragwin(&mut l, 0, 1, 2, at, at, &info());
-    assert_eq!(l.cols[0].wins.len(), 1, "the other window is stashed: {:?}", heights(&l));
-    assert_eq!(l.cols[0].stash.len(), 1);
-    assert!(l.cols[0].wins[0].r.dy() > 600);
+    assert_eq!(l.cols[0].wins.len(), 2, "{:?}", heights(&l));
+    assert!(l.cols[0].stash.is_empty());
+    assert!(l.cols[0].wins[0].body.dy() <= 0);
+    assert!(l.cols[0].wins[1].r.dy() > 600);
     // a window's box in a column with room still just grows the window
     let widths_now = widths(&l);
     let s = l.cols[2].wins[0].r;
@@ -855,11 +887,20 @@ fn the_line_between_columns_moves_only_the_widths() {
     assert_eq!(l.cols[1].r.x0, b.x0 - 100 + BORDER);
     assert_eq!(l.cols[1].r.x1, b.x1);
     assert_eq!(l.cols[0].r.x0, a.x0);
-    // never narrower than acme allows, however far it is taken
-    rowmovecol(&mut l, 1, 0, &info());
+    // never narrower than acme allows short of half that; past it, the
+    // column is minimized where it stands, as a window dragged over goes
+    // down to its tag
+    rowmovecol(&mut l, 1, 80 + SCROLLWID - 10, &info());
+    assert_eq!(l.cols[0].r.x1, 80 + SCROLLWID);
+    rowmovecol(&mut l, 1, 10, &info());
+    assert!(is_strip(l.cols[0].r) && !l.cols[0].stashed, "{:?}", widths(&l));
+    // B1 brings it back at the width it had
+    rowgrow(&mut l, 0, 1, &info());
+    assert!(!is_strip(l.cols[0].r));
     assert_eq!(l.cols[0].r.x1, 80 + SCROLLWID);
     rowmovecol(&mut l, 1, 5000, &info());
-    assert_eq!(l.cols[1].r.x0, b.x1 - 80 - SCROLLWID + BORDER);
+    assert!(is_strip(l.cols[1].r) && !l.cols[1].stashed, "{:?}", widths(&l));
+    assert_eq!(l.cols[1].r.x1, b.x1);
 }
 
 #[test]
@@ -887,48 +928,53 @@ fn a_drags_preview_is_where_the_drop_puts_it() {
 
 #[test]
 fn a_columns_box_answers_as_a_windows_does() {
-    // B3: the column put away at the row's right, as a window is at its
+    // B3: the column stashed at the row's right, as a window is at its
     // column's foot, the columns either side of where it stood taking
     // its width
     let (mut l, before) = four();
     rowgrow(&mut l, 1, 3, &info());
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 3, 4, 2]);
+    assert!(l.column(ColumnId(2)).unwrap().stashed);
     assert_eq!(wid(&l, 2), STRIP);
     assert!(wid(&l, 1) > before[0] && wid(&l, 3) > before[2], "{before:?} -> {:?}", widths(&l));
     // B1 on it: back where it stood, at the width it had
     rowgrow(&mut l, 3, 1, &info());
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
+    assert!(!l.column(ColumnId(2)).unwrap().stashed);
     assert!(near(wid(&l, 2), before[1]), "{before:?} -> {:?}", widths(&l));
-    // B2: the others put away; B2 again on the one with room: all back
+    // B2: maximized, the others minimized where they stand; B2 again
+    // changes nothing; B1 on it: all back
     let (mut l, before) = four();
     rowgrow(&mut l, 2, 2, &info());
-    assert_eq!(ids(&l), vec![3, 1, 2, 4]);
+    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!([1, 2, 4].iter().all(|&id| wid(&l, id) == STRIP));
-    rowgrow(&mut l, 0, 2, &info());
+    let max = l.clone();
+    rowgrow(&mut l, 2, 2, &info());
+    assert_eq!(l, max);
+    rowgrow(&mut l, 2, 1, &info());
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    for j in [0, 1, 3] {
+    for j in 0..3 {
         assert!(near(widths(&l)[j], before[j]), "{before:?} -> {:?}", widths(&l));
     }
-    // B2 on a strip: it comes back alone
+    // B2 on a stashed strip: back where it stood, and maximized
     let (mut l, _) = four();
     rowgrow(&mut l, 1, 3, &info());
     rowgrow(&mut l, 3, 2, &info());
     tiles(&l);
-    assert_eq!(ids(&l), vec![2, 1, 3, 4]);
-    assert!(wid(&l, 2) > 600, "{:?}", widths(&l));
-    assert!([1, 3, 4].iter().all(|&id| wid(&l, id) == STRIP));
-    // B3 on the last column with room: the strip put away last comes
-    // back in its stead, the row never all strips
-    rowgrow(&mut l, 0, 3, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![4, 1, 3, 2]);
-    assert_eq!(widths(&l).iter().filter(|&&w| w > STRIP).count(), 1, "{:?}", widths(&l));
-    // and B2 on that one: all back in the order they stood
-    rowgrow(&mut l, 0, 2, &info());
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
+    assert!(wid(&l, 2) > 600, "{:?}", widths(&l));
+    assert!([1, 3, 4].iter().all(|&id| wid(&l, id) == STRIP && !l.column(ColumnId(id)).unwrap().stashed));
+    // B3 on the last column with room: the minimized one nearest it comes
+    // back in its stead, the row never all strips
+    rowgrow(&mut l, 1, 3, &info());
+    tiles(&l);
+    assert_eq!(ids(&l), vec![1, 3, 4, 2]);
+    assert!(l.column(ColumnId(2)).unwrap().stashed);
+    assert_eq!(widths(&l).iter().filter(|&&w| w > STRIP).count(), 1, "{:?}", widths(&l));
+    assert!(wid(&l, 1) > STRIP);
 }
 
 #[test]

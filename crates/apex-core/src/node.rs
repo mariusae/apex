@@ -590,9 +590,10 @@ impl Node {
     }
 
     /// A click on a window's layout box: button 1 grows it a bit (acme's
-    /// `colgrow`), 2 puts the column's others in its stash, 3 puts it
-    /// there. On a stashed window's box, 1 brings it back where it was
-    /// and 2 as the only one.
+    /// `colgrow`) -- or, on the window 2 maximized, gives the others back
+    /// their sizes -- 2 maximizes it (the others down to their tags), 3
+    /// puts it in the column's stash. On a stashed window's box, 1 brings
+    /// it back where it was and 2 maximized.
     pub fn grow_window(&mut self, log: &mut Log, w: WindowId, but: i32) -> Result<()> {
         let mut l = self.state.layout.clone();
         if let Some((ci, si)) = l.stashed_of(w) {
@@ -606,8 +607,9 @@ impl Node {
         }
         let (ci, wi) = self.place_of(w)?;
         match but {
-            2 => tiling::colstash_others(&mut l, ci, wi, &*self.tiling),
+            2 => tiling::colmaximize(&mut l, ci, wi, &*self.tiling),
             3 => tiling::colstash(&mut l, ci, wi, &*self.tiling),
+            1 if tiling::is_maximized_win(&l.cols[ci], wi) => tiling::colunmaximize(&mut l, ci, &*self.tiling),
             _ => tiling::colgrow(&mut l, ci, wi, but, &*self.tiling),
         }
         self.arrange(log, &l)?;
