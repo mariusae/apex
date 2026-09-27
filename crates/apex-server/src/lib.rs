@@ -1120,6 +1120,27 @@ impl Server {
     /// acme's `textcomplete`, the file-system half: what to insert after
     /// `prefix` (a path fragment typed at `at` in `view`, relative to
     /// `dir`), or the candidates in `+Errors` when it is not decided.
+    /// The names that complete the path fragment `prefix` from `dir`:
+    /// each in the fragment's directory starting with its last part,
+    /// sorted, with whether it is a directory; or why there are none.
+    pub fn candidates(&self, dir: &Path, prefix: &str) -> Result<Vec<(String, bool)>, String> {
+        let (dirpart, base) = match prefix.rsplit_once('/') {
+            Some((d, b)) => (if d.is_empty() { "/".to_string() } else { d.to_string() }, b.to_string()),
+            None => (String::new(), prefix.to_string()),
+        };
+        let where_ = if dirpart.is_empty() { dir.to_path_buf() } else { resolve(dir, &dirpart) };
+        let mut names: Vec<(String, bool)> = std::fs::read_dir(&where_)
+            .map_err(|e| format!("{}: {e}", where_.display()))?
+            .filter_map(|e| e.ok())
+            // a dot file only when the fragment asks for one
+            .filter(|e| base.starts_with('.') || !e.file_name().to_string_lossy().starts_with('.'))
+            .map(|e| (e.file_name().to_string_lossy().to_string(), e.path().is_dir()))
+            .filter(|(n, _)| n.starts_with(&base))
+            .collect();
+        names.sort();
+        Ok(names)
+    }
+
     pub fn complete(&self, view: ViewId, at: usize, dir: &Path, prefix: &str) -> Proposal {
         let (dirpart, base) = match prefix.rsplit_once('/') {
             Some((d, b)) => (if d.is_empty() { "/".to_string() } else { d.to_string() }, b.to_string()),

@@ -765,6 +765,13 @@ impl Daemon {
                 let dir = s.server.dir_of(&s.view, ctx);
                 props.push(s.server.complete(view, at, &dir, &prefix));
             }
+            ClientMsg::Candidates { view, ctx, at, prefix } => {
+                // to the asker alone: a list to choose from, not an edit
+                let dir = s.server.dir_of(&s.view, ctx);
+                let names = s.server.candidates(&dir, &prefix);
+                self.send(id, ServerMsg::Candidates(crate::proto::Candidates { view, at, prefix, names }));
+                return;
+            }
             ClientMsg::Propose { id: tool_id, proposal } => {
                 // a tool's snarf is the clipboard too, on every UI on the
                 // session, as a terminal's OSC 52 is (a UI's own snarf

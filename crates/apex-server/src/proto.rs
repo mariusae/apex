@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 33;
+pub const PROTOCOL: u32 = 34;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -167,6 +167,10 @@ pub enum ClientMsg {
     /// `IoFrame::Request`, then its body frames and end. Streams belong
     /// to the connection and end with it.
     Io { stream: u32, frame: IoFrame },
+    /// ^F in a text: the names in the file system that complete `prefix`
+    /// (the path fragment before `at` in `view`, from `ctx`'s directory),
+    /// for the asker to show and choose from. Answered with `Candidates`.
+    Candidates { view: ViewId, ctx: ExecCtx, at: usize, prefix: String },
 }
 
 /// A frame on the I/O plane. HTTP-shaped: a `Request` opens a stream
@@ -241,6 +245,16 @@ pub struct Script {
     pub text: String,
 }
 
+/// What completes a path fragment: each name there that starts with its
+/// last part, with whether it is a directory; or why there are none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Candidates {
+    pub view: ViewId,
+    pub at: usize,
+    pub prefix: String,
+    pub names: Result<Vec<(String, bool)>, String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ServerMsg {
     /// The daemon's build id, its first frame on every connection. This
@@ -287,6 +301,8 @@ pub enum ServerMsg {
     /// The session this connection was attached to has been ended; the
     /// connection closes right after.
     Ended { id: String, label: String },
+    /// The answer to `ClientMsg::Candidates`, to the connection that asked.
+    Candidates(Candidates),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

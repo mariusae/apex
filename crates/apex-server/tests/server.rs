@@ -1274,3 +1274,22 @@ fn a_shells_prompt_marks_reach_the_terminal() {
     assert_eq!(m.output, Some(m.prompt));
     assert_eq!(m.end, Some(m.prompt + 1));
 }
+
+#[test]
+fn candidates_are_the_names_that_complete_a_path() {
+    let (_log, _node, _col, server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-cands-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("sub/deeper")).unwrap();
+    for f in ["alpha.txt", "alpine.txt", "beta", ".alphadot", "sub/one.rs"] {
+        std::fs::write(dir.join(f), "").unwrap();
+    }
+    // sorted, directories said, dot files only when asked for
+    assert_eq!(server.candidates(&dir, "al").unwrap(), vec![("alpha.txt".to_string(), false), ("alpine.txt".to_string(), false)]);
+    assert_eq!(server.candidates(&dir, ".al").unwrap(), vec![(".alphadot".to_string(), false)]);
+    assert_eq!(server.candidates(&dir, "s").unwrap(), vec![("sub".to_string(), true)]);
+    // in the fragment's own directory
+    assert_eq!(server.candidates(&dir, "sub/").unwrap(), vec![("deeper".to_string(), true), ("one.rs".to_string(), false)]);
+    assert!(server.candidates(&dir, "nowhere/x").is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
