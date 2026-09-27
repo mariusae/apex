@@ -426,6 +426,10 @@ pub struct Acme {
     pub errors_open: std::collections::HashSet<WindowId>,
     /// Windows on their way to where the tiling put them.
     pub glide: crate::glide::Glide,
+    /// ^F's list under the caret (`completion.rs`), and the candidates
+    /// that came in for it, to be shown.
+    pub completion: Option<crate::completion::Completion>,
+    pub candidates: Vec<apex_server::proto::Candidates>,
     /// ⌘⇧P: the palette of commands to run.
     pub commands: Option<crate::commands::Commands>,
     /// A web window's address being typed in its header.
@@ -1609,6 +1613,8 @@ impl Acme {
             stash_walk: None,
             url_edit: None,
             commands: None,
+            completion: None,
+            candidates: Vec::new(),
             glide: Default::default(),
             toasts: Vec::new(),
             errors_open: std::collections::HashSet::new(),
@@ -2428,6 +2434,7 @@ impl Acme {
         let alive = link.poll(&mut self.node, &mut self.log);
         let ended = link.ended.take();
         self.clips.append(&mut link.clips);
+        self.candidates.append(&mut link.candidates);
         if self.connected && !alive {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
@@ -2785,7 +2792,7 @@ impl Acme {
         }
     }
 
-    fn text_of(&self, view: ViewId) -> Option<Text> {
+    pub(crate) fn text_of(&self, view: ViewId) -> Option<Text> {
         let b = self.node.view_buffer(view).ok()?;
         Some(self.node.state.buffer(b).ok()?.text.clone())
     }
@@ -2917,6 +2924,10 @@ impl Acme {
         crate::web::focus_ui(window);
         // a click off the address being typed leaves it as it was
         self.url_edit = None;
+        // and one off ^F's list puts it away (its rows take their own)
+        if self.completion.take().is_some() {
+            cx.notify();
+        }
         // and one off the command palette puts it away
         if self.commands.take().is_some() {
             cx.notify();
@@ -4098,9 +4109,10 @@ impl Acme {
         }
     }
 
-    /// acme's `textcomplete`: the path fragment before `q0` goes to the
-    /// server, which knows the file system; what comes back is inserted.
-    fn complete(&mut self, v: ViewId, q0: usize) {
+    /// acme's `textcomplete`, inline: the path fragment before `q0` goes
+    /// to the server, which knows the file system; the names that complete
+    /// it come back to be typed in or chosen from (`completion.rs`).
+    pub fn complete(&mut self, v: ViewId, q0: usize) {
         let Some(t) = self.text_of(v) else { return };
         let mut q = q0;
         while q > 0 && is_file_char(t.char_at(q - 1)) {
@@ -4111,10 +4123,10 @@ impl Acme {
         match &mut self.backend {
             Backend::Local(server) => {
                 let dir = server.dir_of(&self.node, ctx);
-                let p = server.complete(v, q0, &dir, &prefix);
-                perform(&mut self.node, &mut self.log, vec![p]);
+                let names = server.candidates(&dir, &prefix);
+                self.candidates.push(apex_server::proto::Candidates { view: v, at: q0, prefix, names });
             }
-            Backend::Remote(link) => link.send(&ClientMsg::Complete { view: v, ctx, at: q0, prefix }),
+            Backend::Remote(link) => link.send(&ClientMsg::Candidates { view: v, ctx, at: q0, prefix }),
         }
         self.after();
     }
@@ -4241,6 +4253,11 @@ impl Acme {
                 return;
             }
         }
+        // ^F's list: ↑ ↓ return tab escape are its; the rest go to the
+        // text, and the list follows
+        if self.completion.is_some() && !e.keystroke.modifiers.platform && self.completion_key(&e.keystroke.key, cx) {
+            return;
+        }
         if self.finder.is_some() {
             let ks = &e.keystroke;
             self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
@@ -4301,6 +4318,7 @@ impl Acme {
             }
             Target::Web(_) => {} // not reached: a page's scrollbar takes no keys
         }
+        self.completion_follow(cx);
         cx.notify();
     }
 

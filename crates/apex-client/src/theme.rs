@@ -203,7 +203,6 @@ struct Keys {
     exec: u32,
     look: u32,
     popover: u32,
-    pick: u32,
     hover: u32,
     danger_hover: u32,
     ansi: [u32; 16],
@@ -266,7 +265,7 @@ pub const ALABASTER_LIGHT: Theme = make(Keys {
     paper: 0xF7F7F7, sel: 0xBFDBFE, thumb: 0xCFCFCF, header: 0xEEEEEE, header_sel: 0xBAD4F5, line: 0xDDDDDD,
     ink: 0x000000, dim: 0x777777, faint: 0x999999, accent: 0x007ACC, chosen: 0x007ACC, column: 0xF0F0F0, sidebar: 0xE9E9E9,
     dirty: 0x333333, stale: 0xE09A30, fenced: 0xAA3731, exec: 0xAA3731, look: 0x325CC0,
-    popover: 0xFFFFFF, pick: 0xE3EEFD, hover: 0xEFEFEF, danger_hover: 0xF8E1E0, ansi: ANSI_LIGHT, diff_add: 0xE3ECFB, diff_del: 0xFFEFD6,
+    popover: 0xFFFFFF, hover: 0xEFEFEF, danger_hover: 0xF8E1E0, ansi: ANSI_LIGHT, diff_add: 0xE3ECFB, diff_del: 0xFFEFD6,
 });
 
 /// Alabaster Dark: #0e1415 paper, #cecece ink, #293334 selection, its
@@ -276,7 +275,7 @@ pub const ALABASTER_DARK: Theme = make(Keys {
     paper: 0x0E1415, sel: 0x293334, thumb: 0x3A4A4C, header: 0x162022, header_sel: 0x2E3C3E, line: 0x243234,
     ink: 0xCECECE, dim: 0x708B8D, faint: 0x5A6E70, accent: 0xCD974B, chosen: 0x3A6EA5, column: 0x0A0F10, sidebar: 0x121A1B,
     dirty: 0xCECECE, stale: 0xDFDF8E, fenced: 0xCC3333, exec: 0xB03030, look: 0x3A6EA5,
-    popover: 0x162022, pick: 0x293334, hover: 0x1E2A2C, danger_hover: 0x2B1D1E, ansi: ANSI_DARK, diff_add: 0x16263A, diff_del: 0x33271A,
+    popover: 0x162022, hover: 0x1E2A2C, danger_hover: 0x2B1D1E, ansi: ANSI_DARK, diff_add: 0x16263A, diff_del: 0x33271A,
 });
 
 /// The system's, as Xcode's Default (Light) is: white paper, the label
@@ -285,7 +284,7 @@ pub const XCODE_LIGHT: Theme = make(Keys {
     paper: 0xFFFFFF, sel: 0xA4CDFF, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xB3D4FC, line: 0xDCDCDC,
     ink: 0x1D1D1F, dim: 0x6E6E73, faint: 0x8E8E93, accent: 0x007AFF, chosen: 0x007AFF, column: 0xFAFAFA, sidebar: 0xEBEBEB,
     dirty: 0x3A3A3C, stale: 0xE6A100, fenced: 0xFF3B30, exec: 0xD9480F, look: 0x007AFF,
-    popover: 0xFFFFFF, pick: 0xE1EEFF, hover: 0xF0F0F0, danger_hover: 0xFFE5E3, ansi: ANSI_LIGHT, diff_add: 0xE6F0FF, diff_del: 0xFFF1E0,
+    popover: 0xFFFFFF, hover: 0xF0F0F0, danger_hover: 0xFFE5E3, ansi: ANSI_LIGHT, diff_add: 0xE6F0FF, diff_del: 0xFFF1E0,
 });
 
 /// Xcode's Default (Dark): #1f1f24 paper, its selection (#515b70), the
@@ -294,7 +293,7 @@ pub const XCODE_DARK: Theme = make(Keys {
     paper: 0x1F1F24, sel: 0x515B70, thumb: 0x4A4A50, header: 0x292A30, header_sel: 0x3F4A63, line: 0x38383D,
     ink: 0xDFDFE0, dim: 0x98989D, faint: 0x6C6C70, accent: 0x0A84FF, chosen: 0x0A84FF, column: 0x18181C, sidebar: 0x252529,
     dirty: 0xDFDFE0, stale: 0xFFD60A, fenced: 0xFF453A, exec: 0xC2410C, look: 0x0A6CD8,
-    popover: 0x2C2C31, pick: 0x3F4A63, hover: 0x333338, danger_hover: 0x4A2A28, ansi: ANSI_DARK, diff_add: 0x1B2A44, diff_del: 0x3A2A1C,
+    popover: 0x2C2C31, hover: 0x333338, danger_hover: 0x4A2A28, ansi: ANSI_DARK, diff_add: 0x1B2A44, diff_del: 0x3A2A1C,
 });
 
 /// Classic: acme's make -- cream paper, the tags a pale blue, a yellow
@@ -307,7 +306,7 @@ pub const CLASSIC_LIGHT: Theme = make(Keys {
     paper: 0xFCFCF2, sel: 0xF1E9A6, thumb: 0xD4D4C4, header: 0xEAF4F7, header_sel: 0xBCE3ED, line: 0xD6DCDD,
     ink: 0x202224, dim: 0x6E7072, faint: 0x8A8C8E, accent: 0x007D9C, chosen: 0x007D9C, column: 0xF5F5EA, sidebar: 0xE8EFF1,
     dirty: 0x2F3A40, stale: 0xC79A00, fenced: 0xCE3262, exec: 0xC85A00, look: 0x2A5DB0,
-    popover: 0xFFFFFF, pick: 0xDDF1F6, hover: 0xF0F4F5, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
+    popover: 0xFFFFFF, hover: 0xF0F4F5, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
 });
 
 /// Classic's dark: go.dev's own (#202224 paper, the playground's output ink
@@ -317,7 +316,7 @@ pub const CLASSIC_DARK: Theme = make(Keys {
     paper: 0x202224, sel: 0x4A4526, thumb: 0x4A4C4E, header: 0x2B2D2F, header_sel: 0x1F4B5A, line: 0x3A3C3E,
     ink: 0xE6E6E6, dim: 0x9A9C9E, faint: 0x6E7072, accent: 0x50B7E0, chosen: 0x007D9C, column: 0x1A1B1D, sidebar: 0x26282A,
     dirty: 0xE6E6E6, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xC85A00, look: 0x2A5DB0,
-    popover: 0x2B2D2F, pick: 0x1F4B5A, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
+    popover: 0x2B2D2F, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
 });
 
 /// Panic's Nova, its standard Bright: a white editor on a #ececec
@@ -329,7 +328,7 @@ pub const NOVA_LIGHT: Theme = make(Keys {
     paper: 0xFFFFFF, sel: 0xCCE0FA, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xC4D9F7, line: 0xE0E0E0,
     ink: 0x262626, dim: 0x69727D, faint: 0x8F97A0, accent: 0x3777EA, chosen: 0x3777EA, column: 0xFAFAFA, sidebar: 0xECECEC,
     dirty: 0x3A3A3A, stale: 0xD39B00, fenced: 0xBC391C, exec: 0xBC391C, look: 0x255AB1,
-    popover: 0xFFFFFF, pick: 0xE3ECFC, hover: 0xF2F2F2, danger_hover: 0xF9E3DE, ansi: ANSI_LIGHT, diff_add: 0xE6EFFD, diff_del: 0xFDEEE0,
+    popover: 0xFFFFFF, hover: 0xF2F2F2, danger_hover: 0xF9E3DE, ansi: ANSI_LIGHT, diff_add: 0xE6EFFD, diff_del: 0xFDEEE0,
 });
 
 /// Nova's standard Dark: a #1b1c1d editor beside a lighter #323232
@@ -339,7 +338,7 @@ pub const NOVA_DARK: Theme = make(Keys {
     paper: 0x1B1C1D, sel: 0x23375A, thumb: 0x4A4C4E, header: 0x242628, header_sel: 0x2C3F5E, line: 0x323436,
     ink: 0xDBE5F1, dim: 0x8A96A6, faint: 0x5E6670, accent: 0x78B1F9, chosen: 0x3777EA, column: 0x161718, sidebar: 0x323232,
     dirty: 0xDBE5F1, stale: 0xE5B94B, fenced: 0xF09084, exec: 0xB8462E, look: 0x3777EA,
-    popover: 0x2A2B2D, pick: 0x23375A, hover: 0x2E3032, danger_hover: 0x4A2A24, ansi: ANSI_DARK, diff_add: 0x1A2A45, diff_del: 0x3A2A20,
+    popover: 0x2A2B2D, hover: 0x2E3032, danger_hover: 0x4A2A24, ansi: ANSI_DARK, diff_add: 0x1A2A45, diff_del: 0x3A2A20,
 });
 
 /// View ▸ Theme: which palette, each with its light and dark (which of

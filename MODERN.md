@@ -213,6 +213,16 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   (`TermOp::Marks`, protocol 33): ⌘↑ ⌘↓ go from prompt to prompt, a
   command that failed has a mark in the gutter by its prompt, in the
   terminal's red, and ⌘⇧C copies the last command's output.
+- **^F completes inline** (`completion.rs`): the path fragment before
+  the caret goes to the server (`Candidates`, protocol 34, answered to
+  the asker alone), what its candidates share is typed in at once, and
+  when more than one is left they are listed under the caret. Typing
+  goes on into the text and narrows the list; ↑ ↓ choose; return or tab
+  takes the one chosen, and a directory's own names come up next; a
+  slash typed asks for the next directory's; escape or a click elsewhere
+  puts the list away. One candidate is simply typed in, a directory with
+  its slash, a file with a space after, as acme's ^F does. No more lists
+  in +Errors.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the

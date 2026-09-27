@@ -22,6 +22,7 @@ mod menu;
 mod shell;
 mod sidebar;
 mod commands;
+mod completion;
 mod glide;
 mod miniature;
 mod restart;
@@ -505,6 +506,14 @@ impl Render for Acme {
             None => root,
         };
         let root = match self.commands_panel(cx) {
+            Some(panel) => root.child(panel),
+            None => root,
+        };
+        // ^F's candidates in, and their list under the caret
+        for c in std::mem::take(&mut self.candidates) {
+            self.got_candidates(c, cx);
+        }
+        let root = match self.completion_panel(cx) {
             Some(panel) => root.child(panel),
             None => root,
         };
