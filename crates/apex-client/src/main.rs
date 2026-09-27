@@ -86,6 +86,9 @@ impl Render for Acme {
         // over from where its window was would take the clicks there --
         // on the box of the window that is there now, which sits in the
         // same strip at the column's edge
+        // where ^F's list goes: under the name, as the last frame laid it
+        // out (the layouts are drawn again below)
+        self.completion_anchor();
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
@@ -520,10 +523,7 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        // ^F's candidates in, and their list under the caret
-        for c in std::mem::take(&mut self.candidates) {
-            self.got_candidates(c, cx);
-        }
+        // ^F's list under the caret
         let root = match self.completion_panel(cx) {
             Some(panel) => root.child(panel),
             None => root,

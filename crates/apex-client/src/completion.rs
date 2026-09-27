@@ -28,6 +28,9 @@ pub struct Completion {
     pub cursor: usize,
     /// Nothing matched: said a moment, then gone.
     pub none: Option<std::time::Instant>,
+    /// Where the name starts on the screen, and its line's height: taken
+    /// from the last frame's layout, before a frame lays it out anew.
+    pub anchor: Option<(gpui::Point<gpui::Pixels>, gpui::Pixels)>,
 }
 
 impl Completion {
@@ -54,7 +57,7 @@ fn is_file_char(c: char) -> bool {
 impl Acme {
     /// The names completing `c.prefix` arrived: what they share typed in,
     /// and the rest listed under the caret.
-    pub fn got_candidates(&mut self, c: Candidates, cx: &mut Context<Self>) {
+    pub fn got_candidates(&mut self, c: Candidates) {
         // the caret must still be where it was asked from
         if self.node.selection(c.view).ok() != Some((c.at, c.at)) {
             return;
@@ -63,13 +66,12 @@ impl Acme {
         let start = c.at - base.chars().count();
         let names = c.names.unwrap_or_default();
         if names.is_empty() {
-            self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: Some(std::time::Instant::now()) });
-            cx.notify();
+            self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: Some(std::time::Instant::now()), anchor: None });
             return;
         }
         if names.len() == 1 {
             let (name, dir) = names[0].clone();
-            self.complete_with(c.view, start, c.at, &name, dir, cx);
+            self.complete_with(c.view, start, c.at, &name, dir);
             return;
         }
         // what they all share, typed in now
@@ -80,25 +82,24 @@ impl Acme {
             let _ = self.node.insert(&mut self.log, c.view, &more);
             self.after();
         }
-        self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: None });
-        cx.notify();
+        self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: None, anchor: None });
     }
 
     /// The name `name` in place of what is typed of it (from `start` to
     /// `at`): a directory with its slash, and its own names asked for next;
     /// a file with a space after, and the list put away.
-    fn complete_with(&mut self, view: ViewId, start: usize, at: usize, name: &str, dir: bool, cx: &mut Context<Self>) {
+    fn complete_with(&mut self, view: ViewId, start: usize, at: usize, name: &str, dir: bool) {
         let text = if dir { format!("{name}/") } else { format!("{name} ") };
         let _ = self.node.select(&mut self.log, view, start, at);
         let _ = self.node.replace_selection(&mut self.log, view, &text);
+        // the caret after it, nothing left selected
+        let end = start + text.chars().count();
+        let _ = self.node.select(&mut self.log, view, end, end);
         self.completion = None;
         self.after();
         if dir {
-            if let Ok((q0, _)) = self.node.selection(view) {
-                self.complete(view, q0);
-            }
+            self.complete(view, end);
         }
-        cx.notify();
     }
 
     /// What is typed of the name so far, while the caret is after it and
@@ -140,7 +141,7 @@ impl Acme {
                 match matching.get(cursor.min(matching.len().saturating_sub(1))) {
                     Some((name, dir)) => {
                         let (name, dir) = (name.clone(), *dir);
-                        self.complete_with(view, start, at, &name, dir, cx);
+                        self.complete_with(view, start, at, &name, dir);
                     }
                     None => self.completion = None,
                 }
@@ -180,6 +181,16 @@ impl Acme {
         cx.notify();
     }
 
+    /// Where the list goes, from the last frame's layout of its text:
+    /// called before the frame clears the layouts to draw them again.
+    pub fn completion_anchor(&mut self) {
+        let Some(c) = self.completion.as_ref() else { return };
+        let anchor = self.layouts.get(&c.view).and_then(|l| l.point_of(c.start).map(|p| (p, l.line_height)));
+        if let (Some(c), Some(a)) = (self.completion.as_mut(), anchor) {
+            c.anchor = Some(a);
+        }
+    }
+
     /// The list under the caret.
     pub fn completion_panel(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let c = self.completion.as_ref()?;
@@ -188,9 +199,7 @@ impl Acme {
             return None;
         }
         let c = self.completion.as_ref()?;
-        let l = self.layouts.get(&c.view)?;
-        let at = l.point_of(c.start)?;
-        let lh = l.line_height;
+        let (at, lh) = c.anchor?;
         let t = crate::theme::theme();
         let mono = self.node.state.window(c.view.window()?).is_ok_and(|w| w.mono);
         let font = crate::text_element::font_for(mono).font.family.clone();
@@ -245,7 +254,8 @@ impl Acme {
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {
                             if let Some((_, at)) = this.completion_typed() {
-                                this.complete_with(view, start, at, &name2, dir2, cx);
+                                this.complete_with(view, start, at, &name2, dir2);
+                                cx.notify();
                             }
                             cx.stop_propagation();
                         }),

@@ -1697,6 +1697,10 @@ impl Acme {
         // acme's winsettag: Undo/Redo/Put/Get come and go with the state
         let _ = self.node.update_tags(&mut self.log);
         self.track_closed();
+        // ^F's candidates, as they come: typed in, or listed
+        for c in std::mem::take(&mut self.candidates) {
+            self.got_candidates(c);
+        }
         for (v, q) in self.node.take_shows() {
             // errors just written: a toast, the +Errors window stashed
             if let ViewId::Body(w) = v {
