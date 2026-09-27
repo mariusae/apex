@@ -8,6 +8,11 @@ use apex_server::{perform, Proposal, Server, ServerEvent};
 use futures::channel::mpsc::UnboundedReceiver;
 
 fn session() -> (Log, Node, ColumnId, Server, UnboundedReceiver<ServerEvent>) {
+    // terminals start a plain shell, not the login shell of whoever runs
+    // the tests: theirs reads their own startup files, slowly and with
+    // prompts of its own, and a dozen of them at once missed deadlines
+    static PLAIN: std::sync::Once = std::sync::Once::new();
+    PLAIN.call_once(|| std::env::set_var("SHELL", "/bin/sh"));
     let mut log = Log::new();
     let (a, _) = log.attach(AttachmentKind::Ui, "test");
     let mut node = Node::new(a);
@@ -19,7 +24,9 @@ fn session() -> (Log, Node, ColumnId, Server, UnboundedReceiver<ServerEvent>) {
 
 /// Drain server events until `done` holds or the deadline passes.
 fn pump_until(log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut UnboundedReceiver<ServerEvent>, mut done: impl FnMut(&Node) -> bool) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // generous: a dozen shells starting at once under a loaded machine
+    // take their time, and the deadline is only ever reached on failure
+    let deadline = Instant::now() + Duration::from_secs(30);
     while Instant::now() < deadline {
         if done(node) {
             return true;
@@ -34,6 +41,18 @@ fn pump_until(log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut Unbo
         node.catch_up(log).unwrap();
     }
     done(node)
+}
+
+/// Wait for terminal `t`'s shell to show its prompt; if it never does,
+/// say what the terminal shows once published, and what the server has.
+fn prompt(log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut UnboundedReceiver<ServerEvent>, t: TermId) {
+    let text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    if pump_until(log, node, server, rx, |n| text(n).contains('$') || text(n).contains('%')) {
+        return;
+    }
+    server.publish_term(log, t);
+    node.catch_up(log).unwrap();
+    panic!("no prompt: after a publish the terminal shows {:?} ({:?})", text(node).trim(), node.state.terms.get(&t).map(|x| (x.cols, x.rows, x.exit)));
 }
 
 fn body_text(node: &Node, w: WindowId) -> String {
@@ -275,6 +294,7 @@ fn newterm_runs_a_shell() {
     // the server sees the window (a client does this after every command)
     server.close_orphan_terms(&mut log, &node);
     assert!(node.state.terms.contains_key(&t));
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     // type a command into the shell and see its output in the grid
     for c in "echo apex-term-$((6*7))\r".chars() {
         server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
@@ -385,6 +405,7 @@ fn terminal_selection_follows_the_scrollback_and_keys_scroll_to_the_bottom() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().next().copied().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     server.close_orphan_terms(&mut log, &node);
     let key = |server: &mut Server, log: &mut Log, c: char| {
         server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
@@ -434,6 +455,7 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     // win's name: the directory, then -host
     let host = apex_server::term::sysname();
     assert!(name(&node).ends_with(&format!("/-{host}")), "{}", name(&node));
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let type_ = |server: &mut Server, log: &mut Log, s: &str| {
         for c in s.chars() {
             server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
@@ -649,6 +671,7 @@ fn osc8_hyperlinks_reach_the_grid() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().copied().next().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     // a link, as printf writes it: OSC 8 ; ; uri ST text OSC 8 ; ; ST
     let cmd = "printf '\\033]8;;http://x.example/z\\033\\\\LINKED\\033]8;;\\033\\\\ plain\\n'\r";
     for c in cmd.chars() {
@@ -679,6 +702,7 @@ fn the_wheel_reaches_programs_that_read_the_mouse() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().copied().next().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let type_line = |server: &mut Server, log: &mut Log, line: &str| {
         for c in line.chars() {
             server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
@@ -806,7 +830,7 @@ fn a_terminal_publishes_only_what_changed() {
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().copied().next().expect("terminal");
     let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains('$') || grid_text(n).contains('%')));
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     // the prompt is up: publishing again, nothing having changed, adds nothing
     let before = log.last_seq(Shard::Term(t));
     server.publish_term(&mut log, t);
@@ -881,6 +905,7 @@ fn a_resize_keeps_the_scrollback_position() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().next().copied().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let key = |server: &mut Server, log: &mut Log, c: char| {
         server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
     };
@@ -931,6 +956,7 @@ fn clear_drops_a_terminals_scrollback_and_keeps_its_screen() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().next().copied().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let w = node.state.windows.values().find(|x| x.body == Body::Term(t)).map(|x| x.id).expect("its window");
     // the verb is offered in a terminal, by the server's rule
     assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w), node.window_kind(w), Some(w), None).contains(&"Clear".to_string()));
@@ -953,6 +979,7 @@ fn a_resize_while_scrolled_back_waits_for_the_bottom() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().next().copied().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
         server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
     }
@@ -982,10 +1009,13 @@ fn a_program_asking_the_background_is_told_the_clients_colours() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().next().copied().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>().trim_end().to_string()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
     let ask = |server: &mut Server, log: &mut Log| {
-        // OSC 11 ?: the answer comes back as input, which the shell shows
-        for c in "printf '\\e]11;?\\a'\r".chars() {
+        // OSC 11 ?: the answer comes back as input, which the shell shows;
+        // the last answer is still on the line, so ^U first
+        server.term_key(log, t, &apex_server::TermKey { key: "u".into(), text: None, shift: false, control: true, alt: false });
+        for c in "printf '\\033]11;?\\007'\r".chars() {
             server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
         }
     };
@@ -1004,6 +1034,7 @@ fn focus_reaches_programs_that_asked_for_it() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let t = node.state.terms.keys().copied().next().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let type_line = |server: &mut Server, log: &mut Log, line: &str| {
         for c in line.chars() {
             server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
@@ -1163,7 +1194,7 @@ fn a_terminal_says_how_much_of_it_the_view_shows() {
     let t = node.state.terms.keys().copied().next().expect("terminal");
     let view = |n: &Node| n.state.terms.get(&t).map(|t| (t.top, t.total, t.rows as u64)).unwrap();
     let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains('$') || grid_text(n).contains('%')));
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     // nothing has scrolled away: the view is the whole of it
     let (top, total, rows) = view(&node);
     assert_eq!((top, total), (0, rows), "a fresh terminal is all viewport");
@@ -1194,7 +1225,7 @@ fn a_program_at_work_pulses_its_windows_handle() {
     let t = node.state.terms.keys().copied().next().expect("terminal");
     let w = node.state.windows.values().find(|w| w.body == Body::Term(t)).map(|w| w.id).expect("its window");
     let grid_text = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| grid_text(n).contains('$') || grid_text(n).contains('%')));
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
     assert!(!node.window_working(w), "nothing is at work yet");
     let type_in = |server: &mut apex_server::Server, log: &mut Log, text: &str| {
         for c in text.chars() {
