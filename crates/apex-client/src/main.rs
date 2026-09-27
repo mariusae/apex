@@ -23,6 +23,7 @@ mod shell;
 mod sidebar;
 mod commands;
 mod completion;
+mod glass;
 mod glide;
 mod miniature;
 mod restart;
@@ -191,7 +192,14 @@ impl Render for Acme {
         // full screen is the whole screen
         let side = self.sidebar_shown();
         let slide = if side { None } else { self.sidebar_slide() };
-        let lights = side || self.sidebar_out;
+        // the window the sidebar's clicks act on, when they come in its
+        // glass panel
+        self.main_window = window.window_handle().downcast::<app::Acme>();
+        // floating, it is drawn in its panel on glass where it can be;
+        // the panel has the window's buttons then
+        let glass = self.glass_tick(slide, window, cx);
+        let slide = slide.filter(|_| !glass);
+        let lights = side || (self.sidebar_out && !glass);
         if self.lights_shown != Some(lights) {
             web::set_traffic_lights(window, lights);
             self.lights_shown = Some(lights);
@@ -773,7 +781,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                 // on the sidebar card's top row, as Manifold puts them: the
                 // close button's middle 20 in from the card's edge and half
                 // the row down (the card is 6 in from the window's)
-                traffic_light_position: Some(gpui::point(px(19.), px(6. + shell::SIDEBAR_HEADER / 2. - 6.5))),
+                traffic_light_position: Some(gpui::point(px(19.), px(main_lights_y()))),
             }),
             // the title bar is ours: AppKit must not take a drag there as a
             // window move (a tab dragged reorders the tabs); the strip's
@@ -954,6 +962,13 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     // remembered like any window, on the session it is meant for
     acme.socket = Some(apex_server::daemon::default_socket());
     acme
+}
+
+/// How far down the window's buttons stand: on the sidebar card's top
+/// row (the card is 6 in from the window's top), their own 13 centred in
+/// its 40. The glass panel's stand-ins go where these are.
+pub(crate) fn main_lights_y() -> f32 {
+    6. + shell::SIDEBAR_HEADER / 2. - 6.5
 }
 
 /// The floating sidebar over the content, `t` of the way in: from 24

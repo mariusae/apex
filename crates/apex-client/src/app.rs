@@ -477,6 +477,10 @@ pub struct Acme {
     /// and put away a moment after the pointer is past it, as
     /// Manifold's is; and when it last came or went, for its slide.
     pub sidebar_out: bool,
+    /// The floating sidebar's glass panel (`glass.rs`), and the window
+    /// its clicks act on.
+    pub glass: crate::glass::GlassState,
+    pub main_window: Option<gpui::WindowHandle<Acme>>,
     pub sidebar_moved: Option<std::time::Instant>,
     /// When the pointer left it: it goes a tenth of a second after.
     pub sidebar_leaving: Option<std::time::Instant>,
@@ -1627,6 +1631,8 @@ impl Acme {
             caret_on: true,
             caret_since: std::time::Instant::now(),
             sidebar_out: false,
+            glass: crate::glass::GlassState::Untried,
+            main_window: None,
             sidebar_moved: None,
             sidebar_leaving: None,
             stash_open: None,

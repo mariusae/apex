@@ -15,7 +15,7 @@ use crate::shell::{pjw, SIDEBAR_HEADER};
 use crate::theme;
 
 /// How far the card sits in from the window's edges.
-const INSET: f32 = 6.;
+pub const INSET: f32 = 6.;
 const ROW_H: f32 = 30.;
 const WIN_ROW_H: f32 = 24.;
 
@@ -102,7 +102,9 @@ impl Acme {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
-                                if current {
+                                if current && this.on_glass() {
+                                    this.on_main(cx, |a, window, cx| a.close_current_session(window, cx));
+                                } else if current {
                                     this.close_current_session(window, cx);
                                 } else {
                                     crate::pool::Pool::let_go(cx, id);
@@ -134,7 +136,9 @@ impl Acme {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
-                        if !current {
+                        if !current && this.on_glass() {
+                            this.on_main(cx, move |a, window, cx| a.switch_to(id, window, cx));
+                        } else if !current {
                             this.switch_to(id, window, cx);
                         }
                         cx.notify();
@@ -207,12 +211,19 @@ impl Acme {
             .justify_end()
             .pr(px(8.))
             .child(toggle)
-            .on_mouse_down(MouseButton::Left, |_, window, cx| {
-                window.start_window_move();
-                cx.stop_propagation();
-            });
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    this.drag_main(window);
+                    cx.stop_propagation();
+                }),
+            );
         let shadow = BoxShadow { color: gpui::hsla(0., 0., 0., if dark { 0.5 } else { 0.10 }), offset: gpui::point(px(0.), px(2.)), blur_radius: px(8.), spread_radius: px(0.), inset: false };
-        let outer = div().id("sidebar").flex_none().w(px(crate::shell::SIDEBAR_W)).h_full().p(px(INSET)).font_family(crate::fonts::ui());
+        // on glass (its own panel, the card alone): no card drawn, the
+        // glass is it
+        let glass = floating && self.on_glass();
+        let outer = div().id("sidebar").flex_none().h_full().font_family(crate::fonts::ui());
+        let outer = if glass { outer.w_full() } else { outer.w(px(crate::shell::SIDEBAR_W)).p(px(INSET)) };
         let outer = if floating { outer } else { outer.bg(rgb(t.column)) };
         outer
             .child(
@@ -220,11 +231,8 @@ impl Acme {
                     .relative()
                     .size_full()
                     .rounded(px(10.))
-                    .when(floating, |d| d.child(self.overlay_mark_by(px(0.))))
-                    .bg(rgb(card))
-                    .border_1()
-                    .border_color(rgb(t.border))
-                    .shadow(vec![shadow])
+                    .when(floating && !glass, |d| d.child(self.overlay_mark_by(px(0.))))
+                    .when(!glass, |d| d.bg(rgb(card)).border_1().border_color(rgb(t.border)).shadow(vec![shadow]))
                     .flex()
                     .flex_col()
                     .pb(px(6.))

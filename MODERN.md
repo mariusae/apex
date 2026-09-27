@@ -89,7 +89,15 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   asking for it), and put away a tenth of a second after the pointer
   is 8 pixels past it, sliding in and out as Manifold's does. The
   window's buttons show only with it. There is no tab strip and no title
-  bar, so full screen is the whole screen.
+  bar, so full screen is the whole screen. Floating, the card is Liquid
+  Glass (`glass.rs`), as Reflect's peek sidebar is: drawn in a
+  borderless panel of its own, a child of the window, over an
+  `NSGlassEffectView` that shows the window through it, pages and all
+  (no hole cut in them). The panel has its own window buttons where the
+  window's stand, acting on the window; its clicks that act on the
+  window (a session chosen, the header dragged) go to the window's.
+  Before macOS 26 it floats in the window as a plain card, its hole in
+  any page under it the card alone.
 - **Palettes.** The picker (⌘T) and the finder are Manifold's command
   palette: a card 560 wide centred across the window, its top 30% of
   the way down, rounded 12 with a hairline and a soft shadow, over a
