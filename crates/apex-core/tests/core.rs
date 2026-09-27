@@ -628,31 +628,45 @@ fn notifications_are_a_windows_and_go_with_it() {
     assert_eq!(follower(&log).state.meta.notifications, node.state.meta.notifications);
 }
 
+
+/// Column `c`'s place in the row, and whether it is a strip.
+fn col_at(node: &Node, c: ColumnId) -> (usize, bool) {
+    let l = &node.state.layout;
+    let i = l.column_index(c).unwrap();
+    (i, tiling::is_strip(l.cols[i].r))
+}
+
 #[test]
 fn a_column_put_away_is_replicated_and_new_windows_land_beside_it() {
     let (mut log, mut node, _) = session();
     let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
-    assert!(cols.len() >= 2, "a session starts with columns to put away");
+    let n = cols.len();
+    assert!(n >= 2, "a session starts with columns to put away");
     let (first, second) = (cols[0], cols[1]);
     let r = node.state.layout.cols[0].r;
     let at = (r.x0 + 3, r.y0 + 3);
-    // B3 on the first column's box: a strip, as B3 stashes a window, and a
-    // follower agrees
+    // B3 on the first column's box: put away to the row's right, a strip
+    // there, as B3 puts a window away at its column's foot; a follower
+    // agrees
     node.drag_column(&mut log, first, 3, at, at).unwrap();
-    assert!(tiling::is_strip(node.state.layout.cols[0].r), "{:?}", node.state.layout.cols[0].r);
+    assert_eq!(col_at(&node, first), (n - 1, true), "{:?}", node.state.layout.column(first).unwrap().r);
+    assert_eq!(col_at(&node, second), (0, false));
     assert_eq!(node.state.layout.full, None);
     assert_eq!(follower(&log).state.hash(), node.state.hash());
     // the width it remembers is the session's, not the leader's
-    assert!(node.state.layout.cols[0].restore > 0);
-    assert_eq!(follower(&log).state.layout.cols[0].restore, node.state.layout.cols[0].restore);
-    // a window meant for the strip lands where it can be seen
+    let c = node.state.layout.column(first).unwrap();
+    assert!(c.restore > 0);
+    assert_eq!(follower(&log).state.layout.column(first).unwrap().restore, c.restore);
+    // a window meant for the strip lands where it can be seen: beside it
     let w = node.new_window(&mut log, first, "/tmp/meant-for-the-strip", "").unwrap();
-    assert_eq!(node.state.layout.column_of(w), Some(second));
-    // B1 on the strip's box brings it back, and a follower agrees
-    let s = node.state.layout.cols[0].r;
+    assert_eq!(node.state.layout.column_of(w), Some(cols[n - 1]));
+    // B1 on the strip's box brings it back where it stood, and a follower
+    // agrees
+    let s = node.state.layout.column(first).unwrap().r;
     let on = (s.x0 + 3, s.y0 + 3);
     node.drag_column(&mut log, first, 1, on, on).unwrap();
-    assert!(!tiling::is_strip(node.state.layout.cols[0].r));
+    assert_eq!(col_at(&node, first), (0, false));
+    assert_eq!(col_at(&node, second), (1, false));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
 
@@ -664,10 +678,11 @@ fn going_to_a_window_in_a_collapsed_column_brings_the_column_back() {
     let r = node.state.layout.cols[0].r;
     let at = (r.x0 + 3, r.y0 + 3);
     node.drag_column(&mut log, cols[0], 4, at, at).unwrap();
-    assert!(tiling::is_strip(node.state.layout.cols[0].r));
-    // what a warp onto the window does first (a notification's, a Goto's)
+    assert_eq!(col_at(&node, cols[0]), (cols.len() - 1, true));
+    // what a warp onto the window does first (a notification's, a Goto's):
+    // back where it stood
     node.uncover(&mut log, w).unwrap();
-    assert!(!tiling::is_strip(node.state.layout.cols[0].r));
+    assert_eq!(col_at(&node, cols[0]), (0, false));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
 
@@ -677,23 +692,18 @@ fn a_new_window_meant_for_a_collapsed_column_lands_in_the_nearest_open_one() {
     let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
     let n = cols.len();
     assert!(n >= 2);
-    // the rightmost collapsed: its window goes to the rightmost still open
-    let r = node.state.layout.cols[n - 1].r;
-    let at = (r.x0 + 3, r.y0 + 3);
-    node.drag_column(&mut log, cols[n - 1], 4, at, at).unwrap();
-    assert!(tiling::is_strip(node.state.layout.cols[n - 1].r));
-    let w = node.new_window(&mut log, cols[n - 1], "/tmp/meant-for-the-right", "").unwrap();
-    assert_eq!(node.state.layout.column_of(w), Some(cols[n - 2]));
-    assert!(tiling::is_strip(node.state.layout.cols[n - 1].r), "the strip stays a strip");
-    assert_eq!(follower(&log).state.hash(), node.state.hash());
-    // the leftmost (in a session of its own): the leftmost still open
-    let (mut log, mut node, _) = session();
-    let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
-    let r = node.state.layout.cols[0].r;
-    let at = (r.x0 + 3, r.y0 + 3);
-    node.drag_column(&mut log, cols[0], 4, at, at).unwrap();
-    assert!(tiling::is_strip(node.state.layout.cols[0].r));
-    let v = node.new_window(&mut log, cols[0], "/tmp/meant-for-the-left", "").unwrap();
-    assert_eq!(node.state.layout.column_of(v), Some(cols[1]));
-    assert_eq!(follower(&log).state.hash(), node.state.hash());
+    // put away, at the row's right whichever it was: its window goes to
+    // the rightmost still open, beside the strip
+    for (i, name) in [(n - 1, "/tmp/meant-for-the-right"), (0, "/tmp/meant-for-the-left")] {
+        let (mut log, mut node, _) = session();
+        let r = node.state.layout.cols[i].r;
+        let at = (r.x0 + 3, r.y0 + 3);
+        node.drag_column(&mut log, cols[i], 4, at, at).unwrap();
+        assert_eq!(col_at(&node, cols[i]), (n - 1, true));
+        let w = node.new_window(&mut log, cols[i], name, "").unwrap();
+        assert_eq!(node.state.layout.column_of(w), Some(node.state.layout.cols[n - 2].id));
+        assert!(col_at(&node, cols[i]).1, "the strip stays a strip");
+        assert_eq!(follower(&log).state.hash(), node.state.hash());
+    }
+    let _ = (&mut log, &mut node);
 }

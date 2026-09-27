@@ -907,6 +907,7 @@ pub enum AddingCol {
 /// last column. `None` if the column it would split is too narrow.
 pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> Option<usize> {
     reveal(l, info);
+    settle(l);
     let font = info.font_height().max(1);
     let mut r = l.r;
     r.y0 = l.r.y0 + font + BORDER;
@@ -952,7 +953,7 @@ pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> 
     match c {
         AddingCol::New { id, tag } => {
             // colinit
-            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new(), restore: 0, stash: Vec::new() });
+            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new(), restore: 0, stash: Vec::new(), after: None });
         }
         AddingCol::Existing(c) => {
             l.cols.insert(i, c);
@@ -1003,7 +1004,8 @@ pub fn rowresize(l: &mut Layout, r: Rect, info: &dyn Info) {
 /// acme's `rowclose` without the freeing: take column `ci` out, giving
 /// its width to a neighbour.
 pub fn rowclose(l: &mut Layout, ci: usize, info: &dyn Info) -> Column {
-    reveal(l, info);
+    let ci = revealed(l, ci, info);
+    settle(l);
     let c = l.cols.remove(ci);
     let mut r = c.r;
     let n = l.cols.len();
@@ -1034,78 +1036,86 @@ pub fn rowclose(l: &mut Layout, ci: usize, info: &dyn Info) -> Column {
 /// it the whole row and hides the others (`Layout::full`), until a click
 /// on its box lays the row out again with the others back as strips --
 /// as acme's windows come back as tags after a window took the column.
-pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
+pub fn rowgrow(l: &mut Layout, mut ci: usize, but: i32, info: &dyn Info) {
     let n = l.cols.len();
     if ci >= n {
         return;
     }
     let row = l.r;
+    // B1 on the box of a column given the row: the others back, put away
+    // at its right; anything else works on the row laid out
+    if l.full.is_some() {
+        if but == 1 {
+            reveal(l, info);
+            return;
+        }
+        ci = revealed(l, ci, info);
+    }
     if but == 4 {
-        // collapsing works on a laid out row, and so does bringing back
-        reveal(l, info);
         if is_strip(l.cols[ci].r) {
-            rowrestore(l, ci, info);
+            rowbringback(l, ci, info);
         } else {
-            rowcollapse(l, ci, info);
+            rowputaway(l, ci, info);
         }
         return;
     }
     // button 1 on a strip brings it back, as B4 does: one way back, and
     // no strip left between two columns with room
-    if but == 1 && l.full.is_none() && is_strip(l.cols[ci].r) && rowrestore(l, ci, info) {
+    if but == 1 && l.full.is_none() && is_strip(l.cols[ci].r) {
+        rowbringback(l, ci, info);
         return;
     }
     // as a window's box does: B3 puts this column away (a strip, a sheet
     // at its place), B2 on a strip brings it back alone, B2 on the only
     // column with room brings the others back
     if but == 3 {
-        reveal(l, info);
-        rowstrip(l, ci, info);
+        rowputaway(l, ci, info);
         return;
     }
-    if but == 2 && l.full.is_none() && !is_strip(l.cols[ci].r) && (0..n).all(|j| j == ci || is_strip(l.cols[j].r)) && n > 1 {
-        rowrestore_all(l, ci, info);
+    if but == 2 && n > 1 {
+        let id = l.cols[ci].id;
+        // on a strip: back first, then alone
+        if is_strip(l.cols[ci].r) {
+            rowbringback(l, ci, info);
+        } else if (0..n).all(|j| j == ci || is_strip(l.cols[j].r)) {
+            // on the only one with room: every strip back where it was
+            rowbringback_all(l, id, info);
+            return;
+        }
+        // the others put away, left to right, so they stand at the right
+        // in the order they stood
+        let others: Vec<ColumnId> = l.cols.iter().filter(|c| c.id != id && !is_strip(c.r)).map(|c| c.id).collect();
+        for o in others {
+            if let Some(j) = l.column_index(o) {
+                rowputaway(l, j, info);
+            }
+        }
         return;
     }
     // the width the columns share, the borders between them taken out
     let total = (row.dx() - (n as i32 - 1) * BORDER).max(0);
-    // each column's width now: out of a hidden row, the full one has it all
-    let w0: Vec<i32> = match l.full_index() {
-        Some(fi) => (0..n).map(|j| if j == fi { total } else { 0 }).collect(),
-        None => l.cols.iter().map(|c| c.r.dx().max(0)).collect(),
-    };
-    l.full = None;
-    let mut w = w0;
+    // each column's width now
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
     let most = (total - (n as i32 - 1) * STRIP).max(STRIP);
-    if but == 2 {
-        for j in 0..n {
-            if j != ci && w[j] > STRIP {
-                remember(l, j, w[j]);
-            }
+    // a step, not a leap: columns are few and wide, and a window's
+    // growth (half again) would take most of a neighbour at a click.
+    // A fifth of its width or a twelfth of the row, whichever is
+    // more; a neighbour gives at most a third of what it can spare
+    let mine = w[ci];
+    let mut dw = (mine / 5).max(row.dx() / 12).min(most - mine).max(0);
+    let give = |w: &mut Vec<i32>, j: usize, dw: &mut i32| {
+        let spare = (w[j] - STRIP).max(0);
+        let take = (*dw).min((spare + 2) / 3);
+        w[j] -= take;
+        w[ci] += take;
+        *dw -= take;
+    };
+    for k in 1..n {
+        if ci + k < n {
+            give(&mut w, ci + k, &mut dw);
         }
-        w.iter_mut().for_each(|x| *x = STRIP);
-        w[ci] = most;
-    } else {
-        // a step, not a leap: columns are few and wide, and a window's
-        // growth (half again) would take most of a neighbour at a click.
-        // A fifth of its width or a twelfth of the row, whichever is
-        // more; a neighbour gives at most a third of what it can spare
-        let mine = w[ci];
-        let mut dw = (mine / 5).max(row.dx() / 12).min(most - mine).max(0);
-        let give = |w: &mut Vec<i32>, j: usize, dw: &mut i32| {
-            let spare = (w[j] - STRIP).max(0);
-            let take = (*dw).min((spare + 2) / 3);
-            w[j] -= take;
-            w[ci] += take;
-            *dw -= take;
-        };
-        for k in 1..n {
-            if ci + k < n {
-                give(&mut w, ci + k, &mut dw);
-            }
-            if k <= ci {
-                give(&mut w, ci - k, &mut dw);
-            }
+        if k <= ci {
+            give(&mut w, ci - k, &mut dw);
         }
     }
     // no column narrower than a strip; what one lacks, the grown one pays
@@ -1117,34 +1127,48 @@ pub fn rowgrow(l: &mut Layout, ci: usize, but: i32, info: &dyn Info) {
     }
     w[ci] = w[ci].max(STRIP);
     rowpack(l, &w, info);
+    settle(l);
 }
 
-/// B3 on a column's box: it goes to a strip where it stands, its width to
-/// the columns with room either side of it (nearest first), remembered
-/// for its coming back. The last column with room gives way to the strip
-/// nearest it instead -- the row is never all strips -- and a row of one
+/// B3 (or B4) on a column's box: it is put away to the row's right, as a
+/// window is put away to its column's foot -- a strip there, after those
+/// already put away, remembering the column it stood right of and the
+/// width it had; its width goes to the columns with room either side of
+/// where it stood. The last column with room gives way to the strip
+/// put away last instead (the row is never all strips); a row of one
 /// column keeps it.
-pub fn rowstrip(l: &mut Layout, ci: usize, info: &dyn Info) {
+pub fn rowputaway(l: &mut Layout, ci: usize, info: &dyn Info) {
     let n = l.cols.len();
-    if n < 2 || is_strip(l.cols[ci].r) {
+    if n < 2 || ci >= n || is_strip(l.cols[ci].r) {
         return;
     }
     let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
-    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
-    remember(l, ci, w[ci]);
-    let spare = w[ci] - STRIP;
-    w[ci] = STRIP;
     if wide.len() == 1 {
-        // the last with room: the strip nearest it comes back in its place
-        let near = (0..n).filter(|&j| j != ci).min_by_key(|&j| j.abs_diff(ci)).unwrap_or(ci);
-        w[near] += spare;
-        l.cols[near].restore = 0;
-        rowpack(l, &w, info);
+        // the last with room: the strip put away last comes back first,
+        // and then this one goes as any other
+        let id = l.cols[ci].id;
+        let Some(back) = (0..n).rev().find(|&j| j != ci && is_strip(l.cols[j].r)) else { return };
+        rowbringback(l, back, info);
+        if let Some(ci) = l.column_index(id) {
+            rowputaway(l, ci, info);
+        }
         return;
     }
-    // the columns with room either side, nearest first, sharing it
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    // the width it had of its own, not what it holds for strips
+    let had = natural(l, ci).filter(|&h| h < w[ci]).unwrap_or(w[ci]);
+    remember(l, ci, had);
+    l.cols[ci].after = stood_after(l, ci);
+    // the columns with room either side, sharing its width, each noting
+    // the width it had first
+    let spare = w[ci] - STRIP;
     let left = (0..ci).rev().find(|&j| !is_strip(l.cols[j].r));
     let right = (ci + 1..n).find(|&j| !is_strip(l.cols[j].r));
+    for j in [left, right].into_iter().flatten() {
+        if l.cols[j].restore == 0 {
+            remember(l, j, w[j]);
+        }
+    }
     match (left, right) {
         (Some(a), Some(b)) => {
             w[a] += spare / 2;
@@ -1153,8 +1177,107 @@ pub fn rowstrip(l: &mut Layout, ci: usize, info: &dyn Info) {
         (Some(a), None) | (None, Some(a)) => w[a] += spare,
         (None, None) => {}
     }
+    // to the row's right, after the strips there
+    let c = l.cols.remove(ci);
+    w.remove(ci);
+    l.cols.push(c);
+    w.push(STRIP);
     rowpack(l, &w, info);
 }
+
+/// The column that column `ci` (one with room) stands right of, the
+/// strips counted where they would come back: so that columns put away
+/// one after another come back in the order they stood, whichever comes
+/// back first. None at the row's left.
+fn stood_after(l: &Layout, ci: usize) -> Option<ColumnId> {
+    let group: Vec<usize> = (0..l.cols.len()).filter(|&j| j != ci && is_strip(l.cols[j].r) && back_at(l, &l.cols[j]) == ci).collect();
+    // of the strips coming back just left of it, the one no other comes
+    // back right of
+    let followed = |j: usize| group.iter().any(|&k| l.cols[k].after == Some(l.cols[j].id));
+    match group.iter().rev().find(|&&j| !followed(j)) {
+        Some(&j) => Some(l.cols[j].id),
+        None => ci.checked_sub(1).map(|j| l.cols[j].id),
+    }
+}
+
+/// Where a put-away column comes back: right of the column it stood
+/// right of, when that one has room; right of where that one would come
+/// back, when it is put away too; at the left when it stood there.
+fn back_at(l: &Layout, c: &Column) -> usize {
+    back_among(l, c, &[])
+}
+
+/// `back_at`, the columns `back` counted as back already (their strips
+/// not yet widened).
+fn back_among(l: &Layout, c: &Column, back: &[ColumnId]) -> usize {
+    let open = |j: usize| !is_strip(l.cols[j].r) || back.contains(&l.cols[j].id);
+    let wide_end = (0..l.cols.len()).find(|&j| !open(j)).unwrap_or(l.cols.len());
+    let mut after = c.after;
+    let mut seen = 0;
+    loop {
+        match after {
+            None => return 0,
+            Some(a) => match l.column_index(a) {
+                Some(i) if i < wide_end && open(i) => return i + 1,
+                Some(i) if seen < l.cols.len() => {
+                    after = l.cols[i].after;
+                    seen += 1;
+                }
+                _ => return wide_end,
+            },
+        }
+    }
+}
+
+/// B1 on a strip at the row's right: the column back where it stood, at
+/// the width it had, taken from the columns with room nearest it.
+pub fn rowbringback(l: &mut Layout, ci: usize, info: &dyn Info) {
+    if ci >= l.cols.len() || !is_strip(l.cols[ci].r) {
+        return;
+    }
+    // one left where it stood (a layout from before strips went to the
+    // right) comes back there
+    if (ci + 1..l.cols.len()).any(|j| !is_strip(l.cols[j].r)) {
+        restore_one(l, ci, info);
+        l.cols[ci].after = None;
+        return;
+    }
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    let c = l.cols.remove(ci);
+    w.remove(ci);
+    let at = back_at(l, &c).min(l.cols.len());
+    l.cols.insert(at, c);
+    w.insert(at, STRIP);
+    rowpack(l, &w, info);
+    restore_one(l, at, info);
+    l.cols[at].after = None;
+}
+
+/// B2 on the only column with room: every strip back where it stood, at
+/// the width it had, the column keeping the rest.
+fn rowbringback_all(l: &mut Layout, keep: ColumnId, info: &dyn Info) {
+    // back to their places first, in the order they were put away
+    let strips: Vec<ColumnId> = l.cols.iter().filter(|c| is_strip(c.r)).map(|c| c.id).collect();
+    let mut back = Vec::new();
+    for s in strips {
+        let Some(ci) = l.column_index(s) else { continue };
+        let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+        let c = l.cols.remove(ci);
+        w.remove(ci);
+        let at = back_among(l, &c, &back).min(l.cols.len());
+        back.push(s);
+        l.cols.insert(at, c);
+        w.insert(at, STRIP);
+        rowpack(l, &w, info);
+    }
+    for c in l.cols.iter_mut() {
+        c.after = None;
+    }
+    if let Some(k) = l.column_index(keep) {
+        rowrestore_all(l, k, info);
+    }
+}
+
 
 /// Every strip back at the width it had at once (a fifth of the row when
 /// it has none), column `ci` keeping the rest: B2 on the one column with
@@ -1167,7 +1290,7 @@ fn rowrestore_all(l: &mut Layout, ci: usize, info: &dyn Info) {
         s if s > 0 => ((s as i64 * row + SHARE_UNIT / 2) / SHARE_UNIT) as i32,
         _ => (row / 5) as i32,
     };
-    let mut w: Vec<i32> = l.cols.iter().map(|c| if is_strip(c.r) { had(c).max(STRIP) } else { c.r.dx() }).collect();
+    let mut w: Vec<i32> = l.cols.iter().map(|c| if is_strip(c.r) || c.restore > 0 { had(c).max(STRIP) } else { c.r.dx() }).collect();
     let others: i32 = (0..n).filter(|&j| j != ci).map(|j| w[j]).sum();
     // what is left is ci's; too little, and the others give in proportion
     let room = total - others;
@@ -1211,10 +1334,18 @@ pub fn rowfull(l: &mut Layout, ci: usize, info: &dyn Info) {
 const MINCOL: i32 = 80 + SCROLLWID;
 
 /// The columns laid out left to right at widths `w`, a border between;
-/// the last ends at the row's edge.
+/// the last ends at the row's edge. What the widths leave over or ask
+/// beyond the row is the last column with room's (the strips put away
+/// at the right keep theirs).
 fn rowpack(l: &mut Layout, w: &[i32], info: &dyn Info) {
     let n = l.cols.len();
     let row = l.r;
+    let mut w: Vec<i32> = w.iter().take(n).copied().collect();
+    let total = row.dx() - (n as i32 - 1).max(0) * BORDER;
+    if let Some(k) = (0..w.len()).rev().find(|&j| w[j] > STRIP) {
+        let diff = total - w.iter().sum::<i32>();
+        w[k] = (w[k] + diff).max(STRIP);
+    }
     let mut x = row.x0;
     for (j, width) in w.iter().enumerate().take(n) {
         let mut r = l.cols[j].r;
@@ -1228,6 +1359,28 @@ fn rowpack(l: &mut Layout, w: &[i32], info: &dyn Info) {
 /// Column `j`, about to become a strip, `width` wide: remembered as a
 /// share of the row, so bringing it back gives it this width again (a
 /// share, so a resized window gives it the same part of the row).
+/// The width column `j` has in keeping: a strip's, the width it comes
+/// back at; one with room holding a strip's width, the width it had
+/// before it took it (and goes back to as the strip comes back).
+fn natural(l: &Layout, j: usize) -> Option<i32> {
+    let row = l.r.dx() as i64;
+    match l.cols[j].restore {
+        s if s > 0 => Some(((s as i64 * row + SHARE_UNIT / 2) / SHARE_UNIT) as i32),
+        _ => None,
+    }
+}
+
+/// The columns with room have been given widths by hand (a drag, a
+/// click, a column added or taken out): those are their widths now, and
+/// nothing is held for the strips.
+fn settle(l: &mut Layout) {
+    for c in l.cols.iter_mut() {
+        if !is_strip(c.r) {
+            c.restore = 0;
+        }
+    }
+}
+
 fn remember(l: &mut Layout, j: usize, width: i32) {
     let row = l.r.dx() as i64;
     if width > STRIP && row > 0 {
@@ -1235,72 +1388,15 @@ fn remember(l: &mut Layout, j: usize, width: i32) {
     }
 }
 
-/// B4 on a column's box: the outermost column that is not a strip, on
-/// either side, collapses into that side's strips in place -- it is next
-/// to them already, so nothing moves -- its width going to the next
-/// column in that has room. A column between two with room stays as it
-/// is, and so does the last column with room: the row needs one.
-fn rowcollapse(l: &mut Layout, ci: usize, info: &dyn Info) {
-    let n = l.cols.len();
-    let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
-    if wide.len() < 2 {
-        return;
-    }
-    let to = if ci == wide[0] {
-        wide[1]
-    } else if ci == wide[wide.len() - 1] {
-        wide[wide.len() - 2]
-    } else {
-        return;
-    };
-    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
-    remember(l, ci, w[ci]);
-    w[to] += w[ci] - STRIP;
-    w[ci] = STRIP;
-    rowpack(l, &w, info);
-}
-
-/// B4, or B1, on a strip: it comes back at the width it had, and so does
-/// every strip between it and the columns with room, so that no strip is
-/// ever left between two columns that have it. They come back innermost
-/// first, each undoing the collapse that made it: a column that took a
-/// collapsed neighbour's width and then collapsed itself remembers the
-/// sum, and hands the neighbour's part back when the neighbour returns.
-/// False when nothing came back: no column with room to give.
-fn rowrestore(l: &mut Layout, ci: usize, info: &dyn Info) -> bool {
-    let n = l.cols.len();
-    let wide: Vec<usize> = (0..n).filter(|&j| !is_strip(l.cols[j].r)).collect();
-    let (Some(&first), Some(&last)) = (wide.first(), wide.last()) else { return false };
-    let order: Vec<usize> = if ci < first {
-        (ci..first).rev().collect()
-    } else if ci > last {
-        (last + 1..=ci).collect()
-    } else {
-        vec![ci] // between two with room, as an older layout may leave one
-    };
-    let mut any = false;
-    for j in order {
-        if !restore_one(l, j, info) {
-            break;
-        }
-        any = true;
-    }
-    any
-}
-
 /// One strip back at its remembered width (a fifth of the row when it
 /// has none), taken from the columns with room nearest it, each keeping
 /// enough for its text.
 fn restore_one(l: &mut Layout, j: usize, info: &dyn Info) -> bool {
     let n = l.cols.len();
-    let mut givers: Vec<usize> = (0..n).filter(|&d| !is_strip(l.cols[d].r)).collect();
+    let mut givers: Vec<usize> = (0..n).filter(|&d| d != j && !is_strip(l.cols[d].r)).collect();
     givers.sort_by_key(|&d| d.abs_diff(j));
     let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
-    let row = l.r.dx() as i64;
-    let had = match l.cols[j].restore {
-        s if s > 0 => ((s as i64 * row + SHARE_UNIT / 2) / SHARE_UNIT) as i32,
-        _ => (row / 5) as i32,
-    };
+    let had = natural(l, j).unwrap_or((l.r.dx() / 5) as i32);
     let want = (had - w[j]).max(0);
     let spare: i32 = givers.iter().map(|&d| (w[d] - MINCOL).max(0)).sum();
     let give = want.min(spare);
@@ -1309,6 +1405,19 @@ fn restore_one(l: &mut Layout, j: usize, info: &dyn Info) -> bool {
     }
     w[j] += give;
     let mut owe = give;
+    // first from those holding width for strips, back to what they had;
+    // then from the nearest
+    let naturals: Vec<Option<i32>> = (0..n).map(|d| natural(l, d)).collect();
+    for &d in &givers {
+        if let Some(h) = naturals[d] {
+            let take = owe.min((w[d] - h.max(MINCOL)).max(0));
+            w[d] -= take;
+            owe -= take;
+            if w[d] <= h {
+                l.cols[d].restore = 0;
+            }
+        }
+    }
     for &d in &givers {
         let take = owe.min((w[d] - MINCOL).max(0));
         w[d] -= take;
@@ -1327,11 +1436,9 @@ pub fn uncover(l: &mut Layout, ci: usize, info: &dyn Info) {
     if ci >= l.cols.len() {
         return;
     }
-    if l.full.is_some() && !l.shows(ci) {
-        reveal(l, info);
-    }
+    let ci = if l.full.is_some() && !l.shows(ci) { revealed(l, ci, info) } else { ci };
     if l.full.is_none() && is_strip(l.cols[ci].r) {
-        rowrestore(l, ci, info);
+        rowbringback(l, ci, info);
     }
 }
 
@@ -1340,10 +1447,38 @@ pub fn uncover(l: &mut Layout, ci: usize, info: &dyn Info) {
 /// what anything else that changes the row does first, so it never works
 /// on the hidden columns' stale rectangles.
 fn reveal(l: &mut Layout, info: &dyn Info) {
-    if let Some(fi) = l.full_index() {
-        rowgrow(l, fi, 1, info);
-    }
+    let Some(fi) = l.full_index() else {
+        l.full = None;
+        return;
+    };
     l.full = None;
+    let n = l.cols.len();
+    // the others with room put away to the right, after the strips
+    // already there, in the order they stood, each remembering the column
+    // it stood right of (their widths were remembered when the row was
+    // given)
+    let going: Vec<usize> = (0..n).filter(|&j| j != fi && !is_strip(l.cols[j].r)).collect();
+    let afters: Vec<Option<ColumnId>> = going.iter().map(|&j| stood_after(l, j)).collect();
+    for (&j, a) in going.iter().zip(afters) {
+        l.cols[j].after = a;
+    }
+    let full = l.cols[fi].id;
+    let going: Vec<ColumnId> = going.iter().map(|&j| l.cols[j].id).collect();
+    let mut cols = std::mem::take(&mut l.cols);
+    cols.sort_by_key(|c| if c.id == full { (0, 0) } else if let Some(k) = going.iter().position(|&g| g == c.id) { (2, k) } else { (1, 0) });
+    l.cols = cols;
+    let total = (l.r.dx() - (n as i32 - 1) * BORDER).max(0);
+    let mut w = vec![STRIP; n];
+    w[0] = (total - (n as i32 - 1) * STRIP).max(STRIP);
+    rowpack(l, &w, info);
+}
+
+/// `reveal`, and where column `ci` stands after it (the others put away
+/// at the right, it may have moved).
+fn revealed(l: &mut Layout, ci: usize, info: &dyn Info) -> usize {
+    let id = l.cols[ci].id;
+    reveal(l, info);
+    l.column_index(id).unwrap_or(ci)
 }
 
 /// acme's `rowdragcol`: the layout box of column `ci` was dragged from
@@ -1358,7 +1493,7 @@ pub fn rowdragcol(l: &mut Layout, ci: usize, but: i32, op: (i32, i32), p: (i32, 
         return Some(Warp::ColButton(id));
     }
     // dragged out of a hidden row: the row comes back first
-    reveal(l, info);
+    let ci = revealed(l, ci, info);
     let cr = l.cols[ci].r;
     if (ci > 0 && p.0 < l.cols[ci - 1].r.x0) || (ci < n - 1 && p.0 > cr.x1) {
         // shuffle
@@ -1406,6 +1541,7 @@ pub fn rowmovecol(l: &mut Layout, ci: usize, x: i32, info: &dyn Info) {
     let mut r = cr;
     r.x0 = x + BORDER;
     colresize(l, ci, r, info);
+    settle(l);
 }
 
 /// A failed `rowadd` of an existing column leaves it out of the row;

@@ -519,10 +519,10 @@ impl Node {
             Some(f) if f != col => (f, None),
             _ => (col, y),
         };
-        // a column down to its strip (collapsed into its side, or squeezed
-        // by B2 on another): the nearest column that shows windows has it
-        // instead -- the rightmost of those for a strip on the right, the
-        // leftmost for one on the left -- rather than opening the strip
+        // a column put away (a strip at the row's right, by B3 or B4 on
+        // its box, or B2 on another's): the nearest column that shows
+        // windows -- the rightmost of those, beside the strips -- has it
+        // instead, rather than opening the strip
         let (col, y) = match tiling::nearest_open(&self.state.layout, self.column_index(col)?) {
             Some(ci) if self.state.layout.cols[ci].id != col => (self.state.layout.cols[ci].id, None),
             _ => (col, y),

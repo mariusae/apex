@@ -143,6 +143,10 @@ pub struct Column {
     /// The windows put away, in the order they went.
     #[serde(default)]
     pub stash: Vec<Stashed>,
+    /// Put away (a strip at the row's right, B3 on its box): the column
+    /// it stood right of, which it comes back beside; None at the left.
+    #[serde(default)]
+    pub after: Option<ColumnId>,
 }
 
 impl Column {
@@ -734,7 +738,7 @@ impl State {
         for c in &self.layout.cols {
             h.update(&c.id.0.to_le_bytes());
             h.update(&c.tag.0.to_le_bytes());
-            h.update(&postcard::to_stdvec(&(c.r, c.safe, c.restore)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(c.r, c.safe, c.restore, c.after)).unwrap_or_default());
             for s in &c.wins {
                 h.update(&postcard::to_stdvec(s).unwrap_or_default());
             }
