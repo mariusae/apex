@@ -416,6 +416,8 @@ pub struct Acme {
     pub stash_walk: Option<crate::switcher::StashWalk>,
     /// The sidebar's session row under the pointer: its × shows.
     pub sidebar_hover: Option<crate::pool::TabId>,
+    /// ⌘⇧P: the palette of commands to run.
+    pub commands: Option<crate::commands::Commands>,
     /// A web window's address being typed in its header.
     pub url_edit: Option<crate::webbar::UrlEdit>,
     /// Blank web windows already given their address field.
@@ -1581,6 +1583,7 @@ impl Acme {
             switcher: None,
             stash_walk: None,
             url_edit: None,
+            commands: None,
             sidebar_hover: None,
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
@@ -2841,6 +2844,11 @@ impl Acme {
         crate::web::focus_ui(window);
         // a click off the address being typed leaves it as it was
         self.url_edit = None;
+        // and one off the command palette puts it away
+        if self.commands.take().is_some() {
+            cx.notify();
+            return;
+        }
         if self.finder.is_some() {
             self.close_finder(cx); // a click anywhere else dismisses it
             return;
@@ -3710,7 +3718,7 @@ impl Acme {
     /// Is a gpui overlay up that a native view would hide?
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some()
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some()
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):
@@ -4078,6 +4086,11 @@ impl Acme {
             self.url_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
             return;
         }
+        if self.commands.is_some() {
+            let ks = &e.keystroke;
+            self.commands_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            return;
+        }
         if self.selector.is_some() {
             let ks = &e.keystroke;
             self.selector_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
@@ -4178,7 +4191,7 @@ impl Acme {
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
         // an overlay (the session picker, the finder) has the keyboard:
         // the Edit menu works on its field, not on the text below
-        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() {
+        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() || self.commands.is_some() {
             self.overlay_edit(what, cx);
             return;
         }

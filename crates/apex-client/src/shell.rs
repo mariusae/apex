@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack, RestartServer]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -125,6 +125,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("Next Tab", NextTab),
                 MenuItem::action("Go to…", Goto),
                 MenuItem::action("Go to in All Tabs…", GotoAll),
+                MenuItem::action("Run a Command…", Commands),
                 MenuItem::action("Next Notification", NextNotification),
                 MenuItem::action("Back", NavBack),
                 MenuItem::action("Forward", NavFwd),
@@ -238,7 +239,8 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-r", Get, None),
         KeyBinding::new("cmd-shift-r", Reconnect, None),
         KeyBinding::new("cmd-p", Goto, None),
-        KeyBinding::new("cmd-shift-p", GotoAll, None),
+        KeyBinding::new("cmd-shift-o", GotoAll, None),
+        KeyBinding::new("cmd-shift-p", Commands, None),
         KeyBinding::new("cmd-[", NavBack, None),
         KeyBinding::new("cmd-]", NavFwd, None),
         KeyBinding::new("cmd-ctrl-f", ToggleFullScreen, None),
@@ -1305,6 +1307,10 @@ impl Acme {
         if let Some(e) = self.url_edit.as_mut() {
             e.caret_since = std::time::Instant::now();
             return Some(&mut e.field);
+        }
+        if let Some(c) = self.commands.as_mut() {
+            c.caret_since = std::time::Instant::now();
+            return Some(&mut c.filter);
         }
         if let Some(f) = self.finder.as_mut() {
             f.caret_since = std::time::Instant::now();

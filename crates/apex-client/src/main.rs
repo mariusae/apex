@@ -21,6 +21,7 @@ mod finder;
 mod menu;
 mod shell;
 mod sidebar;
+mod commands;
 mod miniature;
 mod restart;
 mod switcher;
@@ -124,6 +125,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
             .on_action(cx.listener(|this, _: &shell::StashNext, _, cx| this.stash_walk_step(false, cx)))
             .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Commands, _, cx| this.open_commands(cx)))
             .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
@@ -514,6 +516,10 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
+        let root = match self.commands_panel(cx) {
+            Some(panel) => root.child(panel),
+            None => root,
+        };
         // ctrl-tab's cards, over everything
         let root = match self.switcher_overlay(window, cx) {
             Some(o) => root.child(gpui::deferred(o).with_priority(3)),
@@ -533,7 +539,7 @@ impl Render for Acme {
                         acme.webs.set_holes(&holes);
                         // the pages go quiet with the rest while the
                         // picker or the finder has the window
-                        acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some()).then(shell::veil));
+                        acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some() || acme.commands.is_some()).then(shell::veil));
                     });
                 },
                 |_, _, _, _| {},
