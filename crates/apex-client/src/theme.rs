@@ -300,12 +300,13 @@ pub const XCODE_DARK: Theme = make(Keys {
 /// Classic: acme's make -- cream paper, the tags a pale blue, a yellow
 /// selection -- in the hues of go.dev's playground, toned down: its
 /// #ffffdd paper warmed only a little off white, its ink (#202224) and
-/// secondary (#6e7072), Go blue (#007d9c) for the accent, Go's fuchsia
-/// (#ce3262) for B2.
+/// secondary (#6e7072), Go blue (#007d9c) for the accent. B2's sweep
+/// burnt orange (#c85a00) and B3's a deeper blue (#2a5db0): Go's fuchsia
+/// and teal were 46 apart under a deuteranopia simulation, these 114.
 pub const CLASSIC_LIGHT: Theme = make(Keys {
     paper: 0xFCFCF2, sel: 0xF1E9A6, thumb: 0xD4D4C4, header: 0xEAF4F7, header_sel: 0xBCE3ED, line: 0xD6DCDD,
     ink: 0x202224, dim: 0x6E7072, faint: 0x8A8C8E, accent: 0x007D9C, chosen: 0x007D9C, column: 0xF5F5EA, sidebar: 0xE8EFF1,
-    dirty: 0x2F3A40, stale: 0xC79A00, fenced: 0xCE3262, exec: 0xCE3262, look: 0x007D9C,
+    dirty: 0x2F3A40, stale: 0xC79A00, fenced: 0xCE3262, exec: 0xC85A00, look: 0x2A5DB0,
     popover: 0xFFFFFF, pick: 0xDDF1F6, hover: 0xF0F4F5, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
 });
 
@@ -315,7 +316,7 @@ pub const CLASSIC_LIGHT: Theme = make(Keys {
 pub const CLASSIC_DARK: Theme = make(Keys {
     paper: 0x202224, sel: 0x4A4526, thumb: 0x4A4C4E, header: 0x2B2D2F, header_sel: 0x1F4B5A, line: 0x3A3C3E,
     ink: 0xE6E6E6, dim: 0x9A9C9E, faint: 0x6E7072, accent: 0x50B7E0, chosen: 0x007D9C, column: 0x1A1B1D, sidebar: 0x26282A,
-    dirty: 0xE6E6E6, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xCE3262, look: 0x007D9C,
+    dirty: 0xE6E6E6, stale: 0xFDDD00, fenced: 0xE0547A, exec: 0xC85A00, look: 0x2A5DB0,
     popover: 0x2B2D2F, pick: 0x1F4B5A, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
 });
 
