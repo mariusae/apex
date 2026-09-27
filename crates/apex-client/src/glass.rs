@@ -44,24 +44,28 @@ impl Render for SidebarPanel {
 }
 
 /// The panel, once it is made.
+///
+/// It stands where the card does, always, a child of the main window,
+/// the window itself never hidden or faded: a window no one can see has
+/// gpui stop drawing it (its display link goes with its visibility), and
+/// it would start again only when AppKit got round to saying it is seen.
+/// What comes and goes is its content -- the glass, the card drawn on it,
+/// the buttons -- slid and faded by Core Animation, as Reflect's is: one
+/// animation handed to the render server, smooth however long the app's
+/// own frames take. Put away, its content is clear and the clicks pass
+/// through it.
 pub struct Glass {
     panel: usize,
     main: usize,
     /// A child of the main window (in front, moving with it).
     attached: bool,
-    /// What the window server was last told: the frame on screen, the
-    /// alpha, whether clicks pass through.
+    /// The frame on screen the window server was last told.
     frame: Option<[f64; 4]>,
-    alpha: f32,
-    through: bool,
+    /// Out (shown), as last animated.
+    out: bool,
+    /// Put away since: its shadow goes once the content has faded.
+    away_at: Option<std::time::Instant>,
 }
-
-/// The alpha of the panel put away. Not none: a window no one can see
-/// has gpui stop drawing it (its display link goes with its visibility),
-/// and it would start again only when AppKit got round to saying it is
-/// seen -- a stutter each time the sidebar came. So it stays, too faint
-/// to see, and lets the clicks through.
-const AWAY: f32 = 0.004;
 
 pub enum GlassState {
     Untried,
@@ -83,14 +87,37 @@ impl Acme {
                 detach(g);
                 false
             }
-            // floating: the panel always there, in or put away
+            // floating: the panel always there, where the card stands; its
+            // content slid and faded in or out when the sidebar comes or
+            // goes (`slide` is the in-window sidebar's; the panel's own
+            // animation is Core Animation's)
             GlassState::Ready(g) => {
-                let t = slide.unwrap_or(0.);
+                let _ = slide;
                 let inset = px(crate::sidebar::INSET);
                 let size = window.viewport_size();
-                let r = Bounds::new(gpui::point(inset - px(24. * (1. - t)), inset), gpui::size(px(crate::shell::SIDEBAR_W) - inset * 2., size.height - inset * 2.));
-                place(g, window, r, if slide.is_some() { t.max(AWAY) } else { AWAY }, slide.is_none());
-                slide.is_some()
+                let r = Bounds::new(gpui::point(inset, inset), gpui::size(px(crate::shell::SIDEBAR_W) - inset * 2., size.height - inset * 2.));
+                place(g, window, r);
+                let out = self.sidebar_out;
+                if out != g.out {
+                    animate(g, out);
+                    g.out = out;
+                    g.away_at = (!out).then(std::time::Instant::now);
+                    if !out {
+                        // the shadow, once the content has faded
+                        cx.spawn(async move |this, cx| {
+                            cx.background_executor().timer(std::time::Duration::from_millis(200)).await;
+                            let _ = this.update(cx, |a, _| {
+                                if let GlassState::Ready(g) = &mut a.glass {
+                                    if !g.out && g.away_at.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(180)) {
+                                        shadow(g, false);
+                                    }
+                                }
+                            });
+                        })
+                        .detach();
+                    }
+                }
+                true
             }
             // made as soon as the sidebar floats, not when it is first
             // brought
@@ -125,7 +152,7 @@ impl Acme {
                     });
                     let state = match opened {
                         Ok(handle) => match handle.read_with(cx, |p, _| p.panel) {
-                            Ok(panel) if panel != 0 => GlassState::Ready(Glass { panel, main, attached: false, frame: None, alpha: -1., through: false }),
+                            Ok(panel) if panel != 0 => GlassState::Ready(Glass { panel, main, attached: false, frame: None, out: false, away_at: None }),
                             _ => {
                                 let _ = handle.update(cx, |_, window, _| window.remove_window());
                                 GlassState::Unavailable
@@ -243,7 +270,15 @@ mod mac {
             // parent hides it), and casts the card's shadow
             let _: () = msg_send![panel, setBecomesKeyOnlyIfNeeded: true];
             let _: () = msg_send![panel, setHidesOnDeactivate: false];
-            let _: () = msg_send![panel, setHasShadow: true];
+            // put away to begin with: the content clear, no shadow, the
+            // clicks through
+            let _: () = msg_send![content, setWantsLayer: true];
+            let layer: *mut Object = msg_send![content, layer];
+            if !layer.is_null() {
+                let _: () = msg_send![layer, setOpacity: 0.0f32];
+            }
+            let _: () = msg_send![panel, setHasShadow: false];
+            let _: () = msg_send![panel, setIgnoresMouseEvents: true];
             let level: i64 = msg_send![main, level];
             let _: () = msg_send![panel, setLevel: level];
             // the window's buttons where the main window's stand, less
@@ -275,9 +310,8 @@ mod mac {
     }
 
     /// The panel at `r` (in the main window's view, top left first),
-    /// `alpha` opaque, over the main window; the clicks passing `through`
-    /// it when it is put away. Only what changed is sent.
-    pub fn place(g: &mut Glass, main: &Window, r: Bounds<Pixels>, alpha: f32, through: bool) {
+    /// over the main window. Only a change is sent.
+    pub fn place(g: &mut Glass, main: &Window, r: Bounds<Pixels>) {
         let Some((main_window, main_view)) = native(main) else { return };
         let panel = g.panel as *mut Object;
         let local = R { origin: P { x: f32::from(r.origin.x) as f64, y: f32::from(r.origin.y) as f64 }, size: P { x: f32::from(r.size.width) as f64, y: f32::from(r.size.height) as f64 } };
@@ -295,18 +329,80 @@ mod mac {
                 }
                 g.frame = Some(frame);
             }
-            if g.alpha != alpha {
-                let _: () = msg_send![panel, setAlphaValue: alpha as f64];
-                g.alpha = alpha;
-            }
-            if g.through != through {
-                let _: () = msg_send![panel, setIgnoresMouseEvents: through];
-                g.through = through;
-            }
             if !g.attached {
                 let _: () = msg_send![main_window, addChildWindow: panel ordered: ABOVE];
                 let _: () = msg_send![panel, orderFront: nil];
                 g.attached = true;
+            }
+        }
+    }
+
+    fn ns_string(s: &str) -> *mut Object {
+        let c = std::ffi::CString::new(s).unwrap_or_default();
+        // SAFETY: an autoreleased NSString from a C string
+        unsafe { msg_send![class!(NSString), stringWithUTF8String: c.as_ptr()] }
+    }
+
+    /// The content slid and faded in (`out`) or away, by Core Animation:
+    /// in over 0.16 s easing out from 24 pixels to the left, away over
+    /// 0.14 s easing in -- the in-window sidebar's slide. The clicks are
+    /// the panel's from the start of the way in, and pass through it from
+    /// the start of the way out.
+    pub fn animate(g: &mut Glass, out: bool) {
+        let panel = g.panel as *mut Object;
+        // SAFETY: AppKit and Core Animation on the main thread, on the
+        // panel's own content view and layer
+        unsafe {
+            let content: *mut Object = msg_send![panel, contentView];
+            if content.is_null() {
+                return;
+            }
+            let layer: *mut Object = msg_send![content, layer];
+            if layer.is_null() {
+                return;
+            }
+            let (o0, o1, x0, x1, dur, curve) = if out { (0.0f32, 1.0f32, -24.0f64, 0.0f64, 0.16f64, "easeOut") } else { (1.0, 0.0, 0.0, -24.0, 0.14, "easeIn") };
+            // where it was drawn when turned about mid-way: from there
+            let shown: *mut Object = msg_send![layer, presentationLayer];
+            let o0 = if shown.is_null() { o0 } else { msg_send![shown, opacity] };
+            let timing: *mut Object = msg_send![class!(CAMediaTimingFunction), functionWithName: ns_string(curve)];
+            let fade: *mut Object = msg_send![class!(CABasicAnimation), animationWithKeyPath: ns_string("opacity")];
+            let from: *mut Object = msg_send![class!(NSNumber), numberWithFloat: o0];
+            let to: *mut Object = msg_send![class!(NSNumber), numberWithFloat: o1];
+            let _: () = msg_send![fade, setFromValue: from];
+            let _: () = msg_send![fade, setToValue: to];
+            let _: () = msg_send![fade, setDuration: dur];
+            let _: () = msg_send![fade, setTimingFunction: timing];
+            let slide: *mut Object = msg_send![class!(CABasicAnimation), animationWithKeyPath: ns_string("transform.translation.x")];
+            let from: *mut Object = msg_send![class!(NSNumber), numberWithDouble: x0];
+            let to: *mut Object = msg_send![class!(NSNumber), numberWithDouble: x1];
+            let _: () = msg_send![slide, setFromValue: from];
+            let _: () = msg_send![slide, setToValue: to];
+            let _: () = msg_send![slide, setDuration: dur];
+            let _: () = msg_send![slide, setTimingFunction: timing];
+            // the model where it ends (the slide's end is the identity:
+            // away, it is clear anyway)
+            let _: () = msg_send![class!(CATransaction), begin];
+            let _: () = msg_send![class!(CATransaction), setDisableActions: true];
+            let _: () = msg_send![layer, setOpacity: o1];
+            let _: () = msg_send![class!(CATransaction), commit];
+            let _: () = msg_send![layer, addAnimation: fade forKey: ns_string("apex-fade")];
+            let _: () = msg_send![layer, addAnimation: slide forKey: ns_string("apex-slide")];
+            let _: () = msg_send![panel, setIgnoresMouseEvents: !out];
+        }
+        if out {
+            shadow(g, true);
+        }
+    }
+
+    /// The card's shadow on or off (the window's, from its content).
+    pub fn shadow(g: &mut Glass, on: bool) {
+        let panel = g.panel as *mut Object;
+        // SAFETY: AppKit on the main thread
+        unsafe {
+            let _: () = msg_send![panel, setHasShadow: on];
+            if on {
+                let _: () = msg_send![panel, invalidateShadow];
             }
         }
     }
@@ -341,7 +437,7 @@ mod mac {
 }
 
 #[cfg(target_os = "macos")]
-use mac::{detach, drag, install, ns_window, place, supported};
+use mac::{animate, detach, drag, install, ns_window, place, shadow, supported};
 
 #[cfg(not(target_os = "macos"))]
 fn supported() -> bool {
@@ -356,7 +452,11 @@ fn install(_: &Window, _: usize) -> Option<usize> {
     None
 }
 #[cfg(not(target_os = "macos"))]
-fn place(_: &mut Glass, _: &Window, _: Bounds<Pixels>, _: f32, _: bool) {}
+fn place(_: &mut Glass, _: &Window, _: Bounds<Pixels>) {}
+#[cfg(not(target_os = "macos"))]
+fn animate(_: &mut Glass, _: bool) {}
+#[cfg(not(target_os = "macos"))]
+fn shadow(_: &mut Glass, _: bool) {}
 #[cfg(not(target_os = "macos"))]
 fn detach(_: &mut Glass) {}
 #[cfg(not(target_os = "macos"))]
