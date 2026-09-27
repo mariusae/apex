@@ -88,8 +88,11 @@ impl Render for Acme {
         // on the box of the window that is there now, which sits in the
         // same strip at the column's edge
         // where ^F's list goes: under the name, as the last frame laid it
-        // out (the layouts are drawn again below)
-        self.completion_anchor();
+        // out (the layouts are drawn again below); not laid out yet, the
+        // next frame's
+        if self.completion_anchor() {
+            cx.notify();
+        }
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();

@@ -31,7 +31,14 @@ pub struct Completion {
     /// Where the name starts on the screen, and its line's height: taken
     /// from the last frame's layout, before a frame lays it out anew.
     pub anchor: Option<(gpui::Point<gpui::Pixels>, gpui::Pixels)>,
+    /// Frames drawn without finding where it goes: the names came before
+    /// the text they follow was laid out (a directory's, asked for as its
+    /// name was typed in). A few more are asked for; then it goes.
+    pub unplaced: u8,
 }
+
+/// How many frames a list waits to be placed.
+const UNPLACED: u8 = 4;
 
 impl Completion {
     /// The names matching what is typed of the name so far.
@@ -66,7 +73,7 @@ impl Acme {
         let start = c.at - base.chars().count();
         let names = c.names.unwrap_or_default();
         if names.is_empty() {
-            self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: Some(std::time::Instant::now()), anchor: None });
+            self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: Some(std::time::Instant::now()), anchor: None, unplaced: 0 });
             return;
         }
         if names.len() == 1 {
@@ -82,7 +89,7 @@ impl Acme {
             let _ = self.node.insert(&mut self.log, c.view, &more);
             self.after();
         }
-        self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: None, anchor: None });
+        self.completion = Some(Completion { view: c.view, start, names, cursor: 0, none: None, anchor: None, unplaced: 0 });
     }
 
     /// The name `name` in place of what is typed of it (from `start` to
@@ -119,6 +126,13 @@ impl Acme {
     /// puts it away. True when the key was the list's.
     pub fn completion_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let Some(c) = self.completion.as_ref() else { return false };
+        // a list not drawn (not placed yet) takes no keys: return is the
+        // text's, not a name nobody saw chosen
+        if c.anchor.is_none() {
+            self.completion = None;
+            cx.notify();
+            return false;
+        }
         if c.none.is_some() {
             self.completion = None;
             cx.notify();
@@ -183,15 +197,29 @@ impl Acme {
 
     /// Where the list goes, from the last frame's layout of its text:
     /// called before the frame clears the layouts to draw them again.
-    pub fn completion_anchor(&mut self) {
-        let Some(c) = self.completion.as_ref() else { return };
+    /// True when it could not be placed yet and another frame is wanted.
+    pub fn completion_anchor(&mut self) -> bool {
+        let Some(c) = self.completion.as_ref() else { return false };
         // at the name's start; failing that, just past the rune before it
         let anchor = self.layouts.get(&c.view).and_then(|l| {
             let p = l.point_of(c.start).or_else(|| c.start.checked_sub(1).and_then(|q| l.point_of(q)).map(|p| gpui::point(p.x + px(8.), p.y)))?;
             Some((p, l.line_height))
         });
-        if let (Some(c), Some(a)) = (self.completion.as_mut(), anchor) {
-            c.anchor = Some(a);
+        let Some(c) = self.completion.as_mut() else { return false };
+        match anchor {
+            Some(a) => {
+                c.anchor = Some(a);
+                false
+            }
+            None if c.anchor.is_none() => {
+                c.unplaced += 1;
+                if c.unplaced > UNPLACED {
+                    self.completion = None;
+                    return false;
+                }
+                true
+            }
+            None => false,
         }
     }
 
