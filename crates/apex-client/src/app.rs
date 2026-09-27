@@ -409,6 +409,8 @@ pub struct Acme {
     pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
+    /// ⌘E, ⌘ still held: the walk through a column's stash.
+    pub stash_walk: Option<crate::switcher::StashWalk>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
     /// The tab shown has nothing of its own yet -- its link is being
@@ -523,7 +525,7 @@ pub struct Acme {
     mouse_saved: Option<(WindowId, Point<Pixels>)>,
     /// Where the pointer was put by a warp, until the next real mouse event.
     pointer: Option<Point<Pixels>>,
-    last_mouse: Point<Pixels>,
+    pub(crate) last_mouse: Point<Pixels>,
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
@@ -1566,6 +1568,7 @@ impl Acme {
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
             switcher: None,
+            stash_walk: None,
             tag_need: HashMap::new(),
             waiting: None,
             close_requested: false,
@@ -2306,7 +2309,7 @@ impl Acme {
         }
     }
 
-    fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
+    pub(crate) fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
         ((f32::from(p.x) - self.left()) as i32, (f32::from(p.y) - self.top()) as i32)
     }
 
@@ -3246,6 +3249,11 @@ impl Acme {
             self.switcher_commit(window, cx);
             return;
         }
+        // ⌘ let go: the chosen stashed window comes back
+        if self.stash_walk.is_some() && prev.platform && !e.modifiers.platform {
+            self.stash_walk_commit(cx);
+            return;
+        }
         if let Some(w) = self.mouse.term_drag {
             // in a terminal: option copies (nothing to cut), command pastes
             if e.modifiers.alt && !prev.alt {
@@ -3899,6 +3907,13 @@ impl Acme {
             if self.switcher.is_some() {
                 if ks.key == "escape" {
                     self.close_switcher(window, cx);
+                }
+                return;
+            }
+            if self.stash_walk.is_some() {
+                if ks.key == "escape" {
+                    self.stash_walk = None;
+                    cx.notify();
                 }
                 return;
             }

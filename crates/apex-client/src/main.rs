@@ -120,6 +120,8 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(false, cx)))
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::StashNext, _, cx| this.stash_walk_step(false, cx)))
+            .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
@@ -442,6 +444,10 @@ impl Render for Acme {
                     area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 }
             }
+        }
+        // ⌘E's cards, over their column
+        if let Some(o) = self.stash_walk_overlay(&l, window, cx) {
+            area = area.child(o);
         }
         if let Some(m) = &self.menu {
             area = area.child(menu_element(m, font, self.overlay_mark()));

@@ -114,6 +114,14 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   (ctrl-shift-tab back); letting go of control switches to the chosen
   one, as does a click on a card; escape leaves things be. Nothing is
   switched while walking.
+- **⌘E** (`switcher.rs`) is Manifold's ⌘E over a column's stash: the
+  column under the pointer (else the last worked in, else the first with
+  a stash) shows its stashed windows side by side within it, each a live
+  card of the window as it would stand filling the column, the most
+  recently put away chosen first; more E's go further back, ⇧E forward
+  again. Letting go of ⌘ brings the chosen one back where it was (B1's
+  recall), as does a click on a card; escape leaves things be. View ▸
+  Bring Back from Stash does the same (a click or escape to finish).
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the
