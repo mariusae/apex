@@ -1296,8 +1296,20 @@ pub fn rowdragcol(l: &mut Layout, ci: usize, but: i32, op: (i32, i32), p: (i32, 
     if ci == 0 {
         return None;
     }
+    rowmovecol(l, ci, p.0, info);
+    Some(Warp::ColButton(id))
+}
+
+/// The line between column `ci` and the one to its left moved to `x`,
+/// neither made narrower than acme allows: `rowdragcol`'s resize, and
+/// what a drag of the line itself does.
+pub fn rowmovecol(l: &mut Layout, ci: usize, x: i32, info: &dyn Info) {
+    if ci == 0 || ci >= l.cols.len() {
+        return;
+    }
+    let cr = l.cols[ci].r;
     let d = l.cols[ci - 1].r;
-    let mut x = p.0;
+    let mut x = x;
     if x < d.x0 + 80 + SCROLLWID {
         x = d.x0 + 80 + SCROLLWID;
     }
@@ -1310,7 +1322,6 @@ pub fn rowdragcol(l: &mut Layout, ci: usize, but: i32, op: (i32, i32), p: (i32, 
     let mut r = cr;
     r.x0 = x + BORDER;
     colresize(l, ci, r, info);
-    Some(Warp::ColButton(id))
 }
 
 /// A failed `rowadd` of an existing column leaves it out of the row;

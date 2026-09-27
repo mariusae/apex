@@ -621,28 +621,11 @@ impl Node {
     /// `op` and released at `p` (row coordinates).
     pub fn drag_window(&mut self, log: &mut Log, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
         // a stashed window's box (its tag shown over the stash): a click
-        // is a click on it; a drag brings it back where it is let go, in
-        // whatever column that is (its own, where it was, if none)
-        if let Some((ci, si)) = self.state.layout.stashed_of(w) {
-            if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
-                return self.grow_window(log, w, but);
-            }
-            let mut l = self.state.layout.clone();
-            match tiling::rowwhichcol(&l, p) {
-                Some(nc) => {
-                    let slot = tiling::unstash(&mut l, ci, si, &*self.tiling);
-                    tiling::coladd(&mut l, nc, tiling::Adding::Existing(slot), Some(p.1), &*self.tiling);
-                    self.activecol = Some(l.cols[nc].id);
-                }
-                None => tiling::colrecall(&mut l, ci, si, false, &*self.tiling),
-            }
-            self.arrange(log, &l)?;
-            self.warp = Some(Warp::WinButton(w));
-            return Ok(());
+        // is a click on it
+        if self.state.layout.is_stashed(w) && (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+            return self.grow_window(log, w, but);
         }
-        let (ci, wi) = self.place_of(w)?;
-        let mut l = self.state.layout.clone();
-        let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
+        let (l, warp) = self.dragged(w, but, op, p)?;
         if l != self.state.layout {
             self.arrange(log, &l)?;
         }
@@ -651,6 +634,70 @@ impl Node {
         }
         self.warp = warp;
         Ok(())
+    }
+
+    /// The layout a drag of window `w`'s box from `op` to `p` makes, and
+    /// where the mouse goes. A stashed window dragged comes back where it
+    /// is let go, in whatever column that is (its own, where it was, if
+    /// none).
+    fn dragged(&self, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<(Layout, Option<Warp>)> {
+        let mut l = self.state.layout.clone();
+        if let Some((ci, si)) = l.stashed_of(w) {
+            match tiling::rowwhichcol(&l, p) {
+                Some(nc) => {
+                    let slot = tiling::unstash(&mut l, ci, si, &*self.tiling);
+                    tiling::coladd(&mut l, nc, tiling::Adding::Existing(slot), Some(p.1), &*self.tiling);
+                }
+                None => tiling::colrecall(&mut l, ci, si, false, &*self.tiling),
+            }
+            return Ok((l, Some(Warp::WinButton(w))));
+        }
+        let (ci, wi) = self.place_of(w)?;
+        let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
+        Ok((l, warp))
+    }
+
+    /// Where window `w` would stand if its box, pressed at `op`, were let
+    /// go at `p`: the drag done on a copy of the layout (Manifold's
+    /// placement preview). None for what is not yet a drag.
+    pub fn drag_window_preview(&self, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Option<Rect> {
+        if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+            return None;
+        }
+        let (l, _) = self.dragged(w, but, op, p).ok()?;
+        l.slot(w).map(|s| s.r)
+    }
+
+    /// Where column `col` would stand if its box, pressed at `op`, were
+    /// let go at `p`.
+    pub fn drag_column_preview(&self, col: ColumnId, but: i32, op: (i32, i32), p: (i32, i32)) -> Option<Rect> {
+        if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+            return None;
+        }
+        let ci = self.state.layout.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowdragcol(&mut l, ci, but, op, p, &*self.tiling);
+        l.column(col).map(|c| c.r)
+    }
+
+    /// The line on column `col`'s left moved to `x` (the line itself
+    /// dragged): only the widths change.
+    pub fn move_column_edge(&mut self, log: &mut Log, col: ColumnId, x: i32) -> Result<()> {
+        let ci = self.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowmovecol(&mut l, ci, x, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
+    /// Where column `col` would stand with the line on its left at `x`.
+    pub fn column_edge_preview(&self, col: ColumnId, x: i32) -> Option<Rect> {
+        let ci = self.state.layout.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowmovecol(&mut l, ci, x, &*self.tiling);
+        l.column(col).map(|c| c.r)
     }
 
     /// acme's `rowdragcol`: a column's layout box dragged from `op` to `p`.

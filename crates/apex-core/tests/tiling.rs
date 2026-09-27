@@ -756,3 +756,47 @@ fn uncovering_a_column_brings_it_out_of_a_strip_or_from_behind_a_full_one() {
     tiles(&l);
     assert!(near(l.cols[3].r.dx(), before[3]), "{before:?} -> {:?}", widths(&l));
 }
+
+#[test]
+fn the_line_between_columns_moves_only_the_widths() {
+    let mut l = row();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(2), tag: BufferId(2) }, None, &info()).unwrap();
+    add(&mut l, 0, 1, None);
+    add(&mut l, 1, 2, None);
+    let (a, b) = (l.cols[0].r, l.cols[1].r);
+    rowmovecol(&mut l, 1, b.x0 - 100, &info());
+    assert_eq!(l.cols[0].id, ColumnId(1));
+    assert_eq!(l.cols[1].id, ColumnId(2));
+    assert_eq!(l.cols[0].r.x1, b.x0 - 100);
+    assert_eq!(l.cols[1].r.x0, b.x0 - 100 + BORDER);
+    assert_eq!(l.cols[1].r.x1, b.x1);
+    assert_eq!(l.cols[0].r.x0, a.x0);
+    // never narrower than acme allows, however far it is taken
+    rowmovecol(&mut l, 1, 0, &info());
+    assert_eq!(l.cols[0].r.x1, 80 + SCROLLWID);
+    rowmovecol(&mut l, 1, 5000, &info());
+    assert_eq!(l.cols[1].r.x0, b.x1 - 80 - SCROLLWID + BORDER);
+}
+
+#[test]
+fn a_drags_preview_is_where_the_drop_puts_it() {
+    let mut log = Log::new();
+    let (a, _) = log.attach(AttachmentKind::Ui, "t");
+    let mut n = Node::new(a);
+    n.catch_up(&log).unwrap();
+    let col = n.init_session(&mut log).unwrap();
+    let w1 = n.new_window(&mut log, col, "a", "x\n").unwrap();
+    let w2 = n.new_window(&mut log, col, "b", "y\n").unwrap();
+    let r1 = n.state.layout.slot(w1).unwrap().r;
+    let op = (r1.x0 + 3, r1.y0 + 3);
+    // a click is no drag: nothing to preview
+    assert_eq!(n.drag_window_preview(w1, 1, op, op), None);
+    // taken below the other window: the preview is where the drop puts it
+    let r2 = n.state.layout.slot(w2).unwrap().r;
+    let p = (op.0, r2.y1 - 40);
+    let shown = n.drag_window_preview(w1, 1, op, p).unwrap();
+    let before = n.state.layout.clone();
+    n.drag_window(&mut log, w1, 1, op, p).unwrap();
+    assert_ne!(n.state.layout, before);
+    assert_eq!(Some(shown), n.state.layout.slot(w1).map(|s| s.r));
+}
