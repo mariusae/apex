@@ -63,8 +63,8 @@ pub struct Glass {
     frame: Option<[f64; 4]>,
     /// Out (shown), as last animated.
     out: bool,
-    /// Put away since: its shadow goes once the content has faded.
-    away_at: Option<std::time::Instant>,
+    /// Brought out since: the shadow comes once the content has.
+    out_at: Option<std::time::Instant>,
 }
 
 pub enum GlassState {
@@ -101,15 +101,19 @@ impl Acme {
                 if out != g.out {
                     animate(g, out);
                     g.out = out;
-                    g.away_at = (!out).then(std::time::Instant::now);
-                    if !out {
-                        // the shadow, once the content has faded
+                    g.out_at = out.then(std::time::Instant::now);
+                    // the window's shadow is the window's, not the
+                    // content's: it does not fade, and its edge would
+                    // outline the card as it goes. Off as the card starts
+                    // to go; on once it has come
+                    shadow(g, false);
+                    if out {
                         cx.spawn(async move |this, cx| {
-                            cx.background_executor().timer(std::time::Duration::from_millis(200)).await;
+                            cx.background_executor().timer(std::time::Duration::from_millis(170)).await;
                             let _ = this.update(cx, |a, _| {
                                 if let GlassState::Ready(g) = &mut a.glass {
-                                    if !g.out && g.away_at.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(180)) {
-                                        shadow(g, false);
+                                    if g.out && g.out_at.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(160)) {
+                                        shadow(g, true);
                                     }
                                 }
                             });
@@ -152,7 +156,7 @@ impl Acme {
                     });
                     let state = match opened {
                         Ok(handle) => match handle.read_with(cx, |p, _| p.panel) {
-                            Ok(panel) if panel != 0 => GlassState::Ready(Glass { panel, main, attached: false, frame: None, out: false, away_at: None }),
+                            Ok(panel) if panel != 0 => GlassState::Ready(Glass { panel, main, attached: false, frame: None, out: false, out_at: None }),
                             _ => {
                                 let _ = handle.update(cx, |_, window, _| window.remove_window());
                                 GlassState::Unavailable
@@ -389,9 +393,6 @@ mod mac {
             let _: () = msg_send![layer, addAnimation: fade forKey: ns_string("apex-fade")];
             let _: () = msg_send![layer, addAnimation: slide forKey: ns_string("apex-slide")];
             let _: () = msg_send![panel, setIgnoresMouseEvents: !out];
-        }
-        if out {
-            shadow(g, true);
         }
     }
 
