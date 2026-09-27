@@ -540,6 +540,70 @@ pub fn stop(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Stop the daemon at `path`, whatever its version: one of this protocol
+/// is asked (`stop`); one of another, which may not read our Stop as a
+/// Stop, is ended by a signal -- the process at the far end of its
+/// socket, once it is seen to be an apex server on that very socket.
+/// Returns once it has gone.
+pub fn stop_any(path: &Path) -> io::Result<()> {
+    match list_sessions(path) {
+        Ok(_) => return stop(path),
+        Err(e) if e.kind() == io::ErrorKind::Unsupported => {}
+        Err(e) => return Err(e),
+    }
+    let s = UnixStream::connect(path)?;
+    let pid = peer_pid(&s)?;
+    drop(s);
+    let out = std::process::Command::new("ps").args(["-o", "command=", "-p", &pid.to_string()]).output()?;
+    let cmd = String::from_utf8_lossy(&out.stdout).to_string();
+    if !(cmd.contains("apex") && cmd.contains(" server") && cmd.contains(&path.to_string_lossy().to_string())) {
+        return Err(io::Error::other(format!("the process on {} is not an apex server: {}", path.display(), cmd.trim())));
+    }
+    let alive = |p: i32| unsafe { libc::kill(p, 0) == 0 };
+    // SAFETY: signalling a process we have just identified.
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while alive(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    if alive(pid) {
+        // SAFETY: as above.
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+    Ok(())
+}
+
+/// The pid of the process at the far end of a Unix socket.
+#[cfg(target_os = "macos")]
+fn peer_pid(s: &UnixStream) -> io::Result<i32> {
+    use std::os::unix::io::AsRawFd;
+    let mut pid: libc::pid_t = 0;
+    let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+    // SAFETY: a getsockopt into a pid_t of the size given.
+    let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_LOCAL, libc::LOCAL_PEERPID, &mut pid as *mut _ as *mut libc::c_void, &mut len) };
+    if r != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(pid)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn peer_pid(s: &UnixStream) -> io::Result<i32> {
+    use std::os::unix::io::AsRawFd;
+    let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+    let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: a getsockopt into a ucred of the size given.
+    let r = unsafe { libc::getsockopt(s.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, &mut cred as *mut _ as *mut libc::c_void, &mut len) };
+    if r != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(cred.pid)
+}
+
 /// This machine's `~/.apex/NAME` and its name, as a script for a host.
 pub fn local_script(name: &str) -> Option<Script> {
     let home = std::env::var("HOME").ok().filter(|h| !h.is_empty())?;
@@ -970,6 +1034,35 @@ fn spawn_reader(stream: Box<dyn Read + Send>, tx: Sender<ServerMsg>, wake: Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A daemon of another version on a socket of its own: it says its
+    /// build to each connection and then keeps it open.
+    pub(crate) fn stale_daemon(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("stale.sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for mut s in listener.incoming().flatten() {
+                let _ = crate::proto::write_frame(&mut s, &ServerMsg::Build { protocol: crate::proto::PROTOCOL - 1, id: "old".into() });
+                held.push(s);
+            }
+        });
+        path
+    }
+
+    #[test]
+    fn a_daemon_of_another_version_is_not_signalled_unless_it_is_one() {
+        let dir = std::env::temp_dir().join(format!("apex-stale-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = stale_daemon(&dir);
+        let e = list_sessions(&path).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::Unsupported);
+        // the process at the far end is this test, no apex server: left be
+        let e = stop_any(&path).unwrap_err();
+        assert!(e.to_string().contains("not an apex server"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn another_protocol_is_refused_with_advice() {

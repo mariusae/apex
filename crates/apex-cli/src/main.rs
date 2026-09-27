@@ -797,7 +797,8 @@ fn ls(ctx: &Ctx, _: &Parsed) -> R {
 }
 
 fn stop(ctx: &Ctx, _: &Parsed) -> R {
-    apex_server::remote::stop(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))
+    // whatever its version: an old daemon may not read our Stop as one
+    apex_server::remote::stop_any(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))
 }
 
 fn print_procs(procs: &[apex_server::Running]) {

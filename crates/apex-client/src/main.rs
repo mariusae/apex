@@ -498,9 +498,14 @@ fn main() {
             let d = apex_server::providers::Dest::parse(&dest);
             (Target::Url { url: SessionUrl { provider: d.provider, arg: d.name, session: default(), id: None }, files: files.clone() }, None)
         } else {
-            if let Err(e) = shell::ensure_daemon(&socket) {
-                eprintln!("apex-ui: {e}");
-                std::process::exit(1);
+            match shell::ensure_daemon(&socket) {
+                Ok(()) => {}
+                // a daemon of another version: the window opens and says so
+                Err(e) if e.kind() == std::io::ErrorKind::Unsupported => shell::log_line(&format!("the daemon: {e}")),
+                Err(e) => {
+                    eprintln!("apex-ui: {e}");
+                    std::process::exit(1);
+                }
             }
             match &session {
                 Some(s) => (Target::Url { url: SessionUrl::local(s), files: files.clone() }, None),
