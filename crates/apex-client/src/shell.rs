@@ -238,6 +238,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("alt-cmd-e", UnstashAll, None),
         KeyBinding::new("cmd-shift-\\", ShowOverview, None),
         KeyBinding::new("cmd-|", ShowOverview, None),
+        KeyBinding::new("cmd-'", ShowOverview, None),
         KeyBinding::new("cmd-shift-e", StashBack, None),
         KeyBinding::new("cmd-}", NextTab, None),
         KeyBinding::new("cmd-,", Profile, None),

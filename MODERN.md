@@ -137,7 +137,7 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   presses walk the sessions most recently settled on first; the ones
   passed on the way are not taken as settled on. A session not
   connected yet is being connected as it is passed.
-- **⌘⇧\\ shows every session** (View ▸ Show All Sessions), as Mission
+- **⌘⇧\\ (or ⌘') shows every session** (View ▸ Show All Sessions), as Mission
   Control shows the windows: a grid of cards over the window, as large
   as the window allows, each its session's window drawn small and live
   from its replica (the shown one's edge in the accent, a notified one
