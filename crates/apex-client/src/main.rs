@@ -16,10 +16,15 @@ mod attention;
 mod contrast;
 mod cursor;
 mod field;
+mod fonts;
 mod finder;
 mod menu;
 mod shell;
+mod sidebar;
+mod miniature;
+mod restart;
 mod switcher;
+mod webbar;
 mod term_element;
 mod pool;
 mod text_element;
@@ -117,6 +122,9 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(false, cx)))
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::StashNext, _, cx| this.stash_walk_step(false, cx)))
+            .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
@@ -160,35 +168,54 @@ impl Render for Acme {
             web::set_native_titlebar_hidden(window, self.fullscreen);
             self.native_bar_hidden = self.fullscreen;
         }
-        // full screen with the tabs always shown: the strip as ever; else
-        // only when the pointer brings it, over the top of the layout
-        let hides = self.strip_hides();
-        let strip_over = hides && self.strip_revealed;
-        let root = if hides { root } else { root.child(self.titlebar(cx)) };
+        // the sidebar, as Manifold's: pinned, down the left with the
+        // content beside it; else floating over the content when the
+        // pointer brings it, sliding in and out. The window's buttons are
+        // on its top row and show only with it; there is no title bar, so
+        // full screen is the whole screen
+        let side = self.sidebar_shown();
+        let slide = if side { None } else { self.sidebar_slide() };
+        let lights = side || self.sidebar_out;
+        if self.lights_shown != Some(lights) {
+            web::set_traffic_lights(window, lights);
+            self.lights_shown = Some(lights);
+        }
+        if slide.is_some_and(|t| t < 1.) {
+            window.request_animation_frame();
+        }
+        let root = if side { root.flex_row().child(self.sidebar(false, cx)) } else { root };
+        // what fills the rest: across from a pinned sidebar, or all of it
+        let rest = move |d: gpui::Div| if side { d.flex_1().min_w_0().h_full() } else { d.flex_1().min_h_0().w_full() };
         // a tab with nothing attached to it: no acme, just the page and
         // what the tab is waiting for in the middle of it. The window
         // still takes the keys that reach the other tabs, and the picker
         // still opens over it; the link goes on being made in the pool
         if let Some(what) = self.waiting.clone() {
-            let blank = div()
-                .flex_1()
-                .min_h_0()
-                .w_full()
+            // a spinner over the words, as a Mac app waits
+            let accent = text_element::rgb(t.accent);
+            let spinner = canvas(|_, _, _| {}, move |b, _, window, _| text_element::paint_spinner(window, gpui::point(b.left() + b.size.width / 2., b.top() + b.size.height / 2.), 9., 2., accent)).w(px(24.)).h(px(24.));
+            let blank = rest(div())
                 .flex()
+                .flex_col()
+                .gap(px(10.))
                 .items_center()
                 .justify_center()
                 .bg(gpui::rgb(t.body_bg))
-                .child(div().px(px(24.)).text_size(px(13.)).font_family(shell::UI_FONT).text_color(gpui::rgb(t.tab_dim)).child(what));
+                .child(spinner)
+                .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
             let root = root.child(blank);
             let root = match self.selector_panel(cx) {
                 Some(panel) => root.child(panel),
                 None => root,
             };
-            let root = if strip_over {
-                let width = window.viewport_size().width;
-                root.child(gpui::deferred(div().absolute().top(px(0.)).left(px(0.)).w(width).h(px(shell::TITLEBAR_HEIGHT)).child(self.titlebar(cx))).with_priority(1))
-            } else {
-                root
+            // ctrl-tab's cards, over everything
+            let root = match self.switcher_overlay(window, cx) {
+                Some(o) => root.child(gpui::deferred(o).with_priority(3)),
+                None => root,
+            };
+            let root = match slide {
+                Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
+                None => root,
             };
             return root.into_any_element();
         }
@@ -209,19 +236,38 @@ impl Render for Acme {
         let acme_border = if scale <= 1. { 2. } else { ((2. * (scale * 110.).floor() + 66.) / 133.).floor() };
         let extra = ((apex_core::tiling::BORDER as f32 * scale - acme_border).max(0.) / scale).min(apex_core::tiling::BORDER as f32);
         let fill = |x: f32, y: f32, w: f32, h: f32, c: u32| div().absolute().left(px(x)).top(px(y)).w(px(w.max(0.))).h(px(h.max(0.))).bg(gpui::rgb(c));
-        // acme's pointer over acme's part of the window only; the box while
-        // a layout box is held (the innermost hitbox's style wins)
-        let pointer = if self.dragging_box() {
-            cursor::BOX_CURSOR
+        // the system's pointers, as a Mac app's (the innermost hitbox's
+        // style wins): the arrow over text as over everything else -- in
+        // apex a click in text does far more than place an insertion
+        // point, which is all the I-beam says; the open hand over what
+        // drags (a window's handle, a column's box, the session's), the
+        // closed hand everywhere while one is held; over a page, the
+        // page's own
+        use gpui::CursorStyle;
+        let dragging = self.dragging_box();
+        // the line between columns held: the pointer says left and right
+        let held = if self.dragging_edge() { CursorStyle::ResizeLeftRight } else { CursorStyle::ClosedHand };
+        let hold = |c: CursorStyle| if dragging { held } else { c };
+        let pointer = if dragging {
+            held
         } else if self.over_page(window) {
             cursor::NATIVE_CURSOR // the page's own, set as it asks
         } else {
-            cursor::BIG_ARROW
+            CursorStyle::Arrow
         };
-        let mut area = div().relative().flex_1().min_h_0().w_full().overflow_hidden().cursor(pointer);
+        // a lane down a text's left: its handle (a row high) or its
+        // scrollbar (all the way down), with its own pointer
+        let lane = |h: Option<f32>, c: CursorStyle| {
+            let d = div().absolute().left(px(0.)).top(px(0.)).w(px(crate::text_element::SCROLLWID)).cursor(c);
+            match h {
+                Some(h) => d.h(px(h)),
+                None => d.h_full(),
+            }
+        };
+        let mut area = rest(div().relative()).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
-        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()));
+        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)));
         for (ci, col) in l.cols.iter().enumerate() {
             // hidden behind a column grown to the whole row (B3 on its box)
             if !l.shows(ci) {
@@ -237,6 +283,17 @@ impl Render for Acme {
             // it); everywhere else the black root is the borders between
             // the tag and the windows and between the windows
             let tail = col.wins.last().map(|s| s.r.y1).unwrap_or(col.r.y0 + font + apex_core::tiling::BORDER);
+            // the column on the body's paper, as acme's is on white: what
+            // the windows leave -- a body's last part line, the gaps
+            // between them -- is paper, not the rule's grey; a hairline
+            // where each window meets the one above it says where it
+            // starts, folded to its tag or not
+            area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, t.body_bg));
+            for s in col.wins.iter() {
+                let b = apex_core::tiling::BORDER as f32;
+                let hair = 1. / scale;
+                area = area.child(fill(s.r.x0 as f32, s.r.y0 as f32 - b / 2. - hair / 2., s.r.dx() as f32, hair, t.border));
+            }
             if tail < col.r.y1 {
                 area = area.child(at(col.r.x0, tail, col.r.dx(), col.r.y1 - tail, div().size_full().bg(gpui::rgb(t.column)).into_any_element()));
             }
@@ -272,7 +329,33 @@ impl Render for Acme {
                     }
                 }
             }
-            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()));
+            area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+            // the stash: the edges of the sheets put away, peeking out
+            // under the column's windows as a stack of paper does, each
+            // further one narrower and lower; in the accent's tint when
+            // one of them wants the user
+            if let Some((band, _)) = self.stash_geometry(ci) {
+                let n = col.stash.len().min(apex_core::tiling::STASH_EDGES);
+                let notified = col.stash.iter().any(|s| self.window_notified(s.slot.window));
+                let edge = if notified { text_element::mix(t.tag_bg, t.accent, 0.10) } else { t.tag_bg };
+                let (paper, line) = (t.body_bg, t.body_border);
+                let sheets = canvas(
+                    |_, _, _| {},
+                    move |b, _, window, _| {
+                        window.paint_quad(gpui::fill(b, gpui::rgb(paper)));
+                        let top = b.top() + px(apex_core::tiling::BORDER as f32);
+                        for i in (0..n).rev() {
+                            let inset = px(2. + 4. * i as f32);
+                            let bottom = top + px((apex_core::tiling::STASH_EDGE * (i as i32 + 1)) as f32);
+                            let r = gpui::Bounds::new(gpui::point(b.left() + inset, top - px(4.)), gpui::size(b.size.width - inset * 2., bottom - top + px(4.)));
+                            let radii = gpui::Corners { top_left: px(0.), top_right: px(0.), bottom_left: px(5.), bottom_right: px(5.) };
+                            window.paint_quad(gpui::quad(r, radii, gpui::rgb(edge), gpui::Edges { top: px(0.), left: px(1.), right: px(1.), bottom: px(1.) }, gpui::rgb(line), gpui::BorderStyle::Solid));
+                        }
+                    },
+                )
+                .size_full();
+                area = area.child(at(band.x0, band.y0, band.dx(), band.dy(), sheets.into_any_element()).cursor(hold(CursorStyle::Arrow)));
+            }
             for (i, s) in col.wins.iter().enumerate() {
                 if !col.safe && i > 0 {
                     continue; // obscured by the full-column window
@@ -280,7 +363,13 @@ impl Render for Acme {
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
                 let tag_h = if s.body.dy() > 0 { s.body.y0 - s.r.y0 } else { s.r.dy() };
-                area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()));
+                if win.body == Body::Web && !strip {
+                    // a page's header: its handle, back and forward, and
+                    // its address, in the tag's place
+                    area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, self.web_header(w, tag_h as f32, cx)));
+                } else {
+                    area = area.child(at(s.r.x0, s.r.y0, s.r.dx(), tag_h, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                }
                 if s.body.dy() > 0 && strip {
                     area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), div().size_full().bg(gpui::rgb(t.body_bg)).into_any_element()));
                 } else if s.body.dy() > 0 {
@@ -303,7 +392,7 @@ impl Render for Acme {
                             // as wide, drawn as it draws one: the page's own is
                             // hidden, and this one moves the page (WEB.md §2.2)
                             let me_bar = me.clone();
-                            let (bar_bg, thumb_bg) = (t.body_border, t.body_bg);
+                            let (bar_bg, thumb) = (paper, t.body_border);
                             let sw = crate::text_element::SCROLLWID;
                             let bar = canvas(
                                 move |bounds, _, cx| {
@@ -314,9 +403,7 @@ impl Render for Acme {
                                 },
                                 move |bounds, (t0, t1), window, _| {
                                     window.paint_quad(gpui::fill(bounds, gpui::rgb(bar_bg)));
-                                    let h = bounds.size.height;
-                                    let thumb = Bounds::new(gpui::point(bounds.left(), bounds.top() + h * t0), size(px(sw - 1.), (h * (t1 - t0)).max(px(2.))));
-                                    window.paint_quad(gpui::fill(thumb, gpui::rgb(thumb_bg)));
+                                    text_element::paint_scroller(window, bounds, t0 as f32, t1 as f32, text_element::rgb(thumb));
                                 },
                             )
                             .w(px(sw))
@@ -341,9 +428,71 @@ impl Render for Acme {
                                 .into_any_element()
                         }
                     };
-                    area = area.child(at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body));
+                    // the arrow over text and terminals, and down the
+                    // scrollbar; a page keeps its own pointer
+                    let body = if matches!(win.body, Body::Web | Body::Html(_)) {
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).child(lane(None, hold(CursorStyle::Arrow)))
+                    } else if matches!(win.body, Body::Term(_)) {
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow))
+                    } else {
+                        at(s.body.x0, s.body.y0, s.body.dx(), s.body.dy(), body).cursor(hold(CursorStyle::Arrow)).child(lane(None, hold(CursorStyle::Arrow)))
+                    };
+                    area = area.child(body);
                 }
             }
+        }
+        // the lines between the columns: a drag of one makes the columns
+        // on either side wider and narrower (the column's box moves it
+        // too, and more)
+        for (ci, col) in l.cols.iter().enumerate() {
+            if ci == 0 || !l.shows(ci) || l.full.is_some() {
+                continue;
+            }
+            let c = col.id;
+            let edge = div().size_full().cursor(hold(CursorStyle::ResizeLeftRight)).on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_edge(c, e.position, cx)),
+            );
+            area = area.child(at(col.r.x0 - 6, col.r.y0, 7, col.r.dy(), edge.into_any_element()));
+        }
+        // where what is held would land: shaded, as Manifold shows where
+        // a dragged sheet would go
+        if let Some(r) = self.drag_preview() {
+            let shade = div()
+                .size_full()
+                .rounded(px(6.))
+                .bg(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.12))
+                .border_2()
+                .border_color(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.6));
+            area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), shade.into_any_element()));
+        }
+        // the stash brought out: its tags, live, stacked over the column's
+        // foot as sheets drawn out of the pile, each with its handle
+        // (B1 back where it was, B2 back alone, a drag back where it is
+        // let go) and its text (B2 runs Del or Put there as anywhere)
+        if let Some(ci) = self.stash_open.and_then(|c| l.column_index(c)) {
+            if let Some((band, rows)) = self.stash_geometry(ci) {
+                let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0) - 6;
+                let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(-2.)), blur_radius: px(12.), spread_radius: px(0.), inset: false };
+                let card = div().size_full().bg(gpui::rgb(t.body_bg)).rounded_t(px(9.)).shadow(vec![shadow]).child(self.overlay_mark());
+                area = area.child(at(band.x0, top, band.dx(), band.y1 - top, card.into_any_element()).cursor(hold(CursorStyle::Arrow)));
+                for (w, r) in rows {
+                    area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+                }
+            }
+        }
+        // ⌘E's cards, over their column
+        // a blank page just made: its address to be typed, at once
+        let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Web && !self.url_asked.contains(*w) && self.node.window_name(**w).is_empty()).map(|(w, _)| *w);
+        if let Some(w) = blank {
+            self.url_asked.insert(w);
+            self.url_edit_start(w, cx);
+        }
+        if self.stash_walk.as_ref().is_some_and(|s| s.done()) {
+            self.stash_walk = None;
+        }
+        if let Some(o) = self.stash_walk_overlay(&l, window, cx) {
+            area = area.child(o);
         }
         if let Some(m) = &self.menu {
             area = area.child(menu_element(m, font, self.overlay_mark()));
@@ -359,11 +508,14 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
-        let root = if strip_over {
-            let width = window.viewport_size().width;
-            root.child(gpui::deferred(div().absolute().top(px(0.)).left(px(0.)).w(width).h(px(shell::TITLEBAR_HEIGHT)).child(self.titlebar(cx)).child(self.overlay_mark())).with_priority(1))
-        } else {
-            root
+        // ctrl-tab's cards, over everything
+        let root = match self.switcher_overlay(window, cx) {
+            Some(o) => root.child(gpui::deferred(o).with_priority(3)),
+            None => root,
+        };
+        let root = match slide {
+            Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
+            None => root,
         };
         let holes = self.overlay_bounds.clone();
         let me3 = me.clone();
@@ -374,8 +526,8 @@ impl Render for Acme {
                     me3.update(cx, |acme, _| {
                         acme.webs.set_holes(&holes);
                         // the pages go quiet with the rest while the
-                        // picker has the window
-                        acme.webs.set_veil(acme.selector.is_some().then(shell::veil));
+                        // picker or the finder has the window
+                        acme.webs.set_veil((acme.selector.is_some() || acme.finder.is_some()).then(shell::veil));
                     });
                 },
                 |_, _, _, _| {},
@@ -437,6 +589,8 @@ fn main() {
     gpui_platform::application().run(move |cx: &mut App| {
         cursor::install();
         text_element::install_symbols();
+        fonts::load();
+        fonts::install(cx);
         pool::Pool::install(cx);
         theme::load();
         cx.set_menus(shell::menus());
@@ -444,7 +598,17 @@ fn main() {
         cx.on_action(|_: &shell::ThemeLight, cx| shell::set_theme(theme::Mode::Light, cx));
         cx.on_action(|_: &shell::ThemeDark, cx| shell::set_theme(theme::Mode::Dark, cx));
         cx.on_action(|_: &shell::ThemeSystem, cx| shell::set_theme(theme::Mode::System, cx));
-        cx.on_action(|_: &shell::ToggleFullscreenTabs, cx| shell::toggle_fullscreen_tabs(cx));
+        cx.on_action(|_: &shell::ToggleSidebar, cx| shell::toggle_sidebar(cx));
+        cx.on_action(|_: &shell::PaletteAlabaster, cx| shell::set_palette(theme::Palette::Alabaster, cx));
+        cx.on_action(|_: &shell::PaletteSystem, cx| shell::set_palette(theme::Palette::System, cx));
+        cx.on_action(|_: &shell::PaletteClassic, cx| shell::set_palette(theme::Palette::Classic, cx));
+        cx.on_action(|_: &shell::PaletteGitHub, cx| shell::set_palette(theme::Palette::GitHub, cx));
+        cx.on_action(|_: &shell::PaletteNova, cx| shell::set_palette(theme::Palette::Nova, cx));
+        cx.on_action(|_: &shell::FontSystem, cx| shell::set_fonts(fonts::Set::System, cx));
+        cx.on_action(|_: &shell::FontClassic, cx| shell::set_fonts(fonts::Set::Classic, cx));
+        cx.on_action(|_: &shell::FontGo, cx| shell::set_fonts(fonts::Set::Go, cx));
+        cx.on_action(|_: &shell::FontMona, cx| shell::set_fonts(fonts::Set::Mona, cx));
+        cx.on_action(|_: &shell::FontNova, cx| shell::set_fonts(fonts::Set::Nova, cx));
         cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
@@ -482,6 +646,7 @@ fn main() {
         });
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
         // apex has one window; everything else it has open is a tab in it
+        let mut stale: Option<String> = None;
         let (target, frame): (Target, Option<WindowBounds>) = if local {
             (Target::Local(files.clone()), None)
         } else if let Some(cmd) = via.clone() {
@@ -500,8 +665,12 @@ fn main() {
         } else {
             match shell::ensure_daemon(&socket) {
                 Ok(()) => {}
-                // a daemon of another version: the window opens and says so
-                Err(e) if e.kind() == std::io::ErrorKind::Unsupported => shell::log_line(&format!("the daemon: {e}")),
+                // a daemon of another version: the window opens, says so
+                // and offers to restart it
+                Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
+                    shell::log_line(&format!("the daemon: {e}"));
+                    stale = Some(e.to_string());
+                }
                 Err(e) => {
                     eprintln!("apex-ui: {e}");
                     std::process::exit(1);
@@ -525,6 +694,9 @@ fn main() {
             _ => None,
         };
         let opened = open_window(cx, target, frame);
+        if let (Some(why), Some(h)) = (stale.take(), opened) {
+            let _ = h.update(cx, |acme, window, cx| acme.offer_restart(&why, window, cx));
+        }
         if let Some(files) = start {
             if let Some(tab) = opened.and_then(|h| h.read(cx).ok().map(|a| a.tab)) {
                 pool::Pool::start(cx, tab, pool::Why::Attaching, false, files);
@@ -573,7 +745,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                 // the lights on the bar's centre line: their own height is
                 // 13 as AppKit draws them, so the room above is what is
                 // left of the bar (measured on screen, not by the book)
-                traffic_light_position: Some(gpui::point(px(10.), px((shell::TITLEBAR_HEIGHT - 13.) / 2.))),
+                // on the sidebar card's top row, as Manifold puts them: the
+                // close button's middle 20 in from the card's edge and half
+                // the row down (the card is 6 in from the window's)
+                traffic_light_position: Some(gpui::point(px(19.), px(6. + shell::SIDEBAR_HEADER / 2. - 6.5))),
             }),
             // the title bar is ours: AppKit must not take a drag there as a
             // window move (a tab dragged reorders the tabs); the strip's
@@ -756,43 +931,60 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     acme
 }
 
-/// menuhit's painting: the box, its border, the items centred, the
-/// highlighted one in negative, and the scroll bar when there is one.
-fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
+/// The floating sidebar over the content, `t` of the way in: from 24
+/// pixels to the left and faded, as Manifold's slides.
+fn floating_sidebar(sidebar: impl IntoElement, t: f32) -> impl IntoElement {
+    use gpui::{div, px};
+    gpui::deferred(div().absolute().top(px(0.)).bottom(px(0.)).left(px(-24. * (1. - t))).opacity(t).child(sidebar)).with_priority(1)
+}
+
+/// The tools menu painted as a Mac context menu: the card rounded and
+/// lifted, a hairline round it; each row in the system font, the
+/// highlighted one an accent pill in from the sides, the remembered one
+/// checked; and the scrolling lane's thumb a slim scroller's.
+fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
+    let t = theme::theme();
     let r = m.menur;
+    // children are placed from the menu's corner, inside its hairline
+    const EDGE: i32 = 1;
     let mut el = div()
         .absolute()
         .left(px(r.x0 as f32))
         .top(px(r.y0 as f32))
         .w(px(r.dx() as f32))
         .h(px(r.dy() as f32))
-        .bg(rgb(theme::theme().menu_bg))
-        .border(px(menu::BLACKBORDER as f32))
-        .border_color(rgb(theme::theme().menu_border))
+        .bg(rgb(t.menu_bg))
+        .border(px(EDGE as f32))
+        .border_color(rgb(t.menu_border))
+        .rounded(px(menu::RADIUS))
+        .shadow_lg()
+        .font_family(crate::fonts::ui())
         .child(mark);
-    // children are placed relative to the menu's own origin
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);
-        let text = m.items.get((i + m.off) as usize).cloned().unwrap_or_default();
+        let at = (i + m.off) as usize;
+        let text = m.items.get(at).cloned().unwrap_or_default();
         let hl = i == m.lasti;
-        el = el.child(
-            div()
-                .absolute()
-                .left(px((ir.x0 - r.x0 - menu::BLACKBORDER) as f32))
-                .top(px((ir.y0 - r.y0 - menu::BLACKBORDER) as f32))
-                .w(px(ir.dx() as f32))
-                .h(px(ir.dy() as f32))
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(rgb(if hl { theme::theme().menu_hl } else { theme::theme().menu_bg }))
-                .text_color(rgb(if hl { theme::theme().menu_hl_text } else { theme::theme().menu_text }))
-                .font_family("Lucida Grande")
-                .text_size(px(13.))
-                .line_height(px(font as f32))
-                .child(text),
-        );
+        let ink = if hl { t.menu_hl_text } else { t.menu_text };
+        let mut row = div()
+            .absolute()
+            .left(px((ir.x0 - r.x0 - EDGE) as f32))
+            .top(px((ir.y0 - r.y0 - EDGE) as f32))
+            .w(px(ir.dx() as f32))
+            .h(px(ir.dy() as f32))
+            .rounded(px(menu::ROW_RADIUS))
+            .flex()
+            .items_center()
+            .pl(px((menu::LEAD - menu::INSET) as f32))
+            .text_size(px(13.))
+            .text_color(rgb(ink))
+            .when(hl, |d| d.bg(rgb(t.menu_hl)))
+            .child(text);
+        if m.checked == Some(at) {
+            row = row.child(div().absolute().left(px(5.)).top(px(0.)).h_full().flex().items_center().text_size(px(12.)).text_color(rgb(ink)).child("✓"));
+        }
+        el = el.child(row);
     }
     if m.scrolling {
         let sr = m.scrollr;
@@ -800,22 +992,12 @@ fn menu_element(m: &menu::Menu, font: i32, mark: gpui::AnyElement) -> gpui::AnyE
         el = el.child(
             div()
                 .absolute()
-                .left(px((sr.x0 - r.x0 - menu::BLACKBORDER) as f32))
-                .top(px((sr.y0 - r.y0 - menu::BLACKBORDER) as f32))
-                .w(px(sr.dx() as f32))
-                .h(px(sr.dy() as f32))
-                .bg(rgb(theme::theme().menu_bg))
-                .child(
-                    div()
-                        .absolute()
-                        .left(px(0.))
-                        .top(px((th.y0 - sr.y0) as f32))
-                        .w(px(sr.dx() as f32))
-                        .h(px(th.dy() as f32))
-                        .border(px(1.))
-                        .border_color(rgb(theme::theme().menu_border))
-                        .bg(rgb(theme::theme().menu_hl)),
-                ),
+                .left(px((sr.x0 - r.x0 - EDGE) as f32 + 3.5))
+                .top(px((th.y0 - r.y0 - EDGE) as f32))
+                .w(px(5.))
+                .h(px(th.dy() as f32))
+                .rounded(px(2.5))
+                .bg(rgb(t.body_border)),
         );
     }
     el.into_any_element()

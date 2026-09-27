@@ -283,18 +283,6 @@ impl Pool {
         crate::shell::state_file().with_file_name("open-sessions")
     }
 
-    /// Move a tab (dragged) before `before` in the order, or to the end;
-    /// the order is saved, as it is what the next launch restores.
-    pub fn move_tab(cx: &mut App, id: TabId, before: Option<TabId>) {
-        let Some(pool) = cx.try_global::<Pool>() else { return };
-        let Some(at) = pool.tabs.iter().position(|t| t.id == id) else { return };
-        let pool = cx.global_mut::<Pool>();
-        let tab = pool.tabs.remove(at);
-        let to = before.and_then(|b| pool.tabs.iter().position(|t| t.id == b)).unwrap_or(pool.tabs.len());
-        pool.tabs.insert(to, tab);
-        pool.save_tabs();
-    }
-
     fn save_tabs(&self) {
         let p = Self::tabs_file();
         if let Some(d) = p.parent() {
@@ -398,6 +386,16 @@ impl Pool {
             Err(e) => {
                 let why = e.to_string();
                 crate::shell::log_line(&format!("{id} ({asked}): {why}"));
+                // this machine's server is from another version: offer to
+                // restart it (once a launch), in the window on this tab or
+                // any other
+                if e.kind() == std::io::ErrorKind::Unsupported && asked.is_local() {
+                    let h = Self::waiting_on(cx, id).or_else(|| cx.windows().into_iter().find_map(|w| w.downcast::<crate::app::Acme>()));
+                    if let Some(h) = h {
+                        let why = why.clone();
+                        let _ = h.update(cx, |acme, window, cx| acme.offer_restart(&why, window, cx));
+                    }
+                }
                 match Self::waiting_on(cx, id) {
                     Some(h) => {
                         Self::set(cx, id, State::Down(why.clone()));
@@ -444,14 +442,6 @@ impl Pool {
         pool.tabs.retain(|t| t.id != id);
         pool.settled.retain(|s| *s != id);
         pool.save_tabs();
-    }
-
-    /// A parked session's link, for a tab's status card: the last log
-    /// round trip in ms, and how long since the daemon last answered a
-    /// heartbeat, when it has.
-    pub fn link_status(cx: &App, id: TabId) -> Option<(Option<u64>, Option<std::time::Duration>)> {
-        let p = cx.try_global::<Pool>()?.parked.get(&id)?;
-        Some((p.link.ack_ms, p.link.last_pong.map(|t| t.elapsed())))
     }
 
     /// Whether a tab's parked session has notifications waiting.

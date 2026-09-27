@@ -10,11 +10,7 @@ use apex_core::{Cell, TermId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
-use crate::text_element::{font_for, mix, rgb, FontSpec, MARGIN, SCROLLWID};
-
-/// How far the cursor's cell is tinted from its background towards
-/// black: enough to find, not enough to shout.
-const CURSOR_TINT: f32 = 0.18;
+use crate::text_element::{font_for, rgb, FontSpec, MARGIN, SCROLLWID};
 
 pub struct TermLayout {
     pub bounds: Bounds<Pixels>,
@@ -35,7 +31,7 @@ impl TermLayout {
 }
 
 /// A cell's colour as the theme has it (entry.rs on the packing).
-fn color_rgb(packed: u32, th: &crate::theme::Theme) -> u32 {
+pub(crate) fn color_rgb(packed: u32, th: &crate::theme::Theme) -> u32 {
     match packed >> 24 {
         0xfe => th.ansi[(packed & 0xf) as usize],
         0xfd => if packed & 1 == 0 { th.text } else { th.body_bg },
@@ -64,6 +60,10 @@ pub struct Prepaint {
     row_text: Vec<String>,
     cols: u16,
     cursor: Option<(u16, u16)>,
+    /// The keys go here: the cursor is the accent's caret, and whether it
+    /// shows just now (it blinks with the text caret). None when they go
+    /// elsewhere, and it is the plain dark caret.
+    keys: Option<bool>,
     exited: bool,
     /// What the scrollbar shows: the viewport's first row and how many
     /// rows it holds, out of the whole screen's.
@@ -130,6 +130,7 @@ impl Element for TermElement {
             let th = crate::theme::theme();
             let correct = crate::theme::contrast();
             let cursor = if t.cursor_visible { Some(t.cursor) } else { None };
+            let keys = (acme.caret_term == Some(term)).then_some(acme.caret_on);
             // the selection, if it is in this terminal: acme's yellow
             let order = |a: (usize, u64), b: (usize, u64)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
             let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| order(a, b));
@@ -171,13 +172,6 @@ impl Element for TermElement {
                     let fg_rgb = if correct && (fg != 0 || bg != 0) { crate::contrast::correct(fg_rgb, bg_rgb.unwrap_or(th.body_bg), th) } else { fg_rgb };
                     let mut fgc = rgb(fg_rgb);
                     let mut bgc = bg_rgb.map(rgb);
-                    if let Some((cx_, cy)) = cursor {
-                        if cx_ as usize == x && cy as usize == y {
-                            // the cursor: the cell's background tinted
-                            // down a little, the text as it is, not inverted
-                            bgc = Some(rgb(mix(bg_rgb.unwrap_or(th.body_bg), th.cursor_tint_to, CURSOR_TINT)));
-                        }
-                    }
                     if let Some((b, f)) = highlight(x, y) {
                         bgc = Some(b);
                         fgc = f;
@@ -216,7 +210,7 @@ impl Element for TermElement {
                 row_text.push(line.clone());
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress) })
         })
     }
 
@@ -240,13 +234,9 @@ impl Element for TermElement {
             // and the part of it the viewport takes of the whole screen
             // (the history and the viewport together) in the paper
             let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
-            window.paint_quad(fill(sb, rgb(th.body_border)));
             let (top, shown, total) = pp.view;
-            let h = bounds.size.height;
-            let t0 = h * (top.min(total) as f32 / total as f32);
-            let t1 = h * ((top + shown).min(total) as f32 / total as f32);
-            let thumb = Bounds::new(point(bounds.left(), bounds.top() + t0), size(px(SCROLLWID - 1.), (t1 - t0).max(px(2.))));
-            window.paint_quad(fill(thumb, rgb(th.body_bg)));
+            let total = total.max(1);
+            crate::text_element::paint_scroller(window, sb, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, rgb(th.body_border));
             for (i, row) in pp.rows.iter().enumerate() {
                 let y = origin.y + lh * i as f32;
                 for &(x, n, c) in &row.bgs {
@@ -290,11 +280,21 @@ impl Element for TermElement {
                 let bar = Bounds::new(point(bounds.left() + px(SCROLLWID), bounds.top()), size((w * part).max(px(1.)), px(2.)));
                 window.paint_quad(fill(bar, rgb(th.progress)));
             }
-            if pp.exited {
-                if let Some((cx_, cy)) = pp.cursor {
-                    let x = origin.x + pp.cell_w * cx_ as f32;
-                    let y = origin.y + lh * cy as f32;
+            // the cursor as a text window's caret: where the keys go, the
+            // accent's, a little wider, blinking with the text caret; where
+            // they do not, the plain dark one. A program that has ended
+            // leaves a hollow box where its cursor was
+            if let Some((cx_, cy)) = pp.cursor {
+                let x = origin.x + pp.cell_w * cx_ as f32;
+                let y = origin.y + lh * cy as f32;
+                if pp.exited {
                     window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(th.text), BorderStyle::Solid));
+                } else {
+                    match pp.keys {
+                        Some(true) => window.paint_quad(fill(Bounds::new(point(x - px(0.5), y + px(1.)), size(px(2.), lh - px(2.))), rgb(th.accent)).corner_radii(px(1.))),
+                        Some(false) => {}
+                        None => window.paint_quad(fill(Bounds::new(point(x, y + px(2.)), size(px(1.5), lh - px(4.))), rgb(th.text)).corner_radii(px(0.75))),
+                    }
                 }
             }
             let layout = TermLayout {

@@ -536,7 +536,7 @@ const STYLE: &str = r#"
   --add: var(--apex-add, #D8F0DC); --del: var(--apex-del, #FFECC8);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 13px "Lucida Grande", -apple-system, sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px var(--apex-font, "Lucida Grande", -apple-system, sans-serif); font-feature-settings: var(--apex-font-features, normal); }
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: underline; }
 .summary { padding: 8px 12px; color: var(--dim); }
@@ -545,7 +545,7 @@ section.file { margin: 0 0 16px; }
 /* a file's name stays at the top while its lines go by */
 h2 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 4px 12px; font: inherit; background: var(--bg); border-bottom: 1px solid var(--rule); }
 h2 .from, h2 .delta, h2 .note { color: var(--dim); margin-left: 6px; }
-table.diff { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px/16px Menlo, monospace; tab-size: 4; }
+table.diff { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px/16px var(--apex-mono, Menlo, monospace); font-feature-settings: var(--apex-mono-features, normal); tab-size: 4; }
 col.numcol { width: 6ch; }
 /* side by side while each side has room for a line of code, about 70
    columns of it beside its number; one above the other below that, as

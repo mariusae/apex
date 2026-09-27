@@ -1168,8 +1168,8 @@ fn win(ctx: &Ctx, p: &Parsed) -> R {
     match p.args.first().map(|s| s.as_str()) {
         Some("list") | None => {
             for col in &c.node.state.layout.cols {
-                for slot in &col.wins {
-                    let w = slot.window;
+                // the stashed ones too, where they stand in the column
+                for (w, _) in apex_core::tiling::stash_order(col) {
                     let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
                     let mark = if c.node.window_live(w) { ">" } else if dirty { "*" } else { " " };
                     println!("{}\t{mark}{}", w.0, c.node.window_name(w));

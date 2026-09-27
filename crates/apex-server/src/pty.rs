@@ -32,6 +32,7 @@ pub struct Options {
 impl Pty {
     /// A pty of `cols` by `rows` with the program running on it.
     pub fn spawn(opts: &Options, cols: u16, rows: u16) -> io::Result<Pty> {
+        notify_ready();
         let pty = rustix_openpty::openpty(None, None)?;
         let (master, slave) = (pty.controller, pty.user);
         // the reader never blocks: the loop polls and drains
@@ -115,7 +116,9 @@ impl Pty {
     pub fn exit(&mut self) -> Option<i32> {
         if self.exited.is_none() {
             if let Ok(Some(status)) = self.child.try_wait() {
-                self.exited = Some(status.code().unwrap_or(0));
+                // killed by a signal: 128 and its number, as a shell says
+                use std::os::unix::process::ExitStatusExt;
+                self.exited = Some(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(0)));
             }
         }
         self.exited
@@ -128,6 +131,35 @@ impl Pty {
         self.exited = Some(0);
     }
 }
+
+/// macOS's notification library, set up in this process before any
+/// fork for a shell. The child of a fork sets it up again (its atfork
+/// handler), and when another thread was half way through setting it up
+/// at the moment of the fork, the child finds that half-done and is
+/// killed (SIGKILL, before exec): a shell that "exits" at once, signal 9,
+/// with nothing on its screen -- threads forking together (restored
+/// terminals, the tests) met it. Set up here first, it is done, never
+/// half done, whenever a fork comes.
+#[cfg(target_os = "macos")]
+pub fn notify_ready() {
+    extern "C" {
+        fn notify_register_check(name: *const std::os::raw::c_char, token: *mut i32) -> u32;
+        fn notify_cancel(token: i32) -> u32;
+    }
+    static READY: std::sync::Once = std::sync::Once::new();
+    READY.call_once(|| {
+        let mut token = 0;
+        // SAFETY: a registration with a static name, then its cancel.
+        unsafe {
+            if notify_register_check(c"org.apex.pty".as_ptr(), &mut token) == 0 {
+                notify_cancel(token);
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn notify_ready() {}
 
 fn set_nonblocking(fd: &OwnedFd) -> io::Result<()> {
     // SAFETY: plain fcntl on a file descriptor we own.
@@ -177,3 +209,4 @@ pub fn shell_path(shell: Option<&str>) -> PathBuf {
 pub fn program_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
 }
+

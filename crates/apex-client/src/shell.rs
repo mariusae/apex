@@ -20,12 +20,28 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleFullscreenTabs, ToggleContrast]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashNext, StashBack, RestartServer]);
 
-/// View ▸ Always Show Tabs in Full Screen toggled: kept, the menus
-/// remade with the mark, every window laid out again.
-pub fn toggle_fullscreen_tabs(cx: &mut App) {
-    crate::theme::set_fullscreen_tabs(!crate::theme::fullscreen_tabs());
+/// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
+/// again, as a change of appearance does.
+pub fn set_palette(p: crate::theme::Palette, cx: &mut App) {
+    crate::theme::set_palette(p);
+    apply_theme(cx);
+}
+
+/// View ▸ Font ▸ a set chosen: kept, and everything set in it again --
+/// the menus remade with the mark, pages restyled, windows redrawn (and
+/// laid out again, their lines being another height), as a change of
+/// theme does.
+pub fn set_fonts(s: crate::fonts::Set, cx: &mut App) {
+    crate::fonts::set(s);
+    apply_theme(cx);
+}
+
+/// View ▸ Show Sidebar toggled: kept, the menus remade with the mark,
+/// every window laid out again.
+pub fn toggle_sidebar(cx: &mut App) {
+    crate::theme::set_sidebar(!crate::theme::sidebar());
     cx.set_menus(menus());
     cx.refresh_windows();
 }
@@ -73,11 +89,14 @@ pub fn apply_theme(cx: &mut App) {
 /// forget which sessions were open.
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
-pub const TITLEBAR_HEIGHT: f32 = 34.;
+/// The sidebar card's top row, the window's buttons in it, as
+/// Manifold's is.
+pub const SIDEBAR_HEADER: f32 = 40.;
+
+/// The sidebar's width, its card and the margin round it together.
+pub const SIDEBAR_W: f32 = 236.;
 /// The top row's background (acme's tag colour): what the selected tab is.
 pub const BLINK: std::time::Duration = std::time::Duration::from_millis(500);
-/// The system's UI font.
-pub const UI_FONT: &str = ".AppleSystemUIFont";
 
 pub fn menus() -> Vec<Menu> {
     vec![
@@ -88,6 +107,7 @@ pub fn menus() -> Vec<Menu> {
                 MenuItem::action("About Apex", About),
                 MenuItem::separator(),
                 MenuItem::action("Install apex Command…", InstallCli),
+                MenuItem::action("Restart Server…", RestartServer),
                 MenuItem::separator(),
                 MenuItem::action("Hide Apex", HideApp),
                 MenuItem::separator(),
@@ -138,14 +158,46 @@ pub fn menus() -> Vec<Menu> {
             items: {
                 let m = crate::theme::mode();
                 let mark = |name: &str, mine: crate::theme::Mode| if m == mine { format!("{name} ✓") } else { name.to_string() };
-                let tabs = if crate::theme::fullscreen_tabs() { "Always Show Tabs in Full Screen ✓" } else { "Always Show Tabs in Full Screen" };
                 let contrast = if crate::theme::contrast() { "Correct Terminal Contrast ✓" } else { "Correct Terminal Contrast" };
+                let side = if crate::theme::sidebar() { "Hide Sidebar" } else { "Show Sidebar" };
                 vec![
                     MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
                     MenuItem::action(mark("Dark", crate::theme::Mode::Dark), ThemeDark),
                     MenuItem::action(mark("System", crate::theme::Mode::System), ThemeSystem),
                     MenuItem::separator(),
-                    MenuItem::action(tabs, ToggleFullscreenTabs),
+                    MenuItem::submenu(Menu {
+                        name: "Theme".into(),
+                        disabled: false,
+                        items: {
+                            let p = crate::theme::palette();
+                            let mark = |x: crate::theme::Palette| if p == x { format!("{} ✓", x.title()) } else { x.title().to_string() };
+                            vec![
+                                MenuItem::action(mark(crate::theme::Palette::Alabaster), PaletteAlabaster),
+                                MenuItem::action(mark(crate::theme::Palette::System), PaletteSystem),
+                                MenuItem::action(mark(crate::theme::Palette::Classic), PaletteClassic),
+                                MenuItem::action(mark(crate::theme::Palette::GitHub), PaletteGitHub),
+                                MenuItem::action(mark(crate::theme::Palette::Nova), PaletteNova),
+                            ]
+                        },
+                    }),
+                    MenuItem::submenu(Menu {
+                        name: "Font".into(),
+                        disabled: false,
+                        items: {
+                            let f = crate::fonts::current();
+                            let mark = |s: crate::fonts::Set| if f == s { format!("{} ✓", s.title()) } else { s.title().to_string() };
+                            vec![
+                                MenuItem::action(mark(crate::fonts::Set::System), FontSystem),
+                                MenuItem::action(mark(crate::fonts::Set::Classic), FontClassic),
+                                MenuItem::action(mark(crate::fonts::Set::Go), FontGo),
+                                MenuItem::action(mark(crate::fonts::Set::Mona), FontMona),
+                                MenuItem::action(mark(crate::fonts::Set::Nova), FontNova),
+                            ]
+                        },
+                    }),
+                    MenuItem::separator(),
+                    MenuItem::action(side, ToggleSidebar),
+                    MenuItem::action("Bring Back from Stash", StashNext),
                     MenuItem::action(contrast, ToggleContrast),
                 ]
             },
@@ -177,6 +229,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         // ⌘⇧[ and ⌘⇧]: macOS hands the shifted character over, so the
         // binding is on what the key makes -- { and } -- as Zed's is
         KeyBinding::new("cmd-{", PrevTab, None),
+        // Manifold's, and Xcode's: the sidebar
+        KeyBinding::new("ctrl-cmd-s", ToggleSidebar, None),
+        KeyBinding::new("cmd-e", StashNext, None),
+        KeyBinding::new("cmd-shift-e", StashBack, None),
         KeyBinding::new("cmd-}", NextTab, None),
         KeyBinding::new("cmd-,", Profile, None),
         KeyBinding::new("cmd-r", Get, None),
@@ -343,7 +399,7 @@ pub fn plan(socket: &Path) -> std::io::Result<(SessionUrl, Option<WindowBounds>)
     let existing = match list_sessions(socket) {
         Ok(existing) => existing,
         // a daemon of another version: the window opens on what it would
-        // have, and says why it cannot attach
+        // have, says why it cannot attach, and offers to restart it
         Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
             return Ok(again.unwrap_or_else(|| (SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None)));
         }
@@ -368,7 +424,8 @@ pub fn ensure_daemon(socket: &Path) -> std::io::Result<()> {
         Ok(_) => return Ok(()),
         // a daemon of another version is there, with its sessions: not
         // one to start another over (which would take its socket and
-        // leave it running, unreachable), but one for the user to stop
+        // leave it running, unreachable), but one to restart when the
+        // user says so
         Err(e) if e.kind() == std::io::ErrorKind::Unsupported => return Err(e),
         Err(_) => {}
     }
@@ -522,83 +579,104 @@ mod tests {
 /// ones, this machine's, the destination's — and actions below a
 /// divider. Every session is a URL: `local:///name`,
 /// `ssh://user@host/name`, `sprite://box/name`.
-/// How long the pointer rests on a tab before its card shows.
-const CARD_DELAY: std::time::Duration = std::time::Duration::from_millis(450);
-
 /// Peter J. Weinberger's face: the mark a tab carries when a tool in its
 /// session wants the user, where a bell was. Plan 9 has shown this face
 /// for the same reason since faces(1); this is its outline, from
 /// plan9port's `pjw.char.ps` (`assets/pjw.svg`), drawn `h` high in the
 /// tab's own ink.
-fn pjw(h: f32, ink: u32) -> impl IntoElement {
+pub fn pjw(h: f32, ink: u32) -> impl IntoElement {
     const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
     /// The face's own proportions: its outline is 201 wide by 259 tall.
     const RATIO: f32 = 201. / 259.;
     gpui::svg().data(PJW).flex_none().h(px(h)).w(px((h * RATIO).round())).text_color(rgb(ink))
 }
 
+/// Manifold's command palette, which ⌘T's picker and the finder are
+/// drawn as: `panel` centred across the window, its top 30% of the way
+/// down, over a light scrim (`veil`).
+pub fn palette_place(panel: impl IntoElement) -> gpui::Div {
+    div().absolute().top(px(0.)).left(px(0.)).size_full().bg(gpui::rgba(veil())).flex().flex_col().items_center().child(div().flex_none().h(gpui::relative(0.3))).child(panel)
+}
+
+/// The palette's card, as Manifold's: 560 wide (less on a narrow
+/// window), rounded 12, a half-pixel hairline round it and a soft shadow
+/// under it.
+pub fn palette_panel() -> gpui::Div {
+    let t = crate::theme::theme();
+    let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(6.)), blur_radius: px(24.), spread_radius: px(0.), inset: false };
+    div()
+        .w(px(560.))
+        .max_w(gpui::relative(0.92))
+        .bg(rgb(t.panel_bg))
+        .border(px(0.5))
+        .border_color(rgb(t.panel_border))
+        .rounded(px(12.))
+        .shadow(vec![shadow])
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .font_family(crate::fonts::ui())
+}
+
+const GLASS: &[u8] = include_bytes!("../assets/glass.svg");
+
+/// The palette's search row: a magnifying glass, then the field, 15
+/// high in a row 48 high.
+pub fn palette_field(field: impl IntoElement) -> gpui::Div {
+    let t = crate::theme::theme();
+    div()
+        .flex_none()
+        .h(px(48.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .px(px(16.))
+        .text_size(px(15.))
+        .child(gpui::svg().data(GLASS).flex_none().size(px(14.)).text_color(rgb(t.panel_dim)))
+        .child(div().flex_1().min_w_0().child(field))
+}
+
+/// A palette row: 34 high and rounded 7, the icon's column, the title
+/// at 13.5 and what follows it at 12 in the secondary ink -- white on
+/// the accent when it is the one chosen.
+pub fn palette_row(picked: bool) -> gpui::Div {
+    let t = crate::theme::theme();
+    div()
+        .flex_none()
+        .h(px(34.))
+        .px(px(12.))
+        .rounded(px(7.))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(10.))
+        .text_size(px(13.5))
+        .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
+        .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
+        .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
+}
+
+/// A palette row's secondary words' ink: the secondary, or white a
+/// little faded on the chosen row.
+pub fn palette_dim(picked: bool) -> gpui::Hsla {
+    if picked {
+        gpui::hsla(0., 0., 1., 0.8)
+    } else {
+        crate::text_element::rgb(crate::theme::theme().panel_dim)
+    }
+}
+
 /// The colour the window goes behind a dialog (the picker), as RGBA:
 /// gpui's veil and the one laid over each page (`Webs::set_veil`) are
 /// this one colour, so a page goes as quiet as the text beside it.
 pub fn veil() -> u32 {
+    // Manifold's scrim: the light a white haze, the dark a shade
     if crate::theme::is_dark() {
-        0x00000099
+        0x0000004D
     } else {
-        0x33332899
+        0xE6E6E659
     }
-}
-
-/// A tab's status card, beneath the tab while the pointer rests on it:
-/// label and value lines. Records its bounds so the web views cut a
-/// hole for it.
-pub fn tab_card(lines: &[(String, String)], mark: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>) -> gpui::Div {
-    {
-        let t = crate::theme::theme();
-        let mut card = div()
-            .relative()
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .rounded(px(8.))
-            .shadow_md()
-            .px(px(12.))
-            .py(px(8.))
-            .text_size(px(12.))
-            .line_height(px(17.))
-            .font_family(UI_FONT)
-            .text_color(rgb(t.panel_text))
-            .child(div().absolute().top(px(0.)).left(px(0.)).size_full().child(gpui::canvas(
-                move |b, _, _| mark.borrow_mut().push(b),
-                |_, _, _, _| {},
-            ).size_full()));
-        for (k, v) in lines {
-            card = card.child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap(px(10.))
-                    .child(div().w(px(56.)).text_color(rgb(t.panel_dim)).child(k.clone()))
-                    .child(div().child(v.clone())),
-            );
-        }
-        card
-    }
-}
-
-/// A tab held with B1 (`Acme::tab_drag`): which, whether it is the
-/// current one, where the press was, and whether it has moved enough
-/// to be a drag rather than a click.
-pub struct TabDrag {
-    pub tab: crate::pool::TabId,
-    pub current: bool,
-    pub start: gpui::Point<Pixels>,
-    /// Where the pointer is now.
-    pub pos: gpui::Point<Pixels>,
-    /// Where in the tab it was grabbed, from its left edge, and the
-    /// tab's width: the floating tab keeps that grip.
-    pub grab: Pixels,
-    pub width: Pixels,
-    pub moved: bool,
 }
 
 /// What the picker is for: a new tab (the sessions not open here, the
@@ -1224,6 +1302,10 @@ impl Acme {
                 None => Some(&mut sel.filter),
             };
         }
+        if let Some(e) = self.url_edit.as_mut() {
+            e.caret_since = std::time::Instant::now();
+            return Some(&mut e.field);
+        }
         if let Some(f) = self.finder.as_mut() {
             f.caret_since = std::time::Instant::now();
             return Some(&mut f.filter);
@@ -1488,7 +1570,7 @@ impl Acme {
                 .px(px(14.))
                 .py(px(8.))
                 .text_size(px(14.))
-                .font_family(UI_FONT)
+                .font_family(crate::fonts::ui())
                 .when(active, |d| d.bg(rgb(t.tag_bg)))
                 .child(div().w(px(80.)).text_color(rgb(t.panel_dim)).text_size(px(12.)).child(label.to_string()))
         };
@@ -1506,7 +1588,7 @@ impl Acme {
                     .border_color(rgb(t.panel_border))
                     .when(chosen, |d| d.bg(rgb(t.panel_chosen_bg)).text_color(rgb(t.panel_chosen_text)).border_color(rgb(t.panel_chosen_bg)))
                     .when(!chosen, |d| d.text_color(rgb(t.panel_text)).hover(|s| s.bg(rgb(t.panel_hover))))
-                    .cursor_pointer()
+                    .cursor_default()
                     .child(p.clone())
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1522,410 +1604,13 @@ impl Acme {
             );
         }
         let mut el = div().flex().flex_col().py(px(6.));
-        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child("New host"));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(2.)).text_size(px(12.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child("New host"));
         el = el.child(row("Provider", form.field == Field::Provider).child(pills));
         el = el.child(row("Host", form.field == Field::Host).child(field(&form.host, "user@host, a box name…", form.field == Field::Host)));
         let ready = form.host().is_some();
         let hint = if ready { "enter adds it and asks for its sessions  ·  ←→ providers  ·  esc back" } else { "type the host  ·  ←→ providers  ·  esc back" };
-        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(hint));
+        el = el.child(div().px(px(14.)).pt(px(6.)).pb(px(4.)).text_size(px(12.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child(hint));
         el.into_any_element()
-    }
-
-    /// The strip at the top: traffic lights live in its left margin; the
-    /// session URL is a button, a tinted pill as in Zed.
-    pub fn titlebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = if self.in_process() {
-            "in-process".to_string()
-        } else if self.fenced() {
-            format!("{}  ·  fenced", self.url.describe())
-        } else {
-            self.url.describe()
-        };
-        let clickable = self.socket.is_some();
-        let open = self.selector.is_some();
-        // a tab per session the app has open, in the order first shown,
-        // whatever its link is doing: shown, parked, still coming up or
-        // down, each saying so after its name. This one is the selected
-        // tab and toggles the picker; another switches to it; its ×
-        // closes it. The text sits on the bar's centre line.
-        /// A tab is a pill inset in the bar, as ghostty's are, and the
-        /// tabs share the bar between them: every one the same width,
-        /// the row reaching the far right, with `+` after it.
-        const INSET: f32 = 5.;
-        const TAB_H: f32 = TITLEBAR_HEIGHT - INSET * 2.;
-        /// One line box for every piece of text in a tab, whatever its
-        /// size, so centring them centres them on the same line.
-        const LINE: f32 = 18.;
-        let t = crate::theme::theme();
-        let strip: u32 = t.strip;
-        // the bar is acme's paper; a tab lies a step off it, the pointer
-        // on one lifts it another, and the one in front lies a step
-        // beyond that (`theme::step`, toward the ink on light paper and
-        // toward the light on dark)
-        let idle_bg = crate::theme::step(strip, 1);
-        let hover_bg = crate::theme::step(strip, 2);
-        let front_bg = crate::theme::step(strip, 3);
-        // no chevron in the strip and no key of its own for searching the
-        // tabs: ⌘T opens the picker, which is that and every other way
-        // into a session besides, and the bar is the tabs' room
-        let all = crate::pool::Pool::tabs(cx);
-        // one tab is no tab: the bar is then a plain title bar, with the
-        // session's name in the middle of it and the + at its right, as
-        // ghostty's and Terminal's are
-        let lone = (all.len() == 1).then(|| all[0].clone());
-        let all = if lone.is_some() { Vec::new() } else { all };
-        // the tabs fill the bar, each the same width as the rest; with
-        // no tab in it, the + keeps to the right end all the same
-        let mut tabs = div().id("tabs").flex_1().min_w_0().h_full().flex().flex_row().items_center().gap(px(2.));
-        if lone.is_some() {
-            tabs = tabs.justify_end();
-        }
-        // a tab being dragged floats under the pointer, kept within the
-        // strip's tabs (their bounds of last frame say where that is)
-        let dragging = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.tab);
-        let ghost: Option<(crate::pool::TabId, Pixels, Pixels)> = self.tab_drag.as_ref().filter(|d| d.moved).and_then(|d| {
-            let bounds = self.tab_bounds.borrow();
-            let mine = bounds.iter().find(|(u, _)| *u == d.tab).map(|(_, b)| *b)?;
-            let left = bounds.iter().map(|(_, b)| b.origin.x).fold(mine.origin.x, |a, x| if x < a { x } else { a });
-            let right = bounds.iter().map(|(_, b)| b.origin.x + b.size.width).fold(mine.origin.x + mine.size.width, |a, x| if x > a { x } else { a });
-            let mut x = d.pos.x - d.grab;
-            if x > right - d.width {
-                x = right - d.width;
-            }
-            if x < left {
-                x = left;
-            }
-            // the face carries its own margin: the bounds are the face's
-            Some((d.tab, x, mine.origin.y))
-        });
-        let mut floating: Option<gpui::Div> = None;
-        // where the hovered tab sits, for its card to hang under: read
-        // with the drag's, before the bounds are cleared, since what the
-        // tabs record they record at paint, a frame behind this one
-        let hovered: Option<(crate::pool::TabId, gpui::Bounds<Pixels>)> = self
-            .tab_hovered
-            .as_ref()
-            // no card while a tab is held: it would hang in the drag's way
-            .filter(|_| self.tab_drag.is_none())
-            .filter(|(_, since)| since.elapsed() >= CARD_DELAY)
-            .and_then(|(id, _)| self.tab_bounds.borrow().iter().find(|(x, _)| x == id).map(|(_, b)| (*id, *b)));
-        // where each tab lands this frame, for a drag to reorder by
-        self.tab_bounds.borrow_mut().clear();
-        let others = all.len() > 1;
-        // the tab under the pointer, floating, keeps the width it had
-        let drag_w = self.tab_drag.as_ref().map(|d| d.width);
-        for (i, tab) in all.into_iter().enumerate() {
-            let u = tab.url.clone();
-            // the tab this window shows, by the app's own name for it
-            let current = tab.id == self.tab;
-            // the label; the host dimmed after it for a session elsewhere
-            let text = if current && self.in_process() { label.clone() } else { u.session.clone() };
-            let host = (!u.is_local()).then(|| u.arg.clone());
-            // what the tab is doing, when it is anything but simply up:
-            // "connecting…", "restoring…", "fenced", "offline"
-            let word = self.tab_word(&tab, cx);
-            // a tool in that session wants the user: pjw's face before
-            // the name says so, and nothing else changes -- a tab is not
-            // a place to shout from
-            let notified = self.tab_notified(tab.id, cx);
-            // ⌘1 to ⌘9 reach the first nine tabs: each says which it is
-            let key = (i < 9).then(|| format!("⌘{}", i + 1));
-            // the × shows while the pointer is on the tab (a tab held for
-            // a drag is not rested on, and shows none)
-            let on_it = self.tab_hovered.as_ref().is_some_and(|(h, _)| *h == tab.id) && self.tab_drag.is_none();
-            let bg = if open { hover_bg } else { front_bg };
-            let dim = t.tab_dim;
-            // the name's ink, which the face before it shares
-            let ink = if word.is_some() {
-                t.tab_fenced_text
-            } else if current {
-                t.tab_current_text
-            } else {
-                t.tab_text
-            };
-            let closable = clickable && (!current || others);
-            // the tab's face: its look and its words, made twice for a
-            // tab being dragged (the placeholder in the row, the one
-            // under the pointer)
-            let face = |ghost: bool| {
-                div()
-                    .relative()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(px(6.))
-                    // the tabs share the bar: each takes the same part of
-                    // it, and the one floating over a drag keeps the width
-                    // its place in the row had
-                    .when(!ghost, |d| d.flex_1().min_w_0())
-                    .when(ghost, |d| d.w(drag_w.unwrap_or(px(160.))))
-                    .h(px(TAB_H))
-                    .px(px(10.))
-                    .rounded(px(8.))
-                    .text_size(px(13.))
-                    .line_height(px(LINE))
-                    .font_family(UI_FONT)
-                    // the one in front is a pill of the colour of the row
-                    // it shows; the others are the bare strip until the
-                    // pointer is on one, as ghostty's are
-                    .when(current, |d| d.bg(rgb(bg)).text_color(rgb(t.tab_current_text)))
-                    .when(!current, |d| d.bg(rgb(idle_bg)).text_color(rgb(t.tab_text)).hover(|s| s.bg(rgb(hover_bg))))
-                    .when(!current && ghost, |d| d.bg(rgb(hover_bg)))
-                    // not simply up (fenced: another client leads and
-                    // nothing here takes; coming up; down): the whole tab
-                    // fades into the strip, its name greyed, and says so
-                    .when(word.is_some(), |d| d.opacity(0.4).text_color(rgb(t.tab_fenced_text)))
-                    // the name, centred in what room is left of the tab
-                    // and cut short when there is not enough of it, with
-                    // the face before it when a tool in that session wants
-                    // the user -- the two centred together, so the face
-                    // reads as part of the name and nothing else changes
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_row()
-                            .items_baseline()
-                            .justify_center()
-                            .gap(px(5.))
-                            .overflow_hidden()
-                            .when(notified, |d| d.child(pjw(15., ink)))
-                            .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text.clone()))
-                            .when_some(host.clone(), |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(h)))
-                            .when_some(word.clone(), |d, w| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child(w))),
-                    )
-                    // the key that reaches it, at the tab's right end
-                    .when_some(key.clone(), |d, k| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child(k)))
-                    .when(closable && ghost, |d| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(dim)).child("×")))
-            };
-            if let Some((_, x, y)) = ghost.as_ref().filter(|(g, _, _)| *g == tab.id) {
-                // the tab under the pointer, over everything in the strip
-                floating = Some(div().absolute().left(*x).top(*y).child(face(true)));
-            }
-            let bounds = self.tab_bounds.clone();
-            let id = tab.id;
-            let mut chip = face(false)
-                .id(("tab", i))
-                .child(div().absolute().top(px(0.)).left(px(0.)).size_full().child(gpui::canvas(
-                    move |b, _, _| bounds.borrow_mut().push((id, b)),
-                    |_, _, _, _| {},
-                )))
-                // dragged: its place in the row is kept, empty, as the
-                // tabs around it slide; the tab itself is the floating one
-                .when(dragging == Some(id), |d| d.opacity(0.));
-            if clickable {
-                // the pointer resting on a tab: its status card beneath it
-                // after a moment (`tab_hovered`, drawn below)
-                chip = chip.on_hover(cx.listener(move |this, on: &bool, _, cx| {
-                    // a tab passed over while one is dragged is not rested on
-                    if this.tab_drag.is_some() {
-                        return;
-                    }
-                    if *on {
-                        if this.tab_hovered.as_ref().map(|(h, _)| *h) != Some(id) {
-                            this.tab_hovered = Some((id, std::time::Instant::now()));
-                            cx.spawn(async move |this, cx| {
-                                cx.background_executor().timer(CARD_DELAY).await;
-                                let _ = cx.update(|cx| this.update(cx, |_, cx| cx.notify()));
-                            })
-                            .detach();
-                        }
-                    } else if this.tab_hovered.as_ref().map(|(h, _)| *h) == Some(id) {
-                        this.tab_hovered = None;
-                        cx.notify();
-                    }
-                }));
-                // held: a click on release unless it moved, a drag
-                // reordering the tabs if it did (`mouse_move`, `mouse_up`)
-                chip = chip.cursor_pointer().on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                        let (grab, width) = this
-                            .tab_bounds
-                            .borrow()
-                            .iter()
-                            .find(|(u, _)| *u == id)
-                            .map(|(_, b)| (e.position.x - b.origin.x, b.size.width))
-                            .unwrap_or((px(0.), px(80.)));
-                        this.tab_drag = Some(TabDrag { tab: id, current, start: e.position, pos: e.position, grab, width, moved: false });
-                        // held, not rested on: the card goes, and comes back
-                        // only for a pointer that comes to rest on a tab again
-                        this.tab_hovered = None;
-                        cx.stop_propagation();
-                    }),
-                );
-                // right-clicked: the session renamed
-                let url = u.clone();
-                chip = chip.on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |this, _, _, cx| {
-                        this.open_rename(url.clone(), cx);
-                        cx.stop_propagation();
-                    }),
-                );
-                // ×: a parked session let go; the current one let go
-                // too, the window moving to the one parked last. It shows
-                // while the pointer is on the tab, over the tab's own
-                // contents (on the paper it lies on, so the name behind it
-                // does not show through) and taking no room of its own, so
-                // a tab is the same width whether the pointer is on it or
-                // not and the tabs do not shift as it passes
-                if closable && on_it {
-                    let over = if current { bg } else { hover_bg };
-                    chip = chip.child(
-                        div()
-                            .id(("tab-close", i))
-                            .absolute()
-                            .left(px(6.))
-                            .top(px(0.))
-                            .h(px(TAB_H))
-                            .flex()
-                            .items_center()
-                            .px(px(3.))
-                            .rounded(px(4.))
-                            .bg(rgb(over))
-                            .text_size(px(14.))
-                            .line_height(px(LINE))
-                            .text_color(rgb(t.tab_dim))
-                            .hover(|s| s.text_color(rgb(t.tab_close_hover)))
-                            .child("×")
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, window, cx| {
-                                    if current {
-                                        this.close_current_session(window, cx);
-                                    } else {
-                                        crate::pool::Pool::let_go(cx, id);
-                                    }
-                                    cx.notify();
-                                    cx.stop_propagation();
-                                }),
-                            ),
-                    );
-                }
-            }
-            tabs = tabs.child(chip);
-        }
-        // and one more: the picker, for a session not here yet
-        // the +, sized as the × and on the same line as they are
-        let mut plus = div()
-            .id("tab-new")
-            .flex_none()
-            .h(px(TAB_H))
-            .ml(px(2.))
-            .w(px(TAB_H))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_full()
-            .border_1()
-            .border_color(rgb(t.tab_outline_dim))
-            .text_size(px(13.))
-            .line_height(px(LINE))
-            .font_family(UI_FONT)
-            .text_color(rgb(t.tab_dim))
-            .child("+");
-        if clickable {
-            plus = plus.cursor_pointer().hover(|s| s.bg(rgb(t.tab_hover)).border_color(rgb(t.tab_outline)).text_color(rgb(t.tab_current_text))).on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
-                    if this.selector.is_some() {
-                        this.close_selector(cx);
-                    } else {
-                        this.open_selector(cx);
-                    }
-                    cx.stop_propagation();
-                }),
-            );
-        }
-        let button = tabs.child(plus);
-        // the lone tab's name, in the middle of the bar: the whole width
-        // of it, so the name sits where a title bar's title sits, and
-        // under the + (added after it), which keeps its clicks
-        let title = lone.map(|tab| {
-            let u = &tab.url;
-            let text = if self.in_process() { label.clone() } else { u.session.clone() };
-            let host = (!u.is_local()).then(|| u.arg.clone());
-            let word = self.tab_word(&tab, cx);
-            let notified = self.tab_notified(tab.id, cx);
-            div()
-                .absolute()
-                .top(px(0.))
-                .left(px(0.))
-                .size_full()
-                .flex()
-                .flex_row()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_baseline()
-                        .gap(px(5.))
-                        .px(px(90.))
-                        .overflow_hidden()
-                        .text_size(px(13.))
-                        .line_height(px(LINE))
-                        .font_family(UI_FONT)
-                        .text_color(rgb(t.tab_current_text))
-                        .when(word.is_some(), |d| d.text_color(rgb(t.tab_fenced_text)))
-                        .when(notified, |d| d.child(pjw(15., if word.is_some() { t.tab_fenced_text } else { t.tab_current_text })))
-                        .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(text))
-                        .when_some(host, |d, h| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_dim)).child(h)))
-                        .when_some(word, |d, w| d.child(div().flex_none().text_size(px(11.)).line_height(px(LINE)).text_color(rgb(t.tab_fenced_text)).child(w))),
-                )
-        });
-        // the hovered tab's card, beneath it, once the pointer has rested
-        // the card hangs below the strip, under the tab the pointer rests
-        // on: it hangs from the strip's own bottom edge, not from the
-        // tab's, so whatever the tab's shape and however the layers fall
-        // it can never cover the tab it belongs to. Its layer is under
-        // the strip's too (the title bar is deferred at 1 in full
-        // screen), and over the window, which it is a card on.
-        let card = hovered.and_then(|(id, b)| Some((crate::pool::Pool::tab(cx, id)?, b))).map(|(tab, b)| {
-            let lines = self.tab_status(&tab, cx);
-            let el = tab_card(&lines, self.overlay_bounds.clone());
-            gpui::deferred(gpui::anchored().position(gpui::point(b.origin.x, px(TITLEBAR_HEIGHT + 4.))).child(el)).with_priority(0)
-        });
-        div()
-            .id("titlebar")
-            .relative()
-            .h(px(TITLEBAR_HEIGHT))
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            // room for the traffic lights, which full screen has none of
-            .pl(px(if self.fullscreen { 12. } else { 78. }))
-            // the `+` is not flush with the edge: the bar keeps a margin
-            // on the right, as ghostty's does
-            .pr(px(10.))
-            .bg(rgb(strip))
-            .gap(px(6.))
-            // no line under the strip: its grey meets the row below, and
-            // the selected tab runs straight into it
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, e: &gpui::MouseDownEvent, window, cx| {
-                    if this.selector.is_some() {
-                        this.close_selector(cx);
-                    }
-                    if e.click_count >= 2 {
-                        window.titlebar_double_click();
-                    } else {
-                        window.start_window_move();
-                    }
-                    cx.stop_propagation();
-                }),
-            )
-            .when_some(title, |d, el| d.child(el))
-            .child(button)
-            .when_some(card, |d, c| d.child(c))
-            .when_some(floating, |d, f| d.child(f))
-
     }
 
     /// The picker, when open: the window dimmed behind it and the dialog
@@ -1942,61 +1627,26 @@ impl Acme {
         };
         let caret_on = sel.caret_visible();
         // the field: a glass at the left, then what is typed
-        let field = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(10.))
-            .px(px(16.))
-            .py(px(12.))
-            .text_size(px(15.))
-            .font_family(UI_FONT)
-            .child(div().flex_none().text_color(rgb(t.panel_dim)).child("⌕"))
-            .child(div().flex_1().min_w_0().child(crate::field::field_view(&sel.filter, caret_on, &hint, true)));
-        let mut list = div().id("picker-rows").flex().flex_col().px(px(8.)).pb(px(8.)).max_h(px(420.)).overflow_y_scroll();
+        let field = palette_field(crate::field::field_view(&sel.filter, caret_on, &hint, true));
+        let mut list = div().id("picker-rows").flex().flex_col().px(px(6.)).pb(px(6.)).max_h(px(10. * 34.)).overflow_y_scroll();
         for (i, row) in rows.iter().enumerate() {
             let picked = i == sel.cursor && row.pickable();
-            let dim = if picked { t.panel_chosen_text } else { t.panel_dim };
-            let ink = if picked { t.panel_chosen_text } else { t.panel_text };
+            let dim = palette_dim(picked);
             let r = row.clone();
-            let mut el = div()
+            let mut el = palette_row(picked)
                 .id(("picker-row", i))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(10.))
-                .px(px(10.))
-                .py(px(7.))
-                .rounded(px(7.))
-                .text_size(px(14.))
-                .font_family(UI_FONT)
-                .text_color(rgb(ink))
-                .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
-                .when(!picked && row.pickable(), |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
-                // the glyph, in a ring as the screenshots have it
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(18.))
-                        .h(px(18.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .border_1()
-                        .border_color(rgb(dim))
-                        .text_size(px(11.))
-                        .text_color(rgb(dim))
-                        .child(row.glyph()),
-                )
+                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(13.)).text_color(dim).child(row.glyph()))
                 .child(div().flex_none().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.title()))
-                .when_some(row.where_(), |d, w| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(w)))
-                // what picking it does, in the dim words at the right of
-                // the name, as the screenshots have it
-                .child(div().flex_none().text_size(px(12.)).text_color(rgb(dim)).child(row.action()))
+                .when_some(row.where_(), |d, w| d.child(div().flex_none().text_size(px(12.)).text_color(dim).child(w)))
+                // what picking it does, in the secondary words after the
+                // name, as Manifold's "Action"
+                .when(!row.title().starts_with(&row.action()), |d| d.child(div().flex_none().text_size(px(12.)).text_color(dim).child(row.action())))
                 .child(div().flex_1());
+            if !row.pickable() {
+                el = el.text_color(dim);
+            }
             if row.pickable() {
-                el = el.cursor_pointer().on_mouse_down(
+                el = el.cursor_default().on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
                         this.choose(r.clone(), window, cx);
@@ -2008,41 +1658,18 @@ impl Acme {
         }
         if rows.is_empty() && sel.connect.is_none() {
             let what = if sel.renaming.is_some() { "Type a name" } else { "Nothing matches" };
-            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child(what));
+            list = list.child(div().px(px(10.)).py(px(6.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child(what));
         }
-        let mut panel = div()
-            .w(px(760.))
-            .max_w_full()
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .rounded(px(12.))
-            .shadow_lg()
-            .flex()
-            .flex_col()
-            .overflow_hidden()
+        let mut panel = palette_panel()
             .child(self.overlay_mark())
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));
         panel = match &sel.connect {
             Some(form) => panel.child(self.connect_form(form, caret_on, cx)),
             None => panel.child(field).child(list),
         };
-        // the window behind it goes quiet: the dialog is the whole of
-        // what there is to do while it is up
-        let veil = div()
-            .absolute()
-            .top(px(0.))
-            .left(px(0.))
-            .size_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .bg(gpui::rgba(veil()))
-            .justify_center()
-            .child(panel)
-            // a little above the middle, where the eye goes first
-            .child(div().flex_none().h(px(110.)));
-        Some(deferred(veil).with_priority(2))
+        // Manifold's palette: centred across the window, a light scrim
+        // behind it
+        Some(deferred(palette_place(panel)).with_priority(2))
     }
 }
 

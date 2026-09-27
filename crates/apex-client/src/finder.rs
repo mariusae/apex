@@ -18,13 +18,13 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use gpui::{anchored, deferred, div, point, prelude::*, px, rgb, Context, MouseButton};
+use gpui::{deferred, div, prelude::*, px, rgb, Context, MouseButton};
 
 use apex_core::*;
 use apex_server::providers::SessionUrl;
 
 use crate::app::Acme;
-use crate::shell::{BLINK, UI_FONT};
+use crate::shell::BLINK;
 
 /// How many closed files a session remembers.
 const KEEP: usize = 50;
@@ -205,8 +205,8 @@ fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label:
     let tab = label.map(|l| (id, l));
     let mut out = Vec::new();
     for col in &node.state.layout.cols {
-        for slot in &col.wins {
-            let w = slot.window;
+        // stashed ones as well, where they stand: going to one brings it back
+        for (w, _) in apex_core::tiling::stash_order(col) {
             let name = node.window_name(w);
             if name.is_empty() {
                 continue;
@@ -361,48 +361,38 @@ impl Acme {
         let f = self.finder.as_ref()?;
         let picks = f.picks();
         let t = crate::theme::theme();
-        let field = div().px(px(14.)).py(px(10.)).border_b_1().border_color(rgb(t.panel_divider)).text_size(px(14.)).font_family(UI_FONT).child(crate::field::field_view(&f.filter, f.caret_visible(), if f.all { "Go to a window in any tab, or a file closed lately…" } else { "Go to a window, or a file closed lately…" }, true));
-        let mut list = div().id("finder-list").flex().flex_col().py(px(6.)).px(px(6.)).max_h(px(480.)).overflow_y_scroll();
+        let field = crate::shell::palette_field(crate::field::field_view(&f.filter, f.caret_visible(), if f.all { "Go to a window in any tab, or a file closed lately…" } else { "Go to a window, or a file closed lately…" }, true));
+        let mut list = div().id("finder-list").flex().flex_col().px(px(6.)).pb(px(6.)).max_h(px(10. * 34.)).overflow_y_scroll();
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;
+            let dim = crate::shell::palette_dim(picked);
             let Pick::Entry(e) = pick;
             let (dir, name) = match e.name.rfind('/') {
                 Some(k) if k + 1 < e.name.len() => (e.name[..=k].to_string(), e.name[k + 1..].to_string()),
                 _ => (String::new(), e.name.clone()),
             };
             let open = e.window.is_some();
-            let (mark, mark_color) = match (open, e.kind) {
-                (true, WinKind::Term) => ("▶", 0x990099),
-                (true, _) => ("●", 0x000099),
-                (false, _) => ("○", 0x8a8a8a),
+            let mark = match (open, e.kind) {
+                (true, WinKind::Term) => "▶",
+                (true, _) => "●",
+                (false, _) => "○",
             };
             let p = pick.clone();
-            let row = div()
+            let row = crate::shell::palette_row(picked)
                 .id(("goto", i))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(8.))
-                .px(px(10.))
-                .py(px(6.))
-                .rounded(px(6.))
-                .text_size(px(14.))
-                .font_family(UI_FONT)
-                .cursor_pointer()
-                .when(picked, |d| d.bg(rgb(t.panel_pick)))
-                .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
-                .child(div().w(px(14.)).text_color(rgb(mark_color)).child(mark))
+                .cursor_default()
+                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(11.)).text_color(dim).child(mark))
                 // one line, whatever the lengths: the name and the badges
                 // keep theirs, the directory gives way and is cut short
-                .child(div().flex_none().max_w(px(300.)).overflow_hidden().text_ellipsis().whitespace_nowrap().text_color(rgb(if open { t.panel_text } else { t.panel_text_dim })).child(name))
-                .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(rgb(t.panel_dim)).child(dir))
-                .when(!open, |d| d.child(div().flex_none().whitespace_nowrap().text_size(px(11.)).text_color(rgb(t.panel_dim)).child("closed")))
+                .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().when(!open && !picked, |d| d.text_color(dim)).child(name))
+                .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(dim).child(dir))
+                .when(!open, |d| d.child(div().flex_none().whitespace_nowrap().text_size(px(11.)).text_color(dim).child("closed")))
                 // the tab it is in: this one's marked so, the others named
                 .when_some(e.tab.clone(), |d, (id, label)| {
                     let here = id == self.tab;
                     let badge = div()
                         .flex_none()
-                        .max_w(px(220.))
+                        .max_w(px(200.))
                         .overflow_hidden()
                         .text_ellipsis()
                         .px(px(6.))
@@ -410,8 +400,9 @@ impl Acme {
                         .border_1()
                         .text_size(px(11.))
                         .whitespace_nowrap()
-                        .when(here, |b| b.border_color(rgb(t.panel_accent)).text_color(rgb(t.panel_accent)).child(format!("{label} · here")))
-                        .when(!here, |b| b.border_color(rgb(t.panel_border)).bg(rgb(t.panel_hover)).text_color(rgb(t.panel_text)).child(label));
+                        .border_color(if picked { gpui::hsla(0., 0., 1., 0.6) } else if here { rgb(t.panel_accent).into() } else { rgb(t.panel_border).into() })
+                        .text_color(if here && !picked { rgb(t.panel_accent).into() } else { dim })
+                        .child(if here { format!("{label} · here") } else { label });
                     d.child(badge)
                 })
                 .on_mouse_down(
@@ -424,22 +415,15 @@ impl Acme {
             list = list.child(row);
         }
         if picks.is_empty() {
-            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(UI_FONT).text_color(rgb(t.panel_dim)).child("Nothing matches"));
+            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child("Nothing matches"));
         }
-        let panel = div()
-            .w(px(620.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .rounded(px(8.))
-            .shadow_lg()
-            .flex()
-            .flex_col()
+        let panel = crate::shell::palette_panel()
             .child(self.overlay_mark())
             .child(field)
             .child(list)
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));
-        Some(deferred(anchored().position(point(px(72.), px(self.top() + 6.))).child(panel)).with_priority(1))
+        // Manifold's palette, as the picker is
+        Some(deferred(crate::shell::palette_place(panel)).with_priority(1))
     }
 }
 

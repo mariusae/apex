@@ -28,6 +28,8 @@ use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
 /// terminal. Returns once it answers on the socket.
 pub fn spawn_server(exe: &Path, socket: &Path, session: &str) -> io::Result<()> {
     use std::os::unix::process::CommandExt;
+    // a fork, with other threads about: see `notify_ready`
+    crate::pty::notify_ready();
     if let Some(d) = socket.parent() {
         let _ = std::fs::create_dir_all(d);
     }

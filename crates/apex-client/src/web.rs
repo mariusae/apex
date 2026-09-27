@@ -63,7 +63,7 @@ pub enum WebEvent {
 fn theme_css() -> String {
     let t = crate::theme::theme();
     let hex = |c: u32| format!("#{c:06X}");
-    let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2C2C24, 0x4A4A40, 0x9A9A8E) } else { (0xE8E8DC, 0xC8C8B8, 0x6F6F60) };
+    let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2A2A2C, 0x3A3A3C, t.text_dim) } else { (0xF0F0EE, 0xDCDCD9, t.text_dim) };
     let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
     // a diff's added and removed lines (apex diff): pale, one tint each.
     // Removed is orange rather than red, which stays apart from the green
@@ -71,12 +71,16 @@ fn theme_css() -> String {
     // simulation, 14 apart in CIELAB on light and 16 on dark), and each
     // still clears the paper for that reader (8 and 12 on light, 11 and
     // 18 on dark)
-    let (add, del) = if crate::theme::is_dark() { (0x203A2C, 0x443418) } else { (0xD8F0DC, 0xFFECC8) };
+    // on the modern-mac branch, GitHub Colorblind's diff lines: added in
+    // its blue (its green scale is blue), removed in its orange
+    let (add, del) = (t.diff_add, t.diff_del);
     let diff = format!(":root{{--apex-add:{};--apex-del:{}}}", hex(add), hex(del));
-    diff + &format!(
+    // the font set's faces and families (View ▸ Font), for a page's
+    // stylesheet to set itself in
+    diff + &crate::fonts::page_css() + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
          html{{background:{}}}\
-         .apex-copy{{position:absolute;top:4px;right:4px;font:11px \"Lucida Grande\",sans-serif;color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
+         .apex-copy{{position:absolute;top:4px;right:4px;font:11px var(--apex-font);color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
          pre:hover .apex-copy,.apex-copy:focus{{opacity:1}}",
         hex(t.body_bg), hex(t.text), hex(code_bg), hex(rule), hex(t.body_border), hex(link), hex(t.body_sel), hex(dim), hex(t.tag_bg),
         hex(t.body_bg), hex(dim), hex(t.body_bg), hex(rule)
@@ -395,6 +399,7 @@ impl Drop for Webs {
 }
 
 /// What Back, Fwd and Get do in a web window's tag.
+#[derive(Clone, Copy)]
 pub enum Nav {
     Back,
     Fwd,
@@ -1066,6 +1071,11 @@ impl Fetcher {
         if debug {
             eprintln!("web: apexfile request {url} (plane: {})", self.plane.is_some());
         }
+        // the bundled fonts, from the client itself (`fonts::page_css`
+        // names them here, on the page's own scheme and origin)
+        if let Some((bytes, mime)) = url.strip_prefix("apexfile://localhost").and_then(crate::fonts::serve) {
+            return respond(responder, 200, mime, bytes.to_vec());
+        }
         let path = match file_url_path(&format!("file://{}", url.strip_prefix("apexfile://").unwrap_or(&url))) {
             Some(p) => p,
             None => return respond(responder, 400, "text/plain", format!("{url}: not a host file").into_bytes()),
@@ -1199,6 +1209,40 @@ pub fn set_native_titlebar_hidden(window: &Window, hidden: bool) {
 
 #[cfg(not(target_os = "macos"))]
 pub fn set_native_titlebar_hidden(_window: &Window, _hidden: bool) {}
+
+/// The window's buttons shown or not, as Manifold shows them: with the
+/// sidebar, faded in and out (AppKit's animator), and not to be pressed
+/// while they are not there.
+#[cfg(target_os = "macos")]
+pub fn set_traffic_lights(window: &Window, visible: bool) {
+    use objc::runtime::Object;
+    use objc::{msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(h) = HasWindowHandle::window_handle(window) else { return };
+    let RawWindowHandle::AppKit(h) = h.as_raw() else { return };
+    let view = h.ns_view.as_ptr() as *mut Object;
+    // SAFETY: gpui's own NSView, alive while the window is; AppKit
+    // messages on the main thread
+    unsafe {
+        let ns_window: *mut Object = msg_send![view, window];
+        if ns_window.is_null() {
+            return;
+        }
+        for kind in 0u64..3 {
+            let b: *mut Object = msg_send![ns_window, standardWindowButton: kind];
+            if b.is_null() {
+                continue;
+            }
+            let animator: *mut Object = msg_send![b, animator];
+            let alpha: f64 = if visible { 1. } else { 0. };
+            let _: () = msg_send![animator, setAlphaValue: alpha];
+            let _: () = msg_send![b, setEnabled: visible];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_traffic_lights(_window: &Window, _visible: bool) {}
 
 /// What a view shows: a URL, or a buffer's HTML.
 enum Page<'a> {

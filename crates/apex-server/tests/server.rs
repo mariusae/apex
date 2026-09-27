@@ -808,10 +808,18 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     assert_eq!(apex_core::node::web_url("file://localhost/x/y", "/d"), "apexfile:///x/y");
     assert_eq!(apex_core::node::web_url("/abs/p", "/d"), "apexfile:///abs/p");
     assert_eq!(apex_core::node::web_url("rel/p", "/d/"), "apexfile:///d/rel/p");
-    // nothing given or selected: the command fails, saying so
+    // nothing given or selected: a blank page, its address to be typed
     node.select(&mut log, ViewId::Body(t), 0, 0).unwrap();
-    let r = node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    assert!(matches!(r, apex_core::node::Executed::Failed(_, ref why) if why.contains("Web needs a URL")), "{r:?}");
+    let before = node.state.windows.values().filter(|w| w.body == Body::Web).count();
+    node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
+    let blank: Vec<WindowId> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| w.id).filter(|&w| node.window_name(w).is_empty()).collect();
+    assert_eq!(node.state.windows.values().filter(|w| w.body == Body::Web).count(), before + 1);
+    assert_eq!(blank.len(), 1);
+    // going somewhere from it leaves nothing to come back to
+    let back = node.state.layout.nav_back.len();
+    node.web_navigate(&mut log, blank[0], "https://example.org/").unwrap();
+    assert_eq!(node.window_name(blank[0]), "https://example.org/");
+    assert_eq!(node.state.layout.nav_back.len(), back);
     assert!(apex_core::node::TOP_TAG.contains(" Web "));
 }
 

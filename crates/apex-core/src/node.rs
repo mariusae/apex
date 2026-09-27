@@ -390,7 +390,7 @@ impl Node {
     pub fn delete_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
         let ci = self.column_index(col)?;
         let c = &self.state.layout.cols[ci];
-        if !c.wins.is_empty() {
+        if !c.wins.is_empty() || !c.stash.is_empty() {
             return Err(CoreError::Missing("column not empty".into()));
         }
         let tag = c.tag;
@@ -504,7 +504,9 @@ impl Node {
         let rest = self.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
         let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
         self.set_content(log, tag, &format!("{url} {rest}"))?;
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: Some(Loc { session: None, name: from, pos: Pos::Keep }), to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
+        // a blank page was nowhere to come back to
+        let from = (!from.is_empty()).then(|| Loc { session: None, name: from, pos: Pos::Keep });
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
         Ok(())
     }
 
@@ -536,11 +538,15 @@ impl Node {
     /// A window's tag changed shape (or the client measured it anew):
     /// refit it in its own space, as acme's `winsettag` does.
     pub fn refit_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        // a stashed one has no place to refit in until it comes back
+        if self.state.layout.is_stashed(w) {
+            return Ok(());
+        }
         let (ci, wi) = self.place_of(w)?;
         let mut l = self.state.layout.clone();
         let r = l.cols[ci].wins[wi].r;
         let mut full = r;
-        full.y1 = if wi + 1 < l.cols[ci].wins.len() { l.cols[ci].wins[wi + 1].r.y0 - tiling::BORDER } else { l.cols[ci].r.y1 };
+        full.y1 = if wi + 1 < l.cols[ci].wins.len() { l.cols[ci].wins[wi + 1].r.y0 - tiling::BORDER } else { tiling::floor(&l.cols[ci]) };
         let last = wi + 1 == l.cols[ci].wins.len();
         tiling::winresize(&mut l, ci, wi, full, last, &*self.tiling);
         if l != self.state.layout {
@@ -566,6 +572,13 @@ impl Node {
     /// tag, or obscured): grow it a little (`colgrow` with button 1) so
     /// what is shown can be seen. No mouse warp: that is the caller's.
     pub fn reveal(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        // a stashed window is never a dead end: whatever goes to it
+        // brings it back where it was
+        if let Some((ci, si)) = self.state.layout.stashed_of(w) {
+            let mut l = self.state.layout.clone();
+            tiling::colrecall(&mut l, ci, si, false, &*self.tiling);
+            return self.arrange(log, &l);
+        }
         let Some((ci, wi)) = self.state.layout.place_of(w) else { return Ok(()) };
         let bf = self.tiling.body_font_height(w).max(1);
         if self.state.layout.cols[ci].wins[wi].fr_maxlines(bf) > 0 {
@@ -576,23 +589,43 @@ impl Node {
         self.arrange(log, &l)
     }
 
-    /// acme's `colgrow` on a window's layout box: button 1 a bit, 2 as
-    /// big as can be, 3 the whole column.
+    /// A click on a window's layout box: button 1 grows it a bit (acme's
+    /// `colgrow`), 2 puts the column's others in its stash, 3 puts it
+    /// there. On a stashed window's box, 1 brings it back where it was
+    /// and 2 as the only one.
     pub fn grow_window(&mut self, log: &mut Log, w: WindowId, but: i32) -> Result<()> {
-        let (ci, wi) = self.place_of(w)?;
         let mut l = self.state.layout.clone();
-        tiling::colgrow(&mut l, ci, wi, but, &*self.tiling);
+        if let Some((ci, si)) = l.stashed_of(w) {
+            if but == 3 {
+                return Ok(());
+            }
+            tiling::colrecall(&mut l, ci, si, but == 2, &*self.tiling);
+            self.arrange(log, &l)?;
+            self.warp = Some(Warp::WinButton(w));
+            return Ok(());
+        }
+        let (ci, wi) = self.place_of(w)?;
+        match but {
+            2 => tiling::colstash_others(&mut l, ci, wi, &*self.tiling),
+            3 => tiling::colstash(&mut l, ci, wi, &*self.tiling),
+            _ => tiling::colgrow(&mut l, ci, wi, but, &*self.tiling),
+        }
         self.arrange(log, &l)?;
-        self.warp = Some(Warp::WinButton(w));
+        if but != 3 {
+            self.warp = Some(Warp::WinButton(w));
+        }
         Ok(())
     }
 
     /// acme's `coldragwin`: a window's layout box pressed with `but` at
     /// `op` and released at `p` (row coordinates).
     pub fn drag_window(&mut self, log: &mut Log, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
-        let (ci, wi) = self.place_of(w)?;
-        let mut l = self.state.layout.clone();
-        let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
+        // a stashed window's box (its tag shown over the stash): a click
+        // is a click on it
+        if self.state.layout.is_stashed(w) && (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+            return self.grow_window(log, w, but);
+        }
+        let (l, warp) = self.dragged(w, but, op, p)?;
         if l != self.state.layout {
             self.arrange(log, &l)?;
         }
@@ -601,6 +634,70 @@ impl Node {
         }
         self.warp = warp;
         Ok(())
+    }
+
+    /// The layout a drag of window `w`'s box from `op` to `p` makes, and
+    /// where the mouse goes. A stashed window dragged comes back where it
+    /// is let go, in whatever column that is (its own, where it was, if
+    /// none).
+    fn dragged(&self, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<(Layout, Option<Warp>)> {
+        let mut l = self.state.layout.clone();
+        if let Some((ci, si)) = l.stashed_of(w) {
+            match tiling::rowwhichcol(&l, p) {
+                Some(nc) => {
+                    let slot = tiling::unstash(&mut l, ci, si, &*self.tiling);
+                    tiling::coladd(&mut l, nc, tiling::Adding::Existing(slot), Some(p.1), &*self.tiling);
+                }
+                None => tiling::colrecall(&mut l, ci, si, false, &*self.tiling),
+            }
+            return Ok((l, Some(Warp::WinButton(w))));
+        }
+        let (ci, wi) = self.place_of(w)?;
+        let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
+        Ok((l, warp))
+    }
+
+    /// Where window `w` would stand if its box, pressed at `op`, were let
+    /// go at `p`: the drag done on a copy of the layout (Manifold's
+    /// placement preview). None for what is not yet a drag.
+    pub fn drag_window_preview(&self, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Option<Rect> {
+        if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+            return None;
+        }
+        let (l, _) = self.dragged(w, but, op, p).ok()?;
+        l.slot(w).map(|s| s.r)
+    }
+
+    /// Where column `col` would stand if its box, pressed at `op`, were
+    /// let go at `p`.
+    pub fn drag_column_preview(&self, col: ColumnId, but: i32, op: (i32, i32), p: (i32, i32)) -> Option<Rect> {
+        if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+            return None;
+        }
+        let ci = self.state.layout.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowdragcol(&mut l, ci, but, op, p, &*self.tiling);
+        l.column(col).map(|c| c.r)
+    }
+
+    /// The line on column `col`'s left moved to `x` (the line itself
+    /// dragged): only the widths change.
+    pub fn move_column_edge(&mut self, log: &mut Log, col: ColumnId, x: i32) -> Result<()> {
+        let ci = self.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowmovecol(&mut l, ci, x, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
+    /// Where column `col` would stand with the line on its left at `x`.
+    pub fn column_edge_preview(&self, col: ColumnId, x: i32) -> Option<Rect> {
+        let ci = self.state.layout.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowmovecol(&mut l, ci, x, &*self.tiling);
+        l.column(col).map(|c| c.r)
     }
 
     /// acme's `rowdragcol`: a column's layout box dragged from `op` to `p`.
@@ -782,8 +879,16 @@ impl Node {
         let mut next = None;
         if let Some((ci, wi)) = self.state.layout.place_of(window) {
             let mut l = self.state.layout.clone();
+            let above = tiling::stash_above(&l.cols[ci], window);
             let (_, n) = tiling::colclose(&mut l, ci, wi, &*self.tiling);
+            // the stash hands on what was under it; a column left blank
+            // gets its nearest back
+            tiling::left(&mut l, ci, window, above, &*self.tiling);
             next = n;
+            self.arrange(log, &l)?;
+        } else if let Some((ci, si)) = self.state.layout.stashed_of(window) {
+            let mut l = self.state.layout.clone();
+            tiling::unstash(&mut l, ci, si, &*self.tiling);
             self.arrange(log, &l)?;
         }
         self.warp = Some(Warp::Closed { window, next });
@@ -1135,7 +1240,7 @@ impl Node {
 
     /// acme's `colclean`.
     pub fn colclean(&mut self, log: &mut Log, col: ColumnId) -> Result<bool> {
-        let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
+        let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.all_windows().collect()).unwrap_or_default();
         let mut clean = true;
         for w in wins {
             clean &= self.winclean(log, w, true)?;
@@ -1629,7 +1734,7 @@ impl Node {
                 if !self.colclean(log, col)? {
                     return Ok(false);
                 }
-                let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
+                let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.all_windows().collect()).unwrap_or_default();
                 for w in wins {
                     self.delete_window(log, w)?;
                 }
@@ -1682,14 +1787,12 @@ impl Node {
             }
             "Web" => {
                 // a web window on the URL given, else the selected text: a
-                // file:// URL or a path is the host's file (apexfile://)
+                // file:// URL or a path is the host's file (apexfile://);
+                // with neither, a blank page, its address to be typed
                 let arg = text.trim().strip_prefix("Web").map(str::trim).unwrap_or("").to_string();
                 let target = if !arg.is_empty() { arg } else { self.seltext.and_then(|v| self.selected_text(v).ok()).unwrap_or_default().trim().to_string() };
-                if target.is_empty() {
-                    return Err(CoreError::Missing("Web needs a URL or a file, given or selected".into()));
-                }
                 let dir = win.map(|w| self.window_name(w)).and_then(|n| std::path::Path::new(&n).parent().map(|d| d.display().to_string())).unwrap_or_default();
-                let url = web_url(&target, &dir);
+                let url = if target.is_empty() { String::new() } else { web_url(&target, &dir) };
                 let col = win.and_then(|w| self.column_of(w).ok()).or_else(|| self.state.layout.cols.first().map(|c| c.id)).ok_or_else(|| CoreError::Missing("no column".into()))?;
                 let w = self.open_web_window(log, col, &url)?;
                 self.seltext = Some(ViewId::Body(w));

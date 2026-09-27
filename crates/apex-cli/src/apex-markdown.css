@@ -7,7 +7,8 @@
 }
 html, body { margin: 0; background: var(--apex-bg); color: var(--apex-fg); }
 body {
-  font: 13px/1.5 "Lucida Grande", "Lucida Sans Unicode", "Helvetica Neue", sans-serif;
+  font: 13px/1.5 var(--apex-font, "Lucida Grande", "Lucida Sans Unicode", "Helvetica Neue", sans-serif);
+  font-feature-settings: var(--apex-font-features, normal);
   -webkit-font-smoothing: auto;
 }
 ::selection { background: var(--apex-sel); }
@@ -19,7 +20,7 @@ h1 { font-size: 1.7em; } h2 { font-size: 1.4em; } h3 { font-size: 1.2em; } h4 { 
 p, ul, ol, dl, table, pre, blockquote { margin: 0 0 0.9em; }
 a { color: var(--apex-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
-code, pre, kbd, samp, tt { font-family: Menlo, "DejaVu Sans Mono", monospace; font-size: 12px; }
+code, pre, kbd, samp, tt { font-family: var(--apex-mono, Menlo, "DejaVu Sans Mono", monospace); font-size: 12px; font-feature-settings: var(--apex-mono-features, normal); }
 pre { background: var(--apex-code-bg); padding: 10px 12px; border-radius: 4px; overflow: auto; line-height: 1.4; position: relative; }
 blockquote { margin-left: 0; padding: 0 1em; color: var(--apex-dim); border-left: 3px solid var(--apex-border); }
 ul, ol { padding-left: 1.8em; }

@@ -21,7 +21,7 @@ use apex_server::providers::SessionUrl;
 use apex_server::remote::{Link, Wake};
 use apex_server::{PlumbReq, PlumbStep, Proposal, perform, Server, ServerEvent, TermKey};
 
-use crate::shell::{Selector, TITLEBAR_HEIGHT};
+use crate::shell::Selector;
 use crate::menu;
 use crate::text_element::font_for;
 
@@ -66,6 +66,9 @@ struct Drag {
 enum BoxTarget {
     Win(WindowId),
     Col(ColumnId),
+    /// The line on a column's left, dragged to make the columns wider
+    /// or narrower.
+    Edge(ColumnId),
 }
 
 #[derive(Default)]
@@ -392,15 +395,16 @@ pub struct Acme {
     /// session is parked.
     pub wake_target: Option<WakeTarget>,
     pub selector: Option<Selector>,
-    /// A tab held with B1: a click until it moves, a drag reordering
-    /// the tabs after that.
-    pub tab_drag: Option<crate::shell::TabDrag>,
-    /// The tab under the pointer, and since when: its status card shows
-    /// beneath it once the pointer has rested there a moment.
-    pub tab_hovered: Option<(TabId, std::time::Instant)>,
-    /// Where the tabs were drawn last frame, for the drag to know
-    /// which one the pointer has passed.
-    pub tab_bounds: std::rc::Rc<std::cell::RefCell<Vec<(TabId, gpui::Bounds<Pixels>)>>>,
+    /// The view the keys go to, whose caret is the blue one that blinks
+    /// (none when apex is not in front, or the keys go to a terminal or
+    /// a page); whether that caret shows just now; and since when it has
+    /// been left alone -- a key, a click or the pointer coming to it
+    /// start it again from solid.
+    pub caret_view: Option<ViewId>,
+    /// The terminal the keys go to, whose cursor blinks with the caret.
+    pub caret_term: Option<TermId>,
+    pub caret_on: bool,
+    pub caret_since: std::time::Instant,
     /// Where the overlays (the picker, the finder, the tools menu) were
     /// drawn this frame: holes cut in the web views,
     /// which are native views above everything gpui paints, so the
@@ -408,6 +412,14 @@ pub struct Acme {
     pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
+    /// ⌘E, ⌘ still held: the walk through a column's stash.
+    pub stash_walk: Option<crate::switcher::StashWalk>,
+    /// The sidebar's session row under the pointer: its × shows.
+    pub sidebar_hover: Option<crate::pool::TabId>,
+    /// A web window's address being typed in its header.
+    pub url_edit: Option<crate::webbar::UrlEdit>,
+    /// Blank web windows already given their address field.
+    pub url_asked: std::collections::HashSet<WindowId>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
     /// The tab shown has nothing of its own yet -- its link is being
@@ -442,10 +454,22 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
-    /// Full screen hides the strip; the pointer at the top edge brings
-    /// it over the top of the window (a browser's full screen), and it
-    /// goes once the pointer has left it.
-    pub strip_revealed: bool,
+    /// The sidebar, not pinned, floating over the content: brought by the
+    /// pointer at the window's left edge (or leaving the window by it)
+    /// and put away a moment after the pointer is past it, as
+    /// Manifold's is; and when it last came or went, for its slide.
+    pub sidebar_out: bool,
+    pub sidebar_moved: Option<std::time::Instant>,
+    /// When the pointer left it: it goes a tenth of a second after.
+    pub sidebar_leaving: Option<std::time::Instant>,
+    /// The column whose stash is brought out, its tags shown over its
+    /// foot: by the pointer resting on its sheets' edges a moment, and
+    /// put away a moment after it leaves them.
+    pub stash_open: Option<ColumnId>,
+    /// When the pointer left the stash brought out.
+    stash_leaving: Option<std::time::Instant>,
+    /// Whether the window's buttons show just now: with the sidebar.
+    pub lights_shown: Option<bool>,
     /// Whether AppKit's title bar container is hidden (full screen).
     pub native_bar_hidden: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
@@ -510,7 +534,7 @@ pub struct Acme {
     mouse_saved: Option<(WindowId, Point<Pixels>)>,
     /// Where the pointer was put by a warp, until the next real mouse event.
     pointer: Option<Point<Pixels>>,
-    last_mouse: Point<Pixels>,
+    pub(crate) last_mouse: Point<Pixels>,
     pub focus: FocusHandle,
     pub layouts: HashMap<ViewId, TextLayout>,
     pub term_layouts: HashMap<WindowId, TermLayout>,
@@ -1465,56 +1489,6 @@ impl Acme {
         changed
     }
 
-    /// What the titlebar shows of the link: the heartbeat's round trip
-    /// and the log's (an entry flushed to its Ack), in milliseconds.
-    /// A tab's status card (hovered): the session, where it is, how the
-    /// link stands, and the round trips spelled out: the heartbeat's
-    /// (ping) and a log append's acknowledgement (log).
-    pub fn tab_status(&self, tab: &crate::pool::Tab, cx: &gpui::App) -> Vec<(String, String)> {
-        let url = &tab.url;
-        let ms = |m: Option<u64>| m.map(|m| format!("{m} ms")).unwrap_or_else(|| "—".into());
-        let mut lines = vec![("Session".to_string(), url.session.clone())];
-        let host = if url.is_local() { "this machine".to_string() } else { format!("{} ({})", url.arg, url.provider) };
-        lines.push(("Host".into(), host));
-        if tab.id == self.tab {
-            let state = match &self.backend {
-                _ if self.waiting.is_some() => self.waiting.clone().unwrap_or_default(),
-                Backend::Local(_) => "in-process".to_string(),
-                Backend::Remote(_) if !self.connected => "disconnected".into(),
-                Backend::Remote(_) if self.fenced() => "attached, fenced: another client leads".into(),
-                Backend::Remote(_) => "attached, leading".into(),
-            };
-            lines.push(("Status".into(), state));
-            lines.push(("Ping".into(), ms(self.ping_ms)));
-            let ack = match &self.backend {
-                Backend::Remote(link) => link.ack_ms,
-                _ => None,
-            };
-            lines.push(("Log".into(), ms(ack)));
-        } else {
-            match Pool::link_status(cx, tab.id) {
-                Some((ack, pong)) => {
-                    let heard = match pong {
-                        Some(d) if d.as_secs() < 2 => "just now".to_string(),
-                        Some(d) => format!("{}s ago", d.as_secs()),
-                        None => "not yet".into(),
-                    };
-                    lines.push(("Status".into(), format!("parked, attached; last heard {heard}")));
-                    lines.push(("Log".into(), ms(ack)));
-                }
-                None => {
-                    let what = match &tab.state {
-                        crate::pool::State::Coming(why) => why.word().to_string(),
-                        crate::pool::State::Down(why) => why.clone(),
-                        crate::pool::State::Up => "not connected".into(),
-                    };
-                    lines.push(("Status".into(), what));
-                }
-            }
-        }
-        lines
-    }
-
     fn over(cx: &mut Context<Self>, log: Log, node: Node, backend: Backend, session: &str) -> Acme {
         // keys follow the pointer over pages too: a native view keeps the
         // pointer's moves to itself, so the system is asked, often
@@ -1528,11 +1502,25 @@ impl Acme {
                         let _ = h.update(cx, |acme, window, cx| {
                             if cx.entity_id() == mine {
                                 alive = true;
-                                if acme.web_focus_tick(window) || acme.any_working() {
+                                // a spinner turning: the working handles, or the
+                                // page a tab shows while it comes up
+                                if acme.web_focus_tick(window) || acme.any_working() || acme.waiting.is_some() {
                                     cx.notify();
                                 }
-                                if acme.strip_tick(window) {
+                                if acme.caret_tick() {
                                     cx.notify();
+                                }
+                                // the floating sidebar, from where the pointer
+                                // is, asked of the system (a page keeps its
+                                // moves to itself, and it may have left)
+                                if let Some(p) = crate::web::native_mouse(window) {
+                                    if acme.sidebar_tick(p, window.viewport_size()) {
+                                        cx.notify();
+                                    }
+                                    // the stash, too: resting is no move
+                                    if acme.stash_tick(p) {
+                                        cx.notify();
+                                    }
                                 }
                                 if acme.tabs_tick(cx) {
                                     cx.notify();
@@ -1576,13 +1564,23 @@ impl Acme {
             wake: None,
             wake_target: None,
             selector: None,
-            tab_drag: None,
-            tab_hovered: None,
-            strip_revealed: false,
+            caret_view: None,
+            caret_term: None,
+            caret_on: true,
+            caret_since: std::time::Instant::now(),
+            sidebar_out: false,
+            sidebar_moved: None,
+            sidebar_leaving: None,
+            stash_open: None,
+            stash_leaving: None,
+            lights_shown: None,
             native_bar_hidden: false,
-            tab_bounds: Default::default(),
             overlay_bounds: Default::default(),
             switcher: None,
+            stash_walk: None,
+            url_edit: None,
+            sidebar_hover: None,
+            url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
             waiting: None,
             close_requested: false,
@@ -1779,6 +1777,21 @@ impl Acme {
         cx.notify();
     }
 
+    /// A window picked in the sidebar: shown and landed on, as a
+    /// notification's window is; picking it is attending to it.
+    pub fn reveal_window(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        let _ = self.dismiss(w);
+        self.show(w);
+        self.node.warp = Some(Warp::NewWindow(w));
+        self.after();
+        cx.notify();
+    }
+
+    /// Does the window carry a notification this client shows?
+    pub fn window_notified(&self, w: WindowId) -> bool {
+        self.shown_notifications().any(|n| n.window == w)
+    }
+
     fn take_notification(&mut self, cx: &mut Context<Self>) {
         let Some(n) = self.notification_head() else { return };
         let _ = self.dismiss(n.window);
@@ -1815,6 +1828,51 @@ impl Acme {
     /// Is this window in front?
     pub fn app_active(&self) -> bool {
         self.app_active
+    }
+
+    /// The view the keys go to, as `key_down` finds it: the text under
+    /// the pointer; over a page's scrollbar or no text at all, the last
+    /// text selected in; over a terminal, none of acme's (the terminal
+    /// has its own cursor). None while apex is not in front.
+    pub fn key_view(&self) -> Option<ViewId> {
+        if !self.app_active {
+            return None;
+        }
+        match self.locate(self.pointer.unwrap_or(self.last_mouse)) {
+            Some((Target::View(v), _)) => Some(v),
+            Some((Target::Term(..), _)) => None,
+            Some((Target::Web(_), _)) | None => self.node.seltext,
+        }
+    }
+
+    /// The blue caret's state brought up to now: which view has it, and
+    /// whether it shows -- solid for half a second after it was last
+    /// started, then on and off every 530 ms, as the system's blinks.
+    /// True when either changed, so the window is drawn again only when
+    /// the caret does.
+    pub fn caret_tick(&mut self) -> bool {
+        let view = self.key_view();
+        let term = self.key_term();
+        if view != self.caret_view || term != self.caret_term {
+            self.caret_view = view;
+            self.caret_term = term;
+            self.caret_since = std::time::Instant::now();
+            self.caret_on = true;
+            return true;
+        }
+        let t = self.caret_since.elapsed().as_millis();
+        let on = t < 500 || ((t - 500) / 530) % 2 == 1;
+        if on != self.caret_on {
+            self.caret_on = on;
+            return view.is_some() || term.is_some();
+        }
+        false
+    }
+
+    /// The terminal the keys go to: the one under the pointer, while
+    /// apex is in front (as `term_focus_now` tells the programs).
+    pub fn key_term(&self) -> Option<TermId> {
+        self.term_under_pointer.filter(|_| self.app_active)
     }
 
     /// The window the user is in: the one under the pointer, which has
@@ -1871,6 +1929,39 @@ impl Acme {
         self.mouse.box_drag.is_some()
     }
 
+    /// The line between two columns is held.
+    pub fn dragging_edge(&self) -> bool {
+        matches!(self.mouse.box_drag, Some((BoxTarget::Edge(_), _, _)))
+    }
+
+    /// The line on column `c`'s left pressed.
+    pub fn press_edge(&mut self, c: ColumnId, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.mouse.b1.is_none() {
+            self.mouse.box_drag = Some((BoxTarget::Edge(c), MouseButton::Left, pos));
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    /// Where what is being dragged would land were it let go now, in the
+    /// area's coordinates: a window, a column, or the column right of a
+    /// line (Manifold's placement preview).
+    pub fn drag_preview(&self) -> Option<tiling::Rect> {
+        let (bt, b, start) = self.mouse.box_drag?;
+        let but = match b {
+            MouseButton::Left => 1,
+            MouseButton::Middle => 2,
+            MouseButton::Navigate(_) => return None,
+            _ => 3,
+        };
+        let (op, p) = (self.row_pt(start), self.row_pt(self.last_mouse));
+        match bt {
+            BoxTarget::Win(w) => self.node.drag_window_preview(w, but, op, p),
+            BoxTarget::Col(c) => self.node.drag_column_preview(c, but, op, p),
+            BoxTarget::Edge(c) => self.node.column_edge_preview(c, p.0),
+        }
+    }
+
     /// The mouse move acme would make after the last layout change.
     fn take_warp(&mut self) {
         let Some(w) = self.node.warp.take() else { return };
@@ -1919,8 +2010,8 @@ impl Acme {
         let font = font_for(false).line_height;
         let fonti = f32::from(font) as i32;
         let l = &self.node.state.layout;
-        let top = self.top();
-        let row = |x: i32, y: i32| point(px(x as f32), px(y as f32 + top));
+        let (top, left) = (self.top(), self.left());
+        let row = |x: i32, y: i32| point(px(x as f32 + left), px(y as f32 + top));
         let target = match p {
             Pending::Restore(at) => Some(at),
             Pending::Warp(Warp::NewWindow(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
@@ -2036,7 +2127,9 @@ impl Acme {
         let mut tags = HashMap::new();
         let mut bodies = HashMap::new();
         for (w, win) in &self.node.state.windows {
-            if !win.tagexpand {
+            if win.body == Body::Web {
+                tags.insert(*w, (1, false)); // a page's header is one line
+            } else if !win.tagexpand {
                 tags.insert(*w, (1, false)); // acme: Up in the tag shrank it to one line
             } else if let Some((n, nl)) = self.tag_need.get(&ViewId::Tag(*w)) {
                 tags.insert(*w, (*n as i32, *nl));
@@ -2050,7 +2143,7 @@ impl Acme {
         }
         self.node.tiling = Box::new(ClientInfo { font, prop: font, mono, tags, bodies });
         // the OS window
-        let r = tiling::Rect::new(0, 0, f32::from(viewport.width) as i32, (f32::from(viewport.height) - self.top()) as i32);
+        let r = tiling::Rect::new(0, 0, (f32::from(viewport.width) - self.left()) as i32, (f32::from(viewport.height) - self.top()) as i32);
         if r.dx() > 0 && r.dy() > 0 && r != self.node.state.layout.r {
             let _ = self.node.resize_layout(&mut self.log, r);
         }
@@ -2104,47 +2197,167 @@ impl Acme {
         }
     }
 
-    /// Where acme's area starts: below the title bar, or at the top when
-    /// the window is full screen.
+    /// Where acme's area starts: the top of the window, always. There is
+    /// no title bar (the window's buttons are the sidebar's), so full
+    /// screen is the whole screen.
     pub fn top(&self) -> f32 {
-        if self.strip_hides() {
-            0.
+        0.
+    }
+
+    /// Where acme's area starts across: right of the sidebar, while it
+    /// is pinned. acme's layout is in its own coordinates, from the
+    /// area's corner; the pointer and the pages are in the window's.
+    pub fn left(&self) -> f32 {
+        if self.sidebar_shown() {
+            crate::shell::SIDEBAR_W
         } else {
-            TITLEBAR_HEIGHT
+            0.
         }
     }
 
-    /// Full screen with the strip not always shown: it hides, and comes
-    /// with the menu bar.
-    pub fn strip_hides(&self) -> bool {
-        self.fullscreen && !crate::theme::fullscreen_tabs()
+    /// The sidebar is pinned: beside the content, which is laid out
+    /// right of it. Unpinned it floats over the content when brought.
+    pub fn sidebar_shown(&self) -> bool {
+        crate::theme::sidebar()
     }
 
-    /// Full screen, the strip hiding: where the pointer is, asked of the
-    /// system (the menu bar takes its moves at the top, and it can be
-    /// over a page), every tick; near the top it brings the strip, as
-    /// the menu bar comes, and below the strip it lets it go. True when
-    /// the strip's state changed.
-    pub fn strip_tick(&mut self, window: &Window) -> bool {
-        if !self.strip_hides() {
-            if self.strip_revealed {
-                self.strip_revealed = false;
+    /// The floating sidebar, as Manifold's: the pointer within 6 pixels
+    /// of the window's left edge (or just past it, leaving by it, as a
+    /// window against the screen's side is left) brings it; once the
+    /// pointer is more than 8 pixels past it, or out of the window, it
+    /// goes a tenth of a second later -- not while the picker it opened
+    /// is up. `p` is the pointer in the window's coordinates, `size` the
+    /// window's. True when it came or went.
+    pub fn sidebar_tick(&mut self, p: Point<Pixels>, size: gpui::Size<Pixels>) -> bool {
+        if self.sidebar_shown() {
+            let was = self.sidebar_out;
+            self.sidebar_out = false;
+            self.sidebar_leaving = None;
+            return was;
+        }
+        let within_y = p.y >= px(0.) && p.y <= size.height;
+        // only the very edge brings it out -- the last point before the
+        // screen's, or past the window's left side -- and never while a
+        // button is held: moving a window or sweeping text towards the
+        // left is not asking for it
+        let m = &self.mouse;
+        let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
+        let at_edge = within_y && !held && p.x <= px(0.5) && p.x >= px(-60.);
+        if at_edge {
+            self.sidebar_leaving = None;
+            if !self.sidebar_out {
+                self.sidebar_out = true;
+                self.sidebar_moved = Some(std::time::Instant::now());
                 return true;
             }
             return false;
         }
-        let Some(p) = crate::web::native_mouse(window) else { return false };
-        let inside = p.x >= px(0.) && p.x <= window.viewport_size().width;
-        let revealed = inside && if self.strip_revealed { p.y <= px(TITLEBAR_HEIGHT + 10.) } else { p.y <= px(3.) };
-        if revealed != self.strip_revealed {
-            self.strip_revealed = revealed;
-            return true;
+        if !self.sidebar_out {
+            return false;
         }
-        false
+        let over = within_y && p.x >= px(-60.) && p.x <= px(crate::shell::SIDEBAR_W + 8.);
+        if over || self.selector.is_some() {
+            self.sidebar_leaving = None;
+            return false;
+        }
+        match self.sidebar_leaving {
+            None => {
+                self.sidebar_leaving = Some(std::time::Instant::now());
+                false
+            }
+            Some(t) if t.elapsed() >= std::time::Duration::from_millis(100) => {
+                self.sidebar_out = false;
+                self.sidebar_leaving = None;
+                self.sidebar_moved = Some(std::time::Instant::now());
+                true
+            }
+            Some(_) => false,
+        }
     }
 
-    fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
-        (f32::from(p.x) as i32, (f32::from(p.y) - self.top()) as i32)
+    /// How far the floating sidebar is in, 0 to 1, as it slides: in over
+    /// 0.16 s easing out, from 24 pixels to the left and faded, and away
+    /// over 0.14 s easing in; None when it is not there at all.
+    pub fn sidebar_slide(&self) -> Option<f32> {
+        let t = self.sidebar_moved.map(|m| m.elapsed().as_secs_f32());
+        match (self.sidebar_out, t) {
+            (true, Some(t)) => Some(1. - (1. - (t / 0.16).min(1.)).powi(3)),
+            (true, None) => Some(1.),
+            (false, Some(t)) if t < 0.14 => Some(1. - (t / 0.14).powi(3)),
+            _ => None,
+        }
+    }
+
+    /// Column `ci`'s stash as it shows, in the area's coordinates: the
+    /// band its sheets' edges take at the foot, and the rows its tags
+    /// stand in when it is brought out, in the column's order, rising
+    /// from the foot over the column. None without a stash.
+    pub fn stash_geometry(&self, ci: usize) -> Option<(tiling::Rect, Vec<(WindowId, tiling::Rect)>)> {
+        let l = &self.node.state.layout;
+        let c = l.cols.get(ci)?;
+        if c.stash.is_empty() || !l.shows(ci) {
+            return None;
+        }
+        let font = f32::from(crate::text_element::font_for(false).line_height) as i32;
+        let band = tiling::Rect::new(c.r.x0, tiling::floor(c), c.r.x1, c.r.y1);
+        let order: Vec<WindowId> = tiling::stash_order(c).into_iter().filter(|&(_, st)| st).map(|(w, _)| w).collect();
+        let step = font + tiling::BORDER;
+        let top = (c.r.y1 - step * order.len() as i32).max(c.r.y0 + font);
+        let rows = order.into_iter().enumerate().map(|(i, w)| (w, tiling::Rect::new(c.r.x0, top + step * i as i32, c.r.x1, top + step * i as i32 + font))).collect();
+        Some((band, rows))
+    }
+
+    /// The stash under the pointer (`p`, in the window's coordinates):
+    /// brought out the moment the pointer is on a column's sheets with no
+    /// button held (dragging over them is not asking for it), and put
+    /// away a moment after the pointer leaves it. True when it came or
+    /// went.
+    pub fn stash_tick(&mut self, p: Point<Pixels>) -> bool {
+        let m = &self.mouse;
+        let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
+        let (x, y) = self.row_pt(p);
+        let l = &self.node.state.layout;
+        if let Some(open) = self.stash_open {
+            let geo = l.column_index(open).and_then(|ci| self.stash_geometry(ci));
+            let Some((band, rows)) = geo else {
+                self.stash_open = None;
+                self.stash_leaving = None;
+                return true;
+            };
+            let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0);
+            let over = x >= band.x0 && x < band.x1 && y >= top && y <= band.y1 + 2;
+            if over || held {
+                self.stash_leaving = None;
+                return false;
+            }
+            return match self.stash_leaving {
+                None => {
+                    self.stash_leaving = Some(std::time::Instant::now());
+                    false
+                }
+                Some(t) if t.elapsed() >= std::time::Duration::from_millis(150) => {
+                    self.stash_open = None;
+                    self.stash_leaving = None;
+                    true
+                }
+                Some(_) => false,
+            };
+        }
+        if held {
+            return false;
+        }
+        let under = (0..l.cols.len()).find(|&ci| self.stash_geometry(ci).is_some_and(|(b, _)| x >= b.x0 && x < b.x1 && y >= b.y0 && y <= b.y1 + 2)).map(|ci| l.cols[ci].id);
+        match under {
+            Some(c) => {
+                self.stash_open = Some(c);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub(crate) fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
+        ((f32::from(p.x) - self.left()) as i32, (f32::from(p.y) - self.top()) as i32)
     }
 
     /// An event from the in-process server.
@@ -2370,6 +2583,8 @@ impl Acme {
                 pulse,
                 fenced: false,
                 notified,
+                sheet: false,
+                key_caret: None,
                 text: apex_core::text::Text::new(""),
                 sel: (0, 0),
                 origin: 0,
@@ -2388,6 +2603,11 @@ impl Acme {
             pulse,
             fenced: self.fenced(),
             notified,
+            // a stashed window's tag, shown over its column's foot: a
+            // sheet out of the stack (a tag folded in place is a tag)
+            sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.is_stashed(w)),
+            // the keys' view: its caret the blue one, blinking
+            key_caret: (self.caret_view == Some(view)).then_some(self.caret_on),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
@@ -2431,6 +2651,18 @@ impl Acme {
     // ---- hit testing ---------------------------------------------------------
 
     fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
+        // the stash brought out lies over everything in its column
+        if self.stash_open.is_some() {
+            for (v, l) in &self.layouts {
+                if !matches!(v, ViewId::Tag(w) if self.node.state.layout.is_stashed(*w)) || !l.bounds.contains(&pos) {
+                    continue;
+                }
+                if l.layout_box.is_some_and(|b| b.contains(&pos)) {
+                    return Some((Target::View(*v), Region::LayoutBox));
+                }
+                return Some((Target::View(*v), Region::Text(l.offset_at(pos))));
+            }
+        }
         if let Some((w, _)) = self.web_bars.iter().find(|(_, b)| b.contains(&pos)) {
             return Some((Target::Web(*w), Region::WebScrollbar));
         }
@@ -2593,11 +2825,16 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // a click: the caret solid again, wherever it lands
+        self.caret_since = std::time::Instant::now();
+        self.caret_on = true;
         // a click in acme's part of the window takes the keyboard back
         // from any page that had it, and from the window itself when a
         // view that had it went and left it there: not only while pages
         // are up, since the loss outlives them
         crate::web::focus_ui(window);
+        // a click off the address being typed leaves it as it was
+        self.url_edit = None;
         if self.finder.is_some() {
             self.close_finder(cx); // a click anywhere else dismisses it
             return;
@@ -2822,56 +3059,21 @@ impl Acme {
         }
     }
 
-    pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn mouse_move(&mut self, e: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
-        if let Some(d) = &mut self.tab_drag {
-            // a tab held: past a few pixels it is a drag; the tab floats
-            // under the pointer and passes a neighbour once it covers
-            // the whole of it: its far edge past the neighbour's far
-            // edge (measured against the neighbours' places with it out
-            // of the row, so a swap cannot undo itself; overlapping one
-            // partly changes nothing, whichever is the wider)
-            d.pos = pos;
-            if !d.moved && ((d.start.x - pos.x).abs() > px(4.) || (d.start.y - pos.y).abs() > px(4.)) {
-                d.moved = true;
-            }
-            if d.moved {
-                let (id, grab, width) = (d.tab, d.grab, d.width);
-                let mut all: Vec<(TabId, gpui::Bounds<Pixels>)> = self.tab_bounds.borrow().clone();
-                all.sort_by(|a, b| a.1.origin.x.partial_cmp(&b.1.origin.x).unwrap_or(std::cmp::Ordering::Equal));
-                let gap = if all.len() >= 2 { all[1].1.origin.x - (all[0].1.origin.x + all[0].1.size.width) } else { px(4.) };
-                let (gl, gr) = (pos.x - grab, pos.x - grab + width);
-                // the others' slots with the dragged tab out of the row
-                let mut left = all.first().map(|(_, b)| b.origin.x).unwrap_or(px(0.));
-                let mut slots: Vec<(TabId, Pixels, Pixels)> = Vec::new();
-                for (u, b) in all.iter().filter(|(u, _)| *u != id) {
-                    slots.push((*u, left, left + b.size.width));
-                    left += b.size.width + gap;
-                }
-                // where it is now among them, then past each neighbour it
-                // has come to occupy: rightwards once its left edge is past
-                // the neighbour's left edge, leftwards once its right edge
-                // is past the neighbour's right; a narrower tab, which can
-                // sit wholly inside a neighbour, goes by its centre there
-                // (the two tests exclude each other, so the walk ends and
-                // a swap cannot undo itself as the pointer moves on)
-                let c = gl + width / 2.;
-                let mut k = all.iter().position(|(u, _)| *u == id).unwrap_or(slots.len());
-                for _ in 0..=slots.len() {
-                    if k < slots.len() && gl >= slots[k].1 && c >= (slots[k].1 + slots[k].2) / 2. {
-                        k += 1;
-                    } else if k > 0 && gr <= slots[k - 1].2 && c < (slots[k - 1].1 + slots[k - 1].2) / 2. {
-                        k -= 1;
-                    } else {
-                        break;
-                    }
-                }
-                let before = slots.get(k).map(|(u, _, _)| *u);
-                crate::pool::Pool::move_tab(cx, id, before);
-            }
+        self.last_mouse = pos;
+        if self.caret_tick() {
             cx.notify();
-            self.last_mouse = pos;
-            return;
+        }
+        if self.sidebar_tick(pos, window.viewport_size()) {
+            cx.notify();
+        }
+        if self.stash_tick(pos) {
+            cx.notify();
+        }
+        // a box held: where it would land follows the pointer
+        if self.mouse.box_drag.is_some() {
+            cx.notify();
         }
         if self.menu.is_some() {
             self.menu_track(pos);
@@ -2973,17 +3175,7 @@ impl Acme {
         }
     }
 
-    pub fn mouse_up(&mut self, e: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(d) = self.tab_drag.take() {
-            // let go without moving: the click it was (the current tab
-            // toggles the picker; another is switched to)
-            if !d.moved && !d.current {
-                // (the current tab, clicked, is where we are)
-                self.switch_to(d.tab, window, cx);
-            }
-            cx.notify();
-            return;
-        }
+    pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
         if self.mouse.scrolling.is_some_and(|(_, b, _)| b == button) {
@@ -3004,6 +3196,9 @@ impl Acme {
                 let r = match bt {
                     BoxTarget::Win(w) => self.node.drag_window(&mut self.log, w, but, op, p),
                     BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, but, op, p),
+                    // the line goes where it is let go; a click moves nothing
+                    BoxTarget::Edge(c) if (p.0 - op.0).abs() >= 2 => self.node.move_column_edge(&mut self.log, c, p.0),
+                    BoxTarget::Edge(_) => Ok(()),
                 };
                 if let Err(err) = r {
                     eprintln!("layout: {err}");
@@ -3108,6 +3303,11 @@ impl Acme {
         // control let go: the ctrl-tab walk ends where it stands
         if self.switcher.is_some() && !e.modifiers.control {
             self.switcher_commit(window, cx);
+            return;
+        }
+        // ⌘ let go: the chosen stashed window comes back
+        if self.stash_walk.is_some() && prev.platform && !e.modifiers.platform {
+            self.stash_walk_commit(cx);
             return;
         }
         if let Some(w) = self.mouse.term_drag {
@@ -3495,7 +3695,19 @@ impl Acme {
 
     /// Is a gpui overlay up that a native view would hide?
     fn overlay_up(&self) -> bool {
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some()
+        // an address being typed keeps the keys from the pages too
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some()
+    }
+
+    /// A web window's handle pressed (its header draws it, not a tag):
+    /// acme's box, as any window's.
+    pub fn press_handle(&mut self, w: WindowId, button: MouseButton, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        self.url_edit = None;
+        if self.mouse.b1.is_none() {
+            self.mouse.box_drag = Some((BoxTarget::Win(w), button, pos));
+        }
+        cx.stop_propagation();
+        cx.notify();
     }
 
     /// What the pages did: a navigation moves the window's name and the
@@ -3583,50 +3795,17 @@ impl Acme {
         if items.is_empty() {
             return;
         }
-        let fs = crate::text_element::font_for(false);
-        let ih = f32::from(fs.line_height) as i32 + menu::VSPACING;
-        let fh = f32::from(fs.line_height) as i32;
-        let run = |len: usize| gpui::TextRun { len, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
-        let widths: Vec<i32> = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), fs.size, &[run(i.len())], None).width).ceil() as i32).collect();
-        let maxwid = widths.iter().copied().max().unwrap_or(0);
-        let nitem = items.len() as i32;
-        let lasthit = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l)).unwrap_or(0) as i32;
+        // the items measured in the face the menu sets them in, the
+        // system's at a menu's size
+        let face = gpui::font(crate::fonts::ui());
+        let run = |len: usize| gpui::TextRun { len, font: face.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+        let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), px(13.), &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
+        let checked = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l));
         // the screen, for menuhit, is acme's area
-        let screen = self.node.state.layout.r;
-        let screenitem = (screen.dy() - 10) / ih;
-        let (scrolling, nitemdrawn, wid, off, lasti) = if nitem > menu::MAXUNSCROLL || nitem > screenitem {
-            let nitemdrawn = menu::NSCROLL.min(screenitem).max(1);
-            let off = (lasthit - nitemdrawn / 2).clamp(0, (nitem - nitemdrawn).max(0));
-            (true, nitemdrawn, maxwid + menu::GAP + menu::SCROLLWID, off, lasthit - off)
-        } else {
-            (false, nitem, maxwid, 0, lasthit)
-        };
-        let (mx, my) = self.row_pt(at);
-        // r = insetrect(Rect(0,0,wid,n*ih), -Margin), moved so item lasti is centred on the pointer
-        let mut r = tiling::Rect::new(-menu::MARGIN, -menu::MARGIN, wid + menu::MARGIN, nitemdrawn * ih + menu::MARGIN);
-        let (dx, dy) = (mx - wid / 2, my - (lasti * ih + fh / 2));
-        r = tiling::Rect::new(r.x0 + dx, r.y0 + dy, r.x1 + dx, r.y1 + dy);
-        let mut px_ = 0;
-        let mut py_ = 0;
-        if r.x1 > screen.x1 {
-            px_ = screen.x1 - r.x1;
-        }
-        if r.y1 > screen.y1 {
-            py_ = screen.y1 - r.y1;
-        }
-        if r.x0 < screen.x0 {
-            px_ = screen.x0 - r.x0;
-        }
-        if r.y0 < screen.y0 {
-            py_ = screen.y0 - r.y0;
-        }
-        let menur = tiling::Rect::new(r.x0 + px_, r.y0 + py_, r.x1 + px_, r.y1 + py_);
-        let textr = tiling::Rect::new(menur.x1 - menu::MARGIN - maxwid, menur.y0 + menu::MARGIN, menur.x1 - menu::MARGIN, menur.y0 + menu::MARGIN + nitemdrawn * ih);
-        let scrollr = if scrolling { tiling::Rect::new(menur.x0 + menu::BORDER, menur.y0 + menu::BORDER, menur.x0 + menu::BORDER + menu::SCROLLWID, menur.y1 - menu::BORDER) } else { tiling::Rect::new(0, 0, 0, 0) };
-        let m = menu::Menu { window: w, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih };
+        let m = menu::Menu::place(w, items, checked, maxwid, self.row_pt(at), self.node.state.layout.r);
         // moveto: the pointer onto the item, so a click alone repeats it
-        let ir = m.item_rect(lasti);
-        let center = point(px(((ir.x0 + ir.x1) / 2) as f32), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
+        let ir = m.item_rect(m.lasti);
+        let center = point(px(((ir.x0 + ir.x1) / 2) as f32 + self.left()), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
         crate::warp::move_to(window, center);
         self.pointer = Some(center);
         self.last_mouse = center;
@@ -3782,6 +3961,9 @@ impl Acme {
 
     /// Keys go to the text under the pointer, as in acme.
     pub fn key_down(&mut self, e: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // typing: the caret solid while it goes on
+        self.caret_since = std::time::Instant::now();
+        self.caret_on = true;
         // ctrl-tab: the next session, switched to live, while control is
         // held; escape then goes back to where it began
         {
@@ -3796,10 +3978,21 @@ impl Acme {
                 }
                 return;
             }
+            if self.stash_walk.is_some() {
+                if ks.key == "escape" {
+                    self.stash_walk_cancel(cx);
+                }
+                return;
+            }
         }
         if self.finder.is_some() {
             let ks = &e.keystroke;
             self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
+            return;
+        }
+        if self.url_edit.is_some() {
+            let ks = &e.keystroke;
+            self.url_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
             return;
         }
         if self.selector.is_some() {
@@ -3902,7 +4095,7 @@ impl Acme {
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
         // an overlay (the session picker, the finder) has the keyboard:
         // the Edit menu works on its field, not on the text below
-        if self.selector.is_some() || self.finder.is_some() {
+        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() {
             self.overlay_edit(what, cx);
             return;
         }
