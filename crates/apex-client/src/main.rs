@@ -26,6 +26,7 @@ mod completion;
 mod glide;
 mod miniature;
 mod restart;
+mod strips;
 mod switcher;
 mod toasts;
 mod webbar;
@@ -299,6 +300,12 @@ impl Render for Acme {
             // the column on the ground: its windows are cards on it, the
             // ground showing between them where acme drew black borders
             area = area.child(fill(col.r.x0 as f32, col.r.y0 as f32, col.r.dx() as f32, col.r.dy() as f32, ground));
+            // put away: a strip, the edges of sheets on their sides, the
+            // whole of it the column's box (`strips.rs`)
+            if strip {
+                area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), col.r.dy(), self.strip_element(ci, cx)));
+                continue;
+            }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
             // the stash: the edges of the sheets put away, peeking out
             // under the column's windows as a stack of paper does, each
@@ -473,6 +480,10 @@ impl Render for Acme {
                     area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 }
             }
+        }
+        // a strip under the pointer: its column, live, beside it
+        if let Some(s) = self.strip_slice(&l, cx) {
+            area = area.child(s);
         }
         // errors just written, by their columns' feet
         for toast in self.toasts_overlay(&l, cx) {

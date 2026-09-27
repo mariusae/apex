@@ -562,8 +562,6 @@ pub struct Source {
     /// What a click would take here with the modifier held (⌘: B3's,
     /// ⌥: B2's), on a pill.
     pub hint: Option<(usize, usize, HlKind)>,
-    /// In a tag, the word the pointer is on, on a faint pill.
-    pub word_pill: Option<(usize, usize)>,
     pub want_visible: bool,
     /// Bring this position on screen when it is not: acme's `textshow`,
     /// the position `quarters` quarters of the window down (one for new
@@ -592,7 +590,6 @@ pub struct Prepaint {
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
     hint: Option<(usize, usize, HlKind)>,
-    word_pill: Option<(usize, usize)>,
     dirty: bool,
     stale: bool,
     live: bool,
@@ -868,7 +865,7 @@ impl Element for TextElement {
                     _ => Some(Tint { dir_end: 0, name_end: 0, rest }),
                 };
                 while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl, wrap, y, tint);
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint);
                     wrapped += li.subs.len().max(1);
                     y += li.height(lh);
                     lines.push(li);
@@ -893,7 +890,7 @@ impl Element for TextElement {
                     let mut y = -shift;
                     let mut n = first;
                     while y < height {
-                        let Some(mut li) = line(n, y, src.hl) else { break };
+                        let Some(mut li) = line(n, y, src.hl.or(src.hint)) else { break };
                         if n == first {
                             // the rows of the first line above the top one
                             // are above the view
@@ -988,7 +985,6 @@ impl Element for TextElement {
                 sel: src.sel,
                 hl: src.hl,
                 hint: src.hint,
-                word_pill: src.word_pill,
                 dirty: src.dirty,
                 stale: src.stale,
                 live: src.live,
@@ -1117,18 +1113,15 @@ impl Element for TextElement {
                         None => (0, 0, pal.sel),
                     },
                 ];
-                // pills under the text: what a click with ⌘ (B3, in the
-                // accent) or ⌥ (B2) held would take, else the word the
-                // pointer is on in a tag -- a faint one, saying it can be
-                // clicked
+                // a pill under what a click with ⌘ (B3) or ⌥ (B2) held
+                // would take, in that sweep's own colour, its text in the
+                // sweep's ink: what the click would drag, before it does
                 {
                     let th = crate::theme::theme();
-                    let under = if pp.kind == Kind::Body { th.body_bg } else if matches!(pp.kind, Kind::ColTag | Kind::Top) { ground(&th) } else { th.tag_bg };
-                    let pill = match (pp.hint, pp.word_pill) {
-                        (Some((a, b, HlKind::Look)), _) => Some((a, b, mix(under, th.accent, 0.22))),
-                        (Some((a, b, HlKind::Exec)), _) => Some((a, b, mix(under, th.text, 0.14))),
-                        (None, Some((a, b))) => Some((a, b, mix(under, th.text, 0.08))),
-                        _ => None,
+                    let pill = match pp.hint {
+                        Some((a, b, HlKind::Look)) => Some((a, b, th.look_hl)),
+                        Some((a, b, HlKind::Exec)) => Some((a, b, th.exec_hl)),
+                        None => None,
                     };
                     if let Some((a, b, color)) = pill {
                         let (lo, hi) = (a.max(line.start), b.min(line.end));

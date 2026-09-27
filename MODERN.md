@@ -181,10 +181,10 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   anything is swept: its release looks, or opens what the plumber finds.
 - **Pills.** ⌘ held puts what a ⌘-click (B3) would take under the
   pointer -- the selection when the pointer is in it, else the word it
-  would look for or open -- on a pill tinted with the accent, the pointer
-  a hand; ⌥ held, what a ⌥-click (B2) would run, on a neutral one. With
-  no modifier, the word the pointer is on in a tag sits on a faint pill,
-  saying it can be clicked.
+  would look for or open -- on a pill in B3's sweep colour, its text in
+  the sweep's ink, the pointer a hand; ⌥ held, what a ⌥-click (B2) would
+  run, on a pill in B2's. In tags as in bodies, and only with the
+  modifier held.
 - **Tag lines** are two pixels taller than a body's, the text centred in
   them (`TAG_PAD`): the tiling's font height is theirs.
 - **⌘⇧P** (`commands.rs`) is a palette of commands to run in the window
@@ -223,6 +223,15 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   puts the list away. One candidate is simply typed in, a directory with
   its slash, a file with a space after, as acme's ^F does. No more lists
   in +Errors.
+- **Columns answer as windows do.** B1 on a column's box grows it a
+  little; B2 puts the others away (strips), and B2 on the one column
+  with room brings them all back; B3 puts this one away, where it stands,
+  its width to its neighbours (the last with room gives way to the strip
+  nearest it). A strip is drawn as the edges of sheets on their sides,
+  and the whole of it is its column's box: B1 brings it back, B2 back
+  alone, a drag moves it. The pointer on a strip brings out a slice of
+  its column, live, as wide as it would come back (`strips.rs`); a click
+  there brings it back. B3 no longer gives a column the whole row.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the

@@ -478,6 +478,10 @@ pub struct Acme {
     pub sidebar_moved: Option<std::time::Instant>,
     /// When the pointer left it: it goes a tenth of a second after.
     pub sidebar_leaving: Option<std::time::Instant>,
+    /// The strip (a column put away) whose slice is out, by the pointer on
+    /// it, and when the pointer left it and its slice (`strips.rs`).
+    pub strip_open: Option<ColumnId>,
+    pub strip_leaving: Option<std::time::Instant>,
     /// The column whose stash is brought out, its tags shown over its
     /// foot: by the pointer resting on its sheets' edges a moment, and
     /// put away a moment after it leaves them.
@@ -570,8 +574,6 @@ pub struct Acme {
     scrolled_at: HashMap<ViewId, std::time::Instant>,
     /// ⌘ or ⌥ held over text: what a click would take there.
     pub hint: Option<(ViewId, usize, usize, HlKind)>,
-    /// The word the pointer is on in a tag, on a faint pill.
-    pub word_pill: Option<(ViewId, usize, usize)>,
     mouse: Mouse,
     want_visible: HashSet<ViewId>,
     typed_start: HashMap<ViewId, usize>,
@@ -1550,6 +1552,10 @@ impl Acme {
                                     if acme.stash_tick(p) {
                                         cx.notify();
                                     }
+                                    let held = acme.held_any();
+                                    if acme.strip_tick(p, held) {
+                                        cx.notify();
+                                    }
                                 }
                                 if acme.tabs_tick(cx) {
                                     cx.notify();
@@ -1605,6 +1611,8 @@ impl Acme {
             sidebar_moved: None,
             sidebar_leaving: None,
             stash_open: None,
+            strip_open: None,
+            strip_leaving: None,
             stash_leaving: None,
             lights_shown: None,
             native_bar_hidden: false,
@@ -1669,7 +1677,6 @@ impl Acme {
             hl: None,
             hint: None,
             hover_view: None,
-            word_pill: None,
             lane_hover: None,
             scroll_pos: HashMap::new(),
             scrolled_at: HashMap::new(),
@@ -1986,6 +1993,30 @@ impl Acme {
         matches!(self.mouse.box_drag, Some((BoxTarget::Edge(_), _, _)))
     }
 
+    /// A strip pressed: its column's box, as the column tag's box is.
+    pub fn press_col_box(&mut self, c: ColumnId, button: MouseButton, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.mouse.b1.is_none() {
+            self.mouse.box_drag = Some((BoxTarget::Col(c), button, pos));
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    /// Column `c` (a strip) brought back, as B1 on its box brings it.
+    pub fn bring_back_column(&mut self, c: ColumnId, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        let p = self.row_pt(pos);
+        let at = self.node.state.layout.column(c).map(|col| ((col.r.x0 + col.r.x1) / 2, p.1)).unwrap_or(p);
+        let _ = self.node.drag_column(&mut self.log, c, 1, at, at);
+        self.after();
+        cx.notify();
+    }
+
+    /// Any button or box held: nothing slides out under a drag.
+    fn held_any(&self) -> bool {
+        let m = &self.mouse;
+        m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some()
+    }
+
     /// The line on column `c`'s left pressed.
     pub fn press_edge(&mut self, c: ColumnId, pos: Point<Pixels>, cx: &mut Context<Self>) {
         if self.mouse.b1.is_none() {
@@ -2057,6 +2088,17 @@ impl Acme {
         let Some(p) = self.pending else { return };
         if self.warp_wait {
             return; // the frame after this one has the layouts to use
+        }
+        // the window gone to still on its way (`glide.rs`): its drawing is
+        // not where it lands yet, and the pointer goes where it lands
+        let onto = match p {
+            Pending::Warp(Warp::NewWindow(x) | Warp::WinButton(x) | Warp::Closed { next: Some(x), .. }) => Some(x),
+            Pending::Warp(Warp::Sel(v)) => v.window(),
+            _ => None,
+        };
+        if onto.is_some_and(|x| self.glide.gliding(x)) {
+            window.request_animation_frame();
+            return;
         }
         self.pending = None;
         let font = crate::text_element::tag_line_height();
@@ -2617,7 +2659,6 @@ impl Acme {
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         let hint = self.hint.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
-        let word_pill = self.word_pill.and_then(|(pv, lo, hi)| if pv == view { Some((lo, hi)) } else { None });
         // a body scrolled by the pixel: moved up by its scroll into the top
         // row, and down by any pull past the start; forgotten once the
         // session's origin is not the one it was scrolled from
@@ -2659,7 +2700,6 @@ impl Acme {
                 origin: 0,
                 hl: None,
             hint: None,
-                word_pill: None,
                 want_visible: false,
                 show_at: None,
             });
@@ -2694,7 +2734,6 @@ impl Acme {
             origin: v.origin,
             hl,
             hint,
-            word_pill,
             // a window on its way scrolls to what it must show once it lands
             want_visible: !view.window().is_some_and(|w| self.glide.gliding(w)) && self.want_visible.remove(&view),
             show_at: if view.window().is_some_and(|w| self.glide.gliding(w)) { None } else { self.show_at.remove(&view) },
@@ -3167,6 +3206,10 @@ impl Acme {
             cx.notify();
         }
         if self.stash_tick(pos) {
+            cx.notify();
+        }
+        let held = self.held_any();
+        if self.strip_tick(pos, held) {
             cx.notify();
         }
         if self.update_hint(pos) {
@@ -3950,21 +3993,8 @@ impl Acme {
             }
             _ => None,
         });
-        // no modifier: the word the pointer is on in a tag, which B2 (or
-        // B3) would take, on a faint pill
-        let pill = match (&new, held) {
-            (None, false) => match self.locate(pos) {
-                Some((Target::View(v @ (ViewId::Tag(_) | ViewId::ColTag(_) | ViewId::Top)), Region::Text(off))) => {
-                    let t = self.text_of(v);
-                    t.map(|t| expand(&t, off, is_exec_char)).filter(|(a, z)| a < z).map(|(a, z)| (v, a, z))
-                }
-                _ => None,
-            },
-            _ => None,
-        };
-        let changed = new != self.hint || pill != self.word_pill;
+        let changed = new != self.hint;
         self.hint = new;
-        self.word_pill = pill;
         changed
     }
 

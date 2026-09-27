@@ -301,17 +301,25 @@ impl Mini {
 /// Column `ci`'s windows as they stand, drawn small: its window space
 /// (below its tag) as content `w` by `h`, for ⌘E's card of what shows.
 pub fn snapshot_column(node: &Node, ci: usize, t: &Theme) -> Option<(Mini, f32)> {
+    snapshot_column_at(node, ci, None, t)
+}
+
+/// A column's windows as `snapshot_column` draws them, `width` wide when
+/// given -- a strip's, as it would stand brought back.
+pub fn snapshot_column_at(node: &Node, ci: usize, width: Option<f32>, t: &Theme) -> Option<(Mini, f32)> {
     let c = node.state.layout.cols.get(ci)?;
-    let font = f32::from(font_for(false).line_height);
+    let font = f32::from(crate::text_element::tag_line_height());
     let (x0, y0) = (c.r.x0 as f32, c.r.y0 as f32 + font);
-    let (w, h) = (c.r.dx() as f32, (c.r.y1 as f32 - y0).max(1.));
+    let (w, h) = (width.unwrap_or(c.r.dx() as f32), (c.r.y1 as f32 - y0).max(1.));
     let mut m = Mini { w, fills: vec![(0., 0., w, h, t.body_bg)], lines: Vec::new() };
     for s in &c.wins {
         let r = s.r;
         let tag_h = if s.body.dy() > 0 { s.body.y0 - r.y0 } else { r.dy() };
         m.fills.push((0., r.y0 as f32 - y0 - 1., w, 1., t.body_border));
-        let body = (s.body.dy() > 0).then(|| (s.body.x0 as f32 - x0, s.body.y0 as f32 - y0, s.body.dx() as f32, s.body.dy() as f32));
-        window_into(&mut m, node, s.window, (r.x0 as f32 - x0, r.y0 as f32 - y0, r.dx() as f32, tag_h as f32), body, t);
+        // across the whole width asked for: a strip's windows are its width
+        let body = (s.body.dy() > 0).then(|| (0., s.body.y0 as f32 - y0, w, s.body.dy() as f32));
+        let _ = x0;
+        window_into(&mut m, node, s.window, (0., r.y0 as f32 - y0, w, tag_h as f32), body, t);
     }
     Some((m, h))
 }
