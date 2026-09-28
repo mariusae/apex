@@ -742,8 +742,13 @@ fn shape(
     // a window's tag: its `|`, when it is on this line, a glyph left clear
     // for the hairline drawn in its place
     let bar = tint.and_then(|t| t.bar).filter(|&q| q >= start && q < end).map(|q| (info.to_disp(q), info.to_disp(q + 1)));
-    // and its name, in a pill, on the line it starts
+    // and its name, in a pill, on the line it starts; the space after the
+    // name set in the mono face, whose space is wider, for air between
+    // the pill and the first word (a real advance, so clicks and the
+    // caret agree with what is drawn)
     let pill = tint.filter(|t| start == 0 && t.name_end > 0).map(|t| at(t.name_end));
+    let gap = pill.filter(|&p| disp.as_bytes().get(p) == Some(&b' ')).map(|p| (p, p + 1));
+    let wide = font_for(true).font;
     let sweep = match hl {
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
@@ -752,6 +757,9 @@ fn shape(
     cuts.extend(dim);
     cuts.extend(dir);
     if let Some((a, b)) = bar {
+        cuts.extend([a, b]);
+    }
+    if let Some((a, b)) = gap {
         cuts.extend([a, b]);
     }
     if let Some((a, b)) = sweep {
@@ -784,7 +792,13 @@ fn shape(
         } else {
             black
         };
-        let face = if dim.is_some_and(|d| d > 0 && a < d) && !folder { strong.clone() } else { fontspec.font.clone() };
+        let face = if gap.is_some_and(|(p, q)| a >= p && b <= q) {
+            wide.clone()
+        } else if dim.is_some_and(|d| d > 0 && a < d) && !folder {
+            strong.clone()
+        } else {
+            fontspec.font.clone()
+        };
         runs.push(TextRun { len: b - a, font: face, color, background_color: None, underline: None, strikethrough: None });
         colors.push((a, b, color));
     }
@@ -928,7 +942,7 @@ impl Element for TextElement {
                 // the pointer is on the tag
                 let th = crate::theme::theme();
                 let under = if kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
-                let rest = if src.hovered { rgb(th.text_dim) } else { rgb(mix(th.text_dim, under, 0.45)) };
+                let rest = if src.hovered { rgb(mix(th.text_dim, under, 0.2)) } else { rgb(mix(th.text_dim, under, 0.5)) };
                 // the user's words, after the `|`: a step above apex's
                 let yours = rgb(th.text_dim);
                 let tint = match kind {
@@ -1208,7 +1222,7 @@ impl Element for TextElement {
                         let (a, b) = (ds, pe.min(de));
                         if a < b {
                             let sy = ly + lh * i as f32;
-                            let r = Bounds::from_corners(point(origin.x + x(a) - x(ds) - px(4.), sy + px(3.)), point(origin.x + x(b) - x(ds) + px(5.), sy + lh - px(3.)));
+                            let r = Bounds::from_corners(point(origin.x + x(a) - x(ds) - px(4.), sy + px(3.)), point(origin.x + x(b) - x(ds) + px(4.), sy + lh - px(3.)));
                             window.paint_quad(fill(r, tone).corner_radii(px(5.)));
                         }
                     }
