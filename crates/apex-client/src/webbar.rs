@@ -163,6 +163,7 @@ impl Acme {
             .flex_row()
             .items_center()
             .gap(px(2.))
+            .pr(px(6.))
             .bg(rgb(bg))
             .border_b_1()
             .border_color(rgb(t.body_border))
@@ -172,7 +173,6 @@ impl Acme {
             .child(button("web-fwd", "›", Nav::Fwd))
             .child(div().w(px(4.)))
             .child(pill)
-            .child(self.close_button(w, h, cx))
             .into_any_element()
     }
 }

@@ -382,10 +382,7 @@ impl Render for Acme {
                     // its address, in the tag's place
                     area = area.child(at(tx, ty, tw, th, self.web_header(w, th as f32, cx)));
                 } else {
-                    // the close button (×) at the tag's right end, on its
-                    // first line (the line centred in a folded card)
-                    let close = div().absolute().right(px(0.)).top(px(((th - font) as f32 / 2.).min(0.))).child(self.close_button(w, font as f32, cx));
-                    area = area.child(at(tx, ty, tw, th, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))).child(close));
+                    area = area.child(at(tx, ty, tw, th, TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 }
                 // the window the keys go to: a soft ring round its card,
                 // drawn over it once every window is
@@ -510,8 +507,7 @@ impl Render for Acme {
                 let card = div().size_full().bg(gpui::rgb(t.body_bg)).rounded_t(px(9.)).shadow(vec![shadow]).child(self.overlay_mark());
                 area = area.child(at(band.x0, top, band.dx(), band.y1 - top, card.into_any_element()).cursor(hold(CursorStyle::Arrow)));
                 for (w, r) in rows {
-                    let close = div().absolute().right(px(0.)).top(px(0.)).child(self.close_button(w, font as f32, cx));
-                    area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))).child(close));
+                    area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
                 }
             }
         }

@@ -499,7 +499,7 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
         type_(&mut server, &mut log, &format!("printf '\\033]2;renaming...{i} | proj\\007'\r"));
         assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-renaming...{i}␣proj", b.display())), "name: {}", name(&node));
         node.update_tags(&mut log).unwrap();
-        assert_eq!(tag(&node), format!("{}/-renaming...{i}␣proj Snarf Send | Look ", b.display()), "the tag grew");
+        assert_eq!(tag(&node), format!("{}/-renaming...{i}␣proj Del Snarf Send | Look ", b.display()), "the tag grew");
     }
     // the labels never reached the screen
     assert!(!rows(&node).contains("\u{1b}"));
@@ -794,7 +794,7 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().contains(" Back Fwd Get "));
     // and winsettag keeps them there
     node.update_tags(&mut log).unwrap();
-    assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().starts_with("https://example.com/ Snarf Back Fwd Get |"));
+    assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().starts_with("https://example.com/ Del Snarf Back Fwd Get |"));
     // selected in a text window: a file:// URL and a bare path are the host's files
     let t = node.new_window(&mut log, col, "/tmp/here/notes.txt", "see file:///tmp/a.html and also doc.html\n").unwrap();
     node.select(&mut log, ViewId::Body(t), 4, 22).unwrap();

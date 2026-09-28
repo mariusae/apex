@@ -648,7 +648,7 @@ impl Tool {
     }
 
     /// The user's half of the window's tag: what follows `|`. The words
-    /// before it are apex's own (`Snarf Undo Put` ...), kept up to
+    /// before it are apex's own (`Del Snarf Undo Put` ...), kept up to
     /// date by the leader; what comes after is whoever's wrote it.
     pub fn tag(&self, w: WindowId) -> Result<String> {
         let b = self.tag_of(w)?;

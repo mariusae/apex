@@ -275,21 +275,19 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   page changes.
 - **A tag in three parts**, drawn from its text (which stays one text,
   swept, typed and `Edit`ed across as ever): the window's name (its
-  path) in a pill, as a page's header has its address, the folder dim
-  and the last part strong; then apex's words (`Snarf Undo Put`...),
-  faint until the pointer is on the tag; then the `|`, drawn as a
-  hairline as tall as the ink (the character still there, only not
-  drawn); then the user's words, a step stronger than apex's.
-- **A close button** (`Acme::close_button`): a × at the right end of
-  every window's tag (and a page's header, and a stashed window's tag
-  brought out), on its first line. It is only `Del`: B1 or B2 on it runs
-  `Del` in the window's tag, as B2 on the word does, a modified window's
-  warning and all. A tag's text wraps short of it, every line, so a
-  tag of several lines flows round it and the tiling counts the lines
-  it wraps to. A tag no longer carries `Del` (typed, it still works):
-  the × is it. A window closed (by its × or a `Del`) sends the pointer
-  to the next window's × -- acme's move to the next `Del` -- so
-  clicking on closes one after another.
+  path), the folder dim and the last part strong, a wider space after
+  it; then apex's words, faint until the pointer is on the tag; then
+  the `|`, drawn as a hairline as tall as the ink (the character still
+  there, only not drawn); then the user's words, a step stronger.
+- **apex's verbs as icons** (`VERB_ICONS`): the words apex keeps before
+  the `|` -- `Del` (×), `Snarf` (copy), `Undo` and `Redo` (curved
+  arrows), `Put` (into a tray), `Get` (reload), `Send` (a paper plane),
+  `Back` and `Fwd` (chevrons) -- are drawn as icons where the words
+  stand. Only drawn: each word is laid out as one em space with its
+  icon on it, and an offset in the word is at the icon's start or end,
+  so a click, a sweep, B2 and B3 and the ⌘/⌥ pill take the word as ever.
+  A word apex does not know stays a word. After a window closes, the
+  pointer goes to the next window's `Del`, as acme's does.
 - **Columns answer as windows do.** B1 on a column's box grows it a
   little. B2 maximizes it: the others minimized where they stand, as a
   maximized window leaves the others their tags, each remembering its

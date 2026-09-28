@@ -58,9 +58,37 @@ pub fn tag_line_height() -> Pixels {
 /// The radius of a card's corners (a window on the ground).
 pub const CARD_RADIUS: f32 = 7.;
 
-/// The window's close button (×) at its tag's right end: how wide it is,
-/// which a tag's text wraps short of.
-pub const CLOSE_W: f32 = 22.;
+
+/// apex's verbs in a window's tag (the words before its `|`), drawn as
+/// icons: each word laid out as one em space, an icon painted over it.
+/// Only a synonym, drawn: the text is the word, and a click, a sweep, B2
+/// and B3 take it as the word.
+pub const VERB_ICONS: &[(&str, &str)] = &[
+    ("Del", r#"<path d="M7 7l10 10M17 7L7 17"/>"#),
+    ("Snarf", r#"<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>"#),
+    ("Undo", r#"<path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/>"#),
+    ("Redo", r#"<path d="M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3"/>"#),
+    ("Put", r#"<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>"#),
+    ("Get", r#"<path d="M20 11a8 8 0 0 0-14.9-4M4 4v4h4M4 13a8 8 0 0 0 14.9 4M20 20v-4h-4"/>"#),
+    ("Send", r#"<path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/>"#),
+    ("Back", r#"<path d="M15 6l-6 6 6 6"/>"#),
+    ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
+];
+
+/// The icon of verb `i` as an SVG document, stroked, for `paint_svg`
+/// (which draws its shape in the ink it is given).
+fn verb_svg(i: usize) -> &'static [u8] {
+    thread_local! {
+        static SVGS: Vec<&'static [u8]> = VERB_ICONS
+            .iter()
+            .map(|(_, body)| &*Box::leak(format!(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{body}</svg>"#).into_bytes().into_boxed_slice()))
+            .collect();
+    }
+    SVGS.with(|v| v[i])
+}
+
+/// The em space a verb's icon stands on.
+const ICON_CELL: char = '\u{2003}';
 
 pub fn ground(t: &crate::theme::Theme) -> u32 {
     if crate::theme::is_dark() {
@@ -427,11 +455,11 @@ pub struct LineInfo {
     pub y: Pixels,
     pub subs: Vec<(usize, usize)>,
     pub colors: Vec<(usize, usize, Hsla)>,
-    /// A window's tag: where its name (the path) ends on this line, which
-    /// is drawn in a pill, and where its `|` is, drawn as a hairline --
-    /// display offsets; the text is the tag's as ever.
-    pub pill: Option<usize>,
+    /// A window's tag: where its `|` is, drawn as a hairline, and where its
+    /// verbs' icons stand (`VERB_ICONS`) -- display offsets; the text is
+    /// the tag's as ever.
     pub bar: Option<usize>,
+    pub icons: Vec<(usize, usize)>,
 }
 
 impl LineInfo {
@@ -535,6 +563,52 @@ impl TextLayout {
 }
 
 /// Expand tabs and build the display-byte to rune map.
+/// `expand`, and each verb in `icons` (its runes `ws..we`, which icon)
+/// laid out as one em space: every byte of it the word's start, the byte
+/// after it the word's end, so an offset in the word is at the icon's
+/// start or end. Where each icon stands, in display bytes.
+fn expand_icons(src: &str, start: usize, icons: &[(usize, usize, usize)]) -> (String, Vec<usize>, Vec<(usize, usize)>) {
+    if icons.is_empty() {
+        let (d, m) = expand(src, start);
+        return (d, m, Vec::new());
+    }
+    let (mut out, mut map, mut at) = (String::new(), Vec::new(), Vec::new());
+    let chars: Vec<char> = src.chars().collect();
+    let mut k = 0;
+    let mut col = 0;
+    while k < chars.len() {
+        let r = start + k;
+        if let Some(&(_, we, i)) = icons.iter().find(|&&(ws, we, _)| ws == r && we <= start + chars.len()) {
+            at.push((out.len(), i));
+            out.push(ICON_CELL);
+            for _ in 0..ICON_CELL.len_utf8() {
+                map.push(r);
+            }
+            col += 1;
+            k = we - start;
+            continue;
+        }
+        let c = chars[k];
+        if c == '\t' {
+            let n = TABSTOP - col % TABSTOP;
+            for _ in 0..n {
+                out.push(' ');
+                map.push(r);
+            }
+            col += n;
+        } else {
+            out.push(c);
+            for _ in 0..c.len_utf8() {
+                map.push(r);
+            }
+            col += 1;
+        }
+        k += 1;
+    }
+    map.push(start + chars.len());
+    (out, map, at)
+}
+
 fn expand(src: &str, start: usize) -> (String, Vec<usize>) {
     let mut out = String::with_capacity(src.len() + 8);
     let mut map = Vec::with_capacity(src.len() + 8);
@@ -658,7 +732,7 @@ pub struct Prepaint {
 fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, q: usize, room: Pixels, height: Pixels) -> usize {
     let lh = fontspec.line_height;
     let text_len = text.len();
-    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.), None));
+    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.), None, &[]));
     let cl = text.line_of(q.min(text_len));
     let Some(li) = line(cl) else { return 0 };
     let r = li.row_of(q);
@@ -711,8 +785,9 @@ fn shape(
     wrap_width: Option<Pixels>,
     y: Pixels,
     tint: Option<Tint>,
+    icons: &[(usize, usize, usize)],
 ) -> LineInfo {
-    let (disp, map) = expand(line_text, start);
+    let (disp, map, icon_at) = expand_icons(line_text, start, icons);
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
     let white = rgb(crate::theme::theme().sweep_text);
@@ -730,8 +805,8 @@ fn shape(
         y,
         subs: Vec::new(),
         colors: Vec::new(),
-        pill: None,
         bar: None,
+        icons: Vec::new(),
     };
     // the line cut where its ink or face changes: the sweep, and a tag's
     // parts -- its name's directory, its last part, the commands after
@@ -742,12 +817,11 @@ fn shape(
     // a window's tag: its `|`, when it is on this line, a glyph left clear
     // for the hairline drawn in its place
     let bar = tint.and_then(|t| t.bar).filter(|&q| q >= start && q < end).map(|q| (info.to_disp(q), info.to_disp(q + 1)));
-    // and its name, in a pill, on the line it starts; the space after the
-    // name set in the mono face, whose space is wider, for air between
-    // the pill and the first word (a real advance, so clicks and the
-    // caret agree with what is drawn)
-    let pill = tint.filter(|t| start == 0 && t.name_end > 0).map(|t| at(t.name_end));
-    let gap = pill.filter(|&p| disp.as_bytes().get(p) == Some(&b' ')).map(|p| (p, p + 1));
+    // the space after its name set in the mono face, whose space is
+    // wider, for air between the path and the first word (a real
+    // advance, so clicks and the caret agree with what is drawn)
+    let name_at = tint.filter(|t| start == 0 && t.name_end > 0).map(|t| at(t.name_end));
+    let gap = name_at.filter(|&p| disp.as_bytes().get(p) == Some(&b' ')).map(|p| (p, p + 1));
     let wide = font_for(true).font;
     let sweep = match hl {
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
@@ -807,8 +881,8 @@ fn shape(
         colors.push((0, 0, black));
     }
     info.colors = colors;
-    info.pill = pill;
     info.bar = bar.map(|(p, _)| p);
+    info.icons = icon_at;
     let shaped = window
         .text_system()
         .shape_text(disp.clone(), fontspec.size, &runs, wrap_width, None)
@@ -917,11 +991,7 @@ impl Element for TextElement {
                 fontspec.line_height = tag_line_height();
             }
             let lh = fontspec.line_height;
-            // a window's tag wraps short of its close button (×), every
-            // line of it, so none runs under the button; the lines it
-            // wraps to are what the tiling is told (`tags`)
-            let close = if kind == Kind::WinTag { px(CLOSE_W) } else { px(0.) };
-            let wrap = Some((bounds.size.width - px(MARGIN) - px(4.) - close).max(px(10.)));
+            let wrap = Some((bounds.size.width - px(MARGIN) - px(4.)).max(px(10.)));
             let height = bounds.size.height;
             let text = &src.text;
             let text_len = text.len();
@@ -945,6 +1015,7 @@ impl Element for TextElement {
                 let rest = if src.hovered { rgb(mix(th.text_dim, under, 0.2)) } else { rgb(mix(th.text_dim, under, 0.5)) };
                 // the user's words, after the `|`: a step above apex's
                 let yours = rgb(th.text_dim);
+                let mut icons: Vec<(usize, usize, usize)> = Vec::new();
                 let tint = match kind {
                     Kind::WinTag => {
                         let whole = text.to_string();
@@ -953,12 +1024,30 @@ impl Element for TextElement {
                         let trimmed = name.trim_end_matches('/');
                         let dir_end = trimmed.rfind('/').map(|i| trimmed[..=i].chars().count()).unwrap_or(0);
                         let bar = whole[name.len()..].find('|').map(|i| whole[..name.len() + i].chars().count());
+                        // apex's verbs, between the name and the `|` (or the
+                        // end): drawn as icons
+                        let till = bar.unwrap_or(whole.chars().count());
+                        let chars: Vec<char> = whole.chars().collect();
+                        let mut q = name_end;
+                        while q < till {
+                            while q < till && chars[q].is_whitespace() {
+                                q += 1;
+                            }
+                            let ws = q;
+                            while q < till && !chars[q].is_whitespace() {
+                                q += 1;
+                            }
+                            let word: String = chars[ws..q].iter().collect();
+                            if let Some(i) = VERB_ICONS.iter().position(|(v, _)| *v == word) {
+                                icons.push((ws, q, i));
+                            }
+                        }
                         Some(Tint { dir_end, name_end, rest, bar, yours })
                     }
                     _ => Some(Tint { dir_end: 0, name_end: 0, rest, bar: None, yours }),
                 };
                 while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint);
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, &icons);
                     wrapped += li.subs.len().max(1);
                     y += li.height(lh);
                     lines.push(li);
@@ -971,7 +1060,7 @@ impl Element for TextElement {
                 // line -- the view starts at the row it is on, the line
                 // wrapped from its own start whatever row is at the top --
                 // and down the rows to the bottom
-                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y, None));
+                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y, None, &[]));
                 let mut top = src.origin.min(text_len);
                 // a view being brought somewhere is at its row, not between;
                 // one whose selection is in view already (typing) stays
@@ -1213,20 +1302,6 @@ impl Element for TextElement {
                         None => (0, 0, pal.sel),
                     },
                 ];
-                // a window's tag: its path in a pill, as a page's header
-                // has its address
-                if let Some(pe) = line.pill.filter(|&e| e > 0) {
-                    let th = crate::theme::theme();
-                    let tone = rgb(crate::theme::step(th.tag_bg, 1));
-                    for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                        let (a, b) = (ds, pe.min(de));
-                        if a < b {
-                            let sy = ly + lh * i as f32;
-                            let r = Bounds::from_corners(point(origin.x + x(a) - x(ds) - px(4.), sy + px(3.)), point(origin.x + x(b) - x(ds) + px(4.), sy + lh - px(3.)));
-                            window.paint_quad(fill(r, tone).corner_radii(px(5.)));
-                        }
-                    }
-                }
                 // a pill under what a click with ⌘ (B3) or ⌥ (B2) held
                 // would take, in that sweep's own colour, its text in the
                 // sweep's ink: what the click would drag, before it does
@@ -1287,6 +1362,18 @@ impl Element for TextElement {
                 }
 
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
+                // apex's verbs, drawn as their icons on their em spaces, in
+                // the ink the word would have (faint, swept, hinted)
+                for &(d, i) in &line.icons {
+                    let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
+                    let (ds, _) = line.subs[sub];
+                    let (x0, x1) = (origin.x + x(d) - x(ds), origin.x + x(d + ICON_CELL.len_utf8()) - x(ds));
+                    let side = pp.fontspec.size.min(lh - px(4.));
+                    let c = point((x0 + x1) / 2., ly + lh * sub as f32 + lh / 2.);
+                    let ink = line.colors.iter().find(|&&(a, b, _)| d >= a && d < b).map(|c| c.2).unwrap_or_else(|| rgb(crate::theme::theme().text_dim));
+                    let name: SharedString = format!("apex-verb-{i}.svg").into();
+                    let _ = window.paint_svg(Bounds::new(point(c.x - side / 2., c.y - side / 2.), size(side, side)), name, Some(verb_svg(i)), gpui::TransformationMatrix::unit(), ink, cx);
+                }
                 // the tag's `|`, drawn as a hairline as tall as the ink
                 if let Some(d) = line.bar {
                     let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
@@ -1346,9 +1433,7 @@ impl Element for TextElement {
                 const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
                 let fh = (lh - px(2.)).min(px(15.));
                 let fw = fh * (201. / 259.);
-                // left of a window's close button
-                let close = if pp.kind == Kind::WinTag { px(CLOSE_W) } else { px(0.) };
-                let at = point(bounds.right() - close - px(8.) - fw, origin.y + (lh - fh) / 2.);
+                let at = point(bounds.right() - px(8.) - fw, origin.y + (lh - fh) / 2.);
                 // the patch stops short of the right edge, a sheet's line
                 window.paint_quad(fill(Bounds::new(point(at.x - px(5.), bounds.top() + px(2.)), size(fw + px(9.), lh - px(2.))), header_bg));
                 let _ = window.paint_svg(Bounds::new(at, size(fw, fh)), "pjw.svg".into(), Some(PJW), gpui::TransformationMatrix::unit(), rgb(th.accent), cx);
@@ -1446,5 +1531,28 @@ mod ligature_tests {
                 assert!(off.contains(&(tag.to_string(), 0)), "{tag} off in {} ({off:?})", f.family);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod icon_tests {
+    use super::{expand_icons, ICON_CELL};
+
+    #[test]
+    fn verbs_laid_out_as_icons_keep_their_words() {
+        // "/a Del Snarf | Look": Del (runes 3..6) and Snarf (7..12) as icons
+        let (disp, map, at) = expand_icons("/a Del Snarf | Look", 0, &[(3, 6, 0), (7, 12, 1)]);
+        let cell = ICON_CELL.len_utf8();
+        assert_eq!(disp, format!("/a {ICON_CELL} {ICON_CELL} | Look"));
+        assert_eq!(at, vec![(3, 0), (3 + cell + 1, 1)]);
+        // every byte of an icon is its word's start, the byte after it the
+        // word's end: an offset in the word is at the icon's start or end
+        assert!(map[3..3 + cell].iter().all(|&r| r == 3));
+        assert_eq!(map[3 + cell], 6);
+        let snarf = 3 + cell + 1;
+        assert!(map[snarf..snarf + cell].iter().all(|&r| r == 7));
+        assert_eq!(map[snarf + cell], 12);
+        assert_eq!(*map.last().unwrap(), 19);
+        assert_eq!(map.len(), disp.len() + 1);
     }
 }

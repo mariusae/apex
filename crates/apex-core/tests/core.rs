@@ -467,7 +467,7 @@ fn errors_go_to_the_directory_window_in_the_last_column() {
     // its tag has no Undo/Put words (acme: filemenu off), and Del never asks
     node.update_tags(&mut log).unwrap();
     let tag = node.state.buffer(node.state.window(e).unwrap().tag).unwrap().text.to_string();
-    assert!(tag.starts_with("/tmp/proj/+Errors Snarf |"), "{tag}");
+    assert!(tag.starts_with("/tmp/proj/+Errors Del Snarf |"), "{tag}");
     assert!(matches!(node.exec(&mut log, ExecCtx::Window(e), "Del").unwrap(), Executed::Done(_)));
     assert!(node.state.window(e).is_err());
     // no directory: plain +Errors
@@ -593,7 +593,7 @@ fn a_name_with_a_bar_does_not_grow_the_tag() {
         node.update_tags(&mut log).unwrap();
     }
     assert_eq!(tag(&node), once, "the tag grew");
-    assert!(once.starts_with("/tmp/proj/a|b.txt Snarf |"), "{once}");
+    assert!(once.starts_with("/tmp/proj/a|b.txt Del Snarf |"), "{once}");
 }
 
 #[test]
