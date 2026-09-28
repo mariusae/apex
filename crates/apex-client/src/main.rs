@@ -996,8 +996,10 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
 /// row (the card is 6 in from the window's top), their own 13 centred in
 /// its 40. The glass panel's stand-ins go where these are.
 pub(crate) fn main_lights_y() -> f32 {
-    // AppKit's buttons are 14 high in their frames: centred on the bar
-    (title_h() - 14.) / 2.
+    // AppKit's buttons are 16 high in their frames (the circle in the
+    // middle of it): centred on the bar, as the sidebar's button and the
+    // top tag are
+    (title_h() - 16.) / 2.
 }
 
 /// The title bar's height: a Mac title bar's with a toolbar's air, or the
