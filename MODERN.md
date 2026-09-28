@@ -264,6 +264,16 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   when too long, since a path's end says most). Only with two headings or more; it hangs off the page's
   root, so the live morph leaves it be, and is laid out again as the
   page changes.
+- **A close button** (`Acme::close_button`): a × at the right end of
+  every window's tag (and a page's header, and a stashed window's tag
+  brought out), on its first line. It is only `Del`: B1 or B2 on it runs
+  `Del` in the window's tag, as B2 on the word does, a modified window's
+  warning and all. A tag's text wraps short of it, every line, so a
+  tag of several lines flows round it and the tiling counts the lines
+  it wraps to. A window closed by its × sends the pointer to the next
+  window's × (acme's move to the next `Del`), so clicking on closes
+  one after another; closed by `Del`, the pointer goes to the next
+  one's `Del` as ever.
 - **Columns answer as windows do.** B1 on a column's box grows it a
   little. B2 maximizes it: the others minimized where they stand, as a
   maximized window leaves the others their tags, each remembering its

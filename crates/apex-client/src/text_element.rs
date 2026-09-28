@@ -58,6 +58,10 @@ pub fn tag_line_height() -> Pixels {
 /// The radius of a card's corners (a window on the ground).
 pub const CARD_RADIUS: f32 = 7.;
 
+/// The window's close button (×) at its tag's right end: how wide it is,
+/// which a tag's text wraps short of.
+pub const CLOSE_W: f32 = 22.;
+
 pub fn ground(t: &crate::theme::Theme) -> u32 {
     if crate::theme::is_dark() {
         mix(t.body_bg, 0x000000, 0.28)
@@ -872,7 +876,11 @@ impl Element for TextElement {
                 fontspec.line_height = tag_line_height();
             }
             let lh = fontspec.line_height;
-            let wrap = Some((bounds.size.width - px(MARGIN) - px(4.)).max(px(10.)));
+            // a window's tag wraps short of its close button (×), every
+            // line of it, so none runs under the button; the lines it
+            // wraps to are what the tiling is told (`tags`)
+            let close = if kind == Kind::WinTag { px(CLOSE_W) } else { px(0.) };
+            let wrap = Some((bounds.size.width - px(MARGIN) - px(4.) - close).max(px(10.)));
             let height = bounds.size.height;
             let text = &src.text;
             let text_len = text.len();
@@ -1270,7 +1278,9 @@ impl Element for TextElement {
                 const PJW: &[u8] = include_bytes!("../assets/pjw.svg");
                 let fh = (lh - px(2.)).min(px(15.));
                 let fw = fh * (201. / 259.);
-                let at = point(bounds.right() - px(8.) - fw, origin.y + (lh - fh) / 2.);
+                // left of a window's close button
+                let close = if pp.kind == Kind::WinTag { px(CLOSE_W) } else { px(0.) };
+                let at = point(bounds.right() - close - px(8.) - fw, origin.y + (lh - fh) / 2.);
                 // the patch stops short of the right edge, a sheet's line
                 window.paint_quad(fill(Bounds::new(point(at.x - px(5.), bounds.top() + px(2.)), size(fw + px(9.), lh - px(2.))), header_bg));
                 let _ = window.paint_svg(Bounds::new(at, size(fw, fh)), "pjw.svg".into(), Some(PJW), gpui::TransformationMatrix::unit(), rgb(th.accent), cx);
