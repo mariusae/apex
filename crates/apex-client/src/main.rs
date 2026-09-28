@@ -1132,7 +1132,9 @@ impl app::Acme {
             .bg(gpui::rgb(text_element::ground(&t)))
             .border_b(px(0.5))
             .border_color(gpui::rgb(t.body_border))
-            .child(bare("title-lights").w(px(LIGHTS_W)))
+            // the window's buttons' room; in full screen AppKit takes them
+            // away, and the rest moves up to the edge
+            .child(bare("title-lights").w(px(if self.fullscreen { 8. } else { LIGHTS_W })))
             .child(toggle)
             .child(bare("title-gap0").w(px(6.)))
             // the session: its name (a click to rename it), the chevron
