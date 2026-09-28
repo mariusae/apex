@@ -2140,34 +2140,26 @@ impl Acme {
             Pending::Warp(Warp::Sel(v)) => v.window(),
             _ => None,
         };
-        if onto.is_some_and(|x| self.glide.gliding(x)) {
-            // a window's box clicked: the pointer rides on its handle all
-            // the way, as it stays on a column's box
-            if let (Pending::Warp(Warp::WinButton(_)), Some(r)) = (p, onto.and_then(|x| self.glide.drawn_at(x))) {
-                let fonti = f32::from(crate::text_element::tag_line_height()) as i32;
-                let at = point(px((r.x0 + SCROLLWID / 2) as f32 + self.left()), px((r.y0 + fonti / 2) as f32 + self.top()));
-                crate::warp::move_to(window, at);
-                self.pointer = Some(at);
-                self.last_mouse = at;
-            }
-            window.request_animation_frame();
-            return;
-        }
-        self.pending = None;
+        // on its way, the pointer rides along with it, each frame where it
+        // is drawn, so it is where it lands the moment it lands: its box,
+        // the next Del after a close, a selection
+        let gliding = onto.is_some_and(|x| self.glide.gliding(x));
         let font = crate::text_element::tag_line_height();
         let fonti = f32::from(font) as i32;
         let l = &self.node.state.layout;
         let (top, left) = (self.top(), self.left());
         let row = |x: i32, y: i32| point(px(x as f32 + left), px(y as f32 + top));
+        // where window `w` is drawn: on its way, where it has got to
+        let drawn = |w: WindowId| l.slot(w).map(|s| (self.glide.drawn_at(w).filter(|_| gliding).unwrap_or(s.r), s));
         let target = match p {
             Pending::Restore(at) => Some(at),
-            Pending::Warp(Warp::NewWindow(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
-            Pending::Warp(Warp::WinButton(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID / 2, s.r.y0 + fonti / 2)),
+            Pending::Warp(Warp::NewWindow(w)) => drawn(w).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1(fonti) - s.r.y0) + 3)),
+            Pending::Warp(Warp::WinButton(w)) => drawn(w).map(|(r, _)| row(r.x0 + SCROLLWID / 2, r.y0 + fonti / 2)),
             Pending::Warp(Warp::ColButton(c)) => l.column(c).map(|c| row(c.r.x0 + SCROLLWID / 2, c.r.y0 + fonti / 2)),
             Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
                 // movetodel: onto the next window's Del (its first word
                 // after the name, drawn as an icon), so a click closes
-                // that one too
+                // that one too -- as the last frame drew it
                 let tag = self.node.state.window(w).ok().map(|x| x.tag);
                 let text = tag.and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
                 let n = text.chars().position(|c| c == ' ').map(|i| i + 1).unwrap_or(0);
@@ -2183,10 +2175,20 @@ impl Acme {
                     // layout to find the selection in: the top of it, where
                     // a new window is landed on, so a Goto to a terminal
                     // still arrives
-                    None => v.window().and_then(|w| l.slot(w)).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
+                    None => v.window().and_then(drawn).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1(fonti) - s.r.y0) + 3)),
                 }
             }
         };
+        if gliding {
+            if let Some(at) = target {
+                crate::warp::move_to(window, at);
+                self.pointer = Some(at);
+                self.last_mouse = at;
+            }
+            window.request_animation_frame();
+            return;
+        }
+        self.pending = None;
         if std::env::var_os("APEX_DEBUG_WARP").is_some() {
             let slot = match p {
                 Pending::Warp(Warp::NewWindow(w)) | Pending::Warp(Warp::WinButton(w)) => self.node.state.layout.slot(w).copied(),
