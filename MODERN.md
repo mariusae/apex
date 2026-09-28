@@ -53,8 +53,12 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   pointer, else the last selected in; none while apex is not in front)
   is the accent blue, a little wider, blinking as iOS's does -- solid for
   half a second after a key, a click or the pointer coming to it, then
-  on and off every 530 ms. A header's shows at its start too while it is
-  the one. The window is drawn again only when the caret changes.
+  on and off every 530 ms (View ▸ Blink Cursor off: steady). A
+  header's shows at its start too while it is the one. It is as tall
+  as the ink -- the tallest ascender to the deepest descender, a pixel
+  over each way -- centred on the line, not the line's height, which a
+  tag's air makes taller. The window is drawn again only when the caret
+  changes.
   A terminal's cursor is the same caret: the accent's, blinking, where
   the keys go, and the plain dark one where they do not (a hollow box
   once its program has ended).

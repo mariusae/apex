@@ -298,7 +298,7 @@ struct Subst {
 
 thread_local! {
     static SUBST: Cell<Option<Option<Subst>>> = const { Cell::new(None) };
-    static LIFT: std::cell::RefCell<std::collections::HashMap<(String, u32), f32>> = std::cell::RefCell::new(std::collections::HashMap::new());
+    static LIFT: std::cell::RefCell<std::collections::HashMap<(String, u32), (f32, f32)>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// How far a line's glyphs are lifted so their ink sits in the middle of
@@ -308,8 +308,14 @@ thread_local! {
 /// pixels. Measured once per face and size, from the tallest ascender
 /// and deepest descender among a few letters; to the device's pixel.
 fn ink_lift(window: &Window, fs: &FontSpec) -> Pixels {
+    ink(window, fs).0
+}
+
+/// `ink_lift`, and how tall the ink is, from the tallest ascender to the
+/// deepest descender: what a caret spans (a little more), not the line.
+fn ink(window: &Window, fs: &FontSpec) -> (Pixels, Pixels) {
     let key = (fs.font.family.to_string(), f32::from(fs.size).to_bits());
-    let lift = LIFT.with(|m| m.borrow().get(&key).copied()).unwrap_or_else(|| {
+    let (lift, tall) = LIFT.with(|m| m.borrow().get(&key).copied()).unwrap_or_else(|| {
         let ts = window.text_system();
         let id = ts.resolve_font(&fs.font);
         let (asc, desc) = (f32::from(ts.ascent(id, fs.size)), f32::from(ts.descent(id, fs.size)).abs());
@@ -318,11 +324,13 @@ fn ink_lift(window: &Window, fs: &FontSpec) -> Pixels {
         let top = bounds("bdfhklI").iter().map(|b| f32::from(b.origin.y + b.size.height)).fold(0., f32::max);
         let bottom = bounds("gjpqy").iter().map(|b| -f32::from(b.origin.y)).fold(0., f32::max);
         let lift = if top > 0. && bottom > 0. { (((asc - top) - (desc - bottom)) / 2.).clamp(0., f32::from(fs.line_height) / 4.) } else { 0. };
-        LIFT.with(|m| m.borrow_mut().insert(key, lift));
-        lift
+        let tall = if top > 0. && bottom > 0. { top + bottom } else { asc + desc };
+        LIFT.with(|m| m.borrow_mut().insert(key, (lift, tall)));
+        (lift, tall)
     });
     let scale = window.scale_factor();
-    px((lift * scale).round() / scale)
+    let snap = |v: f32| px((v * scale).round() / scale);
+    (snap(lift), snap(tall))
 }
 
 fn slashed_zero(window: &Window, cx: &App) -> Option<Subst> {
@@ -1240,10 +1248,15 @@ impl Element for TextElement {
                     let cx_ = origin.x + x(d) - x(ds);
                     let ty = ly + lh * sub as f32;
                     let th = crate::theme::theme();
+                    // as tall as the ink (ascender to descender) and a pixel
+                    // over each way, centred on the line as the ink is --
+                    // not the line's height, which a tag's air makes taller
+                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh - px(2.));
+                    let cy = ty + (lh - tall) / 2.;
                     if keys {
-                        window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), ty + px(1.)), size(px(2.), lh - px(2.))), rgb(th.accent)).corner_radii(px(1.)));
+                        window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), cy), size(px(2.), tall)), rgb(th.accent)).corner_radii(px(1.)));
                     } else {
-                        window.paint_quad(fill(Bounds::new(point(cx_, ty + px(2.)), size(px(1.5), lh - px(4.))), rgb(th.text)).corner_radii(px(0.75)));
+                        window.paint_quad(fill(Bounds::new(point(cx_, cy + px(0.5)), size(px(1.5), tall - px(1.))), rgb(th.text)).corner_radii(px(0.75)));
                     }
                 }
             }
