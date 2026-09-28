@@ -1144,8 +1144,11 @@ impl Element for TextElement {
             for line in &pp.lines {
                 let ly = origin.y + line.y;
                 let x = |d: usize| line.layout.unwrapped_layout.x_for_index(d);
+                // the selection a ⌘- or ⌥-click would take (the pointer
+                // on it): shown as the pill, not under it as the selection
+                let sel_is_pill = q0 < q1 && pp.hint.is_some_and(|(a, b, _)| (a, b) == (q0, q1));
                 let ranges: [(usize, usize, Hsla); 2] = [
-                    (q0, q1, pal.sel),
+                    if sel_is_pill { (0, 0, pal.sel) } else { (q0, q1, pal.sel) },
                     match pp.hl {
                         Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().exec_hl)),
                         Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().look_hl)),
