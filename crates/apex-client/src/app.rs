@@ -2428,6 +2428,8 @@ impl Acme {
                 self.sidebar_out = false;
                 self.sidebar_leaving = None;
                 self.sidebar_moved = Some(std::time::Instant::now());
+                // no row is under the pointer once it has gone
+                self.sidebar_hover = None;
                 true
             }
             Some(_) => false,

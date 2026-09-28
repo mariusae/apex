@@ -634,6 +634,11 @@ impl Acme {
     /// The pointer on a session's row in the sidebar (not the one shown):
     /// its window, live, beside the row, as ctrl-tab's cards draw it.
     pub fn session_preview(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        // only while the sidebar can be seen: put away, its glass panel
+        // stays (clear) and can still hear the pointer over its rows
+        if !self.sidebar_shown() && !self.sidebar_out {
+            return None;
+        }
         let id = self.sidebar_hover.filter(|id| *id != self.tab)?;
         let row = self.sidebar_rows.borrow().get(&id).copied()?;
         let t = crate::theme::theme();
