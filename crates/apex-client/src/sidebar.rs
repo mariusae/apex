@@ -11,7 +11,7 @@ use gpui::{div, prelude::*, px, rgb, BoxShadow, Context, FontWeight, MouseButton
 
 use crate::app::Acme;
 use crate::pool::Pool;
-use crate::shell::{pjw, SIDEBAR_HEADER};
+use crate::shell::pjw;
 use crate::theme;
 
 /// How far the card sits in from the window's edges.
@@ -184,40 +184,6 @@ impl Acme {
                 }),
             );
         list = list.child(new);
-        // the top: the window's buttons, and the one that puts the
-        // sidebar away; held anywhere else along it, the window moves
-        let toggle = div()
-            .id("sidebar-toggle")
-            .size(px(22.))
-            .rounded(px(5.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_default()
-            .hover(move |s| s.bg(rgb(hover)))
-            .child(sidebar_glyph(t.text_dim))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|_, _, _, cx| {
-                    crate::shell::toggle_sidebar(cx);
-                    cx.stop_propagation();
-                }),
-            );
-        let header = div()
-            .flex_none()
-            .h(px(SIDEBAR_HEADER))
-            .flex()
-            .items_center()
-            .justify_end()
-            .pr(px(8.))
-            .child(toggle)
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, window, cx| {
-                    this.drag_main(window);
-                    cx.stop_propagation();
-                }),
-            );
         let shadow = BoxShadow { color: gpui::hsla(0., 0., 0., if dark { 0.5 } else { 0.10 }), offset: gpui::point(px(0.), px(2.)), blur_radius: px(8.), spread_radius: px(0.), inset: false };
         // on glass (its own panel, the card alone): no card drawn, the
         // glass is it
@@ -238,7 +204,7 @@ impl Acme {
                     .flex()
                     .flex_col()
                     .pb(px(6.))
-                    .child(header)
+                    .pt(px(6.))
                     .child(list),
             )
             // a click in the sidebar is the sidebar's, not acme's
@@ -337,7 +303,7 @@ fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
 }
 
 /// The sidebar button's glyph: a window with a panel down its left.
-fn sidebar_glyph(ink: u32) -> impl IntoElement {
+pub fn sidebar_glyph(ink: u32) -> impl IntoElement {
     div()
         .w(px(15.))
         .h(px(12.))

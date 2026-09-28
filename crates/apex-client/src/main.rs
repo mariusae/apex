@@ -204,13 +204,16 @@ impl Render for Acme {
         // the panel has the window's buttons then
         let glass = self.glass_tick(slide, window, cx);
         let slide = slide.filter(|_| !glass);
-        let lights = side || (self.sidebar_out && !glass);
-        // every frame, the buttons as they are looked at (cheaply): AppKit
-        // can make them anew behind our back
-        web::set_traffic_lights(window, lights);
+        // the window's buttons, always on the title bar; every frame, as
+        // they are looked at (cheaply): AppKit can make them anew behind
+        // our back
+        web::set_traffic_lights(window, true);
         if slide.is_some_and(|t| t < 1.) {
             window.request_animation_frame();
         }
+        // the title bar over all of it, acme's row and a pinned sidebar
+        // under it
+        let root = root.pt(px(title_h()));
         let root = if side { root.flex_row().child(self.sidebar(false, cx)) } else { root };
         // ctrl-tab: the session just gone to sliding in over the one it
         // replaced, which slides out beside it
@@ -237,6 +240,7 @@ impl Render for Acme {
                 .child(spinner)
                 .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
             let root = root.child(blank.relative().left(px(slide_off)));
+            let root = root.child(self.title_bar(&me));
             let root = match outgoing {
                 Some(o) => root.child(o),
                 None => root,
@@ -306,7 +310,6 @@ impl Render for Acme {
         let mut area = rest(div().relative().left(px(slide_off))).overflow_hidden().cursor(pointer);
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
-        area = area.child(at(l.r.x0, l.r.y0, l.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::Top }.into_any_element()).cursor(hold(CursorStyle::Arrow)));
         // the ground the windows stand on, and the one the keys go to
         let ground = text_element::ground(&t);
         let key_window = self.key_window();
@@ -538,6 +541,7 @@ impl Render for Acme {
         let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
         let root = root.child(area);
+        let root = root.child(self.title_bar(&me));
         let root = match outgoing {
             Some(o) => root.child(o),
             None => root,
@@ -805,7 +809,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                 // on the sidebar card's top row, as Manifold puts them: the
                 // close button's middle 20 in from the card's edge and half
                 // the row down (the card is 6 in from the window's)
-                traffic_light_position: Some(gpui::point(px(19.), px(main_lights_y()))),
+                traffic_light_position: Some(gpui::point(px(14.), px(main_lights_y()))),
             }),
             // the title bar is ours: AppKit must not take a drag there as a
             // window move (a tab dragged reorders the tabs); the strip's
@@ -992,14 +996,24 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
 /// row (the card is 6 in from the window's top), their own 13 centred in
 /// its 40. The glass panel's stand-ins go where these are.
 pub(crate) fn main_lights_y() -> f32 {
-    6. + shell::SIDEBAR_HEADER / 2. - 6.5
+    (title_h() - 13.) / 2.
 }
+
+/// The title bar's height: the top row's line and the border under it.
+/// acme's area starts below it (`Acme::top`).
+pub(crate) fn title_h() -> f32 {
+    f32::from(text_element::tag_line_height()) + apex_core::tiling::BORDER as f32
+}
+
+/// Where the window's buttons end across the title bar: the sidebar's
+/// button after them.
+const LIGHTS_W: f32 = 76.;
 
 /// The floating sidebar over the content, `t` of the way in: from 24
 /// pixels to the left and faded, as Manifold's slides.
 fn floating_sidebar(sidebar: impl IntoElement, t: f32) -> impl IntoElement {
     use gpui::{div, px};
-    gpui::deferred(div().absolute().top(px(0.)).bottom(px(0.)).left(px(-24. * (1. - t))).opacity(t).child(sidebar)).with_priority(1)
+    gpui::deferred(div().absolute().top(px(title_h())).bottom(px(0.)).left(px(-24. * (1. - t))).opacity(t).child(sidebar)).with_priority(1)
 }
 
 /// The tools menu painted as a Mac context menu: the card rounded and
@@ -1065,4 +1079,63 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
         );
     }
     el.into_any_element()
+}
+
+impl app::Acme {
+    /// The title bar, as a Mac app's: the window's buttons (AppKit's, put
+    /// there), the sidebar's button, a divider, and the top row -- acme's
+    /// top tag, as editable as ever. Its bare parts move the window, and
+    /// a double click there zooms it, as a title bar's do; past the top
+    /// tag's text the tag's own click does (`mouse_down`).
+    fn title_bar(&self, me: &gpui::Entity<app::Acme>) -> gpui::AnyElement {
+        use gpui::{div, prelude::*, px, MouseButton};
+        let t = theme::theme();
+        let h = title_h();
+        let font = f32::from(text_element::tag_line_height());
+        let bare = |id: &'static str| {
+            div().id(id).flex_none().h_full().on_mouse_down(MouseButton::Left, |e: &gpui::MouseDownEvent, window, cx| {
+                if e.click_count == 2 {
+                    window.zoom_window();
+                } else {
+                    window.start_window_move();
+                }
+                cx.stop_propagation();
+            })
+        };
+        let toggle = div()
+            .id("title-sidebar")
+            .flex_none()
+            .size(px(24.))
+            .rounded(px(5.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_default()
+            .hover(move |s| s.bg(gpui::rgb(theme::step(text_element::ground(&t), 1))))
+            .child(sidebar::sidebar_glyph(t.text_dim))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                shell::toggle_sidebar(cx);
+                cx.stop_propagation();
+            });
+        div()
+            .id("title-bar")
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .w_full()
+            .h(px(h))
+            .flex()
+            .flex_row()
+            .items_center()
+            .bg(gpui::rgb(text_element::ground(&t)))
+            .border_b(px(0.5))
+            .border_color(gpui::rgb(t.body_border))
+            .child(bare("title-lights").w(px(LIGHTS_W)))
+            .child(toggle)
+            .child(bare("title-gap").w(px(10.)))
+            .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
+            .child(bare("title-gap2").w(px(8.)))
+            .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
+            .into_any_element()
+    }
 }

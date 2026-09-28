@@ -649,7 +649,7 @@ impl Acme {
         // in the main window, is under the panel: past its edge
         let (x, y) = if self.on_glass() {
             let inset = crate::sidebar::INSET;
-            (crate::shell::SIDEBAR_W - inset + 10., f32::from(row.top()) + inset - 8.)
+            (crate::shell::SIDEBAR_W - inset + 10., f32::from(row.top()) + crate::title_h() + inset - 8.)
         } else {
             (f32::from(row.right()) + 10., f32::from(row.top()) - 8.)
         };

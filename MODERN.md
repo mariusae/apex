@@ -80,9 +80,15 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   its commands faintly until the pointer is on the tag (the column tags
   and the top row likewise). Selections and sweeps are softly rounded.
   The window the keys go to has a soft ring in the accent.
-- **Sidebar, and no title bar** (`sidebar.rs`), as Manifold's: the
-  sessions as vertical tabs in a card inset from the window's edges, the
-  window's buttons on its top row. The shown session lists its windows,
+- **The title bar is the top row** (`main.rs`, `title_bar`), as a
+  modern Mac app's: across the whole window, the window's buttons, the
+  sidebar's button, a divider, then acme's top tag, as editable as
+  ever. Its bare parts move the window and a double click there zooms
+  it; the tiling's line for the top tag lies above acme's area (the
+  row's rectangle starts a line up), the tag drawn in the bar instead.
+- **Sidebar** (`sidebar.rs`), as Manifold's: the
+  sessions as vertical tabs in a card inset from the window's edges,
+  under the title bar. The shown session lists its windows,
   column by column, each with its dot; a click reveals one and lands on
   it, as taking a notification does. New Session opens the picker.
   Pinned (⌃⌘S, View ▸ Show/Hide Sidebar), it stands beside the content;
@@ -91,15 +97,13 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   window's last column of points, or leaving by it -- and never while a
   button is held (moving windows or sweeping text leftwards is not
   asking for it), and put away a tenth of a second after the pointer
-  is 8 pixels past it, sliding in and out as Manifold's does. The
-  window's buttons show only with it. There is no tab strip and no title
-  bar, so full screen is the whole screen. Floating, the card is Liquid
+  is 8 pixels past it, sliding in and out as Manifold's does. There is
+  no tab strip. Floating, the card is Liquid
   Glass (`glass.rs`), as Reflect's peek sidebar is: drawn in a
   borderless panel of its own, a child of the window, over an
   `NSGlassEffectView` that shows the window through it, pages and all
-  (no hole cut in them). The panel has its own window buttons where the
-  window's stand, acting on the window; its clicks that act on the
-  window (a session chosen, the header dragged) go to the window's.
+  (no hole cut in them). Its clicks that act on the window (a session
+  chosen, the current one closed) go to the window's.
   Before macOS 26 it floats in the window as a plain card, its hole in
   any page under it the card alone.
 - **Palettes.** The picker (⌘T) and the finder are Manifold's command

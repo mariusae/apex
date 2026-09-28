@@ -2288,7 +2288,9 @@ impl Acme {
         }
         self.node.tiling = Box::new(ClientInfo { font, prop, mono, tags, bodies });
         // the OS window
-        let r = tiling::Rect::new(0, 0, (f32::from(viewport.width) - self.left()) as i32, (f32::from(viewport.height) - self.top()) as i32);
+        // the row's top tag is drawn in the title bar (`title_bar`): its
+        // line in the tiling is above the area, the columns start at its top
+        let r = tiling::Rect::new(0, -(font + tiling::BORDER), (f32::from(viewport.width) - self.left()) as i32, (f32::from(viewport.height) - self.top()) as i32);
         if r.dx() > 0 && r.dy() > 0 && r != self.node.state.layout.r {
             let _ = self.node.resize_layout(&mut self.log, r);
         }
@@ -2346,7 +2348,7 @@ impl Acme {
     /// no title bar (the window's buttons are the sidebar's), so full
     /// screen is the whole screen.
     pub fn top(&self) -> f32 {
-        0.
+        crate::title_h()
     }
 
     /// Where acme's area starts across: right of the sidebar, while it
@@ -2380,7 +2382,9 @@ impl Acme {
             self.sidebar_leaving = None;
             return was;
         }
-        let within_y = p.y >= px(0.) && p.y <= size.height;
+        // below the title bar: the pointer on the window's buttons does
+        // not bring it
+        let within_y = p.y >= px(crate::title_h()) && p.y <= size.height;
         // only the very edge brings it out -- the last point before the
         // screen's, or past the window's left side -- and never while a
         // button is held: moving a window or sweeping text towards the

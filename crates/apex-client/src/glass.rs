@@ -8,11 +8,10 @@
 //! -- which, as a menu's does, shows the main window through it, pages
 //! and all, with no hole to cut.
 //!
-//! The panel is the card alone. It covers the main window's own buttons,
-//! so it has buttons of its own in their place, which act on the main
-//! window; the main window's are hidden while it is out. Its clicks that
-//! act on the window (a session chosen, the header dragged) go to the
-//! main window's (`Acme::on_main`). Where glass is not to be had (before
+//! The panel is the card alone, below the title bar (whose window
+//! buttons stay the window's). Its clicks that act on the window (a
+//! session chosen, the current one closed) go to the main window's
+//! (`Acme::on_main`). Where glass is not to be had (before
 //! macOS 26), the sidebar floats in the window as it did.
 
 use gpui::prelude::*;
@@ -95,7 +94,8 @@ impl Acme {
                 let _ = slide;
                 let inset = px(crate::sidebar::INSET);
                 let size = window.viewport_size();
-                let r = Bounds::new(gpui::point(inset, inset), gpui::size(px(crate::shell::SIDEBAR_W) - inset * 2., size.height - inset * 2.));
+                let top = px(crate::title_h());
+                let r = Bounds::new(gpui::point(inset, top + inset), gpui::size(px(crate::shell::SIDEBAR_W) - inset * 2., size.height - top - inset * 2.));
                 place(g, window, r);
                 let out = self.sidebar_out;
                 if out != g.out {
@@ -189,15 +189,6 @@ impl Acme {
             let _ = h.update(cx, |acme, window, cx| f(acme, window, cx));
         });
     }
-
-    /// The main window moved by a press on the sidebar's header, in
-    /// whichever window the sidebar is.
-    pub fn drag_main(&self, window: &Window) {
-        match &self.glass {
-            GlassState::Ready(g) => drag(g.main),
-            _ => window.start_window_move(),
-        }
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -222,10 +213,8 @@ mod mac {
     /// NSWindowBelow, NSWindowAbove
     const BELOW: i64 = -1;
     const ABOVE: i64 = 1;
-    /// NSViewWidthSizable | NSViewHeightSizable; NSViewMaxXMargin |
-    /// NSViewMinYMargin (pinned to the top left of an unflipped view)
+    /// NSViewWidthSizable | NSViewHeightSizable
     const SIZABLE: u64 = 2 | 16;
-    const TOP_LEFT: u64 = 4 | 8;
 
     pub fn supported() -> bool {
         Class::get("NSGlassEffectView").is_some()
@@ -247,8 +236,8 @@ mod mac {
     }
 
     /// The panel made glass: an `NSGlassEffectView` under gpui's view,
-    /// rounded as the card is; the window's buttons, standing in for the
-    /// main window's (`main`). Its NSWindow, or None.
+    /// rounded as the card is, at the main window's (`main`) level. Its
+    /// NSWindow, or None.
     pub fn install(window: &Window, main: usize) -> Option<usize> {
         let (panel, view) = native(window)?;
         let main = main as *mut Object;
@@ -285,30 +274,6 @@ mod mac {
             let _: () = msg_send![panel, setIgnoresMouseEvents: true];
             let level: i64 = msg_send![main, level];
             let _: () = msg_send![panel, setLevel: level];
-            // the window's buttons where the main window's stand, less
-            // the card's inset: acting on the main window
-            let inset = crate::sidebar::INSET as f64;
-            let height = bounds.size.y;
-            let actions = [sel!(performClose:), sel!(performMiniaturize:), sel!(toggleFullScreen:)];
-            for (kind, action) in actions.into_iter().enumerate() {
-                let theirs: *mut Object = msg_send![main, standardWindowButton: kind as u64];
-                if theirs.is_null() {
-                    continue;
-                }
-                let at: R = msg_send![theirs, frame];
-                let mask: u64 = msg_send![main, styleMask];
-                let button: *mut Object = msg_send![class!(NSWindow), standardWindowButton: kind as u64 forStyleMask: mask];
-                if button.is_null() {
-                    continue;
-                }
-                let top = crate::main_lights_y() as f64 - inset;
-                let frame = R { origin: P { x: at.origin.x - inset, y: height - top - at.size.y }, size: at.size };
-                let _: () = msg_send![button, setFrame: frame];
-                let _: () = msg_send![button, setAutoresizingMask: TOP_LEFT];
-                let _: () = msg_send![button, setTarget: main];
-                let _: () = msg_send![button, setAction: action];
-                let _: () = msg_send![content, addSubview: button positioned: ABOVE relativeTo: nil];
-            }
             Some(panel as usize)
         }
     }
@@ -423,22 +388,10 @@ mod mac {
         g.attached = false;
     }
 
-    /// The main window moved as its title bar would be, by the press
-    /// being handled (in the panel).
-    pub fn drag(main: usize) {
-        // SAFETY: AppKit on the main thread, during the press's handling
-        unsafe {
-            let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
-            let event: *mut Object = msg_send![app, currentEvent];
-            if !event.is_null() {
-                let _: () = msg_send![main as *mut Object, performWindowDragWithEvent: event];
-            }
-        }
-    }
 }
 
 #[cfg(target_os = "macos")]
-use mac::{animate, detach, drag, install, ns_window, place, shadow, supported};
+use mac::{animate, detach, install, ns_window, place, shadow, supported};
 
 #[cfg(not(target_os = "macos"))]
 fn supported() -> bool {
@@ -460,5 +413,3 @@ fn animate(_: &mut Glass, _: bool) {}
 fn shadow(_: &mut Glass, _: bool) {}
 #[cfg(not(target_os = "macos"))]
 fn detach(_: &mut Glass) {}
-#[cfg(not(target_os = "macos"))]
-fn drag(_: usize) {}

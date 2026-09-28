@@ -97,9 +97,6 @@ pub fn apply_theme(cx: &mut App) {
 /// forget which sessions were open.
 pub static QUITTING: AtomicBool = AtomicBool::new(false);
 
-/// The sidebar card's top row, the window's buttons in it, as
-/// Manifold's is.
-pub const SIDEBAR_HEADER: f32 = 40.;
 
 /// The sidebar's width, its card and the margin round it together.
 pub const SIDEBAR_W: f32 = 236.;
