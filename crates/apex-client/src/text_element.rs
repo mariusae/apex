@@ -286,21 +286,11 @@ extern "C" {
     fn CFRelease(v: *const std::ffi::c_void);
 }
 
-/// Glyph substitution: Lucida Grande ships a slashed zero (glyph
-/// `zeroslash`) that no OpenType feature exposes, so after shaping we swap
-/// the glyph id of `zero` for it. Resolved once per font family (the
-/// Classic set's; View ▸ Font can change it at any time).
-#[derive(Clone, Copy)]
-struct Subst {
-    font_id: FontId,
-    from: GlyphId,
-    to: GlyphId,
-}
 
 thread_local! {
-    /// The slashed zero found for a family (none for most): looked for
-    /// again when the font set changes (View ▸ Font), not only once.
-    static SUBST: RefCell<Option<(String, Option<Subst>)>> = const { RefCell::new(None) };
+    /// Each font's zero and slashed zero, by the font gpui draws with
+    /// (none for most): looked for once per font.
+    static ZEROS: RefCell<std::collections::HashMap<FontId, Option<(GlyphId, GlyphId)>>> = RefCell::new(std::collections::HashMap::new());
     static LIFT: RefCell<std::collections::HashMap<(String, u32), (f32, f32)>> = RefCell::new(std::collections::HashMap::new());
 }
 
@@ -336,38 +326,42 @@ fn ink(window: &Window, fs: &FontSpec) -> (Pixels, Pixels) {
     (snap(lift), snap(tall))
 }
 
-fn slashed_zero(window: &Window, cx: &App) -> Option<Subst> {
-    let fs = font_for(false);
-    let family = fs.font.family.to_string();
-    if let Some(cached) = SUBST.with(|c| c.borrow().as_ref().filter(|(f, _)| *f == family).map(|(_, s)| *s)) {
-        return cached;
+/// Font `id`'s zero, and the slashed zero to draw in its place, where the
+/// face has one by name and no feature for it (Lucida Grande's
+/// `zeroslash`): asked of the font gpui draws the run with, whatever it
+/// is -- not of one font resolved once, which a font resolved anew (its
+/// fallbacks, a setting come from the server) would no longer match.
+fn zero_for(window: &Window, id: FontId) -> Option<(GlyphId, GlyphId)> {
+    if let Some(z) = ZEROS.with(|m| m.borrow().get(&id).copied()) {
+        return z;
     }
-    // the system's faces have their slashed zero as a feature (`zero`,
-    // set in `unjoined`), and CoreText will not open them by name
-    if fs.font.family.starts_with('.') {
-        SUBST.with(|c| *c.borrow_mut() = Some((family, None)));
-        return None;
-    }
-    let run = TextRun { len: 1, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
-    let shaped = window.text_system().shape_line("0".into(), fs.size, &[run], None);
-    let lucida = cx.text_system().resolve_font(&fs.font);
-    let subst = shaped.runs.first().and_then(|r| {
-        let glyph = r.glyphs.first()?;
-        if r.font_id != lucida {
+    let z = (|| {
+        let font = window.text_system().get_font_for_id(id)?;
+        // the system's faces have their slashed zero as a feature
+        // (`zero`, set in `unjoined`), and CoreText will not open them by
+        // name
+        if font.family.starts_with('.') {
             return None;
         }
-        let ct = core_text::font::new_from_name(&fs.font.family, f32::from(fs.size) as f64).ok()?;
+        let ct = core_text::font::new_from_name(&font.family, 12.).ok()?;
         let slashed = ct.get_glyph_with_name("zeroslash");
         if slashed == 0 {
             return None;
         }
+        let mut zero: u16 = 0;
+        let ch: u16 = '0' as u16;
+        // SAFETY: one character in, one glyph out, both on the stack
+        let found = unsafe { ct.get_glyphs_for_characters(&ch, &mut zero, 1) };
+        if !found || zero == 0 {
+            return None;
+        }
         // SAFETY: gpui::GlyphId is `#[repr(C)] struct GlyphId(u32)` with a
         // crate-private field and no public constructor.
-        let to: GlyphId = unsafe { std::mem::transmute::<u32, GlyphId>(slashed as u32) };
-        Some(Subst { font_id: r.font_id, from: glyph.id, to })
-    });
-    SUBST.with(|c| *c.borrow_mut() = Some((family, subst)));
-    subst
+        let glyph = |g: u16| unsafe { std::mem::transmute::<u32, GlyphId>(g as u32) };
+        Some((glyph(zero), glyph(slashed)))
+    })();
+    ZEROS.with(|m| m.borrow_mut().insert(id, z));
+    z
 }
 
 /// Paint a shaped (possibly wrapped) line glyph by glyph, like gpui's own
@@ -380,7 +374,6 @@ fn paint_glyphs(
     origin: Point<Pixels>,
     line_height: Pixels,
     colors: &[(usize, usize, Hsla)],
-    subst: Option<Subst>,
     lift: Pixels,
 ) {
     let padding_top = (line_height - layout.ascent - layout.descent) / 2.;
@@ -391,6 +384,8 @@ fn paint_glyphs(
     let line_bounds = Bounds::new(origin, size(layout.width, line_height * subs.len().max(1) as f32));
     window.paint_layer(line_bounds, |window| {
         for run in &layout.runs {
+            // the run's face's slashed zero, where it has one to swap in
+            let zero = zero_for(window, run.font_id);
             for glyph in &run.glyphs {
                 while sub + 1 < subs.len() && glyph.index >= subs[sub + 1].0 {
                     sub += 1;
@@ -401,8 +396,8 @@ fn paint_glyphs(
                 }
                 let color = colors.get(ci).map(|c| c.2).unwrap_or_else(gpui::black);
                 let at = point(origin.x + glyph.position.x - sub_x, origin.y + line_height * sub as f32 + baseline);
-                let id = match subst {
-                    Some(s) if s.font_id == run.font_id && glyph.id == s.from => s.to,
+                let id = match zero {
+                    Some((from, to)) if glyph.id == from => to,
                     _ => glyph.id,
                 };
                 if glyph.is_emoji {
@@ -1056,7 +1051,6 @@ impl Element for TextElement {
         cx: &mut App,
     ) {
         let Some(pp) = prepaint.take() else { return };
-        let subst = if pp.fontspec.font.family == font_for(false).font.family { slashed_zero(window, cx) } else { None };
         let pal = palette(pp.kind);
         let lh = pp.fontspec.line_height;
         let lift = ink_lift(window, &pp.fontspec);
@@ -1226,7 +1220,7 @@ impl Element for TextElement {
                     }
                 }
 
-                paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, subst, lift);
+                paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
 
                 // the tick, as a Mac text view's caret: a plain line, a
                 // little in from the row's top and bottom. A header's is
