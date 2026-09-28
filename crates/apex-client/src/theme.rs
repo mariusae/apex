@@ -478,6 +478,22 @@ pub fn set_sidebar(on: bool) {
 /// that does not read on its paper is moved until it does
 /// (`contrast.rs`). Kept in the `contrast` state file.
 static CONTRAST: AtomicBool = AtomicBool::new(true);
+/// View ▸ Blink Cursor: the keys' caret (and a terminal's cursor) blinks,
+/// or stays on -- the key window's ring says where the keys go too.
+static BLINK: AtomicBool = AtomicBool::new(true);
+
+pub fn blink() -> bool {
+    BLINK.load(Ordering::Relaxed)
+}
+
+pub fn set_blink(on: bool) {
+    BLINK.store(on, Ordering::Relaxed);
+    let p = crate::shell::state_file().with_file_name("blink");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
+}
 
 pub fn contrast() -> bool {
     CONTRAST.load(Ordering::Relaxed)
@@ -498,6 +514,8 @@ pub fn load() {
     SIDEBAR.store(side, Ordering::Relaxed);
     let contrast = std::fs::read_to_string(crate::shell::state_file().with_file_name("contrast")).map(|s| s.trim() != "off").unwrap_or(true);
     CONTRAST.store(contrast, Ordering::Relaxed);
+    let blink = std::fs::read_to_string(crate::shell::state_file().with_file_name("blink")).map(|s| s.trim() != "off").unwrap_or(true);
+    BLINK.store(blink, Ordering::Relaxed);
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
     if let Some(i) = PALETTES.iter().position(|p| p.word() == pal.trim()) {
         PALETTE.store(i as u8, Ordering::Relaxed);

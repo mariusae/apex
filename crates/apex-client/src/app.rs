@@ -1957,7 +1957,8 @@ impl Acme {
             return true;
         }
         let t = self.caret_since.elapsed().as_millis();
-        let on = t < 500 || ((t - 500) / 530) % 2 == 1;
+        // steady when blinking is off (View ▸ Blink Cursor)
+        let on = !crate::theme::blink() || t < 500 || ((t - 500) / 530) % 2 == 1;
         if on != self.caret_on {
             self.caret_on = on;
             return view.is_some() || term.is_some();
