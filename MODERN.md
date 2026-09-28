@@ -259,11 +259,11 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   when more than one is left they are listed under the caret (over its
   line, when the window's foot leaves no room below). Typing
   goes on into the text and narrows the list; ↑ ↓ choose; return or tab
-  takes the one chosen, and a directory's own names come up next; a
-  slash typed asks for the next directory's; escape or a click elsewhere
-  puts the list away. One candidate is simply typed in, a directory with
-  its slash, a file with a space after, as acme's ^F does. No more lists
-  in +Errors.
+  takes the one chosen; a slash typed, escape or a click elsewhere puts
+  the list away. One candidate is simply typed in, a directory with its
+  slash, a file with a space after, as acme's ^F does. A completion done
+  is done: the next list (a directory's names, say) comes only with the
+  next ^F. No more lists in +Errors.
 - **A preview's contents as a scrubber** (`web.rs`, `TOC_SCRIPT`): down
   the right edge of a page rendered from a buffer (a Markdown preview,
   apex diff), each heading a tick where it stands in the page, longer

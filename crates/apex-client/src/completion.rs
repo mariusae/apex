@@ -2,11 +2,11 @@
 //! caret goes to the server (which has the file system); what all its
 //! candidates share is typed in at once, and when more than one is left
 //! they are listed under the caret. Typing goes on into the text as ever
-//! and narrows the list; ↑ ↓ choose; return or tab takes the one chosen
-//! (a directory's own names come up next); escape, or a click elsewhere,
-//! puts the list away. One candidate is simply typed in: a directory with
-//! its slash (and its names listed), a file with a space after, as acme's
-//! ^F does.
+//! and narrows the list; ↑ ↓ choose; return or tab takes the one chosen;
+//! escape, a click elsewhere, or a slash typed puts the list away. One
+//! candidate is simply typed in: a directory with its slash, a file with
+//! a space after, as acme's ^F does. A completion done is done: the next
+//! list, a directory's names say, comes only with the next ^F.
 
 use gpui::prelude::*;
 use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Context, MouseButton};
@@ -93,9 +93,10 @@ impl Acme {
     }
 
     /// The name `name` in place of what is typed of it (from `start` to
-    /// `at`): a directory with its slash, and its own names asked for next;
-    /// a file with a space after, and the list put away.
+    /// `at`): a directory with its slash, a file with a space after, and
+    /// the list put away.
     fn complete_with(&mut self, view: ViewId, start: usize, at: usize, name: &str, dir: bool) {
+        // done: a directory's names wait for the next ^F
         let text = if dir { format!("{name}/") } else { format!("{name} ") };
         let _ = self.node.select(&mut self.log, view, start, at);
         let _ = self.node.replace_selection(&mut self.log, view, &text);
@@ -104,9 +105,6 @@ impl Acme {
         let _ = self.node.select(&mut self.log, view, end, end);
         self.completion = None;
         self.after();
-        if dir {
-            self.complete(view, end);
-        }
     }
 
     /// What is typed of the name so far, while the caret is after it and
@@ -174,10 +172,10 @@ impl Acme {
         let Some(c) = self.completion.as_ref() else { return };
         let view = c.view;
         let Ok((q0, q1)) = self.node.selection(view) else { return };
-        // a slash typed: the next directory's names
+        // a slash typed: the name is done, and the list goes (the next
+        // directory's names wait for the next ^F)
         if q0 == q1 && q0 > c.start && self.text_of(view).is_some_and(|t| t.char_at(q0 - 1) == '/') {
             self.completion = None;
-            self.complete(view, q0);
             cx.notify();
             return;
         }
