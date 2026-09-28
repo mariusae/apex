@@ -996,18 +996,21 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
 /// row (the card is 6 in from the window's top), their own 13 centred in
 /// its 40. The glass panel's stand-ins go where these are.
 pub(crate) fn main_lights_y() -> f32 {
-    (title_h() - 13.) / 2.
+    // AppKit's buttons are 14 high in their frames: centred on the bar
+    (title_h() - 14.) / 2.
 }
 
-/// The title bar's height: the top row's line and the border under it.
-/// acme's area starts below it (`Acme::top`).
+/// The title bar's height: a Mac title bar's with a toolbar's air, or the
+/// top row's line and the border under it where that is taller. acme's
+/// area starts below it (`Acme::top`); the window's buttons, the
+/// sidebar's and the top tag are centred on it.
 pub(crate) fn title_h() -> f32 {
-    f32::from(text_element::tag_line_height()) + apex_core::tiling::BORDER as f32
+    (f32::from(text_element::tag_line_height()) + apex_core::tiling::BORDER as f32).max(38.)
 }
 
-/// Where the window's buttons end across the title bar: the sidebar's
-/// button after them.
-const LIGHTS_W: f32 = 76.;
+/// Where the window's buttons end across the title bar, with air before
+/// the sidebar's button after them.
+const LIGHTS_W: f32 = 86.;
 
 /// The floating sidebar over the content, `t` of the way in: from 24
 /// pixels to the left and faded, as Manifold's slides.
