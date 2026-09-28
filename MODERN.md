@@ -39,13 +39,14 @@ which changes what B2 and B3 do on a window's box, and so is the core's
 - **Handles as document dots** (`text_element::dot`): hollow clean,
   filled dirty, gold stale; live rings it in the accent and lights its
   middle; working turns a spinner's arc round it. A notified window's
-  header takes a pale tint of the accent, as Mail tints a flagged row,
-  with pjw's face in the accent at its end (and by the window's row in
-  the sidebar, as by the session's). Column boxes are drag grips; the
+  header takes a pale tint of the accent, as Mail tints a flagged row.
+  pjw's face is only ever for another session wanting the user: on the
+  title bar's chevron, by its row in the sidebar and the chevron's list,
+  on its card in the overview -- never for this one. Column boxes are
+  drag grips; the
   session's square, having nothing to drag, is bare (red when fenced).
   B1 on the top row past its text drags the Mac window, as a title bar
-  does. While any session wants the user -- this one or one in the
-  sidebar -- pjw's face is at the top row's end, the window's top right.
+  does.
   All still acme's layout boxes: B1 on them as ever, B2 and B3 on a
   window's as the stash has them.
 - **The caret says where the keys go.** Every text's caret is a plain
@@ -87,7 +88,8 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   click makes it a field, return renames the session on its daemon --
   and a chevron that drops the sessions down (this one checked, a
   notified one wearing pjw, New Session after them; a click goes to
-  one); pjw stands by the chevron while another session wants the user.
+  one); pjw sits on the chevron, a badge, while another session wants
+  the user.
   Its bare parts move the window and a double click there zooms
   it; the tiling's line for the top tag lies above acme's area (the
   row's rectangle starts a line up), the tag drawn in the bar instead.

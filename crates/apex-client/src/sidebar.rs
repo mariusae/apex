@@ -115,7 +115,8 @@ impl Acme {
                             }),
                         ),
                 );
-            } else if notified {
+            } else if notified && !current {
+                // pjw is for another session wanting the user, never this one
                 row = row.child(div().flex_none().child(pjw(14., t.text)));
             }
             row = if current {
@@ -254,7 +255,6 @@ impl Acme {
                     .child(dot_element(&d))
                     .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(if stashed { t.text_dim } else { t.text })).child(label))
                     .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(dir))
-                    .when(d.badge, |r| r.child(div().flex_none().child(pjw(12., t.accent))))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _, _, cx| {

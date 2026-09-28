@@ -3,7 +3,7 @@
 //! A click on the name makes it a field: return renames the session (on
 //! its daemon, as the picker's rename does), escape or a click elsewhere
 //! leaves it as it was. A click on the chevron brings the sessions down
-//! under it -- this one checked, a notified one wearing pjw -- and a
+//! under it -- this one checked, another notified one wearing pjw -- and a
 //! click on one goes to it; New Session opens the picker.
 
 use std::time::Instant;
@@ -126,6 +126,7 @@ impl Acme {
             .items_center()
             .justify_center()
             .cursor_default()
+            .relative()
             .when(open, move |d| d.bg(rgb(hover)))
             .hover(move |s| s.bg(rgb(hover)))
             .child(chevron_glyph(crate::text_element::rgb(t.text_dim)))
@@ -138,8 +139,10 @@ impl Acme {
                     cx.stop_propagation();
                 }),
             );
-        // another session wants the user
+        // another session wants the user: pjw on the chevron, as a badge
+        // (pjw is only ever for another session, never this one)
         let others = Pool::tabs(cx).into_iter().any(|tab| tab.id != self.tab && self.tab_notified(tab.id, cx));
+        let chevron = chevron.when(others, |d| d.child(div().absolute().top(px(-6.)).right(px(-6.)).child(crate::shell::pjw(12., t.accent))));
         let menu = open.then(|| self.session_menu_panel(h, cx));
         div()
             .relative()
@@ -152,7 +155,6 @@ impl Acme {
             .font_family(crate::fonts::ui())
             .child(name)
             .child(chevron)
-            .when(others, |d| d.child(div().flex_none().pl(px(4.)).child(crate::shell::pjw(13., t.accent))))
             .children(menu)
             .into_any_element()
     }
@@ -198,7 +200,7 @@ impl Acme {
             let current = id == self.tab;
             let name = if current { self.session_label() } else { tab.url.session.clone() };
             let host = (!tab.url.is_local()).then(|| tab.url.arg.clone());
-            let notified = self.tab_notified(id, cx);
+            let notified = !current && self.tab_notified(id, cx);
             panel = panel.child(
                 row(("session-menu-row", i))
                     .child(div().flex_none().w(px(12.)).child(if current { "✓" } else { "" }))
