@@ -270,10 +270,10 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   `Del` in the window's tag, as B2 on the word does, a modified window's
   warning and all. A tag's text wraps short of it, every line, so a
   tag of several lines flows round it and the tiling counts the lines
-  it wraps to. A window closed by its × sends the pointer to the next
-  window's × (acme's move to the next `Del`), so clicking on closes
-  one after another; closed by `Del`, the pointer goes to the next
-  one's `Del` as ever.
+  it wraps to. A tag no longer carries `Del` (typed, it still works):
+  the × is it. A window closed (by its × or a `Del`) sends the pointer
+  to the next window's × -- acme's move to the next `Del` -- so
+  clicking on closes one after another.
 - **Columns answer as windows do.** B1 on a column's box grows it a
   little. B2 maximizes it: the others minimized where they stand, as a
   maximized window leaves the others their tags, each remembering its

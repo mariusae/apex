@@ -559,9 +559,6 @@ pub struct Acme {
     /// acme's savemouse/restoremouse: the window whose creation moved the
     /// mouse, and where it was.
     mouse_saved: Option<(WindowId, Point<Pixels>)>,
-    /// A window closed by its × (not a `Del` in its tag): the pointer goes
-    /// to the next window's ×, as a `Del`'s goes to the next one's `Del`.
-    close_by_button: Option<WindowId>,
     /// Where the pointer was put by a warp, until the next real mouse event.
     pointer: Option<Point<Pixels>>,
     pub(crate) last_mouse: Point<Pixels>,
@@ -1697,7 +1694,6 @@ impl Acme {
             live: std::collections::HashMap::new(),
             warp_wait: false,
             mouse_saved: None,
-            close_by_button: None,
             pointer: None,
             last_mouse: Point::default(),
             focus: cx.focus_handle(),
@@ -2162,18 +2158,11 @@ impl Acme {
             Pending::Warp(Warp::NewWindow(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID + 3, s.tag_y1(fonti) + 3)),
             Pending::Warp(Warp::WinButton(w)) => l.slot(w).map(|s| row(s.r.x0 + SCROLLWID / 2, s.r.y0 + fonti / 2)),
             Pending::Warp(Warp::ColButton(c)) => l.column(c).map(|c| row(c.r.x0 + SCROLLWID / 2, c.r.y0 + fonti / 2)),
-            // closed by its ×: onto the next window's ×, so the next click
-            // closes that one too
-            Pending::Warp(Warp::Closed { window, next: Some(w) }) if self.close_by_button == Some(window) => {
+            // movetodel: onto the next window's × (its Del), so the next
+            // click closes that one too
+            Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
                 let (cx_, cy) = (crate::text_element::CLOSE_W / 2. + 3., fonti as f32 / 2. + 1.);
                 l.slot(w).map(|s| point(px(s.r.x1 as f32 - cx_ + left), px(s.r.y0 as f32 + cy + top)))
-            }
-            Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
-                // movetodel: the rune two past the tag's first space
-                let tag = self.node.state.window(w).ok().map(|x| x.tag);
-                let text = tag.and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
-                let n = text.chars().position(|c| c == ' ').map(|i| i + 2).unwrap_or(0);
-                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.point_of(n)).map(|q| point(q.x + px(4.), q.y + font - px(4.)))
             }
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
             Pending::Warp(Warp::Sel(v)) => {
@@ -3998,7 +3987,6 @@ impl Acme {
         .size_full();
         let del = |_: MouseButton| {
             cx.listener(move |this: &mut Acme, _: &gpui::MouseDownEvent, _, cx| {
-                this.close_by_button = Some(w);
                 this.execute(crate::app::ExecCtx::Window(w), "Del", cx);
                 cx.stop_propagation();
                 cx.notify();

@@ -16,7 +16,7 @@ use crate::tiling::{self, Rect, Warp};
 
 /// What a new window's tag holds after its name; the words before `|`
 /// are kept up to date by [`Node::update_tags`], as acme's `winsettag`.
-pub const WIN_TAG_SUFFIX: &str = " Del Snarf | Look ";
+pub const WIN_TAG_SUFFIX: &str = " Snarf | Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
 pub const TOP_TAG: &str = "Newcol Newterm Win Web Kill Putall Exit End ";
 pub const ERRORS: &str = "+Errors";
@@ -453,7 +453,7 @@ impl Node {
     /// A window whose body is a terminal (the term shard exists already).
     pub fn open_term_window(&mut self, log: &mut Log, col: ColumnId, name: &str, term: TermId) -> Result<WindowId> {
         let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf Send | Look "), None)?;
+        let tag = self.create_buffer(log, "", &format!("{name} Snarf Send | Look "), None)?;
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Term(term) }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
@@ -466,7 +466,7 @@ impl Node {
     /// and Back, Fwd and Get in the tag are the page's history and reload.
     pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
         let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{url} Del Snarf Back Fwd Get | Look "), None)?;
+        let tag = self.create_buffer(log, "", &format!("{url} Snarf Back Fwd Get | Look "), None)?;
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Web }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
@@ -480,7 +480,7 @@ impl Node {
     pub fn open_html_window(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str) -> Result<WindowId> {
         let id = WindowId(self.alloc());
         let body = self.create_buffer(log, name, text, None)?;
-        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf | Look "), None)?;
+        let tag = self.create_buffer(log, "", &format!("{name} Snarf | Look "), None)?;
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Html(body) }))?;
         self.append(log, Shard::Buffer(body), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
@@ -1264,7 +1264,7 @@ impl Node {
     }
 
     /// acme's `winsettag1`: the words before `|` in every window's tag —
-    /// `Del Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they apply, and
+    /// `Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they apply, and
     /// `Back Fwd Get` on a web window — brought up to date. The text
     /// after `|` is the user's.
     pub fn update_tags(&mut self, log: &mut Log) -> Result<()> {
@@ -1283,7 +1283,8 @@ impl Node {
             let Ok(win) = self.state.window(w) else { continue };
             let tag = win.tag;
             let name = self.window_name(w);
-            let mut new = format!("{name} Del Snarf");
+            // no Del: the window's × is it (typed, the word still works)
+            let mut new = format!("{name} Snarf");
             // a program's window is no file: nothing to Undo into, and
             // nothing to Put it to, whether it says so by being owned
             // or by the name it is called (§ `is_scratch`)

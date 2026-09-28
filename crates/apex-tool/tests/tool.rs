@@ -204,7 +204,7 @@ fn a_tool_furnishes_its_window_tag() {
             }
         }
     }
-    assert_eq!(tag, "/tmp/tagger-notes Del Snarf Undo Put | Look Send ");
+    assert_eq!(tag, "/tmp/tagger-notes Snarf Undo Put | Look Send ");
     assert_eq!(t.tag(w).unwrap(), " Look Send ");
     // a name with a bar of its own: the tool's half is still what
     // follows the bar past the name, and writing it leaves the name
@@ -222,7 +222,7 @@ fn a_tool_furnishes_its_window_tag() {
             }
         }
     }
-    assert_eq!(tag, "/tmp/tagger|notes Del Snarf | Look Send ");
+    assert_eq!(tag, "/tmp/tagger|notes Snarf | Look Send ");
 }
 #[test]
 fn work_behind_a_window_shows_while_the_tool_is_there() {
