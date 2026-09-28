@@ -215,6 +215,7 @@ const TOC_SCRIPT: &str = r#"(function () {
       '#apex-toc .item{padding:3px 8px;border-radius:6px;color:var(--apex-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;opacity:.72}' +
       '#apex-toc .item:hover{background:var(--apex-tag-bg);opacity:1}' +
       '#apex-toc .item.on{color:var(--apex-accent);opacity:1;font-weight:600}' +
+      '#apex-toc .item.path{direction:rtl;text-align:left}' +
       '#apex-toc .l1{font-weight:600;opacity:.9}#apex-toc .l2{padding-left:18px}#apex-toc .l3{padding-left:30px}#apex-toc .l4{padding-left:42px}');
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
     const root = document.createElement('div');
@@ -249,7 +250,20 @@ const TOC_SCRIPT: &str = r#"(function () {
       items = heads.map(function (h) {
         const a = document.createElement('div');
         a.className = 'item l' + h.tagName[1];
-        a.textContent = h.textContent.trim();
+        // a diff's file: its name alone, cut from the left when it is too
+        // long (the end of a path says most), the whole of it on hover
+        const name = h.querySelector('.name');
+        const label = (name || h).textContent.trim();
+        a.title = label;
+        if (h.closest('section.file')) {
+          a.classList.add('path');
+          const b = document.createElement('bdi');
+          b.dir = 'ltr';
+          b.textContent = label;
+          a.appendChild(b);
+        } else {
+          a.textContent = label;
+        }
         a.addEventListener('mousedown', function (e) {
           e.preventDefault();
           e.stopPropagation();

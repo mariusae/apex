@@ -256,7 +256,8 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   of the part being read in the accent (a scrollspy). A press on the
   rail goes to that place, a drag scrubs through the page; the pointer
   on it brings the headings out beside it as a list, and a click on one
-  goes there. Only with two headings or more; it hangs off the page's
+  goes there (a diff's files by their names alone, cut from the left
+  when too long, since a path's end says most). Only with two headings or more; it hangs off the page's
   root, so the live morph leaves it be, and is laid out again as the
   page changes.
 - **Columns answer as windows do.** B1 on a column's box grows it a
