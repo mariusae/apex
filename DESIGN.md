@@ -679,8 +679,11 @@ its commands and terminals are killed, everything attached gets
 `Ended` and is cut off (a window on it goes offline saying so, a
 parked one is dropped), and the daemon goes on for the others; the
 picker's `end` on a session row does the same, on the host through
-`apex end-session` there, and so does `End` in the top row (`End -f`
-forces), which then closes the window. A program says what it is
+`apex end-session` there, and so does `End` in the top row, which then
+closes the window. `End` asks as `Del` does, by `Del`'s rule
+(`winclean`): each modified file warns in +Errors, once for what it
+holds, and the session stays; `End` again with nothing changed ends it
+whatever the daemon's own check would say. `End -f` ends it at once. A program says what it is
 called with
 `Named`, so `apex tool lsp` is `lsp` in the top row, not `apex`: the
 server renames the entry of the announcer's process group (the exit

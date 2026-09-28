@@ -172,6 +172,28 @@ fn commands_are_logged_with_their_handler() {
 }
 
 #[test]
+fn end_warns_once_as_del_does_then_lets_the_session_go() {
+    let (mut log, mut node, col) = session();
+    // a clean file, a scratch window and a directory: nothing to ask
+    let _ = node.new_window(&mut log, col, "/tmp/end-clean", "x").unwrap();
+    let s = node.new_window(&mut log, col, "/tmp/+Errors", "x").unwrap();
+    node.insert(&mut log, ViewId::Body(s), "y").unwrap();
+    assert!(node.session_clean(&mut log).unwrap());
+    // a modified file, on two windows: warned once, and the session held
+    let f = node.new_window(&mut log, col, "/tmp/end-f", "x").unwrap();
+    node.insert(&mut log, ViewId::Body(f), "y").unwrap();
+    let _ = node.zerox(&mut log, f).unwrap();
+    assert!(!node.session_clean(&mut log).unwrap());
+    let errors: String = node.state.buffers.values().filter(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).collect();
+    assert_eq!(errors.matches("/tmp/end-f modified").count(), 1, "{errors:?}");
+    // asked again with nothing changed: it may go
+    assert!(node.session_clean(&mut log).unwrap());
+    // changed since the warning: warned again
+    node.insert(&mut log, ViewId::Body(f), "z").unwrap();
+    assert!(!node.session_clean(&mut log).unwrap());
+}
+
+#[test]
 fn del_warns_once_on_a_dirty_buffer() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "f", "x").unwrap();

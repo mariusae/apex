@@ -1253,6 +1253,26 @@ impl Node {
         Ok(false)
     }
 
+    /// `End` without `-f`: may the session go? Del's rule (`winclean`)
+    /// asked of every file it has open, laid out or stashed: one that is
+    /// modified warns in +Errors, once for what it holds now, and holds
+    /// the session; asked again with nothing changed, it lets it go. Each
+    /// file once, by the first window on it -- unlike Del, another window
+    /// on the same file is no reason to let it go, since End closes them
+    /// all.
+    pub fn session_clean(&mut self, log: &mut Log) -> Result<bool> {
+        let mut seen = std::collections::HashSet::new();
+        let mut clean = true;
+        let wins: Vec<WindowId> = self.state.windows.keys().copied().collect();
+        for w in wins {
+            let Some(b) = self.state.window(w).ok().and_then(|x| x.body_buffer()) else { continue };
+            if seen.insert(b) {
+                clean &= self.winclean(log, w, true)?;
+            }
+        }
+        Ok(clean)
+    }
+
     /// acme's `colclean`.
     pub fn colclean(&mut self, log: &mut Log, col: ColumnId) -> Result<bool> {
         let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.all_windows().collect()).unwrap_or_default();

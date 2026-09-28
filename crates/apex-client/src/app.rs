@@ -4834,10 +4834,29 @@ impl Acme {
             let _ = self.node.commit_tag(&mut self.log, w);
         }
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
-        // End: the session ended (as apex end-session does), the window closed
+        // End: the session ended (as apex end-session does), the window
+        // closed -- as Del closes a window: a modified file warns first
+        // (Del's rule, `Node::session_clean`), and End again with nothing
+        // changed ends it all the same. -f ends it at once.
         if word == "End" {
             let force = text.split_whitespace().any(|w| w == "-f");
-            self.end_session(force, cx);
+            if !force {
+                match self.node.session_clean(&mut self.log) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        self.after();
+                        cx.notify();
+                        return;
+                    }
+                    Err(e) => {
+                        self.notice(&format!("End: {e}\n"));
+                        return;
+                    }
+                }
+            }
+            // asked already: the daemon's own check (another rule) is not
+            // asked again
+            self.end_session(true, cx);
             return;
         }
         // Send in a terminal, as win's: the selection (swept with B1),
