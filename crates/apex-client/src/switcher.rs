@@ -634,9 +634,8 @@ impl Acme {
     /// The pointer on a session's row in the sidebar (not the one shown):
     /// its window, live, beside the row, as ctrl-tab's cards draw it.
     pub fn session_preview(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        // only while the sidebar can be seen: put away, its glass panel
-        // stays (clear) and can still hear the pointer over its rows
-        if !self.sidebar_shown() && !self.sidebar_out {
+        // only while the sidebar is shown
+        if !self.sidebar_shown() {
             return None;
         }
         let id = self.sidebar_hover.filter(|id| *id != self.tab)?;
@@ -649,15 +648,8 @@ impl Acme {
         let (cw, ch) = (l.r.x1.max(1) as f32, l.r.y1.max(1) as f32);
         let w = 320f32;
         let h = w * ch / cw;
-        // beside the row; on glass the row is in the panel's window (the
-        // card, INSET in from the main one's corner), and the preview,
-        // in the main window, is under the panel: past its edge
-        let (x, y) = if self.on_glass() {
-            let inset = crate::sidebar::INSET;
-            (crate::shell::SIDEBAR_W - inset + 10., f32::from(row.top()) + crate::title_h() + inset - 8.)
-        } else {
-            (f32::from(row.right()) + 10., f32::from(row.top()) - 8.)
-        };
+        // beside the row
+        let (x, y) = (f32::from(row.right()) + 10., f32::from(row.top()) - 8.);
         let y = y.max(8.);
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.25), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false };
         let body = gpui::canvas(|_, _, _| {}, move |b, _, window, cx| mini.paint(b, window, cx)).size_full();

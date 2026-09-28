@@ -479,18 +479,6 @@ pub struct Acme {
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
-    /// The sidebar, not pinned, floating over the content: brought by the
-    /// pointer at the window's left edge (or leaving the window by it)
-    /// and put away a moment after the pointer is past it, as
-    /// Manifold's is; and when it last came or went, for its slide.
-    pub sidebar_out: bool,
-    /// The floating sidebar's glass panel (`glass.rs`), and the window
-    /// its clicks act on.
-    pub glass: crate::glass::GlassState,
-    pub main_window: Option<gpui::WindowHandle<Acme>>,
-    pub sidebar_moved: Option<std::time::Instant>,
-    /// When the pointer left it: it goes a tenth of a second after.
-    pub sidebar_leaving: Option<std::time::Instant>,
     /// The strip (a column put away) whose slice is out, by the pointer on
     /// it, and when the pointer left it and its slice (`strips.rs`).
     pub strip_open: Option<ColumnId>,
@@ -1007,8 +995,8 @@ impl Acme {
     }
 
     /// An overlay's mark whose hole reaches `margin` past it: the panels'
-    /// shadows want room; the floating sidebar's hole is its card alone,
-    /// or the page beside it would show a band of bare paper.
+    /// shadows want room; a card flush against a page wants none, or the
+    /// page beside it would show a band of bare paper.
     pub fn overlay_mark_by(&self, margin: Pixels) -> gpui::AnyElement {
         use gpui::prelude::*;
         let rc = self.overlay_bounds.clone();
@@ -1569,14 +1557,11 @@ impl Acme {
                                 if acme.caret_tick() {
                                     cx.notify();
                                 }
-                                // the floating sidebar, from where the pointer
-                                // is, asked of the system (a page keeps its
-                                // moves to itself, and it may have left)
+                                // the stash, from where the pointer is, asked
+                                // of the system (a page keeps its moves to
+                                // itself, and it may have left): resting is
+                                // no move
                                 if let Some(p) = crate::web::native_mouse(window) {
-                                    if acme.sidebar_tick(p, window.viewport_size()) {
-                                        cx.notify();
-                                    }
-                                    // the stash, too: resting is no move
                                     if acme.stash_tick(p) {
                                         cx.notify();
                                     }
@@ -1635,11 +1620,6 @@ impl Acme {
             caret_term: None,
             caret_on: true,
             caret_since: std::time::Instant::now(),
-            sidebar_out: false,
-            glass: crate::glass::GlassState::Untried,
-            main_window: None,
-            sidebar_moved: None,
-            sidebar_leaving: None,
             stash_open: None,
             strip_open: None,
             strip_leaving: None,
@@ -2378,77 +2358,6 @@ impl Acme {
     /// right of it. Unpinned it floats over the content when brought.
     pub fn sidebar_shown(&self) -> bool {
         crate::theme::sidebar()
-    }
-
-    /// The floating sidebar, as Manifold's: the pointer within 6 pixels
-    /// of the window's left edge (or just past it, leaving by it, as a
-    /// window against the screen's side is left) brings it; once the
-    /// pointer is more than 8 pixels past it, or out of the window, it
-    /// goes a tenth of a second later -- not while the picker it opened
-    /// is up. `p` is the pointer in the window's coordinates, `size` the
-    /// window's. True when it came or went.
-    pub fn sidebar_tick(&mut self, p: Point<Pixels>, size: gpui::Size<Pixels>) -> bool {
-        if self.sidebar_shown() {
-            let was = self.sidebar_out;
-            self.sidebar_out = false;
-            self.sidebar_leaving = None;
-            return was;
-        }
-        // below the title bar: the pointer on the window's buttons does
-        // not bring it
-        let within_y = p.y >= px(crate::title_h()) && p.y <= size.height;
-        // only the very edge brings it out -- the last point before the
-        // screen's, or past the window's left side -- and never while a
-        // button is held: moving a window or sweeping text towards the
-        // left is not asking for it
-        let m = &self.mouse;
-        let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
-        let at_edge = within_y && !held && p.x <= px(0.5) && p.x >= px(-60.);
-        if at_edge {
-            self.sidebar_leaving = None;
-            if !self.sidebar_out {
-                self.sidebar_out = true;
-                self.sidebar_moved = Some(std::time::Instant::now());
-                return true;
-            }
-            return false;
-        }
-        if !self.sidebar_out {
-            return false;
-        }
-        let over = within_y && p.x >= px(-60.) && p.x <= px(crate::shell::SIDEBAR_W + 8.);
-        if over || self.selector.is_some() {
-            self.sidebar_leaving = None;
-            return false;
-        }
-        match self.sidebar_leaving {
-            None => {
-                self.sidebar_leaving = Some(std::time::Instant::now());
-                false
-            }
-            Some(t) if t.elapsed() >= std::time::Duration::from_millis(100) => {
-                self.sidebar_out = false;
-                self.sidebar_leaving = None;
-                self.sidebar_moved = Some(std::time::Instant::now());
-                // no row is under the pointer once it has gone
-                self.sidebar_hover = None;
-                true
-            }
-            Some(_) => false,
-        }
-    }
-
-    /// How far the floating sidebar is in, 0 to 1, as it slides: in over
-    /// 0.16 s easing out, from 24 pixels to the left and faded, and away
-    /// over 0.14 s easing in; None when it is not there at all.
-    pub fn sidebar_slide(&self) -> Option<f32> {
-        let t = self.sidebar_moved.map(|m| m.elapsed().as_secs_f32());
-        match (self.sidebar_out, t) {
-            (true, Some(t)) => Some(1. - (1. - (t / 0.16).min(1.)).powi(3)),
-            (true, None) => Some(1.),
-            (false, Some(t)) if t < 0.14 => Some(1. - (t / 0.14).powi(3)),
-            _ => None,
-        }
     }
 
     /// Column `ci`'s stash as it shows, in the area's coordinates: the
@@ -3277,13 +3186,10 @@ impl Acme {
         }
     }
 
-    pub fn mouse_move(&mut self, e: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
         self.last_mouse = pos;
         if self.caret_tick() {
-            cx.notify();
-        }
-        if self.sidebar_tick(pos, window.viewport_size()) {
             cx.notify();
         }
         if self.stash_tick(pos) {

@@ -20,10 +20,9 @@ const ROW_H: f32 = 30.;
 const WIN_ROW_H: f32 = 24.;
 
 impl Acme {
-    /// The sidebar: pinned (`floating` false), a column down the window's
-    /// left on the columns' ground; floating, the card alone over the
-    /// content, a hole cut for it in any page under it.
-    pub fn sidebar(&self, floating: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The sidebar: a column down the window's left, under the title bar,
+    /// its card on the columns' ground.
+    pub fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme::theme();
         let dark = theme::is_dark();
         let card = t.strip;
@@ -102,9 +101,7 @@ impl Acme {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
-                                if current && this.on_glass() {
-                                    this.on_main(cx, |a, window, cx| a.close_current_session(window, cx));
-                                } else if current {
+                                if current {
                                     this.close_current_session(window, cx);
                                 } else {
                                     crate::pool::Pool::let_go(cx, id);
@@ -137,9 +134,7 @@ impl Acme {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, window, cx| {
-                        if !current && this.on_glass() {
-                            this.on_main(cx, move |a, window, cx| a.switch_to(id, window, cx));
-                        } else if !current {
+                        if !current {
                             this.switch_to(id, window, cx);
                         }
                         cx.notify();
@@ -186,22 +181,25 @@ impl Acme {
             );
         list = list.child(new);
         let shadow = BoxShadow { color: gpui::hsla(0., 0., 0., if dark { 0.5 } else { 0.10 }), offset: gpui::point(px(0.), px(2.)), blur_radius: px(8.), spread_radius: px(0.), inset: false };
-        // on glass (its own panel, the card alone): no card drawn, the
-        // glass is it
-        let glass = floating && self.on_glass();
-        let outer = div().id("sidebar").flex_none().h_full().font_family(crate::fonts::ui());
-        let outer = if glass { outer.w_full() } else { outer.w(px(crate::shell::SIDEBAR_W)).p(px(INSET)) };
-        // pinned, round the card: the ground the windows stand on, as
-        // under the column tags and between the cards
-        let outer = if floating { outer } else { outer.bg(rgb(crate::text_element::ground(&t))) };
-        outer
+        // round the card: the ground the windows stand on, as under the
+        // column tags and between the cards
+        div()
+            .id("sidebar")
+            .flex_none()
+            .h_full()
+            .font_family(crate::fonts::ui())
+            .w(px(crate::shell::SIDEBAR_W))
+            .p(px(INSET))
+            .bg(rgb(crate::text_element::ground(&t)))
             .child(
                 div()
                     .relative()
                     .size_full()
                     .rounded(px(10.))
-                    .when(floating && !glass, |d| d.child(self.overlay_mark_by(px(0.))))
-                    .when(!glass, |d| d.bg(rgb(card)).border_1().border_color(rgb(t.border)).shadow(vec![shadow]))
+                    .bg(rgb(card))
+                    .border_1()
+                    .border_color(rgb(t.border))
+                    .shadow(vec![shadow])
                     .flex()
                     .flex_col()
                     .pb(px(6.))

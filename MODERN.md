@@ -98,21 +98,11 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   under the title bar. The shown session lists its windows,
   column by column, each with its dot; a click reveals one and lands on
   it, as taking a notification does. New Session opens the picker.
-  Pinned (⌃⌘S, View ▸ Show/Hide Sidebar), it stands beside the content;
-  unpinned, the content has the whole window and the sidebar floats over
-  it without moving it, brought by the pointer at the very edge -- the
-  window's last column of points, or leaving by it -- and never while a
-  button is held (moving windows or sweeping text leftwards is not
-  asking for it), and put away a tenth of a second after the pointer
-  is 8 pixels past it, sliding in and out as Manifold's does. There is
-  no tab strip. Floating, the card is Liquid
-  Glass (`glass.rs`), as Reflect's peek sidebar is: drawn in a
-  borderless panel of its own, a child of the window, over an
-  `NSGlassEffectView` that shows the window through it, pages and all
-  (no hole cut in them). Its clicks that act on the window (a session
-  chosen, the current one closed) go to the window's.
-  Before macOS 26 it floats in the window as a plain card, its hole in
-  any page under it the card alone.
+  Shown or not by the title bar's button (⌃⌘S, View ▸ Show/Hide
+  Sidebar), it stands beside the content; hidden, the content has the
+  whole window. Nothing brings it out by itself (the pointer at the
+  window's edge once did, over the content, on Liquid Glass): the button
+  is always there. There is no tab strip.
 - **Palettes.** The picker (⌘T) and the finder are Manifold's command
   palette: a card 560 wide centred across the window, its top 30% of
   the way down, rounded 12 with a hairline and a soft shadow, over a

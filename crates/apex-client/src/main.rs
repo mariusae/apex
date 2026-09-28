@@ -23,7 +23,6 @@ mod shell;
 mod sidebar;
 mod commands;
 mod completion;
-mod glass;
 mod glide;
 mod miniature;
 mod restart;
@@ -191,31 +190,17 @@ impl Render for Acme {
             web::set_native_titlebar_hidden(window, self.fullscreen);
             self.native_bar_hidden = self.fullscreen;
         }
-        // the sidebar, as Manifold's: pinned, down the left with the
-        // content beside it; else floating over the content when the
-        // pointer brings it, sliding in and out. The window's buttons are
-        // on its top row and show only with it; there is no title bar, so
-        // full screen is the whole screen
+        // the sidebar, as Manifold's, down the left with the content beside
+        // it, shown or not by the title bar's button (⌃⌘S)
         let side = self.sidebar_shown();
-        let slide = if side { None } else { self.sidebar_slide() };
-        // the window the sidebar's clicks act on, when they come in its
-        // glass panel
-        self.main_window = window.window_handle().downcast::<app::Acme>();
-        // floating, it is drawn in its panel on glass where it can be;
-        // the panel has the window's buttons then
-        let glass = self.glass_tick(slide, window, cx);
-        let slide = slide.filter(|_| !glass);
         // the window's buttons, always on the title bar; every frame, as
         // they are looked at (cheaply): AppKit can make them anew behind
         // our back
         web::set_traffic_lights(window, true);
-        if slide.is_some_and(|t| t < 1.) {
-            window.request_animation_frame();
-        }
         // the title bar over all of it, acme's row and a pinned sidebar
         // under it
         let root = root.pt(px(title_h()));
-        let root = if side { root.flex_row().child(self.sidebar(false, cx)) } else { root };
+        let root = if side { root.flex_row().child(self.sidebar(cx)) } else { root };
         // ctrl-tab: the session just gone to sliding in over the one it
         // replaced, which slides out beside it
         let vp = window.viewport_size();
@@ -257,10 +242,6 @@ impl Render for Acme {
             };
             let root = match self.session_preview(cx) {
                 Some(p) => root.child(gpui::deferred(p).with_priority(3)),
-                None => root,
-            };
-            let root = match slide {
-                Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
                 None => root,
             };
             return root.into_any_element();
@@ -568,10 +549,6 @@ impl Render for Acme {
         // a session under the pointer in the sidebar: its window, live
         let root = match self.session_preview(cx) {
             Some(p) => root.child(gpui::deferred(p).with_priority(3)),
-            None => root,
-        };
-        let root = match slide {
-            Some(t) => root.child(floating_sidebar(self.sidebar(true, cx), t)),
             None => root,
         };
         let holes = self.overlay_bounds.clone();
@@ -989,9 +966,7 @@ fn offline_window(cx: &mut gpui::Context<Acme>, url: &SessionUrl, files: Vec<Str
     acme
 }
 
-/// How far down the window's buttons stand: on the sidebar card's top
-/// row (the card is 6 in from the window's top), their own 13 centred in
-/// its 40. The glass panel's stand-ins go where these are.
+/// How far down the window's buttons stand on the title bar.
 pub(crate) fn main_lights_y() -> f32 {
     // AppKit's buttons are 16 high in their frames (the circle in the
     // middle of it): centred on the bar, as the sidebar's button and the
@@ -1010,13 +985,6 @@ pub(crate) fn title_h() -> f32 {
 /// Where the window's buttons end across the title bar, with air before
 /// the sidebar's button after them.
 const LIGHTS_W: f32 = 86.;
-
-/// The floating sidebar over the content, `t` of the way in: from 24
-/// pixels to the left and faded, as Manifold's slides.
-fn floating_sidebar(sidebar: impl IntoElement, t: f32) -> impl IntoElement {
-    use gpui::{div, px};
-    gpui::deferred(div().absolute().top(px(title_h())).bottom(px(0.)).left(px(-24. * (1. - t))).opacity(t).child(sidebar)).with_priority(1)
-}
 
 /// The tools menu painted as a Mac context menu: the card rounded and
 /// lifted, a hairline round it; each row in the system font, the
