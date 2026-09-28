@@ -427,6 +427,11 @@ pub struct LineInfo {
     pub y: Pixels,
     pub subs: Vec<(usize, usize)>,
     pub colors: Vec<(usize, usize, Hsla)>,
+    /// A window's tag: where its name (the path) ends on this line, which
+    /// is drawn in a pill, and where its `|` is, drawn as a hairline --
+    /// display offsets; the text is the tag's as ever.
+    pub pill: Option<usize>,
+    pub bar: Option<usize>,
 }
 
 impl LineInfo {
@@ -689,6 +694,10 @@ pub struct Tint {
     pub dir_end: usize,
     pub name_end: usize,
     pub rest: Hsla,
+    /// A window's tag: its first `|` after the name, which parts apex's
+    /// words from the user's, and the ink of the user's words after it.
+    pub bar: Option<usize>,
+    pub yours: Hsla,
 }
 
 fn shape(
@@ -721,6 +730,8 @@ fn shape(
         y,
         subs: Vec::new(),
         colors: Vec::new(),
+        pill: None,
+        bar: None,
     };
     // the line cut where its ink or face changes: the sweep, and a tag's
     // parts -- its name's directory, its last part, the commands after
@@ -728,6 +739,11 @@ fn shape(
     let at = |q: usize| if q <= start { 0 } else { info.to_disp(q.min(end)) };
     let dir = tint.map(|t| at(t.dir_end));
     let dim = tint.map(|t| at(t.name_end));
+    // a window's tag: its `|`, when it is on this line, a glyph left clear
+    // for the hairline drawn in its place
+    let bar = tint.and_then(|t| t.bar).filter(|&q| q >= start && q < end).map(|q| (info.to_disp(q), info.to_disp(q + 1)));
+    // and its name, in a pill, on the line it starts
+    let pill = tint.filter(|t| start == 0 && t.name_end > 0).map(|t| at(t.name_end));
     let sweep = match hl {
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
@@ -735,6 +751,9 @@ fn shape(
     let mut cuts = vec![0, n];
     cuts.extend(dim);
     cuts.extend(dir);
+    if let Some((a, b)) = bar {
+        cuts.extend([a, b]);
+    }
     if let Some((a, b)) = sweep {
         cuts.extend([a, b]);
     }
@@ -750,8 +769,14 @@ fn shape(
         let swept = sweep.is_some_and(|(lo, hi)| a >= lo && b <= hi);
         let command = dim.is_some_and(|d| a >= d);
         let folder = dir.is_some_and(|d| a < d) && !command;
-        let color = if swept {
+        let is_bar = bar.is_some_and(|(p, q)| a >= p && b <= q);
+        let yours = bar.is_some_and(|(_, q)| a >= q) || tint.and_then(|t| t.bar).is_some_and(|q| q < start);
+        let color = if is_bar {
+            gpui::transparent_black()
+        } else if swept {
             white
+        } else if yours && command {
+            tint.map(|t| t.yours).unwrap_or(dimmed)
         } else if command {
             tint.map(|t| t.rest).unwrap_or(dimmed)
         } else if folder {
@@ -768,6 +793,8 @@ fn shape(
         colors.push((0, 0, black));
     }
     info.colors = colors;
+    info.pill = pill;
+    info.bar = bar.map(|(p, _)| p);
     let shaped = window
         .text_system()
         .shape_text(disp.clone(), fontspec.size, &runs, wrap_width, None)
@@ -902,6 +929,8 @@ impl Element for TextElement {
                 let th = crate::theme::theme();
                 let under = if kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
                 let rest = if src.hovered { rgb(th.text_dim) } else { rgb(mix(th.text_dim, under, 0.45)) };
+                // the user's words, after the `|`: a step above apex's
+                let yours = rgb(th.text_dim);
                 let tint = match kind {
                     Kind::WinTag => {
                         let whole = text.to_string();
@@ -909,9 +938,10 @@ impl Element for TextElement {
                         let name_end = name.chars().count();
                         let trimmed = name.trim_end_matches('/');
                         let dir_end = trimmed.rfind('/').map(|i| trimmed[..=i].chars().count()).unwrap_or(0);
-                        Some(Tint { dir_end, name_end, rest })
+                        let bar = whole[name.len()..].find('|').map(|i| whole[..name.len() + i].chars().count());
+                        Some(Tint { dir_end, name_end, rest, bar, yours })
                     }
-                    _ => Some(Tint { dir_end: 0, name_end: 0, rest }),
+                    _ => Some(Tint { dir_end: 0, name_end: 0, rest, bar: None, yours }),
                 };
                 while let Some((s, e)) = text.line_range(n) {
                     let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint);
@@ -1169,6 +1199,20 @@ impl Element for TextElement {
                         None => (0, 0, pal.sel),
                     },
                 ];
+                // a window's tag: its path in a pill, as a page's header
+                // has its address
+                if let Some(pe) = line.pill.filter(|&e| e > 0) {
+                    let th = crate::theme::theme();
+                    let tone = rgb(crate::theme::step(th.tag_bg, 1));
+                    for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                        let (a, b) = (ds, pe.min(de));
+                        if a < b {
+                            let sy = ly + lh * i as f32;
+                            let r = Bounds::from_corners(point(origin.x + x(a) - x(ds) - px(4.), sy + px(3.)), point(origin.x + x(b) - x(ds) + px(5.), sy + lh - px(3.)));
+                            window.paint_quad(fill(r, tone).corner_radii(px(5.)));
+                        }
+                    }
+                }
                 // a pill under what a click with ⌘ (B3) or ⌥ (B2) held
                 // would take, in that sweep's own colour, its text in the
                 // sweep's ink: what the click would drag, before it does
@@ -1229,6 +1273,16 @@ impl Element for TextElement {
                 }
 
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
+                // the tag's `|`, drawn as a hairline as tall as the ink
+                if let Some(d) = line.bar {
+                    let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
+                    let (ds, _) = line.subs[sub];
+                    let mid = origin.x + (x(d) + x(d + 1)) / 2. - x(ds);
+                    let tall = ink(window, &pp.fontspec).1;
+                    let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
+                    let th = crate::theme::theme();
+                    window.paint_quad(fill(Bounds::new(point(mid - px(0.5), sy), size(px(1.), tall)), rgb(th.body_border)));
+                }
 
                 // the tick, as a Mac text view's caret: a plain line, a
                 // little in from the row's top and bottom. A header's is

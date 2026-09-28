@@ -264,6 +264,13 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   when too long, since a path's end says most). Only with two headings or more; it hangs off the page's
   root, so the live morph leaves it be, and is laid out again as the
   page changes.
+- **A tag in three parts**, drawn from its text (which stays one text,
+  swept, typed and `Edit`ed across as ever): the window's name (its
+  path) in a pill, as a page's header has its address, the folder dim
+  and the last part strong; then apex's words (`Snarf Undo Put`...),
+  faint until the pointer is on the tag; then the `|`, drawn as a
+  hairline as tall as the ink (the character still there, only not
+  drawn); then the user's words, a step stronger than apex's.
 - **A close button** (`Acme::close_button`): a × at the right end of
   every window's tag (and a page's header, and a stashed window's tag
   brought out), on its first line. It is only `Del`: B1 or B2 on it runs
