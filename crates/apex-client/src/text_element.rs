@@ -2,7 +2,7 @@
 //! the core's state: only the visible lines are shaped, and the geometry
 //! is recorded on the app so mouse events map to rune offsets.
 
-use std::cell::Cell;
+use std::cell::RefCell;
 
 use gpui::{
     fill, font, point, px, relative, size, App, AvailableSpace, Bounds, ContentMask, Element, ElementId,
@@ -288,7 +288,8 @@ extern "C" {
 
 /// Glyph substitution: Lucida Grande ships a slashed zero (glyph
 /// `zeroslash`) that no OpenType feature exposes, so after shaping we swap
-/// the glyph id of `zero` for it. Resolved once per process.
+/// the glyph id of `zero` for it. Resolved once per font family (the
+/// Classic set's; View ▸ Font can change it at any time).
 #[derive(Clone, Copy)]
 struct Subst {
     font_id: FontId,
@@ -297,8 +298,10 @@ struct Subst {
 }
 
 thread_local! {
-    static SUBST: Cell<Option<Option<Subst>>> = const { Cell::new(None) };
-    static LIFT: std::cell::RefCell<std::collections::HashMap<(String, u32), (f32, f32)>> = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// The slashed zero found for a family (none for most): looked for
+    /// again when the font set changes (View ▸ Font), not only once.
+    static SUBST: RefCell<Option<(String, Option<Subst>)>> = const { RefCell::new(None) };
+    static LIFT: RefCell<std::collections::HashMap<(String, u32), (f32, f32)>> = RefCell::new(std::collections::HashMap::new());
 }
 
 /// How far a line's glyphs are lifted so their ink sits in the middle of
@@ -334,14 +337,15 @@ fn ink(window: &Window, fs: &FontSpec) -> (Pixels, Pixels) {
 }
 
 fn slashed_zero(window: &Window, cx: &App) -> Option<Subst> {
-    if let Some(cached) = SUBST.with(|c| c.get()) {
+    let fs = font_for(false);
+    let family = fs.font.family.to_string();
+    if let Some(cached) = SUBST.with(|c| c.borrow().as_ref().filter(|(f, _)| *f == family).map(|(_, s)| *s)) {
         return cached;
     }
-    let fs = font_for(false);
     // the system's faces have their slashed zero as a feature (`zero`,
     // set in `unjoined`), and CoreText will not open them by name
     if fs.font.family.starts_with('.') {
-        SUBST.with(|c| c.set(Some(None)));
+        SUBST.with(|c| *c.borrow_mut() = Some((family, None)));
         return None;
     }
     let run = TextRun { len: 1, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
@@ -362,7 +366,7 @@ fn slashed_zero(window: &Window, cx: &App) -> Option<Subst> {
         let to: GlyphId = unsafe { std::mem::transmute::<u32, GlyphId>(slashed as u32) };
         Some(Subst { font_id: r.font_id, from: glyph.id, to })
     });
-    SUBST.with(|c| c.set(Some(subst)));
+    SUBST.with(|c| *c.borrow_mut() = Some((family, subst)));
     subst
 }
 
