@@ -29,6 +29,7 @@ mod miniature;
 mod restart;
 mod strips;
 mod switcher;
+mod titlebar;
 mod toasts;
 mod webbar;
 mod term_element;
@@ -240,7 +241,7 @@ impl Render for Acme {
                 .child(spinner)
                 .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
             let root = root.child(blank.relative().left(px(slide_off)));
-            let root = root.child(self.title_bar(&me));
+            let root = root.child(self.title_bar(&me, cx));
             let root = match outgoing {
                 Some(o) => root.child(o),
                 None => root,
@@ -541,7 +542,7 @@ impl Render for Acme {
         let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
         let root = root.child(area);
-        let root = root.child(self.title_bar(&me));
+        let root = root.child(self.title_bar(&me, cx));
         let root = match outgoing {
             Some(o) => root.child(o),
             None => root,
@@ -1092,7 +1093,7 @@ impl app::Acme {
     /// top tag, as editable as ever. Its bare parts move the window, and
     /// a double click there zooms it, as a title bar's do; past the top
     /// tag's text the tag's own click does (`mouse_down`).
-    fn title_bar(&self, me: &gpui::Entity<app::Acme>) -> gpui::AnyElement {
+    fn title_bar(&self, me: &gpui::Entity<app::Acme>, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
         use gpui::{div, prelude::*, px, MouseButton};
         let t = theme::theme();
         let h = title_h();
@@ -1137,6 +1138,10 @@ impl app::Acme {
             .border_color(gpui::rgb(t.body_border))
             .child(bare("title-lights").w(px(LIGHTS_W)))
             .child(toggle)
+            .child(bare("title-gap0").w(px(6.)))
+            // the session: its name (a click to rename it), the chevron
+            // for the others, a mark when one of them wants the user
+            .child(self.session_title(h, cx))
             .child(bare("title-gap").w(px(10.)))
             .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
             .child(bare("title-gap2").w(px(8.)))

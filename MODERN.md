@@ -82,8 +82,13 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   The window the keys go to has a soft ring in the accent.
 - **The title bar is the top row** (`main.rs`, `title_bar`), as a
   modern Mac app's: across the whole window, the window's buttons, the
-  sidebar's button, a divider, then acme's top tag, as editable as
-  ever. Its bare parts move the window and a double click there zooms
+  sidebar's button, the session (`titlebar.rs`), a divider, then acme's
+  top tag, as editable as ever. The session is its name in bold -- a
+  click makes it a field, return renames the session on its daemon --
+  and a chevron that drops the sessions down (this one checked, a
+  notified one wearing pjw, New Session after them; a click goes to
+  one); pjw stands by the chevron while another session wants the user.
+  Its bare parts move the window and a double click there zooms
   it; the tiling's line for the top tag lies above acme's area (the
   row's rectangle starts a line up), the tag drawn in the bar instead.
 - **Sidebar** (`sidebar.rs`), as Manifold's: the

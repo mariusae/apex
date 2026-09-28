@@ -439,6 +439,10 @@ pub struct Acme {
     pub commands: Option<crate::commands::Commands>,
     /// A web window's address being typed in its header.
     pub url_edit: Option<crate::webbar::UrlEdit>,
+    /// The title bar's session name being typed, and its sessions
+    /// dropped down (`titlebar.rs`).
+    pub session_edit: Option<crate::titlebar::SessionEdit>,
+    pub session_menu: bool,
     /// Blank web windows already given their address field.
     pub url_asked: std::collections::HashSet<WindowId>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
@@ -1647,6 +1651,8 @@ impl Acme {
             overview: None,
             stash_walk: None,
             url_edit: None,
+            session_edit: None,
+            session_menu: false,
             commands: None,
             completion: None,
             candidates: Vec::new(),
@@ -3013,8 +3019,12 @@ impl Acme {
         // view that had it went and left it there: not only while pages
         // are up, since the loss outlives them
         crate::web::focus_ui(window);
-        // a click off the address being typed leaves it as it was
+        // a click off the address being typed leaves it as it was, and
+        // so does one off the session's name; one off the sessions
+        // dropped down puts them away
         self.url_edit = None;
+        self.session_edit = None;
+        self.session_menu = false;
         // and one off ^F's list puts it away (its rows take their own)
         if self.completion.take().is_some() {
             cx.notify();
@@ -3963,7 +3973,7 @@ impl Acme {
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
         // and a walk held open by a modifier: the key coming up ends it
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.stash_walk.is_some() || self.switcher.is_some() || self.overview.is_some()
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.stash_walk.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu
     }
 
     /// Window `w`'s close button (×), `h` high: a click on it (B1 or B2) is
@@ -4419,6 +4429,16 @@ impl Acme {
         if self.url_edit.is_some() {
             let ks = &e.keystroke;
             self.url_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            return;
+        }
+        if self.session_edit.is_some() {
+            let ks = &e.keystroke;
+            self.session_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
+            return;
+        }
+        if self.session_menu && e.keystroke.key == "escape" {
+            self.session_menu = false;
+            cx.notify();
             return;
         }
         if self.commands.is_some() {
