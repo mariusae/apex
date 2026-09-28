@@ -249,6 +249,16 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   puts the list away. One candidate is simply typed in, a directory with
   its slash, a file with a space after, as acme's ^F does. No more lists
   in +Errors.
+- **A preview's contents as a scrubber** (`web.rs`, `TOC_SCRIPT`): down
+  the right edge of a page rendered from a buffer (a Markdown preview,
+  apex diff), each heading a tick where it stands in the page, longer
+  the higher it is, a faint band for the part in view, and the heading
+  of the part being read in the accent (a scrollspy). A press on the
+  rail goes to that place, a drag scrubs through the page; the pointer
+  on it brings the headings out beside it as a list, and a click on one
+  goes there. Only with two headings or more; it hangs off the page's
+  root, so the live morph leaves it be, and is laid out again as the
+  page changes.
 - **Columns answer as windows do.** B1 on a column's box grows it a
   little. B2 maximizes it: the others minimized where they stand, as a
   maximized window leaves the others their tags, each remembering its

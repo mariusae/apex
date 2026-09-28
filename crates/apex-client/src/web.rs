@@ -77,7 +77,8 @@ fn theme_css() -> String {
     let diff = format!(":root{{--apex-add:{};--apex-del:{}}}", hex(add), hex(del));
     // the font set's faces and families (View ▸ Font), for a page's
     // stylesheet to set itself in
-    diff + &crate::fonts::page_css() + &format!(
+    let accent = format!(":root{{--apex-accent:{}}}", hex(t.accent));
+    diff + &accent + &crate::fonts::page_css() + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
          html{{background:{}}}\
          .apex-copy{{position:absolute;top:4px;right:4px;font:11px var(--apex-font);color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
@@ -181,6 +182,153 @@ const COPY_SCRIPT: &str = r#"(function () {
   function all() { document.querySelectorAll('pre:not(.mermaid)').forEach(dress); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', all); else all();
   new MutationObserver(all).observe(document.documentElement, { childList: true, subtree: true });
+})();"#;
+
+/// A page from a buffer's contents, as a scrubber down its right edge:
+/// each heading (h1 to h4) a tick where it stands in the page, longer the
+/// higher it is, the part of the page in view a faint band over them, and
+/// the heading of the part being read -- the last one above a quarter of
+/// the way down the view -- in the accent (a scrollspy). A press on the
+/// rail goes to that place in the page, and a drag scrubs through it; the
+/// pointer on it brings out the contents, the headings as a list beside
+/// it, the one being read in the accent, and a click on one goes there.
+/// Only with two headings or more. It hangs off the document's root, not
+/// its body, so a preview's morph (which redoes the body) leaves it be,
+/// and it is laid out again whenever the page changes (a morph, an image
+/// or a diagram coming in, the view resized).
+const TOC_SCRIPT: &str = r#"(function () {
+  if (window.__apexToc) return;
+  window.__apexToc = true;
+  function start() {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(
+      '#apex-toc{position:fixed;top:14px;bottom:14px;right:3px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
+      '#apex-toc[hidden]{display:none}' +
+      '#apex-toc .rail{position:absolute;inset:0;cursor:pointer}' +
+      '#apex-toc .tick{position:absolute;right:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--apex-dim);opacity:.5;transition:opacity .12s,background-color .12s}' +
+      '#apex-toc .rail:hover .tick{opacity:.8}' +
+      '#apex-toc .tick.on{background:var(--apex-accent);opacity:1}' +
+      '#apex-toc .band{position:absolute;right:2px;width:18px;border-radius:4px;background:var(--apex-fg);opacity:.06;pointer-events:none}' +
+      '#apex-toc .rail:hover .band{opacity:.1}' +
+      '#apex-toc .panel{position:absolute;right:28px;top:0;max-height:100%;overflow-y:auto;min-width:170px;max-width:300px;padding:6px;box-sizing:border-box;border-radius:10px;background:var(--apex-bg);border:1px solid var(--apex-border);box-shadow:0 8px 28px rgba(0,0,0,.16);opacity:0;transform:translateX(6px);pointer-events:none;transition:opacity .12s,transform .12s}' +
+      '#apex-toc.open .panel{opacity:1;transform:none;pointer-events:auto}' +
+      '#apex-toc .item{padding:3px 8px;border-radius:6px;color:var(--apex-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;opacity:.72}' +
+      '#apex-toc .item:hover{background:var(--apex-tag-bg);opacity:1}' +
+      '#apex-toc .item.on{color:var(--apex-accent);opacity:1;font-weight:600}' +
+      '#apex-toc .l1{font-weight:600;opacity:.9}#apex-toc .l2{padding-left:18px}#apex-toc .l3{padding-left:30px}#apex-toc .l4{padding-left:42px}');
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    const root = document.createElement('div');
+    root.id = 'apex-toc';
+    root.hidden = true;
+    const rail = document.createElement('div');
+    rail.className = 'rail';
+    const band = document.createElement('div');
+    band.className = 'band';
+    const panel = document.createElement('div');
+    panel.className = 'panel';
+    rail.appendChild(band);
+    root.append(rail, panel);
+    document.documentElement.appendChild(root);
+    const view = () => document.scrollingElement || document.documentElement;
+    const at = (h) => h.getBoundingClientRect().top + view().scrollTop;
+    let heads = [], ticks = [], items = [], current = -1;
+    function build() {
+      heads = Array.from(document.body ? document.body.querySelectorAll('h1,h2,h3,h4') : []).filter((h) => h.textContent.trim());
+      root.hidden = heads.length < 2;
+      ticks.forEach((t) => t.remove());
+      panel.textContent = '';
+      const H = rail.clientHeight, total = Math.max(1, view().scrollHeight);
+      ticks = heads.map(function (h) {
+        const t = document.createElement('div');
+        t.className = 'tick';
+        t.style.width = [0, 14, 10, 7, 5][+h.tagName[1]] + 'px';
+        t.style.top = (at(h) / total) * H + 'px';
+        rail.appendChild(t);
+        return t;
+      });
+      items = heads.map(function (h) {
+        const a = document.createElement('div');
+        a.className = 'item l' + h.tagName[1];
+        a.textContent = h.textContent.trim();
+        a.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          view().scrollTo({ top: Math.max(0, at(h) - 12), behavior: 'smooth' });
+        });
+        panel.appendChild(a);
+        return a;
+      });
+      current = -1;
+      spy();
+    }
+    function spy() {
+      const s = view(), H = rail.clientHeight, total = Math.max(1, s.scrollHeight);
+      band.style.top = (s.scrollTop / total) * H + 'px';
+      band.style.height = Math.max(8, (s.clientHeight / total) * H) + 'px';
+      let c = -1;
+      const line = s.scrollTop + s.clientHeight * 0.25;
+      for (let i = 0; i < heads.length; i++) {
+        if (at(heads[i]) <= line) c = i;
+        else break;
+      }
+      if (heads.length && s.scrollTop + s.clientHeight >= total - 2) c = heads.length - 1;
+      if (c === current) return;
+      if (current >= 0 && ticks[current]) { ticks[current].classList.remove('on'); items[current].classList.remove('on'); }
+      current = c;
+      if (c >= 0) {
+        ticks[c].classList.add('on');
+        items[c].classList.add('on');
+        if (root.classList.contains('open')) items[c].scrollIntoView({ block: 'nearest' });
+      }
+    }
+    // laid out again when the page changes, once a frame at most
+    let queued = false;
+    function later() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () { queued = false; build(); });
+    }
+    let spying = false;
+    addEventListener('scroll', function () {
+      if (spying) return;
+      spying = true;
+      requestAnimationFrame(function () { spying = false; spy(); });
+    }, { passive: true });
+    addEventListener('resize', later);
+    addEventListener('load', later, true);
+    new MutationObserver(function (records) {
+      if (records.some((r) => !root.contains(r.target))) later();
+    }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    // a press on the rail goes there; a drag scrubs
+    let scrubbing = false;
+    function scrub(e) {
+      const r = rail.getBoundingClientRect(), s = view();
+      const f = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+      s.scrollTop = f * s.scrollHeight - s.clientHeight / 2;
+    }
+    rail.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      scrubbing = true;
+      scrub(e);
+    });
+    addEventListener('mousemove', function (e) { if (scrubbing) scrub(e); }, true);
+    addEventListener('mouseup', function () { scrubbing = false; }, true);
+    // the contents beside the rail while the pointer is on either
+    let closing = null;
+    root.addEventListener('mouseenter', function () {
+      clearTimeout(closing);
+      root.classList.add('open');
+      if (current >= 0 && items[current]) items[current].scrollIntoView({ block: 'nearest' });
+    });
+    root.addEventListener('mouseleave', function () {
+      closing = setTimeout(function () { if (!scrubbing) root.classList.remove('open'); }, 200);
+    });
+    build();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();"#;
 
 /// Mermaid in a page from a buffer (WEB.md §3): each `pre.mermaid` block
@@ -762,7 +910,7 @@ impl Webs {
                 }
                 b.with_url(&webkit_url(url))
             }
-            Page::Html { html, dir, .. } => b.with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_html(dress(html, dir)),
+            Page::Html { html, dir, .. } => b.with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_initialization_script(TOC_SCRIPT).with_html(dress(html, dir)),
         };
         b = b
             .with_navigation_handler(move |u| {
