@@ -184,7 +184,8 @@ const COPY_SCRIPT: &str = r#"(function () {
   new MutationObserver(all).observe(document.documentElement, { childList: true, subtree: true });
 })();"#;
 
-/// A page from a buffer's contents, as a scrubber down its right edge:
+/// A page from a buffer's contents, as a scrubber down its left edge (its
+/// scrollbar is at the right):
 /// each heading (h1 to h4) a tick where it stands in the page, longer the
 /// higher it is, the part of the page in view a faint band over them, and
 /// the heading of the part being read -- the last one above a quarter of
@@ -202,15 +203,15 @@ const TOC_SCRIPT: &str = r#"(function () {
   function start() {
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(
-      '#apex-toc{position:fixed;top:14px;bottom:14px;right:3px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
+      '#apex-toc{position:fixed;top:14px;bottom:14px;left:3px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
       '#apex-toc[hidden]{display:none}' +
       '#apex-toc .rail{position:absolute;inset:0;cursor:pointer}' +
-      '#apex-toc .tick{position:absolute;right:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--apex-dim);opacity:.5;transition:opacity .12s,background-color .12s}' +
+      '#apex-toc .tick{position:absolute;left:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--apex-dim);opacity:.5;transition:opacity .12s,background-color .12s}' +
       '#apex-toc .rail:hover .tick{opacity:.8}' +
       '#apex-toc .tick.on{background:var(--apex-accent);opacity:1}' +
-      '#apex-toc .band{position:absolute;right:2px;width:18px;border-radius:4px;background:var(--apex-fg);opacity:.06;pointer-events:none}' +
+      '#apex-toc .band{position:absolute;left:2px;width:18px;border-radius:4px;background:var(--apex-fg);opacity:.06;pointer-events:none}' +
       '#apex-toc .rail:hover .band{opacity:.1}' +
-      '#apex-toc .panel{position:absolute;right:28px;top:0;max-height:100%;overflow-y:auto;min-width:170px;max-width:300px;padding:6px;box-sizing:border-box;border-radius:10px;background:var(--apex-bg);border:1px solid var(--apex-border);box-shadow:0 8px 28px rgba(0,0,0,.16);opacity:0;transform:translateX(6px);pointer-events:none;transition:opacity .12s,transform .12s}' +
+      '#apex-toc .panel{position:absolute;left:28px;top:0;max-height:100%;overflow-y:auto;min-width:170px;max-width:300px;padding:6px;box-sizing:border-box;border-radius:10px;background:var(--apex-bg);border:1px solid var(--apex-border);box-shadow:0 8px 28px rgba(0,0,0,.16);opacity:0;transform:translateX(-6px);pointer-events:none;transition:opacity .12s,transform .12s}' +
       '#apex-toc.open .panel{opacity:1;transform:none;pointer-events:auto}' +
       '#apex-toc .item{padding:3px 8px;border-radius:6px;color:var(--apex-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;opacity:.72}' +
       '#apex-toc .item:hover{background:var(--apex-tag-bg);opacity:1}' +

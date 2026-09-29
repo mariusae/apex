@@ -268,7 +268,7 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   is done: the next list (a directory's names, say) comes only with the
   next ^F. No more lists in +Errors.
 - **A preview's contents as a scrubber** (`web.rs`, `TOC_SCRIPT`): down
-  the right edge of a page rendered from a buffer (a Markdown preview,
+  the left edge (the scrollbar is at the right) of a page rendered from a buffer (a Markdown preview,
   apex diff), each heading a tick where it stands in the page, longer
   the higher it is, a faint band for the part in view, and the heading
   of the part being read in the accent (a scrollspy). A press on the
