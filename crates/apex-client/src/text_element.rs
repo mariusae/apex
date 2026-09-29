@@ -219,7 +219,8 @@ pub fn paint_scroller(window: &mut Window, lane: Bounds<Pixels>, s0: f32, s1: f3
     let (t0, t1) = (h * s0.clamp(0., 1.), h * s1.clamp(0., 1.));
     let len = (t1 - t0).max(px(14.)).min(h);
     let top = (lane.top() + px(3.) + t0).min(lane.bottom() - px(3.) - len);
-    let thumb = Bounds::new(point(lane.left() + px(4.), top), size(px(5.), len));
+    // in the middle of the lane
+    let thumb = Bounds::new(point(lane.left() + (lane.size.width - px(5.)) / 2., top), size(px(5.), len));
     window.paint_quad(fill(thumb, ink).corner_radii(px(2.5)));
 }
 
