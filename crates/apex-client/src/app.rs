@@ -2149,8 +2149,11 @@ impl Acme {
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
             Pending::Warp(Warp::Sel(v)) => {
                 let q0 = self.node.selection(v).map(|s| s.0).unwrap_or(0);
-                match self.layouts.get(&v).and_then(|tl| tl.point_of(q0)) {
-                    Some(q) => Some(point(q.x + px(4.), q.y + font - px(4.))),
+                // on the selection's first rune, halfway down its own line
+                // (a body's line, not a tag's), so a click there takes it
+                // again: B3 on, B3 on, through the matches
+                match self.layouts.get(&v).and_then(|tl| tl.point_of(q0).map(|q| (q, tl.line_height))) {
+                    Some((q, lh)) => Some(point(q.x + px(4.), q.y + lh / 2.)),
                     // a body that is not text (a terminal, a page) has no
                     // layout to find the selection in: the top of it, where
                     // a new window is landed on, so a Goto to a terminal
