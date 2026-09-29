@@ -207,7 +207,7 @@ const TOC_SCRIPT: &str = r#"(function () {
   function start() {
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(
-      '#apex-toc{position:fixed;top:50%;height:min(50vh,calc(100vh - 28px));transform:translateY(-50%);left:3px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
+      '#apex-toc{position:fixed;top:50%;height:min(50vh,calc(100vh - 28px));transform:translateY(-50%);left:10px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
       '#apex-toc[hidden]{display:none}' +
       '#apex-toc .rail{position:absolute;inset:0;cursor:pointer}' +
       '#apex-toc .tick{position:absolute;left:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--apex-dim);opacity:.5;transition:opacity .12s,background-color .12s}' +
@@ -241,7 +241,8 @@ const TOC_SCRIPT: &str = r#"(function () {
     // room for the rail left of the page's content: the page moved over
     // as much as it lacks (on the root, which a morph leaves be), and on
     // a view too narrow to spare it, no rail
-    const RAIL = 30, NARROW = 420;
+    // the rail 10 in from the edge, 22 wide, as much air after it
+    const RAIL = 44, NARROW = 420;
     let pad = 0;
     function room(show) {
       const el = document.querySelector('article') || document.body;
