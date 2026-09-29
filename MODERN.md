@@ -254,6 +254,10 @@ windows put away out of the tiling, which is the core's
   opens down from its top. Resizing the OS window or switching session
   snaps. A gliding window's terminal keeps its size, and its text its
   scroll, until it lands.
+- **Empty columns** say what to do there, faintly, in the middle of
+  them (where there is room): ⌘P to go to a file, ⌘N for a new window,
+  B2 on Newterm for a shell, ⌘⇧P for every command. Drawing only: the
+  column's ground takes the buttons as ever.
 - **Errors as toasts** (`toasts.rs`): a command's errors still go to its
   +Errors window, but that window goes to the stash and what was
   written shows in a toast at the foot of its column, with Show All (the

@@ -330,6 +330,12 @@ impl Render for Acme {
                 continue;
             }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
+            // a column with no windows: a faint word on what to do there,
+            // where there is room for it (it takes no clicks: the ground's
+            // buttons are acme's as ever)
+            if col.wins.is_empty() && col.r.dx() >= EMPTY_W && col.r.dy() - font >= EMPTY_H {
+                area = area.child(at(col.r.x0, col.r.y0 + font, col.r.dx(), col.r.dy() - font, empty_column(&t)));
+            }
             for s in &col.wins {
                 if col.hides(s.window) {
                     continue; // behind the window grown to the whole column
@@ -953,6 +959,45 @@ pub(crate) fn main_lights_y() -> f32 {
 /// sidebar's and the top tag are centred on it.
 pub(crate) fn title_h() -> f32 {
     (f32::from(text_element::tag_line_height()) + apex_core::tiling::BORDER as f32).max(38.)
+}
+
+/// The least room an empty column shows its hint in.
+const EMPTY_W: i32 = 200;
+const EMPTY_H: i32 = 120;
+
+/// An empty column's hint, in the middle of it: the ways to put something
+/// there, each key (or command) and what it does, faint -- in the
+/// interface's face, as the sidebar's, not the text's.
+fn empty_column(t: &theme::Theme) -> gpui::AnyElement {
+    use gpui::{div, prelude::*, px};
+    let ink = gpui::Hsla::from(gpui::rgb(t.text_dim)).opacity(0.75);
+    let faint = gpui::Hsla::from(gpui::rgb(t.text_dim)).opacity(0.55);
+    let row = |key: &'static str, what: &'static str| {
+        div()
+            .flex()
+            .flex_row()
+            .gap(px(10.))
+            .child(div().w(px(84.)).flex_none().text_right().font_weight(gpui::FontWeight::MEDIUM).text_color(ink).child(key))
+            .child(div().flex_none().text_color(faint).child(what))
+    };
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .font_family(crate::fonts::ui())
+                .text_size(px(12.5))
+                .child(row("⌘P", "go to a file"))
+                .child(row("⌘N", "a new window"))
+                .child(row("B2 Newterm", "a shell"))
+                .child(row("⌘⇧P", "every command")),
+        )
+        .into_any_element()
 }
 
 /// Where the window's buttons end across the title bar, with air before
