@@ -32,7 +32,9 @@ pub const LANE_HIT: f32 = 6.;
 /// it.
 pub fn paint_overlay_scroller(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, shows: f32, open: bool) {
     let th = crate::theme::theme();
-    let lane = Bounds::new(point(bounds.right() - px(SCROLLWID), bounds.top()), size(px(SCROLLWID), bounds.size.height));
+    // a pixel in from the card's edge, where the key window's ring lies
+    // over it: centred in what shows of the gutter
+    let lane = Bounds::new(point(bounds.right() - px(SCROLLWID + 1.), bounds.top()), size(px(SCROLLWID), bounds.size.height));
     if open {
         window.paint_quad(fill(lane, rgb(mix(th.body_bg, th.body_border, 0.45))));
         paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(0.75));
