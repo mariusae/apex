@@ -1382,8 +1382,21 @@ impl Element for TextElement {
                         }
                         if let (Some(x0), Some(x1)) = (x0, x1) {
                             let sy = ly + lh * i as f32;
-                            // softly rounded, as a modern editor's selection is
-                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy), point(origin.x + x1, sy + lh)), color).corner_radii(px(3.)));
+                            // softly rounded, as a modern editor's selection
+                            // is: the whole of it one shape, its rows joined
+                            // square -- only the top row's top corners and
+                            // the bottom row's bottom ones rounded, or each
+                            // row's corners would notch its edges
+                            let top = a >= line.start && dlo >= ds && (dlo < de || last);
+                            let bottom = if incl_nl { last && b == line.end + 1 } else { dhi > ds && dhi <= de };
+                            let r = px(3.);
+                            let radii = gpui::Corners {
+                                top_left: if top { r } else { px(0.) },
+                                top_right: if top { r } else { px(0.) },
+                                bottom_left: if bottom { r } else { px(0.) },
+                                bottom_right: if bottom { r } else { px(0.) },
+                            };
+                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy), point(origin.x + x1, sy + lh)), color).corner_radii(radii));
                         }
                     }
                 }
