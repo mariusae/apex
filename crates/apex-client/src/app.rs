@@ -424,6 +424,9 @@ pub struct Acme {
     pub sidebar_rows: std::rc::Rc<std::cell::RefCell<HashMap<crate::pool::TabId, gpui::Bounds<Pixels>>>>,
     /// Errors just written, shown as toasts by their columns.
     pub toasts: Vec<crate::toasts::Toast>,
+    /// Where the toasts were drawn last: a click anywhere else puts
+    /// them away.
+    pub toasts_at: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
     /// +Errors windows the user has open (brought back from a toast):
     /// errors written there are seen there.
     pub errors_open: std::collections::HashSet<WindowId>,
@@ -1631,6 +1634,7 @@ impl Acme {
             candidates: Vec::new(),
             glide: Default::default(),
             toasts: Vec::new(),
+            toasts_at: Default::default(),
             errors_open: std::collections::HashSet::new(),
             sidebar_hover: None,
             sidebar_rows: Default::default(),
@@ -2235,7 +2239,10 @@ impl Acme {
         if self.webs.is_empty() {
             return false;
         }
+        // a click in a page puts the toasts away: drawn again without them
+        let toasted = !self.toasts.is_empty();
         self.web_events();
+        let dismissed = toasted && self.toasts.is_empty();
         if self.overlay_up() {
             self.webs.unfocus(window);
         } else {
@@ -2257,7 +2264,7 @@ impl Acme {
                 }
             }
         }
-        self.webs.any_loading()
+        self.webs.any_loading() || dismissed
     }
 
     /// Is the pointer over a page? Then gpui's cursor rect must say
@@ -3890,6 +3897,7 @@ impl Acme {
                 // a file link with a line: the file, at that line
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
                 WebEvent::Loading(on) => self.webs.set_loading(w, on),
+                WebEvent::Down => self.toasts.clear(),
                 // a code block's copy handle: into the snarf buffer, and
                 // the clipboard with it
                 WebEvent::Copy(text) => {

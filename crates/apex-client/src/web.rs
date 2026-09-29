@@ -46,6 +46,9 @@ pub enum WebEvent {
     Open(String, Option<usize>),
     /// The page started (true) or finished loading.
     Loading(bool),
+    /// A button went down in the page (a click there, which gpui does not
+    /// see: the toasts go, as for a click anywhere off them).
+    Down,
     /// A code block's copy handle was clicked: its text, for the snarf
     /// buffer and the clipboard.
     Copy(String),
@@ -575,6 +578,8 @@ const CURSOR_SCRIPT: &str = r#"(function () {
   }
   document.addEventListener('mousemove', at, { capture: true, passive: true });
   document.addEventListener('mouseleave', function () { say('default'); }, { capture: true, passive: true });
+  // a button down in the page, which the app does not hear otherwise
+  document.addEventListener('mousedown', function () { try { window.ipc.postMessage('down:'); } catch (e) {} }, { capture: true, passive: true });
 })();"#;
 
 pub struct Webs {
@@ -966,7 +971,12 @@ impl Webs {
             .with_initialization_script(CURSOR_SCRIPT)
             .with_initialization_script(SCROLL_SCRIPT)
             .with_ipc_handler(move |req| {
-                if req.body() == "mermaid:" {
+                if req.body() == "down:" {
+                    let _ = tx4.send((w, WebEvent::Down));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
+                } else if req.body() == "mermaid:" {
                     let _ = tx4.send((w, WebEvent::Mermaid));
                     if let Some(k) = &wake4 {
                         k();

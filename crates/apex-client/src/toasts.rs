@@ -2,9 +2,10 @@
 //! window, as ever -- the core's, and every client's -- but that window
 //! is not opened over the work: it goes to the stash, and what was just
 //! written shows in a toast at the foot of the column it came from (the
-//! active one, if that is gone), with Show All (the window brought back)
-//! and ×. A toast goes by
-//! itself after a while unless the pointer is on it. Its words answer as
+//! active one, if that is gone), with Show All (the window shown in the
+//! stash's preview) and ×. A toast goes by
+//! itself after a while unless the pointer is on it, and at once on a
+//! click anywhere but on a toast. Its words answer as
 //! the window's would: B3 on one looks (plumbs a file:line, say), B2 runs
 //! it, both from the `+Errors` window; the text is not for editing. An
 //! `+Errors` window already open and showing lines is shown as before,
@@ -13,7 +14,7 @@
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{div, px, rgb, AnyElement, Context, MouseButton};
+use gpui::{canvas, div, px, rgb, AnyElement, Context, MouseButton};
 
 use apex_core::state::Layout;
 use apex_core::{ViewId, WindowId};
@@ -64,6 +65,16 @@ impl Acme {
         true
     }
 
+    /// A button went down at `p`, before anything else hears it: off
+    /// every toast, they go.
+    pub fn toasts_click(&mut self, p: gpui::Point<gpui::Pixels>, cx: &mut Context<Self>) {
+        if self.toasts.is_empty() || self.toasts_at.borrow().iter().any(|b| b.contains(&p)) {
+            return;
+        }
+        self.toasts.clear();
+        cx.notify();
+    }
+
     /// The toasts, at the feet of their columns in `l` (the layout drawn).
     pub fn toasts_overlay(&mut self, l: &Layout, cx: &mut Context<Self>) -> Vec<AnyElement> {
         self.toasts.retain(|t| t.hovered || t.at.elapsed() < STAY);
@@ -77,15 +88,17 @@ impl Acme {
             let lines: Vec<&str> = toast.text.trim_end().lines().collect();
             let shown = lines[lines.len().saturating_sub(LINES)..].join("\n");
             let more = lines.len() > LINES;
-            let width = (col.r.dx() as f32 - 16.).clamp(160., 420.);
+            let width = (col.r.dx() as f32 - 16.).clamp(200., 520.);
             let below = up_by.entry(col.id).or_insert(8.);
             let height = 44. + 16. * shown.lines().count().max(1) as f32;
             let bottom = col.r.y1 as f32 - *below;
             *below += height + 6.;
             let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.22), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
             let name = self.node.window_name(w);
+            let at = self.toasts_at.clone();
             let card = div()
                 .id(("toast", i))
+                .child(canvas(move |b, _, _| at.borrow_mut().push(b), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
                 .absolute()
                 .left(px(col.r.x1 as f32 - width - 8.))
                 .top(px(bottom - height))

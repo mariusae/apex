@@ -106,6 +106,7 @@ impl Render for Acme {
         // the overlays record where they land this frame; the last thing
         // laid out cuts the web views' holes to match (`Webs::set_holes`)
         self.overlay_bounds.borrow_mut().clear();
+        self.toasts_at.borrow_mut().clear();
         let root = div()
             .id("apex")
             .size_full()
@@ -161,6 +162,9 @@ impl Render for Acme {
             }))
             .on_action(cx.listener(|_, _: &shell::ToggleFullScreen, window, _| window.toggle_fullscreen()))
             .on_key_down(cx.listener(Self::key_down))
+            // a click off the toasts puts them away, wherever it lands (the
+            // sidebar and the title bar keep their clicks to themselves)
+            .capture_any_mouse_down(cx.listener(|this, e: &gpui::MouseDownEvent, _, cx| this.toasts_click(e.position, cx)))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             // a force click is B3
             .on_mouse_pressure(cx.listener(Self::mouse_pressure))
