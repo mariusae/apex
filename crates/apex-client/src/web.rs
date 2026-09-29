@@ -193,7 +193,11 @@ const COPY_SCRIPT: &str = r#"(function () {
 /// rail goes to that place in the page, and a drag scrubs through it; the
 /// pointer on it brings out the contents, the headings as a list beside
 /// it, the one being read in the accent, and a click on one goes there.
-/// Only with two headings or more. It hangs off the document's root, not
+/// At most half the view's height, in the middle of it; the list may take
+/// all of it. Only with two headings or more, and room for it: the page moved over as
+/// much as it lacks, or no rail on a view too narrow to spare it. The
+/// pointer on the rail marks the nearest tick's heading in the list. It
+/// hangs off the document's root, not
 /// its body, so a preview's morph (which redoes the body) leaves it be,
 /// and it is laid out again whenever the page changes (a morph, an image
 /// or a diagram coming in, the view resized).
@@ -203,7 +207,7 @@ const TOC_SCRIPT: &str = r#"(function () {
   function start() {
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(
-      '#apex-toc{position:fixed;top:14px;bottom:14px;left:3px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
+      '#apex-toc{position:fixed;top:50%;height:min(50vh,calc(100vh - 28px));transform:translateY(-50%);left:3px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
       '#apex-toc[hidden]{display:none}' +
       '#apex-toc .rail{position:absolute;inset:0;cursor:pointer}' +
       '#apex-toc .tick{position:absolute;left:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--apex-dim);opacity:.5;transition:opacity .12s,background-color .12s}' +
@@ -211,10 +215,10 @@ const TOC_SCRIPT: &str = r#"(function () {
       '#apex-toc .tick.on{background:var(--apex-accent);opacity:1}' +
       '#apex-toc .band{position:absolute;left:2px;width:18px;border-radius:4px;background:var(--apex-fg);opacity:.06;pointer-events:none}' +
       '#apex-toc .rail:hover .band{opacity:.1}' +
-      '#apex-toc .panel{position:absolute;left:28px;top:0;max-height:100%;overflow-y:auto;min-width:170px;max-width:300px;padding:6px;box-sizing:border-box;border-radius:10px;background:var(--apex-bg);border:1px solid var(--apex-border);box-shadow:0 8px 28px rgba(0,0,0,.16);opacity:0;transform:translateX(-6px);pointer-events:none;transition:opacity .12s,transform .12s}' +
-      '#apex-toc.open .panel{opacity:1;transform:none;pointer-events:auto}' +
+      '#apex-toc .panel{position:absolute;left:28px;top:50%;max-height:calc(100vh - 28px);overflow-y:auto;min-width:170px;max-width:300px;padding:6px;box-sizing:border-box;border-radius:10px;background:var(--apex-bg);border:1px solid var(--apex-border);box-shadow:0 8px 28px rgba(0,0,0,.16);opacity:0;transform:translate(-6px,-50%);pointer-events:none;transition:opacity .12s,transform .12s}' +
+      '#apex-toc.open .panel{opacity:1;transform:translate(0,-50%);pointer-events:auto}' +
       '#apex-toc .item{padding:3px 8px;border-radius:6px;color:var(--apex-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;opacity:.72}' +
-      '#apex-toc .item:hover{background:var(--apex-tag-bg);opacity:1}' +
+      '#apex-toc .item:hover,#apex-toc .item.near{background:var(--apex-tag-bg);opacity:1}' +
       '#apex-toc .item.on{color:var(--apex-accent);opacity:1;font-weight:600}' +
       '#apex-toc .item.path{direction:rtl;text-align:left}' +
       '#apex-toc .l1{font-weight:600;opacity:.9}#apex-toc .l2{padding-left:18px}#apex-toc .l3{padding-left:30px}#apex-toc .l4{padding-left:42px}');
@@ -234,9 +238,27 @@ const TOC_SCRIPT: &str = r#"(function () {
     const view = () => document.scrollingElement || document.documentElement;
     const at = (h) => h.getBoundingClientRect().top + view().scrollTop;
     let heads = [], ticks = [], items = [], current = -1;
+    // room for the rail left of the page's content: the page moved over
+    // as much as it lacks (on the root, which a morph leaves be), and on
+    // a view too narrow to spare it, no rail
+    const RAIL = 30, NARROW = 420;
+    let pad = 0;
+    function room(show) {
+      const el = document.querySelector('article') || document.body;
+      let want = 0;
+      if (show && el) {
+        const lead = el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft || '0') - pad;
+        want = Math.max(0, Math.ceil(RAIL - lead));
+      }
+      if (want !== pad) {
+        pad = want;
+        document.documentElement.style.paddingLeft = pad ? pad + 'px' : '';
+      }
+    }
     function build() {
       heads = Array.from(document.body ? document.body.querySelectorAll('h1,h2,h3,h4') : []).filter((h) => h.textContent.trim());
-      root.hidden = heads.length < 2;
+      root.hidden = heads.length < 2 || innerWidth < NARROW;
+      room(!root.hidden);
       ticks.forEach((t) => t.remove());
       panel.textContent = '';
       const H = rail.clientHeight, total = Math.max(1, view().scrollHeight);
@@ -339,6 +361,29 @@ const TOC_SCRIPT: &str = r#"(function () {
     });
     root.addEventListener('mouseleave', function () {
       closing = setTimeout(function () { if (!scrubbing) root.classList.remove('open'); }, 200);
+      near(-1);
+    });
+    // the pointer on the rail: the heading of the tick nearest it marked
+    // in the list, and brought into its view
+    let marked = -1;
+    function near(i) {
+      if (i === marked) return;
+      if (marked >= 0 && items[marked]) items[marked].classList.remove('near');
+      marked = i;
+      if (i >= 0 && items[i]) {
+        items[i].classList.add('near');
+        items[i].scrollIntoView({ block: 'nearest' });
+      }
+    }
+    rail.addEventListener('mousemove', function (e) {
+      const r = rail.getBoundingClientRect();
+      const y = e.clientY - r.top;
+      let best = -1, dist = Infinity;
+      ticks.forEach(function (t, i) {
+        const d = Math.abs(parseFloat(t.style.top) - y);
+        if (d < dist) { dist = d; best = i; }
+      });
+      near(best);
     });
     build();
   }

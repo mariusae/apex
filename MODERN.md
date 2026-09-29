@@ -275,7 +275,11 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   rail goes to that place, a drag scrubs through the page; the pointer
   on it brings the headings out beside it as a list, and a click on one
   goes there (a diff's files by their names alone, cut from the left
-  when too long, since a path's end says most). Only with two headings or more; it hangs off the page's
+  when too long, since a path's end says most); the pointer on a tick
+  marks its heading in the list, brought into view. The rail is at most
+  half the view's height, in its middle. Where the page's content comes
+  too near the left edge the page moves over to make room, and a view
+  narrower than 420 has no rail. Only with two headings or more; it hangs off the page's
   root, so the live morph leaves it be, and is laid out again as the
   page changes.
 - **A tag in three parts**, drawn from its text (which stays one text,
