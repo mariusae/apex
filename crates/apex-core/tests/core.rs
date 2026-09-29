@@ -659,73 +659,89 @@ fn col_at(node: &Node, c: ColumnId) -> (usize, bool) {
 }
 
 #[test]
-fn a_column_put_away_is_replicated_and_new_windows_land_beside_it() {
+fn a_column_minimized_or_given_the_row_is_replicated_and_new_windows_land_where_they_show() {
     let (mut log, mut node, _) = session();
     let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
     let n = cols.len();
-    assert!(n >= 2, "a session starts with columns to put away");
+    assert!(n >= 2, "a session starts with columns");
     let (first, second) = (cols[0], cols[1]);
-    let r = node.state.layout.cols[0].r;
+    let r = node.state.layout.cols[1].r;
     let at = (r.x0 + 3, r.y0 + 3);
-    // B3 on the first column's box: put away to the row's right, a strip
-    // there, as B3 puts a window away at its column's foot; a follower
-    // agrees
-    node.drag_column(&mut log, first, 3, at, at).unwrap();
-    assert_eq!(col_at(&node, first), (n - 1, true), "{:?}", node.state.layout.column(first).unwrap().r);
-    assert_eq!(col_at(&node, second), (0, false));
-    assert_eq!(node.state.layout.full, None);
+    // B2 on the second column's box: it maximized, the first minimized
+    // where it stands; a follower agrees
+    node.drag_column(&mut log, second, 2, at, at).unwrap();
+    assert_eq!(col_at(&node, first), (0, true));
+    assert_eq!(col_at(&node, second), (1, false));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
     // the width it remembers is the session's, not the leader's
     let c = node.state.layout.column(first).unwrap();
     assert!(c.restore > 0);
     assert_eq!(follower(&log).state.layout.column(first).unwrap().restore, c.restore);
-    // a window meant for the strip lands where it can be seen: beside it
+    // a window meant for the strip lands where it can be seen
     let w = node.new_window(&mut log, first, "/tmp/meant-for-the-strip", "").unwrap();
-    assert_eq!(node.state.layout.column_of(w), Some(cols[n - 1]));
-    // B1 on the strip's box brings it back where it stood, and a follower
-    // agrees
+    let lands = node.state.layout.column_of(w).unwrap();
+    assert!(!col_at(&node, lands).1);
+    // B1 on the strip's box brings it back where it stands
     let s = node.state.layout.column(first).unwrap().r;
     let on = (s.x0 + 3, s.y0 + 3);
     node.drag_column(&mut log, first, 1, on, on).unwrap();
     assert_eq!(col_at(&node, first), (0, false));
-    assert_eq!(col_at(&node, second), (1, false));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+    // B3 on a column's box: the whole row, the others hidden, and B3
+    // again gives them back; a follower agrees, and no column is put away
+    let r = node.state.layout.cols[0].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    node.drag_column(&mut log, first, 3, at, at).unwrap();
+    assert_eq!(node.state.layout.full, Some(first));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+    node.drag_column(&mut log, first, 3, at, at).unwrap();
+    assert_eq!(node.state.layout.full, None);
+    assert!(node.state.layout.cols.iter().all(|c| !c.stashed));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
 
 #[test]
-fn going_to_a_window_in_a_collapsed_column_brings_the_column_back() {
+fn going_to_a_window_in_a_hidden_or_minimized_column_brings_the_column_back() {
     let (mut log, mut node, _) = session();
     let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
     let w = node.new_window(&mut log, cols[0], "/tmp/in-a-collapsed-column", "").unwrap();
-    let r = node.state.layout.cols[0].r;
+    // minimized by B2 on its neighbour
+    let r = node.state.layout.cols[1].r;
     let at = (r.x0 + 3, r.y0 + 3);
-    node.drag_column(&mut log, cols[0], 4, at, at).unwrap();
-    assert_eq!(col_at(&node, cols[0]), (cols.len() - 1, true));
+    node.drag_column(&mut log, cols[1], 2, at, at).unwrap();
+    assert_eq!(col_at(&node, cols[0]), (0, true));
     // what a warp onto the window does first (a notification's, a Goto's):
-    // back where it stood
+    // back where it stands
     node.uncover(&mut log, w).unwrap();
+    assert_eq!(col_at(&node, cols[0]), (0, false));
+    assert_eq!(follower(&log).state.hash(), node.state.hash());
+    // hidden behind a column given the row: the row back
+    let r = node.state.layout.cols[1].r;
+    let at = (r.x0 + 3, r.y0 + 3);
+    node.drag_column(&mut log, cols[1], 3, at, at).unwrap();
+    assert_eq!(node.state.layout.full, Some(cols[1]));
+    node.uncover(&mut log, w).unwrap();
+    assert_eq!(node.state.layout.full, None);
     assert_eq!(col_at(&node, cols[0]), (0, false));
     assert_eq!(follower(&log).state.hash(), node.state.hash());
 }
 
 #[test]
-fn a_new_window_meant_for_a_collapsed_column_lands_in_the_nearest_open_one() {
-    let (mut log, mut node, _) = session();
-    let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
-    let n = cols.len();
-    assert!(n >= 2);
-    // put away, at the row's right whichever it was: its window goes to
-    // the rightmost still open, beside the strip
-    for (i, name) in [(n - 1, "/tmp/meant-for-the-right"), (0, "/tmp/meant-for-the-left")] {
+fn a_new_window_meant_for_a_minimized_column_lands_in_an_open_one() {
+    for which in [0usize, 1] {
         let (mut log, mut node, _) = session();
-        let r = node.state.layout.cols[i].r;
+        let cols: Vec<ColumnId> = node.state.layout.cols.iter().map(|c| c.id).collect();
+        let n = cols.len();
+        assert!(n >= 2);
+        // every other column maximized over it
+        let other = if which == 0 { n - 1 } else { 0 };
+        let r = node.state.layout.cols[other].r;
         let at = (r.x0 + 3, r.y0 + 3);
-        node.drag_column(&mut log, cols[i], 4, at, at).unwrap();
-        assert_eq!(col_at(&node, cols[i]), (n - 1, true));
-        let w = node.new_window(&mut log, cols[i], name, "").unwrap();
-        assert_eq!(node.state.layout.column_of(w), Some(node.state.layout.cols[n - 2].id));
-        assert!(col_at(&node, cols[i]).1, "the strip stays a strip");
+        node.drag_column(&mut log, cols[other], 2, at, at).unwrap();
+        assert!(col_at(&node, cols[which]).1);
+        let w = node.new_window(&mut log, cols[which], "/tmp/meant-for-a-strip", "").unwrap();
+        assert_eq!(node.state.layout.column_of(w), Some(cols[other]));
+        assert!(col_at(&node, cols[which]).1, "the strip stays a strip");
         assert_eq!(follower(&log).state.hash(), node.state.hash());
     }
-    let _ = (&mut log, &mut node);
 }

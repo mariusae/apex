@@ -705,30 +705,35 @@ fn button_2_maximizes_a_column_and_minimizes_the_others_where_they_stand() {
 }
 
 #[test]
-fn a_column_given_the_row_comes_back_as_strips_at_a_click_on_its_box() {
+fn button_3_gives_a_column_the_row_and_again_gives_the_others_back_where_they_were() {
     let mut l = three();
+    let before = widths(&l);
     let id = l.cols[1].id;
-    rowfull(&mut l, 1, &info());
+    rowgrow(&mut l, 1, 3, &info());
     assert_eq!(l.full, Some(id));
     assert_eq!((l.cols[1].r.x0, l.cols[1].r.x1), (0, 1000));
     assert!(l.shows(1) && !l.shows(0) && !l.shows(2));
     // the hidden columns are not there to be found, stale as they are
     assert_eq!(rowwhichcol(&l, (5, 300)), Some(1));
     assert_eq!(rowwhichcol(&l, (995, 300)), Some(1));
-    // clicked again, with button 1: the others come back as strips, put
-    // away at its right
-    rowgrow(&mut l, 1, 1, &info());
+    // B3 again: every column back where it stood, at its width
+    rowgrow(&mut l, 1, 3, &info());
     assert_eq!(l.full, None);
     tiles(&l);
-    assert_eq!(ids(&l), vec![2, 1, 3]);
-    assert_eq!(widths(&l), vec![1000 - 2 * STRIP - 2 * BORDER, STRIP, STRIP]);
-    // and each comes back where it stood
+    assert_eq!(ids(&l), vec![1, 2, 3]);
+    let after = widths(&l);
+    for (a, b) in before.iter().zip(&after) {
+        assert!(near(*a, *b), "{before:?} -> {after:?}");
+    }
+    assert!(l.cols.iter().all(|c| !c.stashed));
+    // and B1 on it as well
+    rowgrow(&mut l, 2, 3, &info());
+    assert_eq!(l.full, Some(ColumnId(3)));
     rowgrow(&mut l, 2, 1, &info());
-    let ci = ix(&l, 1);
-    rowgrow(&mut l, ci, 1, &info());
+    assert_eq!(l.full, None);
+    tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3]);
 }
-
 #[test]
 fn a_click_on_a_columns_box_grows_it_and_a_drag_still_moves_it() {
     let mut l = three();
@@ -751,26 +756,24 @@ fn a_click_on_a_columns_box_grows_it_and_a_drag_still_moves_it() {
 fn a_row_with_a_full_column_resizes_it_and_lays_out_before_it_adds_or_closes() {
     let mut l = three();
     let id = l.cols[0].id;
-    rowfull(&mut l, 0, &info());
+    rowgrow(&mut l, 0, 3, &info());
     // the window grows: the full column is the row still
     rowresize(&mut l, Rect::new(0, 0, 1400, 900), &info());
     assert_eq!(l.full, Some(id));
     assert_eq!((l.cols[0].r.x0, l.cols[0].r.x1, l.cols[0].r.y1), (0, 1400, 900));
-    // a new column: the row comes back first, and since the last column is
-    // a strip with nothing to give, the widest gives
+    // a new column: the row comes back first, every column with room
     let at = rowadd(&mut l, AddingCol::New { id: ColumnId(4), tag: BufferId(4) }, None, &info());
-    assert_eq!(at, Some(1));
+    assert!(at.is_some());
     assert_eq!(l.full, None);
     tiles(&l);
-    assert!(l.cols[1].r.dx() > STRIP && l.cols[0].r.dx() > STRIP, "{:?}", widths(&l));
+    assert!(widths(&l).iter().all(|&w| w > STRIP), "{:?}", widths(&l));
     // closing one, from a hidden row too
-    rowfull(&mut l, 0, &info());
+    rowgrow(&mut l, 0, 3, &info());
     rowclose(&mut l, 3, &info());
     assert_eq!(l.full, None);
     tiles(&l);
 }
-
-// ---- putting a column away at the row's right, and bringing it back ------------------
+// ---- strips, and bringing them back ------------------------------------------------------
 
 /// A row of four columns, each with a window, and their widths.
 fn four() -> (Layout, Vec<i32>) {
@@ -786,105 +789,7 @@ fn near(a: i32, b: i32) -> bool {
 }
 
 #[test]
-fn button_4_puts_a_column_away_at_the_rows_right_and_the_last_with_room_stays() {
-    let (mut l, before) = four();
-    assert!(before.iter().all(|&w| w > STRIP), "{before:?}");
-    // the leftmost: a strip at the row's right, its width to the column
-    // that stood beside it
-    rowgrow(&mut l, 0, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![2, 3, 4, 1]);
-    assert_eq!(wid(&l, 1), STRIP);
-    assert_eq!(wid(&l, 2), before[1] + before[0] - STRIP, "{before:?} -> {:?}", widths(&l));
-    assert_eq!((wid(&l, 3), wid(&l, 4)), (before[2], before[3]));
-    // the next: after the strip already there
-    rowgrow(&mut l, 0, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![3, 4, 1, 2]);
-    // the rightmost with room: its width to its left
-    rowgrow(&mut l, 1, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![3, 1, 2, 4]);
-    assert_eq!(wid(&l, 3), 1000 - 3 * STRIP - 3 * BORDER, "{:?}", widths(&l));
-    // the last with room: the strip put away last comes back in its
-    // stead, the row never all strips
-    rowgrow(&mut l, 0, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![4, 1, 2, 3]);
-    assert_eq!(widths(&l).iter().filter(|&&w| w > STRIP).count(), 1, "{:?}", widths(&l));
-}
-
-#[test]
-fn a_column_put_away_from_between_two_gives_its_width_to_both() {
-    let (mut l, before) = four();
-    rowgrow(&mut l, 1, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 3, 4, 2]);
-    let spare = before[1] - STRIP;
-    assert_eq!(wid(&l, 1), before[0] + spare / 2, "{before:?} -> {:?}", widths(&l));
-    assert_eq!(wid(&l, 3), before[2] + spare - spare / 2, "{before:?} -> {:?}", widths(&l));
-    assert_eq!(wid(&l, 4), before[3]);
-    // B4 on the strip: back where it stood, at the width it had
-    rowgrow(&mut l, 3, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    assert!(near(wid(&l, 2), before[1]), "{before:?} -> {:?}", widths(&l));
-}
-
-#[test]
-fn a_column_put_away_comes_back_where_it_stood_at_the_width_it_had() {
-    let (mut l, before) = four();
-    rowgrow(&mut l, 0, 4, &info());
-    // B4 on the strip: back as it was, and so is the column that took it
-    let ci = ix(&l, 1);
-    rowgrow(&mut l, ci, 4, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    let w = widths(&l);
-    assert!(near(w[0], before[0]) && near(w[1], before[1]), "{before:?} -> {w:?}");
-    // B1 on a strip is the same way back
-    rowgrow(&mut l, 3, 4, &info());
-    rowgrow(&mut l, 3, 1, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    let w = widths(&l);
-    assert!(near(w[3], before[3]) && near(w[2], before[2]), "{before:?} -> {w:?}");
-}
-
-#[test]
-fn columns_put_away_one_after_another_come_back_in_the_order_they_stood() {
-    // the two leftmost, brought back either way round
-    for order in [[1u64, 2], [2, 1]] {
-        let (mut l, before) = four();
-        rowgrow(&mut l, 0, 4, &info());
-        rowgrow(&mut l, 0, 4, &info());
-        assert_eq!(ids(&l), vec![3, 4, 1, 2]);
-        for id in order {
-            let ci = ix(&l, id);
-            rowgrow(&mut l, ci, 1, &info());
-        }
-        tiles(&l);
-        assert_eq!(ids(&l), vec![1, 2, 3, 4], "{order:?}");
-        let w = widths(&l);
-        assert!(near(w[0], before[0]) && near(w[1], before[1]), "{order:?}: {before:?} -> {w:?}");
-    }
-    // two from between, the second first
-    let (mut l, _) = four();
-    rowgrow(&mut l, 1, 4, &info());
-    let ci = ix(&l, 3);
-    rowgrow(&mut l, ci, 4, &info());
-    assert_eq!(ids(&l), vec![1, 4, 2, 3]);
-    let ci = ix(&l, 3);
-    rowgrow(&mut l, ci, 1, &info());
-    let ci = ix(&l, 2);
-    rowgrow(&mut l, ci, 1, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    assert!(widths(&l).iter().all(|&x| x > STRIP), "{:?}", widths(&l));
-}
-
-#[test]
-fn strips_left_by_button_2_or_3_come_back_at_the_widths_they_had() {
+fn strips_left_by_button_2_come_back_at_the_widths_they_had() {
     // minimized by B2 on another: back where it stands
     let (mut l, before) = four();
     rowgrow(&mut l, 2, 2, &info());
@@ -896,36 +801,30 @@ fn strips_left_by_button_2_or_3_come_back_at_the_widths_they_had() {
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!(near(wid(&l, 4), before[3]), "{before:?} -> {:?}", widths(&l));
-    // given the row, then the row back as strips: each strip remembers
-    // its column
-    let (mut l, before) = four();
-    rowfull(&mut l, 1, &info());
-    rowgrow(&mut l, 1, 1, &info());
-    assert_eq!(ids(&l), vec![2, 1, 3, 4]);
-    assert_eq!(wid(&l, 1), STRIP);
-    let ci = ix(&l, 1);
-    rowgrow(&mut l, ci, 1, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    assert!(near(wid(&l, 1), before[0]), "{before:?} -> {:?}", widths(&l));
 }
 
 #[test]
+fn button_4_on_a_columns_box_does_nothing() {
+    let (mut l, _) = four();
+    let before = l.clone();
+    rowgrow(&mut l, 1, 4, &info());
+    assert_eq!(l, before);
+}
+#[test]
 fn a_click_on_a_windows_box_in_a_strip_brings_the_column_back_and_the_next_grows_the_window() {
     let (mut l, before) = four();
-    // a second window in the first column, then the column put away
+    // a second window in the first column, then the column minimized
+    // (B2 on its neighbour)
     add(&mut l, 0, 20, None);
     assert_eq!(l.cols[0].wins.len(), 2);
-    rowgrow(&mut l, 0, 4, &info());
-    let ci = ix(&l, 1);
-    assert_eq!(ci, 3);
-    assert!(is_strip(l.cols[ci].r));
+    rowgrow(&mut l, 1, 2, &info());
+    assert!(is_strip(l.cols[0].r));
     let heights = |l: &Layout| l.cols[0].wins.iter().map(|s| s.r.dy()).collect::<Vec<_>>();
     // the first click on the second window's box: only the column, back
-    // where it stood at its width
-    let s = l.cols[ci].wins[1].r;
+    // where it stands at its width
+    let s = l.cols[0].wins[1].r;
     let at = (s.x0 + 3, s.y0 + 3);
-    assert_eq!(coldragwin(&mut l, ci, 1, 2, at, at, &info()), Some(Warp::WinButton(WindowId(20))));
+    assert_eq!(coldragwin(&mut l, 0, 1, 2, at, at, &info()), Some(Warp::WinButton(WindowId(20))));
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!(near(l.cols[0].r.dx(), before[0]), "{before:?} -> {:?}", widths(&l));
@@ -938,37 +837,29 @@ fn a_click_on_a_windows_box_in_a_strip_brings_the_column_back_and_the_next_grows
     assert_eq!(l.cols[0].wins.len(), 2, "{:?}", heights(&l));
     assert!(l.cols[0].wins[0].body.dy() <= 0);
     assert!(l.cols[0].wins[1].r.dy() > 600);
-    // a window's box in a column with room still just grows the window
-    let widths_now = widths(&l);
-    let s = l.cols[2].wins[0].r;
-    coldragwin(&mut l, 2, 0, 1, (s.x0 + 3, s.y0 + 3), (s.x0 + 3, s.y0 + 3), &info());
-    assert_eq!(widths(&l), widths_now);
 }
-
 #[test]
 fn uncovering_a_column_brings_it_out_of_a_strip_or_from_behind_a_full_one() {
     let (mut l, before) = four();
-    rowgrow(&mut l, 0, 4, &info());
-    let ci = ix(&l, 1);
-    uncover(&mut l, ci, &info());
+    rowgrow(&mut l, 1, 2, &info());
+    assert!(is_strip(l.cols[0].r));
+    uncover(&mut l, 0, &info());
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!(near(wid(&l, 1), before[0]), "{before:?} -> {:?}", widths(&l));
     // a column with room is left as it is
     let now = widths(&l);
-    uncover(&mut l, 2, &info());
+    uncover(&mut l, 1, &info());
     assert_eq!(widths(&l), now);
-    // hidden behind a column given the row: out, where it stood, at the
-    // width it had
+    // hidden behind a column given the row: the row as it was
     let (mut l, before) = four();
-    rowfull(&mut l, 1, &info());
+    rowgrow(&mut l, 1, 3, &info());
     uncover(&mut l, 3, &info());
     assert_eq!(l.full, None);
     tiles(&l);
-    assert_eq!(ids(&l), vec![2, 4, 1, 3]);
+    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!(near(wid(&l, 4), before[3]), "{before:?} -> {:?}", widths(&l));
 }
-
 #[test]
 fn the_line_between_columns_moves_only_the_widths() {
     let mut l = row();
@@ -1024,22 +915,16 @@ fn a_drags_preview_is_where_the_drop_puts_it() {
 
 #[test]
 fn a_columns_box_answers_as_a_windows_does() {
-    // B3: the column stashed at the row's right, as a window is at its
-    // column's foot, the columns either side of where it stood taking
-    // its width
+    // B3: the whole row, the others hidden; B3 again: all back
     let (mut l, before) = four();
     rowgrow(&mut l, 1, 3, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 3, 4, 2]);
-    assert!(l.column(ColumnId(2)).unwrap().stashed);
-    assert_eq!(wid(&l, 2), STRIP);
-    assert!(wid(&l, 1) > before[0] && wid(&l, 3) > before[2], "{before:?} -> {:?}", widths(&l));
-    // B1 on it: back where it stood, at the width it had
-    rowgrow(&mut l, 3, 1, &info());
+    assert_eq!(l.full, Some(ColumnId(2)));
+    rowgrow(&mut l, 1, 3, &info());
     tiles(&l);
     assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    assert!(!l.column(ColumnId(2)).unwrap().stashed);
-    assert!(near(wid(&l, 2), before[1]), "{before:?} -> {:?}", widths(&l));
+    for j in 0..4 {
+        assert!(near(widths(&l)[j], before[j]), "{before:?} -> {:?}", widths(&l));
+    }
     // B2: maximized, the others minimized where they stand; B2 again
     // changes nothing; B1 on it: all back
     let (mut l, before) = four();
@@ -1055,47 +940,23 @@ fn a_columns_box_answers_as_a_windows_does() {
     for j in 0..3 {
         assert!(near(widths(&l)[j], before[j]), "{before:?} -> {:?}", widths(&l));
     }
-    // B2 on a stashed strip: back where it stood, and maximized
+    // B2 on a column given the row: the row back, then it maximized
     let (mut l, _) = four();
     rowgrow(&mut l, 1, 3, &info());
-    rowgrow(&mut l, 3, 2, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
-    assert!(wid(&l, 2) > 600, "{:?}", widths(&l));
-    assert!([1, 3, 4].iter().all(|&id| wid(&l, id) == STRIP && !l.column(ColumnId(id)).unwrap().stashed));
-    // B3 on the last column with room: the minimized one nearest it comes
-    // back in its stead, the row never all strips
-    rowgrow(&mut l, 1, 3, &info());
-    tiles(&l);
-    assert_eq!(ids(&l), vec![1, 3, 4, 2]);
-    assert!(l.column(ColumnId(2)).unwrap().stashed);
-    assert_eq!(widths(&l).iter().filter(|&&w| w > STRIP).count(), 1, "{:?}", widths(&l));
-    assert!(wid(&l, 1) > STRIP);
+    rowgrow(&mut l, 1, 2, &info());
+    assert_eq!(l.full, None);
+    assert!(is_maximized_col(&l, 1));
+    // no column is ever put away
+    assert!(l.cols.iter().all(|c| !c.stashed));
 }
-
-#[test]
-fn putting_a_column_away_leaves_the_pointer_be() {
-    let (mut l, _) = four();
-    let r = l.cols[1].r;
-    let at = (r.x0 + 3, r.y0 + 3);
-    // B3 on its box: no warp to the strip, whose slice the pointer would
-    // bring out at once
-    assert_eq!(rowdragcol(&mut l, 1, 3, at, at, &info()), None);
-    assert!(is_strip(l.column(ColumnId(2)).unwrap().r));
-    // B1 on the strip: back, and the pointer goes to its box
-    let ci = ix(&l, 2);
-    let s = l.cols[ci].r;
-    let on = (s.x0 + 3, s.y0 + 3);
-    assert_eq!(rowdragcol(&mut l, ci, 1, on, on, &info()), Some(Warp::ColButton(ColumnId(2))));
-}
-
 #[test]
 fn resizing_the_row_keeps_strips_strips() {
-    // two put away at the right, the others sharing the rest
+    // two minimized (B2 on another), the others sharing the rest
     let (mut l, _) = four();
-    rowgrow(&mut l, 0, 4, &info());
-    rowgrow(&mut l, 0, 4, &info());
-    assert_eq!(ids(&l), vec![3, 4, 1, 2]);
+    rowgrow(&mut l, 2, 2, &info());
+    rowgrow(&mut l, 3, 1, &info());
+    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
+    assert_eq!((wid(&l, 1), wid(&l, 2)), (STRIP, STRIP));
     let (a, b) = (wid(&l, 3), wid(&l, 4));
     for r in [Rect::new(0, 0, 1600, 900), Rect::new(0, 0, 700, 900), Rect::new(0, 0, 1000, 900)] {
         rowresize(&mut l, r, &info());
@@ -1107,13 +968,11 @@ fn resizing_the_row_keeps_strips_strips() {
         let share = |x: i32, y: i32| x as f64 / (x + y) as f64;
         assert!((share(a2, b2) - share(a, b)).abs() < 0.01, "{r:?}: {a}/{b} -> {a2}/{b2}");
     }
-    // and each comes back where it stood, as it would have
-    let ci = ix(&l, 1);
-    rowgrow(&mut l, ci, 1, &info());
-    assert_eq!(ids(&l), vec![1, 3, 4, 2]);
+    // and each comes back where it stands
+    rowgrow(&mut l, 0, 1, &info());
+    assert_eq!(ids(&l), vec![1, 2, 3, 4]);
     assert!(wid(&l, 1) > STRIP);
 }
-
 #[test]
 fn a_window_stashed_with_a_few_lines_comes_back_with_an_even_share() {
     let mut l = row();
