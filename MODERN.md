@@ -110,7 +110,9 @@ windows put away out of the tiling, which is the core's
   row's rectangle starts a line up), the tag drawn in the bar instead.
 - **Sidebar** (`sidebar.rs`), as Manifold's: the
   sessions as vertical tabs in a card inset from the window's edges,
-  under the title bar -- every known host's, under the host's name
+  running up round the window's buttons and its own toggle, one with
+  them as Reflect's is (the title bar -- the session's name, the top
+  row, the stash -- is the rest's, right of it) -- every known host's, under the host's name
   (this Mac first) when there is more than one: those open in the app
   as their tabs, the others fainter, a click opening one. Each host is
   asked for its sessions in the background as the sidebar shows and

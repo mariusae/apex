@@ -267,15 +267,20 @@ impl Acme {
             .h_full()
             .font_family(crate::fonts::ui())
             .w(px(crate::shell::SIDEBAR_W))
-            .p(px(INSET))
+            .px(px(INSET))
+            .pb(px(INSET))
             .bg(rgb(crate::text_element::ground(&t)))
             .child(
+                // its top is the title bar's, round the window's buttons
+                // (`title_bar`): joined to it, square and open there
                 div()
                     .relative()
                     .size_full()
-                    .rounded(px(10.))
+                    .rounded_b(px(10.))
                     .bg(rgb(card))
-                    .border_1()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_b_1()
                     .border_color(rgb(t.border))
                     .shadow(vec![shadow])
                     .flex()

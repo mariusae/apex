@@ -1044,6 +1044,10 @@ impl app::Acme {
                 cx.stop_propagation();
             })
         };
+        let side = self.sidebar_shown();
+        // on the sidebar's card (its top, joined to the rest of it below
+        // the bar) or on the bar's ground
+        let under = if side { t.strip } else { text_element::ground(&t) };
         let toggle = div()
             .id("title-sidebar")
             .flex_none()
@@ -1053,12 +1057,83 @@ impl app::Acme {
             .items_center()
             .justify_center()
             .cursor_default()
-            .hover(move |s| s.bg(gpui::rgb(theme::step(text_element::ground(&t), 1))))
+            .hover(move |s| s.bg(gpui::rgb(theme::step(under, 1))))
             .child(sidebar::sidebar_glyph(t.text_dim))
             .on_mouse_down(MouseButton::Left, |_, _, cx| {
                 shell::toggle_sidebar(cx);
                 cx.stop_propagation();
             });
+        // the window's buttons' room; in full screen AppKit takes them
+        // away, and the rest moves up to the edge
+        let lights = if self.fullscreen { 8. } else { LIGHTS_W };
+        // the session: its name (a click to rename it), the chevron for
+        // the others, a mark when one of them wants the user; then acme's
+        // top row, and the stash's room at the right end
+        let rest = div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .flex_row()
+            .items_center()
+            .border_b(px(0.5))
+            .border_color(gpui::rgb(t.body_border))
+            .when(!side, |d| d.child(bare("title-lights").w(px(lights))).child(toggle).child(bare("title-gap0").w(px(6.))))
+            .when(side, |d| d.child(bare("title-gap0").w(px(10.))))
+            .child(self.session_title(h, cx))
+            .child(bare("title-gap").w(px(10.)))
+            .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
+            .child(bare("title-gap2").w(px(8.)))
+            .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
+            .child(bare("title-shelf").w(px(self.shelf_room(cx))));
+        // the sidebar shown: its card goes up round the window's buttons
+        // and its own, one with them as a Mac app's sidebar is; the bar
+        // is the rest's
+        let card_top = side.then(|| {
+            let inset = sidebar::INSET;
+            let toggle = div()
+                .id("title-sidebar-card")
+                .flex_none()
+                .size(px(24.))
+                .rounded(px(5.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_default()
+                .hover(move |s| s.bg(gpui::rgb(theme::step(under, 1))))
+                .child(sidebar::sidebar_glyph(t.text_dim))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                    shell::toggle_sidebar(cx);
+                    cx.stop_propagation();
+                });
+            div()
+                .flex_none()
+                .relative()
+                .w(px(shell::SIDEBAR_W))
+                .h_full()
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(inset))
+                        .top(px(inset))
+                        .w(px(shell::SIDEBAR_W - 2. * inset))
+                        .h(px(h - inset))
+                        .rounded_t(px(10.))
+                        .bg(gpui::rgb(t.strip))
+                        .border_t_1()
+                        .border_l_1()
+                        .border_r_1()
+                        .border_color(gpui::rgb(t.border))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .child(bare("title-lights").w(px(lights - inset)))
+                        .child(toggle)
+                        .child(bare("title-card-rest").flex_1()),
+                )
+                // the ground round the card's top, a title bar's too
+                .child(bare("title-card-edge").absolute().top(px(0.)).left(px(0.)).w_full().h(px(inset)))
+        });
         div()
             .id("title-bar")
             .absolute()
@@ -1070,22 +1145,8 @@ impl app::Acme {
             .flex_row()
             .items_center()
             .bg(gpui::rgb(text_element::ground(&t)))
-            .border_b(px(0.5))
-            .border_color(gpui::rgb(t.body_border))
-            // the window's buttons' room; in full screen AppKit takes them
-            // away, and the rest moves up to the edge
-            .child(bare("title-lights").w(px(if self.fullscreen { 8. } else { LIGHTS_W })))
-            .child(toggle)
-            .child(bare("title-gap0").w(px(6.)))
-            // the session: its name (a click to rename it), the chevron
-            // for the others, a mark when one of them wants the user
-            .child(self.session_title(h, cx))
-            .child(bare("title-gap").w(px(10.)))
-            .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
-            .child(bare("title-gap2").w(px(8.)))
-            .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
-            // the stash's cards at the right end, their room kept clear
-            .child(bare("title-shelf").w(px(self.shelf_room(cx))))
+            .children(card_top)
+            .child(rest)
             .children(self.shelf(h, self.node.state.layout.r.dx() as f32 + self.left(), cx))
             .into_any_element()
     }
