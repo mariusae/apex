@@ -40,9 +40,12 @@ const FAN: Duration = Duration::from_millis(160);
 const GRACE: Duration = Duration::from_millis(250);
 /// A scroll this far moves the choice one card.
 const NOTCH: f32 = 24.;
-/// The preview's size when the window's own is not known.
-const PREVIEW_W: f32 = 440.;
+/// The least the preview is, whatever size the window had (one stashed
+/// as it was made, an +Errors window, may have had a few lines): this
+/// wide, and this tall or this much of the window's height.
+const PREVIEW_W: f32 = 480.;
 const PREVIEW_H: f32 = 320.;
+const PREVIEW_OF_H: f32 = 0.4;
 
 #[derive(Default)]
 pub struct Shelf {
@@ -340,15 +343,17 @@ impl Acme {
         let t = crate::theme::theme();
         let l = &self.node.state.layout;
         let slot = l.stash.iter().find(|s| s.slot.window == w).map(|s| s.slot);
-        let (cw, ch) = slot.map(|s| (s.r.dx() as f32, s.r.dy() as f32)).filter(|&(x, y)| x > 40. && y > 40.).unwrap_or((PREVIEW_W, PREVIEW_H));
-        // as large as it stood, unless the window below the bar is smaller
         let (room_w, room_h) = ((bar_w - 16.).max(80.), (l.r.dy() as f32 - 12.).max(80.));
+        // as large as it stood, and never less than a useful size
+        let (cw, ch) = slot.map(|s| (s.r.dx() as f32, s.r.dy() as f32)).unwrap_or((0., 0.));
+        let (cw, ch) = (cw.max(PREVIEW_W.min(room_w)), ch.max(PREVIEW_H.max(l.r.dy() as f32 * PREVIEW_OF_H).min(room_h)));
+        // unless the window below the bar is smaller
         let scale = (room_w / cw).min(room_h / ch).min(1.);
         let (pw, ph) = (cw * scale, ch * scale);
         let left = (centre - pw / 2.).clamp(8., (bar_w - pw - 8.).max(8.));
         let me = cx.entity();
         let font = f32::from(crate::text_element::tag_line_height());
-        let tag_h = slot.filter(|s| s.body.dy() > 0).map(|s| (s.body.y0 - s.r.y0) as f32).unwrap_or(font + 1.).clamp(font, ph / 2.);
+        let tag_h = slot.filter(|s| s.body.dy() > 0).map(|s| (s.body.y0 - s.r.y0) as f32).unwrap_or(font + 1.).clamp(font, (ph / 2.).max(font));
         let body = self.node.state.window(w).map(|x| x.body).ok();
         let content: AnyElement = match body {
             Some(Body::Text(_)) | Some(Body::Term(_)) => {

@@ -141,7 +141,10 @@ windows put away out of the tiling, which is the core's
   bar's right end as their tags made small, bunched like a hand of
   cards, the latest on top. The pointer on them, or a scroll over
   them, fans them out, and the one under the pointer (or scrolled to)
-  shows below the bar: the window itself, live, at the size it had.
+  shows below the bar: the window itself, live, at the size it had
+  (at least 480 wide and 320 or two fifths of the window tall: one put
+  away as it was made, an +Errors window, may have had a line or two;
+  such a window comes back with an even share of its column, too).
   The pointer can go onto it and work in it as in any window --
   select, snarf, B2, B3, type, scroll -- and it stays stashed (a Look in
   it is found and shown there, the mouse going to it there); the fan
