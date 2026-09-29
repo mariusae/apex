@@ -2036,7 +2036,7 @@ impl Acme {
     }
 
     /// Any button or box held: nothing slides out under a drag.
-    fn held_any(&self) -> bool {
+    pub(crate) fn held_any(&self) -> bool {
         let m = &self.mouse;
         m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some()
     }
@@ -2463,6 +2463,11 @@ impl Acme {
     pub fn show(&mut self, w: WindowId) {
         self.node.seltext = Some(ViewId::Body(w));
         self.want_visible.insert(ViewId::Body(w));
+        // the stashed window being worked in, in the stash's preview: shown
+        // there, and left stashed
+        if self.shelf.peeking() == Some(w) {
+            return;
+        }
         let _ = self.node.reveal(&mut self.log, w); // textshow: a window with no lines grows
     }
 
@@ -2593,7 +2598,8 @@ impl Acme {
         let layout = &self.node.state.layout;
         let column = match view {
             ViewId::ColTag(c) => layout.column(c),
-            ViewId::Tag(w) | ViewId::Body(w) => layout.column_of(w).and_then(|c| layout.column(c)),
+            // a stashed window (in the stash's preview) is in none
+            ViewId::Tag(w) | ViewId::Body(w) => layout.place_of(w).map(|(ci, _)| &layout.cols[ci]),
             ViewId::Top => None,
         };
         if column.is_some_and(|c| tiling::is_strip(c.r)) {
@@ -2637,7 +2643,7 @@ impl Acme {
             // a card's outer corners: a tag's top (and foot, folded to its
             // tag), a body's foot
             round: match view {
-                ViewId::Tag(w) => (true, layout.slot(w).is_none_or(|s| s.body.dy() <= 0)),
+                ViewId::Tag(w) => (true, layout.slot(w).is_none_or(|s| s.body.dy() <= 0) && !layout.is_stashed(w)),
                 ViewId::Body(_) => (false, true),
                 _ => (false, false),
             },
@@ -2696,11 +2702,15 @@ impl Acme {
     // ---- hit testing ---------------------------------------------------------
 
     fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
-        if let Some((w, _)) = self.web_bars.iter().find(|(_, b)| b.contains(&pos)) {
+        // the stash's preview lies over everything: over it, only the
+        // window it shows is there
+        let only = self.shelf.peeking().filter(|_| self.shelf.preview_at.get().is_some_and(|b| b.contains(&pos)));
+        let mine = |w: WindowId| only.is_none_or(|o| o == w);
+        if let Some((w, _)) = self.web_bars.iter().find(|(w, b)| mine(**w) && b.contains(&pos)) {
             return Some((Target::Web(*w), Region::WebScrollbar));
         }
         for (w, l) in &self.term_layouts {
-            if !l.bounds.contains(&pos) {
+            if !mine(*w) || !l.bounds.contains(&pos) {
                 continue;
             }
             let t = match self.node.state.window(*w).ok()?.body {
@@ -2714,7 +2724,7 @@ impl Acme {
             return Some((Target::Term(*w, t), Region::Term(c, r)));
         }
         for (v, l) in &self.layouts {
-            if !l.bounds.contains(&pos) {
+            if (only.is_some() && v.window() != only) || !l.bounds.contains(&pos) {
                 continue;
             }
             if l.scrollbar.is_some_and(|b| b.contains(&pos)) {

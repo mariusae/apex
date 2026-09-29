@@ -141,8 +141,13 @@ windows put away out of the tiling, which is the core's
   bar's right end as their tags made small, bunched like a hand of
   cards, the latest on top. The pointer on them, or a scroll over
   them, fans them out, and the one under the pointer (or scrolled to)
-  shows live below the bar as it stood; a click on one brings it back
-  where it was -- under the window it was under, at the share of its
+  shows below the bar: the window itself, live, at the size it had.
+  The pointer can go onto it and work in it as in any window --
+  select, snarf, B2, B3, type, scroll -- and it stays stashed (a Look in
+  it is found and shown there, the mouse going to it there); the fan
+  closes a quarter second after the pointer has left the cards and the
+  preview, not while a button is held. A click on a card, or B1 on the
+  handle in the preview, brings the window back where it was -- under the window it was under, at the share of its
   column it had, or at the foot of the active column if its own is
   gone. The sidebar lists them under Stashed, and a click there does
   the same. That is the only way back but one: whatever goes to a

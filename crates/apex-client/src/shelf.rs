@@ -2,14 +2,19 @@
 //! their tags made small, bunched at the bar's right end like a hand of
 //! cards, the latest on top. The pointer on them, or a scroll over
 //! them, fans them out, and the one under the pointer (or scrolled to)
-//! shows live below the bar; a click on one brings it back where it
-//! was. The sidebar lists them too. Going to a stashed window any other
+//! shows below the bar -- the window itself, live, at the size it had:
+//! the pointer can go onto it and work in it as in any window (select,
+//! B2, B3, type, scroll) and it stays stashed; the fan closes a moment
+//! after the pointer has left both. A click on a card, or B1 on the
+//! handle in the preview, brings the window back where it was. The sidebar lists them too. Going to a stashed window any other
 //! way (Look, the plumber, a notification) brings it back as well.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{canvas, div, px, rgb, AnyElement, Context, MouseButton, ScrollWheelEvent, Window};
+use gpui::{canvas, div, px, rgb, AnyElement, Bounds, Context, MouseButton, Pixels, ScrollWheelEvent, Window};
 
 use apex_core::WindowId;
 
@@ -29,8 +34,10 @@ const PEEKS: usize = 4;
 /// Between the cards fanned out, and the narrowest they get to fit.
 const GAP: f32 = 4.;
 const MIN_W: f32 = 72.;
-/// How long the fan takes to open or close.
+/// How long the fan takes to open or close, and how long it waits for
+/// the pointer to come back (on its way from a card to its preview).
 const FAN: Duration = Duration::from_millis(160);
+const GRACE: Duration = Duration::from_millis(250);
 /// A scroll this far moves the choice one card.
 const NOTCH: f32 = 24.;
 /// The preview's size when the window's own is not known.
@@ -39,8 +46,16 @@ const PREVIEW_H: f32 = 320.;
 
 #[derive(Default)]
 pub struct Shelf {
-    /// The pointer is on the cards.
+    /// Fanned out (or on its way): the pointer is on the cards or the
+    /// preview, or left them a moment ago.
     pub hovered: bool,
+    on_stack: bool,
+    on_preview: bool,
+    /// When the pointer left both.
+    left_at: Option<Instant>,
+    /// Where the preview was drawn last: the pointer there is on it and
+    /// nothing under it.
+    pub preview_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// When the fan last began to open or close.
     since: Option<Instant>,
     /// The card chosen: under the pointer, or scrolled to.
@@ -59,6 +74,26 @@ impl Shelf {
             (k, k < 1.)
         } else {
             (1. - k, k < 1.)
+        }
+    }
+
+    /// The window shown in the preview.
+    pub fn peeking(&self) -> Option<WindowId> {
+        self.pick.filter(|_| self.hovered && self.fan().0 > 0.5)
+    }
+
+    /// The pointer came onto or left the cards (`stack`) or the preview.
+    fn touch(&mut self, stack: bool, on: bool) {
+        if stack {
+            self.on_stack = on;
+        } else {
+            self.on_preview = on;
+        }
+        if self.on_stack || self.on_preview {
+            self.left_at = None;
+            self.hover(true);
+        } else if self.hovered {
+            self.left_at = Some(Instant::now());
         }
     }
 
@@ -169,7 +204,7 @@ impl Acme {
             .w(px(width + 8.))
             .h(px(CARD_H + 8.))
             .on_hover(cx.listener(|this, on: &bool, _, cx| {
-                this.shelf.hover(*on);
+                this.shelf.touch(true, *on);
                 cx.notify();
             }))
             .on_scroll_wheel(cx.listener(move |this, e: &ScrollWheelEvent, _, cx| {
@@ -203,18 +238,38 @@ impl Acme {
             let picked = self.shelf.pick == Some(w) && self.shelf.hovered;
             stack = stack.child(self.shelf_card(w, i, right_of(i) + 4., card_w, picked, cx));
         }
-        // keep the fan moving until it settles
-        let tick = canvas(|_, _, _| {}, move |_, _, window, _| {
-            if moving {
-                window.request_animation_frame();
-            }
-        })
+        // keep the fan moving until it settles, and close it once the
+        // pointer has been off it a moment (not while a button is held:
+        // a selection swept out of the preview)
+        let me = cx.entity();
+        let left = self.shelf.left_at;
+        let tick = canvas(
+            move |_, window, cx| {
+                if let Some(at) = left {
+                    if at.elapsed() >= GRACE {
+                        me.update(cx, |this, cx| {
+                            if this.shelf.left_at == Some(at) && !this.held_any() {
+                                this.shelf.left_at = None;
+                                this.shelf.hover(false);
+                                cx.notify();
+                            }
+                        });
+                    }
+                    window.request_animation_frame();
+                }
+            },
+            move |_, _, window, _| {
+                if moving {
+                    window.request_animation_frame();
+                }
+            },
+        )
         .size(px(0.));
         let mut out = div().absolute().top(px(0.)).right(px(0.)).size_full().child(stack).child(tick);
         if let Some(p) = self.shelf.pick.filter(|_| self.shelf.hovered && k > 0.5) {
             if let Some(i) = wins.iter().position(|&w| w == p) {
                 let centre = bar_w - 8. - 4. - right_of(i) - card_w / 2.;
-                out = out.child(self.shelf_preview(p, centre, h, bar_w));
+                out = out.child(self.shelf_preview(p, centre, h, bar_w, cx));
             }
         }
         Some(out.into_any_element())
@@ -276,23 +331,52 @@ impl Acme {
             .into_any_element()
     }
 
-    /// Window `w` drawn live below the bar, at the size it had in its
-    /// column (smaller only when the window has not the room), under its
-    /// card at `centre`.
-    fn shelf_preview(&self, w: WindowId, centre: f32, h: f32, bar_w: f32) -> AnyElement {
+    /// Window `w` below the bar, at the size it had in its column
+    /// (smaller only when the window has not the room), under its card
+    /// at `centre`: its tag and body themselves, live, to work in as in
+    /// any window -- a page's drawn from its replica.
+    fn shelf_preview(&self, w: WindowId, centre: f32, h: f32, bar_w: f32, cx: &mut Context<Self>) -> AnyElement {
+        use apex_core::{Body, ViewId};
         let t = crate::theme::theme();
         let l = &self.node.state.layout;
-        let (cw, ch) = l.stash.iter().find(|s| s.slot.window == w).map(|s| (s.slot.r.dx() as f32, s.slot.r.dy() as f32)).filter(|&(x, y)| x > 40. && y > 40.).unwrap_or((PREVIEW_W, PREVIEW_H));
+        let slot = l.stash.iter().find(|s| s.slot.window == w).map(|s| s.slot);
+        let (cw, ch) = slot.map(|s| (s.r.dx() as f32, s.r.dy() as f32)).filter(|&(x, y)| x > 40. && y > 40.).unwrap_or((PREVIEW_W, PREVIEW_H));
         // as large as it stood, unless the window below the bar is smaller
         let (room_w, room_h) = ((bar_w - 16.).max(80.), (l.r.dy() as f32 - 12.).max(80.));
         let scale = (room_w / cw).min(room_h / ch).min(1.);
         let (pw, ph) = (cw * scale, ch * scale);
         let left = (centre - pw / 2.).clamp(8., (bar_w - pw - 8.).max(8.));
-        let mini = crate::miniature::snapshot_window(&self.node, w, cw, ch, &t);
-        let body = canvas(|_, _, _| {}, move |b, _, window, cx| mini.paint(b, window, cx)).size_full();
+        let me = cx.entity();
+        let font = f32::from(crate::text_element::tag_line_height());
+        let tag_h = slot.filter(|s| s.body.dy() > 0).map(|s| (s.body.y0 - s.r.y0) as f32).unwrap_or(font + 1.).clamp(font, ph / 2.);
+        let body = self.node.state.window(w).map(|x| x.body).ok();
+        let content: AnyElement = match body {
+            Some(Body::Text(_)) | Some(Body::Term(_)) => {
+                let tag = div().flex_none().w_full().h(px(tag_h - 1.)).child(crate::text_element::TextElement { acme: me.clone(), view: ViewId::Tag(w) });
+                let inner: AnyElement = match body {
+                    Some(Body::Term(term)) => crate::term_element::TermElement { acme: me.clone(), window: w, term }.into_any_element(),
+                    _ => crate::text_element::TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
+                };
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(tag)
+                    .child(div().flex_none().w_full().h(px(1.)).bg(rgb(t.body_border)))
+                    .child(div().flex_1().min_h_0().w_full().child(inner))
+                    .into_any_element()
+            }
+            _ => {
+                let mini = crate::miniature::snapshot_window(&self.node, w, cw, ch, &t);
+                canvas(|_, _, _| {}, move |b, _, window, cx| mini.paint(b, window, cx)).size_full().into_any_element()
+            }
+        };
+        let at = self.shelf.preview_at.clone();
+        let mark = canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full();
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.22), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false };
         gpui::deferred(
             div()
+                .id("shelf-preview")
                 .absolute()
                 .top(px(h + 6.))
                 .left(px(left))
@@ -304,8 +388,14 @@ impl Acme {
                 .border_1()
                 .border_color(rgb(t.body_border))
                 .shadow(vec![shadow])
+                .cursor(gpui::CursorStyle::Arrow)
                 .child(self.overlay_mark())
-                .child(body),
+                .child(mark)
+                .child(content)
+                .on_hover(cx.listener(|this, on: &bool, _, cx| {
+                    this.shelf.touch(false, *on);
+                    cx.notify();
+                })),
         )
         .with_priority(2)
         .into_any_element()
