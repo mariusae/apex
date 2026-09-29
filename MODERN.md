@@ -30,8 +30,11 @@ windows put away out of the tiling, which is the core's
   Terminal's own SF Mono at Medium, 12/16, the Regular being thin),
   Classic (Lucida Grande 13/17, Menlo 12/16), Nova (SF Pro legible
   14/20 for text and the interface, Menlo 12/16), Go (Go 14/20, Go Mono
-  12/16, bundled) and Mona (Mona Sans 15/21, Monaspace Xenon 12/16 with
-  Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled).
+  12/16, bundled), Mona (Mona Sans 15/21, Monaspace Xenon 12/16 with
+  Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled)
+  and H&Co (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart
+  cuts: not bundled -- the installed ones, else Operator Mono's files
+  from the iCloud Drive Fonts folder).
 - **Tags as title bars.** The window's name in the primary ink, a
   medium weight; the commands after it in the secondary. Column tags
   and the top row are all secondary. A header's caret is not drawn

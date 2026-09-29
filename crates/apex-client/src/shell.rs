@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, PaletteAlabaster, PaletteSystem, PaletteClassic, PaletteGitHub, PaletteNova, StashWindow, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -199,6 +199,7 @@ pub fn menus() -> Vec<Menu> {
                                 MenuItem::action(mark(crate::fonts::Set::Go), FontGo),
                                 MenuItem::action(mark(crate::fonts::Set::Mona), FontMona),
                                 MenuItem::action(mark(crate::fonts::Set::Nova), FontNova),
+                                MenuItem::action(mark(crate::fonts::Set::Hco), FontHco),
                             ]
                         },
                     }),
