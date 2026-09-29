@@ -400,8 +400,10 @@ impl Render for Acme {
                                 .flex()
                                 .flex_row()
                                 .bg(gpui::rgb(paper))
+                                // in by the key ring's width at the left and
+                                // foot, which the native view would cover
                                 .child(
-                                    div().flex_1().h_full().cursor(cursor::NATIVE_CURSOR).child(
+                                    div().flex_1().h_full().pl(px(crate::web::PAGE_INSET)).pb(px(crate::web::PAGE_INSET)).cursor(cursor::NATIVE_CURSOR).child(
                                         canvas(
                                             move |bounds, window, cx| {
                                                 me2.update(cx, |acme, _| acme.web_place(w, bounds, window));

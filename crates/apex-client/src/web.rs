@@ -1072,6 +1072,7 @@ impl Webs {
         match b.build_as_child(window) {
             Ok(view) => {
                 let _ = view.set_visible(visible);
+                round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
                 self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
             }
@@ -1468,6 +1469,43 @@ pub fn set_native_titlebar_hidden(window: &Window, hidden: bool) {
 
 #[cfg(not(target_os = "macos"))]
 pub fn set_native_titlebar_hidden(_window: &Window, _hidden: bool) {}
+
+/// A page's foot-left corner rounded as its card's is (the card's radius
+/// less the inset the page stands in by, `PAGE_INSET`), so the ring round
+/// the window the keys go to shows there: the page is a native view over
+/// everything gpui draws. Its right is the scrollbar's, drawn by gpui.
+#[cfg(target_os = "macos")]
+fn round_foot(view: &wry::WebView) {
+    use objc::runtime::{Object, YES};
+    use objc::{msg_send, sel, sel_impl};
+    use wry::WebViewExtMacOS;
+    let wk = view.webview();
+    let v = &*wk as *const _ as *mut Object;
+    // SAFETY: the WKWebView was just made and is alive; CoreAnimation on
+    // the main thread.
+    unsafe {
+        let _: () = msg_send![v, setWantsLayer: YES];
+        let layer: *mut Object = msg_send![v, layer];
+        if layer.is_null() {
+            return;
+        }
+        let flipped: bool = msg_send![layer, isGeometryFlipped];
+        // kCALayerMinXMinYCorner (1) is the foot when y goes up, else
+        // kCALayerMinXMaxYCorner (4)
+        let corner: usize = if flipped { 4 } else { 1 };
+        let _: () = msg_send![layer, setCornerRadius: (crate::text_element::CARD_RADIUS - PAGE_INSET) as f64];
+        let _: () = msg_send![layer, setMaskedCorners: corner];
+        let _: () = msg_send![layer, setMasksToBounds: YES];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn round_foot(_view: &wry::WebView) {}
+
+/// How far a page stands in from its card's left and foot: the width of
+/// the ring round the window the keys go to, which a native view would
+/// cover.
+pub const PAGE_INSET: f32 = 2.;
 
 /// The window's buttons shown or not, as Manifold shows them: with the
 /// sidebar, faded in and out (AppKit's animator), and not to be pressed
