@@ -3,8 +3,11 @@
 //! is not opened over the work: it goes to its column's stash, and what
 //! was just written shows in a toast at the foot of that column, by the
 //! stash, with Show All (the window brought back) and ×. A toast goes by
-//! itself after a while unless the pointer is on it. An `+Errors` window
-//! already open and showing lines is shown as before, and toasts nothing.
+//! itself after a while unless the pointer is on it. Its words answer as
+//! the window's would: B3 on one looks (plumbs a file:line, say), B2 runs
+//! it, both from the `+Errors` window; the text is not for editing. An
+//! `+Errors` window already open and showing lines is shown as before,
+//! and toasts nothing.
 
 use std::time::{Duration, Instant};
 
@@ -152,7 +155,7 @@ impl Acme {
                         .line_height(px(16.))
                         .text_color(rgb(t.panel_text))
                         .overflow_hidden()
-                        .children(shown.lines().map(|l| div().truncate().child(l.to_string())).collect::<Vec<_>>())
+                        .children(shown.lines().enumerate().map(|(n, l)| toast_line(w, i, n, l, cx)).collect::<Vec<_>>())
                         .when(more, |d| d.child(div().text_color(rgb(t.panel_dim)).child("…"))),
                 )
                 .on_hover(cx.listener(move |this, over: &bool, _, cx| {
@@ -167,4 +170,68 @@ impl Acme {
         }
         out
     }
+}
+
+/// A toast's line, word by word: B3 on a word looks it up from the
+/// `+Errors` window (as a click in the window would: a file:line opens),
+/// B2 runs it there; the spaces between stay as they were.
+fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<Acme>) -> AnyElement {
+    let mut row = div().id(("toast-line", toast * 1000 + n)).flex().flex_row().overflow_hidden().whitespace_nowrap();
+    let mut rest = line;
+    let mut k = 0;
+    while !rest.is_empty() {
+        let gap = rest.len() - rest.trim_start().len();
+        if gap > 0 {
+            row = row.child(div().flex_none().child(rest[..gap].to_string()));
+            rest = &rest[gap..];
+            continue;
+        }
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let word = rest[..end].to_string();
+        rest = &rest[end..];
+        let look = word.trim_matches(|c| !crate::app::is_file_char(c)).to_string();
+        let run = word.trim_matches(|c| !crate::app::is_exec_char(c)).to_string();
+        let (look1, run1) = (look.clone(), run.clone());
+        k += 1;
+        row = row.child(
+            div()
+                .id(("toast-word", (toast * 1000 + n) * 1000 + k))
+                .flex_none()
+                .rounded(px(3.))
+                .hover(|s| s.bg(rgb(crate::theme::theme().panel_hover)))
+                .child(word)
+                // ⌘-click is B3 and ⌥-click B2, as anywhere
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                        if e.modifiers.platform {
+                            this.look(apex_core::ExecCtx::Window(w), &look1);
+                        } else if e.modifiers.alt {
+                            this.execute(apex_core::ExecCtx::Window(w), &run1, cx);
+                        } else {
+                            return;
+                        }
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, _, _, cx| {
+                        this.look(apex_core::ExecCtx::Window(w), &look);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Middle,
+                    cx.listener(move |this, _, _, cx| {
+                        this.execute(apex_core::ExecCtx::Window(w), &run, cx);
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                ),
+        );
+    }
+    row.into_any_element()
 }

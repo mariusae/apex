@@ -588,10 +588,10 @@ fn is_alnum(c: char) -> bool {
     u > 0x20 && !(0x7F..=0xA0).contains(&u) && !".!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".contains(c)
 }
 /// acme's `isfilec` (look.c): alnum, and `.-+/:@`.
-fn is_file_char(c: char) -> bool {
+pub(crate) fn is_file_char(c: char) -> bool {
     is_alnum(c) || ".-+/:@".contains(c)
 }
-fn is_exec_char(c: char) -> bool {
+pub(crate) fn is_exec_char(c: char) -> bool {
     is_file_char(c) || "<|>".contains(c)
 }
 
