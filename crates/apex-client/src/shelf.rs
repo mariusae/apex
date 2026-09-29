@@ -16,10 +16,14 @@ use apex_core::WindowId;
 use crate::app::Acme;
 use crate::glide::ease;
 
-/// A card as the bar shows it, and how much of each one under the top
-/// card peeks out while they are bunched (a few at most).
-const CARD_W: f32 = 132.;
+/// A card as the bar shows it: as wide as the widest name needs (the
+/// dot, its gap and the card's padding besides), up to a limit; and how
+/// much of each one under the top card peeks out while they are bunched
+/// (a few at most).
+const CARD_MAX: f32 = 240.;
+const CARD_PAD: f32 = 7. + 9. + 6. + 7. + 2. + 2.;
 const CARD_H: f32 = 22.;
+const CARD_TEXT: f32 = 12.;
 const PEEK: f32 = 5.;
 const PEEKS: usize = 4;
 /// Between the cards fanned out, and the narrowest they get to fit.
@@ -29,7 +33,7 @@ const MIN_W: f32 = 72.;
 const FAN: Duration = Duration::from_millis(160);
 /// A scroll this far moves the choice one card.
 const NOTCH: f32 = 24.;
-/// The preview's largest size.
+/// The preview's size when the window's own is not known.
 const PREVIEW_W: f32 = 440.;
 const PREVIEW_H: f32 = 320.;
 
@@ -80,6 +84,29 @@ impl Acme {
         self.node.state.layout.stash.iter().rev().map(|s| s.slot.window).collect()
     }
 
+    /// Stashed window `w`'s card's name: the last part of its name, or
+    /// what it is when it has none.
+    fn shelf_label(&self, w: WindowId) -> String {
+        let name = self.node.window_name(w);
+        if !name.is_empty() {
+            return crate::sidebar::split_name(&name).0;
+        }
+        match self.node.window_kind(w) {
+            apex_core::WinKind::Term => "Terminal".into(),
+            apex_core::WinKind::Web => "New page".into(),
+            _ => "Untitled".into(),
+        }
+    }
+
+    /// How wide the cards are: the widest name's, all of them alike.
+    fn shelf_card_w(&self, cx: &gpui::App) -> f32 {
+        let ts = cx.text_system();
+        let id = ts.resolve_font(&gpui::font(crate::fonts::ui()));
+        let width = |s: &str| s.chars().map(|c| ts.advance(id, px(CARD_TEXT), c).map(|a| f32::from(a.width)).unwrap_or(7.)).sum::<f32>();
+        let widest = self.node.state.layout.stash.iter().map(|s| width(&self.shelf_label(s.slot.window))).fold(0., f32::max);
+        (widest.ceil() + CARD_PAD).clamp(MIN_W, CARD_MAX)
+    }
+
     /// ⌘M: the window the keys go to (else the one under the pointer)
     /// put in the stash.
     pub fn stash_key(&mut self, window: &Window, cx: &mut Context<Self>) {
@@ -102,12 +129,12 @@ impl Acme {
 
     /// How much room the bunched cards want at the bar's right end
     /// (nothing without a stash).
-    pub fn shelf_room(&self) -> f32 {
+    pub fn shelf_room(&self, cx: &gpui::App) -> f32 {
         let n = self.node.state.layout.stash.len();
         if n == 0 {
             0.
         } else {
-            CARD_W + PEEK * (n - 1).min(PEEKS) as f32 + 20.
+            self.shelf_card_w(cx) + PEEK * (n - 1).min(PEEKS) as f32 + 20.
         }
     }
 
@@ -124,8 +151,9 @@ impl Acme {
         let (k, moving) = self.shelf.fan();
         // fanned out: side by side leftward from the right end, narrower
         // if they would take more than half the bar
-        let fan_w = (((bar_w / 2.) / n as f32) - GAP).clamp(MIN_W, CARD_W);
-        let card_w = CARD_W + (fan_w - CARD_W) * k;
+        let full_w = self.shelf_card_w(cx);
+        let fan_w = (((bar_w / 2.) / n as f32) - GAP).clamp(MIN_W.min(full_w), full_w);
+        let card_w = full_w + (fan_w - full_w) * k;
         let right_of = |i: usize| {
             let bunched = PEEK * i.min(PEEKS) as f32;
             let fanned = (fan_w + GAP) * i as f32;
@@ -204,11 +232,7 @@ impl Acme {
         } else {
             t.tag_bg
         };
-        let mut name = self.node.window_name(w);
-        if name.is_empty() && self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web) {
-            name = "New page".into();
-        }
-        let (label, _) = crate::sidebar::split_name(&name);
+        let label = self.shelf_label(w);
         let d = self.window_dot(w);
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.14), offset: gpui::point(px(0.), px(1.)), blur_radius: px(3.), spread_radius: px(0.), inset: false };
         div()
@@ -230,7 +254,7 @@ impl Acme {
             .px(px(7.))
             .overflow_hidden()
             .font_family(crate::fonts::ui())
-            .text_size(px(12.))
+            .text_size(px(CARD_TEXT))
             .text_color(rgb(t.text))
             .cursor_default()
             .child(crate::sidebar::dot_element(&d))
@@ -252,13 +276,16 @@ impl Acme {
             .into_any_element()
     }
 
-    /// Window `w` drawn live below the bar, as it stood in its column
-    /// (scaled down to fit), under its card at `centre`.
+    /// Window `w` drawn live below the bar, at the size it had in its
+    /// column (smaller only when the window has not the room), under its
+    /// card at `centre`.
     fn shelf_preview(&self, w: WindowId, centre: f32, h: f32, bar_w: f32) -> AnyElement {
         let t = crate::theme::theme();
         let l = &self.node.state.layout;
         let (cw, ch) = l.stash.iter().find(|s| s.slot.window == w).map(|s| (s.slot.r.dx() as f32, s.slot.r.dy() as f32)).filter(|&(x, y)| x > 40. && y > 40.).unwrap_or((PREVIEW_W, PREVIEW_H));
-        let scale = (PREVIEW_W / cw).min(PREVIEW_H / ch).min(1.);
+        // as large as it stood, unless the window below the bar is smaller
+        let (room_w, room_h) = ((bar_w - 16.).max(80.), (l.r.dy() as f32 - 12.).max(80.));
+        let scale = (room_w / cw).min(room_h / ch).min(1.);
         let (pw, ph) = (cw * scale, ch * scale);
         let left = (centre - pw / 2.).clamp(8., (bar_w - pw - 8.).max(8.));
         let mini = crate::miniature::snapshot_window(&self.node, w, cw, ch, &t);

@@ -1071,7 +1071,7 @@ impl app::Acme {
             .child(bare("title-gap2").w(px(8.)))
             .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
             // the stash's cards at the right end, their room kept clear
-            .child(bare("title-shelf").w(px(self.shelf_room())))
+            .child(bare("title-shelf").w(px(self.shelf_room(cx))))
             .children(self.shelf(h, self.node.state.layout.r.dx() as f32 + self.left(), cx))
             .into_any_element()
     }
