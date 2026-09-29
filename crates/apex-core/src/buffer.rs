@@ -55,6 +55,34 @@ pub struct Buffer {
     pub views: BTreeMap<ViewId, View>,
     pub undo: Vec<Group>,
     pub redo: Vec<Group>,
+    /// The text's content hash at `version`, worked out when asked
+    /// (`dirty`), not sent or compared.
+    #[serde(skip)]
+    hashed: Memo,
+}
+
+/// The text's hash at one version, kept so `dirty` hashes the text once
+/// per version. Nothing of the state: a copy starts without it, and two
+/// buffers are alike whatever theirs hold.
+#[derive(Default)]
+struct Memo(std::sync::Mutex<Option<(Version, String)>>);
+
+impl Clone for Memo {
+    fn clone(&self) -> Memo {
+        Memo::default()
+    }
+}
+
+impl PartialEq for Memo {
+    fn eq(&self, _: &Memo) -> bool {
+        true
+    }
+}
+
+impl std::fmt::Debug for Memo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Memo")
+    }
 }
 
 /// Bound on undo history, in groups.
@@ -73,11 +101,25 @@ impl Buffer {
             views: BTreeMap::new(),
             undo: Vec::new(),
             redo: Vec::new(),
+            hashed: Memo::default(),
         }
     }
 
+    /// Changed since it was loaded or put -- and not back to what is on
+    /// disk: typing and undoing it all is clean again, as in acme (whose
+    /// undo takes the file's sequence back to where Put left it; here the
+    /// version only goes forward, and the text is held to the disk's
+    /// hash instead).
     pub fn dirty(&self) -> bool {
-        self.version != self.clean_version
+        if self.version == self.clean_version {
+            return false;
+        }
+        let Some(disk) = &self.disk_hash else { return true };
+        let mut memo = self.hashed.0.lock().unwrap_or_else(|e| e.into_inner());
+        if memo.as_ref().is_none_or(|(v, _)| *v != self.version) {
+            *memo = Some((self.version, self.text.content_hash()));
+        }
+        memo.as_ref().is_none_or(|(_, h)| h != disk)
     }
 
     /// Apply a concrete edit and record it under `group`.
@@ -221,6 +263,27 @@ mod tests {
 
     fn buf(s: &str) -> Buffer {
         Buffer::new(BufferId(1), "x", s, None)
+    }
+
+    #[test]
+    fn typing_and_undoing_it_all_is_clean_again() {
+        let disk = Text::new("abc").content_hash();
+        let mut b = Buffer::new(BufferId(1), "x", "abc", Some(disk));
+        assert!(!b.dirty());
+        b.edit(1, 0, "X", GroupId(1));
+        assert!(b.dirty());
+        b.undo();
+        assert!(!b.dirty(), "back to what is on disk");
+        b.redo();
+        assert!(b.dirty());
+        // the same text typed again by hand is what is on disk too
+        b.edit(1, 1, "", GroupId(2));
+        assert!(!b.dirty());
+        // with no disk to hold it to, any change is a change
+        let mut n = buf("abc");
+        n.edit(1, 0, "X", GroupId(1));
+        n.undo();
+        assert!(n.dirty());
     }
 
     #[test]
