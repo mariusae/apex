@@ -1128,3 +1128,19 @@ fn a_window_stashed_with_a_few_lines_comes_back_with_an_even_share() {
     let dy = l.cols[0].wins[2].r.dy();
     assert!(dy > 600 / 3 - 2 * FONT, "{:?}", wins(&l, 0));
 }
+
+#[test]
+fn a_window_restashed_is_the_latest_and_still_comes_back_where_it_was() {
+    let mut l = row();
+    for w in 1..=4 {
+        add(&mut l, 0, w, None);
+    }
+    stash(&mut l, 0, 1, &info());
+    stash(&mut l, 0, 1, &info());
+    assert_eq!(l.stash.iter().map(|s| s.slot.window.0).collect::<Vec<_>>(), vec![2, 3]);
+    restash(&mut l, 0);
+    assert_eq!(l.stash.iter().map(|s| s.slot.window.0).collect::<Vec<_>>(), vec![3, 2]);
+    back(&mut l, 2, None);
+    back(&mut l, 3, None);
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+}

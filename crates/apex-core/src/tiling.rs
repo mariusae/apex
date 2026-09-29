@@ -766,6 +766,13 @@ pub fn left(l: &mut Layout, ci: usize, w: WindowId, above: Option<WindowId>) {
     }
 }
 
+/// Stashed window `si` made the latest put away, as though stashed just
+/// now (worked in where it is shown): first among the stash's cards.
+pub fn restash(l: &mut Layout, si: usize) {
+    let s = l.stash.remove(si);
+    l.stash.push(s);
+}
+
 /// A stashed window taken out of the stash for good (closed): its slot.
 pub fn unstash(l: &mut Layout, si: usize) -> Slot {
     let s = l.stash.remove(si);

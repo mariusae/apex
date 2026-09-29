@@ -620,6 +620,18 @@ impl Node {
         self.arrange(log, &l)
     }
 
+    /// Stashed window `w` made the latest in the stash (worked in where
+    /// the stash shows it): first among its cards.
+    pub fn restash_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some(si) = self.state.layout.stashed_of(w) else { return Ok(()) };
+        if si + 1 == self.state.layout.stash.len() {
+            return Ok(());
+        }
+        let mut l = self.state.layout.clone();
+        tiling::restash(&mut l, si);
+        self.arrange(log, &l)
+    }
+
     /// Stashed window `w` brought back where it was: under the window it
     /// was under in its column, or at the foot of the active column when
     /// its own is gone.
