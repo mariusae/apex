@@ -443,6 +443,11 @@ pub struct Acme {
     /// dropped down (`titlebar.rs`).
     pub session_edit: Option<crate::titlebar::SessionEdit>,
     pub session_menu: bool,
+    /// Every known host and its sessions, for the sidebar: as last seen,
+    /// then as each host answers (`sidebar_refresh`), and when it was
+    /// last asked.
+    pub sidebar_hosts: Vec<(crate::shell::Host, crate::shell::Loading)>,
+    pub sidebar_asked: Option<std::time::Instant>,
     /// Blank web windows already given their address field.
     pub url_asked: std::collections::HashSet<WindowId>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
@@ -1633,6 +1638,8 @@ impl Acme {
             url_edit: None,
             session_edit: None,
             session_menu: false,
+            sidebar_hosts: Vec::new(),
+            sidebar_asked: None,
             commands: None,
             completion: None,
             candidates: Vec::new(),

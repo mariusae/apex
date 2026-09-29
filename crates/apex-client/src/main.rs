@@ -193,6 +193,11 @@ impl Render for Acme {
         // the sidebar, as Manifold's, down the left with the content beside
         // it, shown or not by the title bar's button (⌃⌘S)
         let side = self.sidebar_shown();
+        // every host's sessions for it, asked in the background as it
+        // shows, and again each minute it stays
+        if side && self.sidebar_asked.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(60)) {
+            self.sidebar_refresh(cx);
+        }
         // the window's buttons, always on the title bar; every frame, as
         // they are looked at (cheaply): AppKit can make them anew behind
         // our back

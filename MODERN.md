@@ -95,7 +95,12 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   row's rectangle starts a line up), the tag drawn in the bar instead.
 - **Sidebar** (`sidebar.rs`), as Manifold's: the
   sessions as vertical tabs in a card inset from the window's edges,
-  under the title bar. The shown session lists its windows,
+  under the title bar -- every known host's, under the host's name
+  (this Mac first) when there is more than one: those open in the app
+  as their tabs, the others fainter, a click opening one. Each host is
+  asked for its sessions in the background as the sidebar shows and
+  each minute it stays (what it had last shown until it answers, and
+  kept, marked unreachable, if it does not). The shown session lists its windows,
   column by column, each with its dot; a click reveals one and lands on
   it, as taking a notification does. New Session opens the picker.
   Shown or not by the title bar's button (⌃⌘S, View ▸ Show/Hide

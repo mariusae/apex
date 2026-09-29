@@ -1,6 +1,9 @@
 //! The sidebar (the modern-mac experiment): the sessions down the left
-//! as vertical tabs, in a card that floats a little in from the
-//! window's edges as Manifold's does, the window's buttons at its top.
+//! as vertical tabs, in a card a little in from the window's edges as
+//! Manifold's is -- every known host's, under the host (this Mac first),
+//! asked for in the background: those open in the app as their tabs,
+//! the others fainter, a click opening one. A host that does not answer
+//! keeps what it had last, and says so.
 //! The one shown has its windows listed under it, column by column, each
 //! with its handle's dot: a click on one reveals it and lands on it, as
 //! taking a notification does. Nothing here is new to apex but the way
@@ -10,7 +13,8 @@
 use gpui::{div, prelude::*, px, rgb, BoxShadow, Context, FontWeight, MouseButton};
 
 use crate::app::Acme;
-use crate::pool::Pool;
+use crate::pool::{Pool, Tab};
+use crate::shell::{Host, Loading};
 use crate::shell::pjw;
 use crate::theme;
 
@@ -30,7 +34,81 @@ impl Acme {
         let chosen = if dark { 0x3A3A3C } else { 0xFFFFFF };
         let avatar_idle = if dark { 0x58585C } else { 0xB8B8BC };
         let mut list = div().id("sessions").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().gap(px(2.)).px(px(6.));
-        for (i, tab) in Pool::tabs(cx).into_iter().enumerate() {
+        let entries = self.sidebar_entries(cx);
+        let headed = entries.iter().filter(|e| matches!(e, Entry::Host(..))).count() > 1;
+        for entry in entries {
+            let (i, tab) = match entry {
+                // a host's name over its sessions (when there is more than
+                // one host), and whether it could be asked
+                Entry::Host(k, name, down) => {
+                    if headed {
+                        list = list.child(
+                            div()
+                                .id(("host", k))
+                                .flex_none()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(px(6.))
+                                .px(px(8.))
+                                .pt(px(if k == 0 { 2. } else { 10. }))
+                                .pb(px(2.))
+                                .text_size(px(11.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(rgb(t.text_dim))
+                                .child(name)
+                                .when(down, |d| d.child(div().font_weight(FontWeight::NORMAL).child("unreachable"))),
+                        );
+                    }
+                    continue;
+                }
+                // a session not open in the app: fainter, a click opens it
+                Entry::Known(k, url) => {
+                    let name = url.session.clone();
+                    let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_else(|| "·".into());
+                    list = list.child(
+                        div()
+                            .id(("known-session", k))
+                            .flex_none()
+                            .min_h(px(ROW_H))
+                            .py(px(4.))
+                            .px(px(8.))
+                            .rounded(px(8.))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .cursor_default()
+                            .hover(move |s| s.bg(rgb(hover)))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .size(px(18.))
+                                    .rounded_full()
+                                    .border(px(1.25))
+                                    .border_color(rgb(avatar_idle))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(rgb(t.text_dim))
+                                    .text_size(px(10.))
+                                    .font_weight(FontWeight::BOLD)
+                                    .child(initial),
+                            )
+                            .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).text_color(rgb(t.text_dim)).child(name))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, window, cx| {
+                                    this.switch_to_url(&url, window, cx);
+                                    cx.defer(|cx| crate::shell::save_open(cx));
+                                    cx.notify();
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                    );
+                    continue;
+                }
+                Entry::Tab(i, tab) => (i, tab),
+            };
             let id = tab.id;
             let current = id == self.tab;
             let u = tab.url.clone();
@@ -321,5 +399,105 @@ mod tests {
         assert_eq!(split_name("/tmp/proj/main.rs"), ("main.rs".into(), "/tmp/proj".into()));
         assert_eq!(split_name("/tmp/proj/"), ("proj/".into(), "/tmp".into()));
         assert_eq!(split_name("+Errors"), ("+Errors".into(), "".into()));
+    }
+}
+
+/// A row of the sidebar's list.
+enum Entry {
+    /// A host's name (its place in the list, the name, whether it failed to answer).
+    Host(usize, String, bool),
+    /// One of the app's tabs (its place among them).
+    Tab(usize, Tab),
+    /// A host's session not open in the app.
+    Known(usize, apex_server::providers::SessionUrl),
+}
+
+impl Acme {
+    /// The sidebar's rows: each host (this Mac first, then the known
+    /// ones, then any other a tab is on), its tabs under it, then its
+    /// other sessions.
+    fn sidebar_entries(&self, cx: &gpui::App) -> Vec<Entry> {
+        let tabs = Pool::tabs(cx);
+        let mut hosts: Vec<Host> = self.sidebar_hosts.iter().map(|(h, _)| h.clone()).collect();
+        if hosts.is_empty() {
+            hosts = crate::shell::known_hosts();
+        }
+        for t in &tabs {
+            let h = Host::of(&t.url);
+            if !hosts.contains(&h) {
+                hosts.push(h);
+            }
+        }
+        let same = |a: &apex_server::providers::SessionUrl, b: &apex_server::providers::SessionUrl| a.provider == b.provider && a.arg == b.arg && a.session == b.session;
+        let mut out = Vec::new();
+        let mut k = 0;
+        for (hi, h) in hosts.iter().enumerate() {
+            let loading = self.sidebar_hosts.iter().find(|(x, _)| x == h).map(|(_, l)| l);
+            let name = if h.is_local() { "This Mac".to_string() } else { h.arg.clone() };
+            out.push(Entry::Host(hi, name, matches!(loading, Some(Loading::Failed(..)))));
+            for (i, t) in tabs.iter().enumerate().filter(|(_, t)| Host::of(&t.url) == *h) {
+                out.push(Entry::Tab(i, t.clone()));
+            }
+            for s in loading.map(|l| l.sessions()).unwrap_or_default() {
+                let u = h.url_of(s);
+                if !tabs.iter().any(|t| same(&t.url, &u)) {
+                    out.push(Entry::Known(k, u));
+                    k += 1;
+                }
+            }
+        }
+        out
+    }
+
+    /// Every known host asked for its sessions, in the background: what
+    /// it had last shown until it answers, and kept if it does not.
+    pub fn sidebar_refresh(&mut self, cx: &mut Context<Self>) {
+        self.sidebar_asked = Some(std::time::Instant::now());
+        let mut hosts = crate::shell::known_hosts();
+        for t in Pool::tabs(cx) {
+            let h = Host::of(&t.url);
+            if !hosts.contains(&h) {
+                hosts.push(h);
+            }
+        }
+        let mut known = crate::shell::known_sessions();
+        for h in &hosts {
+            if !self.sidebar_hosts.iter().any(|(x, _)| x == h) {
+                self.sidebar_hosts.push((h.clone(), Loading::Seeded(known.remove(h).unwrap_or_default())));
+            }
+        }
+        self.sidebar_hosts.sort_by_key(|(h, _)| hosts.iter().position(|x| x == h).unwrap_or(usize::MAX));
+        for h in hosts {
+            let (host, socket) = (h.clone(), self.socket.clone());
+            let asking = cx.background_executor().spawn(async move {
+                if host.is_local() {
+                    let Some(socket) = socket else { return Err("no daemon".to_string()) };
+                    apex_server::remote::list_sessions(&socket).map_err(|e| e.to_string())
+                } else {
+                    apex_server::providers::list_sessions(&host.dest()).map_err(|e| e.to_string())
+                }
+            });
+            cx.spawn(async move |this, cx| {
+                let r = asking.await;
+                let _ = cx.update(|cx| {
+                    let _ = this.update(cx, |acme, cx| {
+                        let before = acme.sidebar_hosts.iter().find(|(x, _)| *x == h).map(|(_, l)| l.sessions().to_vec()).unwrap_or_default();
+                        let loaded = match r {
+                            Ok(names) => {
+                                crate::shell::note_sessions(&h, &names);
+                                Loading::Ready(names)
+                            }
+                            Err(e) => Loading::Failed(before, e),
+                        };
+                        match acme.sidebar_hosts.iter_mut().find(|(x, _)| *x == h) {
+                            Some(e) => e.1 = loaded,
+                            None => acme.sidebar_hosts.push((h.clone(), loaded)),
+                        }
+                        cx.notify();
+                    });
+                });
+            })
+            .detach();
+        }
     }
 }
