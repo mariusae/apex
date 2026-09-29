@@ -11,9 +11,9 @@ windows put away out of the tiling, which is the core's
 
 ## What changed
 
-- **Look.** Four palettes to live with (View ▸ Theme, `theme.rs`), each a
+- **Look.** Five palettes to live with (View ▸ Theme, `theme.rs`), each a
   light and a dark, the appearance (View: Light, Dark, System) choosing
-  which: Alabaster (tonsky's, light and dark), System (Xcode's Default
+  which: Alabaster (tonsky's, light and dark), Xcode (Xcode's Default
   Light and Dark, the system blue), Classic (acme's make -- cream paper,
   pale blue tags, a yellow selection -- toned down, in the hues of
   go.dev's playground) GitHub (Light Colorblind lifted off white,

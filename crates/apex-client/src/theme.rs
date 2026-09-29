@@ -1,6 +1,6 @@
 //! The themes, as a Mac app of now dresses (the modern-mac branch's
 //! experiment; acme's tinted papers are on main): four palettes to live
-//! with and choose among (View ▸ Theme: Alabaster, System, Go, GitHub),
+//! with and choose among (View ▸ Theme: Alabaster, Xcode, Classic, GitHub, Nova),
 //! each a light and a dark, and the appearance choosing between those
 //! (View: Light, Dark, System). Every palette lays out the same way: a
 //! paper for bodies and a header for the tags over them, hairlines where
@@ -278,8 +278,8 @@ pub const ALABASTER_DARK: Theme = make(Keys {
     popover: 0x162022, hover: 0x1E2A2C, danger_hover: 0x2B1D1E, ansi: ANSI_DARK, diff_add: 0x16263A, diff_del: 0x33271A,
 });
 
-/// The system's, as Xcode's Default (Light) is: white paper, the label
-/// greys, Xcode's selection (#a4cdff), the system blue (#007aff).
+/// Xcode's Default (Light): white paper, the label greys, Xcode's
+/// selection (#a4cdff), the system blue (#007aff).
 pub const XCODE_LIGHT: Theme = make(Keys {
     paper: 0xFFFFFF, sel: 0xA4CDFF, thumb: 0xC8C8C8, header: 0xF5F5F5, header_sel: 0xB3D4FC, line: 0xDCDCDC,
     ink: 0x1D1D1F, dim: 0x6E6E73, faint: 0x8E8E93, accent: 0x007AFF, chosen: 0x007AFF, column: 0xFAFAFA, sidebar: 0xEBEBEB,
@@ -346,19 +346,19 @@ pub const NOVA_DARK: Theme = make(Keys {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Palette {
     Alabaster,
-    System,
+    Xcode,
     Classic,
     GitHub,
     Nova,
 }
 
-pub const PALETTES: [Palette; 5] = [Palette::Alabaster, Palette::System, Palette::Classic, Palette::GitHub, Palette::Nova];
+pub const PALETTES: [Palette; 5] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::GitHub, Palette::Nova];
 
 impl Palette {
     pub fn title(self) -> &'static str {
         match self {
             Palette::Alabaster => "Alabaster",
-            Palette::System => "System",
+            Palette::Xcode => "Xcode",
             Palette::Classic => "Classic",
             Palette::GitHub => "GitHub",
             Palette::Nova => "Nova",
@@ -367,7 +367,7 @@ impl Palette {
     fn word(self) -> &'static str {
         match self {
             Palette::Alabaster => "alabaster",
-            Palette::System => "system",
+            Palette::Xcode => "xcode",
             Palette::Classic => "classic",
             Palette::GitHub => "github",
             Palette::Nova => "nova",
@@ -434,8 +434,8 @@ pub fn theme() -> &'static Theme {
     match (palette(), is_dark()) {
         (Palette::Alabaster, false) => &ALABASTER_LIGHT,
         (Palette::Alabaster, true) => &ALABASTER_DARK,
-        (Palette::System, false) => &XCODE_LIGHT,
-        (Palette::System, true) => &XCODE_DARK,
+        (Palette::Xcode, false) => &XCODE_LIGHT,
+        (Palette::Xcode, true) => &XCODE_DARK,
         (Palette::Classic, false) => &CLASSIC_LIGHT,
         (Palette::Classic, true) => &CLASSIC_DARK,
         (Palette::GitHub, false) => &LIGHT,
@@ -517,7 +517,9 @@ pub fn load() {
     let blink = std::fs::read_to_string(crate::shell::state_file().with_file_name("blink")).map(|s| s.trim() != "off").unwrap_or(true);
     BLINK.store(blink, Ordering::Relaxed);
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
-    if let Some(i) = PALETTES.iter().position(|p| p.word() == pal.trim()) {
+    // "system" was Xcode's palette's name before it had its own
+    let pal = if pal.trim() == "system" { "xcode" } else { pal.trim() };
+    if let Some(i) = PALETTES.iter().position(|p| p.word() == pal) {
         PALETTE.store(i as u8, Ordering::Relaxed);
     }
     let m = match std::fs::read_to_string(file()).map(|s| s.trim().to_string()).as_deref() {
