@@ -360,8 +360,12 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Exec { ctx, text } => {
+            let stashed = |node: &Node| matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w));
+            let was = stashed(node);
             match node.exec(log, ctx, &text)? {
                 Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
+                // not a window the command just put away (`Stash`)
+                _ if stashed(node) && !was => Ok(None),
                 _ => Ok(match ctx {
                     ExecCtx::Window(w) => Some(w),
                     _ => None,
