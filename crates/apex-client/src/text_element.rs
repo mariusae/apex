@@ -16,22 +16,23 @@ use crate::app::{Acme, HlKind, Kind};
 
 pub const SCROLLWID: f32 = 12.;
 pub const MARGIN: f32 = 16.; // Scrollwid + Scrollgap
-/// A body's text (a text's, a terminal's) starts this far in: its
-/// scroller lays over the text's edge, as macOS's overlay scrollers do,
-/// rather than keeping a lane of its own (`LANE_HIT`, `SCROLLWID`).
+/// A body's text (a text's, a terminal's) starts this far in. Its
+/// scroller keeps no lane of its own: it lays over the body's right edge,
+/// as macOS's overlay scrollers do (`LANE_HIT`, `SCROLLWID`).
 pub const BODY_MARGIN: f32 = 8.;
-/// How wide a body's scroller lane is to the pointer while it is shut:
-/// the text's own inset, short of its first character. Once the pointer
-/// is in it, the lane opens to `SCROLLWID`, its gutter drawn over the
-/// text (which does not move), and B1 B2 B3 in it are acme's scrollbar.
+/// How wide a body's scroller lane, at its right edge, is to the pointer
+/// while it is shut. Once the pointer is in it, the lane opens to
+/// `SCROLLWID`, its gutter drawn over what is there (which does not
+/// move), and B1 B2 B3 in it are acme's scrollbar.
 pub const LANE_HIT: f32 = 6.;
 
-/// The body's scroller, over its text: shut, the thumb alone while the
-/// text moves (`shows`); open (the pointer in the lane), a gutter the
-/// lane's width, drawn over the text's edge, and the thumb in it.
+/// The body's scroller, at its right edge over its text: shut, the thumb
+/// alone while the text moves (`shows`); open (the pointer in the lane),
+/// a gutter the lane's width, drawn over what is there, and the thumb in
+/// it.
 pub fn paint_overlay_scroller(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, shows: f32, open: bool) {
     let th = crate::theme::theme();
-    let lane = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
+    let lane = Bounds::new(point(bounds.right() - px(SCROLLWID), bounds.top()), size(px(SCROLLWID), bounds.size.height));
     if open {
         window.paint_quad(fill(lane, rgb(mix(th.body_bg, th.body_border, 0.45))));
         paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(0.75));
@@ -1270,7 +1271,8 @@ impl Element for TextElement {
                     // rounded, with no track
                     // the lane to the pointer: the text's inset while shut,
                     // the whole lane once open (drawn over the text below)
-                    let sb = Bounds::new(bounds.origin, size(px(if pp.lane { SCROLLWID } else { LANE_HIT }), bounds.size.height));
+                    let w = px(if pp.lane { SCROLLWID } else { LANE_HIT });
+                    let sb = Bounds::new(point(bounds.right() - w, bounds.top()), size(w, bounds.size.height));
                     // acme's: the runes shown, of all of them
                     let total = pp.text_len.max(1) as f32;
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };

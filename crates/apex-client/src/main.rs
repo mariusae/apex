@@ -426,7 +426,6 @@ impl Render for Acme {
                                 .flex()
                                 .flex_row()
                                 .bg(gpui::rgb(paper))
-                                .child(bar)
                                 .child(
                                     div().flex_1().h_full().cursor(cursor::NATIVE_CURSOR).child(
                                         canvas(
@@ -438,13 +437,16 @@ impl Render for Acme {
                                         .size_full(),
                                     ),
                                 )
+                                // the scrollbar at its right, as a text's
+                                .child(bar)
                                 .into_any_element()
                         }
                     };
                     // the arrow over text and terminals, and down the
                     // scrollbar; a page keeps its own pointer
                     let body = if matches!(win.body, Body::Web | Body::Html(_)) {
-                        at(bx, s.body.y0, bw, bh, body).child(lane(None, hold(CursorStyle::Arrow)))
+                        let bar = div().absolute().right(px(0.)).top(px(0.)).w(px(crate::text_element::SCROLLWID)).h_full().cursor(hold(CursorStyle::Arrow));
+                        at(bx, s.body.y0, bw, bh, body).child(bar)
                     } else if matches!(win.body, Body::Term(_)) {
                         at(bx, s.body.y0, bw, bh, body).cursor(hold(CursorStyle::Arrow))
                     } else {

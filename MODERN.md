@@ -73,14 +73,14 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   and, as macOS's overlay scrollers, only while its text moves, while the
   pointer is in the lane or dragging it, fading a second after
   (`Acme::scroller`). The lane works the same when the thumb is away.
-  In text and terminal windows it keeps no room of its own
-  (`paint_overlay_scroller`): the text starts 8 in (`BODY_MARGIN`), not
-  16, and the scroller lays over its edge, as Ghostty's does. Shut, the
-  lane is the text's inset to the pointer (`LANE_HIT`, short of the
-  first character), and the thumb shows over the text while it moves;
-  with the pointer in it, the lane opens to its full 12 with a gutter
-  drawn over the text (which does not move), and B1 B2 B3 in it are
-  acme's scrollbar. A page keeps its lane beside it.
+  It stands at the right, as macOS's and Ghostty's do. In text and
+  terminal windows it keeps no room of its own (`paint_overlay_scroller`):
+  the text starts 8 in (`BODY_MARGIN`), and the scroller lays over the
+  body's right edge. Shut, the lane is 6 wide to the pointer
+  (`LANE_HIT`), and the thumb shows over the text while it moves; with
+  the pointer in it, the lane opens to its full 12 with a gutter drawn
+  over what is there (which does not move), and B1 B2 B3 in it are
+  acme's scrollbar. A page keeps its bar beside it, at its right.
 - **Cards on a ground.** Each window is a card inset in its space, its
   outer corners rounded, on a ground a step below it that shows where
   acme drew black borders and under the column tags and the top row; no

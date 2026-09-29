@@ -248,7 +248,8 @@ impl Element for TermElement {
             // (the history and the viewport together) in the paper
             // the lane to the pointer: the text's inset while shut, the
             // whole lane once open (drawn over the text, after it)
-            let sb = Bounds::new(bounds.origin, size(px(if pp.lane { SCROLLWID } else { LANE_HIT }), bounds.size.height));
+            let w = px(if pp.lane { SCROLLWID } else { LANE_HIT });
+            let sb = Bounds::new(point(bounds.right() - w, bounds.top()), size(w, bounds.size.height));
             let (top, shown, total) = pp.view;
             let total = total.max(1);
             // an overlay scroller: seen while the view moves or the pointer
@@ -302,9 +303,9 @@ impl Element for TermElement {
             // top of the text, as far along as it says (all of it while
             // it does not), over the text's first line and no taller
             if let Some(at) = pp.progress {
-                let w = bounds.size.width - px(SCROLLWID);
+                let w = bounds.size.width;
                 let part = at.map(|p| f32::from(p.min(100)) / 100.).unwrap_or(1.);
-                let bar = Bounds::new(point(bounds.left() + px(SCROLLWID), bounds.top()), size((w * part).max(px(1.)), px(2.)));
+                let bar = Bounds::new(point(bounds.left(), bounds.top()), size((w * part).max(px(1.)), px(2.)));
                 window.paint_quad(fill(bar, rgb(th.progress)));
             }
             // the cursor as a text window's caret: where the keys go, the
