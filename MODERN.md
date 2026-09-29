@@ -172,9 +172,13 @@ windows put away out of the tiling, which is the core's
 - **⌘⇧\\ (or ⌘') shows every session** (View ▸ Show All Sessions), as Mission
   Control shows the windows: a grid of cards over the window, as large
   as the window allows, each its session's window drawn small and live
-  from its replica (the shown one's edge in the accent, a notified one
-  wearing pjw), in the sidebar's order. A click on one goes to it;
-  escape, a click off the cards or ⌘⇧\\ again leaves things be.
+  from its replica (a notified one wearing pjw), in the sidebar's order,
+  on an opaque ground. The window shrinks into its card as the grid
+  comes up. One ring, the accent's, is on the card chosen -- this
+  session's at first -- and glides to the one under the pointer or the
+  arrows' next. A click or return goes to it, its card growing to fill
+  the window; escape, a click off the cards or ⌘⇧\\ again goes back to
+  this one the same way.
 - **Web windows** (`webbar.rs`) have a header of their own in the tag's
   place, as the Claude app's browser does: the handle (every button and
   drag of it as any window's -- it moves, grows, maximizes), back and

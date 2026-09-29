@@ -58,6 +58,8 @@ const CARD_Y: i32 = 1;
 
 impl Render for Acme {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // the overview's card gone to has grown to the window: go there
+        self.overview_tick(window, cx);
         if let Some(loc) = self.pending_switch.take() {
             self.switch_for(loc, window, cx);
         }

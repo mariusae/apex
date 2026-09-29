@@ -4236,12 +4236,10 @@ impl Acme {
         // held; escape then goes back to where it began
         {
             let ks = &e.keystroke;
-            // the overview up: escape puts it away; the keys are its
+            // the overview up: the keys are its (the arrows, return, escape)
             if self.overview.is_some() {
-                if ks.key == "escape" {
-                    self.overview = None;
-                    cx.notify();
-                }
+                let key = ks.key.clone();
+                self.overview_key(&key, window, cx);
                 return;
             }
             if ks.modifiers.control && ks.key == "tab" {
