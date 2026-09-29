@@ -590,6 +590,9 @@ pub struct Webs {
     focused: Option<WindowId>,
     /// The cursor each page last asked for.
     cursors: HashMap<WindowId, gpui::CursorStyle>,
+    /// The overlays over the pages this frame (the window's coordinates):
+    /// the pointer there is not on a page.
+    cut: Vec<Bounds<Pixels>>,
 }
 
 /// A page that has the keyboard when its view goes hands it back first.
@@ -630,11 +633,15 @@ impl Webs {
         if std::env::var_os("APEX_WEB_DEBUG").is_some() {
             eprintln!("web: views over a plane: {}, proxy port {proxy:?}", plane.is_some());
         }
-        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None, cursors: HashMap::new() }
+        Webs { hosts: HashMap::new(), tx, rx, plane, proxy, wake, focused: None, cursors: HashMap::new(), cut: Vec::new() }
     }
 
     /// The shown page under `pos`, if any.
     pub fn window_at(&self, pos: Point<Pixels>) -> Option<WindowId> {
+        // an overlay over a page (a toast, a menu) is not the page
+        if self.cut.iter().any(|b| b.contains(&pos)) {
+            return None;
+        }
         self.hosts.iter().find(|(_, h)| h.shown && h.bounds.is_some_and(|b| b.contains(&pos))).map(|(w, _)| *w)
     }
 
@@ -697,11 +704,29 @@ impl Webs {
         }
         #[link(name = "QuartzCore", kind = "framework")]
         extern "C" {}
+        self.cut = holes.iter().map(|&(o, _)| o).collect();
         // the panels' shadows reach past their bounds, each its own way
         for h in self.hosts.values_mut() {
             let Some(vb) = h.bounds else { continue };
             if !h.shown {
                 continue;
+            }
+            // what of the overlays lies over this page, their bounds alone:
+            // the clicks there are theirs, not the page's (`hit_test`)
+            {
+                let wk = h.view.webview();
+                let view = &*wk as *const _ as *mut Object;
+                let hits: Vec<[f64; 4]> = holes
+                    .iter()
+                    .filter_map(|&(o, _)| {
+                        let x0 = o.origin.x.max(vb.origin.x);
+                        let y0 = o.origin.y.max(vb.origin.y);
+                        let x1 = (o.origin.x + o.size.width).min(vb.origin.x + vb.size.width);
+                        let y1 = (o.origin.y + o.size.height).min(vb.origin.y + vb.size.height);
+                        (x1 > x0 && y1 > y0).then(|| [f64::from(f32::from(x0 - vb.origin.x)), f64::from(f32::from(y0 - vb.origin.y)), f64::from(f32::from(x1 - x0)), f64::from(f32::from(y1 - y0))])
+                    })
+                    .collect();
+                hit::set(view, hits);
             }
             let local: Vec<(f64, f64, f64, f64)> = holes
                 .iter()
@@ -752,7 +777,9 @@ impl Webs {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn set_holes(&mut self, _holes: &[(Bounds<Pixels>, Pixels)]) {}
+    pub fn set_holes(&mut self, holes: &[(Bounds<Pixels>, Pixels)]) {
+        self.cut = holes.iter().map(|&(o, _)| o).collect();
+    }
 
     /// A dialog has the window, and the window goes quiet behind it: gpui
     /// paints its veil over everything it draws, but a page is a native
@@ -1741,5 +1768,104 @@ mod tests {
         assert_eq!(apex_url("file:///a/b.html"), "apexfile:///a/b.html");
         assert_eq!(webkit_url("apexfile:///a/b.html"), "apexfile://localhost/a/b.html");
         assert_eq!(webkit_url("http://localhost:8/"), "http://localhost.apex-host:8/");
+    }
+}
+
+/// A page's holes to the pointer: AppKit gives a click to the view under
+/// it, and a page's view lies over gpui's whatever is drawn in its holes
+/// (they are its layer's mask, drawing only). So the page's view is
+/// taught to answer no to a point in one of its holes (`hitTest:`), and
+/// the click falls through to gpui's view beneath: a toast, a menu, a
+/// palette over a page takes its own clicks.
+#[cfg(target_os = "macos")]
+mod hit {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Mutex, Once};
+
+    use objc::runtime::{class_addMethod, class_getInstanceMethod, method_getImplementation, method_setImplementation, object_getClass, Class, Imp, Method, Object, Sel};
+    use objc::{msg_send, sel, sel_impl};
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct P {
+        x: f64,
+        y: f64,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct R {
+        origin: P,
+        size: P,
+    }
+
+    /// Each page's view's holes, in its own coordinates from its top left.
+    static HOLES: Mutex<Option<HashMap<usize, Vec<[f64; 4]>>>> = Mutex::new(None);
+    /// The view class's own `hitTest:`, called for every other point.
+    static ORIGINAL: AtomicUsize = AtomicUsize::new(0);
+    static TAUGHT: Once = Once::new();
+
+    /// Page view `view`'s holes now (none: its clicks all its own).
+    pub fn set(view: *mut Object, holes: Vec<[f64; 4]>) {
+        teach(view);
+        let mut m = HOLES.lock().unwrap();
+        let m = m.get_or_insert_with(HashMap::new);
+        if holes.is_empty() {
+            m.remove(&(view as usize));
+        } else {
+            m.insert(view as usize, holes);
+        }
+    }
+
+    /// The page views' class taught to pass a point in a hole on: added to
+    /// the class as its own (wry's WKWebView subclass), or, where it has
+    /// one of its own already, put in its place -- the old one called for
+    /// every point that is not in a hole.
+    fn teach(view: *mut Object) {
+        TAUGHT.call_once(|| {
+            // SAFETY: the Objective-C runtime on the main thread, on the
+            // page view's own class; the method keeps `hitTest:`'s type
+            unsafe {
+                let cls = object_getClass(view as *const Object) as *mut Class;
+                let sel = sel!(hitTest:);
+                let m = class_getInstanceMethod(cls, sel);
+                if m.is_null() {
+                    return;
+                }
+                ORIGINAL.store(method_getImplementation(m) as usize, Ordering::SeqCst);
+                let imp: Imp = std::mem::transmute(hit_test as extern "C" fn(&Object, Sel, P) -> *mut Object);
+                let types = b"@32@0:8{CGPoint=dd}16\0";
+                if class_addMethod(cls, sel, imp, types.as_ptr() as *const _) == objc::runtime::NO {
+                    // the class's own: replaced (it is not a superclass's)
+                    method_setImplementation(m as *mut Method, imp);
+                }
+            }
+        });
+    }
+
+    extern "C" fn hit_test(this: &Object, cmd: Sel, point: P) -> *mut Object {
+        let key = this as *const Object as usize;
+        let inside = HOLES.lock().ok().and_then(|m| {
+            let holes = m.as_ref()?.get(&key)?.clone();
+            // SAFETY: plain AppKit geometry on the view being asked
+            let (x, y) = unsafe {
+                let sup: *mut Object = msg_send![this, superview];
+                let local: P = msg_send![this, convertPoint: point fromView: sup];
+                let flipped: bool = msg_send![this, isFlipped];
+                let b: R = msg_send![this, bounds];
+                (local.x, if flipped { local.y } else { b.size.y - local.y })
+            };
+            Some(holes.iter().any(|h| x >= h[0] && x < h[0] + h[2] && y >= h[1] && y < h[1] + h[3]))
+        });
+        if inside == Some(true) {
+            return std::ptr::null_mut();
+        }
+        let original = ORIGINAL.load(Ordering::SeqCst);
+        if original == 0 {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: the class's own `hitTest:` as it was, with its own type
+        let f: extern "C" fn(&Object, Sel, P) -> *mut Object = unsafe { std::mem::transmute(original) };
+        f(this, cmd, point)
     }
 }
