@@ -643,6 +643,10 @@ pub fn colunmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
 
 // ---- the stash --------------------------------------------------------------------------
 
+/// Fewer body lines than this, a window comes back from the stash with an
+/// even share of its column rather than the little it had.
+const FEW_LINES: i32 = 5;
+
 /// Column `ci`'s windows in its order with those stashed from it put
 /// back where they were: (window, stashed). A stashed window goes under
 /// the one it was under (laid out or stashed); one whose window is gone,
@@ -702,7 +706,8 @@ pub fn stash(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
 
 /// Stashed window `si` brought back: under the window it was under in
 /// its column, with the share of the column it had, the others giving
-/// it up in proportion. A window whose column is gone comes back at the
+/// it up in proportion -- or, if it had only a few lines (stashed as it
+/// was made, as an +Errors window is), an even share. A window whose column is gone comes back at the
 /// foot of column `or` instead. Returns the column it went to; None
 /// (and it stays stashed) when there is none.
 pub fn recall(l: &mut Layout, si: usize, or: Option<usize>, info: &dyn Info) -> Option<usize> {
@@ -733,7 +738,9 @@ pub fn recall(l: &mut Layout, si: usize, or: Option<usize>, info: &dyn Info) -> 
         l.cols[ci].wins.len()
     };
     let n = l.cols[ci].wins.len() as i64;
-    let mine = if slot.share > 0 && n > 0 { (slot.share as i64).min(SHARE_UNIT - n) } else { SHARE_UNIT / (n + 1) };
+    let even = SHARE_UNIT / (n + 1);
+    let mine = if slot.share > 0 && n > 0 { (slot.share as i64).min(SHARE_UNIT - n) } else { even };
+    let mine = if slot.frmax < FEW_LINES { mine.max(even) } else { mine };
     let mut given = 0i64;
     for s in l.cols[ci].wins.iter_mut() {
         s.share = ((s.share as i64 * (SHARE_UNIT - mine)) / SHARE_UNIT).max(1) as i32;

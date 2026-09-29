@@ -1113,3 +1113,18 @@ fn resizing_the_row_keeps_strips_strips() {
     assert_eq!(ids(&l), vec![1, 3, 4, 2]);
     assert!(wid(&l, 1) > STRIP);
 }
+
+#[test]
+fn a_window_stashed_with_a_few_lines_comes_back_with_an_even_share() {
+    let mut l = row();
+    add(&mut l, 0, 1, None);
+    add(&mut l, 0, 2, None);
+    // made at the foot, as an +Errors window can be: a line or two
+    add(&mut l, 0, 3, Some(700 - 3 * FONT));
+    assert!(l.cols[0].wins[2].frmax < 5, "{:?}", wins(&l, 0));
+    stash(&mut l, 0, 2, &info());
+    recall(&mut l, 0, None, &info());
+    // a third of the column, near enough, not the sliver it had
+    let dy = l.cols[0].wins[2].r.dy();
+    assert!(dy > 600 / 3 - 2 * FONT, "{:?}", wins(&l, 0));
+}
