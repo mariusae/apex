@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, StashWindow, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -66,6 +66,13 @@ pub fn toggle_contrast(cx: &mut App) {
 /// every window drawn again.
 pub fn toggle_blink(cx: &mut App) {
     crate::theme::set_blink(!crate::theme::blink());
+    cx.set_menus(menus());
+    cx.refresh_windows();
+}
+
+/// View ▸ Smooth Cursor toggled: kept, the menus remade with the mark.
+pub fn toggle_smooth_caret(cx: &mut App) {
+    crate::theme::set_smooth_caret(!crate::theme::smooth_caret());
     cx.set_menus(menus());
     cx.refresh_windows();
 }
@@ -174,6 +181,7 @@ pub fn menus() -> Vec<Menu> {
                 let mark = |name: &str, mine: crate::theme::Mode| if m == mine { format!("{name} ✓") } else { name.to_string() };
                 let contrast = if crate::theme::contrast() { "Correct Terminal Contrast ✓" } else { "Correct Terminal Contrast" };
                 let blink = if crate::theme::blink() { "Blink Cursor ✓" } else { "Blink Cursor" };
+                let smooth = if crate::theme::smooth_caret() { "Smooth Cursor ✓" } else { "Smooth Cursor" };
                 let side = if crate::theme::sidebar() { "Hide Sidebar" } else { "Show Sidebar" };
                 vec![
                     MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
@@ -221,6 +229,7 @@ pub fn menus() -> Vec<Menu> {
                     MenuItem::action("Show All Sessions", ShowOverview),
                     MenuItem::action(contrast, ToggleContrast),
                     MenuItem::action(blink, ToggleBlink),
+                    MenuItem::action(smooth, ToggleSmoothCaret),
                 ]
             },
         },

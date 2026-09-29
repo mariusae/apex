@@ -495,6 +495,25 @@ pub fn set_blink(on: bool) {
     let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
 }
 
+/// View ▸ Smooth Cursor: the keys' caret (and a terminal's cursor, where
+/// the keys go) glides to where it moves, over a few frames, rather than
+/// jumping there -- as Neovide's and Ghostty's cursor shaders do. Off
+/// until chosen; kept in the `smoothcaret` state file.
+static SMOOTH_CARET: AtomicBool = AtomicBool::new(false);
+
+pub fn smooth_caret() -> bool {
+    SMOOTH_CARET.load(Ordering::Relaxed)
+}
+
+pub fn set_smooth_caret(on: bool) {
+    SMOOTH_CARET.store(on, Ordering::Relaxed);
+    let p = crate::shell::state_file().with_file_name("smoothcaret");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
+}
+
 pub fn contrast() -> bool {
     CONTRAST.load(Ordering::Relaxed)
 }
@@ -516,6 +535,8 @@ pub fn load() {
     CONTRAST.store(contrast, Ordering::Relaxed);
     let blink = std::fs::read_to_string(crate::shell::state_file().with_file_name("blink")).map(|s| s.trim() != "off").unwrap_or(true);
     BLINK.store(blink, Ordering::Relaxed);
+    let smooth = std::fs::read_to_string(crate::shell::state_file().with_file_name("smoothcaret")).map(|s| s.trim() == "on").unwrap_or(false);
+    SMOOTH_CARET.store(smooth, Ordering::Relaxed);
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
     // "system" was Xcode's palette's name before it had its own
     let pal = if pal.trim() == "system" { "xcode" } else { pal.trim() };

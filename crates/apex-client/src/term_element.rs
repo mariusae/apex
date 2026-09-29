@@ -319,7 +319,12 @@ impl Element for TermElement {
                     window.paint_quad(outline(Bounds::new(point(x, y), size(pp.cell_w, lh)), rgb(th.text), BorderStyle::Solid));
                 } else {
                     match pp.keys {
-                        Some(true) => window.paint_quad(fill(Bounds::new(point(x - px(0.5), y + px(1.)), size(px(2.), lh - px(2.))), rgb(th.accent)).corner_radii(px(1.))),
+                        Some(true) => {
+                            // gliding there, with Smooth Cursor on
+                            let frame = crate::text_element::caret_frame(bounds, pp.view.0, px(0.));
+                            let at = crate::text_element::glide_caret(&self.acme, crate::text_element::CaretKey::Term(self.window), frame, point(x, y), window, cx);
+                            window.paint_quad(fill(Bounds::new(point(at.x - px(0.5), at.y + px(1.)), size(px(2.), lh - px(2.))), rgb(th.accent)).corner_radii(px(1.)))
+                        }
                         Some(false) => {}
                         None => window.paint_quad(fill(Bounds::new(point(x, y + px(2.)), size(px(1.5), lh - px(4.))), rgb(th.text)).corner_radii(px(0.75))),
                     }

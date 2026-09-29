@@ -404,6 +404,8 @@ pub struct Acme {
     /// The terminal the keys go to, whose cursor blinks with the caret.
     pub caret_term: Option<TermId>,
     pub caret_on: bool,
+    /// The keys' caret on its way to where it moved (View ▸ Smooth Cursor).
+    pub caret_glide: Option<crate::text_element::CaretGlide>,
     pub caret_since: std::time::Instant,
     /// Where the overlays (the picker, the finder, the tools menu) were
     /// drawn this frame: holes cut in the web views,
@@ -1615,6 +1617,7 @@ impl Acme {
             caret_view: None,
             caret_term: None,
             caret_on: true,
+            caret_glide: None,
             caret_since: std::time::Instant::now(),
             shelf: Default::default(),
             strip_open: None,

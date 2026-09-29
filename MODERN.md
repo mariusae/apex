@@ -61,7 +61,11 @@ windows put away out of the tiling, which is the core's
   pointer, else the last selected in; none while apex is not in front)
   is the accent blue, a little wider, blinking as iOS's does -- solid for
   half a second after a key, a click or the pointer coming to it, then
-  on and off every 530 ms (View ▸ Blink Cursor off: steady). A
+  on and off every 530 ms (View ▸ Blink Cursor off: steady). View ▸
+  Smooth Cursor (off at first, to live with) has it glide where it
+  moves, over 90 ms, as Neovide's and Ghostty's cursor shaders do -- the
+  terminal's cursor too, where the keys go -- and go with the text at
+  once when the text itself moves (a scroll, a window gliding). A
   header's shows at its start too while it is the one. It is as tall
   as the ink -- the tallest ascender to the deepest descender, a pixel
   over each way -- centred on the line, not the line's height, which a

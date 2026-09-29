@@ -240,6 +240,70 @@ pub fn paint_scroller(window: &mut Window, lane: Bounds<Pixels>, s0: f32, s1: f3
 
 /// A drag grip, two columns of three dots: a column's box, and the
 /// session's.
+/// Whose caret is gliding: a text's (its view) or a terminal's (its window).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CaretKey {
+    View(ViewId),
+    Term(apex_core::WindowId),
+}
+
+/// The keys' caret on its way (View ▸ Smooth Cursor): from where it was
+/// drawn to where it is now, since `at`; `frame` is what the text stood
+/// in -- the element's place and how far it was scrolled -- and when that
+/// changes the caret goes with the text at once, not on its own.
+pub struct CaretGlide {
+    key: CaretKey,
+    frame: [u32; 4],
+    from: Point<Pixels>,
+    to: Point<Pixels>,
+    at: std::time::Instant,
+}
+
+/// How long the caret takes to glide where it moved.
+const CARET_GLIDE: std::time::Duration = std::time::Duration::from_millis(90);
+
+impl CaretGlide {
+    /// Where it is drawn now, and whether it is still on its way.
+    fn now(&self) -> (Point<Pixels>, bool) {
+        let k = (self.at.elapsed().as_secs_f32() / CARET_GLIDE.as_secs_f32()).min(1.);
+        let e = 1. - (1. - k).powi(3);
+        (point(self.from.x + (self.to.x - self.from.x) * e, self.from.y + (self.to.y - self.from.y) * e), k < 1.)
+    }
+}
+
+/// Where the keys' caret is drawn, `to` being where it is: with Smooth
+/// Cursor on, on its way from where it was drawn last in the same text,
+/// the text unmoved (a frame asked for until it lands); otherwise there.
+pub fn glide_caret(acme: &Entity<Acme>, key: CaretKey, frame: [u32; 4], to: Point<Pixels>, window: &mut Window, cx: &mut App) -> Point<Pixels> {
+    if !crate::theme::smooth_caret() {
+        return to;
+    }
+    let (at, moving) = acme.update(cx, |a, _| {
+        let fresh = |from| CaretGlide { key, frame, from, to, at: std::time::Instant::now() };
+        match &a.caret_glide {
+            Some(g) if g.key == key && g.frame == frame => {
+                if g.to != to {
+                    let from = g.now().0;
+                    a.caret_glide = Some(fresh(from));
+                }
+            }
+            // another text, or the text itself moved (scrolled, laid out
+            // anew, gliding with its window): there at once
+            _ => a.caret_glide = Some(fresh(to)),
+        }
+        a.caret_glide.as_ref().map(|g| g.now()).unwrap_or((to, false))
+    });
+    if moving {
+        window.request_animation_frame();
+    }
+    at
+}
+
+/// A frame's place and scroll as `CaretGlide` keeps them.
+pub fn caret_frame(bounds: Bounds<Pixels>, scroll: u64, shift: Pixels) -> [u32; 4] {
+    [f32::from(bounds.origin.x).to_bits(), f32::from(bounds.origin.y).to_bits() ^ f32::from(shift).to_bits(), scroll as u32, (scroll >> 32) as u32]
+}
+
 pub fn paint_grip(window: &mut Window, b: Bounds<Pixels>, ink: Hsla) {
     paint_grip_as(window, b, ink, false);
 }
@@ -1469,6 +1533,10 @@ impl Element for TextElement {
                     let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh - px(2.));
                     let cy = ty + (lh - tall) / 2.;
                     if keys {
+                        // gliding there, with Smooth Cursor on
+                        let frame = caret_frame(bounds, pp.shown.0 as u64, origin.y - bounds.top());
+                        let at = glide_caret(&self.acme, CaretKey::View(self.view), frame, point(cx_, cy), window, cx);
+                        let (cx_, cy) = (at.x, at.y);
                         window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), cy), size(px(2.), tall)), rgb(th.accent)).corner_radii(px(1.)));
                     } else {
                         window.paint_quad(fill(Bounds::new(point(cx_, cy + px(0.5)), size(px(1.5), tall - px(1.))), rgb(th.text)).corner_radii(px(0.75)));
