@@ -346,8 +346,12 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             };
             if let Some(v) = view {
                 if node.view_buffer(v).is_ok() && node.look_dir(log, v, &text, reverse)? {
-                    if let Some(w) = v.window() {
-                        node.reveal(log, w)?; // textshow grows a window with no lines
+                    // textshow grows a window with no lines; a stashed one
+                    // B3 was in is being looked at in the stash's preview,
+                    // and stays stashed
+                    let peeked = matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w));
+                    if let Some(w) = v.window().filter(|_| !peeked) {
+                        node.reveal(log, w)?;
                     }
                     node.warp = Some(Warp::Sel(v)); // acme moves the mouse to what it found
                 }
@@ -360,12 +364,11 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Exec { ctx, text } => {
-            let stashed = |node: &Node| matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w));
-            let was = stashed(node);
             match node.exec(log, ctx, &text)? {
                 Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
-                // not a window the command just put away (`Stash`)
-                _ if stashed(node) && !was => Ok(None),
+                // not a stashed window: one the command put away (`Stash`),
+                // or one worked in in the stash's preview
+                _ if matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w)) => Ok(None),
                 _ => Ok(match ctx {
                     ExecCtx::Window(w) => Some(w),
                     _ => None,
