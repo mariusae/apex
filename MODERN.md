@@ -242,7 +242,8 @@ windows put away out of the tiling, which is the core's
   +Errors window, but that window goes to the stash and what was
   written shows in a toast at the foot of its column, with Show All (the
   window shown in the stash's preview and left stashed, the pointer on
-  the toast's first line there, selected) and ×; it goes after eight
+  the toast's first line there, selected; B1 anywhere on the toast
+  does the same) and ×; it goes after eight
   seconds unless the pointer is on it, and at once on a click anywhere
   off the toasts (in a page too). An +Errors window brought back is
   written to as before.

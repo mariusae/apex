@@ -7,7 +7,8 @@
 //! itself after a while unless the pointer is on it, and at once on a
 //! click anywhere but on a toast. Its words answer as
 //! the window's would: B3 on one looks (plumbs a file:line, say), B2 runs
-//! it, both from the `+Errors` window; the text is not for editing. An
+//! it, both from the `+Errors` window; B1 anywhere on a toast is its
+//! Show All. The text is not for editing. An
 //! `+Errors` window already open and showing lines is shown as before,
 //! and toasts nothing.
 
@@ -63,6 +64,20 @@ impl Acme {
             None => self.toasts.push(Toast { window: w, text, at: Instant::now(), hovered: false }),
         }
         true
+    }
+
+    /// Show All (or B1 on the toast): its window shown -- stashed, in the
+    /// stash's preview and left there; open in a column, brought on
+    /// screen -- and the toast gone.
+    fn toast_show_all(&mut self, w: WindowId, cx: &mut Context<Self>) {
+        let said = self.toasts.iter().find(|t| t.window == w).map(|t| t.text.clone()).unwrap_or_default();
+        self.toasts.retain(|t| t.window != w);
+        if self.node.state.layout.is_stashed(w) {
+            self.peek_errors(w, &said, cx);
+        } else {
+            self.errors_open.insert(w);
+            self.reveal_window(w, cx);
+        }
     }
 
     /// A button went down at `p`, before anything else hears it: off
@@ -135,16 +150,7 @@ impl Acme {
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, _, _, cx| {
-                                        let said = this.toasts.iter().find(|t| t.window == w).map(|t| t.text.clone()).unwrap_or_default();
-                                        this.toasts.retain(|t| t.window != w);
-                                        // stashed: shown in the stash's preview, and
-                                        // left there; open in a column: brought on screen
-                                        if this.node.state.layout.is_stashed(w) {
-                                            this.peek_errors(w, &said, cx);
-                                        } else {
-                                            this.errors_open.insert(w);
-                                            this.reveal_window(w, cx);
-                                        }
+                                        this.toast_show_all(w, cx);
                                         cx.stop_propagation();
                                     }),
                                 ),
@@ -186,7 +192,16 @@ impl Acme {
                     }
                     cx.notify();
                 }))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+                // B1 anywhere on it (but ×, and ⌘ or ⌥ on a word) is Show All
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                        if !e.modifiers.platform && !e.modifiers.alt {
+                            this.toast_show_all(w, cx);
+                        }
+                        cx.stop_propagation();
+                    }),
+                );
             out.push(card.into_any_element());
         }
         out
@@ -195,7 +210,8 @@ impl Acme {
 
 /// A toast's line, word by word: B3 on a word looks it up from the
 /// `+Errors` window (as a click in the window would: a file:line opens),
-/// B2 runs it there; the spaces between stay as they were.
+/// B2 runs it there; B1 is the toast's (Show All). The spaces between
+/// stay as they were.
 fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<Acme>) -> AnyElement {
     let mut row = div().id(("toast-line", toast * 1000 + n)).flex().flex_row().overflow_hidden().whitespace_nowrap();
     let mut rest = line;
