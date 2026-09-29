@@ -1896,6 +1896,8 @@ impl Acme {
 
     /// A click or a key in a window: its notification, if any, dismissed.
     fn attend(&mut self, w: WindowId) {
+        // worked in in the stash's preview: first among its cards after
+        self.touch_stashed(w);
         if self.dismiss(w) {
             self.after();
         }

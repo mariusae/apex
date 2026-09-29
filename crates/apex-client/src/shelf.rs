@@ -66,6 +66,11 @@ pub struct Shelf {
     pub pick: Option<WindowId>,
     /// Scrolled, not yet a whole notch.
     scroll: f32,
+    /// Stashed windows worked in (clicked or typed in, in the preview;
+    /// a toast's Show All), in that order: brought forward among the
+    /// cards when the fan closes -- not while it is open, where a card
+    /// moving would take the preview out from under the pointer.
+    pub touched: Vec<WindowId>,
 }
 
 impl Shelf {
@@ -189,6 +194,27 @@ impl Acme {
         cx.notify();
     }
 
+    /// The stashed windows worked in while the fan was open, brought
+    /// forward: the last worked in rightmost, the first card met.
+    fn restack(&mut self) {
+        let touched = std::mem::take(&mut self.shelf.touched);
+        if touched.is_empty() {
+            return;
+        }
+        for w in touched {
+            let _ = self.node.restash_window(&mut self.log, w);
+        }
+        self.after();
+    }
+
+    /// A stashed window worked in: brought forward when the fan closes.
+    pub fn touch_stashed(&mut self, w: WindowId) {
+        if self.node.state.layout.is_stashed(w) {
+            self.shelf.touched.retain(|&x| x != w);
+            self.shelf.touched.push(w);
+        }
+    }
+
     /// A toast's Show All: its stashed window shown in the stash's
     /// preview, left stashed, the pointer taken to the start of what the
     /// toast said (its first line selected).
@@ -206,6 +232,7 @@ impl Acme {
         let q0 = body[..at].chars().count();
         let q1 = q0 + first.chars().count();
         self.shelf.open_on(w);
+        self.touch_stashed(w);
         let _ = self.node.select(&mut self.log, v, q0, q1);
         self.node.seltext = Some(v);
         self.show_at.insert(v, (q0, 1));
@@ -319,6 +346,7 @@ impl Acme {
                             if this.shelf.left_at == Some(at) && !this.held_any() {
                                 this.shelf.left_at = None;
                                 this.shelf.hover(false);
+                                this.restack();
                                 cx.notify();
                             }
                         });

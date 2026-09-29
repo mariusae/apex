@@ -149,7 +149,10 @@ windows put away out of the tiling, which is the core's
   select, snarf, B2, B3, type, scroll -- and it stays stashed (a Look in
   it is found and shown there, the mouse going to it there); the fan
   closes a quarter second after the pointer has left the cards and the
-  preview, not while a button is held. A click on a card, or B1 on the
+  preview, not while a button is held. A window worked in there (a
+  click or a key in it, or a toast's Show All) is brought forward as
+  the fan closes -- rightmost, the first card met next time -- not while
+  it is open, where its card moving would take the preview away. A click on a card, or B1 on the
   handle in the preview, brings the window back where it was -- under the window it was under, at the share of its
   column it had, or at the foot of the active column if its own is
   gone. The sidebar lists them under Stashed, and a click there does
