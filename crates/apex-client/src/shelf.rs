@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{canvas, div, px, rgb, AnyElement, Bounds, Context, MouseButton, Pixels, ScrollWheelEvent, Window};
+use gpui::{canvas, div, px, rgb, AnyElement, Bounds, Context, HoverListenerMode, MouseButton, Pixels, ScrollWheelEvent, Window};
 
 use apex_core::WindowId;
 
@@ -206,6 +206,9 @@ impl Acme {
             .right(px(8.))
             .w(px(width + 8.))
             .h(px(CARD_H + 8.))
+            // gpui takes a key typed as the pointer gone until it moves;
+            // the pointer is where it was, on the cards or the preview
+            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(cx.listener(|this, on: &bool, _, cx| {
                 this.shelf.touch(true, *on);
                 cx.notify();
@@ -397,6 +400,8 @@ impl Acme {
                 .child(self.overlay_mark())
                 .child(mark)
                 .child(content)
+                // typing into it is no leaving it
+                .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
                 .on_hover(cx.listener(|this, on: &bool, _, cx| {
                     this.shelf.touch(false, *on);
                     cx.notify();
