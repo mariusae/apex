@@ -34,7 +34,10 @@ windows put away out of the tiling, which is the core's
   Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled)
   and H&Co (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart
   cuts: not bundled -- the installed ones, else Operator Mono's files
-  from the iCloud Drive Fonts folder).
+  from the iCloud Drive Fonts folder). ⌘+ and ⌘− (View ▸ Font ▸ Bigger,
+  Smaller) take the text a pixel bigger or smaller a step, the mono
+  faces in proportion, line heights to whole pixels; ⌘0 back to the
+  set's own size. Kept, as the set is.
 - **Tags as title bars.** The window's name in the primary ink, a
   medium weight; the commands after it in the secondary. Column tags
   and the top row are all secondary. A header's caret is not drawn

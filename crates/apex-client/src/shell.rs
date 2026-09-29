@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, StashWindow, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -36,6 +36,14 @@ pub fn set_palette(p: crate::theme::Palette, cx: &mut App) {
 pub fn set_fonts(s: crate::fonts::Set, cx: &mut App) {
     crate::fonts::set(s);
     apply_theme(cx);
+}
+
+/// ⌘+, ⌘− and ⌘0: the text a step bigger or smaller, or its own size
+/// again; every window laid out anew.
+pub fn resize_fonts(by: i8, cx: &mut App) {
+    if crate::fonts::resize(by) {
+        apply_theme(cx);
+    }
 }
 
 /// View ▸ Show Sidebar toggled: kept, the menus remade with the mark,
@@ -200,6 +208,10 @@ pub fn menus() -> Vec<Menu> {
                                 MenuItem::action(mark(crate::fonts::Set::Mona), FontMona),
                                 MenuItem::action(mark(crate::fonts::Set::Nova), FontNova),
                                 MenuItem::action(mark(crate::fonts::Set::Hco), FontHco),
+                                MenuItem::separator(),
+                                MenuItem::action("Bigger", FontBigger),
+                                MenuItem::action("Smaller", FontSmaller),
+                                MenuItem::action("Actual Size", FontActual),
                             ]
                         },
                     }),
@@ -243,6 +255,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, None),
         // the Mac's Minimize: here, into the stash in the title bar
         KeyBinding::new("cmd-m", StashWindow, None),
+        KeyBinding::new("cmd-=", FontBigger, None),
+        KeyBinding::new("cmd-+", FontBigger, None),
+        KeyBinding::new("cmd--", FontSmaller, None),
+        KeyBinding::new("cmd-0", FontActual, None),
         KeyBinding::new("cmd-shift-\\", ShowOverview, None),
         KeyBinding::new("cmd-|", ShowOverview, None),
         KeyBinding::new("cmd-'", ShowOverview, None),

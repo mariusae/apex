@@ -25,7 +25,7 @@
 //! page's own scheme handler answers from these bytes (`serve`), so a
 //! page, whose web view is another process, has them too.
 
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI8, AtomicU8, Ordering};
 
 use gpui::{px, App, FontWeight, Pixels};
 
@@ -81,12 +81,49 @@ pub fn set(s: Set) {
     let _ = std::fs::write(p, format!("{}\n", s.word()));
 }
 
-/// The choice of last time.
+/// The choice of last time, and the size.
 pub fn load() {
     let word = std::fs::read_to_string(crate::shell::state_file().with_file_name("fonts")).unwrap_or_default();
     if let Some(i) = ALL.iter().position(|s| s.word() == word.trim()) {
         SET.store(i as u8, Ordering::Relaxed);
     }
+    let step = std::fs::read_to_string(crate::shell::state_file().with_file_name("fontsize")).unwrap_or_default();
+    STEP.store(step.trim().parse::<i8>().unwrap_or(0).clamp(MIN_STEP, MAX_STEP), Ordering::Relaxed);
+}
+
+/// ⌘+ and ⌘−: the text a pixel bigger or smaller a step, the mono faces
+/// in proportion; ⌘0 back to the set's own. Kept in the `fontsize`
+/// state file.
+static STEP: AtomicI8 = AtomicI8::new(0);
+const MIN_STEP: i8 = -5;
+const MAX_STEP: i8 = 14;
+
+/// A step bigger (1), smaller (-1), or back to the set's size (0).
+/// Whether that changed anything.
+pub fn resize(by: i8) -> bool {
+    let was = STEP.load(Ordering::Relaxed);
+    let now = if by == 0 { 0 } else { (was + by).clamp(MIN_STEP, MAX_STEP) };
+    if now == was {
+        return false;
+    }
+    STEP.store(now, Ordering::Relaxed);
+    let _ = std::fs::write(crate::shell::state_file().with_file_name("fontsize"), format!("{now}\n"));
+    true
+}
+
+/// A face's size and line height scaled as the text's is: the text's
+/// size up or down by the step, the rest by the same ratio; line
+/// heights whole pixels (acme's tiling counts in them), sizes to the
+/// half pixel.
+fn sized(mut s: Spec, text_size: f32) -> Spec {
+    let step = STEP.load(Ordering::Relaxed);
+    if step == 0 {
+        return s;
+    }
+    let k = (text_size + step as f32).max(6.) / text_size;
+    s.size = px((f32::from(s.size) * k * 2.).round() / 2.);
+    s.line_height = px((f32::from(s.line_height) * k).round());
+    s
 }
 
 /// A face as the text is set in it: the family, its size and line
@@ -117,6 +154,12 @@ static SF_NS_MONO: AtomicBool = AtomicBool::new(false);
 
 /// What text windows and tags are set in.
 pub fn text() -> Spec {
+    let s = text_as_set();
+    let size = f32::from(s.size);
+    sized(s, size)
+}
+
+fn text_as_set() -> Spec {
     match current() {
         Set::System => Spec { family: ".SystemUIFont", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: LEGIBLE },
         Set::Classic => Spec { family: "Lucida Grande", size: px(13.), line_height: px(17.), weight: FontWeight::NORMAL, features: &[] },
@@ -133,6 +176,10 @@ const OPERATOR: &str = "Operator Mono SSm";
 
 /// What mono windows and terminals are set in.
 pub fn mono() -> Spec {
+    sized(mono_as_set(), f32::from(text_as_set().size))
+}
+
+fn mono_as_set() -> Spec {
     match current() {
         Set::System => {
             let family = if SF_MONO.load(Ordering::Relaxed) {
