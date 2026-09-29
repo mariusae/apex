@@ -491,7 +491,7 @@ pub struct Acme {
     /// Whether AppKit's title bar container is hidden (full screen).
     pub native_bar_hidden: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
-    show_at: HashMap<ViewId, (usize, usize)>,
+    pub(crate) show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
     pub pending_goto: Option<Loc>,
     /// A notification in a tab still attaching (⌘G): taken once it is
@@ -3130,6 +3130,9 @@ impl Acme {
         let pos = e.position;
         self.last_mouse = pos;
         if self.caret_tick() {
+            cx.notify();
+        }
+        if self.shelf.pointer_at(pos) {
             cx.notify();
         }
         let held = self.held_any();

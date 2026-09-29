@@ -238,7 +238,8 @@ windows put away out of the tiling, which is the core's
 - **Errors as toasts** (`toasts.rs`): a command's errors still go to its
   +Errors window, but that window goes to the stash and what was
   written shows in a toast at the foot of its column, with Show All (the
-  window brought back) and ×; it goes after eight seconds unless the
+  window shown in the stash's preview and left stashed, the pointer on
+  the toast's first line there, selected) and ×; it goes after eight seconds unless the
   pointer is on it. An +Errors window brought back is written to as
   before.
 - **Session previews**: the pointer on a session in the sidebar (not the

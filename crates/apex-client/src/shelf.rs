@@ -57,8 +57,9 @@ pub struct Shelf {
     /// When the pointer left both.
     left_at: Option<Instant>,
     /// Where the preview was drawn last: the pointer there is on it and
-    /// nothing under it.
+    /// nothing under it. And where the cards were.
     pub preview_at: Rc<Cell<Option<Bounds<Pixels>>>>,
+    pub stack_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// When the fan last began to open or close.
     since: Option<Instant>,
     /// The card chosen: under the pointer, or scrolled to.
@@ -83,6 +84,40 @@ impl Shelf {
     /// The window shown in the preview.
     pub fn peeking(&self) -> Option<WindowId> {
         self.pick.filter(|_| self.hovered && self.fan().0 > 0.5)
+    }
+
+    /// Fanned out at once on stashed window `w`, its preview up (a toast's
+    /// Show All): the pointer is taken onto it.
+    pub fn open_on(&mut self, w: WindowId) {
+        self.hovered = true;
+        self.since = Some(Instant::now() - FAN);
+        self.pick = Some(w);
+        self.scroll = 0.;
+        self.on_preview = true;
+        self.left_at = None;
+    }
+
+    /// The pointer moved to `p`: on the cards or the preview, or off both
+    /// (the hover listeners hear no warp, and a move straight off after
+    /// one is no leaving to them). True when that changed anything.
+    pub fn pointer_at(&mut self, p: gpui::Point<Pixels>) -> bool {
+        if !self.hovered {
+            return false;
+        }
+        let on = [&self.stack_at, &self.preview_at].iter().any(|c| c.get().is_some_and(|b| b.contains(&p)));
+        match (on, self.left_at) {
+            (true, Some(_)) => {
+                self.left_at = None;
+                true
+            }
+            (false, None) => {
+                self.on_stack = false;
+                self.on_preview = false;
+                self.left_at = Some(Instant::now());
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The pointer came onto or left the cards (`stack`) or the preview.
@@ -150,6 +185,31 @@ impl Acme {
     pub fn stash_key(&mut self, window: &Window, cx: &mut Context<Self>) {
         let Some(w) = self.key_window().or_else(|| self.window_at_pointer(window)) else { return };
         let _ = self.node.stash_window(&mut self.log, w);
+        self.after();
+        cx.notify();
+    }
+
+    /// A toast's Show All: its stashed window shown in the stash's
+    /// preview, left stashed, the pointer taken to the start of what the
+    /// toast said (its first line selected).
+    pub fn peek_errors(&mut self, w: WindowId, said: &str, cx: &mut Context<Self>) {
+        let v = apex_core::ViewId::Body(w);
+        let Some(body) = self.text_of(v).map(|t| t.to_string()) else { return };
+        let first = said.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+        // the toast's text is the tail of the window's (what was written
+        // since it came), else where its first line last is
+        let at = if !said.is_empty() && body.ends_with(said) {
+            body.len() - said.len() + said.find(first).unwrap_or(0)
+        } else {
+            body.rfind(first).unwrap_or(body.len())
+        };
+        let q0 = body[..at].chars().count();
+        let q1 = q0 + first.chars().count();
+        self.shelf.open_on(w);
+        let _ = self.node.select(&mut self.log, v, q0, q1);
+        self.node.seltext = Some(v);
+        self.show_at.insert(v, (q0, 1));
+        self.node.warp = Some(apex_core::Warp::Sel(v));
         self.after();
         cx.notify();
     }
@@ -234,6 +294,8 @@ impl Acme {
                 cx.notify();
                 cx.stop_propagation();
             }));
+        let at = self.shelf.stack_at.clone();
+        stack = stack.child(canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full());
         // the ground behind them as they fan over the bar
         if k > 0. {
             let ground = crate::text_element::ground(&t);

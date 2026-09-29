@@ -122,9 +122,16 @@ impl Acme {
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, _, _, cx| {
+                                        let said = this.toasts.iter().find(|t| t.window == w).map(|t| t.text.clone()).unwrap_or_default();
                                         this.toasts.retain(|t| t.window != w);
-                                        this.errors_open.insert(w);
-                                        this.reveal_window(w, cx);
+                                        // stashed: shown in the stash's preview, and
+                                        // left there; open in a column: brought on screen
+                                        if this.node.state.layout.is_stashed(w) {
+                                            this.peek_errors(w, &said, cx);
+                                        } else {
+                                            this.errors_open.insert(w);
+                                            this.reveal_window(w, cx);
+                                        }
                                         cx.stop_propagation();
                                     }),
                                 ),
