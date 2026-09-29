@@ -19,6 +19,7 @@ mod field;
 mod fonts;
 mod finder;
 mod menu;
+mod shelf;
 mod shell;
 mod sidebar;
 mod commands;
@@ -139,11 +140,9 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(false, cx)))
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
-            .on_action(cx.listener(|this, _: &shell::StashNext, _, cx| this.stash_walk_step(false, cx)))
+            .on_action(cx.listener(|this, _: &shell::StashWindow, window, cx| this.stash_key(window, cx)))
             .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
             .on_action(cx.listener(|this, _: &shell::Commands, _, cx| this.open_commands(cx)))
-            .on_action(cx.listener(|this, _: &shell::StashBack, _, cx| this.stash_walk_step(true, cx)))
-            .on_action(cx.listener(|this, _: &shell::UnstashAll, _, cx| this.unstash_all(cx)))
             .on_action(cx.listener(|this, _: &shell::ShowOverview, _, cx| this.toggle_overview(cx)))
             // a UI hack, on purpose: the keys just say the verbs, which a
             // tool answers
@@ -323,35 +322,9 @@ impl Render for Acme {
                 continue;
             }
             area = area.child(at(col.r.x0, col.r.y0, col.r.dx(), font, TextElement { acme: me.clone(), view: ViewId::ColTag(col.id) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
-            // the stash: the edges of the sheets put away, peeking out
-            // under the column's windows as a stack of paper does, each
-            // further one narrower and lower; in the accent's tint when
-            // one of them wants the user
-            if let Some((band, _)) = self.stash_geometry(ci) {
-                let n = col.stash.len().min(apex_core::tiling::STASH_EDGES);
-                let notified = col.stash.iter().any(|s| self.window_notified(s.slot.window));
-                let edge = if notified { text_element::mix(t.tag_bg, t.accent, 0.10) } else { t.tag_bg };
-                let (paper, line) = (ground, t.body_border);
-                let sheets = canvas(
-                    |_, _, _| {},
-                    move |b, _, window, _| {
-                        window.paint_quad(gpui::fill(b, gpui::rgb(paper)));
-                        let top = b.top() + px(apex_core::tiling::BORDER as f32);
-                        for i in (0..n).rev() {
-                            let inset = px(2. + 4. * i as f32);
-                            let bottom = top + px((apex_core::tiling::STASH_EDGE * (i as i32 + 1)) as f32);
-                            let r = gpui::Bounds::new(gpui::point(b.left() + inset, top - px(4.)), gpui::size(b.size.width - inset * 2., bottom - top + px(4.)));
-                            let radii = gpui::Corners { top_left: px(0.), top_right: px(0.), bottom_left: px(5.), bottom_right: px(5.) };
-                            window.paint_quad(gpui::quad(r, radii, gpui::rgb(edge), gpui::Edges { top: px(0.), left: px(1.), right: px(1.), bottom: px(1.) }, gpui::rgb(line), gpui::BorderStyle::Solid));
-                        }
-                    },
-                )
-                .size_full();
-                area = area.child(at(band.x0, band.y0, band.dx(), band.dy(), sheets.into_any_element()).cursor(hold(CursorStyle::Arrow)));
-            }
-            for (i, s) in col.wins.iter().enumerate() {
-                if !col.safe && i > 0 {
-                    continue; // obscured by the full-column window
+            for s in &col.wins {
+                if col.hides(s.window) {
+                    continue; // behind the window grown to the whole column
                 }
                 let w = s.window;
                 let Ok(win) = self.node.state.window(w) else { continue };
@@ -484,21 +457,6 @@ impl Render for Acme {
                 .border_color(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.6));
             area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), shade.into_any_element()));
         }
-        // the stash brought out: its tags, live, stacked over the column's
-        // foot as sheets drawn out of the pile, each with its handle
-        // (B1 back where it was, B2 back maximized, a drag back where it
-        // is let go) and its text (B2 runs Del or Put there as anywhere)
-        if let Some(ci) = self.stash_open.and_then(|c| l.column_index(c)) {
-            if let Some((band, rows)) = self.stash_geometry(ci) {
-                let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0) - 6;
-                let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(-2.)), blur_radius: px(12.), spread_radius: px(0.), inset: false };
-                let card = div().size_full().bg(gpui::rgb(t.body_bg)).rounded_t(px(9.)).shadow(vec![shadow]).child(self.overlay_mark());
-                area = area.child(at(band.x0, top, band.dx(), band.y1 - top, card.into_any_element()).cursor(hold(CursorStyle::Arrow)));
-                for (w, r) in rows {
-                    area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), TextElement { acme: me.clone(), view: ViewId::Tag(w) }.into_any_element()).cursor(hold(CursorStyle::Arrow)).child(lane(Some(font as f32), hold(CursorStyle::OpenHand))));
-                }
-            }
-        }
         // a strip under the pointer: its column, live, beside it
         if let Some(s) = self.strip_slice(&l, cx) {
             area = area.child(s);
@@ -507,18 +465,11 @@ impl Render for Acme {
         for toast in self.toasts_overlay(&l, cx) {
             area = area.child(toast);
         }
-        // ⌘E's cards, over their column
         // a blank page just made: its address to be typed, at once
         let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Web && !self.url_asked.contains(*w) && self.node.window_name(**w).is_empty()).map(|(w, _)| *w);
         if let Some(w) = blank {
             self.url_asked.insert(w);
             self.url_edit_start(w, cx);
-        }
-        if self.stash_walk.as_ref().is_some_and(|s| s.done()) {
-            self.stash_walk = None;
-        }
-        if let Some(o) = self.stash_walk_overlay(&l, window, cx) {
-            area = area.child(o);
         }
         if let Some(m) = &self.menu {
             area = area.child(menu_element(m, font, self.overlay_mark()));
@@ -1119,6 +1070,9 @@ impl app::Acme {
             .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
             .child(bare("title-gap2").w(px(8.)))
             .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
+            // the stash's cards at the right end, their room kept clear
+            .child(bare("title-shelf").w(px(self.shelf_room())))
+            .children(self.shelf(h, self.node.state.layout.r.dx() as f32 + self.left(), cx))
             .into_any_element()
     }
 }

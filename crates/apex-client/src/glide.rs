@@ -29,7 +29,7 @@ fn lerp(a: Rect, b: Rect, k: f32) -> Rect {
     Rect::new(l(a.x0, b.x0), l(a.y0, b.y0), l(a.x1, b.x1), l(a.y1, b.y1))
 }
 
-fn ease(k: f32) -> f32 {
+pub fn ease(k: f32) -> f32 {
     1. - (1. - k.clamp(0., 1.)).powi(3)
 }
 

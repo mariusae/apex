@@ -146,7 +146,7 @@ impl Acme {
     fn command_target(&self) -> Option<WindowId> {
         let (x, y) = self.row_pt(self.last_mouse);
         let l = &self.node.state.layout;
-        l.cols.iter().enumerate().filter(|(ci, _)| l.shows(*ci)).flat_map(|(_, c)| c.wins.iter()).find(|s| s.r.contains(x, y)).map(|s| s.window).or_else(|| self.node.seltext.and_then(|v| v.window()))
+        l.cols.iter().enumerate().filter(|(ci, _)| l.shows(*ci)).flat_map(|(_, c)| c.wins.iter().filter(move |s| !c.hides(s.window))).find(|s| s.r.contains(x, y)).map(|s| s.window).or_else(|| self.node.seltext.and_then(|v| v.window()))
     }
 
     pub fn commands_key(&mut self, key: &str, ch: Option<&str>, mods: &gpui::Modifiers, cx: &mut Context<Self>) {

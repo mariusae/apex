@@ -1,8 +1,9 @@
 //! Errors as toasts. A command's errors go to its directory's `+Errors`
 //! window, as ever -- the core's, and every client's -- but that window
-//! is not opened over the work: it goes to its column's stash, and what
-//! was just written shows in a toast at the foot of that column, by the
-//! stash, with Show All (the window brought back) and ×. A toast goes by
+//! is not opened over the work: it goes to the stash, and what was just
+//! written shows in a toast at the foot of the column it came from (the
+//! active one, if that is gone), with Show All (the window brought back)
+//! and ×. A toast goes by
 //! itself after a while unless the pointer is on it. Its words answer as
 //! the window's would: B3 on one looks (plumbs a file:line, say), B2 runs
 //! it, both from the `+Errors` window; the text is not for editing. An
@@ -15,7 +16,7 @@ use gpui::prelude::*;
 use gpui::{div, px, rgb, AnyElement, Context, MouseButton};
 
 use apex_core::state::Layout;
-use apex_core::{tiling, ViewId, WindowId};
+use apex_core::{ViewId, WindowId};
 
 use crate::app::Acme;
 
@@ -33,8 +34,8 @@ pub struct Toast {
 
 impl Acme {
     /// Errors were written to `w` (an `+Errors` window) and it is to be
-    /// shown: unless it is open and showing lines, it goes to its
-    /// column's stash and a toast says what was written. True when it
+    /// shown: unless it is open and showing lines, it goes to the stash
+    /// and a toast says what was written. True when it
     /// was taken care of so.
     pub fn toast_errors(&mut self, w: WindowId) -> bool {
         if !self.node.window_name(w).ends_with(apex_core::node::ERRORS) {
@@ -51,7 +52,7 @@ impl Acme {
         let v = ViewId::Body(w);
         let text = self.node.selected_text(v).unwrap_or_default();
         if l.place_of(w).is_some() {
-            let _ = self.node.grow_window(&mut self.log, w, 3);
+            let _ = self.node.stash_window(&mut self.log, w);
         }
         match self.toasts.iter_mut().find(|t| t.window == w) {
             Some(t) => {
@@ -72,12 +73,12 @@ impl Acme {
         let mut up_by: std::collections::HashMap<apex_core::ColumnId, f32> = std::collections::HashMap::new();
         for (i, toast) in self.toasts.iter().enumerate().rev() {
             let w = toast.window;
-            let Some(col) = l.column_of(w).and_then(|c| l.column(c)) else { continue };
+            let Some(col) = l.column_of(w).or(self.node.activecol).and_then(|c| l.column(c)).or(l.cols.last()) else { continue };
             let lines: Vec<&str> = toast.text.trim_end().lines().collect();
             let shown = lines[lines.len().saturating_sub(LINES)..].join("\n");
             let more = lines.len() > LINES;
             let width = (col.r.dx() as f32 - 16.).clamp(160., 420.);
-            let below = up_by.entry(col.id).or_insert(tiling::stash_band(col) as f32 + 8.);
+            let below = up_by.entry(col.id).or_insert(8.);
             let height = 44. + 16. * shown.lines().count().max(1) as f32;
             let bottom = col.r.y1 as f32 - *below;
             *below += height + 6.;

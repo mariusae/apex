@@ -152,6 +152,15 @@ pub struct Dot {
     pub spin: Option<u32>,
     /// Notified: the header tinted, pjw's face at its end.
     pub badge: bool,
+    /// Grown to the whole column, others hidden behind it: square, not
+    /// round.
+    pub square: bool,
+}
+
+impl Dot {
+    pub fn squared(self, square: bool) -> Dot {
+        Dot { square, ..self }
+    }
 }
 
 pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, working: bool, notified: bool) -> Dot {
@@ -168,6 +177,7 @@ pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, worki
         core: (live && fill.is_none()).then_some(th.accent),
         spin: working.then_some(th.accent),
         badge: notified,
+        square: false,
     }
 }
 
@@ -178,15 +188,17 @@ const SPIN_R: f32 = 5.25;
 
 pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
     let circle = |r: f32| Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(2. * r), px(2. * r)));
+    // square: the same size, its corners barely rounded
+    let round = |r: f32| if d.square { px(r.min(1.25)) } else { px(r) };
     if let Some(f) = d.fill {
-        window.paint_quad(fill(circle(DOT_R), rgb(f)).corner_radii(px(DOT_R)));
+        window.paint_quad(fill(circle(DOT_R), rgb(f)).corner_radii(round(DOT_R)));
     }
     if let Some(ring) = d.ring {
         let r = if d.fill.is_some() { RING_R } else { DOT_R };
-        window.paint_quad(gpui::quad(circle(r), px(r), gpui::transparent_black(), px(1.25), rgb(ring), gpui::BorderStyle::Solid));
+        window.paint_quad(gpui::quad(circle(r), round(r), gpui::transparent_black(), px(1.25), rgb(ring), gpui::BorderStyle::Solid));
     }
     if let Some(core) = d.core {
-        window.paint_quad(fill(circle(1.75), rgb(core)).corner_radii(px(1.75)));
+        window.paint_quad(fill(circle(1.75), rgb(core)).corner_radii(round(1.75)));
     }
     if let Some(ink) = d.spin {
         paint_spinner(window, c, SPIN_R, 1.5, rgb(ink));
@@ -695,9 +707,9 @@ pub struct Source {
     /// A body's scroller: how much of its thumb shows, and whether that
     /// is changing (drawn again soon).
     pub scroller: (f32, bool),
-    /// A stashed window's tag, shown over its column's foot while the
-    /// stash is brought out: drawn as a sheet drawn out of the stack.
-    pub sheet: bool,
+    /// A window grown to the whole column, others hidden behind it: its
+    /// handle square.
+    pub hiding: bool,
     /// The keys go here: its caret is the blue one, and whether it shows
     /// just now (it blinks). None for any other view, whose caret is the
     /// plain one.
@@ -747,7 +759,7 @@ pub struct Prepaint {
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
-    sheet: bool,
+    hiding: bool,
     key_caret: Option<bool>,
 }
 
@@ -1206,7 +1218,7 @@ impl Element for TextElement {
                 round: src.round,
                 scroller: src.scroller,
                 lane: acme.lane_open(view),
-                sheet: src.sheet,
+                hiding: src.hiding,
                 key_caret: src.key_caret,
             })
         })
@@ -1245,24 +1257,12 @@ impl Element for TextElement {
             pal.bg
         };
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            if pp.sheet {
-                // the edge of a sheet in a stack of them, as Manifold
-                // draws what lies beneath the top one: in from the
-                // column's sides, its top corners rounded, a hairline
-                // round it, on the column's own ground
-                let th = crate::theme::theme();
-                window.paint_quad(fill(bounds, rgb(th.body_bg)));
-                let card = Bounds::new(point(bounds.left() + px(2.), bounds.top() + px(1.)), size(bounds.size.width - px(4.), bounds.size.height + px(1.)));
-                let radii = gpui::Corners { top_left: px(7.), top_right: px(7.), bottom_left: px(0.), bottom_right: px(0.) };
-                window.paint_quad(gpui::quad(card, radii, header_bg, gpui::Edges { top: px(1.), left: px(1.), right: px(1.), bottom: px(0.) }, rgb(th.body_border), gpui::BorderStyle::Solid));
-            } else {
-                // a card's corners where it has them; the column tags and the
-                // top row on the ground, with no card of their own
-                let r = px(CARD_RADIUS);
-                let radii = gpui::Corners { top_left: if pp.round.0 { r } else { px(0.) }, top_right: if pp.round.0 { r } else { px(0.) }, bottom_left: if pp.round.1 { r } else { px(0.) }, bottom_right: if pp.round.1 { r } else { px(0.) } };
-                let bg = if matches!(pp.kind, Kind::ColTag | Kind::Top) { rgb(ground(&crate::theme::theme())) } else { header_bg };
-                window.paint_quad(fill(bounds, bg).corner_radii(radii));
-            }
+            // a card's corners where it has them; the column tags and the
+            // top row on the ground, with no card of their own
+            let r = px(CARD_RADIUS);
+            let radii = gpui::Corners { top_left: if pp.round.0 { r } else { px(0.) }, top_right: if pp.round.0 { r } else { px(0.) }, bottom_left: if pp.round.1 { r } else { px(0.) }, bottom_right: if pp.round.1 { r } else { px(0.) } };
+            let bg = if matches!(pp.kind, Kind::ColTag | Kind::Top) { rgb(ground(&crate::theme::theme())) } else { header_bg };
+            window.paint_quad(fill(bounds, bg).corner_radii(radii));
 
             let mut scrollbar = None;
             let mut overlay = None;
@@ -1292,10 +1292,8 @@ impl Element for TextElement {
                 Kind::WinTag => {
                     let th = crate::theme::theme();
                     let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
-                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified);
-                    // in from the edge as far as a stashed window's sheet
-                    // puts it (in from its rounded corner), so the dots of
-                    // the stash and the column's line up
+                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified).squared(pp.hiding);
+                    // in from the card's rounded corner
                     paint_dot(window, &d, point(b.left() + px(7.5), b.top() + lh / 2.));
                     layout_box = Some(b);
                 }

@@ -82,7 +82,7 @@ impl Acme {
         let t = crate::theme::theme();
         let c = self.node.state.layout.cols[ci].id;
         let open = self.strip_open == Some(c);
-        let notified = self.node.state.layout.cols[ci].all_windows().any(|w| self.window_notified(w));
+        let notified = self.node.state.layout.cols[ci].wins.iter().any(|s| self.window_notified(s.window));
         let edge = if notified { crate::text_element::mix(t.tag_bg, t.accent, 0.12) } else if open { crate::theme::step(t.tag_bg, 1) } else { t.tag_bg };
         let line = t.body_border;
         let sheets = canvas(
@@ -110,7 +110,7 @@ impl Acme {
     }
 
     /// Window `w`'s handle as its tag shows it.
-    fn window_dot(&self, w: apex_core::WindowId) -> crate::text_element::Dot {
+    pub(crate) fn window_dot(&self, w: apex_core::WindowId) -> crate::text_element::Dot {
         let t = crate::theme::theme();
         let live = self.node.window_live(w) || self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web);
         crate::text_element::dot(&t, false, self.node.window_unsaved(w), live, self.node.window_working(w), self.window_notified(w))
@@ -122,7 +122,7 @@ impl Acme {
         let t = crate::theme::theme();
         let col = &self.node.state.layout.cols[ci];
         let c = col.id;
-        let notified = col.all_windows().any(|w| self.window_notified(w));
+        let notified = col.wins.iter().any(|s| self.window_notified(s.window));
         let card = if notified { crate::text_element::mix(t.tag_bg, t.accent, 0.12) } else { t.tag_bg };
         let line = t.body_border;
         let grip = crate::text_element::rgb(t.text_dim);

@@ -204,15 +204,17 @@ pub fn note_closed(url: &SessionUrl, path: &str) {
 fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label: Option<String>) -> Vec<Entry> {
     let tab = label.map(|l| (id, l));
     let mut out = Vec::new();
-    for col in &node.state.layout.cols {
-        // stashed ones as well, where they stand: going to one brings it back
-        for (w, _) in apex_core::tiling::stash_order(col) {
-            let name = node.window_name(w);
-            if name.is_empty() {
-                continue;
-            }
-            out.push(Entry { name, window: Some(w), kind: node.window_kind(w), tab: tab.clone() });
+    let l = &node.state.layout;
+    // stashed ones as well, where they stood (those whose column is gone
+    // after): going to one brings it back
+    let order = (0..l.cols.len()).flat_map(|ci| apex_core::tiling::stash_order(l, ci)).map(|(w, _)| w);
+    let orphans = l.stash.iter().filter(|s| l.column(s.col).is_none()).map(|s| s.slot.window);
+    for w in order.chain(orphans) {
+        let name = node.window_name(w);
+        if name.is_empty() {
+            continue;
         }
+        out.push(Entry { name, window: Some(w), kind: node.window_kind(w), tab: tab.clone() });
     }
     for p in recently_closed(url) {
         if !out.iter().any(|e| e.name == p) {

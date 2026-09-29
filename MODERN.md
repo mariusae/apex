@@ -6,8 +6,8 @@ shared state, in the log), tags that are text you type into and B2,
 the three buttons and their chords, plumbing, the sessions and the
 daemon. Everything here is drawn inside the rectangles the tiling
 gives, or beside them, with one deliberate exception: the stash (below),
-which changes what B2 and B3 do on a window's box, and so is the core's
-(`Column::stash`, protocol 32).
+windows put away out of the tiling, which is the core's
+(`Layout::stash`, protocol 37).
 
 ## What changed
 
@@ -47,8 +47,9 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   session's square, having nothing to drag, is bare (red when fenced).
   B1 on the top row past its text drags the Mac window, as a title bar
   does.
-  All still acme's layout boxes: B1 on them as ever, B2 and B3 on a
-  window's as the stash has them.
+  All still acme's layout boxes: B1, B2 and B3 on them as ever. A
+  window grown to the whole column with others hidden behind it has a
+  square handle; alone in its column it stays round.
 - **The caret says where the keys go.** Every text's caret is a plain
   dark line, but the one the keys go to (acme's rule: the text under the
   pointer, else the last selected in; none while apex is not in front)
@@ -122,30 +123,32 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   light scrim; a 48-point search row with a magnifying glass, rows 34
   high with the title at 13.5 and what follows in the secondary ink, the
   chosen row in the accent with white words.
-- **Stashing and maximizing** (`tiling::colstash`, `colmaximize` and
-  their kin, the core's) are two things, B3 the one and B2 the other.
-  B2 on a window's box maximizes it, as acme's B2 does: the others in
-  the column down to their tags, none stashed; B1 on the maximized
-  window's box gives each back the size it had (`Slot::premax`,
-  protocol 36). B3 on a window's box puts it away in its column's stash,
-  its space going to a neighbour as a closed window's does. The stash shows as the edges of a stack
-  of paper peeking out under the column's windows, a few pixels a sheet,
-  which the tiling leaves room for (`tiling::floor`). The pointer on
-  them, no button held, brings the stash out at once: the
-  stashed windows' tags, live, stacked over the column's foot in the
-  column's order as sheets drawn out of the pile, put away a moment
-  after the pointer leaves. Their handles: B1 brings one back where it
-  was (under the window it was under, at the share of the column it
-  had), B2 back maximized, a drag back where it is let
-  go, in any column. Their text is a tag's: B2 runs Del or Put there, B3
-  looks. A stashed window is never a dead end: whatever goes to it (a
-  Look, the plumber, the finder, the sidebar, a notification) brings it
-  back where it was; and a column with a stash is never blank -- when
-  its last window laid out is put away or closed, the stashed one
-  nearest it comes back. Folded windows (a tag squeezed in place by a
-  neighbour's growth or a drag) are acme's, and plain tags. The sidebar
-  and the finder list stashed windows where they stand, the sidebar's
-  names in the secondary ink; `apex win list` does too.
+- **Maximizing** (`tiling::colfull`, `colmaximize` and their kin, the
+  core's). B3 on a window's box is acme's again: the window grown to
+  the whole column, keeping its place in it, the others hidden behind
+  it (`Column::full`); B3 again or B1 gives them back exactly where
+  they were. Its handle is square while others are hidden. B2
+  maximizes as acme's B2 does: the others in the column down to their
+  tags, which show, so it needs no mark; B1 on the maximized window's
+  box gives each back the size it had (`Slot::premax`). Adding a
+  window to the column, closing one, dragging or growing gives the
+  hidden ones back first; going to a hidden window does too.
+- **The stash** (`shelf.rs`, `tiling::stash`): one for the session, not
+  a column's. ⌘M (View ▸ Stash Window) puts the window the keys go to
+  away -- out of its column, its space going to a neighbour as a closed
+  window's does; `Stash` typed and run in a tag does the same (it is
+  not in the tags as drawn). The stashed windows show at the title
+  bar's right end as their tags made small, bunched like a hand of
+  cards, the latest on top. The pointer on them, or a scroll over
+  them, fans them out, and the one under the pointer (or scrolled to)
+  shows live below the bar as it stood; a click on one brings it back
+  where it was -- under the window it was under, at the share of its
+  column it had, or at the foot of the active column if its own is
+  gone. The sidebar lists them under Stashed, and a click there does
+  the same. That is the only way back but one: whatever goes to a
+  stashed window (a Look, the plumber, the finder, a notification)
+  brings it back too. The finder and `apex win list` list stashed
+  windows where they stood.
 - **ctrl-tab** (`switcher.rs`) walks the sessions live: each press
   shows the next one in the window at once, sliding in from the right
   over the one it replaces (which slides out to the left, drawn from its
@@ -161,26 +164,9 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   from its replica (the shown one's edge in the accent, a notified one
   wearing pjw), in the sidebar's order. A click on one goes to it;
   escape, a click off the cards or ⌘⇧\\ again leaves things be.
-- **⌘E** (`switcher.rs`) brings a column's stash up as a stack of cards
-  leaning back within the column, as Safari once showed its tabs, each a
-  live preview (`miniature.rs` draws them through the lean: each row
-  placed and narrowed as it goes down the card): the column tilts back
-  into the front card and slides down while the stash rises behind it,
-  the most recently put away chosen, the older ones behind showing their
-  tags. More E's choose further back (⇧E forward), the cards before the
-  choice sliding down to the foot and gathering there as their tags.
-  Letting go of ⌘ brings the chosen window back where it was (B1's
-  recall), its card settling flat onto where it lands as the rest fade;
-  a click on a card does the same; escape settles the front card back
-  as the column. The column is the active one -- the window with the
-  keys' caret's, else the last worked in -- and ⌘E does nothing when it
-  has no stash, whatever other columns have. View ▸ Bring Back from Stash
-  does the same (a click or escape to finish). ⌥⌘E (View ▸ Bring Back
-  All from Stash) brings the same column's whole stash back at once,
-  each window where it was.
 - **Web windows** (`webbar.rs`) have a header of their own in the tag's
   place, as the Claude app's browser does: the handle (every button and
-  drag of it as any window's -- it moves, grows, stashes), back and
+  drag of it as any window's -- it moves, grows, maximizes), back and
   forward, and the address, and nothing else. A click in the address
   takes it for typing (all selected); return goes there (a bare host
   gets https://, a path is the host's file), escape or a click elsewhere
@@ -196,7 +182,7 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   column box's resize does): the columns either side wider and narrower,
   never shuffled, and a click on it does nothing.
 - **Placement preview.** While a handle is held -- a window's, a
-  stashed one's, a column's, or the line between columns -- where it
+  column's, or the line between columns -- where it
   would land were it let go now is shaded in the accent, as Manifold
   shows where a dragged sheet would go. It is the drop itself, done on a
   copy of the layout (`Node::drag_window_preview` and its kin), so what
@@ -242,8 +228,8 @@ which changes what B2 and B3 do on a window's box, and so is the core's
   snaps. A gliding window's terminal keeps its size, and its text its
   scroll, until it lands.
 - **Errors as toasts** (`toasts.rs`): a command's errors still go to its
-  +Errors window, but that window goes to its column's stash and what
-  was written shows in a toast at the column's foot, with Show All (the
+  +Errors window, but that window goes to the stash and what was
+  written shows in a toast at the foot of its column, with Show All (the
   window brought back) and ×; it goes after eight seconds unless the
   pointer is on it. An +Errors window brought back is written to as
   before.

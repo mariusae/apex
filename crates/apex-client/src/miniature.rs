@@ -5,7 +5,6 @@
 //! drawn afresh each frame from what the session is now. Pages, whose
 //! native views are the shown session's alone, are their paper and name.
 
-use apex_core::tiling;
 use apex_core::*;
 use gpui::{point, px, size, App, Bounds, ContentMask, Pixels, Window};
 
@@ -68,18 +67,13 @@ pub fn snapshot(node: &Node, t: &Theme) -> Mini {
         let cr = col.r;
         m.fills.push((cr.x0 as f32, cr.y0 as f32, cr.dx() as f32, cr.dy() as f32, t.body_bg));
         tag(&mut m, col.tag, (cr.x0 as f32, cr.y0 as f32, cr.dx() as f32, font));
-        for s in &col.wins {
+        for s in col.wins.iter().filter(|s| !col.hides(s.window)) {
             let r = s.r;
             let tag_h = if s.body.dy() > 0 { s.body.y0 - r.y0 } else { r.dy() };
             // the hairline where it meets the one above
             m.fills.push((r.x0 as f32, r.y0 as f32 - 1., r.dx() as f32, 1., t.body_border));
             let body = (s.body.dy() > 0).then(|| (s.body.x0 as f32, s.body.y0 as f32, s.body.dx() as f32, s.body.dy() as f32));
             window_into(&mut m, node, s.window, (r.x0 as f32, r.y0 as f32, r.dx() as f32, tag_h as f32), body, t);
-        }
-        // a stash: its band, the colour of its sheets
-        let band = tiling::stash_band(col);
-        if band > 0 {
-            m.fills.push((cr.x0 as f32 + 2., (cr.y1 - band + tiling::BORDER) as f32, cr.dx() as f32 - 4., (band - tiling::BORDER) as f32, t.tag_bg));
         }
     }
     m
@@ -200,12 +194,6 @@ pub struct Tilt {
 }
 
 impl Tilt {
-    /// A tilt part of the way (`k`, 0 to 1) from `a` to `b`.
-    pub fn lerp(a: Tilt, b: Tilt, k: f32) -> Tilt {
-        let l = |x: f32, y: f32| x + (y - x) * k;
-        Tilt { left: l(a.left, b.left), top: l(a.top, b.top), width: l(a.width, b.width), slope: l(a.slope, b.slope), vs: l(a.vs, b.vs), height: l(a.height, b.height) }
-    }
-
     /// How far down the card (on the screen) content row `y` lands, for
     /// content `w` wide.
     fn down(&self, w: f32, y: f32) -> f32 {
@@ -222,14 +210,6 @@ impl Tilt {
     /// Screen pixels per content pixel across, at content row `y`.
     fn across(&self, w: f32, y: f32) -> f32 {
         (self.width - 2. * self.slope * self.down(w, y)) / w
-    }
-
-    /// The card's outline on the screen: top left, top right, bottom
-    /// right, bottom left.
-    pub fn corners(&self) -> [(f32, f32); 4] {
-        let inset = self.slope * self.height;
-        let b = self.top + self.height;
-        [(self.left, self.top), (self.left + self.width, self.top), (self.left + self.width - inset, b), (self.left + inset, b)]
     }
 }
 
@@ -298,21 +278,17 @@ impl Mini {
     }
 }
 
-/// Column `ci`'s windows as they stand, drawn small: its window space
-/// (below its tag) as content `w` by `h`, for ⌘E's card of what shows.
-pub fn snapshot_column(node: &Node, ci: usize, t: &Theme) -> Option<(Mini, f32)> {
-    snapshot_column_at(node, ci, None, t)
-}
 
-/// A column's windows as `snapshot_column` draws them, `width` wide when
-/// given -- a strip's, as it would stand brought back.
+/// Column `ci`'s windows as they stand, drawn small: its window space
+/// (below its tag), `width` wide when given -- a strip's, as it would
+/// stand brought back.
 pub fn snapshot_column_at(node: &Node, ci: usize, width: Option<f32>, t: &Theme) -> Option<(Mini, f32)> {
     let c = node.state.layout.cols.get(ci)?;
     let font = f32::from(crate::text_element::tag_line_height());
     let (x0, y0) = (c.r.x0 as f32, c.r.y0 as f32 + font);
     let (w, h) = (width.unwrap_or(c.r.dx() as f32), (c.r.y1 as f32 - y0).max(1.));
     let mut m = Mini { w, fills: vec![(0., 0., w, h, t.body_bg)], lines: Vec::new() };
-    for s in &c.wins {
+    for s in c.wins.iter().filter(|s| !c.hides(s.window)) {
         let r = s.r;
         let tag_h = if s.body.dy() > 0 { s.body.y0 - r.y0 } else { r.dy() };
         m.fills.push((0., r.y0 as f32 - y0 - 1., w, 1., t.body_border));

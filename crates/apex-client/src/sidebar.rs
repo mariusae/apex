@@ -292,62 +292,80 @@ impl Acme {
 
     /// The shown session's windows, column by column in the order the
     /// columns stand, each as its handle shows it and named by the last
-    /// part of its name, the folder it is in after it.
+    /// part of its name, the folder it is in after it; then the stash,
+    /// the latest put away first (a click brings one back where it was).
     fn window_rows(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme::theme();
-        let hover = theme::step(t.strip, 1);
         let mut rows = div().flex().flex_col().pb(px(4.));
         let l = &self.node.state.layout;
         for col in &l.cols {
-            // stashed ones too, where they stand in the column, their
-            // names in the secondary ink (a click brings one back)
-            for (w, stashed) in apex_core::tiling::stash_order(col) {
-                let mut name = self.node.window_name(w);
-                // a blank page, its address not yet typed
-                if name.is_empty() && self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web) {
-                    name = "New page".into();
-                }
-                let (label, dir) = split_name(&name);
-                let d = crate::text_element::dot(
-                    t,
-                    false,
-                    self.node.window_unsaved(w),
-                    self.node.window_live(w) || self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web),
-                    self.node.window_working(w),
-                    self.window_notified(w),
-                );
-                let row = div()
-                    .id(("win", w.0))
+            for s in &col.wins {
+                rows = rows.child(self.window_row(s.window, false, cx));
+            }
+        }
+        if !l.stash.is_empty() {
+            rows = rows.child(
+                div()
                     .flex_none()
-                    .h(px(WIN_ROW_H))
                     .pl(px(14.))
-                    .pr(px(8.))
-                    .rounded(px(6.))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .cursor_default()
-                    .hover(move |s| s.bg(rgb(hover)))
-                    .child(dot_element(&d))
-                    .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(if stashed { t.text_dim } else { t.text })).child(label))
-                    .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(dir))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| {
-                            this.reveal_window(w, cx);
-                            cx.stop_propagation();
-                        }),
-                    );
-                rows = rows.child(row);
+                    .pt(px(8.))
+                    .pb(px(2.))
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(t.text_dim))
+                    .child("Stashed"),
+            );
+            for s in l.stash.iter().rev() {
+                rows = rows.child(self.window_row(s.slot.window, true, cx));
             }
         }
         rows
+    }
+
+    /// Window `w`'s row: a click on a laid-out one reveals it and lands
+    /// on it; on a stashed one, brings it back.
+    fn window_row(&self, w: apex_core::WindowId, stashed: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = theme::theme();
+        let hover = theme::step(t.strip, 1);
+        let mut name = self.node.window_name(w);
+        // a blank page, its address not yet typed
+        if name.is_empty() && self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web) {
+            name = "New page".into();
+        }
+        let (label, dir) = split_name(&name);
+        let d = self.window_dot(w);
+        div()
+            .id(("win", w.0))
+            .flex_none()
+            .h(px(WIN_ROW_H))
+            .pl(px(14.))
+            .pr(px(8.))
+            .rounded(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .cursor_default()
+            .hover(move |s| s.bg(rgb(hover)))
+            .child(dot_element(&d))
+            .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(label))
+            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(dir))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    if stashed {
+                        this.unstash(w, cx);
+                    } else {
+                        this.reveal_window(w, cx);
+                    }
+                    cx.stop_propagation();
+                }),
+            )
     }
 }
 
 /// A window's name as a row shows it: its last part (a directory's with
 /// its slash), and the folder it is in, home as `~`.
-fn split_name(name: &str) -> (String, String) {
+pub(crate) fn split_name(name: &str) -> (String, String) {
     let trimmed = name.trim_end_matches('/');
     let slash = if name.ends_with('/') && !trimmed.is_empty() { "/" } else { "" };
     let (dir, last) = match trimmed.rfind('/') {
@@ -364,7 +382,7 @@ fn split_name(name: &str) -> (String, String) {
 }
 
 /// The handle's dot as a row draws it: the same marks, at a row's size.
-fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
+pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
     let mut el = div().flex_none().size(px(9.)).rounded_full();
     if let Some(f) = d.fill {
         el = el.bg(rgb(f));

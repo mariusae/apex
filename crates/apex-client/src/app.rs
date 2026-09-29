@@ -417,8 +417,6 @@ pub struct Acme {
     /// A session sliding in (ctrl-tab), and the overview up (⌘⇧\).
     pub switch_slide: Option<crate::switcher::SwitchSlide>,
     pub overview: Option<crate::switcher::Overview>,
-    /// ⌘E, ⌘ still held: the walk through a column's stash.
-    pub stash_walk: Option<crate::switcher::StashWalk>,
     /// The sidebar's session row under the pointer: its × shows, and a
     /// preview of the session beside it.
     pub sidebar_hover: Option<crate::pool::TabId>,
@@ -488,12 +486,8 @@ pub struct Acme {
     /// it, and when the pointer left it and its slice (`strips.rs`).
     pub strip_open: Option<ColumnId>,
     pub strip_leaving: Option<std::time::Instant>,
-    /// The column whose stash is brought out, its tags shown over its
-    /// foot: by the pointer resting on its sheets' edges a moment, and
-    /// put away a moment after it leaves them.
-    pub stash_open: Option<ColumnId>,
-    /// When the pointer left the stash brought out.
-    stash_leaving: Option<std::time::Instant>,
+    /// The stash in the title bar, fanned out under the pointer.
+    pub shelf: crate::shelf::Shelf,
     /// Whether AppKit's title bar container is hidden (full screen).
     pub native_bar_hidden: bool,
     /// Positions to bring on screen (new `+Errors` text), by view.
@@ -1552,24 +1546,18 @@ impl Acme {
                                 // a walk whose key came up where gpui did not
                                 // hear it (a page had the keys): ended as the
                                 // key coming up ends it
-                                let (cmd, ctrl) = crate::web::modifiers_down();
-                                if acme.stash_walk.as_ref().is_some_and(|s| s.held && !s.settling()) && !cmd {
-                                    acme.stash_walk_commit(cx);
-                                }
+                                let (_, ctrl) = crate::web::modifiers_down();
                                 if acme.switcher.is_some() && !ctrl {
                                     acme.switcher_commit(window, cx);
                                 }
                                 if acme.caret_tick() {
                                     cx.notify();
                                 }
-                                // the stash, from where the pointer is, asked
+                                // the strips, from where the pointer is, asked
                                 // of the system (a page keeps its moves to
                                 // itself, and it may have left): resting is
                                 // no move
                                 if let Some(p) = crate::web::native_mouse(window) {
-                                    if acme.stash_tick(p) {
-                                        cx.notify();
-                                    }
                                     let held = acme.held_any();
                                     if acme.strip_tick(p, held) {
                                         cx.notify();
@@ -1625,16 +1613,14 @@ impl Acme {
             caret_term: None,
             caret_on: true,
             caret_since: std::time::Instant::now(),
-            stash_open: None,
+            shelf: Default::default(),
             strip_open: None,
             strip_leaving: None,
-            stash_leaving: None,
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
             switcher: None,
             switch_slide: None,
             overview: None,
-            stash_walk: None,
             url_edit: None,
             session_edit: None,
             session_menu: false,
@@ -1868,6 +1854,13 @@ impl Acme {
         self.node.warp = Some(Warp::NewWindow(w));
         self.after();
         cx.notify();
+    }
+
+    /// Is the window grown to the whole of its column with others hidden
+    /// behind it (B3 on its box)? Its handle is square while it is.
+    pub fn hides_others(&self, w: WindowId) -> bool {
+        let l = &self.node.state.layout;
+        l.column_of(w).and_then(|c| l.column(c)).is_some_and(|c| c.hiding() && c.full.is_some_and(|f| f.window == w))
     }
 
     /// Does the window carry a notification this client shows?
@@ -2308,7 +2301,9 @@ impl Acme {
             .layout
             .cols
             .iter()
-            .flat_map(|c| c.wins.iter())
+            // those hidden behind a window grown to the whole column are
+            // not drawn to be measured
+            .flat_map(|c| c.wins.iter().filter(move |s| !c.hides(s.window)))
             .filter(|s| {
                 self.tag_need.get(&ViewId::Tag(s.window)).is_some_and(|(n, nl)| {
                     let fit = (s.r.dy() / font).max(0);
@@ -2373,74 +2368,6 @@ impl Acme {
     /// right of it. Unpinned it floats over the content when brought.
     pub fn sidebar_shown(&self) -> bool {
         crate::theme::sidebar()
-    }
-
-    /// Column `ci`'s stash as it shows, in the area's coordinates: the
-    /// band its sheets' edges take at the foot, and the rows its tags
-    /// stand in when it is brought out, in the column's order, rising
-    /// from the foot over the column. None without a stash.
-    pub fn stash_geometry(&self, ci: usize) -> Option<(tiling::Rect, Vec<(WindowId, tiling::Rect)>)> {
-        let l = &self.node.state.layout;
-        let c = l.cols.get(ci)?;
-        if c.stash.is_empty() || !l.shows(ci) {
-            return None;
-        }
-        let font = f32::from(crate::text_element::tag_line_height()) as i32;
-        let band = tiling::Rect::new(c.r.x0, tiling::floor(c), c.r.x1, c.r.y1);
-        let order: Vec<WindowId> = tiling::stash_order(c).into_iter().filter(|&(_, st)| st).map(|(w, _)| w).collect();
-        let step = font + tiling::BORDER;
-        let top = (c.r.y1 - step * order.len() as i32).max(c.r.y0 + font);
-        let rows = order.into_iter().enumerate().map(|(i, w)| (w, tiling::Rect::new(c.r.x0, top + step * i as i32, c.r.x1, top + step * i as i32 + font))).collect();
-        Some((band, rows))
-    }
-
-    /// The stash under the pointer (`p`, in the window's coordinates):
-    /// brought out the moment the pointer is on a column's sheets with no
-    /// button held (dragging over them is not asking for it), and put
-    /// away a moment after the pointer leaves it. True when it came or
-    /// went.
-    pub fn stash_tick(&mut self, p: Point<Pixels>) -> bool {
-        let m = &self.mouse;
-        let held = m.b1.is_some() || m.b2.is_some() || m.b3.is_some() || m.box_drag.is_some() || m.scrolling.is_some() || m.term_drag.is_some() || m.term_sweep.is_some();
-        let (x, y) = self.row_pt(p);
-        let l = &self.node.state.layout;
-        if let Some(open) = self.stash_open {
-            let geo = l.column_index(open).and_then(|ci| self.stash_geometry(ci));
-            let Some((band, rows)) = geo else {
-                self.stash_open = None;
-                self.stash_leaving = None;
-                return true;
-            };
-            let top = rows.first().map(|(_, r)| r.y0).unwrap_or(band.y0);
-            let over = x >= band.x0 && x < band.x1 && y >= top && y <= band.y1 + 2;
-            if over || held {
-                self.stash_leaving = None;
-                return false;
-            }
-            return match self.stash_leaving {
-                None => {
-                    self.stash_leaving = Some(std::time::Instant::now());
-                    false
-                }
-                Some(t) if t.elapsed() >= std::time::Duration::from_millis(150) => {
-                    self.stash_open = None;
-                    self.stash_leaving = None;
-                    true
-                }
-                Some(_) => false,
-            };
-        }
-        if held {
-            return false;
-        }
-        let under = (0..l.cols.len()).find(|&ci| self.stash_geometry(ci).is_some_and(|(b, _)| x >= b.x0 && x < b.x1 && y >= b.y0 && y <= b.y1 + 2)).map(|ci| l.cols[ci].id);
-        match under {
-            Some(c) => {
-                self.stash_open = Some(c);
-                true
-            }
-            None => false,
-        }
     }
 
     pub(crate) fn row_pt(&self, p: Point<Pixels>) -> (i32, i32) {
@@ -2683,7 +2610,7 @@ impl Acme {
                 hovered: false,
                 round: (false, false),
                 scroller: (0., false),
-                sheet: false,
+                hiding: false,
                 key_caret: None,
                 text: apex_core::text::Text::new(""),
                 sel: (0, 0),
@@ -2714,9 +2641,9 @@ impl Acme {
                 ViewId::Body(_) => (false, true),
                 _ => (false, false),
             },
-            // a stashed window's tag, shown over its column's foot: a
-            // sheet out of the stack (a tag folded in place is a tag)
-            sheet: matches!(view, ViewId::Tag(w) if self.node.state.layout.is_stashed(w)),
+            // a window grown to the whole column with others behind it:
+            // its handle square
+            hiding: matches!(view, ViewId::Tag(w) if self.hides_others(w)),
             // the keys' view: its caret the blue one, blinking
             key_caret: (self.caret_view == Some(view)).then_some(self.caret_on),
             text: buf.text.clone(),
@@ -2769,18 +2696,6 @@ impl Acme {
     // ---- hit testing ---------------------------------------------------------
 
     fn locate(&self, pos: Point<Pixels>) -> Option<(Target, Region)> {
-        // the stash brought out lies over everything in its column
-        if self.stash_open.is_some() {
-            for (v, l) in &self.layouts {
-                if !matches!(v, ViewId::Tag(w) if self.node.state.layout.is_stashed(*w)) || !l.bounds.contains(&pos) {
-                    continue;
-                }
-                if l.layout_box.is_some_and(|b| b.contains(&pos)) {
-                    return Some((Target::View(*v), Region::LayoutBox));
-                }
-                return Some((Target::View(*v), Region::Text(l.offset_at(pos))));
-            }
-        }
         if let Some((w, _)) = self.web_bars.iter().find(|(_, b)| b.contains(&pos)) {
             return Some((Target::Web(*w), Region::WebScrollbar));
         }
@@ -3207,9 +3122,6 @@ impl Acme {
         if self.caret_tick() {
             cx.notify();
         }
-        if self.stash_tick(pos) {
-            cx.notify();
-        }
         let held = self.held_any();
         if self.strip_tick(pos, held) {
             cx.notify();
@@ -3473,11 +3385,6 @@ impl Acme {
         // control let go: the ctrl-tab walk ends where it stands
         if self.switcher.is_some() && !e.modifiers.control {
             self.switcher_commit(window, cx);
-            return;
-        }
-        // ⌘ let go: the chosen stashed window comes back
-        if self.stash_walk.is_some() && prev.platform && !e.modifiers.platform {
-            self.stash_walk_commit(cx);
             return;
         }
         if let Some(w) = self.mouse.term_drag {
@@ -3904,7 +3811,7 @@ impl Acme {
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
         // and a walk held open by a modifier: the key coming up ends it
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.stash_walk.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):
@@ -4295,12 +4202,6 @@ impl Acme {
                 }
                 return;
             }
-            if self.stash_walk.is_some() {
-                if ks.key == "escape" {
-                    self.stash_walk_cancel(cx);
-                }
-                return;
-            }
         }
         // ^F's list: ↑ ↓ return tab escape are its; the rest go to the
         // text, and the list follows
@@ -4383,7 +4284,7 @@ impl Acme {
 
     /// The window acme would act on: the one under the pointer, else the
     /// last selected text's.
-    fn window_at_pointer(&self, window: &Window) -> Option<WindowId> {
+    pub(crate) fn window_at_pointer(&self, window: &Window) -> Option<WindowId> {
         let pos = self.pointer(window);
         if let Some(w) = self.webs.window_at(pos) {
             return Some(w); // a page: the window is its
