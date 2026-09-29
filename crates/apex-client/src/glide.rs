@@ -18,6 +18,10 @@ use apex_core::{ColumnId, WindowId};
 use crate::app::Acme;
 
 const GLIDE: Duration = Duration::from_millis(160);
+/// A glide begun while the last was still on its way: the user is ahead
+/// of it (a second click on a handle), so it jumps to where the last was
+/// going and goes on from there quicker.
+const HURRY: Duration = Duration::from_millis(80);
 
 /// A rectangle part of the way (`k`) from `a` to `b`.
 fn lerp(a: Rect, b: Rect, k: f32) -> Rect {
@@ -37,23 +41,23 @@ pub struct Glide {
     /// Where each window and column was last put by the tiling.
     wins: HashMap<WindowId, Place>,
     cols: HashMap<ColumnId, Rect>,
-    /// Those on their way: from, to, since.
-    moving_w: HashMap<WindowId, (Place, Place, Instant)>,
-    moving_c: HashMap<ColumnId, (Rect, Rect, Instant)>,
+    /// Those on their way: from, to, since, taking how long.
+    moving_w: HashMap<WindowId, (Place, Place, Instant, Duration)>,
+    moving_c: HashMap<ColumnId, (Rect, Rect, Instant, Duration)>,
     /// The row and the tab last drawn: when either changes, nothing glides.
     row: Option<(Rect, crate::pool::TabId)>,
 }
 
 impl Glide {
     fn now_w(&self, w: WindowId) -> Option<Place> {
-        let (a, b, at) = self.moving_w.get(&w)?;
-        let k = ease(at.elapsed().as_secs_f32() / GLIDE.as_secs_f32());
+        let (a, b, at, d) = self.moving_w.get(&w)?;
+        let k = ease(at.elapsed().as_secs_f32() / d.as_secs_f32());
         Some((lerp(a.0, b.0, k), lerp(a.1, b.1, k)))
     }
 
     fn now_c(&self, c: ColumnId) -> Option<Rect> {
-        let (a, b, at) = self.moving_c.get(&c)?;
-        let k = ease(at.elapsed().as_secs_f32() / GLIDE.as_secs_f32());
+        let (a, b, at, d) = self.moving_c.get(&c)?;
+        let k = ease(at.elapsed().as_secs_f32() / d.as_secs_f32());
         Some(lerp(*a, *b, k))
     }
 
@@ -79,8 +83,8 @@ impl Acme {
         let mut l = self.node.state.layout.clone();
         let g = &mut self.glide;
         // what has landed is done
-        g.moving_w.retain(|_, (_, _, at)| at.elapsed() < GLIDE);
-        g.moving_c.retain(|_, (_, _, at)| at.elapsed() < GLIDE);
+        g.moving_w.retain(|_, (_, _, at, d)| at.elapsed() < *d);
+        g.moving_c.retain(|_, (_, _, at, d)| at.elapsed() < *d);
         let here = (l.r, self.tab);
         let snap = g.row != Some(here);
         g.row = Some(here);
@@ -94,8 +98,9 @@ impl Acme {
         for c in &l.cols {
             if let Some(&was) = g.cols.get(&c.id) {
                 if was != c.r && !snap {
-                    let from = g.now_c(c.id).unwrap_or(was);
-                    g.moving_c.insert(c.id, (from, c.r, Instant::now()));
+                    // still on its way: from where it was going, quicker
+                    let (from, d) = if g.moving_c.contains_key(&c.id) { (was, HURRY) } else { (was, GLIDE) };
+                    g.moving_c.insert(c.id, (from, c.r, Instant::now(), d));
                 }
             }
             cols.insert(c.id, c.r);
@@ -103,14 +108,16 @@ impl Acme {
                 let to = (s.r, s.body);
                 match g.wins.get(&s.window) {
                     Some(&was) if was != to && !snap => {
-                        let from = g.now_w(s.window).unwrap_or(was);
-                        g.moving_w.insert(s.window, (from, to, Instant::now()));
+                        // still on its way (a second click before it
+                        // landed): from where it was going, quicker
+                        let (from, d) = if g.moving_w.contains_key(&s.window) { (was, HURRY) } else { (was, GLIDE) };
+                        g.moving_w.insert(s.window, (from, to, Instant::now(), d));
                     }
                     // appearing among windows that were there: opening down
                     // from its top
                     None if before => {
                         let flat = |r: Rect| Rect::new(r.x0, r.y0, r.x1, r.y0);
-                        g.moving_w.insert(s.window, ((flat(s.r), flat(s.body)), to, Instant::now()));
+                        g.moving_w.insert(s.window, ((flat(s.r), flat(s.body)), to, Instant::now(), GLIDE));
                     }
                     _ => {}
                 }
