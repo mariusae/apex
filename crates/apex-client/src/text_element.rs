@@ -1086,9 +1086,13 @@ impl Element for TextElement {
                     // what is to be shown: textshow's position, `quarters`
                     // quarters of the window down (one for new `+Errors`
                     // text, three for a program's output), or the selection
+                    // (a selection by its start: a line plumbed or looked
+                    // to ends at the next line's start, and shown by its end
+                    // from below it came to the top as the line under it,
+                    // the line itself just out of sight above)
                     let want = match (src.show_at, src.want_visible) {
                         (Some((q, quarters)), _) => Some((q, Some(height * (quarters as f32 / 4.)))),
-                        (None, true) => Some((src.sel.1, None)),
+                        (None, true) => Some((src.sel.0, None)),
                         _ => None,
                     };
                     let Some((q, room)) = want else { break };
