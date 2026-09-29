@@ -2174,6 +2174,8 @@ impl Acme {
                 crate::warp::move_to(window, at);
                 self.pointer = Some(at);
                 self.last_mouse = at;
+                // no event says the pointer moved: the ⌘/⌥ pill goes with it
+                self.update_hint(at);
             }
             window.request_animation_frame();
             return;
@@ -2192,6 +2194,9 @@ impl Acme {
             crate::warp::move_to(window, at);
             self.pointer = Some(at);
             self.last_mouse = at;
+            // no event says the pointer moved: the ⌘/⌥ pill goes with it,
+            // off what was clicked and onto what it now is over
+            self.update_hint(at);
         }
     }
 
@@ -3637,11 +3642,12 @@ impl Acme {
         let (bounds, pos) = match target {
             Target::View(v) => {
                 let Some(l) = self.layouts.get(&v) else { return false };
-                (l.bounds, point(l.bounds.left() + px(SCROLLWID as f32 / 2.), y))
+                // the lane is at the body's right
+                (l.bounds, point(l.bounds.right() - px(SCROLLWID as f32 / 2.), y))
             }
             Target::Term(w, _) => {
                 let Some(l) = self.term_layouts.get(&w) else { return false };
-                (l.bounds, point(l.bounds.left() + px(SCROLLWID as f32 / 2.), y))
+                (l.bounds, point(l.bounds.right() - px(SCROLLWID as f32 / 2.), y))
             }
             Target::Web(w) => {
                 let Some(b) = self.web_bars.get(&w).copied() else { return false };
@@ -3657,6 +3663,7 @@ impl Acme {
         let at = point(pos.x, y);
         crate::warp::move_to(window, at);
         self.pointer = Some(at);
+        self.update_hint(at);
         self.sync();
         true
     }
