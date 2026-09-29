@@ -11,14 +11,17 @@ windows put away out of the tiling, which is the core's
 
 ## What changed
 
-- **Look.** Five palettes to live with (View ▸ Theme, `theme.rs`), each a
+- **Look.** Six palettes to live with (View ▸ Theme, `theme.rs`), each a
   light and a dark, the appearance (View: Light, Dark, System) choosing
   which: Alabaster (tonsky's, light and dark), Xcode (Xcode's Default
   Light and Dark, the system blue), Classic (acme's make -- cream paper,
   pale blue tags, a yellow selection -- toned down, in the hues of
   go.dev's playground) GitHub (Light Colorblind lifted off white,
-  and Dark Dimmed) and Nova (Panic's standard Bright and Dark, sampled
-  from Panic's own preview of them). Each is a handful of key colours from which the rest
+  and Dark Dimmed), Nova (Panic's standard Bright and Dark, sampled
+  from Panic's own preview of them) and rsms (Rasmus Andersson's Sublime
+  Text theme: its bright scheme, and dark mono for the dark -- the
+  editor's colours from its schemes, the chrome's as Sublime's Adaptive
+  UI draws round them, sampled from its screenshots). Each is a handful of key colours from which the rest
   follows (`make`); every one keeps orange-for-red and blue-for-green
   where it matters (the terminal's ANSI, apex diff's lines) and B2's and
   B3's sweeps apart under a deuteranopia simulation. A grey header over

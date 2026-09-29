@@ -1,6 +1,6 @@
 //! The themes, as a Mac app of now dresses (the modern-mac branch's
 //! experiment; acme's tinted papers are on main): four palettes to live
-//! with and choose among (View ▸ Theme: Alabaster, Xcode, Classic, GitHub, Nova),
+//! with and choose among (View ▸ Theme: Alabaster, Xcode, Classic, GitHub, Nova, rsms),
 //! each a light and a dark, and the appearance choosing between those
 //! (View: Light, Dark, System). Every palette lays out the same way: a
 //! paper for bodies and a header for the tags over them, hairlines where
@@ -341,6 +341,43 @@ pub const NOVA_DARK: Theme = make(Keys {
     popover: 0x2A2B2D, hover: 0x2E3032, danger_hover: 0x4A2A24, ansi: ANSI_DARK, diff_add: 0x1A2A45, diff_del: 0x3A2A20,
 });
 
+/// rsms's Sublime Text theme, its bright scheme (rsms/sublime-theme,
+/// `rsms-bright.sublime-color-scheme`, over Sublime's Adaptive UI as its
+/// screenshot shows it): hsl(60 30% 99%) paper and black ink; the
+/// selection its blue4 (hsl 204 100% 83%) at half over the paper; its
+/// accent and caret blue2 (hsl 224 100% 50%); comments black at 47%; the
+/// gutter's grey3 for what is faintest. The chrome as Adaptive makes it
+/// round that paper: #e9e9e8 for the sidebar, tab bar and title (the
+/// columns' ground here), a selected row #f4f4f3 (the headers), tab
+/// labels #8c8c8c (what is secondary), the sidebar's #424241 and its
+/// close marks #afafae, the status bar's #d8d8d8 (hairlines). B2's sweep
+/// its red (hsl 0 100% 30%), B3's its blue (hsl 216 100% 33%); stale a
+/// dark gold, since its yellow does not read on white.
+pub const RSMS_BRIGHT: Theme = make(Keys {
+    paper: 0xFDFDFB, sel: 0xD3EDFD, thumb: 0xCCCCCC, header: 0xF4F4F3, header_sel: 0xCDE6F6, line: 0xD8D8D8,
+    ink: 0x000000, dim: 0x8C8C8C, faint: 0xAFAFAE, accent: 0x0044FF, chosen: 0x0044FF, column: 0xE9E9E8, sidebar: 0xE9E9E8,
+    dirty: 0x424241, stale: 0xC9A000, fenced: 0x990000, exec: 0x990000, look: 0x0047A8,
+    popover: 0xFDFDFB, hover: 0xF4F4F3, danger_hover: 0xF9E0E0, ansi: ANSI_LIGHT, diff_add: 0xE3ECFB, diff_del: 0xFFEFD6,
+});
+
+/// rsms's dark mono (`rsms-dark-mono.sublime-color-scheme`): colourless
+/// but for its pink caret and blue selection. hsl(0 0% 8%) paper, white
+/// ink at 80% on it; the selection hsl(204 100% 70%) at 30%; the caret,
+/// and so the accent, hsl(320 90% 70%); comments white at 35%, the gutter
+/// at 30%. The chrome black, as its Adaptive UI goes (`dark_bg`: black),
+/// a selected row #3c3c3c (a chosen row here, white on it), tab labels
+/// #909090, the sidebar's labels #d8d8d8, its close marks #5e5e5e, the
+/// status bar #363636. B2's sweep a muted, brownish orange and B3's the
+/// selection's blue, darkened for white on it: a grey B2, or its pink,
+/// was barely apart from the blue under a deuteranopia simulation (34
+/// and 23 in CIELAB), this is 84. Stale a muted gold.
+pub const RSMS_DARK_MONO: Theme = make(Keys {
+    paper: 0x141414, sel: 0x2D485A, thumb: 0x5A5A5A, header: 0x1E1E1E, header_sel: 0x33505F, line: 0x2A2A2A,
+    ink: 0xD0D0D0, dim: 0x909090, faint: 0x5E5E5E, accent: 0xF76EC9, chosen: 0x3C3C3C, column: 0x000000, sidebar: 0x000000,
+    dirty: 0xD8D8D8, stale: 0xD6B656, fenced: 0xE0605A, exec: 0x9A5A2E, look: 0x2A63A8,
+    popover: 0x1E1E1E, hover: 0x2A2A2A, danger_hover: 0x3A2222, ansi: ANSI_DARK, diff_add: 0x1B2733, diff_del: 0x33271A,
+});
+
 /// View ▸ Theme: which palette, each with its light and dark (which of
 /// those is the appearance's to say: Light, Dark, System).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -350,9 +387,10 @@ pub enum Palette {
     Classic,
     GitHub,
     Nova,
+    Rsms,
 }
 
-pub const PALETTES: [Palette; 5] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::GitHub, Palette::Nova];
+pub const PALETTES: [Palette; 6] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::GitHub, Palette::Nova, Palette::Rsms];
 
 impl Palette {
     pub fn title(self) -> &'static str {
@@ -362,6 +400,7 @@ impl Palette {
             Palette::Classic => "Classic",
             Palette::GitHub => "GitHub",
             Palette::Nova => "Nova",
+            Palette::Rsms => "rsms",
         }
     }
     fn word(self) -> &'static str {
@@ -371,6 +410,7 @@ impl Palette {
             Palette::Classic => "classic",
             Palette::GitHub => "github",
             Palette::Nova => "nova",
+            Palette::Rsms => "rsms",
         }
     }
 }
@@ -442,6 +482,8 @@ pub fn theme() -> &'static Theme {
         (Palette::GitHub, true) => &DARK,
         (Palette::Nova, false) => &NOVA_LIGHT,
         (Palette::Nova, true) => &NOVA_DARK,
+        (Palette::Rsms, false) => &RSMS_BRIGHT,
+        (Palette::Rsms, true) => &RSMS_DARK_MONO,
     }
 }
 

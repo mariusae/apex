@@ -612,6 +612,7 @@ fn main() {
         cx.on_action(|_: &shell::PaletteClassic, cx| shell::set_palette(theme::Palette::Classic, cx));
         cx.on_action(|_: &shell::PaletteGitHub, cx| shell::set_palette(theme::Palette::GitHub, cx));
         cx.on_action(|_: &shell::PaletteNova, cx| shell::set_palette(theme::Palette::Nova, cx));
+        cx.on_action(|_: &shell::PaletteRsms, cx| shell::set_palette(theme::Palette::Rsms, cx));
         cx.on_action(|_: &shell::FontSystem, cx| shell::set_fonts(fonts::Set::System, cx));
         cx.on_action(|_: &shell::FontClassic, cx| shell::set_fonts(fonts::Set::Classic, cx));
         cx.on_action(|_: &shell::FontGo, cx| shell::set_fonts(fonts::Set::Go, cx));
