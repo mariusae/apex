@@ -562,6 +562,44 @@ const SCROLL_SCRIPT: &str = r#"(function () {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
 })();"#;
 
+/// A page's selection kept while the page has not the keyboard. WebKit
+/// clears a page's selection when its view stops being the window's
+/// first responder, and in apex the keyboard follows the pointer, so
+/// the pointer going off a page lost what was selected there. The last
+/// selection the page had is kept (let go of only when a click or a key
+/// in the page empties it), painted as the selection is while the page
+/// is away (`__apexAway`), and put back when the keyboard comes back to
+/// it (`__apexBack`): `Webs::focus_tick` says which.
+const KEEP_SCRIPT: &str = r#"(function () {
+  let kept = null, input = 0;
+  const marks = function () { return window.CSS && CSS.highlights && window.Highlight; };
+  const touched = function () { input = Date.now(); };
+  addEventListener('mousedown', touched, true);
+  addEventListener('keydown', touched, true);
+  document.addEventListener('selectionchange', function () {
+    const s = getSelection();
+    if (s.rangeCount && !s.isCollapsed) kept = s.getRangeAt(0).cloneRange();
+    else if (Date.now() - input < 1000) kept = null;
+  });
+  let sheet = null;
+  window.__apexAway = function () {
+    if (!kept || !marks()) return;
+    if (!sheet) {
+      sheet = new CSSStyleSheet();
+      sheet.replaceSync('::highlight(apex-kept){background-color:var(--apex-sel, Highlight)}');
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    }
+    CSS.highlights.set('apex-kept', new Highlight(kept));
+  };
+  window.__apexBack = function () {
+    if (marks()) CSS.highlights.delete('apex-kept');
+    const s = getSelection();
+    if (kept && kept.startContainer.isConnected && (!s.rangeCount || s.isCollapsed)) {
+      try { s.removeAllRanges(); s.addRange(kept); } catch (e) {}
+    }
+  };
+})();"#;
+
 const CURSOR_SCRIPT: &str = r#"(function () {
   let last = '';
   function say(c) { if (c !== last) { last = c; try { window.ipc.postMessage('cursor:' + c); } catch (e) {} } }
@@ -880,10 +918,18 @@ impl Webs {
     pub fn focus_tick(&mut self, window: &Window) {
         let Some(pos) = native_mouse(window) else { return };
         let over = self.window_at(pos);
+        if over != self.focused {
+            // the page left keeps its selection painted; the one come to
+            // has it back (`KEEP_SCRIPT`)
+            if let Some(h) = self.focused.and_then(|w| self.hosts.get(&w)) {
+                let _ = h.view.evaluate_script("window.__apexAway&&__apexAway()");
+            }
+        }
         match over {
             Some(w) if over != self.focused => {
                 if let Some(h) = self.hosts.get(&w) {
                     let _ = h.view.focus();
+                    let _ = h.view.evaluate_script("window.__apexBack&&__apexBack()");
                 }
             }
             Some(_) => {}
@@ -902,6 +948,9 @@ impl Webs {
     /// that key comes up, and a page with the keys would hear it instead).
     pub fn unfocus(&mut self, window: &Window) {
         focus_ui(window);
+        if let Some(h) = self.focused.and_then(|w| self.hosts.get(&w)) {
+            let _ = h.view.evaluate_script("window.__apexAway&&__apexAway()");
+        }
         self.focused = None;
     }
 
@@ -969,6 +1018,7 @@ impl Webs {
             })
             // the cursor the page wants under the pointer, as it changes
             .with_initialization_script(CURSOR_SCRIPT)
+            .with_initialization_script(KEEP_SCRIPT)
             .with_initialization_script(SCROLL_SCRIPT)
             .with_ipc_handler(move |req| {
                 if req.body() == "down:" {
