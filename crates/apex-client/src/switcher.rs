@@ -12,8 +12,8 @@
 //! ⌘⇧\ (or ⌘'): all the sessions at once, as Mission Control shows the
 //! windows -- a grid of cards over the window, each its session's window
 //! drawn small and live. The window shrinks into its card as the grid
-//! comes up; one ring (the accent's) is on the card chosen, moving to
-//! the one under the pointer or the arrows' next; a click or return goes
+//! comes up; one ring (the accent's) is on the card chosen, and is at
+//! once on the one under the pointer or the arrows' next; a click or return goes
 //! to it, its card growing to fill the window. Escape, ⌘⇧\ again or a
 //! click off the cards goes back to this one the same way.
 
@@ -31,11 +31,10 @@ use crate::pool::{Pool, TabId};
 const SLIDE: Duration = Duration::from_millis(220);
 /// The label over a card: its session's initial and name.
 const LABEL: f32 = 26.;
-/// How long the overview takes to come up, to go (a card growing to the
-/// window), and its ring to move from card to card.
+/// How long the overview takes to come up, and to go (a card growing to
+/// the window).
 const OVERVIEW_RISE: Duration = Duration::from_millis(260);
 const OVERVIEW_PICK: Duration = Duration::from_millis(240);
-const OVERVIEW_RING: Duration = Duration::from_millis(140);
 /// Round a card, and how far out of it the ring stands.
 const CARD_R: f32 = 12.;
 const RING_OUT: f32 = 4.;
@@ -64,13 +63,11 @@ impl SwitchSlide {
     }
 }
 
-/// The overview (⌘⇧\): when it came up, the card chosen (the ring's)
-/// and the one the ring moved from and when, and the card gone to and
-/// when (growing to fill the window).
+/// The overview (⌘⇧\): when it came up, the card chosen (the ring's),
+/// and the card gone to and when (growing to fill the window).
 pub struct Overview {
     opened: Instant,
     focus: usize,
-    moved: Option<(usize, Instant)>,
     picked: Option<(TabId, Instant)>,
 }
 
@@ -174,7 +171,7 @@ impl Acme {
             Some(_) => self.overview_pick(self.tab, cx),
             None => {
                 let focus = Pool::tabs(cx).iter().position(|t| t.id == self.tab).unwrap_or(0);
-                self.overview = Some(Overview { opened: Instant::now(), focus, moved: None, picked: None });
+                self.overview = Some(Overview { opened: Instant::now(), focus, picked: None });
             }
         }
         cx.notify();
@@ -189,22 +186,18 @@ impl Acme {
             return;
         }
         if let Some(i) = ids.iter().position(|&x| x == id) {
-            if i != o.focus {
-                o.moved = Some((o.focus, Instant::now()));
-                o.focus = i;
-            }
+            o.focus = i;
         }
         o.picked = Some((id, Instant::now()));
         cx.notify();
     }
 
-    /// The ring to card `i` (the pointer on it, an arrow).
+    /// The ring to card `i` (the pointer on it, an arrow), at once.
     fn overview_focus(&mut self, i: usize, cx: &mut Context<Self>) {
         let Some(o) = self.overview.as_mut() else { return };
         if o.picked.is_some() || o.focus == i {
             return;
         }
-        o.moved = Some((o.focus, Instant::now()));
         o.focus = i;
         cx.notify();
     }
@@ -373,9 +366,8 @@ impl Acme {
             Some((id, at)) => (ids.iter().position(|&x| x == id), ease(at.elapsed().as_secs_f32() / OVERVIEW_PICK.as_secs_f32())),
             None => (None, 0.),
         };
-        let ring_k = o.moved.map(|(_, at)| ease(at.elapsed().as_secs_f32() / OVERVIEW_RING.as_secs_f32())).unwrap_or(1.);
         // (going: until the tick has gone there, which a frame asks)
-        if rise < 1. || gone.is_some() || ring_k < 1. {
+        if rise < 1. || gone.is_some() {
             window.request_animation_frame();
         }
         let here = ids.iter().position(|&x| x == self.tab);
@@ -459,14 +451,10 @@ impl Acme {
                     ),
             );
         }
-        // the ring: the accent's, round the card chosen, moving from the
-        // last one to it; with its card as that grows to the window
+        // the ring: the accent's, round the card chosen; with its card as
+        // that grows to the window
         if !ids.is_empty() {
-            let to = place(o.focus.min(ids.len() - 1)).0;
-            let (x, y, rw, rh) = match o.moved {
-                Some((from, _)) if ring_k < 1. && from < ids.len() => mix(place(from).0, to, ring_k),
-                _ => to,
-            };
+            let (x, y, rw, rh) = place(o.focus.min(ids.len() - 1)).0;
             let alpha = if gone.is_some() { 1. - go } else { rise };
             overlay = overlay.child(
                 div()

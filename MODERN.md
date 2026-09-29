@@ -175,8 +175,8 @@ windows put away out of the tiling, which is the core's
   from its replica (a notified one wearing pjw), in the sidebar's order,
   on an opaque ground. The window shrinks into its card as the grid
   comes up. One ring, the accent's, is on the card chosen -- this
-  session's at first -- and glides to the one under the pointer or the
-  arrows' next. A click or return goes to it, its card growing to fill
+  session's at first -- and is at once on the one under the pointer or
+  the arrows' next. A click or return goes to it, its card growing to fill
   the window; escape, a click off the cards or ⌘⇧\\ again goes back to
   this one the same way.
 - **Web windows** (`webbar.rs`) have a header of their own in the tag's
