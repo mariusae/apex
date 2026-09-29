@@ -1935,6 +1935,10 @@ impl Acme {
     /// True when either changed, so the window is drawn again only when
     /// the caret does.
     pub fn caret_tick(&mut self) -> bool {
+        // on a toast or a panel: the keys stay where they were
+        if self.over_overlay(self.pointer.unwrap_or(self.last_mouse)) {
+            return false;
+        }
         let view = self.key_view();
         let term = self.key_term();
         if view != self.caret_view || term != self.caret_term {
@@ -2707,6 +2711,12 @@ impl Acme {
         // the stash's preview lies over everything: over it, only the
         // window it shows is there
         let only = self.shelf.peeking().filter(|_| self.shelf.preview_at.get().is_some_and(|b| b.contains(&pos)));
+        // any other overlay (a toast, a panel, a list) hides what is under
+        // it: the pointer there is on none of acme's texts -- no ⌘/⌥ pill
+        // on the window behind a toast
+        if only.is_none() && self.over_overlay(pos) {
+            return None;
+        }
         let mine = |w: WindowId| only.is_none_or(|o| o == w);
         if let Some((w, _)) = self.web_bars.iter().find(|(w, b)| mine(**w) && b.contains(&pos)) {
             return Some((Target::Web(*w), Region::WebScrollbar));
@@ -2738,6 +2748,24 @@ impl Acme {
             return Some((Target::View(*v), Region::Text(l.offset_at(pos))));
         }
         None
+    }
+
+    /// Is `pos` on an overlay (a toast, a panel, a list) other than the
+    /// stash's preview, which is a window to work in? The pointer there
+    /// leaves the keys and the ring where they were.
+    pub(crate) fn over_overlay(&self, pos: Point<Pixels>) -> bool {
+        let peeked = self.shelf.peeking().is_some() && self.shelf.preview_at.get().is_some_and(|b| b.contains(&pos));
+        !peeked && self.overlay_bounds.borrow().iter().any(|(b, _)| b.contains(&pos))
+    }
+
+    /// Where the keys go with the pointer on an overlay: where they went
+    /// before it came there (the ringed window's text or terminal).
+    fn kept_target(&self) -> Option<Target> {
+        if let Some(t) = self.caret_term {
+            let w = self.node.state.windows.values().find(|x| x.body == Body::Term(t)).map(|x| x.id)?;
+            return Some(Target::Term(w, t));
+        }
+        self.caret_view.or(self.node.seltext).map(Target::View)
     }
 
     fn ctx_of(&self, view: ViewId) -> ExecCtx {
@@ -3178,7 +3206,8 @@ impl Acme {
         }
         self.last_mouse = pos;
         // the terminal under the pointer has the keyboard, and the window
-        let at = self.locate(pos).map(|(t, _)| t);
+        // (on a toast or a panel, whichever had them keeps them)
+        let at = if self.over_overlay(pos) { self.kept_target() } else { self.locate(pos).map(|(t, _)| t) };
         let under = match at {
             Some(Target::Term(_, t)) => Some(t),
             _ => None,
@@ -4253,7 +4282,13 @@ impl Acme {
             self.selector_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
             return;
         }
-        let target = match self.locate(self.pointer(window)) {
+        let pos = self.pointer(window);
+        let target = match self.locate(pos) {
+            // on a toast or a panel: where the keys went before
+            None if self.over_overlay(pos) => match self.kept_target() {
+                Some(t) => t,
+                None => return,
+            },
             // a page's scrollbar holds no text: the last selected does
             Some((Target::Web(_), _)) | None => match self.node.seltext {
                 Some(v) => Target::View(v),
@@ -4366,7 +4401,13 @@ impl Acme {
                 return;
             }
         }
-        let target = match self.locate(self.pointer(window)) {
+        let pos = self.pointer(window);
+        let target = match self.locate(pos) {
+            // on a toast or a panel: where the keys went before
+            None if self.over_overlay(pos) => match self.kept_target() {
+                Some(t) => t,
+                None => return,
+            },
             // a page's scrollbar holds no text: the last selected does
             Some((Target::Web(_), _)) | None => match self.node.seltext {
                 Some(v) => Target::View(v),
