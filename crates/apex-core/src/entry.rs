@@ -176,6 +176,9 @@ pub enum LayoutOp {
         cols: Vec<crate::state::Column>,
         #[serde(default)]
         full: Option<ColumnId>,
+        /// The session's stash: windows put away, out of every column.
+        #[serde(default)]
+        stash: Vec<crate::state::Stashed>,
     },
     /// The snarf buffer (acme's is global; the client mirrors the system clipboard).
     Snarf { text: String },

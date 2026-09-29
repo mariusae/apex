@@ -236,7 +236,7 @@ impl Node {
 
     /// Append the whole tiling as it now stands in `l`.
     fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full }))?;
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone() }))?;
         Ok(())
     }
 
@@ -390,7 +390,7 @@ impl Node {
     pub fn delete_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
         let ci = self.column_index(col)?;
         let c = &self.state.layout.cols[ci];
-        if !c.wins.is_empty() || !c.stash.is_empty() {
+        if !c.wins.is_empty() {
             return Err(CoreError::Missing("column not empty".into()));
         }
         let tag = c.tag;
@@ -439,6 +439,13 @@ impl Node {
             .unwrap_or(fallback);
         self.activecol = Some(col);
         let ci = self.column_index(col)?;
+        // a column with a window grown to the whole of it gives the
+        // others back first, so the new one lands among them
+        if self.state.layout.cols[ci].full.is_some() {
+            let mut l = self.state.layout.clone();
+            tiling::unfull(&mut l, ci, &*self.tiling);
+            self.arrange(log, &l)?;
+        }
         let y = tiling::newwindow_y(&self.state.layout, ci, from, &*self.tiling);
         let w = self.open_window_at(log, col, body, y)?;
         // if(w->body.fr.maxlines < 2) colgrow(w->col, w, 1)
@@ -544,9 +551,17 @@ impl Node {
         }
         let (ci, wi) = self.place_of(w)?;
         let mut l = self.state.layout.clone();
+        if l.cols[ci].full.is_some() {
+            // the whole column's (or hidden, with nowhere to fit)
+            tiling::colgrow(&mut l, ci, wi, -1, &*self.tiling);
+            if l != self.state.layout {
+                self.arrange(log, &l)?;
+            }
+            return Ok(());
+        }
         let r = l.cols[ci].wins[wi].r;
         let mut full = r;
-        full.y1 = if wi + 1 < l.cols[ci].wins.len() { l.cols[ci].wins[wi + 1].r.y0 - tiling::BORDER } else { tiling::floor(&l.cols[ci]) };
+        full.y1 = if wi + 1 < l.cols[ci].wins.len() { l.cols[ci].wins[wi + 1].r.y0 - tiling::BORDER } else { l.cols[ci].r.y1 };
         let last = wi + 1 == l.cols[ci].wins.len();
         tiling::winresize(&mut l, ci, wi, full, last, &*self.tiling);
         if l != self.state.layout {
@@ -559,8 +574,11 @@ impl Node {
     /// brought out if it is a strip or hidden behind a column given the
     /// row, so they land on something they can see.
     pub fn uncover(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
-        let Some(ci) = self.state.layout.column_of(w).and_then(|c| self.state.layout.column_index(c)) else { return Ok(()) };
+        let Some((ci, _)) = self.state.layout.place_of(w) else { return Ok(()) };
         let mut l = self.state.layout.clone();
+        if l.cols[ci].hides(w) {
+            tiling::unfull(&mut l, ci, &*self.tiling);
+        }
         tiling::uncover(&mut l, ci, &*self.tiling);
         if l != self.state.layout {
             self.arrange(log, &l)?;
@@ -573,13 +591,17 @@ impl Node {
     /// what is shown can be seen. No mouse warp: that is the caller's.
     pub fn reveal(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
         // a stashed window is never a dead end: whatever goes to it
-        // brings it back where it was
-        if let Some((ci, si)) = self.state.layout.stashed_of(w) {
-            let mut l = self.state.layout.clone();
-            tiling::colrecall(&mut l, ci, si, false, &*self.tiling);
-            return self.arrange(log, &l);
+        // brings it back where it was; nor is one hidden behind a window
+        // grown to the whole column
+        if self.state.layout.is_stashed(w) {
+            return self.unstash_window(log, w);
         }
         let Some((ci, wi)) = self.state.layout.place_of(w) else { return Ok(()) };
+        if self.state.layout.cols[ci].hides(w) {
+            let mut l = self.state.layout.clone();
+            tiling::unfull(&mut l, ci, &*self.tiling);
+            self.arrange(log, &l)?;
+        }
         let bf = self.tiling.body_font_height(w).max(1);
         if self.state.layout.cols[ci].wins[wi].fr_maxlines(bf) > 0 {
             return Ok(());
@@ -589,57 +611,56 @@ impl Node {
         self.arrange(log, &l)
     }
 
-    /// Every window in column `col`'s stash back where it was.
-    pub fn unstash_all(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
-        let ci = self.column_index(col)?;
-        if self.state.layout.cols[ci].stash.is_empty() {
-            return Ok(());
-        }
+    /// Window `w` put in the session's stash (⌘M, `Stash`): out of its
+    /// column, its space going to a neighbour.
+    pub fn stash_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some((ci, wi)) = self.state.layout.place_of(w) else { return Ok(()) };
         let mut l = self.state.layout.clone();
-        tiling::colrecall_all(&mut l, ci, &*self.tiling);
+        tiling::stash(&mut l, ci, wi, &*self.tiling);
+        self.arrange(log, &l)
+    }
+
+    /// Stashed window `w` brought back where it was: under the window it
+    /// was under in its column, or at the foot of the active column when
+    /// its own is gone.
+    pub fn unstash_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some(si) = self.state.layout.stashed_of(w) else { return Ok(()) };
+        let mut l = self.state.layout.clone();
+        let or = self.activecol.and_then(|c| l.column_index(c)).or_else(|| l.cols.len().checked_sub(1));
+        let Some(ci) = tiling::recall(&mut l, si, or, &*self.tiling) else { return Ok(()) };
         self.arrange(log, &l)?;
-        self.activecol = Some(col);
+        self.activecol = Some(self.state.layout.cols[ci].id);
         Ok(())
     }
 
     /// A click on a window's layout box: button 1 grows it a bit (acme's
     /// `colgrow`) -- or, on the window 2 maximized, gives the others back
     /// their sizes -- 2 maximizes it (the others down to their tags), 3
-    /// puts it in the column's stash. On a stashed window's box, 1 brings
-    /// it back where it was and 2 maximized.
+    /// grows it to the whole column, the others hidden, and 3 again (or
+    /// 1) gives them back.
     pub fn grow_window(&mut self, log: &mut Log, w: WindowId, but: i32) -> Result<()> {
-        let mut l = self.state.layout.clone();
-        if let Some((ci, si)) = l.stashed_of(w) {
-            if but == 3 {
-                return Ok(());
-            }
-            tiling::colrecall(&mut l, ci, si, but == 2, &*self.tiling);
-            self.arrange(log, &l)?;
-            self.warp = Some(Warp::WinButton(w));
-            return Ok(());
+        if self.state.layout.is_stashed(w) {
+            return self.unstash_window(log, w);
         }
+        let mut l = self.state.layout.clone();
         let (ci, wi) = self.place_of(w)?;
         match but {
             2 => tiling::colmaximize(&mut l, ci, wi, &*self.tiling),
-            3 => tiling::colstash(&mut l, ci, wi, &*self.tiling),
+            3 => tiling::colfull(&mut l, ci, wi, &*self.tiling),
+            1 if l.cols[ci].full.is_some() => {
+                tiling::unfull(&mut l, ci, &*self.tiling);
+            }
             1 if tiling::is_maximized_win(&l.cols[ci], wi) => tiling::colunmaximize(&mut l, ci, &*self.tiling),
             _ => tiling::colgrow(&mut l, ci, wi, but, &*self.tiling),
         }
         self.arrange(log, &l)?;
-        if but != 3 {
-            self.warp = Some(Warp::WinButton(w));
-        }
+        self.warp = Some(Warp::WinButton(w));
         Ok(())
     }
 
     /// acme's `coldragwin`: a window's layout box pressed with `but` at
     /// `op` and released at `p` (row coordinates).
     pub fn drag_window(&mut self, log: &mut Log, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
-        // a stashed window's box (its tag shown over the stash): a click
-        // is a click on it
-        if self.state.layout.is_stashed(w) && (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
-            return self.grow_window(log, w, but);
-        }
         let (l, warp) = self.dragged(w, but, op, p)?;
         if l != self.state.layout {
             self.arrange(log, &l)?;
@@ -652,21 +673,9 @@ impl Node {
     }
 
     /// The layout a drag of window `w`'s box from `op` to `p` makes, and
-    /// where the mouse goes. A stashed window dragged comes back where it
-    /// is let go, in whatever column that is (its own, where it was, if
-    /// none).
+    /// where the mouse goes.
     fn dragged(&self, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<(Layout, Option<Warp>)> {
         let mut l = self.state.layout.clone();
-        if let Some((ci, si)) = l.stashed_of(w) {
-            match tiling::rowwhichcol(&l, p) {
-                Some(nc) => {
-                    let slot = tiling::unstash(&mut l, ci, si, &*self.tiling);
-                    tiling::coladd(&mut l, nc, tiling::Adding::Existing(slot), Some(p.1), &*self.tiling);
-                }
-                None => tiling::colrecall(&mut l, ci, si, false, &*self.tiling),
-            }
-            return Ok((l, Some(Warp::WinButton(w))));
-        }
         let (ci, wi) = self.place_of(w)?;
         let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
         Ok((l, warp))
@@ -894,16 +903,15 @@ impl Node {
         let mut next = None;
         if let Some((ci, wi)) = self.state.layout.place_of(window) {
             let mut l = self.state.layout.clone();
-            let above = tiling::stash_above(&l.cols[ci], window);
+            let above = tiling::stash_above(&l, ci, window);
             let (_, n) = tiling::colclose(&mut l, ci, wi, &*self.tiling);
-            // the stash hands on what was under it; a column left blank
-            // gets its nearest back
-            tiling::left(&mut l, ci, window, above, &*self.tiling);
+            // the stash hands on what was under it
+            tiling::left(&mut l, ci, window, above);
             next = n;
             self.arrange(log, &l)?;
-        } else if let Some((ci, si)) = self.state.layout.stashed_of(window) {
+        } else if let Some(si) = self.state.layout.stashed_of(window) {
             let mut l = self.state.layout.clone();
-            tiling::unstash(&mut l, ci, si, &*self.tiling);
+            tiling::unstash(&mut l, si);
             self.arrange(log, &l)?;
         }
         self.warp = Some(Warp::Closed { window, next });
@@ -1275,7 +1283,7 @@ impl Node {
 
     /// acme's `colclean`.
     pub fn colclean(&mut self, log: &mut Log, col: ColumnId) -> Result<bool> {
-        let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.all_windows().collect()).unwrap_or_default();
+        let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
         let mut clean = true;
         for w in wins {
             clean &= self.winclean(log, w, true)?;
@@ -1603,7 +1611,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "Web" => Handler::Leader,
+            | "Stash" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "Web" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -1769,7 +1777,7 @@ impl Node {
                 if !self.colclean(log, col)? {
                     return Ok(false);
                 }
-                let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.all_windows().collect()).unwrap_or_default();
+                let wins: Vec<WindowId> = self.state.layout.column(col).map(|c| c.wins.iter().map(|s| s.window).collect()).unwrap_or_default();
                 for w in wins {
                     self.delete_window(log, w)?;
                 }
@@ -1782,6 +1790,10 @@ impl Node {
                 if cmd == "Delete" || !self.window_last_view(w) || self.winclean(log, w, false)? {
                     self.delete_window(log, w)?;
                 }
+            }
+            "Stash" => {
+                let w = win.ok_or_else(|| CoreError::Missing("Stash needs a window".into()))?;
+                self.stash_window(log, w)?;
             }
             "Tab" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Tab needs a window".into()))?;

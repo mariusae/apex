@@ -1228,13 +1228,15 @@ fn win(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     match p.args.first().map(|s| s.as_str()) {
         Some("list") | None => {
-            for col in &c.node.state.layout.cols {
-                // the stashed ones too, where they stand in the column
-                for (w, _) in apex_core::tiling::stash_order(col) {
-                    let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                    let mark = if c.node.window_live(w) { ">" } else if dirty { "*" } else { " " };
-                    println!("{}\t{mark}{}", w.0, c.node.window_name(w));
-                }
+            let l = &c.node.state.layout;
+            // the stashed ones too: where they stood in their columns, and
+            // those whose column is gone at the end
+            let order = (0..l.cols.len()).flat_map(|ci| apex_core::tiling::stash_order(l, ci)).map(|(w, _)| w);
+            let orphans = l.stash.iter().filter(|s| l.column(s.col).is_none()).map(|s| s.slot.window);
+            for w in order.chain(orphans) {
+                let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
+                let mark = if c.node.window_live(w) { ">" } else if dirty { "*" } else { " " };
+                println!("{}\t{mark}{}", w.0, c.node.window_name(w));
             }
             Ok(())
         }

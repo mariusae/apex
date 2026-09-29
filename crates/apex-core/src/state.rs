@@ -116,30 +116,49 @@ pub struct Slot {
     pub premax: i32,
 }
 
-/// A window put away in its column's stash (B3 on its box): out of the
-/// tiling, drawn as a sheet's edge at the
-/// column's foot, and brought back where it was, at the size it had.
+/// A window put away in the session's stash (⌘M, `Stash`): out of the
+/// tiling, and brought back where it was, at the size it had.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Stashed {
     /// Its place as it was: the share it comes back with among them.
     pub slot: Slot,
+    /// The column it was in, which it comes back to (the active one if
+    /// that is gone).
+    pub col: ColumnId,
     /// The window just above it in the column (laid out or stashed
     /// itself) when it was put away, which it comes back under; None at
     /// the top. A window leaving the column hands its own on.
     pub above: Option<WindowId>,
 }
 
-/// A column: its rectangle (the tag is its first line), its windows
-/// top to bottom, and its stash. `safe` is acme's: false while one
-/// window has been grown to the whole column and the others are
-/// obscured.
+/// A window grown to the whole column (B3 on its box, acme's): the
+/// others are hidden behind it, their rectangles stale, until B3 again
+/// or B1 on its box gives them back.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Full {
+    pub window: WindowId,
+    /// Its share of the column before, which it goes back to.
+    pub share: i32,
+    /// Its rectangle and remainder before, and the column's rectangle
+    /// then: in a column still the same, each window goes back exactly
+    /// where it was.
+    pub r: Rect,
+    pub extra: i32,
+    pub col: Rect,
+}
+
+/// A column: its rectangle (the tag is its first line) and its windows
+/// top to bottom.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Column {
     pub id: ColumnId,
     pub tag: BufferId,
     pub r: Rect,
-    pub safe: bool,
     pub wins: Vec<Slot>,
+    /// The window grown to the whole column, when one is (acme's
+    /// `safe` is false while it is).
+    #[serde(default)]
+    pub full: Option<Full>,
     /// The width it had when it last became a strip (minimized by B2 on
     /// another's box or by a drag, stashed by B3), as a share of the row
     /// in parts per million: what bringing it back gives it. For a
@@ -147,9 +166,6 @@ pub struct Column {
     /// was maximized), which it goes back to. Zero when there is none.
     #[serde(default)]
     pub restore: i32,
-    /// The windows put away, in the order they went.
-    #[serde(default)]
-    pub stash: Vec<Stashed>,
     /// Stashed (B3 on its box): a strip at the row's right, after those
     /// already there. A strip that is not stashed is minimized: where it
     /// stands, among the others in their order.
@@ -162,9 +178,14 @@ pub struct Column {
 }
 
 impl Column {
-    /// Every window in the column, laid out and stashed.
-    pub fn all_windows(&self) -> impl Iterator<Item = WindowId> + '_ {
-        self.wins.iter().map(|s| s.window).chain(self.stash.iter().map(|s| s.slot.window))
+    /// Whether window `w` is hidden behind one grown to the whole column.
+    pub fn hides(&self, w: WindowId) -> bool {
+        self.full.is_some_and(|f| f.window != w)
+    }
+    /// Whether a window is grown to the whole column with others hidden
+    /// behind it (not merely alone in it).
+    pub fn hiding(&self) -> bool {
+        self.full.is_some() && self.wins.len() > 1
     }
 }
 
@@ -187,6 +208,9 @@ pub struct Layout {
     /// lays the row out again.
     #[serde(default)]
     pub full: Option<ColumnId>,
+    /// The windows put away (⌘M, `Stash`), in the order they went.
+    #[serde(default)]
+    pub stash: Vec<Stashed>,
 }
 
 impl Layout {
@@ -204,13 +228,17 @@ impl Layout {
         self.full.and_then(|f| self.column_index(f))
     }
 
-    /// The column a window is in, laid out or stashed.
+    /// The column a window is in (a stashed one: the column it came
+    /// from, while there is one).
     pub fn column_of(&self, w: WindowId) -> Option<ColumnId> {
-        self.cols.iter().find(|c| c.all_windows().any(|x| x == w)).map(|c| c.id)
+        match self.cols.iter().find(|c| c.wins.iter().any(|s| s.window == w)) {
+            Some(c) => Some(c.id),
+            None => self.stashed_of(w).map(|si| self.stash[si].col).filter(|&c| self.column(c).is_some()),
+        }
     }
-    /// The column and stash indices of a stashed window.
-    pub fn stashed_of(&self, w: WindowId) -> Option<(usize, usize)> {
-        self.cols.iter().enumerate().find_map(|(ci, c)| c.stash.iter().position(|s| s.slot.window == w).map(|si| (ci, si)))
+    /// A stashed window's index in the stash.
+    pub fn stashed_of(&self, w: WindowId) -> Option<usize> {
+        self.stash.iter().position(|s| s.slot.window == w)
     }
     pub fn is_stashed(&self, w: WindowId) -> bool {
         self.stashed_of(w).is_some()
@@ -231,8 +259,8 @@ impl Layout {
     fn unplace(&mut self, w: WindowId) {
         for c in &mut self.cols {
             c.wins.retain(|s| s.window != w);
-            c.stash.retain(|s| s.slot.window != w);
         }
+        self.stash.retain(|s| s.slot.window != w);
     }
 }
 
@@ -523,18 +551,17 @@ impl State {
                 l.top = Some(*top);
                 l.r = *r;
             }
-            LayoutOp::Arrange { r, cols, full } => {
+            LayoutOp::Arrange { r, cols, full, stash } => {
                 // a window may sit in one place only
                 let mut seen = std::collections::BTreeSet::new();
-                for c in cols {
-                    for w in c.all_windows() {
-                        if !seen.insert(w) {
-                            return Err(ApplyError::Exists(format!("window {w} placed twice")));
-                        }
+                for w in cols.iter().flat_map(|c| c.wins.iter().map(|s| s.window)).chain(stash.iter().map(|s| s.slot.window)) {
+                    if !seen.insert(w) {
+                        return Err(ApplyError::Exists(format!("window {w} placed twice")));
                     }
                 }
                 l.r = *r;
                 l.cols = cols.clone();
+                l.stash = stash.clone();
                 l.full = full.filter(|f| cols.iter().any(|c| c.id == *f));
             }
             LayoutOp::Snarf { text } => l.snarf = text.clone(),
@@ -750,14 +777,14 @@ impl State {
         for c in &self.layout.cols {
             h.update(&c.id.0.to_le_bytes());
             h.update(&c.tag.0.to_le_bytes());
-            h.update(&postcard::to_stdvec(&(c.r, c.safe, c.restore, c.stashed, c.after)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(c.r, c.full, c.restore, c.stashed, c.after)).unwrap_or_default());
             for s in &c.wins {
                 h.update(&postcard::to_stdvec(s).unwrap_or_default());
             }
-            h.update(b"stash");
-            for s in &c.stash {
-                h.update(&postcard::to_stdvec(s).unwrap_or_default());
-            }
+        }
+        h.update(b"stash");
+        for s in &self.layout.stash {
+            h.update(&postcard::to_stdvec(s).unwrap_or_default());
         }
         h.update(self.layout.snarf.as_bytes());
         for (seq, (ctx, e)) in &self.layout.execs {

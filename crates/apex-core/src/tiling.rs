@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::*;
-use crate::state::{Column, Layout, Slot, Stashed};
+use crate::state::{Column, Full, Layout, Slot, Stashed};
 
 /// acme's `Border`: between columns and between windows.
 pub const BORDER: i32 = 2;
@@ -244,6 +244,7 @@ pub enum Adding {
 /// no `y`, by stealing the lower half of the last window. Returns the
 /// window's index in the column.
 pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn Info) -> usize {
+    unfull(l, ci, info);
     let font = info.font_height().max(1);
     let mut r = l.cols[ci].r;
     r.y0 = l.cols[ci].r.y0 + font + BORDER;
@@ -275,7 +276,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
             let c = &l.cols[ci];
             let v = &c.wins[vi];
             let bf = info.body_font_height(v.window).max(1);
-            if c.safe && v.fr_maxlines(bf) > 3 && v.body_all_dy(font) > minht {
+            if v.fr_maxlines(bf) > 3 && v.body_all_dy(font) > minht {
                 break;
             }
             j += 1;
@@ -287,7 +288,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
         }
         // figure out where to split v to make room for w
         let c = &l.cols[ci];
-        let ymax = if i < n { c.wins[i].r.y0 - BORDER } else { floor(c) };
+        let ymax = if i < n { c.wins[i].r.y0 - BORDER } else { c.r.y1 };
         let v = &c.wins[vi];
         let bf = info.body_font_height(v.window).max(1);
         // new window must start after v's tag ends
@@ -323,7 +324,6 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
     // a new window's tag is set right after (winsettag → winresize); a
     // moved one is resized into its place: both come to this
     winresize(l, ci, i, r, true, info);
-    l.cols[ci].safe = true;
     // if there were too many windows, redo the whole column
     if buggered {
         let cr = l.cols[ci].r;
@@ -337,9 +337,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
 /// when the *next* window took the space ("extend next window up"), that
 /// window: acme moves the mouse onto its `Del`.
 pub fn colclose(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) -> (Slot, Option<WindowId>) {
-    if !l.cols[ci].safe {
-        colgrow(l, ci, wi, 1, info);
-    }
+    unfull(l, ci, info);
     let s = l.cols[ci].wins.remove(wi);
     let mut r = s.r;
     let n = l.cols[ci].wins.len();
@@ -350,7 +348,7 @@ pub fn colclose(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) -> (Slot,
         // extend last window down
         let w = &l.cols[ci].wins[wi - 1];
         r.y0 = w.r.y0;
-        r.y1 = floor(&l.cols[ci]);
+        r.y1 = l.cols[ci].r.y1;
         (wi - 1, false)
     } else {
         // extend next window up
@@ -359,16 +357,22 @@ pub fn colclose(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) -> (Slot,
         (wi, true)
     };
     let id = l.cols[ci].wins[idx].window;
-    if l.cols[ci].safe {
-        winresize(l, ci, idx, r, true, info);
-    }
+    winresize(l, ci, idx, r, true, info);
     (s, if up { Some(id) } else { None })
 }
 
 /// acme's `colresize`: the column gets rectangle `r`; its windows keep
-/// their proportions.
+/// their proportions. A window grown to the whole column stays so.
 pub fn colresize(l: &mut Layout, ci: usize, r: Rect, info: &dyn Info) {
     let font = info.font_height().max(1);
+    if let Some(f) = l.cols[ci].full {
+        if let Some(wi) = l.cols[ci].wins.iter().position(|s| s.window == f.window) {
+            lay_full(l, ci, wi, r, info);
+            l.cols[ci].r = r;
+            return;
+        }
+        l.cols[ci].full = None;
+    }
     let n = l.cols[ci].wins.len();
     let mut r1 = r;
     r1.y1 = r1.y0 + font; // the column tag
@@ -382,8 +386,7 @@ pub fn colresize(l: &mut Layout, ci: usize, r: Rect, info: &dyn Info) {
     if stale {
         sync_shares(l, ci);
     }
-    // the windows stop above the stash's sheets
-    let bottom = r.y1 - stash_band(&l.cols[ci]);
+    let bottom = r.y1;
     let space = (bottom - r.y0 - font - n as i32 * BORDER).max(0) as i64;
     for i in 0..n {
         l.cols[ci].wins[i].maxlines = 0;
@@ -408,12 +411,23 @@ pub fn colgrow(l: &mut Layout, ci: usize, wi: usize, but: i32, info: &dyn Info) 
     let font = info.font_height().max(1);
     let n = l.cols[ci].wins.len();
     let mut cr = l.cols[ci].r;
-    cr.y1 = floor(&l.cols[ci]);
+    if but < 0 && l.cols[ci].full.is_some() {
+        // the whole column's, or hidden and nowhere to fit
+        if !l.cols[ci].hides(l.cols[ci].wins[wi].window) {
+            lay_full(l, ci, wi, cr, info);
+        }
+        return;
+    }
+    if but == 3 {
+        colfull(l, ci, wi, info);
+        return;
+    }
+    unfull(l, ci, info);
     let bf = |l: &Layout, j: usize| info.body_font_height(l.cols[ci].wins[j].window).max(1);
     if but < 0 {
         // make sure window fills its own space properly
         let mut r = l.cols[ci].wins[wi].r;
-        if wi == n - 1 || !l.cols[ci].safe {
+        if wi == n - 1 {
             r.y1 = cr.y1;
         } else {
             r.y1 = l.cols[ci].wins[wi + 1].r.y0 - BORDER;
@@ -517,38 +531,126 @@ pub fn colgrow(l: &mut Layout, ci: usize, wi: usize, but: i32, info: &dyn Info) 
             y1 = r.y1;
         }
     }
-    l.cols[ci].safe = true;
+}
+
+// ---- the whole column --------------------------------------------------------------------
+
+/// Window `wi` laid out in the whole of column rectangle `cr`, below its
+/// tag; the others obscured, as in acme (no lines fit; their rectangles
+/// go stale).
+fn lay_full(l: &mut Layout, ci: usize, wi: usize, cr: Rect, info: &dyn Info) {
+    let font = info.font_height().max(1);
+    let r = Rect::new(cr.x0, cr.y0 + font + BORDER, cr.x1, cr.y1);
+    winresize_in(l, ci, wi, r, true, info);
+    for (j, s) in l.cols[ci].wins.iter_mut().enumerate() {
+        if j != wi {
+            s.frmax = 0;
+        }
+    }
+}
+
+/// B3 on a window's box (acme's): grown to the whole column, keeping
+/// its place in it, the others hidden behind it until B3 again (or B1)
+/// gives them back. On the window already grown so, gives them back.
+pub fn colfull(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
+    let w = l.cols[ci].wins[wi].window;
+    if l.cols[ci].full.is_some_and(|f| f.window == w) {
+        unfull(l, ci, info);
+        return;
+    }
+    unfull(l, ci, info);
+    sync_shares(l, ci);
+    let s = l.cols[ci].wins[wi];
+    l.cols[ci].full = Some(Full { window: w, share: s.share, r: s.r, extra: s.extra, col: l.cols[ci].r });
+    let cr = l.cols[ci].r;
+    lay_full(l, ci, wi, cr, info);
+}
+
+/// Column `ci` laid out again with every window in it, if one was grown
+/// to the whole of it: each where it was, or, the column resized
+/// meanwhile, at the share it had. Whether one was.
+pub fn unfull(l: &mut Layout, ci: usize, info: &dyn Info) -> bool {
+    let Some(f) = l.cols[ci].full.take() else { return false };
+    let Some(wi) = l.cols[ci].wins.iter().position(|s| s.window == f.window) else {
+        let cr = l.cols[ci].r;
+        colresize(l, ci, cr, info);
+        return true;
+    };
+    l.cols[ci].wins[wi].share = f.share;
+    if l.cols[ci].r != f.col {
+        whole_shares(l, ci);
+        let cr = l.cols[ci].r;
+        colresize(l, ci, cr, info);
+        return true;
+    }
+    // the others' rectangles went stale untouched: each back as it was
+    for j in 0..l.cols[ci].wins.len() {
+        let (r, extra) = if j == wi { (f.r, f.extra) } else { (l.cols[ci].wins[j].r, l.cols[ci].wins[j].extra) };
+        winresize_in(l, ci, j, r, true, info);
+        l.cols[ci].wins[j].extra = extra;
+    }
+    true
+}
+
+/// The shares made whole again (a window may have come or gone): each
+/// in proportion to what it had, summing to the unit.
+fn whole_shares(l: &mut Layout, ci: usize) {
+    let c = &mut l.cols[ci];
+    let total: i64 = c.wins.iter().map(|s| s.share.max(1) as i64).sum();
+    let n = c.wins.len();
+    let mut given = 0i64;
+    for (k, s) in c.wins.iter_mut().enumerate() {
+        let share = if k == n - 1 { SHARE_UNIT - given } else { s.share.max(1) as i64 * SHARE_UNIT / total.max(1) };
+        s.share = share.max(1) as i32;
+        given += share;
+    }
+}
+
+/// Is window `wi` the one B2 gave its column: every other window laid
+/// out down to its tag, and the shares they had kept to go back to.
+pub fn is_maximized_win(c: &Column, wi: usize) -> bool {
+    c.wins.len() > 1 && c.wins.iter().enumerate().all(|(j, s)| j == wi || s.body.dy() <= 0) && c.wins.iter().any(|s| s.premax > 0)
+}
+
+/// B2 on a window's box: maximized -- as big as it can be, the others in
+/// the column down to their tags, as acme's B2: the share each had kept,
+/// for B1 on its box to give back.
+pub fn colmaximize(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
+    unfull(l, ci, info);
+    if !is_maximized_win(&l.cols[ci], wi) {
+        sync_shares(l, ci);
+        for s in l.cols[ci].wins.iter_mut() {
+            s.premax = s.share.max(1);
+        }
+    }
+    colgrow(l, ci, wi, 2, info);
+}
+
+/// B1 on the box of the window B2 maximized: every window in the column
+/// back at the share it had before.
+pub fn colunmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
+    unfull(l, ci, info);
+    for s in l.cols[ci].wins.iter_mut() {
+        if s.premax > 0 {
+            s.share = s.premax;
+        }
+        s.premax = 0;
+    }
+    whole_shares(l, ci);
+    let cr = l.cols[ci].r;
+    colresize(l, ci, cr, info);
 }
 
 // ---- the stash --------------------------------------------------------------------------
 
-/// A stashed window's edge at the column's foot, and how many edges show
-/// at most (more are under them).
-pub const STASH_EDGE: i32 = 5;
-pub const STASH_EDGES: usize = 3;
-
-/// The height the stash's sheets take at the foot of column `c`, the
-/// border above them included; nothing without a stash.
-pub fn stash_band(c: &Column) -> i32 {
-    if c.stash.is_empty() {
-        0
-    } else {
-        BORDER + STASH_EDGE * c.stash.len().min(STASH_EDGES) as i32
-    }
-}
-
-/// Where a column's windows end: its bottom, less the stash's band.
-pub fn floor(c: &Column) -> i32 {
-    c.r.y1 - stash_band(c)
-}
-
-/// The column's windows in its order with the stashed ones put back
-/// where they were: (window, stashed). A stashed window goes under the
-/// one it was under (laid out or stashed); one whose window is gone,
+/// Column `ci`'s windows in its order with those stashed from it put
+/// back where they were: (window, stashed). A stashed window goes under
+/// the one it was under (laid out or stashed); one whose window is gone,
 /// which leaving hands on (`left`) and so should not be, at the end.
-pub fn stash_order(c: &Column) -> Vec<(WindowId, bool)> {
+pub fn stash_order(l: &Layout, ci: usize) -> Vec<(WindowId, bool)> {
+    let c = &l.cols[ci];
     let mut order: Vec<(WindowId, bool)> = c.wins.iter().map(|s| (s.window, false)).collect();
-    let mut rest: Vec<&Stashed> = c.stash.iter().collect();
+    let mut rest: Vec<&Stashed> = l.stash.iter().filter(|s| s.col == c.id).collect();
     loop {
         let before = rest.len();
         rest.retain(|s| {
@@ -572,9 +674,9 @@ pub fn stash_order(c: &Column) -> Vec<(WindowId, bool)> {
     order
 }
 
-/// The window just above `w` in the column's order, stashed or not.
-pub fn stash_above(c: &Column, w: WindowId) -> Option<WindowId> {
-    let order = stash_order(c);
+/// The window just above `w` in column `ci`'s order, stashed or not.
+pub fn stash_above(l: &Layout, ci: usize, w: WindowId) -> Option<WindowId> {
+    let order = stash_order(l, ci);
     let i = order.iter().position(|&(x, _)| x == w)?;
     i.checked_sub(1).map(|j| order[j].0)
 }
@@ -587,124 +689,48 @@ fn fresh_shares(l: &mut Layout, ci: usize) {
     }
 }
 
-/// The last window sized down (or up) to the column's floor: the stash
-/// grew or shrank under it.
-fn refloor(l: &mut Layout, ci: usize, info: &dyn Info) {
-    let font = info.font_height().max(1);
-    let Some(last) = l.cols[ci].wins.len().checked_sub(1) else { return };
-    let mut r = l.cols[ci].wins[last].r;
-    r.y1 = floor(&l.cols[ci]);
-    if r.dy() >= font {
-        winresize(l, ci, last, r, true, info);
-    } else {
-        let cr = l.cols[ci].r;
-        colresize(l, ci, cr, info);
-    }
-}
-
-/// B3 on a window's box: put it in its column's stash, its space going to
-/// a neighbour as a closed window's does. The last window laid out in a
-/// column gives way to the stashed one nearest it -- a column with a
-/// stash is never blank -- and stays if there is none.
-pub fn colstash(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
-    if l.cols[ci].wins.len() == 1 && l.cols[ci].stash.is_empty() {
-        return;
-    }
+/// Window `wi` of column `ci` put in the stash (⌘M, `Stash`), its space
+/// going to a neighbour as a closed window's does.
+pub fn stash(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
+    unfull(l, ci, info);
     fresh_shares(l, ci);
     let w = l.cols[ci].wins[wi].window;
-    let order = stash_order(&l.cols[ci]);
-    let above = stash_above(&l.cols[ci], w);
+    let above = stash_above(l, ci, w);
     let (slot, _) = colclose(l, ci, wi, info);
-    l.cols[ci].stash.push(Stashed { slot, above });
-    if l.cols[ci].wins.is_empty() {
-        raise_nearest(l, ci, &order, w, info);
-    } else {
-        refloor(l, ci, info);
-    }
+    l.stash.push(Stashed { slot, col: l.cols[ci].id, above });
 }
 
-/// Column `ci` has no window laid out: the stashed one nearest `w` in
-/// `order` (the column's order before) fills it.
-fn raise_nearest(l: &mut Layout, ci: usize, order: &[(WindowId, bool)], w: WindowId, info: &dyn Info) {
-    let Some(at) = order.iter().position(|&(x, _)| x == w) else { return };
-    let near = (1..order.len())
-        .flat_map(|d| [at.checked_add(d), at.checked_sub(d)])
-        .flatten()
-        .filter_map(|i| order.get(i))
-        .find(|&&(x, _)| x != w && l.cols[ci].stash.iter().any(|s| s.slot.window == x))
-        .map(|&(x, _)| x);
-    if let Some(si) = near.and_then(|x| l.cols[ci].stash.iter().position(|s| s.slot.window == x)) {
-        colrecall(l, ci, si, false, info);
-    } else {
-        let cr = l.cols[ci].r;
-        colresize(l, ci, cr, info);
-    }
-}
-
-/// Is window `wi` the one B2 gave its column: every other window laid
-/// out down to its tag, and the shares they had kept to go back to.
-pub fn is_maximized_win(c: &Column, wi: usize) -> bool {
-    c.wins.len() > 1 && c.wins.iter().enumerate().all(|(j, s)| j == wi || s.body.dy() <= 0) && c.wins.iter().any(|s| s.premax > 0)
-}
-
-/// B2 on a window's box: maximized -- as big as it can be, the others in
-/// the column down to their tags, as acme's B2 -- and not stashed: the
-/// share each had kept, for B1 on its box to give back.
-pub fn colmaximize(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
-    if !is_maximized_win(&l.cols[ci], wi) {
-        sync_shares(l, ci);
-        for s in l.cols[ci].wins.iter_mut() {
-            s.premax = s.share.max(1);
-        }
-    }
-    colgrow(l, ci, wi, 2, info);
-}
-
-/// B1 on the box of the window B2 maximized: every window in the column
-/// back at the share it had before.
-pub fn colunmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
-    let c = &mut l.cols[ci];
-    for s in c.wins.iter_mut() {
-        if s.premax > 0 {
-            s.share = s.premax;
-        }
-        s.premax = 0;
-    }
-    // the shares made whole again (a window may have come or gone)
-    let total: i64 = c.wins.iter().map(|s| s.share.max(1) as i64).sum();
-    let n = c.wins.len();
-    let mut given = 0i64;
-    for (k, s) in c.wins.iter_mut().enumerate() {
-        let share = if k == n - 1 { SHARE_UNIT - given } else { s.share.max(1) as i64 * SHARE_UNIT / total.max(1) };
-        s.share = share.max(1) as i32;
-        given += share;
-    }
-    let cr = l.cols[ci].r;
-    colresize(l, ci, cr, info);
-    l.cols[ci].safe = true;
-}
-
-/// A stashed window brought back: under the window it was under, with
-/// the share of the column it had, the others giving it up in proportion
-/// -- or, `alone`, maximized (the others down to their tags).
-pub fn colrecall(l: &mut Layout, ci: usize, si: usize, alone: bool, info: &dyn Info) {
+/// Stashed window `si` brought back: under the window it was under in
+/// its column, with the share of the column it had, the others giving
+/// it up in proportion. A window whose column is gone comes back at the
+/// foot of column `or` instead. Returns the column it went to; None
+/// (and it stays stashed) when there is none.
+pub fn recall(l: &mut Layout, si: usize, or: Option<usize>, info: &dyn Info) -> Option<usize> {
+    let home = l.column_index(l.stash[si].col);
+    let ci = home.or(or).filter(|&ci| ci < l.cols.len())?;
+    unfull(l, ci, info);
     fresh_shares(l, ci);
-    let Stashed { mut slot, above } = l.cols[ci].stash.remove(si);
-    // under the nearest laid-out window above it in the column's order
-    let mut up = above;
-    let at = loop {
-        match up {
-            None => break 0,
-            Some(a) => {
-                if let Some(i) = l.cols[ci].wins.iter().position(|s| s.window == a) {
-                    break i + 1;
-                }
-                match l.cols[ci].stash.iter().find(|s| s.slot.window == a) {
-                    Some(s) => up = s.above,
-                    None => break l.cols[ci].wins.len(),
+    let Stashed { mut slot, above, .. } = l.stash.remove(si);
+    let at = if home.is_some() {
+        // under the nearest laid-out window above it in the column's order
+        let id = l.cols[ci].id;
+        let mut up = above;
+        loop {
+            match up {
+                None => break 0,
+                Some(a) => {
+                    if let Some(i) = l.cols[ci].wins.iter().position(|s| s.window == a) {
+                        break i + 1;
+                    }
+                    match l.stash.iter().find(|s| s.slot.window == a && s.col == id) {
+                        Some(s) => up = s.above,
+                        None => break l.cols[ci].wins.len(),
+                    }
                 }
             }
         }
+    } else {
+        l.cols[ci].wins.len()
     };
     let n = l.cols[ci].wins.len() as i64;
     let mine = if slot.share > 0 && n > 0 { (slot.share as i64).min(SHARE_UNIT - n) } else { SHARE_UNIT / (n + 1) };
@@ -714,62 +740,37 @@ pub fn colrecall(l: &mut Layout, ci: usize, si: usize, alone: bool, info: &dyn I
         given += s.share as i64;
     }
     slot.share = (SHARE_UNIT - given) as i32;
-    let w = slot.window;
+    slot.premax = 0;
     l.cols[ci].wins.insert(at, slot);
     let cr = l.cols[ci].r;
     colresize(l, ci, cr, info);
-    l.cols[ci].safe = true;
-    if alone {
-        if let Some(wi) = l.cols[ci].wins.iter().position(|s| s.window == w) {
-            if l.cols[ci].wins.len() > 1 {
-                colmaximize(l, ci, wi, info);
-            }
-        }
-    }
-}
-
-/// Every stashed window in column `ci` back where it was (⌥⌘E): the one
-/// highest in the column's order first, so each comes back beside one
-/// already there.
-pub fn colrecall_all(l: &mut Layout, ci: usize, info: &dyn Info) {
-    while !l.cols[ci].stash.is_empty() {
-        let order = stash_order(&l.cols[ci]);
-        let Some(x) = order.iter().find(|&&(_, st)| st).map(|&(x, _)| x) else { break };
-        let Some(si) = l.cols[ci].stash.iter().position(|s| s.slot.window == x) else { break };
-        colrecall(l, ci, si, false, info);
-    }
+    Some(ci)
 }
 
 /// Window `w`, which was under `above`, has left column `ci` (closed, or
-/// moved to another): the stashed windows under it go under `above`
-/// instead, and a column left with none laid out gets the nearest back.
-pub fn left(l: &mut Layout, ci: usize, w: WindowId, above: Option<WindowId>, info: &dyn Info) {
-    let mut order = stash_order(&l.cols[ci]);
-    // `w` is gone from the order: put it back where it was for nearness
-    let at = above.and_then(|a| order.iter().position(|&(x, _)| x == a)).map(|i| i + 1).unwrap_or(0);
-    order.insert(at.min(order.len()), (w, false));
-    for s in l.cols[ci].stash.iter_mut() {
-        if s.above == Some(w) {
+/// moved to another): the windows stashed under it go under `above`
+/// instead.
+pub fn left(l: &mut Layout, ci: usize, w: WindowId, above: Option<WindowId>) {
+    let id = l.cols[ci].id;
+    for s in l.stash.iter_mut() {
+        if s.col == id && s.above == Some(w) {
             s.above = above;
         }
     }
-    if l.cols[ci].wins.is_empty() && !l.cols[ci].stash.is_empty() {
-        raise_nearest(l, ci, &order, w, info);
-    } else {
-        refloor(l, ci, info);
-    }
 }
 
-/// A stashed window taken out of the stash for good (closed, or dragged
-/// elsewhere): its slot.
-pub fn unstash(l: &mut Layout, ci: usize, si: usize, info: &dyn Info) -> Slot {
-    let s = l.cols[ci].stash.remove(si);
-    left(l, ci, s.slot.window, s.above, info);
+/// A stashed window taken out of the stash for good (closed): its slot.
+pub fn unstash(l: &mut Layout, si: usize) -> Slot {
+    let s = l.stash.remove(si);
+    if let Some(ci) = l.column_index(s.col) {
+        left(l, ci, s.slot.window, s.above);
+    }
     s.slot
 }
 
 /// acme's `colsort`: windows in name order, keeping their heights.
 pub fn colsort(l: &mut Layout, ci: usize, name: impl Fn(WindowId) -> String, info: &dyn Info) {
+    unfull(l, ci, info);
     let font = info.font_height().max(1);
     let n = l.cols[ci].wins.len();
     if n == 0 {
@@ -784,7 +785,7 @@ pub fn colsort(l: &mut Layout, ci: usize, name: impl Fn(WindowId) -> String, inf
     for i in 0..n {
         r.y0 = y;
         if i == n - 1 {
-            r.y1 = floor(&l.cols[ci]);
+            r.y1 = l.cols[ci].r.y1;
         } else {
             r.y1 = r.y0 + l.cols[ci].wins[i].r.dy() + BORDER;
         }
@@ -813,19 +814,22 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
             return Some(Warp::WinButton(w));
         }
         // B2 maximizes it (the others down to their tags), and B1 on it
-        // then gives them back their sizes; B3 stashes it; B1 otherwise
+        // then gives them back their sizes; B3 grows it to the whole
+        // column, and B3 again or B1 gives the others back; B1 otherwise
         // grows it a little
         match but {
             2 => colmaximize(l, ci, wi, info),
-            3 => {
-                colstash(l, ci, wi, info);
-                return None;
+            3 => colfull(l, ci, wi, info),
+            1 if l.cols[ci].full.is_some() => {
+                unfull(l, ci, info);
             }
             1 if is_maximized_win(&l.cols[ci], wi) => colunmaximize(l, ci, info),
             _ => colgrow(l, ci, wi, but, info),
         }
         return Some(Warp::WinButton(w));
     }
+    // a drag works on the column as it is laid out, every window in it
+    unfull(l, ci, info);
     // is it a flick to the right?
     if (py - op.1).abs() < 10 && px > op.0 + 30 && rowwhichcol(l, (px, py)) == Some(ci) {
         px = op.0 + l.cols[ci].wins[wi].r.dx(); // yes: toss to next column
@@ -833,9 +837,9 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
     let nc = rowwhichcol(l, (px, py));
     if let Some(nc) = nc {
         if nc != ci {
-            let above = stash_above(&l.cols[ci], w);
+            let above = stash_above(l, ci, w);
             let (slot, _) = colclose(l, ci, wi, info);
-            left(l, ci, w, above, info);
+            left(l, ci, w, above);
             coladd(l, nc, Adding::Existing(slot), Some(py), info);
             return Some(Warp::WinButton(w));
         }
@@ -873,9 +877,8 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
     r.y0 = winresize(l, ci, wi - 1, r, false, info);
     r.y1 = r.y0 + BORDER;
     r.y0 = r.y1;
-    r.y1 = if wi == n - 1 { floor(&l.cols[ci]) } else { l.cols[ci].wins[wi + 1].r.y0 - BORDER };
+    r.y1 = if wi == n - 1 { l.cols[ci].r.y1 } else { l.cols[ci].wins[wi + 1].r.y0 - BORDER };
     winresize(l, ci, wi, r, true, info);
-    l.cols[ci].safe = true;
     Some(Warp::WinButton(w))
 }
 
@@ -981,7 +984,7 @@ pub fn rowadd(l: &mut Layout, c: AddingCol, x: Option<i32>, info: &dyn Info) -> 
     match c {
         AddingCol::New { id, tag } => {
             // colinit
-            l.cols.insert(i, Column { id, tag, r, safe: true, wins: Vec::new(), restore: 0, stash: Vec::new(), stashed: false, after: None });
+            l.cols.insert(i, Column { id, tag, r, wins: Vec::new(), full: None, restore: 0, stashed: false, after: None });
         }
         AddingCol::Existing(c) => {
             l.cols.insert(i, c);

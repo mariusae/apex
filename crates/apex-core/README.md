@@ -13,7 +13,7 @@ programs into entries. See `../../DESIGN.md`.
 | `buffer` | a buffer (acme's `File`): text, version, undo groups, and its **views** — selections and origins, adjusted by acme's `textinsert`/`textdelete` rules |
 | `state` | `State::apply`, deterministic and pure; `hash()` for divergence checks; postcard snapshots |
 | `log` | `Log`: one log per shard, leases with fence epochs, transfer (request/release/grant) and reclaim |
-| `node` | `Node`: catch up as a follower; as leader append, type, cut/paste/undo, `Look`, `Edit`, `New`/`Del`/`Zerox`/`Newcol`/`Delcol`/`Sort`/`Font`, `+Errors` |
+| `node` | `Node`: catch up as a follower; as leader append, type, cut/paste/undo, `Look`, `Edit`, `New`/`Del`/`Zerox`/`Stash`/`Newcol`/`Delcol`/`Sort`/`Font`, `+Errors` |
 
 Design points visible in the code:
 
