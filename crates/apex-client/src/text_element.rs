@@ -16,6 +16,29 @@ use crate::app::{Acme, HlKind, Kind};
 
 pub const SCROLLWID: f32 = 12.;
 pub const MARGIN: f32 = 16.; // Scrollwid + Scrollgap
+/// A body's text (a text's, a terminal's) starts this far in: its
+/// scroller lays over the text's edge, as macOS's overlay scrollers do,
+/// rather than keeping a lane of its own (`LANE_HIT`, `SCROLLWID`).
+pub const BODY_MARGIN: f32 = 8.;
+/// How wide a body's scroller lane is to the pointer while it is shut:
+/// the text's own inset, short of its first character. Once the pointer
+/// is in it, the lane opens to `SCROLLWID`, its gutter drawn over the
+/// text (which does not move), and B1 B2 B3 in it are acme's scrollbar.
+pub const LANE_HIT: f32 = 6.;
+
+/// The body's scroller, over its text: shut, the thumb alone while the
+/// text moves (`shows`); open (the pointer in the lane), a gutter the
+/// lane's width, drawn over the text's edge, and the thumb in it.
+pub fn paint_overlay_scroller(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, shows: f32, open: bool) {
+    let th = crate::theme::theme();
+    let lane = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
+    if open {
+        window.paint_quad(fill(lane, rgb(mix(th.body_bg, th.body_border, 0.45))));
+        paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(0.75));
+    } else if shows > 0. {
+        paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(0.55 * shows));
+    }
+}
 pub const TABSTOP: usize = 4;
 
 // acme's colours live in theme.rs (the light theme), with the dark
@@ -37,7 +60,6 @@ pub fn rgb(hex: u32) -> Hsla {
 pub struct Palette {
     pub bg: Hsla,
     pub sel: Hsla,
-    pub border: Hsla,
 }
 
 /// The ground the windows stand on: what shows between them (they are
@@ -101,8 +123,8 @@ pub fn ground(t: &crate::theme::Theme) -> u32 {
 pub fn palette(kind: Kind) -> Palette {
     let t = crate::theme::theme();
     match kind {
-        Kind::Body => Palette { bg: rgb(t.body_bg), sel: rgb(t.body_sel), border: rgb(t.body_border) },
-        _ => Palette { bg: rgb(t.tag_bg), sel: rgb(t.tag_sel), border: rgb(t.tag_border) },
+        Kind::Body => Palette { bg: rgb(t.body_bg), sel: rgb(t.body_sel) },
+        _ => Palette { bg: rgb(t.tag_bg), sel: rgb(t.tag_sel) },
     }
 }
 
@@ -719,6 +741,8 @@ pub struct Prepaint {
     notified: bool,
     round: (bool, bool),
     scroller: (f32, bool),
+    /// The pointer in the scroller's lane: it is open.
+    lane: bool,
     sheet: bool,
     key_caret: Option<bool>,
 }
@@ -988,7 +1012,8 @@ impl Element for TextElement {
                 fontspec.line_height = tag_line_height();
             }
             let lh = fontspec.line_height;
-            let wrap = Some((bounds.size.width - px(MARGIN) - px(4.)).max(px(10.)));
+            let margin = if kind == Kind::Body { px(BODY_MARGIN) } else { px(MARGIN) };
+            let wrap = Some((bounds.size.width - margin - px(4.)).max(px(10.)));
             let height = bounds.size.height;
             let text = &src.text;
             let text_len = text.len();
@@ -1176,6 +1201,7 @@ impl Element for TextElement {
                 notified: src.notified,
                 round: src.round,
                 scroller: src.scroller,
+                lane: acme.lane_open(view),
                 sheet: src.sheet,
                 key_caret: src.key_caret,
             })
@@ -1199,7 +1225,8 @@ impl Element for TextElement {
         // a folded window's tag is its card, a little shorter than the
         // line: the line centred in it, clipped as much top as bottom
         let shift = if pp.kind != Kind::Body { (bounds.size.height - lh).min(px(0.)) / 2. } else { px(0.) };
-        let origin = point(bounds.left() + px(MARGIN), bounds.top() + shift);
+        let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else { px(MARGIN) };
+        let origin = point(bounds.left() + margin, bounds.top() + shift);
 
         // a notified window's header in a pale tint of the accent, as
         // Mail tints a flagged row: the whole bar says it wants the user.
@@ -1234,22 +1261,24 @@ impl Element for TextElement {
             }
 
             let mut scrollbar = None;
+            let mut overlay = None;
             let mut layout_box = None;
             match pp.kind {
                 Kind::Body => {
                     // the lane is acme's, B1, B2 and B3 all as ever; what
                     // shows in it is a Mac scroller's thumb, slim and
                     // rounded, with no track
-                    let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
+                    // the lane to the pointer: the text's inset while shut,
+                    // the whole lane once open (drawn over the text below)
+                    let sb = Bounds::new(bounds.origin, size(px(if pp.lane { SCROLLWID } else { LANE_HIT }), bounds.size.height));
                     // acme's: the runes shown, of all of them
                     let total = pp.text_len.max(1) as f32;
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
                     // an overlay scroller: seen while the text moves or the
-                    // pointer is in the lane, fading after
+                    // pointer is in the lane, fading after -- over the text,
+                    // once it is drawn
                     let (shows, fading) = pp.scroller;
-                    if shows > 0. {
-                        paint_scroller(window, sb, s0, s1, pal.border.opacity(shows));
-                    }
+                    overlay = Some((s0, s1, shows));
                     if fading {
                         window.request_animation_frame();
                     }
@@ -1420,6 +1449,10 @@ impl Element for TextElement {
                 }
             }
 
+            // a body's scroller, over its text
+            if let Some((s0, s1, shows)) = overlay {
+                paint_overlay_scroller(window, bounds, s0, s1, shows, pp.lane);
+            }
             let layout = TextLayout {
                 bounds,
                 text_origin: origin,

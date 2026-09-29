@@ -10,7 +10,7 @@ use apex_core::{Cell, TermId, ViewId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
-use crate::text_element::{font_for, rgb, FontSpec, MARGIN, SCROLLWID};
+use crate::text_element::{font_for, rgb, FontSpec, BODY_MARGIN, LANE_HIT, SCROLLWID};
 
 pub struct TermLayout {
     pub bounds: Bounds<Pixels>,
@@ -77,6 +77,8 @@ pub struct Prepaint {
     /// How much of the scroller's thumb shows, and whether that is
     /// changing (an overlay scroller, `Acme::scroller`).
     scroller: (f32, bool),
+    /// The pointer in the scroller's lane: it is open.
+    lane: bool,
 }
 
 pub struct TermElement {
@@ -127,7 +129,7 @@ impl Element for TermElement {
         let run = move |len: usize, color: Hsla| TextRun { len, font: font.clone(), color, background_color: None, underline: None, strikethrough: None };
         let cell_w = window.text_system().shape_line("M".into(), fontspec.size, &[run(1, gpui::black())], None).width;
         let lh = fontspec.line_height;
-        let cols = (((bounds.size.width - px(MARGIN) - px(4.)) / cell_w).floor() as u16).max(2);
+        let cols = (((bounds.size.width - px(BODY_MARGIN) - px(4.)) / cell_w).floor() as u16).max(2);
         let rows_n = ((bounds.size.height / lh).floor() as u16).max(1);
         let term = self.term;
         let win = self.window;
@@ -135,6 +137,7 @@ impl Element for TermElement {
             acme.term_resize(term, cols, rows_n);
             let at = acme.node.state.terms.get(&term).map(|t| t.top)?;
             let scroller = acme.scroller(ViewId::Body(win), at);
+            let lane = acme.lane_open(ViewId::Body(win));
             let t = acme.node.state.terms.get(&term)?;
             let th = crate::theme::theme();
             let correct = crate::theme::contrast();
@@ -220,7 +223,7 @@ impl Element for TermElement {
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
             let failed = t.marks.iter().filter(|m| m.exit.is_some_and(|e| e != 0) && m.prompt >= top && m.prompt < top + t.rows as u64).map(|m| (m.prompt - top) as usize).collect();
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane })
         })
     }
 
@@ -236,22 +239,21 @@ impl Element for TermElement {
     ) {
         let Some(pp) = prepaint.take() else { return };
         let lh = pp.fontspec.line_height;
-        let origin = point(bounds.left() + px(MARGIN), bounds.top());
+        let origin = point(bounds.left() + px(BODY_MARGIN), bounds.top());
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             let th = crate::theme::theme();
             window.paint_quad(fill(bounds, rgb(th.body_bg)));
             // acme's scrollbar, as a text window draws one: the bar dark,
             // and the part of it the viewport takes of the whole screen
             // (the history and the viewport together) in the paper
-            let sb = Bounds::new(bounds.origin, size(px(SCROLLWID), bounds.size.height));
+            // the lane to the pointer: the text's inset while shut, the
+            // whole lane once open (drawn over the text, after it)
+            let sb = Bounds::new(bounds.origin, size(px(if pp.lane { SCROLLWID } else { LANE_HIT }), bounds.size.height));
             let (top, shown, total) = pp.view;
             let total = total.max(1);
             // an overlay scroller: seen while the view moves or the pointer
             // is in the lane, fading after
             let (shows, fading) = pp.scroller;
-            if shows > 0. {
-                crate::text_element::paint_scroller(window, sb, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, rgb(th.body_border).opacity(shows));
-            }
             if fading {
                 window.request_animation_frame();
             }
@@ -322,6 +324,8 @@ impl Element for TermElement {
                     }
                 }
             }
+            // the scroller, over the text
+            crate::text_element::paint_overlay_scroller(window, bounds, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, shows, pp.lane);
             let layout = TermLayout {
                 bounds,
                 text_origin: origin,

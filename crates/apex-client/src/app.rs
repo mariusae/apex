@@ -4002,6 +4002,12 @@ impl Acme {
     /// stopped; none otherwise. `key` names the scroller (a text, or a
     /// window's body), `at` where it is now. And whether it is changing,
     /// to be drawn again.
+    /// Is the pointer in `key`'s scroller lane: its gutter out, over the
+    /// text's edge, and B1 B2 B3 acme's scrollbar there.
+    pub fn lane_open(&self, key: ViewId) -> bool {
+        self.lane_hover == Some(key)
+    }
+
     pub fn scroller(&mut self, key: ViewId, at: u64) -> (f32, bool) {
         if self.scroll_pos.insert(key, at).is_some_and(|was| was != at) {
             self.scrolled_at.insert(key, std::time::Instant::now());

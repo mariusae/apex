@@ -9,7 +9,7 @@ use apex_core::tiling;
 use apex_core::*;
 use gpui::{point, px, size, App, Bounds, ContentMask, Pixels, Window};
 
-use crate::text_element::{font_for, rgb, MARGIN};
+use crate::text_element::{font_for, rgb, BODY_MARGIN, MARGIN};
 use crate::theme::Theme;
 
 /// What a card paints, in the session's own coordinates (its area's,
@@ -107,7 +107,7 @@ fn window_into(m: &mut Mini, node: &Node, w: WindowId, tag_r: (f32, f32, f32, f3
                 }
                 let line = untab(&bb.text.line(first + i), win.tabstop as usize);
                 m.lines.push(Line {
-                    x: b.0 + MARGIN,
+                    x: b.0 + BODY_MARGIN,
                     y: b.1 + i as f32 * lh,
                     clip,
                     mono: win.mono,
@@ -129,7 +129,7 @@ fn window_into(m: &mut Mini, node: &Node, w: WindowId, tag_r: (f32, f32, f32, f3
                     }
                 }
                 m.lines.push(Line {
-                    x: b.0 + MARGIN,
+                    x: b.0 + BODY_MARGIN,
                     y: b.1 + i as f32 * lh,
                     clip,
                     mono: true,
