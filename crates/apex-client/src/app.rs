@@ -4164,7 +4164,21 @@ impl Acme {
     fn term_scrollbar_click(&mut self, w: WindowId, t: TermId, pos: Point<Pixels>, dir: i64) {
         let Some(l) = self.term_layouts.get(&w) else { return };
         let frac = ((pos.y - l.bounds.top()) / l.bounds.size.height).clamp(0., 1.);
-        let n = ((l.rows.len() as f32 * frac) as isize).max(1);
+        let rows = l.rows.len();
+        if dir == 0 {
+            // B2: the line as far down the history and screen together as
+            // the pointer is down the bar comes to the top, as a text's
+            // does (the screen's last rows at most)
+            let Some(term) = self.node.state.terms.get(&t) else { return };
+            let last = term.total.saturating_sub(rows as u64);
+            let to = ((term.total as f64 * frac as f64) as u64).min(last);
+            let delta = to as i64 - term.top as i64;
+            if delta != 0 {
+                self.term_scroll(t, delta as isize);
+            }
+            return;
+        }
+        let n = ((rows as f32 * frac) as isize).max(1);
         self.term_scroll(t, n * dir as isize);
     }
 
