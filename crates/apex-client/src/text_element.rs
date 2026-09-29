@@ -241,11 +241,22 @@ pub fn paint_scroller(window: &mut Window, lane: Bounds<Pixels>, s0: f32, s1: f3
 /// A drag grip, two columns of three dots: a column's box, and the
 /// session's.
 pub fn paint_grip(window: &mut Window, b: Bounds<Pixels>, ink: Hsla) {
+    paint_grip_as(window, b, ink, false);
+}
+
+/// The grip, and `hiding` (the column given the whole row, the others
+/// hidden behind it, as a window's square handle says of its column):
+/// its dots square, and a square round them.
+pub fn paint_grip_as(window: &mut Window, b: Bounds<Pixels>, ink: Hsla, hiding: bool) {
     let cx = b.left() + b.size.width / 2.;
     let cy = b.top() + b.size.height / 2.;
     for (dx, dy) in [(-2., -4.), (2., -4.), (-2., 0.), (2., 0.), (-2., 4.), (2., 4.)] {
-        let r = 0.9;
-        window.paint_quad(fill(Bounds::new(point(cx + px(dx - r), cy + px(dy - r)), size(px(2. * r), px(2. * r))), ink).corner_radii(px(r)));
+        let r = if hiding { 1. } else { 0.9 };
+        window.paint_quad(fill(Bounds::new(point(cx + px(dx - r), cy + px(dy - r)), size(px(2. * r), px(2. * r))), ink).corner_radii(px(if hiding { 0. } else { r })));
+    }
+    if hiding {
+        let frame = Bounds::new(point(cx - px(5.), cy - px(7.)), size(px(10.), px(14.)));
+        window.paint_quad(gpui::quad(frame, px(1.5), gpui::transparent_black(), px(1.), ink, gpui::BorderStyle::Solid));
     }
 }
 
@@ -1299,7 +1310,7 @@ impl Element for TextElement {
                 }
                 Kind::ColTag => {
                     let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
-                    paint_grip(window, b, rgb(crate::theme::theme().text_dim));
+                    paint_grip_as(window, b, rgb(crate::theme::theme().text_dim), pp.hiding);
                     layout_box = Some(b);
                 }
                 Kind::Top => {

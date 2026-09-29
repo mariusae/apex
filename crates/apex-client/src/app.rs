@@ -2662,7 +2662,12 @@ impl Acme {
             },
             // a window grown to the whole column with others behind it:
             // its handle square
-            hiding: matches!(view, ViewId::Tag(w) if self.hides_others(w)),
+            hiding: match view {
+                ViewId::Tag(w) => self.hides_others(w),
+                // a column given the whole row, the others hidden
+                ViewId::ColTag(c) => layout.full == Some(c) && layout.cols.len() > 1,
+                _ => false,
+            },
             // the keys' view: its caret the blue one, blinking
             key_caret: (self.caret_view == Some(view)).then_some(self.caret_on),
             text: buf.text.clone(),
@@ -2942,9 +2947,9 @@ impl Acme {
         }
         if matches!(self.logical_button_peek(e), MouseButton::Navigate(_)) {
             let button = self.logical_button(e);
-            // B4 on a column's box: the column put away at the row's right,
-            // or a strip back where it stood, when the button comes up (a
-            // column has no tools menu)
+            // B4 on a column's box: taken as a click there when the button
+            // comes up, which does nothing (a column has no tools menu, and
+            // is not put away)
             if let Some((Target::View(ViewId::ColTag(c)), Region::LayoutBox)) = self.locate(e.position) {
                 self.mouse.box_drag = Some((BoxTarget::Col(c), button, e.position));
                 cx.notify();

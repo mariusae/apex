@@ -322,19 +322,16 @@ windows put away out of the tiling, which is the core's
   each window's handle down it where the window stands: a click on a handle brings the
   column back and lands on that window, and B1 anywhere else on it
   brings it back where it stands.
-  B3 (or B4) stashes a column: its width to the columns either side of
-  where it stood (the last with room gives way to the minimized one
-  nearest it, else the one stashed last), and it goes to the row's
-  right, as a window goes to its column's foot: a strip there, after
-  those already stashed (`Column::stashed`, protocol 36; `Column::after`
-  remembers the column it stood right of). It comes back where it stood,
-  at the width it had, taken first from the columns holding width for
-  strips; columns stashed one after another come back in the order they
-  stood, whichever comes back first. A stashed strip is drawn as the
-  edges of sheets on their sides, and the whole of it is its column's
-  box: B1 brings it back, B2 back and maximized, a drag moves it. The
-  pointer on it brings out a slice of its column, live, as wide as it
-  would come back (`strips.rs`); a click there brings it back.
+  B3 gives a column the whole row, as it grows a window to the whole
+  column: the others hidden behind it (`Layout::full`), their places
+  kept, its grip framed and its dots square while they are; B3 again or
+  B1 on its box gives them back where they stood, it at the width it
+  had (its share of the row, `Column::restore`). Anything that changes
+  the row -- a column added, closed or dragged, B2, going to a window in
+  a hidden one -- gives them back first. Columns are not put away: B4
+  on a column's box does nothing. A column an older apex put away at
+  the row's right is still drawn as the edges of sheets on their sides,
+  and B1 brings it back where it stood.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the
