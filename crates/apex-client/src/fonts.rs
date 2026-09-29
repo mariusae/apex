@@ -15,6 +15,8 @@
 //! - Mona: Mona Sans and Monaspace Xenon (bundled), Xenon set as
 //!   Manifold sets it: texture healing (`calt`) and stylistic sets 2, 3,
 //!   7 and 8, and in pages Radon for its italics.
+//! - Inter: Inter and JetBrains Mono (both bundled, both OFL), as rsms
+//!   sets his Sublime Text theme.
 //! - H&Co: Hoefler & Co.'s Ideal Sans (screen smart) and Operator Mono,
 //!   not to be bundled: the system's copies, or Operator Mono's files in
 //!   the user's iCloud Drive `Fonts` folder where it is not installed
@@ -37,9 +39,10 @@ pub enum Set {
     Mona,
     Nova,
     Hco,
+    Inter,
 }
 
-pub const ALL: [Set; 6] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco];
+pub const ALL: [Set; 7] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter];
 
 impl Set {
     pub fn title(self) -> &'static str {
@@ -50,6 +53,7 @@ impl Set {
             Set::Mona => "Mona",
             Set::Nova => "Nova",
             Set::Hco => "H&Co",
+            Set::Inter => "Inter",
         }
     }
 
@@ -61,6 +65,7 @@ impl Set {
             Set::Mona => "mona",
             Set::Nova => "nova",
             Set::Hco => "hco",
+            Set::Inter => "inter",
         }
     }
 }
@@ -167,6 +172,7 @@ fn text_as_set() -> Spec {
         Set::Mona => Spec { family: "Mona Sans", size: px(15.), line_height: px(21.), weight: FontWeight::NORMAL, features: &[] },
         Set::Nova => Spec { family: ".SystemUIFont", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: LEGIBLE },
         Set::Hco => Spec { family: IDEAL, size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Inter => Spec { family: "Inter", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
@@ -196,6 +202,7 @@ fn mono_as_set() -> Spec {
         Set::Mona => Spec { family: "Monaspace Xenon", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: XENON },
         Set::Nova => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Hco => Spec { family: OPERATOR, size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Inter => Spec { family: "JetBrains Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
@@ -208,6 +215,7 @@ pub fn ui() -> &'static str {
         Set::Mona => "Mona Sans",
         Set::Nova => ".AppleSystemUIFont",
         Set::Hco => IDEAL,
+        Set::Inter => "Inter",
     }
 }
 
@@ -246,6 +254,17 @@ pub const FACES: &[Face] = &[
     // Xenon's italics are Radon's, the handwritten one, as Manifold's are
     face!("monaspace", "MonaspaceRadon-Italic.otf", "Monaspace Xenon", 400, true),
     face!("monaspace", "MonaspaceRadon-BoldItalic.otf", "Monaspace Xenon", 700, true),
+    face!("inter", "Inter-Regular.ttf", "Inter", 400, false),
+    face!("inter", "Inter-Medium.ttf", "Inter", 500, false),
+    face!("inter", "Inter-SemiBold.ttf", "Inter", 600, false),
+    face!("inter", "Inter-Bold.ttf", "Inter", 700, false),
+    face!("inter", "Inter-Italic.ttf", "Inter", 400, true),
+    face!("inter", "Inter-BoldItalic.ttf", "Inter", 700, true),
+    face!("jetbrains", "JetBrainsMono-Regular.ttf", "JetBrains Mono", 400, false),
+    face!("jetbrains", "JetBrainsMono-Medium.ttf", "JetBrains Mono", 500, false),
+    face!("jetbrains", "JetBrainsMono-Bold.ttf", "JetBrains Mono", 700, false),
+    face!("jetbrains", "JetBrainsMono-Italic.ttf", "JetBrains Mono", 400, true),
+    face!("jetbrains", "JetBrainsMono-BoldItalic.ttf", "JetBrains Mono", 700, true),
 ];
 
 /// Faces found on this machine rather than bundled (H&Co's where they
@@ -364,6 +383,7 @@ pub fn page_css() -> String {
         Set::Nova => ("-apple-system, BlinkMacSystemFont, sans-serif", "Menlo, monospace", "\"ss06\", \"tnum\"", "normal"),
         Set::Mona => ("\"Mona Sans\", sans-serif", "\"Monaspace Xenon\", monospace", "normal", "\"calt\", \"ss02\", \"ss03\", \"ss07\", \"ss08\""),
         Set::Hco => ("\"Ideal Sans SSm\", sans-serif", "\"Operator Mono SSm\", monospace", "normal", "normal"),
+        Set::Inter => ("\"Inter\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
     };
     css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features}}}"));
     css

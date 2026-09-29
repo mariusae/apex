@@ -35,7 +35,8 @@ windows put away out of the tiling, which is the core's
   14/20 for text and the interface, Menlo 12/16), Go (Go 14/20, Go Mono
   12/16, bundled), Mona (Mona Sans 15/21, Monaspace Xenon 12/16 with
   Manifold's texture healing and stylistic sets 2, 3, 7 and 8, bundled)
-  and H&Co (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart
+  Inter (Inter 14/20 and JetBrains Mono 12/16, as rsms sets his Sublime
+  theme; both bundled) and H&Co (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart
   cuts: not bundled -- the installed ones, else Operator Mono's files
   from the iCloud Drive Fonts folder). ⌘+ and ⌘− (View ▸ Font ▸ Bigger,
   Smaller) take the text a pixel bigger or smaller a step, the mono
