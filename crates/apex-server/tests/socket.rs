@@ -146,7 +146,7 @@ fn a_tool_works_on_a_headless_session_and_a_ui_takes_over() {
     std::fs::write(&path, "b\na\n").unwrap();
     tool.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: path.to_string_lossy().to_string() });
     // (Newcol made an empty window too, as acme's does)
-    let named = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w).ends_with("h.txt"));
+    let named = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w).ends_with("h.txt"));
     assert!(wait(&mut tool, |r| named(r).is_some()));
     let w = named(&tool).unwrap();
     // an Edit program, then Put, both by proposal
@@ -233,7 +233,7 @@ fn the_watcher_reloads_clean_buffers_and_flags_dirty_ones() {
     assert_eq!(body(&c, w), "mine two\n");
     c.node.exec(&mut c.log, ExecCtx::Window(w), "Put").unwrap();
     c.flush();
-    assert!(wait(&mut c, |r| r.node.state.buffers.values().any(|b| b.name.ends_with("+Errors") && b.text.to_string().contains("modified since last read"))));
+    assert!(wait(&mut c, |r| r.node.state.buffers.values().any(|b| b.kind == apex_core::WinKind::Errors && b.text.to_string().contains("modified since last read"))));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "three\n");
     c.node.exec(&mut c.log, ExecCtx::Window(w), "Put").unwrap();
     c.flush();
@@ -254,7 +254,7 @@ fn the_watcher_reloads_clean_buffers_and_flags_dirty_ones() {
     // acme's get: a dirty window is asked once ("modified"), then reloads
     c.node.exec(&mut c.log, ExecCtx::Window(w), "Get").unwrap();
     c.flush();
-    assert!(wait(&mut c, |r| r.node.state.buffers.values().any(|b| b.name.ends_with("+Errors") && b.text.to_string().contains("w.txt modified"))));
+    assert!(wait(&mut c, |r| r.node.state.buffers.values().any(|b| b.kind == apex_core::WinKind::Errors && b.text.to_string().contains("w.txt modified"))));
     assert_ne!(body(&c, w), "four\n");
     c.node.exec(&mut c.log, ExecCtx::Window(w), "Get").unwrap();
     c.flush();
@@ -327,7 +327,7 @@ fn b3_expands_as_acme_does_where_the_files_are() {
     let mut ui = Remote::connect(&sock, "main", "ui").unwrap();
     let col = ui.node.state.layout.cols[0].id;
     ui.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: notes.display().to_string() });
-    let find = |r: &Remote, suffix: &str| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w).ends_with(suffix));
+    let find = |r: &Remote, suffix: &str| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w).ends_with(suffix));
     assert!(wait(&mut ui, |r| find(r, "/notes").is_some()));
     let w = find(&ui, "/notes").unwrap();
     let b = ui.node.state.window(w).unwrap().body_buffer().unwrap();

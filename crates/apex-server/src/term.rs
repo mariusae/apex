@@ -72,48 +72,18 @@ pub fn sysname() -> String {
     }
 }
 
-/// win's `label`: the window's name for a label, with `/-name` added when
-/// the label does not end in a `-` component of its own.
-/// The rule for a terminal's window name: `{osc7 path}/-{title}`. Once
-/// OSC 7 has reported a directory, that is the path and nothing else
-/// ever is; until then the path is where the terminal started (a shell
-/// reports the same directory soon after, a program like `Newterm
-/// claude` never does); the title (an xterm title, plan9port's label)
-/// follows a `-`. Before either, `dir/-host`, win's naming.
-pub fn compose_name(cwd: Option<&Path>, title: Option<&str>, initial_dir: &Path, initial_label: &str) -> String {
-    let dir = |d: &Path| d.display().to_string().trim_end_matches('/').to_string();
-    let t = title.map(|t| word(t));
-    match (cwd, t) {
-        (Some(c), Some(t)) => format!("{}/-{t}", dir(c)),
-        (Some(c), None) => format!("{}/-{initial_label}", dir(c)),
-        (None, Some(t)) => format!("{}/-{t}", dir(initial_dir)),
-        (None, None) => format!("{}/-{initial_label}", dir(initial_dir)),
-    }
-}
-
-/// A title made into one word, which is what a name is here: a
-/// terminal's name lives in the first word of its tag, and the bar after
-/// it is apex's. A title is nobody's to choose -- a coding agent writes
-/// its state into one, blanks, bar and all (`renaming... | proj`) -- so
-/// runs of blanks and any bar become a single `␣` (U+2423), the blank
-/// written down. It reads as the space it stands for and is a word
-/// character (`acme_isalnum`), so the name is still one word to a
-/// double-click and to B3.
-pub fn word(title: &str) -> String {
-    let mut out = String::with_capacity(title.len());
-    let mut gap = false;
-    for c in title.trim().chars() {
-        if c.is_whitespace() || c == '|' {
-            gap = true;
-            continue;
-        }
-        if gap && !out.is_empty() {
-            out.push('\u{2423}');
-        }
-        gap = false;
-        out.push(c);
-    }
-    out
+/// Where a terminal's window is, and its label, from what its shell
+/// said: the directory OSC 7 reported (once it has, that and nothing else
+/// is the path; until then where the terminal started -- a shell reports
+/// the same soon after, a program like `Newterm claude` never does), with
+/// its slash; and the title (an xterm title, plan9port's label), else the
+/// label it started with (its command, or the host). A title is nobody's
+/// to choose -- a coding agent writes its state into one, blanks, bar
+/// and all -- and is kept as it is, but for the blanks at its ends.
+pub fn place(cwd: Option<&Path>, title: Option<&str>, initial_dir: &Path, initial_label: &str) -> (String, String) {
+    let dir = format!("{}/", cwd.unwrap_or(initial_dir).display().to_string().trim_end_matches('/'));
+    let label = title.map(str::trim).filter(|t| !t.is_empty()).unwrap_or(initial_label).to_string();
+    (dir, label)
 }
 
 /// A leading `~` or `~/` (a shell's short form of the home directory, as
@@ -188,14 +158,17 @@ mod tests {
     }
 
     #[test]
-    fn a_title_is_one_word() {
+    fn a_title_is_the_label_as_it_is() {
         let dir = PathBuf::from("/a/b");
-        let name = |t: &str| compose_name(Some(&dir), Some(t), &dir, "host");
-        assert_eq!(name("proj"), "/a/b/-proj");
-        // a coding agent's title: its state, a spinner, and the project
-        assert_eq!(name("renaming... ⠹ | proj"), "/a/b/-renaming...␣⠹␣proj");
-        assert_eq!(name("  padded  "), "/a/b/-padded");
-        assert_eq!(name("|"), "/a/b/-");
+        let at = |t: &str| place(Some(&dir), Some(t), &dir, "host");
+        assert_eq!(at("proj"), ("/a/b/".to_string(), "proj".to_string()));
+        // a coding agent's title: its state, a spinner, and the project,
+        // blanks and bar kept
+        assert_eq!(at("renaming... ⠹ | proj").1, "renaming... ⠹ | proj");
+        assert_eq!(at("  padded  ").1, "padded");
+        // no title: the label it started with
+        assert_eq!(at("   ").1, "host");
+        assert_eq!(place(None, None, Path::new("/here/"), "host"), ("/here/".to_string(), "host".to_string()));
     }
 }
 
@@ -231,8 +204,8 @@ pub struct TermHost {
     /// Where the shell is, as far as its labels have told us (acme's win
     /// resolves relative names there).
     pub dir: PathBuf,
-    /// The `-name` the window carries after its directory (the host, until
-    /// a label brings its own).
+    /// The label the window starts with (its command, or the host), until
+    /// a title brings its own.
     pub label: String,
     /// The shell's process, for `ps` and `kill`: pid, its name (the
     /// shell's, or the command's), the command line, when it started.
@@ -244,11 +217,11 @@ pub struct TermHost {
     /// its cursor; the next publish carries only what differs.
     last: Option<Published>,
     /// What the shell reported: its directory (OSC 7) and its title (an
-    /// xterm title, plan9port's label), the window's name being made of
-    /// them (`compose_name`).
+    /// xterm title, plan9port's label), the window's path and label being
+    /// made of them (`place`).
     pub cwd: Option<PathBuf>,
     pub title: Option<String>,
-    /// Where the shell started: the name's directory until OSC 7 says.
+    /// Where the shell started: the window's path until OSC 7 says.
     pub initial_dir: PathBuf,
     /// The colours last given to the terminal, which answers a program's
     /// questions from them; none until a client has said.
@@ -270,9 +243,10 @@ struct Published {
 }
 
 impl TermHost {
-    /// The window's name under the rule, from what the shell reported.
-    pub fn window_name(&self) -> String {
-        compose_name(self.cwd.as_deref(), self.title.as_deref(), &self.initial_dir, &self.label)
+    /// The window's path and label under the rule, from what the shell
+    /// reported.
+    pub fn window_place(&self) -> (String, String) {
+        place(self.cwd.as_deref(), self.title.as_deref(), &self.initial_dir, &self.label)
     }
 
     /// Start the user's shell (`shell` when the session names one, the
@@ -851,11 +825,12 @@ mod name_tests {
     #[test]
     fn the_directory_is_where_the_terminal_started_until_osc7_says() {
         let d = Path::new("/w/here");
-        assert_eq!(compose_name(None, None, d, "host"), "/w/here/-host");
+        let pair = |p: &str, l: &str| (p.to_string(), l.to_string());
+        assert_eq!(place(None, None, d, "host"), pair("/w/here/", "host"));
         // a title (Newterm claude, an xterm title) keeps the start directory
-        assert_eq!(compose_name(None, Some("claude"), d, "host"), "/w/here/-claude");
+        assert_eq!(place(None, Some("claude"), d, "host"), pair("/w/here/", "claude"));
         // OSC 7 reported: that path, and nothing else ever
-        assert_eq!(compose_name(Some(Path::new("/else/")), Some("t"), d, "host"), "/else/-t");
-        assert_eq!(compose_name(Some(Path::new("/else")), None, d, "host"), "/else/-host");
+        assert_eq!(place(Some(Path::new("/else/")), Some("t"), d, "host"), pair("/else/", "t"));
+        assert_eq!(place(Some(Path::new("/else")), None, d, "host"), pair("/else/", "host"));
     }
 }

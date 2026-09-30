@@ -379,7 +379,7 @@ impl Daemon {
         let s = &self.sessions[&key];
         let label = s.label.clone();
         if !force {
-            let dirty = s.view.state.buffers.values().filter(|b| b.name.starts_with('/') && !b.name.ends_with('/') && b.dirty()).count();
+            let dirty = s.view.state.buffers.values().filter(|b| b.kind == apex_core::WinKind::File && !b.scratch && b.name.starts_with('/') && b.dirty()).count();
             if dirty > 0 {
                 return Err(format!("session {label}: {dirty} unsaved window(s); Put them, or end it with -f"));
             }
@@ -1259,7 +1259,6 @@ impl Daemon {
                         eprintln!("apexd: {name}: proposal: {e}");
                     }
                 }
-                let _ = s.view.update_tags(&mut s.log);
                 // places to go whose windows are not open: open them, land
                 for loc in s.view.take_gotos() {
                     let col = s.view.state.layout.cols.first().map(|c| c.id);

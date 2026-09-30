@@ -8,23 +8,27 @@ use apex_core::*;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Proposal {
-    /// Open a window showing a file's contents (or a listing): in the
-    /// active column, else the column of `from`, else `col` (acme's
-    /// `makenewwindow`).
-    OpenWindow { col: ColumnId, from: Option<WindowId>, name: String, text: String, hash: String, select_line: Option<usize> },
-    /// A window on a new, empty buffer with this name (`New path`).
-    NewWindow { col: ColumnId, name: String },
-    /// A window on a terminal the server created.
-    TermWindow { col: ColumnId, name: String, term: TermId },
+    /// Open a window showing a file's contents, or a directory's listing
+    /// (`kind` says which): in the active column, else the column of
+    /// `from`, else `col` (acme's `makenewwindow`).
+    OpenWindow { col: ColumnId, from: Option<WindowId>, name: String, kind: WinKind, text: String, hash: String, select_line: Option<usize> },
+    /// A window on a new, empty buffer at this path (`New path`): a
+    /// file's, or scratch (a tool's window, a transcript), with a label
+    /// beside the path.
+    NewWindow { col: ColumnId, name: String, label: Option<String>, scratch: bool },
+    /// A window on a terminal the server created, in directory `dir`,
+    /// labelled (its command, else the host).
+    TermWindow { col: ColumnId, dir: String, label: Option<String>, term: TermId },
     /// A web window on `url` in `col` (`Newweb URL`, `apex web open`).
     OpenWeb { col: ColumnId, url: String },
-    /// A window whose buffer `text` is HTML shown as a page (`apex web`).
-    OpenHtml { col: ColumnId, name: String, text: String },
+    /// A window whose buffer `text` is HTML shown as a page (`apex web`,
+    /// a preview): at `path` (the file it shows), labelled.
+    OpenHtml { col: ColumnId, path: String, text: String, label: Option<String> },
     /// Show another session (by id, a prefix, or label), at `window`
     /// there when given: a UI leading this one switches to it.
     Switch { session: String, window: Option<WindowId> },
     /// The client rendering a web window says where its page went: the
-    /// window's name follows, the place left goes on the navigation stack.
+    /// window's path follows, the place left goes on the navigation stack.
     WebNavigate { window: WindowId, url: String },
     /// Replace a buffer's content: unconditionally (`Get`), or only if the
     /// buffer is still at `version` (a watched file changed) — a buffer
@@ -34,13 +38,17 @@ pub enum Proposal {
     /// The buffer is clean at this version, and this is what stands on
     /// disk -- `None` when nothing does, as for a window a tool writes.
     Clean { buffer: BufferId, version: Version, hash: Option<String> },
-    /// `Put newname`: rename the buffer and its window's tag.
-    Rename { buffer: BufferId, window: WindowId, name: String },
+    /// Where a window is, set: a text window renamed (`Put newname`, a
+    /// rename in its tag, a tool's), a terminal's directory changed.
+    SetPath { window: WindowId, path: String },
+    /// A window's label, set (a terminal's title, a tool's window's name;
+    /// none to take it away).
+    SetLabel { window: WindowId, label: Option<String> },
     /// A range replaced, valid at `version`: pipe output (`select`, as
     /// acme's `|` leaves the output selected), or a tool's write, which
     /// leaves dot alone as a write to acme's `data` file does.
     ReplaceRange { select: bool, dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
-    /// Text for `dir/+Errors` (acme's errorwin), or plain `+Errors`.
+    /// Text for `dir`'s errors window (acme's errorwin), or the session's.
     Errors { dir: Option<String>, text: String },
     /// Filename completion (acme's ^F): insert `text` at `at` in `view`,
     /// if the insertion point is still there.
@@ -54,9 +62,6 @@ pub enum Proposal {
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// Put this text in the snarf buffer (a terminal selection's text).
     Snarf { text: String },
-    /// A terminal's shell labelled its window (acme's win): the tag's
-    /// first word changes.
-    TermName { window: WindowId, name: String },
     /// B3 did not name a file: search the body instead; backwards for
     /// shift-B3.
     Look { ctx: ExecCtx, text: String, reverse: bool },
@@ -116,8 +121,8 @@ pub enum Proposal {
 /// searched in, if any.
 pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<WindowId>, CoreError> {
     match p {
-        Proposal::OpenWindow { col, from, name, text, hash, select_line } => {
-            if let Some(w) = node.state.windows.keys().copied().find(|w| node.window_name(*w) == name) {
+        Proposal::OpenWindow { col, from, name, kind, text, hash, select_line } => {
+            if let Some(w) = node.window_of(&name, kind) {
                 // acme's openfile: show it (a window with no lines grows a
                 // few), and jump the mouse to the selection
                 node.reveal(log, w)?;
@@ -126,20 +131,20 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.warp = Some(Warp::Sel(ViewId::Body(w)));
                 return Ok(Some(w));
             }
-            let b = node.create_buffer(log, &name, &text, Some(hash))?;
+            let b = node.create_buffer_as(log, &name, &text, Some(hash), kind, false)?;
             let w = node.make_window(log, from, col, b)?;
             select(node, log, w, select_line)?;
             node.seltext = Some(ViewId::Body(w));
             Ok(Some(w))
         }
-        Proposal::NewWindow { col, name } => {
-            let w = node.new_window(log, col, &name, "")?;
+        Proposal::NewWindow { col, name, label, scratch } => {
+            let w = node.new_window_as(log, col, &name, "", &Spec { kind: WinKind::File, scratch, label })?;
             node.seltext = Some(ViewId::Body(w));
             Ok(Some(w))
         }
-        Proposal::TermWindow { col, name, term } => {
+        Proposal::TermWindow { col, dir, label, term } => {
             node.catch_up(log)?;
-            let w = node.open_term_window(log, col, &name, term)?;
+            let w = node.open_term_window(log, col, &dir, label, term)?;
             Ok(Some(w))
         }
         Proposal::OpenWeb { col, url } => {
@@ -147,9 +152,9 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             let w = node.open_web_window(log, col, &url)?;
             Ok(Some(w))
         }
-        Proposal::OpenHtml { col, name, text } => {
+        Proposal::OpenHtml { col, path, text, label } => {
             node.catch_up(log)?;
-            let w = node.open_html_window(log, col, &name, &text)?;
+            let w = node.open_html_window(log, col, &path, &text, label)?;
             Ok(Some(w))
         }
         Proposal::WebNavigate { window, url } => {
@@ -173,12 +178,12 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Clean { version, disk_hash: hash }))?;
             Ok(None)
         }
-        Proposal::Rename { buffer, window, name } => {
-            node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Rename { name: name.clone() }))?;
-            let tag = node.state.window(window)?.tag;
-            let rest = node.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
-            let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
-            node.set_content(log, tag, &format!("{name} {rest}"))?;
+        Proposal::SetPath { window, path } => {
+            node.set_window_path(log, window, &path)?;
+            Ok(None)
+        }
+        Proposal::SetLabel { window, label } => {
+            node.set_window_label(log, window, label.as_deref())?;
             Ok(None)
         }
         Proposal::ReplaceRange { select, dir, buffer, version, q0, q1, text } => {
@@ -227,13 +232,6 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 node.insert(log, view, &text)?;
             }
             Ok(view.window())
-        }
-        Proposal::TermName { window, name } => {
-            let tag = node.state.window(window)?.tag;
-            let rest = node.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
-            let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
-            node.set_content(log, tag, &format!("{name} {rest}"))?;
-            Ok(None)
         }
         Proposal::Snarf { text } => {
             node.append(log, apex_core::Shard::Layout, apex_core::Op::Layout(apex_core::LayoutOp::Snarf { text }))?;

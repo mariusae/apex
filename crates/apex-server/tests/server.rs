@@ -61,7 +61,7 @@ fn body_text(node: &Node, w: WindowId) -> String {
 }
 
 fn errors_text(node: &Node) -> String {
-    node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default()
+    node.state.buffers.values().find(|b| b.kind == WinKind::Errors).map(|b| b.text.to_string()).unwrap_or_default()
 }
 
 fn open(server: &Server, log: &mut Log, node: &mut Node, col: ColumnId, dir: &std::path::Path, name: &str) -> WindowId {
@@ -94,7 +94,7 @@ fn files_put_and_get() {
 
     let w = open(&server, &mut log, &mut node, col, &dir, "f.txt");
     assert_eq!(body_text(&node, w), "one\ntwo\n");
-    assert_eq!(node.window_name(w), path.to_string_lossy());
+    assert_eq!(node.window_path(w), path.to_string_lossy());
     // opening it again gives the same window
     assert_eq!(open(&server, &mut log, &mut node, col, &dir, "f.txt"), w);
 
@@ -119,6 +119,8 @@ fn files_put_and_get() {
     // a directory opens as a listing
     let d = open(&server, &mut log, &mut node, col, &dir, ".");
     assert!(body_text(&node, d).contains("f.txt\n"));
+    assert_eq!(node.window_kind(d), WinKind::Dir);
+    assert_eq!(node.window_kind(w), WinKind::File);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -147,8 +149,8 @@ fn get_rule_overrides_filesystem_get_and_stays_scoped() {
     let (_, e) = log.install_rule(SERVER, 0, rule);
     node.state.apply(Shard::Meta, &e).unwrap();
 
-    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_live), node.window_kind(w_live), Some(w_live), None), vec!["Get"]);
-    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w_file), node.window_kind(w_file), Some(w_file), None).is_empty());
+    assert_eq!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_path(w_live), node.window_kind(w_live), Some(w_live), None), vec!["Get"]);
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_path(w_file), node.window_kind(w_file), Some(w_file), None).is_empty());
 
     node.exec(&mut log, ExecCtx::Window(w_live), "Get").unwrap();
     assert_eq!(poll(&mut server, &mut log, &mut node), 0);
@@ -448,13 +450,12 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
     let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
     server.close_orphan_terms(&mut log, &node);
-    let name = |n: &Node| {
-        let tag = n.state.window(w).unwrap().tag;
-        n.state.buffer(tag).unwrap().text.to_string().split(' ').next().unwrap_or("").to_string()
-    };
-    // win's name: the directory, then -host
+    let path = |n: &Node| n.window_path(w);
+    let label = |n: &Node| n.window_label(w).unwrap_or_default();
+    // win's naming: the directory, the host its label
     let host = apex_server::term::sysname();
-    assert!(name(&node).ends_with(&format!("/-{host}")), "{}", name(&node));
+    assert_eq!(label(&node), host);
+    assert!(path(&node).ends_with('/'), "{}", path(&node));
     prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let type_ = |server: &mut Server, log: &mut Log, s: &str| {
         for c in s.chars() {
@@ -465,41 +466,41 @@ fn terminal_labels_name_the_window_and_its_shell_knows_the_session() {
     // the shell's environment: the session, and a truecolor xterm
     type_(&mut server, &mut log, "echo s=$apexsession c=$COLORTERM t=$TERM w=$winid\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains(&format!("s=main c=truecolor t=xterm-256color w={}", w.0))), "grid:\n{}", rows(&node));
-    // the rule: {osc7 path}/-{title}. A label (plan9port's) alone is a
-    // title, after the directory the terminal started in until one is reported
+    // the rule: the path is OSC 7's directory, the label the title. A
+    // label (plan9port's) alone is a title, the path where the terminal
+    // started until a directory is reported
     let base = std::env::temp_dir().join(format!("apex-label-{}", std::process::id()));
     let (a, b) = (base.join("a"), base.join("b"));
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
     type_(&mut server, &mut log, "printf '\\033];x\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n).ends_with("/-x") && !name(n).starts_with('-')), "name: {}", name(&node));
-    // OSC 7 reports the directory: the path, the title after it; B2/B3 resolve there
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| label(n) == "x"), "label: {}", label(&node));
+    // OSC 7 reports the directory: the path; B2/B3 resolve there
+    let slashed = |d: &std::path::Path| format!("{}/", d.display());
     type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", a.display()));
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", a.display())), "name: {}", name(&node));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| path(n) == slashed(&a)), "path: {}", path(&node));
+    assert_eq!(label(&node), "x");
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), a);
-    // winsettag keeps the name (a terminal's name is its tag's first word)
-    node.update_tags(&mut log).unwrap();
-    assert_eq!(node.window_name(w), format!("{}/-x", a.display()));
-    // another directory: the path follows, the title stays
+    // another directory: the path follows, the label stays
     type_(&mut server, &mut log, &format!("printf '\\033]7;file://somehost{}\\007'\r", b.display()));
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-x", b.display())), "name: {}", name(&node));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| path(n) == slashed(&b)), "path: {}", path(&node));
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), b);
-    // an xterm title is a title; once OSC 7 has spoken, nothing else is the path
+    // an xterm title is the label; once OSC 7 has spoken, nothing else is the path
     type_(&mut server, &mut log, "printf '\\033]2;hello\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-hello", b.display())), "name: {}", name(&node));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| label(n) == "hello"), "label: {}", label(&node));
     type_(&mut server, &mut log, "printf '\\033]2;~/src\\007'\r");
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-~/src", b.display())), "name: {}", name(&node));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| label(n) == "~/src"), "label: {}", label(&node));
+    assert_eq!(path(&node), slashed(&b));
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), b);
     // a title of a program's own making (a coding agent writes its state
-    // into one, over and over) is still one word: blanks and the bar --
-    // the tag's own -- become `_`, so the tag keeps its shape however
-    // often the title changes, and does not grow
+    // into one, over and over), blanks and bar and all, is the label as
+    // it is; the tag, the user's words, is untouched by it
     let tag = |n: &Node| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
+    let before = tag(&node);
     for i in 0..3 {
         type_(&mut server, &mut log, &format!("printf '\\033]2;renaming...{i} | proj\\007'\r"));
-        assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| name(n) == format!("{}/-renaming...{i}␣proj", b.display())), "name: {}", name(&node));
-        node.update_tags(&mut log).unwrap();
-        assert_eq!(tag(&node), format!("{}/-renaming...{i}␣proj Del Snarf Send | Look ", b.display()), "the tag grew");
+        assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| label(n) == format!("renaming...{i} | proj")), "label: {}", label(&node));
+        assert_eq!(tag(&node), before);
     }
     // the labels never reached the screen
     assert!(!rows(&node).contains("\u{1b}"));
@@ -536,11 +537,9 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     let p = server.open_file(col, None, &dir, "notes.md", None).unwrap();
     let w = perform(&mut node, &mut log, vec![p]).expect("window");
     // the verb is offered in the window's tools menu (B4), not its tag
-    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_name(w), n.window_kind(w), Some(w), None);
+    let verbs = |n: &Node, w: WindowId| apex_core::plumb::verbs_for(&n.state.meta.rules, &n.window_path(w), n.window_kind(w), Some(w), None);
     assert_eq!(verbs(&node, w), vec!["Preview"]);
-    node.update_tags(&mut log).unwrap();
-    let tag = node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string();
-    assert!(!tag.contains("Preview"), "tag: {tag}");
+    assert!(!node.window_verbs(w).contains(&"Preview"), "{:?}", node.window_verbs(w));
     // a .txt window does not offer it
     std::fs::write(dir.join("a.txt"), "x\n").unwrap();
     let p = server.open_file(col, None, &dir, "a.txt", None).unwrap();
@@ -553,7 +552,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
         let (_, step) = server.plumb_start(&node, req);
         assert!(matches!(step, apex_server::PlumbStep::Done(_)), "{step:?}");
     }
-    let errors = |n: &Node| n.state.windows.keys().find(|w| n.window_name(**w).ends_with("+Errors")).and_then(|w| n.state.window(*w).ok()).and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    let errors = |n: &Node| n.state.windows.keys().find(|w| n.window_kind(**w) == WinKind::Errors).and_then(|w| n.state.window(*w).ok()).and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors(n).contains(&format!("previewing {}", md.display()))), "errors:\n{}", errors(&node));
     // acme's expand: nothing takes `s.pchr` (no such file), so the word is tried
     let word = ("pchr".to_string(), Span { buffer: BufferId(0), q0: 2, q1: 6 });
@@ -582,7 +581,7 @@ fn newterm_with_a_command_runs_it_instead_of_a_shell() {
     node.exec(&mut log, ExecCtx::Top, "Newterm printf 'ran %s\\n' here").unwrap();
     poll(&mut server, &mut log, &mut node);
     let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
-    assert!(node.window_name(w).ends_with("/-printf"), "{}", node.window_name(w));
+    assert_eq!(node.window_label(w).as_deref(), Some("printf"));
     // live while it runs
     assert!(node.window_live(w));
     let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
@@ -605,22 +604,16 @@ fn a_name_typed_into_the_tag_is_where_put_writes() {
     let w = node.state.windows.keys().copied().max().expect("window");
     let b = node.state.window(w).unwrap().body_buffer().unwrap();
     node.set_content(&mut log, b, "hello\n").unwrap();
-    let tag = node.state.window(w).unwrap().tag;
-    let old = node.state.buffer(tag).unwrap().text.to_string();
-    node.set_content(&mut log, tag, &format!("notes.txt{old}")).unwrap();
-    // winsettag leaves the typed name alone
-    node.update_tags(&mut log).unwrap();
-    assert!(node.state.buffer(tag).unwrap().text.to_string().starts_with("notes.txt "), "{}", node.state.buffer(tag).unwrap().text.to_string());
-    assert_eq!(node.window_name(w), "");
-    // a click in the tag commits it
-    node.commit_tag(&mut log, w).unwrap();
-    assert_eq!(node.window_name(w), "notes.txt");
+    assert_eq!(node.window_path(w), "");
+    // renamed (as the path's field does, on a double-click in it)
+    apex_server::perform(&mut node, &mut log, vec![Proposal::SetPath { window: w, path: "notes.txt".into() }]);
+    assert_eq!(node.window_path(w), "notes.txt");
     // Put writes it where the window is, and the name becomes absolute
     node.exec(&mut log, ExecCtx::Window(w), "Put").unwrap();
     poll(&mut server, &mut log, &mut node);
     let path = dir.join("notes.txt");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello\n");
-    assert_eq!(node.window_name(w), path.display().to_string());
+    assert_eq!(node.window_path(w), path.display().to_string());
     assert!(!node.state.buffer(b).unwrap().dirty());
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -742,12 +735,12 @@ fn newweb_opens_a_web_window_whose_name_follows_the_page() {
     node.exec(&mut log, ExecCtx::Top, "Newweb https://example.com/").unwrap();
     poll(&mut server, &mut log, &mut node);
     let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
-    assert_eq!(node.window_name(w), "https://example.com/");
+    assert_eq!(node.window_path(w), "https://example.com/");
     assert_eq!(node.window_kind(w), WinKind::Web);
     assert!(node.state.window(w).unwrap().body_buffer().is_none());
     // the page goes somewhere: the name follows, the place left is behind us
     apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::WebNavigate { window: w, url: "https://example.com/two".into() }]);
-    assert_eq!(node.window_name(w), "https://example.com/two");
+    assert_eq!(node.window_path(w), "https://example.com/two");
     let back = node.state.layout.nav_back.last().cloned().expect("a place to go back to");
     assert_eq!(back.name, "https://example.com/");
     // the same URL again is no move
@@ -767,12 +760,14 @@ fn newweb_opens_a_web_window_whose_name_follows_the_page() {
 #[test]
 fn html_windows_are_text_shown_as_a_page() {
     let (mut log, mut node, col, _server, _rx) = session();
-    let w = apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::OpenHtml { col, name: "/tmp/x/+web".into(), text: "<h1>hi</h1>".into() }]).expect("a window");
+    let w = apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::OpenHtml { col, path: "/tmp/x/".into(), text: "<h1>hi</h1>".into(), label: Some("web".into()) }]).expect("a window");
     let win = node.state.window(w).unwrap();
     let Body::Html(b) = win.body else { panic!("{:?}", win.body) };
     assert_eq!(win.body_buffer(), Some(b));
-    assert_eq!(node.window_name(w), "/tmp/x/+web");
-    assert_eq!(node.window_kind(w), WinKind::Web);
+    assert_eq!(node.window_path(w), "/tmp/x/");
+    assert_eq!(node.window_label(w).as_deref(), Some("web"));
+    assert_eq!(node.window_kind(w), WinKind::Preview);
+    assert!(node.window_scratch(w));
     assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "<h1>hi</h1>");
     // its text is edited as any buffer's: the page follows the version
     let version = node.state.buffer(b).unwrap().version;
@@ -790,20 +785,17 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     // typed after the word: a URL as it is
     node.exec(&mut log, ExecCtx::Top, "Web https://example.com/").unwrap();
     let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
-    assert_eq!(node.window_name(w), "https://example.com/");
-    assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().contains(" Back Fwd Get "));
-    // and winsettag keeps them there
-    node.update_tags(&mut log).unwrap();
-    assert!(node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string().starts_with("https://example.com/ Del Snarf Back Fwd Get |"));
+    assert_eq!(node.window_path(w), "https://example.com/");
+    assert_eq!(node.window_verbs(w), vec!["Del", "Snarf", "Back", "Fwd", "Get"]);
     // selected in a text window: a file:// URL and a bare path are the host's files
     let t = node.new_window(&mut log, col, "/tmp/here/notes.txt", "see file:///tmp/a.html and also doc.html\n").unwrap();
     node.select(&mut log, ViewId::Body(t), 4, 22).unwrap();
     node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_name(w.id)).collect();
+    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_path(w.id)).collect();
     assert!(names.contains(&"apexfile:///tmp/a.html".to_string()), "{names:?}");
     node.select(&mut log, ViewId::Body(t), 32, 40).unwrap();
     node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_name(w.id)).collect();
+    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_path(w.id)).collect();
     assert!(names.contains(&"apexfile:///tmp/here/doc.html".to_string()), "{names:?}");
     assert_eq!(apex_core::node::web_url("file://localhost/x/y", "/d"), "apexfile:///x/y");
     assert_eq!(apex_core::node::web_url("/abs/p", "/d"), "apexfile:///abs/p");
@@ -812,13 +804,13 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     node.select(&mut log, ViewId::Body(t), 0, 0).unwrap();
     let before = node.state.windows.values().filter(|w| w.body == Body::Web).count();
     node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let blank: Vec<WindowId> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| w.id).filter(|&w| node.window_name(w).is_empty()).collect();
+    let blank: Vec<WindowId> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| w.id).filter(|&w| node.window_path(w).is_empty()).collect();
     assert_eq!(node.state.windows.values().filter(|w| w.body == Body::Web).count(), before + 1);
     assert_eq!(blank.len(), 1);
     // going somewhere from it leaves nothing to come back to
     let back = node.state.layout.nav_back.len();
     node.web_navigate(&mut log, blank[0], "https://example.org/").unwrap();
-    assert_eq!(node.window_name(blank[0]), "https://example.org/");
+    assert_eq!(node.window_path(blank[0]), "https://example.org/");
     assert_eq!(node.state.layout.nav_back.len(), back);
     assert!(apex_core::node::TOP_TAG.contains(" Web "));
 }
@@ -850,17 +842,17 @@ fn a_terminal_publishes_only_what_changed() {
 }
 
 #[test]
-fn a_terminals_name_is_the_reported_directory_and_the_title() {
-    use apex_server::term::compose_name;
+fn a_terminals_path_is_the_reported_directory_and_its_label_the_title() {
+    use apex_server::term::place;
     let d = std::path::Path::new("/here");
-    assert_eq!(compose_name(None, None, d, "host"), "/here/-host");
-    // a title before any directory is reported: where the terminal started,
-    // then the title, made into one word (a name is a word, and the bar
-    // after it in the tag is apex's)
-    assert_eq!(compose_name(None, Some("my title here"), d, "host"), "/here/-my␣title␣here");
-    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar/")), Some("my title here"), d, "host"), "/foo/bar/-my␣title␣here");
-    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), Some("renaming... \u{2839} | proj"), d, "host"), "/foo/bar/-renaming...\u{2423}\u{2839}\u{2423}proj");
-    assert_eq!(compose_name(Some(std::path::Path::new("/foo/bar")), None, d, "host"), "/foo/bar/-host");
+    let at = |cwd: Option<&str>, title: Option<&str>| place(cwd.map(std::path::Path::new), title, d, "host");
+    assert_eq!(at(None, None), ("/here/".to_string(), "host".to_string()));
+    // a title before any directory is reported: where the terminal
+    // started, and the title as the label, blanks and all
+    assert_eq!(at(None, Some("my title here")), ("/here/".to_string(), "my title here".to_string()));
+    assert_eq!(at(Some("/foo/bar/"), Some("my title here")), ("/foo/bar/".to_string(), "my title here".to_string()));
+    assert_eq!(at(Some("/foo/bar"), Some("renaming... \u{2839} | proj")).1, "renaming... \u{2839} | proj");
+    assert_eq!(at(Some("/foo/bar"), None), ("/foo/bar/".to_string(), "host".to_string()));
 }
 
 #[test]
@@ -959,7 +951,7 @@ fn clear_drops_a_terminals_scrollback_and_keeps_its_screen() {
     prompt(&mut log, &mut node, &mut server, &mut rx, t);
     let w = node.state.windows.values().find(|x| x.body == Body::Term(t)).map(|x| x.id).expect("its window");
     // the verb is offered in a terminal, by the server's rule
-    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_name(w), node.window_kind(w), Some(w), None).contains(&"Clear".to_string()));
+    assert!(apex_core::plumb::verbs_for(&node.state.meta.rules, &node.window_path(w), node.window_kind(w), Some(w), None).contains(&"Clear".to_string()));
     for c in "for i in $(seq 1 100); do echo line-$i; done\r".chars() {
         server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
     }
@@ -1152,7 +1144,7 @@ fn put_in_an_autoindent_window_trims_blanks_and_one_undo_brings_them_back() {
 #[test]
 fn look_in_a_pages_tag_is_found_in_the_page() {
     let (mut log, mut node, col, _server, _rx) = session();
-    let page = perform(&mut node, &mut log, vec![Proposal::OpenHtml { col, name: "/tmp/page+Preview".into(), text: "<p>foo bar foo</p>".into() }]).expect("a page");
+    let page = perform(&mut node, &mut log, vec![Proposal::OpenHtml { col, path: "/tmp/page".into(), text: "<p>foo bar foo</p>".into(), label: None }]).expect("a page");
     // Look foo in its tag: for the client to find in the page's view, not
     // searched for in the HTML the window holds
     node.exec(&mut log, ExecCtx::Window(page), "Look foo").unwrap();

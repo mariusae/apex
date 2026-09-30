@@ -29,7 +29,6 @@ use std::process::{Command, Stdio};
 
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
 
-use apex_core::node::ERRORS;
 use apex_core::state::ExecStatus;
 use apex_core::plumb::{expand, Bindings};
 use apex_core::*;
@@ -216,9 +215,9 @@ impl Server {
                     return self.cwd.clone(); // a page has no directory here
                 }
             }
-            let name = leader.window_name(w);
+            let name = leader.window_path(w);
             let p = Path::new(&name);
-            if name.ends_with('/') && p.is_dir() {
+            if matches!(leader.window_kind(w), WinKind::Dir | WinKind::Errors) && p.is_dir() {
                 return p.to_path_buf();
             }
             if let Some(parent) = p.parent() {
@@ -232,7 +231,8 @@ impl Server {
 
     // ---- files -------------------------------------------------------------
 
-    /// Read a file or directory listing; returns (display name, text).
+    /// Read a file or directory listing; returns (display name, text) --
+    /// a directory's name with its slash.
     pub fn read_path(&self, path: &Path) -> std::io::Result<(String, String)> {
         let meta = std::fs::metadata(path)?;
         if meta.is_dir() {
@@ -264,22 +264,28 @@ impl Server {
         let path = resolve(dir, name);
         let (display, text) = self.read_path(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let hash = Text::new(&text).content_hash();
-        Ok(Proposal::OpenWindow { col, from, name: display, text, hash, select_line })
+        let kind = if path.is_dir() { WinKind::Dir } else { WinKind::File };
+        Ok(Proposal::OpenWindow { col, from, name: display, kind, text, hash, select_line })
     }
 
     fn put(&mut self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {
         let b = view.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("Put: not a text window")?;
         let buf = view.state.buffer(b).map_err(|e| e.to_string())?;
         let (buf_name, text, version) = (buf.name.clone(), buf.text.to_string(), buf.version);
+        // a scratch window (errors, a preview, a transcript) or a
+        // directory has no file to be written to, unless one is named
+        if arg.is_none() && (buf.scratch || buf.kind != WinKind::File) {
+            return Err("Put: no file name".into());
+        }
         let dir = self.dir_of(view, ExecCtx::Window(w));
-        // a name typed into the tag may be relative: it is resolved where
-        // the window is, and the buffer takes the absolute name
+        // a name given (or renamed to) may be relative: it is resolved
+        // where the window is, and the buffer takes the absolute name
         let name = match arg {
             Some(a) => resolve(&dir, a).to_string_lossy().to_string(),
-            None if !buf_name.is_empty() && !buf_name.starts_with('/') && !buf_name.starts_with('+') => resolve(&dir, &buf_name).to_string_lossy().to_string(),
+            None if !buf_name.is_empty() && !buf_name.starts_with('/') => resolve(&dir, &buf_name).to_string_lossy().to_string(),
             None => buf_name.clone(),
         };
-        if name.is_empty() || name.starts_with('+') || name.ends_with('/') {
+        if name.is_empty() || name.ends_with('/') {
             return Err("Put: no file name".into());
         }
         let renamed = name != buf_name;
@@ -298,7 +304,7 @@ impl Server {
         self.watches.written.insert(PathBuf::from(&name), hash.clone());
         let mut out = Vec::new();
         if renamed {
-            out.push(Proposal::Rename { buffer: b, window: w, name });
+            out.push(Proposal::SetPath { window: w, path: name });
         }
         out.push(if runs.is_empty() { Proposal::Clean { buffer: b, version, hash: Some(hash) } } else { Proposal::PutTrimmed { buffer: b, version, runs, hash } });
         Ok(out)
@@ -329,11 +335,11 @@ impl Server {
         // the shell starts once the window is there (`spawn_pending`),
         // with the window's id in its environment as acme's win has
         self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24, scrollback });
-        // win's name: the directory, then `-` and the host (`awd` keeps it
-        // so), or the command
+        // win's naming: the directory, and the host (`awd` keeps it so)
+        // or the command as the label
         let label = cmd.map(command_name).filter(|n| !n.is_empty()).unwrap_or_else(term::sysname);
-        let name = format!("{}/-{}", dir.display().to_string().trim_end_matches('/'), label);
-        Ok(Proposal::TermWindow { col, name, term: id })
+        let (dir, label) = term::place(None, None, dir, &label);
+        Ok(Proposal::TermWindow { col, dir, label: Some(label), term: id })
     }
 
     /// Start the shells of terminals whose windows have appeared, with
@@ -554,7 +560,7 @@ impl Server {
             }
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
-                let was = h.window_name();
+                let was = h.window_place();
                 match ev {
                     // the screen changed; the publish below carries it
                     TermEvent::Wakeup | TermEvent::Bell => {}
@@ -643,10 +649,15 @@ impl Server {
                         }
                     }
                 }
-                let now = h.window_name();
+                let now = h.window_place();
                 if now != was {
                     if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                        props.push(Proposal::TermName { window: w, name: now });
+                        if now.0 != was.0 {
+                            props.push(Proposal::SetPath { window: w, path: now.0 });
+                        }
+                        if now.1 != was.1 {
+                            props.push(Proposal::SetLabel { window: w, label: Some(now.1) });
+                        }
                     }
                 }
                 self.publish_term(log, id);
@@ -702,12 +713,12 @@ impl Server {
             .state
             .buffers
             .values()
-            .filter(|b| !b.name.is_empty() && !b.name.starts_with('+') && !b.name.ends_with('/') && b.name.starts_with('/'))
+            .filter(|b| b.kind == WinKind::File && !b.scratch && b.name.starts_with('/'))
             .map(|b| PathBuf::from(&b.name))
             .collect();
         files.extend(self.subscribed.iter().cloned());
         // directory windows: the directory itself, for its entries
-        let dirs: Vec<PathBuf> = view.state.buffers.values().filter(|b| b.name.ends_with('/') && b.name.starts_with('/')).map(|b| PathBuf::from(b.name.trim_end_matches('/'))).filter(|p| !p.as_os_str().is_empty()).collect();
+        let dirs: Vec<PathBuf> = view.state.buffers.values().filter(|b| b.kind == WinKind::Dir && b.name.starts_with('/')).map(|b| PathBuf::from(b.name.trim_end_matches('/'))).filter(|p| !p.as_os_str().is_empty()).collect();
         self.watches.sync(files.iter().map(|p| p.as_path()), dirs.iter().map(|p| p.as_path()));
     }
 
@@ -722,7 +733,7 @@ impl Server {
             if !d.ends_with('/') {
                 d.push('/');
             }
-            if let Some(buf) = view.state.buffers.values().find(|b| b.name == d) {
+            if let Some(buf) = view.state.buffers.values().find(|b| b.kind == WinKind::Dir && b.name == d) {
                 if let Ok((_, listing)) = self.read_path(parent) {
                     props.extend(self.content_changed(buf, listing));
                 }
@@ -733,7 +744,7 @@ impl Server {
 
     fn path_changed(&mut self, view: &Node, path: &Path) -> Vec<Proposal> {
         let name = path.to_string_lossy().to_string();
-        let Some(buf) = view.state.buffers.values().find(|b| b.name == name) else { return Vec::new() };
+        let Some(buf) = view.state.buffers.values().find(|b| b.name == name && b.kind == WinKind::File && !b.scratch) else { return Vec::new() };
         let Ok(bytes) = std::fs::read(path) else { return Vec::new() };
         let text = String::from_utf8_lossy(&bytes).to_string();
         let hash = Text::new(&text).content_hash();
@@ -944,7 +955,7 @@ impl Server {
                     let dirty = x
                         .body_buffer()
                         .and_then(|b| view.state.buffer(b).ok())
-                        .is_some_and(|b| b.dirty() && !b.name.is_empty() && !b.name.starts_with('+') && !b.name.ends_with('/'));
+                        .is_some_and(|b| b.dirty() && !b.name.is_empty() && b.kind == WinKind::File && !b.scratch);
                     if dirty {
                         props.append(&mut self.put(view, *w, None)?);
                     }
@@ -960,7 +971,7 @@ impl Server {
                 if path.exists() {
                     props.push(self.open_file(col, win, &dir, name, None)?);
                 } else {
-                    props.push(Proposal::NewWindow { col, name: path.to_string_lossy().to_string() });
+                    props.push(Proposal::NewWindow { col, name: path.to_string_lossy().to_string(), label: None, scratch: false });
                 }
             }
             "Newterm" => {
@@ -1279,7 +1290,7 @@ impl Server {
         };
         let dir = req.dir.clone().unwrap_or_else(|| self.dir_of(view, req.ctx));
         let (name, kind) = match win {
-            Some(w) => (view.window_name(w), view.window_kind(w)),
+            Some(w) => (view.window_path(w), view.window_kind(w)),
             None => (String::new(), WinKind::File),
         };
         // acme's expand, here where the files are: from the pointer (a
@@ -1292,7 +1303,7 @@ impl Server {
         if let Some(at) = req.at.filter(|_| req.verb == "plumb") {
             if let Ok(buf) = view.state.buffer(at.buffer) {
                 let (q0, q1) = req.sel.map(|s| (s.q0, s.q1)).unwrap_or((at.q0, at.q0));
-                let is_file = |n: &str| n.is_empty() || view.state.windows.keys().any(|w| view.window_name(*w) == n) || resolve(&dir, n).exists();
+                let is_file = |n: &str| n.is_empty() || view.state.windows.keys().any(|w| view.window_path(*w) == n) || resolve(&dir, n).exists();
                 match apex_core::expand::expand(&buf.text, q0, q1, &is_file) {
                     Some(e) => {
                         req.text = buf.text.slice(e.q0, e.q1);
@@ -1565,7 +1576,7 @@ impl Server {
         let mut words = text.split_whitespace();
         let verb = words.next()?;
         let (name, kind) = match ctx {
-            ExecCtx::Window(w) => (view.window_name(w), view.window_kind(w)),
+            ExecCtx::Window(w) => (view.window_path(w), view.window_kind(w)),
             _ => (String::new(), WinKind::File),
         };
         let cw = match ctx {
@@ -1841,7 +1852,7 @@ pub fn command_env(view: &Node, ctx: ExecCtx) -> Vec<(String, String)> {
     };
     env.push(("winid".into(), w.map(|w| w.0.to_string()).unwrap_or_else(|| "0".into())));
     if let Some(w) = w {
-        let name = view.window_name(w);
+        let name = view.window_path(w);
         if !name.is_empty() {
             env.push(("%".into(), name.clone()));
             env.push(("samfile".into(), name));
@@ -1983,9 +1994,6 @@ impl Drop for Server {
         self.terms.clear();
     }
 }
-
-/// The `+Errors` name, re-exported for clients.
-pub const ERRORS_NAME: &str = ERRORS;
 
 /// This program's binary, as a path to run it by. On Linux, once the
 /// file has been replaced under a running daemon (a newer apex uploaded
