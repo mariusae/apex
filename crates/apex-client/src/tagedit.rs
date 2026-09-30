@@ -54,6 +54,9 @@ const NOTE_H: f32 = 18.;
 /// entries, the "more", the foot, the gaps.
 const PICKER_REST: f32 = 8. + 5. + NOTE_H + NOTE_H + 4. * 2.;
 const PICKER_W: f32 = 420.;
+/// The narrowest it goes to keep its names under the path: past this it
+/// moves left instead.
+const PICKER_MIN_W: f32 = 220.;
 /// How far in from the picker's edge a row's name starts: its border,
 /// its padding, the row's.
 const TEXT_IN: f32 = 1. + 4. + 8.;
@@ -318,7 +321,7 @@ impl Acme {
         let rows = (((bottom - 8. - top - PICKER_REST) / row_h()).floor().max(0.) as usize).clamp(MIN_ROWS, ROWS);
         // its rows' text under the part's (the panel's padding and the
         // row's before it), unless that would take it past the right edge
-        let left = (f32::from(b.left()) - TEXT_IN).min(right - PICKER_W - 8.).max(8.);
+        let left = (f32::from(b.left()) - TEXT_IN).min(right - PICKER_MIN_W - 8.).max(8.);
         let at = point(px(left), px(top));
         self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
@@ -576,7 +579,8 @@ impl Acme {
                         row = row.child(div().flex_1().min_w_0().truncate().child(title.clone())).child(dim(div().id(("kind", i)).flex_none().pl(px(8.)).text_size(px(11.))).child(*kind));
                     }
                     Choice::Entry(name, dir) => {
-                        row = row.child(div().flex_none().child(name.clone()));
+                        // a long name cut short where the picker is narrow
+                        row = row.child(div().flex_shrink(1.).min_w_0().truncate().child(name.clone()));
                         if *dir {
                             let name = name.clone();
                             row = row.child(dim(div().id(("slash", i)).flex_none()).child("/")).child(div().flex_1()).child(
@@ -616,7 +620,6 @@ impl Acme {
             let foot = if p.warned { "Unsaved: ⌥↩ again to replace it" } else { "↩ open  ⌥↩ here  → in  ← up" };
             let panel = div()
                 .id("path-picker")
-                .w(px(PICKER_W))
                 .p(px(4.))
                 .rounded(px(7.))
                 .bg(rgb(t.panel_bg))
@@ -640,7 +643,12 @@ impl Acme {
             // window's edge makes it, and at the top it came down to
             let right = self.node.state.layout.r.x1 as f32 + self.left();
             let typed = self.layouts.get(&ViewId::Tag(p.window)).and_then(|l| l.atom_bounds(Atom::Typed)).map(|b| f32::from(b.left()) - TEXT_IN);
-            let left = typed.unwrap_or(f32::from(p.at.x)).min(right - PICKER_W - 8.).max(8.);
+            // narrower where the window's edge is near, so the names stay
+            // under the path; moved left only past the narrowest
+            let want = typed.unwrap_or(f32::from(p.at.x));
+            let width = (right - 8. - want).clamp(PICKER_MIN_W, PICKER_W);
+            let left = want.min(right - 8. - width).max(8.);
+            let panel = panel.w(px(width));
             out.push(deferred(anchored().position(point(px(left), p.at.y)).child(panel)).with_priority(2).into_any_element());
         }
         out
