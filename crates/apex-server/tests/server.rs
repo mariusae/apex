@@ -297,6 +297,10 @@ fn newterm_runs_a_shell() {
     server.close_orphan_terms(&mut log, &node);
     assert!(node.state.terms.contains_key(&t));
     prompt(&mut log, &mut node, &mut server, &mut rx, t);
+    // its shell is one of the session's processes, run from its window
+    node.catch_up(&log).unwrap();
+    let shell = node.state.meta.procs.iter().find(|p| p.kind == ProcKind::Term).cloned().expect("the shell's record");
+    assert!(shell.running() && shell.origin == ExecCtx::Window(w) && shell.pid > 0, "{shell:?}");
     // type a command into the shell and see its output in the grid
     for c in "echo apex-term-$((6*7))\r".chars() {
         server.term_key(&mut log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
@@ -311,6 +315,9 @@ fn newterm_runs_a_shell() {
     assert!(!node.state.windows.contains_key(&w));
     node.catch_up(&log).unwrap();
     assert!(!node.state.terms.contains_key(&t));
+    // and its shell, hung up, has ended
+    let ended = node.state.meta.procs.iter().find(|p| p.id == shell.id).and_then(|p| p.exit.clone());
+    assert_eq!(ended.map(|e| e.0), Some("hangup".to_string()));
 }
 
 #[test]

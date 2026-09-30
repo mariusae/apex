@@ -468,6 +468,9 @@ pub enum ProcKind {
     Script,
     /// A program the server did not start that said what it is.
     Adopted,
+    /// A terminal's shell (or the command it was made to run): its
+    /// window is where it is seen.
+    Term,
 }
 
 /// Where a process's output goes.

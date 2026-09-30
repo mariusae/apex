@@ -364,6 +364,7 @@ impl Server {
             match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback) {
                 Ok(mut host) => {
                     host.set_colors(&self.term_colors);
+                    self.procs.push(MetaOp::ProcStart { pid: host.pid, name: host.name.clone(), cmd: host.cmd.clone(), dir: host.dir.display().to_string(), origin: ExecCtx::Window(w), kind: ProcKind::Term, out: ProcOut::None, started: host.started });
                     if (p.cols, p.rows) != (80, 24) {
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Resize { cols: p.cols, rows: p.rows }));
                     }
@@ -376,6 +377,7 @@ impl Server {
                 }
             }
         }
+        self.flush_procs(log);
     }
 
     /// What programs in terminals put on the clipboard (OSC 52) since
@@ -515,7 +517,11 @@ impl Server {
 
     /// Kill a terminal (its window was deleted).
     pub fn close_term(&mut self, log: &mut Log, id: TermId) {
-        self.terms.remove(&id);
+        // its window gone: the shell is hung up, and ends with it
+        if let Some(h) = self.terms.remove(&id).filter(|h| !h.exited) {
+            self.procs.push(MetaOp::ProcExit { pid: h.pid, status: "hangup".into(), ended: now_secs() });
+            self.flush_procs(log);
+        }
         let _ = self.node.delete_shard(log, Shard::Term(id));
     }
 
@@ -599,6 +605,7 @@ impl Server {
                     }
                     TermEvent::Exit(status) => {
                         h.exited = true;
+                        self.procs.push(MetaOp::ProcExit { pid: h.pid, status: if status == 0 { String::new() } else { status.to_string() }, ended: now_secs() });
                         // a program that said it was at work and then
                         // ended is at work no longer, whatever it said
                         if std::mem::take(&mut h.working) {
@@ -1741,6 +1748,37 @@ fn proc_out(m: &ShellMode) -> ProcOut {
     match m {
         ShellMode::Errors { dir } => ProcOut::Errors { dir: dir.clone() },
         ShellMode::Replace { buffer, .. } => ProcOut::Buffer(*buffer),
+    }
+}
+
+/// A time (seconds since the epoch) as the clock here says it: `14:03:12`,
+/// and the day before it when that is not today (`Sep 29 14:03:12`).
+pub fn local_time(secs: u64) -> String {
+    let at = |s: u64| {
+        let t = s as libc::time_t;
+        // SAFETY: tm is a plain struct localtime_r fills in
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        let ok = !unsafe { libc::localtime_r(&t, &mut tm) }.is_null();
+        ok.then_some(tm)
+    };
+    let (Some(tm), Some(now)) = (at(secs), at(now_secs())) else { return String::new() };
+    let hms = format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    if (tm.tm_year, tm.tm_yday) == (now.tm_year, now.tm_yday) {
+        return hms;
+    }
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    format!("{} {} {hms}", MONTHS[tm.tm_mon.clamp(0, 11) as usize], tm.tm_mday)
+}
+
+/// How long ago a time (seconds since the epoch) was: `12s`, `4m`, `2h05m`.
+pub fn ago(secs: u64) -> String {
+    let d = now_secs().saturating_sub(secs);
+    if d < 60 {
+        format!("{d}s")
+    } else if d < 3600 {
+        format!("{}m", d / 60)
+    } else {
+        format!("{}h{:02}m", d / 3600, (d % 3600) / 60)
     }
 }
 

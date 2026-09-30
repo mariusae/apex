@@ -272,13 +272,15 @@ JSON object per line: the shard, its sequence number, the attachment that
 appended it, and the operation. It runs until the connection ends. This
 is acme's event file, generalised: a tool that wants to follow edits,
 selections, or windows reads this." },
-    Cmd { name: "ps", usage: "apex ps", short: "the commands the session is running", flags: &[], run: ps, long: "\
-Ps lists the commands the session's server is running: what B2 started
-from a tag (shell commands, Win, the profile and attach scripts, tools
-started from them), as the session's tag shows them. One per line: the pid,
-the name (the first word, what Kill and apex kill go by), where it was
-started from (a window id, or top), when, its directory, and the whole
-command line. Terminals' shells are listed too while they run, named
+    Cmd { name: "ps", usage: "apex ps [-a]", short: "the processes the session is running", flags: &[switch("a", "the last few that ended too, and how each is")], run: ps, long: "\
+Ps lists the processes the session is running, as its record has them
+(what the session's tag shows as pills): what B2 started from a tag
+(shell commands, Win, the profile and attach scripts, tools started
+from them). One per line: the pid, the name (the first word, what Kill
+and apex kill go by), where it was started from (a window id, or top),
+when, its directory, and the whole command line. With -a the last few
+that ended are listed too, and a last field says how each is: running,
+done, exit N, signal N or hangup, and when it ended. Terminals' shells are listed too while they run, named
 after the shell (or the command Newterm was given). A program may say
 what it is called (apex tool lsp is lsp, not apex); one the server did
 not start is listed for as long as it stays connected." },
@@ -885,23 +887,43 @@ fn stop(ctx: &Ctx, _: &Parsed) -> R {
     apex_server::remote::stop_any(&ctx.socket).map_err(|e| format!("{}: {e}", ctx.socket.display()))
 }
 
-fn print_procs(procs: &[apex_server::Running]) {
-    for r in procs {
-        let from = match r.ctx {
-            ExecCtx::Window(w) => w.0.to_string(),
-            ExecCtx::Column(c) => format!("col {c}"),
-            ExecCtx::Top => "top".into(),
-        };
-        let started = std::time::UNIX_EPOCH + Duration::from_secs(r.started);
-        let ago = std::time::SystemTime::now().duration_since(started).map(|d| d.as_secs()).unwrap_or(0);
-        let when = if ago < 60 { format!("{ago}s ago") } else if ago < 3600 { format!("{}m ago", ago / 60) } else { format!("{}h{:02}m ago", ago / 3600, (ago % 3600) / 60) };
-        println!("{}\t{}\t{from}\t{when}\t{}\t{}", r.pid, r.name, r.dir, r.cmd);
+/// A process as ps prints it: its pid, name, where it was run from,
+/// when it started, its directory and command line -- and with `status`
+/// how it is now (running, or how it ended).
+fn print_proc(pid: u32, name: &str, ctx: ExecCtx, started: u64, dir: &str, cmd: &str, status: Option<String>) {
+    let from = match ctx {
+        ExecCtx::Window(w) => w.0.to_string(),
+        ExecCtx::Column(c) => format!("col {c}"),
+        ExecCtx::Top => "top".into(),
+    };
+    let when = format!("{} ago", apex_server::ago(started));
+    match status {
+        Some(st) => println!("{pid}\t{name}\t{from}\t{when}\t{dir}\t{cmd}\t{st}"),
+        None => println!("{pid}\t{name}\t{from}\t{when}\t{dir}\t{cmd}"),
     }
 }
 
-fn ps(ctx: &Ctx, _: &Parsed) -> R {
-    let mut c = tool(ctx)?;
-    print_procs(&c.ps(TIMEOUT)?);
+fn print_procs(procs: &[apex_server::Running]) {
+    for r in procs {
+        print_proc(r.pid, &r.name, r.ctx, r.started, &r.dir, &r.cmd, None);
+    }
+}
+
+/// `apex ps [-a]`: the session's processes as its record has them
+/// (`Meta::procs`), oldest first; with -a the last few that ended too,
+/// and how each is.
+fn ps(ctx: &Ctx, p: &Parsed) -> R {
+    let c = tool(ctx)?;
+    let all = p.is("a");
+    for r in c.node.state.meta.procs.iter().filter(|r| all || r.running()) {
+        let status = all.then(|| match &r.exit {
+            None => "running".to_string(),
+            Some((st, at)) if st.is_empty() => format!("done {} ago", apex_server::ago(*at)),
+            Some((st, at)) if st.starts_with("signal") || st == "hangup" => format!("{st} {} ago", apex_server::ago(*at)),
+            Some((st, at)) => format!("exit {st} {} ago", apex_server::ago(*at)),
+        });
+        print_proc(r.pid, &r.name, r.origin, r.started, &r.dir, &r.cmd, status);
+    }
     Ok(())
 }
 
@@ -910,7 +932,7 @@ fn kill(ctx: &Ctx, p: &Parsed) -> R {
         return Err("usage".into());
     }
     let mut c = tool(ctx)?;
-    let before = c.ps(TIMEOUT)?;
+    let before: Vec<_> = c.node.state.meta.procs.iter().filter(|r| r.running()).cloned().collect();
     let known = |t: &String| before.iter().any(|r| r.name == *t || r.pid.to_string() == *t);
     if let Some(t) = p.args.iter().find(|t| !known(t)) {
         return Err(format!("{t}: no such command; apex ps lists them"));
