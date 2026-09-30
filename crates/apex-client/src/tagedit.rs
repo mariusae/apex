@@ -38,6 +38,15 @@ const DOUBLE: Duration = Duration::from_millis(250);
 /// The picker's rows at once.
 const ROWS: usize = 12;
 
+/// The picker's parts' heights, fixed, so its tallest is known when it
+/// comes down and it can be put where that fits (`PICKER_H`), to stay.
+const ROW_H: f32 = 24.;
+const FIELD_H: f32 = 30.;
+const NOTE_H: f32 = 18.;
+/// The tallest the picker is: padding, the field, a full list with its
+/// line between windows and entries and its "more", the foot, the gaps.
+const PICKER_H: f32 = 8. + FIELD_H + ROWS as f32 * ROW_H + 5. + NOTE_H + NOTE_H + 4. * 2.;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Part {
     Path,
@@ -73,7 +82,9 @@ pub struct Picker {
     /// The folder's entries (a folder's with `true`), once the host said.
     pub names: Option<Result<Vec<(String, bool)>, String>>,
     pub cursor: usize,
-    /// Where it hangs from: the foot of the part clicked.
+    /// Where its top left is: under the part clicked when it fits there at
+    /// its tallest, else as high as it must be to -- decided once, so it
+    /// does not move as the list grows and shrinks.
     pub at: Point<Pixels>,
     pub caret_since: Instant,
     /// The entry to start on: the one the path goes through.
@@ -288,7 +299,11 @@ impl Acme {
         let Some(b) = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_bounds(atom)) else { return };
         self.tag_edit = None;
         let windows = self.associated(&dir, w);
-        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at: point(b.left(), b.bottom()), caret_since: Instant::now(), current, warned: false });
+        let bottom = self.node.state.layout.r.y1 as f32 + self.top();
+        let below = f32::from(b.bottom()) + 2.;
+        let top = if below + PICKER_H + 8. <= bottom { below } else { (bottom - PICKER_H - 8.).max(8.) };
+        let at = point(b.left() - px(6.), px(top));
+        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
         // blinking while it is up
         cx.spawn(async move |this, cx| loop {
@@ -515,19 +530,21 @@ impl Acme {
             let cursor = p.cursor.min(picks.len().saturating_sub(1));
             let first = cursor.saturating_sub(ROWS - 1).min(picks.len().saturating_sub(ROWS));
             let mut list = div().flex().flex_col();
-            let note = |text: String| div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child(text);
+            let note = |text: String| div().flex_none().h(px(ROW_H)).flex().items_center().px(px(8.)).text_color(rgb(t.panel_dim)).child(text);
             let windows = picks.iter().filter(|c| matches!(c, Choice::Window(..))).count();
             for (i, choice) in picks.iter().enumerate().skip(first).take(ROWS) {
                 let picked = i == cursor;
                 // a line between the windows and the entries
                 if i == windows && windows > 0 {
-                    list = list.child(div().mx(px(8.)).my(px(2.)).h(px(1.)).bg(rgb(t.panel_border)));
+                    list = list.child(div().flex_none().mx(px(8.)).my(px(2.)).h(px(1.)).bg(rgb(t.panel_border)));
                 }
                 let dim = |d: gpui::Stateful<gpui::Div>| d.when(!picked, |d| d.text_color(rgb(t.panel_dim)));
                 let mut row = div()
                     .id(("pick", i))
+                    .flex_none()
+                    .h(px(ROW_H))
+                    .items_center()
                     .px(px(8.))
-                    .py(px(2.))
                     .rounded(px(4.))
                     .flex()
                     .flex_row()
@@ -570,7 +587,7 @@ impl Acme {
                 ));
             }
             if picks.len() > first + ROWS {
-                list = list.child(div().px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - ROWS)));
+                list = list.child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - ROWS)));
             }
             match &p.names {
                 None => list = list.child(note("…".into())),
@@ -597,9 +614,10 @@ impl Acme {
                 // the folder's whole path, and what is typed as its next part
                 .child(
                     div()
+                        .flex_none()
+                        .h(px(FIELD_H))
                         .mx(px(4.))
                         .px(px(4.))
-                        .py(px(2.))
                         .rounded(px(4.))
                         .border_1()
                         .border_color(rgb(t.panel_border))
@@ -611,9 +629,9 @@ impl Acme {
                         .child(div().flex_1().min_w(px(60.)).child(crate::field::field_view(&p.filter, caret_on(p.caret_since), "", true))),
                 )
                 .child(list)
-                .child(div().px(px(8.)).pt(px(2.)).text_size(px(11.)).text_color(rgb(if p.warned { t.accent } else { t.panel_dim })).child(foot))
+                .child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(if p.warned { t.accent } else { t.panel_dim })).child(foot))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-            out.push(deferred(anchored().position(point(p.at.x - px(6.), p.at.y + px(2.))).child(panel)).with_priority(2).into_any_element());
+            out.push(deferred(anchored().position(p.at).child(panel)).with_priority(2).into_any_element());
         }
         out
     }
