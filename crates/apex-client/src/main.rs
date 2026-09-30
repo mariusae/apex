@@ -97,6 +97,10 @@ impl Render for Acme {
         if self.completion_anchor() {
             cx.notify();
         }
+        // and the path's picker: under what is typed in the tag
+        if self.picker_anchor() {
+            cx.notify();
+        }
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();

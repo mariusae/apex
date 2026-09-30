@@ -103,6 +103,9 @@ pub struct Picker {
     pub at: Point<Pixels>,
     /// The rows it shows at once: as many as fit under the path.
     pub rows: usize,
+    /// Where what is typed starts in the tag, as the last frame laid it
+    /// out (`picker_anchor`): the names go under it.
+    pub typed_x: Option<f32>,
     pub caret_since: Instant,
     /// The entry to start on: the one the path goes through.
     pub current: Option<String>,
@@ -323,7 +326,7 @@ impl Acme {
         // row's before it), unless that would take it past the right edge
         let left = (f32::from(b.left()) - TEXT_IN).min(right - PICKER_MIN_W - 8.).max(8.);
         let at = point(px(left), px(top));
-        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, caret_since: Instant::now(), current, warned: false });
+        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, typed_x: None, caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
         // blinking while it is up
         cx.spawn(async move |this, cx| loop {
@@ -511,6 +514,21 @@ impl Acme {
         self.list_folder(w, &up);
     }
 
+    /// Where what is typed starts in the picker's tag, taken from the last
+    /// frame's layouts before a frame clears them to lay them out anew.
+    /// True when it moved (a folder gone into, or out of): the next frame
+    /// puts the picker under it.
+    pub fn picker_anchor(&mut self) -> bool {
+        let Some(w) = self.picker.as_ref().map(|p| p.window) else { return false };
+        let x = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_bounds(Atom::Typed)).map(|b| f32::from(b.left()));
+        let Some(p) = self.picker.as_mut() else { return false };
+        if x.is_some() && x != p.typed_x {
+            p.typed_x = x;
+            return true;
+        }
+        false
+    }
+
     /// The field over the path or label, and the picker under the path.
     pub fn tag_overlays(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut out = Vec::new();
@@ -642,7 +660,7 @@ impl Acme {
             // (a folder gone into, or up out of); as far left as the
             // window's edge makes it, and at the top it came down to
             let right = self.node.state.layout.r.x1 as f32 + self.left();
-            let typed = self.layouts.get(&ViewId::Tag(p.window)).and_then(|l| l.atom_bounds(Atom::Typed)).map(|b| f32::from(b.left()) - TEXT_IN);
+            let typed = p.typed_x.map(|x| x - TEXT_IN);
             // narrower where the window's edge is near, so the names stay
             // under the path; moved left only past the narrowest
             let want = typed.unwrap_or(f32::from(p.at.x));
@@ -672,6 +690,7 @@ mod tests {
             cursor: 0,
             at: gpui::point(gpui::px(0.), gpui::px(0.)),
             rows: super::ROWS,
+            typed_x: None,
             caret_since: std::time::Instant::now(),
             current: None,
             warned: false,
