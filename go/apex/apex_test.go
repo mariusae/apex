@@ -45,6 +45,13 @@ func TestAgainstASession(t *testing.T) {
 	if tag, err := w.Tag(); err != nil || strings.TrimSpace(tag) != "Shout" {
 		t.Fatalf("tag: %q, %v", tag, err)
 	}
+	// its path and label are its own, beside the tag
+	if err := w.SetLabel("shouter"); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := w.Info(); err != nil || info.ID != w.ID || info.Path != "/tmp/gotest-window" || info.Label == nil || *info.Label != "shouter" || info.Kind != "file" {
+		t.Fatalf("info: %+v, %v", info, err)
+	}
 	got := make(chan Plumb, 1)
 	if _, err := tool.Offer(Rule{Verb: "Shout", Window: w, Unlisted: true}, func(p Plumb) bool {
 		got <- p

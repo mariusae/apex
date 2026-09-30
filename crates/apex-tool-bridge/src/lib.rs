@@ -11,7 +11,7 @@
 //! `{"id": N, "ok": false, "error": "..."}`:
 //!
 //! - `windows` → `windows: [{id, path, label, kind, scratch, live}]`;
-//!   `window {window}` → the same for one. A window's path is where it
+//!   `window {window}` → `window: {...}`, the same for one. A window's path is where it
 //!   is (a file's or directory's, the directory an errors window is for,
 //!   the file a preview shows, a terminal's directory, a page's address),
 //!   its label a name beside it (a terminal's title, a tool's window's)
@@ -184,8 +184,9 @@ impl Bridge {
                 Ok(json!({ "windows": list }))
             }
             "window" => {
+                // under its own key: the reply's id is the command's
                 let w = self.tool.window(window(v)?).ok_or("no such window")?;
-                Ok(window_json(&w))
+                Ok(json!({ "window": window_json(&w) }))
             }
             "new" => {
                 let path = v["path"].as_str().ok_or("path")?;

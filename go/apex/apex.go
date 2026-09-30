@@ -64,6 +64,7 @@ type Tool struct {
 	handlers   map[RuleID]func(Plumb) bool
 	watchers   map[int]func(Edit)
 	onRename   func(*Window, string)
+	onRelabel  func(*Window, *string)
 	onDelete   func(*Window)
 	session    string
 	attachment int
@@ -235,10 +236,17 @@ type Window struct {
 
 // WindowInfo describes a window as Windows lists them.
 type WindowInfo struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
-	// file, dir, term, errors or web.
+	ID int `json:"id"`
+	// Where it is: a file's path, a directory's (with its slash), a
+	// terminal's directory, a URL; empty for a window not yet given one.
+	Path string `json:"path"`
+	// Words beside the path (a terminal's title, a tool's name for its
+	// pane); nil for none.
+	Label *string `json:"label"`
+	// file, dir, term, errors, web or preview.
 	Kind string `json:"kind"`
+	// Never saved and never dirty (an errors window, a tool's pane).
+	Scratch bool `json:"scratch"`
 	// A process is behind it (a shell's, a tool's).
 	Live bool `json:"live"`
 }
@@ -258,24 +266,54 @@ func (t *Tool) Windows() ([]WindowInfo, error) {
 // elsewhere (a plumb, Windows).
 func (t *Tool) Window(id int) *Window { return &Window{ID: id, t: t} }
 
-// New makes a new, empty window with this name in the last column.
-func (t *Tool) New(name string) (*Window, error) {
+// Info describes the window now.
+func (w *Window) Info() (WindowInfo, error) {
+	var r struct {
+		Window WindowInfo `json:"window"`
+	}
+	err := w.t.call("window", map[string]any{"window": w.ID}, &r)
+	return r.Window, err
+}
+
+// New makes a new, empty window for the file at path, in the last
+// column: Put writes it there.
+func (t *Tool) New(path string) (*Window, error) {
+	return t.newWindow(map[string]any{"path": path})
+}
+
+// NewScratch makes a new, empty scratch window at path (a directory, or
+// a file it is about), labelled: the tool's own pane, never saved and
+// never dirty.
+func (t *Tool) NewScratch(path, label string) (*Window, error) {
+	args := map[string]any{"path": path, "scratch": true}
+	if label != "" {
+		args["label"] = label
+	}
+	return t.newWindow(args)
+}
+
+func (t *Tool) newWindow(args map[string]any) (*Window, error) {
 	var r struct {
 		Window int `json:"window"`
 	}
-	if err := t.call("new", map[string]any{"name": name}, &r); err != nil {
+	if err := t.call("new", args, &r); err != nil {
 		return nil, err
 	}
 	return &Window{ID: r.Window, t: t}, nil
 }
 
-// NewPage makes a window showing html as a page, in the last column.
-// Writing to the window rewrites the page.
-func (t *Tool) NewPage(name, html string) (*Window, error) {
+// NewPage makes a window showing html as a page, in the last column, at
+// path (the file or directory it is about; relative links resolve
+// there), labelled. Writing to the window rewrites the page.
+func (t *Tool) NewPage(path, label, html string) (*Window, error) {
+	args := map[string]any{"path": path, "html": html}
+	if label != "" {
+		args["label"] = label
+	}
 	var r struct {
 		Window int `json:"window"`
 	}
-	if err := t.call("page", map[string]any{"name": name, "html": html}, &r); err != nil {
+	if err := t.call("page", args, &r); err != nil {
 		return nil, err
 	}
 	return &Window{ID: r.Window, t: t}, nil
@@ -285,8 +323,8 @@ func (t *Tool) NewPage(name, html string) (*Window, error) {
 // page: side by side, in acme's colours, every file name, line number and
 // line a link that opens the file at that line. The paths in the diff are
 // taken under dir (the bridge's own directory when dir is empty); the
-// page is the window DIR/+Diff, made the first time and written over
-// after that.
+// page is a scratch window at DIR labelled Diff, made the first time and
+// written over after that.
 func (t *Tool) Diff(text, dir string) (*Window, error) {
 	args := map[string]any{"text": text}
 	if dir != "" {
@@ -436,14 +474,24 @@ func (w *Window) Line(n int) (q0, q1 int, err error) {
 	return r.Q0, r.Q1, nil
 }
 
-// Rename gives the window (its buffer) a new name.
-func (w *Window) Rename(name string) error {
-	return w.t.call("rename", map[string]any{"window": w.ID, "name": name}, nil)
+// Rename puts the window somewhere else: a text window's file renamed
+// (nothing is written until Put), a terminal's directory.
+func (w *Window) Rename(path string) error {
+	return w.t.call("rename", map[string]any{"window": w.ID, "path": path}, nil)
 }
 
-// Tag is the user's half of the window's tag: what follows `|`. The
-// words before it are apex's own (Del, Snarf, Undo, Put and the rest),
-// kept up to date by the session.
+// SetLabel gives the window words beside its path; "" takes them away.
+func (w *Window) SetLabel(label string) error {
+	args := map[string]any{"window": w.ID}
+	if label != "" {
+		args["label"] = label
+	}
+	return w.t.call("label", args, nil)
+}
+
+// Tag is the window's tag's text: the user's words. The path, the label
+// and apex's verbs (Del, Snarf, Undo, Put and the rest) are drawn before
+// it from the window's state, and are not in it.
 func (w *Window) Tag() (string, error) {
 	var r struct {
 		Text string `json:"text"`
@@ -454,9 +502,9 @@ func (w *Window) Tag() (string, error) {
 	return r.Text, nil
 }
 
-// SetTag writes that half: one space after the `|`, then text. Nothing
-// that was there is put back, Look included, so a tool furnishing its
-// window's tag says the whole of it ("Look Send"). It is the window
+// SetTag writes it: text, and nothing that was there is put back, Look
+// included, so a tool furnishing its window's tag says the whole of it
+// ("Look Send"). It is the window
 // saying what it is for, and the place for a verb that wants to be
 // clicked without going by way of the tools menu.
 func (w *Window) SetTag(text string) error {
@@ -565,8 +613,14 @@ func (w *Window) Unwatch() error {
 }
 
 // OnRename is told, from Serve, when a window the tool made, opened or
-// watches is renamed (a shell's cd, a Put under a new name).
-func (t *Tool) OnRename(fn func(w *Window, name string)) { t.onRename = fn }
+// watches is somewhere else by someone else's doing (a shell's cd, a Put
+// under a new path, the user's rename); the tool's own Rename is not
+// told.
+func (t *Tool) OnRename(fn func(w *Window, path string)) { t.onRename = fn }
+
+// OnRelabel is told, from Serve, when such a window's label changes by
+// someone else's doing (a terminal's title); nil for none.
+func (t *Tool) OnRelabel(fn func(w *Window, label *string)) { t.onRelabel = fn }
 
 // OnDelete is told, from Serve, when such a window is deleted.
 func (t *Tool) OnDelete(fn func(w *Window)) { t.onDelete = fn }
@@ -777,11 +831,20 @@ func (t *Tool) Serve(ctx context.Context) error {
 		case "renamed":
 			var r struct {
 				Window int    `json:"window"`
-				Name   string `json:"name"`
+				Path   string `json:"path"`
 			}
 			_ = unmarshalAll(ev, &r)
 			if t.onRename != nil {
-				t.onRename(t.Window(r.Window), r.Name)
+				t.onRename(t.Window(r.Window), r.Path)
+			}
+		case "relabeled":
+			var r struct {
+				Window int     `json:"window"`
+				Label  *string `json:"label"`
+			}
+			_ = unmarshalAll(ev, &r)
+			if t.onRelabel != nil {
+				t.onRelabel(t.Window(r.Window), r.Label)
 			}
 		case "deleted":
 			var d struct {
