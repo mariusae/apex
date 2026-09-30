@@ -316,6 +316,10 @@ windows put away out of the tiling, which is the core's
   window's or a preview's kind when it has none); apex's verbs as
   icons, faint until the pointer is on the tag; a hairline. Then the
   user's words, a step stronger: all the tag's text holds.
+- **Processes as pills.** What runs for the session is shown before
+  the top row's text, a pill each: its name and a ×. The × ends it; B1
+  on it goes to its output, B3 to the window it was run from. The
+  sidebar lists them too, under the session's windows.
 - **apex's verbs as icons** (`VERB_ICONS`, `Node::window_verbs`): `Del`
   (×), `Snarf` (copy), `Undo` and `Redo` (curved arrows), `Put` (into
   a tray), `Get` (reload), `Send` (a paper plane), `Back` and `Fwd`

@@ -2016,8 +2016,9 @@ common extension is inserted, otherwise the candidates are listed in
 (`framescroll`); the mouse pulled up as a tag closes under it and pushed
 down as one expands over it (`winresize`); `Kill name` ending every
 running command whose first word is `name` (the server tracks the
-commands it starts); the top row naming each running command at its
-front while it runs, "`name: exit status`" in `+Errors` when one ends
+commands it starts); the session showing each running command while
+it runs (a pill in its tag, *Processes are the session's*), "`name:
+exit status`" in `+Errors` when one ends
 badly (`waitthread`, `runproc`'s naming: the first word without its
 directory, `|sort` for a pipe); `Zerox` refusing directories; newline ignored in
 column and top tags; acme's `+Errors` an errors window (kind `Errors`,
@@ -2511,4 +2512,33 @@ folder and ← back up. Tools and the CLI say the same things
 explicitly: `WindowInfo{path, label, kind, scratch}`, `Tool::rename`,
 `set_label`, `new_scratch(path, label)`; `apex win list` prints each,
 and `apex win rename`, `label` and `tag` set them.
+
+## Processes are the session's
+
+*As built (protocol 39):* what the server runs for a session is a
+record in its metalog, not a word in its top row. acme's `waitthread`
+put a running command's name at the front of the top row and took it
+out when the command ended; apex did the same, editing the top row's
+text on the side, so what ran was known only as a word in a buffer --
+with no identity, no status once it ended, nothing of where it came
+from or where its output went.
+
+- `MetaOp::ProcStart` records a process as it starts: its pid, name
+  (the command's first word, or what it calls itself), command line,
+  directory, where it was run from (a window, a column, the top row),
+  its kind (a command, a script of the session's, a program that
+  announced itself) and where its output goes (a directory's errors
+  window, a buffer's selection). `ProcRename` follows a program naming
+  itself; `ProcExit` records its status (acme's wait message, empty for
+  a clean exit) and when. `Meta::procs` keeps those running and the
+  last few that ended (`PROCS_ENDED`).
+- The server reports a shell command's start with its pid from the
+  thread that runs it, before it can end, on the channel its end comes
+  by; it appends the record as it pumps (`Server::flush_procs`).
+- The top row is the user's text; the client draws the running
+  processes before it as pills (`Head::procs`), each its name and a ×.
+  The × ends it (`Kill` by its pid); B1 on it goes to its output (the
+  errors window, made if its output has not come yet, or the window
+  whose selection it replaces); B3 to the window it was run from. The
+  sidebar lists them under the session's windows, the same three ways.
 

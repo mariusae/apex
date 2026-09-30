@@ -35,6 +35,7 @@ mod toasts;
 mod webbar;
 mod term_element;
 mod pool;
+mod procs;
 mod text_element;
 mod theme;
 mod warp;

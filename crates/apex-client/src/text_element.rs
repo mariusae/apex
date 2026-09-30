@@ -730,6 +730,11 @@ pub enum Atom {
     /// What is typed after a folder while the path's picker is down: the
     /// path being chosen, in the tag itself.
     Typed,
+    /// A running process, in the session's tag (by its id): its name, on
+    /// a pill.
+    Proc(apex_core::Seq),
+    /// ... and the × on its pill that ends it.
+    ProcKill(apex_core::Seq),
 }
 
 /// The head of a window's tag, laid out before its text on its first
@@ -777,6 +782,20 @@ impl Head {
             h.caret = Some(a + typed.char_indices().nth(cursor).map_or(typed.len(), |(i, _)| i));
         }
         h.rest(label, verbs);
+        h
+    }
+
+    /// The session's tag's head: its running processes, each a pill of
+    /// its name and a × (`Atom::Proc`, `Atom::ProcKill`).
+    pub fn procs(procs: &[(apex_core::Seq, String)]) -> Head {
+        let mut h = Head::default();
+        for (id, name) in procs {
+            // the pill's room inside it, as a label's
+            h.push(&format!(" {name}\u{2009}"), Some(Atom::Proc(*id)));
+            let mut cell = [0u8; 4];
+            h.push(ICON_CELL.encode_utf8(&mut cell), Some(Atom::ProcKill(*id)));
+            h.push("  ", None);
+        }
         h
     }
 
@@ -1021,7 +1040,19 @@ fn shape(
         disp.insert_str(0, &h.text);
         map.splice(0..0, std::iter::repeat_n(start, hn));
     }
-    let icon_at: Vec<(usize, usize)> = head.map(|h| h.atoms.iter().filter_map(|&(a, _, x)| if let Atom::Verb(i) = x { Some((a, i)) } else { None }).collect()).unwrap_or_default();
+    let del = VERB_ICONS.iter().position(|(v, _)| *v == "Del").unwrap_or(0);
+    let icon_at: Vec<(usize, usize)> = head
+        .map(|h| {
+            h.atoms
+                .iter()
+                .filter_map(|&(a, _, x)| match x {
+                    Atom::Verb(i) => Some((a, i)),
+                    Atom::ProcKill(_) => Some((a, del)),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let atom_of = |a: usize| head.and_then(|h| h.atoms.iter().find(|&&(p, q, _)| a >= p && a < q)).map(|x| x.2);
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
@@ -1105,14 +1136,14 @@ fn shape(
             black
         } else if a < hn {
             match atom {
-                Some(Atom::Name | Atom::Typed) => black,
+                Some(Atom::Name | Atom::Typed | Atom::Proc(_)) => black,
                 Some(Atom::Verb(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
-                Some(Atom::Dir(_) | Atom::Untitled | Atom::Label) => dimmed,
+                Some(Atom::Dir(_) | Atom::Untitled | Atom::Label | Atom::ProcKill(_)) => dimmed,
             }
         } else {
             tint.map(|t| t.text).unwrap_or(black)
         };
-        let face = if matches!(atom, Some(Atom::Verb(_))) {
+        let face = if matches!(atom, Some(Atom::Verb(_) | Atom::ProcKill(_))) {
             cell_face.clone()
         } else if gap.is_some_and(|(p, q)| a >= p && b <= q) {
             wide.clone()
@@ -1185,7 +1216,11 @@ impl Element for TextElement {
         if kind != Kind::Top && kind != Kind::Top {
             (window.request_layout(style, [], cx), ())
         } else {
-            let text: SharedString = self.acme.read(cx).view_text(self.view).into();
+            // the top row: its processes' pills, then its text
+            let text: SharedString = {
+                let acme = self.acme.read(cx);
+                format!("{}{}", acme.top_head().text, acme.view_text(self.view)).into()
+            };
             let mut fontspec = font_for(false);
             fontspec.line_height = tag_line_height();
             let id = window.request_measured_layout(
@@ -1261,7 +1296,7 @@ impl Element for TextElement {
                 let rest = if src.hovered { rgb(mix(th.text_dim, under, 0.2)) } else { rgb(mix(th.text_dim, under, 0.5)) };
                 // the user's words in a window's tag: a step above apex's
                 let tint = Some(Tint { rest, text: if kind == Kind::WinTag { rgb(th.text_dim) } else { rest }, sel: src.sel });
-                let head = src.head.as_ref().filter(|_| kind == Kind::WinTag);
+                let head = src.head.as_ref().filter(|_| matches!(kind, Kind::WinTag | Kind::Top));
                 while let Some((s, e)) = text.line_range(n) {
                     let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, head.filter(|_| n == 0));
                     wrapped += li.subs.len().max(1);
@@ -1582,6 +1617,19 @@ impl Element for TextElement {
                     }
                 }
 
+                // a process on a pill: its name and its ×
+                for &(a, _, atom) in &line.atoms {
+                    let Atom::Proc(id) = atom else { continue };
+                    let Some(&(_, b, _)) = line.atoms.iter().find(|x| x.2 == Atom::ProcKill(id)) else { continue };
+                    let sub = line.subs.iter().position(|&(ds, de)| a >= ds && a < de).unwrap_or(0);
+                    let (ds, _) = line.subs[sub];
+                    let th = crate::theme::theme();
+                    let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
+                    let tall = (ink(window, &pp.fontspec).1 + px(6.)).min(lh - px(2.));
+                    let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
+                    let r = Bounds::from_corners(point(origin.x + x(a) - x(ds), sy), point(origin.x + x(b) - x(ds) + px(3.), sy + tall));
+                    window.paint_quad(fill(r, rgb(mix(th.text_dim, under, 0.8))).corner_radii(tall / 2.));
+                }
                 // the label on a chip of its own
                 for &(a, b, atom) in &line.atoms {
                     if atom != Atom::Label {
@@ -1793,6 +1841,9 @@ mod head_tests {
         assert_eq!(p.atoms[..3], [(0, 1, Atom::Dir(1)), (1, 3, Atom::Dir(3)), (3, 5, Atom::Typed)]);
         assert_eq!(p.caret, Some(4));
         // the session's errors window: its label alone
+        // the session's processes: a pill each, its name and its ×
+        let p = Head::procs(&[(7, "make".into())]);
+        assert_eq!(p.atoms.iter().map(|x| x.2).collect::<Vec<_>>(), vec![Atom::Proc(7), Atom::ProcKill(7)]);
         let e = Head::build("", Some("Errors"), &["Del"], true, false);
         assert_eq!(e.atoms[0], (0, 8, Atom::Label));
     }

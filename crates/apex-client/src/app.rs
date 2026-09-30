@@ -2680,6 +2680,7 @@ impl Acme {
             kind: Kind::of(view),
             head: match view {
                 ViewId::Tag(w) => Some(self.tag_head(w)),
+                ViewId::Top => Some(self.top_head()),
                 _ => None,
             },
             mono,
@@ -3074,6 +3075,11 @@ impl Acme {
                 window.start_window_move();
                 return;
             }
+        }
+        // a process's pill in the session's tag
+        if let (Target::View(ViewId::Top), Region::Atom(a)) = (target, region) {
+            self.press_proc(a, button, cx);
+            return;
         }
         // the head of a window's tag: its path, label and verbs
         if let (Target::View(ViewId::Tag(w)), Region::Atom(a)) = (target, region) {

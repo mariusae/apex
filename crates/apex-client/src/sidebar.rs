@@ -324,7 +324,86 @@ impl Acme {
                 rows = rows.child(self.window_row(s.slot.window, true, cx));
             }
         }
+        // what runs for the session, as its tag's pills show it
+        let procs = self.running_procs();
+        if !procs.is_empty() {
+            rows = rows.child(
+                div()
+                    .flex_none()
+                    .pl(px(14.))
+                    .pt(px(8.))
+                    .pb(px(2.))
+                    .text_size(px(11.))
+                    .font_weight(crate::fonts::weight(FontWeight::MEDIUM))
+                    .text_color(rgb(t.text_dim))
+                    .child("Processes"),
+            );
+            for p in &procs {
+                rows = rows.child(self.proc_row(p, cx));
+            }
+        }
         rows
+    }
+
+    /// A process's row: live as a terminal's handle is, its name and
+    /// where it runs, and a × that ends it. B1 goes to its output, B3 to
+    /// where it was run from, as its pill's do.
+    fn proc_row(&self, p: &apex_core::state::Proc, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = theme::theme();
+        let hover = theme::step(t.strip, 1);
+        let press = theme::step(t.strip, 2);
+        let id = p.id;
+        let d = crate::text_element::dot(&t, false, false, true, false, false);
+        div()
+            .id(("proc", id))
+            .flex_none()
+            .h(px(WIN_ROW_H))
+            .pl(px(14.))
+            .pr(px(6.))
+            .rounded(px(6.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .cursor_default()
+            .hover(move |s| s.bg(rgb(hover)))
+            .child(dot_element(&d))
+            .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(p.name.clone()))
+            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(tilde(&p.dir)))
+            .child(
+                div()
+                    .id(("proc-kill", id))
+                    .flex_none()
+                    .size(px(18.))
+                    .rounded(px(4.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(13.))
+                    .text_color(rgb(t.text_dim))
+                    .hover(move |s| s.bg(rgb(press)).text_color(rgb(t.text)))
+                    .child("×")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            this.kill_proc(id, cx);
+                            cx.stop_propagation();
+                        }),
+                    ),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    this.proc_output(id, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, _, cx| {
+                    this.proc_origin(id, cx);
+                    cx.stop_propagation();
+                }),
+            )
     }
 
     /// Window `w`'s row: a click on a laid-out one reveals it and lands

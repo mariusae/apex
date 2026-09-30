@@ -275,7 +275,7 @@ selections, or windows reads this." },
     Cmd { name: "ps", usage: "apex ps", short: "the commands the session is running", flags: &[], run: ps, long: "\
 Ps lists the commands the session's server is running: what B2 started
 from a tag (shell commands, Win, the profile and attach scripts, tools
-started from them), as the top row names them. One per line: the pid,
+started from them), as the session's tag shows them. One per line: the pid,
 the name (the first word, what Kill and apex kill go by), where it was
 started from (a window id, or top), when, its directory, and the whole
 command line. Terminals' shells are listed too while they run, named
@@ -552,7 +552,7 @@ is the session's setup on the machine running the daemon; the client's
 ~/.apex/attach is its own per attachment, the UI's tweaks. On one
 machine both live in the same ~/.apex, each run once in its role. When
 a session is made, one rc on its host sources the host's profile. It runs
-like any command, named profile in the top row with its output in
+like any command, a process named profile with its output in
 the errors window, with apexsession (the session's id), apexsessionlabel and
 APEX_SOCKET set, so apex in it
 configures the session: apex open, apex exec Newcol, apex set, apex
@@ -948,7 +948,7 @@ fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
 }
 
 /// `apex preview FILE`: the tool, run on the host as a command of the
-/// session (so the terminal is free and the top row names it).
+/// session (so the terminal is free and the session's tag shows it).
 fn preview_cmd(ctx: &Ctx, p: &Parsed) -> R {
     let [file] = p.args.as_slice() else { return Err("usage".into()) };
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
