@@ -456,6 +456,10 @@ pub enum MetaOp {
     /// It ended: `status` as acme's wait message has it, empty for a
     /// clean exit (`2`, `signal 15`).
     ProcExit { pid: u32, status: String, ended: u64 },
+    /// The session's place: the host it runs on, and its current
+    /// directory (with its slash) -- where commands from the top row run
+    /// and terminals start, and what paths are shown relative to.
+    Cwd { host: String, dir: String },
 }
 
 /// What a process is to the session.

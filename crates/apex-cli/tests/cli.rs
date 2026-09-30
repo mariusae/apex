@@ -1206,3 +1206,38 @@ fn a_ui_kills_a_process_by_its_pid() {
     // not a command of the session's: nothing was exec'd for it
     assert!(!ui.node.state.layout.execs.values().any(|(_, e)| e.text.starts_with("Kill")));
 }
+
+/// The session's current directory: said, changed, refused where there is
+/// no directory, and where commands from the session's tag and a column's
+/// run.
+#[test]
+fn the_session_has_a_current_directory() {
+    let sock = daemon();
+    let before = ok(&sock, &["cd"]);
+    assert!(before.trim().ends_with('/'), "{before:?}");
+    let dir = std::env::temp_dir().join(format!("apex-cd-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    let want = format!("{}/", dir.display());
+    ok(&sock, &["cd", &dir.join("sub/..").display().to_string()]);
+    assert_eq!(ok(&sock, &["cd"]).trim(), want);
+    let (success, _, err) = apex(&sock, &["cd", "/no/such/place"]);
+    assert!(!success && err.contains("not a directory"), "{err}");
+    assert_eq!(ok(&sock, &["cd"]).trim(), want, "a refused cd leaves it");
+    // commands from the session's tag, and from a column's, run there
+    let mut c = Remote::connect_as(&sock, "main", "viewer", AttachmentKind::Tool).unwrap();
+    let col = c.node.state.layout.cols[0].id;
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Top, text: "pwd".into() }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Column(col), text: "pwd".into() }, Duration::from_secs(5)).unwrap();
+    let errors = |n: &Node| n.state.windows.keys().filter(|w| n.window_kind(**w) == WinKind::Errors).filter_map(|w| n.state.window(*w).ok()?.body_buffer()).filter_map(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).collect::<String>();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let base = dir.display().to_string();
+    // (in rc or sh alike: pwd, twice, and the directory both times)
+    let both = |n: &Node| errors(n).matches(&format!("{base}\n")).count() >= 2;
+    while !both(&c.node) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(both(&c.node), "{}", errors(&c.node));
+    assert_eq!(c.node.state.meta.cwd, want);
+    assert!(!c.node.state.meta.host.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}

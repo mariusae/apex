@@ -94,6 +94,8 @@ pub struct Link {
     pub last_pong: Option<std::time::Instant>,
     /// The session was ended under us (`Ended`): the link closes next.
     pub ended: Option<String>,
+    /// The last error the daemon sent this connection.
+    pub error: Option<String>,
     /// Where the last edit by another attachment ended, per buffer: in a
     /// win's window, the output point, where the prompt is.
     pub foreign_end: HashMap<BufferId, usize>,
@@ -243,7 +245,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), candidates: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), candidates: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -404,7 +406,10 @@ impl Link {
             }
             ServerMsg::ShardReady { .. } => {}
             ServerMsg::Welcome { .. } => {}
-            ServerMsg::Error { text } => eprintln!("remote: server: {text}"),
+            ServerMsg::Error { text } => {
+                eprintln!("remote: server: {text}");
+                self.error = Some(text);
+            }
             ServerMsg::Pong { .. } => {
                 self.last_pong = Some(std::time::Instant::now());
             }

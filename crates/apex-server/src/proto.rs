@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 40;
+pub const PROTOCOL: u32 = 41;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -158,6 +158,10 @@ pub enum ClientMsg {
     /// by name or pid (acme's Kill; `Ps` answers with what is left).
     Ps,
     Kill { targets: Vec<String> },
+    /// Change the session's current directory (`apex cd`, the title bar's
+    /// crumbs): `dir` absolute, or relative to the session's. A directory
+    /// on the host, or an `Error` answers.
+    Cd { dir: String },
     /// A running program says what it is called: the command of process
     /// group `group` (the shell's pid) takes `name` in the top row, `ps`
     /// and `Kill`; a program of no known group (started from the profile,

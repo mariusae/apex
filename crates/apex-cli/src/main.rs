@@ -284,6 +284,14 @@ done, exit N, signal N or hangup, and when it ended. Terminals' shells are liste
 after the shell (or the command Newterm was given). A program may say
 what it is called (apex tool lsp is lsp, not apex); one the server did
 not start is listed for as long as it stays connected." },
+    Cmd { name: "cd", usage: "apex cd [DIR]", short: "the session's current directory", flags: &[], run: cd, long: "\
+Cd changes the session's current directory to DIR (relative to the
+directory apex cd is run in, so apex cd . is here), a directory on the
+session's host. Commands run from the session's tag or a column's tag
+run there, terminals made from them start there, and windows show
+paths inside it relative to it (the directory itself as ./). The title
+bar shows it, after the host, as crumbs to change it by. Cd alone
+prints it." },
     Cmd { name: "kill", usage: "apex kill NAME|PID...", short: "end running commands", flags: &[], run: kill, long: "\
 Kill ends every running command named NAME, or the one with pid PID, as
 Kill in the top row does: the command's process group is sent SIGTERM,
@@ -940,6 +948,34 @@ fn kill(ctx: &Ctx, p: &Parsed) -> R {
     let left = c.kill(p.args.clone(), TIMEOUT)?;
     print_procs(&left);
     Ok(())
+}
+
+/// `apex cd [DIR]`: the session's current directory, changed or said.
+fn cd(ctx: &Ctx, p: &Parsed) -> R {
+    let mut c = tool(ctx)?;
+    match p.args.as_slice() {
+        [] => {
+            println!("{}", c.node.state.meta.cwd);
+            Ok(())
+        }
+        [dir] => {
+            let mut want = absolute(dir)?;
+            if !want.ends_with('/') {
+                want.push('/');
+            }
+            // as a shell's cd: dir/.. and ./dir are the directories named
+            let want = apex_server::resolve(std::path::Path::new("/"), &want).display().to_string();
+            let want = if want.ends_with('/') { want } else { format!("{want}/") };
+            c.link.error = None;
+            c.send(&ClientMsg::Cd { dir: want.clone() });
+            wait(&mut c, |r| r.node.state.meta.cwd == want || r.link.error.is_some())?;
+            match c.link.error.take() {
+                Some(e) => Err(e),
+                None => Ok(()),
+            }
+        }
+        _ => Err("usage".into()),
+    }
 }
 
 fn version(_: &Ctx, _: &Parsed) -> R {

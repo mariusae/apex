@@ -346,6 +346,12 @@ pub struct Meta {
     /// ended, oldest first (`MetaOp::ProcStart`).
     #[serde(default)]
     pub procs: Vec<Proc>,
+    /// The host the session runs on, and its current directory, with its
+    /// slash (`MetaOp::Cwd`); empty until said.
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub cwd: String,
 }
 
 /// A process of the session's (`MetaOp::ProcStart`): what it is, where
@@ -769,6 +775,10 @@ impl State {
             MetaOp::Unnotify { window } => m.notifications.retain(|n| n.window != *window),
             MetaOp::ProcStart { pid, name, cmd, dir, origin, kind, out, started } => {
                 m.procs.push(Proc { id: seq, pid: *pid, name: name.clone(), cmd: cmd.clone(), dir: dir.clone(), origin: *origin, kind: *kind, out: out.clone(), started: *started, exit: None });
+            }
+            MetaOp::Cwd { host, dir } => {
+                m.host = host.clone();
+                m.cwd = dir.clone();
             }
             MetaOp::ProcRename { pid, name } => {
                 if let Some(p) = m.procs.iter_mut().find(|p| p.pid == *pid && p.running()) {

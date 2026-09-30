@@ -340,6 +340,9 @@ impl Daemon {
         // the daemon lays the session out (two columns, the top tag) so a
         // tool can work before any UI attaches
         view.init_session(&mut log).expect("fresh session");
+        // where it is: the host, and the directory it starts in
+        log.meta(server.place());
+        view.catch_up(&log).expect("fresh log");
         self.sessions.insert(key.clone(), Session { id: sid, label: label.to_string(), log, server, view, leader: None });
         eprintln!("apexd: session {label} ({key}) made");
         // its init runs now, as a command of the session
@@ -749,6 +752,16 @@ impl Daemon {
                     }
                 }
             }
+            ClientMsg::Cd { dir } => match s.server.cd(&dir) {
+                Ok(op) => {
+                    let e = s.log.meta(op);
+                    let _ = s.view.state.apply(Shard::Meta, &e);
+                }
+                Err(text) => {
+                    self.send(id, ServerMsg::Error { text });
+                    return;
+                }
+            },
             ClientMsg::Kill { targets } => {
                 for t in &targets {
                     s.server.kill(t);

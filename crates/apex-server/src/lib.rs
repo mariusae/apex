@@ -1782,6 +1782,31 @@ pub fn ago(secs: u64) -> String {
     }
 }
 
+impl Server {
+    /// Change the session's current directory to `dir` (absolute, or
+    /// relative to the one it has): where commands from the top row run
+    /// and terminals start from now on. The record to append, or why not.
+    pub fn cd(&mut self, dir: &str) -> Result<MetaOp, String> {
+        let path = resolve(&self.cwd, dir);
+        if !path.is_dir() {
+            return Err(format!("cd: {}: not a directory", path.display()));
+        }
+        self.cwd = path.clone();
+        Ok(MetaOp::Cwd { host: term::sysname(), dir: with_slash(&path) })
+    }
+
+    /// The session's place as it is: its record, for a session just made.
+    pub fn place(&self) -> MetaOp {
+        MetaOp::Cwd { host: term::sysname(), dir: with_slash(&self.cwd) }
+    }
+}
+
+/// A directory's path with its slash, as a directory's window has it.
+fn with_slash(p: &Path) -> String {
+    let s = p.display().to_string();
+    if s.ends_with('/') { s } else { format!("{s}/") }
+}
+
 /// Now, in seconds since the epoch.
 fn now_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
