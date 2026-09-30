@@ -887,6 +887,10 @@ pub struct Tint {
     /// words from the user's, and the ink of the user's words after it.
     pub bar: Option<usize>,
     pub yours: Hsla,
+    /// The tag's selection: what of its secondary ink is in it is drawn in
+    /// the primary, which reads on the selection where the secondary may
+    /// not (a column tag's, on a dark ground).
+    pub sel: (usize, usize),
 }
 
 fn shape(
@@ -942,9 +946,16 @@ fn shape(
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
     };
+    let chosen = match tint.map(|t| t.sel) {
+        Some((lo, hi)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
+        _ => None,
+    };
     let mut cuts = vec![0, n];
     cuts.extend(dim);
     cuts.extend(dir);
+    if let Some((a, b)) = chosen {
+        cuts.extend([a, b]);
+    }
     if let Some((a, b)) = bar {
         cuts.extend([a, b]);
     }
@@ -964,6 +975,7 @@ fn shape(
             continue;
         }
         let swept = sweep.is_some_and(|(lo, hi)| a >= lo && b <= hi);
+        let selected = chosen.is_some_and(|(lo, hi)| a >= lo && b <= hi);
         let command = dim.is_some_and(|d| a >= d);
         let folder = dir.is_some_and(|d| a < d) && !command;
         let is_bar = bar.is_some_and(|(p, q)| a >= p && b <= q);
@@ -972,6 +984,8 @@ fn shape(
             gpui::transparent_black()
         } else if swept {
             white
+        } else if selected {
+            black
         } else if yours && command {
             tint.map(|t| t.yours).unwrap_or(dimmed)
         } else if command {
@@ -1155,9 +1169,9 @@ impl Element for TextElement {
                                 icons.push((ws, q, i));
                             }
                         }
-                        Some(Tint { dir_end, name_end, rest, bar, yours })
+                        Some(Tint { dir_end, name_end, rest, bar, yours, sel: src.sel })
                     }
-                    _ => Some(Tint { dir_end: 0, name_end: 0, rest, bar: None, yours }),
+                    _ => Some(Tint { dir_end: 0, name_end: 0, rest, bar: None, yours, sel: src.sel }),
                 };
                 while let Some((s, e)) = text.line_range(n) {
                     let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, &icons);
