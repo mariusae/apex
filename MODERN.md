@@ -38,10 +38,9 @@ windows put away out of the tiling, which is the core's
   Inter (Inter 14/20 and JetBrains Mono 12/16, as rsms sets his Sublime
   theme; both bundled), Geist (Vercel's Geist 14/20 and Geist Mono
   12/16, bundled), Styrene (Commercial Type's Styrene B 14/20 with
-  JetBrains Mono 12/16: not bundled, loaded from the iCloud Drive Fonts
-  folder where it is not installed) and H&Co (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart
-  cuts: not bundled -- the installed ones, else Operator Mono's files
-  from the iCloud Drive Fonts folder). ⌘+ and ⌘− (View ▸ Font ▸ Bigger,
+  JetBrains Mono 12/16: not bundled, the installed family) and H&Co
+  (Ideal Sans 14/20, Operator Mono 12/16, the screen-smart cuts: not
+  bundled, the installed families). ⌘+ and ⌘− (View ▸ Font ▸ Bigger,
   Smaller) take the text a pixel bigger or smaller a step, the mono
   faces in proportion, line heights to whole pixels; ⌘0 back to the
   set's own size. Kept, as the set is.

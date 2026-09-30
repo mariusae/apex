@@ -19,12 +19,9 @@
 //!   sets his Sublime Text theme.
 //! - Geist: Vercel's Geist and Geist Mono (bundled, OFL).
 //! - Styrene: Commercial Type's Styrene B, with JetBrains Mono. Not to
-//!   be bundled: the installed family, else its files from the iCloud
-//!   Drive `Fonts` folder, as H&Co's.
+//!   be bundled: the installed family.
 //! - H&Co: Hoefler & Co.'s Ideal Sans (screen smart) and Operator Mono,
-//!   not to be bundled: the system's copies, or Operator Mono's files in
-//!   the user's iCloud Drive `Fonts` folder where it is not installed
-//!   (`install`, which pages are served them from as the bundled ones).
+//!   not to be bundled: the installed families.
 //!
 //! The bundled faces go to gpui at launch (`install`) and to pages by
 //! `@font-face` from `apexfile://localhost/.apex-font/FILE`, which the
@@ -316,72 +313,10 @@ pub const FACES: &[Face] = &[
     face!("geist", "GeistMono-BoldItalic.ttf", "Geist Mono", 700, true),
 ];
 
-/// Faces found on this machine rather than bundled (H&Co's where they
-/// are not installed), loaded at launch: served to pages as the bundled
-/// ones are.
-static FOUND: std::sync::OnceLock<Vec<Face>> = std::sync::OnceLock::new();
-
-/// Every face a page may be served: the bundled ones, and those found.
-fn faces() -> impl Iterator<Item = &'static Face> {
-    FACES.iter().chain(FOUND.get().into_iter().flatten())
-}
-
-/// H&Co's families and Styrene not installed: their files from the
-/// user's iCloud Drive `Fonts` folder (the family's folder, or loose
-/// there), by the weight and slant each file's name says.
-fn found_faces(installed: &[String]) -> Vec<Face> {
-    let Some(home) = std::env::var_os("HOME") else { return Vec::new() };
-    let fonts = std::path::Path::new(&home).join("Library/Mobile Documents/com~apple~CloudDocs/Fonts");
-    let mut out = Vec::new();
-    for (family, prefix, dirs) in [
-        (OPERATOR, "OperatorMonoSSm-", ["HCo_OperatorMonoSSm/OpenType", ""]),
-        (IDEAL, "IdealSansSSm-", ["HCo_IdealSansSSm_Pro/OpenType", "HCo_IdealSansSSm_Basic/OpenType"]),
-        // "Styrene B-Bold Italic-Desktop.otf" and the like
-        (STYRENE, "Styrene B-", ["Styrene B", ""]),
-    ] {
-        if installed.iter().any(|n| n == family) {
-            continue;
-        }
-        let mut seen = std::collections::HashSet::new();
-        for dir in dirs {
-            let Ok(rd) = std::fs::read_dir(fonts.join(dir)) else { continue };
-            for e in rd.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                let Some(style) = name.strip_prefix(prefix).and_then(|r| r.strip_suffix(".otf")) else { continue };
-                if !seen.insert(name.clone()) {
-                    continue;
-                }
-                let Ok(bytes) = std::fs::read(e.path()) else { continue };
-                let italic = style.contains("Italic");
-                let weight = match style.trim_end_matches("Italic").trim_end_matches("-Pro") {
-                    s if s.starts_with("XLight") => 200,
-                    s if s.starts_with("Light") => 300,
-                    s if s.starts_with("Medium") => 500,
-                    s if s.starts_with("Semibold") => 600,
-                    s if s.starts_with("Bold") => 700,
-                    _ => 400,
-                };
-                out.push(Face { file: Box::leak(name.into_boxed_str()), bytes: Box::leak(bytes.into_boxed_slice()), family, weight, italic });
-            }
-        }
-    }
-    out
-}
-
 /// The bundled faces to gpui, and SF Mono: Terminal's copy, the whole
 /// family (not a font the system lets be named, nor one to bundle),
-/// else the system's `.SF NS Mono`; and H&Co's where they are not
-/// installed.
+/// else the system's `.SF NS Mono`.
 pub fn install(cx: &mut App) {
-    let installed = cx.text_system().all_font_names();
-    let found = found_faces(&installed);
-    if !found.is_empty() {
-        let bytes = found.iter().map(|f| std::borrow::Cow::Borrowed(f.bytes)).collect();
-        if let Err(e) = cx.text_system().add_fonts(bytes) {
-            eprintln!("apex-ui: H&Co's fonts: {e}");
-        }
-    }
-    let _ = FOUND.set(found);
     let bundled = FACES.iter().filter(|f| !f.italic || !f.file.starts_with("MonaspaceRadon")).map(|f| std::borrow::Cow::Borrowed(f.bytes)).collect();
     if let Err(e) = cx.text_system().add_fonts(bundled) {
         eprintln!("apex-ui: the bundled fonts: {e}");
@@ -409,9 +344,8 @@ pub const PAGE_PATH: &str = "/.apex-font/";
 
 /// A bundled face by the file a page asks for.
 pub fn serve(path: &str) -> Option<(&'static [u8], &'static str)> {
-    // a name with spaces in it (Styrene's) comes asked for as a URL's
-    let file = path.strip_prefix(PAGE_PATH)?.replace("%20", " ");
-    let f = faces().find(|f| f.file == file)?;
+    let file = path.strip_prefix(PAGE_PATH)?;
+    let f = FACES.iter().find(|f| f.file == file)?;
     Some((f.bytes, if file.ends_with(".otf") { "font/otf" } else { "font/ttf" }))
 }
 
@@ -421,7 +355,7 @@ pub fn serve(path: &str) -> Option<(&'static [u8], &'static str)> {
 /// `--apex-mono-features` -- which a page's stylesheet sets itself in.
 pub fn page_css() -> String {
     let mut css = String::new();
-    for f in faces() {
+    for f in FACES {
         css.push_str(&format!(
             "@font-face{{font-family:\"{}\";src:url(\"apexfile://localhost{}{}\");font-weight:{};font-style:{}}}",
             f.family,
@@ -435,10 +369,7 @@ pub fn page_css() -> String {
     // for a page's `font-weight` to find them by (WebKit's match, as
     // gpui's, took their Bold for the regular)
     if current() == Set::Hco {
-        // (not those loaded from their files, served as the bundled are:
-        // a local() that finds nothing would stand in their way)
-        let found = |family: &str| FOUND.get().is_some_and(|f| f.iter().any(|x| x.family == family));
-        for (family, ps) in [(IDEAL, "IdealSansSSm"), (OPERATOR, "OperatorMonoSSm")].into_iter().filter(|(f, _)| !found(f)) {
+        for (family, ps) in [(IDEAL, "IdealSansSSm"), (OPERATOR, "OperatorMonoSSm")] {
             for (style, weight) in [("Light", 300), ("Book", 400), ("Medium", 500), ("Semibold", 600), ("Bold", 700)] {
                 for italic in [false, true] {
                     let name = format!("{ps}-{style}{}", if italic { "Italic" } else { "" });
