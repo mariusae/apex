@@ -481,15 +481,15 @@ fn programs_say_what_they_are_called() {
     let line = ps.lines().find(|l| l.contains("\tlsp\t")).unwrap_or_else(|| panic!("{ps}"));
     assert!(line.contains("tool lsp"), "{line}");
     assert!(!ps.contains("\tapex\t"), "{ps}");
-    // the top row says lsp too, now, not at the next command
+    // the session's processes say lsp too, now, not at the next command
     let mut viewer = Remote::connect_as(&sock, "main", "viewer", AttachmentKind::Tool).unwrap();
-    let top_text = |n: &Node| n.state.layout.top.and_then(|b| n.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    let names = |n: &Node| n.state.meta.procs.iter().filter(|p| p.running()).map(|p| p.name.clone()).collect::<Vec<_>>();
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !top_text(&viewer.node).starts_with("lsp ") && Instant::now() < deadline {
+    while !names(&viewer.node).contains(&"lsp".to_string()) && Instant::now() < deadline {
         let _ = viewer.step(Duration::from_millis(20));
     }
-    assert!(top_text(&viewer.node).starts_with("lsp "), "{:?}", top_text(&viewer.node));
-    assert!(!top_text(&viewer.node).contains("apex "), "{:?}", top_text(&viewer.node));
+    assert!(names(&viewer.node).contains(&"lsp".to_string()), "{:?}", names(&viewer.node));
+    assert!(!names(&viewer.node).contains(&"apex".to_string()), "{:?}", names(&viewer.node));
     drop(viewer);
     // a program of no known group is adopted for as long as it is connected
     let r = Remote::connect_as(&sock, "main", "orphan", AttachmentKind::Tool).unwrap();
@@ -507,6 +507,12 @@ fn programs_say_what_they_are_called() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!ok(&sock, &["ps"]).contains("\torphan\t"));
+    // the session remembers it: adopted, and ended with its connection
+    let mut viewer = Remote::connect_as(&sock, "main", "viewer2", AttachmentKind::Tool).unwrap();
+    let _ = viewer.step(Duration::from_millis(50));
+    let orphan = viewer.node.state.meta.procs.iter().find(|p| p.name == "orphan").cloned();
+    assert!(orphan.as_ref().is_some_and(|p| p.pid == 4_000_001 && p.kind == ProcKind::Adopted && !p.running()), "{orphan:?}");
+    drop(viewer);
     // Kill by the announced name ends the tool
     let left = ok(&sock, &["kill", "lsp"]);
     assert!(!left.contains("\tlsp\t"), "{left}");

@@ -342,7 +342,42 @@ pub struct Meta {
     /// has one, and the session while any window is.
     #[serde(default)]
     pub notifications: Vec<Notification>,
+    /// The processes running for the session, and the last few that
+    /// ended, oldest first (`MetaOp::ProcStart`).
+    #[serde(default)]
+    pub procs: Vec<Proc>,
 }
+
+/// A process of the session's (`MetaOp::ProcStart`): what it is, where
+/// it came from and where its output goes, and how it ended once it has.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Proc {
+    /// The metalog entry that started it: its identity (pids are reused).
+    pub id: Seq,
+    pub pid: u32,
+    /// What it is called: the command's first word, or its own name.
+    pub name: String,
+    /// The whole command line.
+    pub cmd: String,
+    pub dir: String,
+    /// Where it was run from.
+    pub origin: ExecCtx,
+    pub kind: crate::entry::ProcKind,
+    pub out: crate::entry::ProcOut,
+    /// Seconds since the epoch.
+    pub started: u64,
+    /// Once it has ended: its status (empty for a clean exit) and when.
+    pub exit: Option<(String, u64)>,
+}
+
+impl Proc {
+    pub fn running(&self) -> bool {
+        self.exit.is_none()
+    }
+}
+
+/// How many ended processes the session remembers.
+pub const PROCS_ENDED: usize = 16;
 
 /// A window's flag raised for the user (`MetaOp::Notify`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -732,6 +767,29 @@ impl State {
                 None => m.notifications.push(Notification { window: *window, by: *attachment, at: seq }),
             },
             MetaOp::Unnotify { window } => m.notifications.retain(|n| n.window != *window),
+            MetaOp::ProcStart { pid, name, cmd, dir, origin, kind, out, started } => {
+                m.procs.push(Proc { id: seq, pid: *pid, name: name.clone(), cmd: cmd.clone(), dir: dir.clone(), origin: *origin, kind: *kind, out: out.clone(), started: *started, exit: None });
+            }
+            MetaOp::ProcRename { pid, name } => {
+                if let Some(p) = m.procs.iter_mut().find(|p| p.pid == *pid && p.running()) {
+                    p.name = name.clone();
+                }
+            }
+            MetaOp::ProcExit { pid, status, ended } => {
+                if let Some(p) = m.procs.iter_mut().find(|p| p.pid == *pid && p.running()) {
+                    p.exit = Some((status.clone(), *ended));
+                }
+                // the last few that ended kept, for what they said
+                let ended = m.procs.iter().filter(|p| !p.running()).count();
+                let mut drop = ended.saturating_sub(PROCS_ENDED);
+                m.procs.retain(|p| {
+                    if drop > 0 && !p.running() {
+                        drop -= 1;
+                        return false;
+                    }
+                    true
+                });
+            }
             MetaOp::Unset { owner, key } => {
                 if let Some(s) = m.settings.get_mut(owner) {
                     s.remove(key);

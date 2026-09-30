@@ -306,6 +306,12 @@ impl Log {
         self.push_meta(MetaOp::Unset { owner, key: key.to_string() })
     }
 
+    /// Append to the metalog: the server's own record of the session (a
+    /// process started or ended).
+    pub fn meta(&mut self, op: MetaOp) -> Entry {
+        self.push_meta(op)
+    }
+
     /// Raise a notification on `window`, on `attachment`'s behalf.
     pub fn notify(&mut self, attachment: AttachmentId, window: WindowId) -> Entry {
         self.push_meta(MetaOp::Notify { attachment, window })

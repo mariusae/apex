@@ -53,11 +53,6 @@ pub enum Proposal {
     /// Filename completion (acme's ^F): insert `text` at `at` in `view`,
     /// if the insertion point is still there.
     Complete { view: ViewId, at: usize, text: String },
-    /// acme's waitthread: a command started; its name goes to the front of
-    /// the top row.
-    CommandStart { name: String },
-    /// ... and leaves it when the command ends.
-    CommandExit { name: String },
     /// The outcome of an exec.
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// Put this text in the snarf buffer (a terminal selection's text).
@@ -204,27 +199,6 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         }
         Proposal::Errors { dir, text } => {
             node.errors(log, dir.as_deref(), &text)?;
-            Ok(None)
-        }
-        Proposal::CommandStart { name } => {
-            // the top row edited as a side effect: the text last selected
-            // (where keys and looks go) stays what it was
-            let was = node.seltext;
-            if node.state.layout.top.is_some() {
-                node.select(log, ViewId::Top, 0, 0)?;
-                node.replace_selection(log, ViewId::Top, &format!("{name} "))?;
-                node.select(log, ViewId::Top, 0, 0)?;
-            }
-            node.seltext = was;
-            Ok(None)
-        }
-        Proposal::CommandExit { name } => {
-            let was = node.seltext;
-            if node.state.layout.top.is_some() && node.look(log, ViewId::Top, &format!("{name} "))? {
-                node.replace_selection(log, ViewId::Top, "")?;
-                node.select(log, ViewId::Top, 0, 0)?;
-            }
-            node.seltext = was;
             Ok(None)
         }
         Proposal::Complete { view, at, text } => {

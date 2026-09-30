@@ -448,4 +448,36 @@ pub enum MetaOp {
     /// The window's notification lowered: retracted by the tool, or
     /// dismissed by the user (taken, or the window used).
     Unnotify { window: WindowId },
+    /// A process the server started (a command run from a tag, a script
+    /// of the session's) or that announced itself: running from now.
+    ProcStart { pid: u32, name: String, cmd: String, dir: String, origin: ExecCtx, kind: ProcKind, out: ProcOut, started: u64 },
+    /// It is called something else now (a program naming itself).
+    ProcRename { pid: u32, name: String },
+    /// It ended: `status` as acme's wait message has it, empty for a
+    /// clean exit (`2`, `signal 15`).
+    ProcExit { pid: u32, status: String, ended: u64 },
+}
+
+/// What a process is to the session.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum ProcKind {
+    /// A command run from a tag (B2), or by a rule.
+    #[default]
+    Command,
+    /// A script of the session's own: the profile, an attach script.
+    Script,
+    /// A program the server did not start that said what it is.
+    Adopted,
+}
+
+/// Where a process's output goes.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum ProcOut {
+    /// A directory's errors window (or the session's).
+    Errors { dir: Option<String> },
+    /// A buffer, over what was selected (`|cmd`, `<cmd`).
+    Buffer(BufferId),
+    /// Nowhere apex sees.
+    #[default]
+    None,
 }

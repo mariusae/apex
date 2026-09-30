@@ -356,27 +356,39 @@ fn completion_extends_a_path_or_lists_candidates() {
 }
 
 #[test]
-fn running_commands_are_named_in_the_top_row() {
+fn running_commands_are_the_sessions_processes() {
     let (mut log, mut node, col, mut server, mut rx) = session();
     let top = node.state.layout.top.unwrap();
     let top_text = |n: &Node| n.state.buffer(top).unwrap().text.to_string();
+    let running = |n: &Node, name: &str| n.state.meta.procs.iter().find(|p| p.name == name && p.running()).cloned();
+    let ended = |n: &Node, name: &str| n.state.meta.procs.iter().find(|p| p.name == name && !p.running()).cloned();
     let w = node.new_window(&mut log, col, "scratch", "").unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "sleep 30").unwrap();
     poll(&mut server, &mut log, &mut node);
-    // acme's waitthread: the name, without directory, at the front
-    assert!(top_text(&node).starts_with("sleep "), "{:?}", top_text(&node));
+    // acme's waitthread: the name, without directory; where it came from
+    // and where its output goes
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| running(n, "sleep").is_some()));
+    let sleep = running(&node, "sleep").unwrap();
+    assert_eq!((sleep.cmd.as_str(), sleep.origin, sleep.kind), ("sleep 30", ExecCtx::Window(w), ProcKind::Command));
+    assert!(matches!(sleep.out, ProcOut::Errors { .. }), "{:?}", sleep.out);
+    assert!(sleep.pid > 0);
     node.exec(&mut log, ExecCtx::Window(w), "false").unwrap();
     poll(&mut server, &mut log, &mut node);
-    assert!(top_text(&node).starts_with("false sleep "), "{:?}", top_text(&node));
-    // false exits 1: its name leaves and the exit is reported
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !top_text(n).contains("false ")));
+    // false exits 1: it ends, remembered with its status, and the exit is
+    // reported
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| ended(n, "false").is_some()));
+    assert_eq!(ended(&node, "false").unwrap().exit.unwrap().0, "1");
     assert!(errors_text(&node).contains("false: exit 1"), "{:?}", errors_text(&node));
-    node.exec(&mut log, ExecCtx::Window(w), "Kill sleep").unwrap();
+    assert!(running(&node, "sleep").is_some());
+    // Kill by its pid, as the UI's pills do
+    node.exec(&mut log, ExecCtx::Top, &format!("Kill {}", sleep.pid)).unwrap();
     poll(&mut server, &mut log, &mut node);
-    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !top_text(n).contains("sleep ")));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| ended(n, "sleep").is_some()));
     // under sh the sleep itself dies of the signal; under rc, rc reports
     // the death and exits 1, as plan9port's does
+    assert!(!ended(&node, "sleep").unwrap().exit.unwrap().0.is_empty());
     assert!(errors_text(&node).contains("sleep: exit "), "{:?}", errors_text(&node));
+    // and the top row is the user's, untouched
     assert!(top_text(&node).starts_with("Newcol"), "{:?}", top_text(&node));
 }
 

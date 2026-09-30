@@ -1244,9 +1244,10 @@ impl Daemon {
     /// (see `editor_command`)
     fn after(&mut self, name: &str, props: Vec<Proposal>) {
         let Some(s) = self.sessions.get_mut(name) else { return };
-        // starts first: a command started by what we just did (the attach
-        // script, a rename) is named before anything reports its end
-        let mut props = { let mut all = s.server.take_started(); all.extend(props); all };
+        // the processes' record: a program that named itself, an
+        // adoption ended (the rest went in as they happened)
+        s.server.flush_procs(&mut s.log);
+        let mut props = props;
         s.server.close_orphan_terms(&mut s.log, &s.view);
         s.server.sync_preview_rules(&mut s.log, &s.view);
         s.server.sync_watches(&s.view);

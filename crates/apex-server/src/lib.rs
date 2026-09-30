@@ -44,7 +44,10 @@ pub enum ServerEvent {
     /// A shell command finished: `(ctx, exec seq, stdout, stderr, what to do
     /// with stdout)`, its name as shown in the top row, and how it ended
     /// (acme's wait message: empty for a clean exit).
-    Shell { ctx: ExecCtx, exec: Option<Seq>, out: String, err: String, mode: ShellMode, name: String, exit: String },
+    Shell { ctx: ExecCtx, exec: Option<Seq>, out: String, err: String, mode: ShellMode, name: String, exit: String, pid: Option<u32> },
+    /// A shell command started, as `pid`: the session's record of it
+    /// (`MetaOp::ProcStart`). Sent before its `Shell`, on the same channel.
+    ProcStarted { pid: u32, name: String, cmd: String, dir: String, ctx: ExecCtx, kind: ProcKind, out: ProcOut },
     /// A watched directory reported this path.
     File(PathBuf),
 }
@@ -120,8 +123,9 @@ pub struct Server {
     /// Stale buffers `Put` has refused once (acme: the second Put writes).
     put_warned: BTreeSet<BufferId>,
     running: std::sync::Arc<std::sync::Mutex<Vec<Running>>>,
-    /// Proposals made while performing (a command's name for the top row).
-    started: Vec<Proposal>,
+    /// The session's record of its processes, to go into the metalog
+    /// (`flush_procs`): what started, was renamed, or ended.
+    procs: Vec<MetaOp>,
     /// Plumb walks in progress, by id.
     plumbs: HashMap<u64, Plumb>,
     next_plumb: u64,
@@ -180,7 +184,7 @@ impl Server {
             watches,
             put_warned: BTreeSet::new(),
             running: Default::default(),
-            started: Vec::new(),
+            procs: Vec::new(),
             plumbs: HashMap::new(),
             next_plumb: 1,
             plumb_starts: Vec::new(),
@@ -665,11 +669,16 @@ impl Server {
                 }
                 self.publish_term(log, id);
             }
-            ServerEvent::Shell { ctx, exec, out, err, mode, name, exit } => {
+            ServerEvent::ProcStarted { pid, name, cmd, dir, ctx, kind, out } => {
+                self.procs.push(MetaOp::ProcStart { pid, name, cmd, dir, origin: ctx, kind, out, started: now_secs() });
+            }
+            ServerEvent::Shell { ctx, exec, out, err, mode, name, exit, pid } => {
                 let dir = mode_dir(&mode);
-                // acme's waitthread: the name leaves the top row, then any
-                // exit message is reported
-                props.push(Proposal::CommandExit { name: name.clone() });
+                // acme's waitthread: the process ends, then any exit
+                // message is reported
+                if let Some(pid) = pid {
+                    self.procs.push(MetaOp::ProcExit { pid, status: exit.clone(), ended: now_secs() });
+                }
                 if !exit.is_empty() {
                     props.push(Proposal::Errors { dir: dir.clone(), text: format!("{name}: exit {exit}\n") });
                 }
@@ -691,6 +700,7 @@ impl Server {
                 }
             }
         }
+        self.flush_procs(log);
         props
     }
 
@@ -803,8 +813,7 @@ impl Server {
             // script started in the background is its own (adopted below)
             if !r.script {
                 if r.name != name && r.name == command_name(&r.cmd) {
-                    self.started.push(Proposal::CommandExit { name: r.name.clone() });
-                    self.started.push(Proposal::CommandStart { name: name.to_string() });
+                    self.procs.push(MetaOp::ProcRename { pid: r.pid, name: name.to_string() });
                     r.name = name.to_string();
                 }
                 return None;
@@ -815,16 +824,18 @@ impl Server {
         }
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         running.push(Running { pid, name: name.to_string(), cmd: cmd.to_string(), dir: String::new(), ctx: ExecCtx::Top, started, adopted: true, script: false });
-        self.started.push(Proposal::CommandStart { name: name.to_string() });
+        self.procs.push(MetaOp::ProcStart { pid, name: name.to_string(), cmd: cmd.to_string(), dir: String::new(), origin: ExecCtx::Top, kind: ProcKind::Adopted, out: ProcOut::None, started });
         Some(pid)
     }
 
-    /// The top row's starts and ends waiting to be applied (commands
-    /// started outside an exec: scripts, adoptions, renames). The daemon
-    /// takes them after everything it does, so a start never trails its
-    /// own exit.
-    pub fn take_started(&mut self) -> Vec<Proposal> {
-        std::mem::take(&mut self.started)
+    /// The processes' starts, renames and ends so far into the metalog,
+    /// in the order they happened: the session's record of what runs.
+    /// `pump` and `poll_execs` do it as they go; the daemon after what
+    /// else it did (a program naming itself, an adoption ending).
+    pub fn flush_procs(&mut self, log: &mut Log) {
+        for op in std::mem::take(&mut self.procs) {
+            log.meta(op);
+        }
     }
 
     /// An adopted program's announcer went: the entry goes too.
@@ -832,7 +843,7 @@ impl Server {
         let mut running = self.running.lock().unwrap();
         if let Some(i) = running.iter().position(|r| r.pid == pid && r.adopted) {
             let r = running.remove(i);
-            self.started.push(Proposal::CommandExit { name: r.name });
+            self.procs.push(MetaOp::ProcExit { pid: r.pid, status: String::new(), ended: now_secs() });
         }
     }
 
@@ -886,7 +897,7 @@ impl Server {
         for (ctx, seq, text, at) in todo {
             self.performed.insert((ctx, seq));
             let r = self.perform(log, view, ctx, seq, &text, at);
-            props.append(&mut self.started);
+            self.flush_procs(log);
             match r {
                 Ok(Some(mut p)) => {
                     props.append(&mut p);
@@ -1052,12 +1063,17 @@ impl Server {
     fn spawn_shell_as(&mut self, name: String, ctx: ExecCtx, exec: Option<Seq>, cmd: String, dir: PathBuf, stdin: Option<String>, mode: ShellMode, env: Vec<(String, String)>) {
         let tx = self.tx.clone();
         let running = self.running.clone();
-        // acme's waitthread: the name goes into the top row while it runs
-        self.started.push(Proposal::CommandStart { name: name.clone() });
         std::thread::spawn(move || {
+            // acme's waitthread: the process is the session's while it
+            // runs, said so as soon as it has a pid, before it can end
+            let (tx2, kind, out, dir2) = (tx.clone(), if matches!(name.as_str(), "profile" | "attach") { ProcKind::Script } else { ProcKind::Command }, proc_out(&mode), dir.display().to_string());
+            let (n2, c2) = (name.clone(), cmd.clone());
+            let started: Box<dyn FnOnce(u32) + Send> = Box::new(move |pid| {
+                let _ = tx2.unbounded_send(ServerEvent::ProcStarted { pid, name: n2, cmd: c2, dir: dir2, ctx, kind, out });
+            });
             // the name as it is at the end: the program may have renamed itself
-            let (out, err, exit, name) = shell_in_named(&name, ctx, &cmd, &dir, stdin, Some(running), &env);
-            let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit });
+            let (out, err, exit, name, pid) = shell_in_started(&name, ctx, &cmd, &dir, stdin, Some(running), &env, Some(started));
+            let _ = tx.unbounded_send(ServerEvent::Shell { ctx, exec, out, err, mode, name, exit, pid });
         });
     }
 
@@ -1720,6 +1736,19 @@ pub fn perform(node: &mut Node, log: &mut Log, props: Vec<Proposal>) -> Option<W
     made
 }
 
+/// Where a shell command's output goes, for the session's record.
+fn proc_out(m: &ShellMode) -> ProcOut {
+    match m {
+        ShellMode::Errors { dir } => ProcOut::Errors { dir: dir.clone() },
+        ShellMode::Replace { buffer, .. } => ProcOut::Buffer(*buffer),
+    }
+}
+
+/// Now, in seconds since the epoch.
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
 fn mode_dir(m: &ShellMode) -> Option<String> {
     match m {
         ShellMode::Errors { dir } | ShellMode::Replace { dir, .. } => dir.clone(),
@@ -1903,6 +1932,14 @@ pub fn shell_in_ctx(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Opti
 /// `shell_in_ctx`, returning as well the command's name as it was when
 /// it ended (a program may have said what it is called meanwhile).
 pub fn shell_in_named(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)]) -> (String, String, String, String) {
+    let (out, err, exit, name, _) = shell_in_started(name, ctx, cmd, dir, input, running, env, None);
+    (out, err, exit, name)
+}
+
+/// `shell_in_named`, telling `started` the pid once the command runs,
+/// and returning the pid (none when it could not be started).
+#[allow(clippy::too_many_arguments)]
+pub fn shell_in_started(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Option<String>, running: Option<std::sync::Arc<std::sync::Mutex<Vec<Running>>>>, env: &[(String, String)], started: Option<Box<dyn FnOnce(u32) + Send>>) -> (String, String, String, String, Option<u32>) {
     let mut command = Command::new(command_shell());
     // acme's runproc clears these before setting its own
     for k in ["acmeaddr", "winid", "%", "samfile"] {
@@ -1923,9 +1960,12 @@ pub fn shell_in_named(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Op
         .spawn();
     let mut child = match child {
         Ok(c) => c,
-        Err(e) => return (String::new(), format!("{cmd}: {e}\n"), String::new(), name.to_string()),
+        Err(e) => return (String::new(), format!("{cmd}: {e}\n"), String::new(), name.to_string(), None),
     };
     let pid = child.id();
+    if let Some(f) = started {
+        f(pid);
+    }
     if let Some(r) = &running {
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let script = matches!(name, "profile" | "attach");
@@ -1989,7 +2029,7 @@ pub fn shell_in_named(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Op
         }
         r.retain(|x| x.pid != pid);
     }
-    (out.0, out.1, out.2, final_name)
+    (out.0, out.1, out.2, final_name, Some(pid))
 }
 
 impl Drop for Server {
