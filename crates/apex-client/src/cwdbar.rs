@@ -6,6 +6,7 @@
 //! first row, `./`, is the folder itself. Return makes the one chosen
 //! the session's directory, as `apex cd` does; → or tab (or the › on its
 //! row) goes into a folder; ← or backspace with nothing typed goes up.
+//! B3 on a crumb plumbs the path to there, as on a tag's path.
 
 use std::time::{Duration, Instant};
 
@@ -127,10 +128,29 @@ impl Acme {
                     .text_color(rgb(if own { t.text } else { t.text_dim }))
                     .when(own, |d| d.font_weight(crate::fonts::weight(FontWeight::MEDIUM)))
                     .child(part)
-                    .on_mouse_down(
-                        MouseButton::Left,
+                    .on_mouse_down(MouseButton::Left, {
+                        let upto = upto.clone();
                         cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                            this.open_cwd_picker(upto.clone(), next.clone(), e.position.x, cx);
+                            // ⌘-click is B3, as everywhere in apex
+                            if e.modifiers.platform {
+                                this.cwd_picker = None;
+                                this.look(ExecCtx::Top, &upto);
+                                this.after();
+                                cx.notify();
+                            } else {
+                                this.open_cwd_picker(upto.clone(), next.clone(), e.position.x, cx);
+                            }
+                            cx.stop_propagation();
+                        })
+                    })
+                    // B3, as on a tag's path: the path to there plumbed
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, _, _, cx| {
+                            this.cwd_picker = None;
+                            this.look(ExecCtx::Top, &upto);
+                            this.after();
+                            cx.notify();
                             cx.stop_propagation();
                         }),
                     ),
