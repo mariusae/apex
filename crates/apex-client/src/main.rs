@@ -1136,7 +1136,8 @@ impl app::Acme {
             .border_b(px(0.5))
             .border_color(gpui::rgb(t.body_border))
             .when(!side, |d| d.child(bare("title-lights").w(px(lights))).child(toggle).child(bare("title-gap0").w(px(6.))))
-            .when(side, |d| d.child(bare("title-gap0").w(px(10.))))
+            // the sidebar out: the top row flush with it, as the columns
+            // under it are, its square over their grips
             .when(!side, |d| {
                 d.child(self.session_title(h, cx))
                     .child(bare("title-gap").w(px(10.)))
