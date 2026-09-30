@@ -125,7 +125,8 @@ impl Element for TermElement {
     ) -> Option<Prepaint> {
         let fontspec = font_for(true);
         let font = fontspec.font.clone();
-        let bold_font = gpui::Font { weight: gpui::FontWeight::BOLD, ..fontspec.font.clone() };
+        let bold_font = gpui::Font { weight: crate::fonts::weight(gpui::FontWeight::BOLD), ..fontspec.font.clone() };
+        let bold_weight = bold_font.weight;
         let run = move |len: usize, color: Hsla| TextRun { len, font: font.clone(), color, background_color: None, underline: None, strikethrough: None };
         let cell_w = window.text_system().shape_line("M".into(), fontspec.size, &[run(1, gpui::black())], None).width;
         let lh = fontspec.line_height;
@@ -209,7 +210,7 @@ impl Element for TermElement {
                         }
                     }
                     match runs.last_mut() {
-                        Some(r) if r.color == fgc && (r.font.weight == gpui::FontWeight::BOLD) == bold => r.len += len,
+                        Some(r) if r.color == fgc && (r.font.weight == bold_weight) == bold => r.len += len,
                         _ => {
                             let mut r = run(len, fgc);
                             if bold {

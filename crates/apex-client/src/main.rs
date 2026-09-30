@@ -112,6 +112,9 @@ impl Render for Acme {
         let root = div()
             .id("apex")
             .size_full()
+            // the interface's regular weight, as the font set asks for it
+            // (H&Co's regular is not the weight called regular)
+            .font_weight(fonts::weight(gpui::FontWeight::NORMAL))
             .bg(gpui::rgb(text_element::ground(&t)))
             .flex()
             .flex_col()
@@ -981,7 +984,7 @@ fn empty_column(t: &theme::Theme) -> gpui::AnyElement {
             .flex()
             .flex_row()
             .gap(px(10.))
-            .child(div().w(px(84.)).flex_none().text_right().font_weight(gpui::FontWeight::MEDIUM).text_color(ink).child(key))
+            .child(div().w(px(84.)).flex_none().text_right().font_weight(crate::fonts::weight(gpui::FontWeight::MEDIUM)).text_color(ink).child(key))
             .child(div().flex_none().text_color(faint).child(what))
     };
     div()

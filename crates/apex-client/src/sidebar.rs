@@ -54,10 +54,10 @@ impl Acme {
                                 .pt(px(if k == 0 { 2. } else { 10. }))
                                 .pb(px(2.))
                                 .text_size(px(11.))
-                                .font_weight(FontWeight::MEDIUM)
+                                .font_weight(crate::fonts::weight(FontWeight::MEDIUM))
                                 .text_color(rgb(t.text_dim))
                                 .child(name)
-                                .when(down, |d| d.child(div().font_weight(FontWeight::NORMAL).child("unreachable"))),
+                                .when(down, |d| d.child(div().font_weight(crate::fonts::weight(FontWeight::NORMAL)).child("unreachable"))),
                         );
                     }
                     continue;
@@ -91,7 +91,7 @@ impl Acme {
                                     .justify_center()
                                     .text_color(rgb(t.text_dim))
                                     .text_size(px(10.))
-                                    .font_weight(FontWeight::BOLD)
+                                    .font_weight(crate::fonts::weight(FontWeight::BOLD))
                                     .child(initial),
                             )
                             .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).text_color(rgb(t.text_dim)).child(name))
@@ -128,14 +128,14 @@ impl Acme {
                 .bg(rgb(if current { t.accent } else { avatar_idle }))
                 .text_color(rgb(0xFFFFFF))
                 .text_size(px(10.))
-                .font_weight(FontWeight::BOLD)
+                .font_weight(crate::fonts::weight(FontWeight::BOLD))
                 .child(initial);
             let mut text = div().flex_1().min_w_0().flex().flex_col().child(
                 div()
                     .truncate()
                     .text_size(px(13.))
                     .line_height(px(16.))
-                    .font_weight(if current { FontWeight::MEDIUM } else { FontWeight::NORMAL })
+                    .font_weight(crate::fonts::weight(if current { FontWeight::MEDIUM } else { FontWeight::NORMAL }))
                     .text_color(rgb(if word.is_some() { t.text_dim } else { t.text }))
                     .child(name),
             );
@@ -316,7 +316,7 @@ impl Acme {
                     .pt(px(8.))
                     .pb(px(2.))
                     .text_size(px(11.))
-                    .font_weight(FontWeight::MEDIUM)
+                    .font_weight(crate::fonts::weight(FontWeight::MEDIUM))
                     .text_color(rgb(t.text_dim))
                     .child("Stashed"),
             );

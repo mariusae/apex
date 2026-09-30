@@ -334,7 +334,7 @@ pub struct FontSpec {
 /// windows and tags, `fonts::mono` for mono windows and terminals).
 pub fn font_for(mono: bool) -> FontSpec {
     let spec = if mono { crate::fonts::mono() } else { crate::fonts::text() };
-    let f = Font { weight: spec.weight, ..unjoined(with_symbols(font(spec.family)), spec.features) };
+    let f = Font { weight: crate::fonts::weight(spec.weight), ..unjoined(with_symbols(font(spec.family)), spec.features) };
     FontSpec { font: f, size: spec.size, line_height: spec.line_height }
 }
 
@@ -913,7 +913,11 @@ fn shape(
     let dimmed = rgb(crate::theme::theme().text_dim);
     // a tag's name is set a weight heavier than the commands after it,
     // as a title is over a toolbar's
-    let strong = Font { weight: gpui::FontWeight::MEDIUM, ..fontspec.font.clone() };
+    let strong = Font { weight: crate::fonts::weight(gpui::FontWeight::MEDIUM), ..fontspec.font.clone() };
+    // an icon's cell: an em space in a face whose em space is an em (a
+    // face's own may be narrower, or missing -- Styrene's -- and the
+    // icons then stood on one another)
+    let cell_face = Font { family: ".SystemUIFont".into(), ..fontspec.font.clone() };
     let mut info = LineInfo {
         start,
         end,
@@ -953,6 +957,9 @@ fn shape(
     let mut cuts = vec![0, n];
     cuts.extend(dim);
     cuts.extend(dir);
+    for &(d, _) in &icon_at {
+        cuts.extend([d, d + ICON_CELL.len_utf8()]);
+    }
     if let Some((a, b)) = chosen {
         cuts.extend([a, b]);
     }
@@ -995,7 +1002,9 @@ fn shape(
         } else {
             black
         };
-        let face = if gap.is_some_and(|(p, q)| a >= p && b <= q) {
+        let face = if icon_at.iter().any(|&(d, _)| a >= d && b <= d + ICON_CELL.len_utf8()) {
+            cell_face.clone()
+        } else if gap.is_some_and(|(p, q)| a >= p && b <= q) {
             wide.clone()
         } else if dim.is_some_and(|d| d > 0 && a < d) && !folder {
             strong.clone()

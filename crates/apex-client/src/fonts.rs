@@ -188,6 +188,27 @@ fn text_as_set() -> Spec {
     }
 }
 
+/// The weight to ask for to get `w`: what it is, but for H&Co's faces,
+/// whose weights are drawn together as a typographic family's are --
+/// their Bold says it is Core Text's regular (0), their Book lighter
+/// (-0.17), and so on -- so that asking for a regular 400 got the Bold,
+/// and all of it was bold. Asked for, each comes out as the weight they
+/// say (font-kit's mapping of Core Text's: Light 300, Book 325, Medium
+/// 350, Semibold 375, Bold 400), a little over it, since the match looks
+/// down from what is asked first.
+pub fn weight(w: FontWeight) -> FontWeight {
+    if current() != Set::Hco {
+        return w;
+    }
+    FontWeight(match w.0 {
+        x if x < 350. => 305.,
+        x if x < 450. => 330.,
+        x if x < 550. => 355.,
+        x if x < 650. => 380.,
+        _ => 400.,
+    })
+}
+
 /// Hoefler & Co.'s families, as their screen-smart cuts name themselves.
 const IDEAL: &str = "Ideal Sans SSm";
 const OPERATOR: &str = "Operator Mono SSm";
@@ -409,6 +430,22 @@ pub fn page_css() -> String {
             f.weight,
             if f.italic { "italic" } else { "normal" }
         ));
+    }
+    // H&Co's installed faces by their own names at the weights they are,
+    // for a page's `font-weight` to find them by (WebKit's match, as
+    // gpui's, took their Bold for the regular)
+    if current() == Set::Hco {
+        // (not those loaded from their files, served as the bundled are:
+        // a local() that finds nothing would stand in their way)
+        let found = |family: &str| FOUND.get().is_some_and(|f| f.iter().any(|x| x.family == family));
+        for (family, ps) in [(IDEAL, "IdealSansSSm"), (OPERATOR, "OperatorMonoSSm")].into_iter().filter(|(f, _)| !found(f)) {
+            for (style, weight) in [("Light", 300), ("Book", 400), ("Medium", 500), ("Semibold", 600), ("Bold", 700)] {
+                for italic in [false, true] {
+                    let name = format!("{ps}-{style}{}", if italic { "Italic" } else { "" });
+                    css.push_str(&format!("@font-face{{font-family:\"{family}\";src:local(\"{name}\");font-weight:{weight};font-style:{}}}", if italic { "italic" } else { "normal" }));
+                }
+            }
+        }
     }
     let (sans, mono, sans_features, mono_features) = match current() {
         Set::System => ("-apple-system, BlinkMacSystemFont, sans-serif", "ui-monospace, \"SF Mono\", Menlo, monospace", "\"ss06\", \"tnum\"", "\"zero\""),

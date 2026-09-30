@@ -90,7 +90,7 @@ impl Acme {
                 .border_1()
                 .border_color(rgb(t.accent))
                 .text_size(px(13.5))
-                .font_weight(FontWeight::SEMIBOLD)
+                .font_weight(crate::fonts::weight(FontWeight::SEMIBOLD))
                 .child(crate::field::field_view(&e.field, e.caret_on(), "Session name", true))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .into_any_element(),
@@ -102,7 +102,7 @@ impl Acme {
                 .flex()
                 .items_center()
                 .text_size(px(13.5))
-                .font_weight(FontWeight::SEMIBOLD)
+                .font_weight(crate::fonts::weight(FontWeight::SEMIBOLD))
                 .text_color(rgb(t.text))
                 .whitespace_nowrap()
                 .cursor(gpui::CursorStyle::IBeam)
@@ -204,7 +204,7 @@ impl Acme {
             panel = panel.child(
                 row(("session-menu-row", i))
                     .child(div().flex_none().w(px(12.)).child(if current { "✓" } else { "" }))
-                    .child(div().flex_1().min_w_0().truncate().when(current, |d| d.font_weight(FontWeight::SEMIBOLD)).child(name))
+                    .child(div().flex_1().min_w_0().truncate().when(current, |d| d.font_weight(crate::fonts::weight(FontWeight::SEMIBOLD))).child(name))
                     .when_some(host, |d, host| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(t.panel_dim)).child(host)))
                     .when(notified, |d| d.child(div().flex_none().child(crate::shell::pjw(12., t.accent))))
                     .on_mouse_down(

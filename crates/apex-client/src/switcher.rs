@@ -314,10 +314,10 @@ impl Acme {
                     .bg(rgb(if shown { t.accent } else { avatar_idle }))
                     .text_color(rgb(0xFFFFFF))
                     .text_size(px(9.))
-                    .font_weight(FontWeight::BOLD)
+                    .font_weight(crate::fonts::weight(FontWeight::BOLD))
                     .child(initial),
             )
-            .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).font_weight(FontWeight::MEDIUM).text_color(rgb(t.text)).child(name))
+            .child(div().flex_1().min_w_0().truncate().text_size(px(13.)).font_weight(crate::fonts::weight(FontWeight::MEDIUM)).text_color(rgb(t.text)).child(name))
             .when(notified && !shown, |d| d.child(div().flex_none().child(crate::shell::pjw(13., t.accent))))
             .when_some(url.filter(|u| !u.is_local()).map(|u| u.arg), |d, host| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(t.text_dim)).child(host)));
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.22), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false };
