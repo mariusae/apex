@@ -1183,3 +1183,26 @@ fn notify_waits_until_the_user_dismisses_it() {
     let _ = ui.step(Duration::from_millis(100));
     assert!(ui.node.state.meta.notifications.is_empty());
 }
+
+/// The UI's × on a process: the server asked to kill its pid, as the
+/// app does (and `apex kill`), and the record says it ended.
+#[test]
+fn a_ui_kills_a_process_by_its_pid() {
+    let sock = daemon();
+    ok(&sock, &["exec", "sleep 60"]);
+    let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
+    let running = |n: &Node| n.state.meta.procs.iter().find(|p| p.name == "sleep" && p.running()).cloned();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while running(&ui.node).is_none() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    let p = running(&ui.node).expect("sleep runs");
+    ui.send(&apex_server::proto::ClientMsg::Kill { targets: vec![p.pid.to_string()] });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while running(&ui.node).is_some() && Instant::now() < deadline {
+        let _ = ui.step(Duration::from_millis(20));
+    }
+    assert!(running(&ui.node).is_none(), "still running: {:?}", ok(&sock, &["ps", "-a"]));
+    // not a command of the session's: nothing was exec'd for it
+    assert!(!ui.node.state.layout.execs.values().any(|(_, e)| e.text.starts_with("Kill")));
+}

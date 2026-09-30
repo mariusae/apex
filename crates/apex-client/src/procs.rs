@@ -99,11 +99,20 @@ impl Acme {
         cx.notify();
     }
 
-    /// End process `id`, as `Kill` its pid would.
+    /// End process `id`, as `Kill` its pid would -- asked of the server
+    /// directly, as `apex kill` asks, not run as a command: a click on a
+    /// × is not an exec of the session's.
     pub fn kill_proc(&mut self, id: Seq, cx: &mut Context<Self>) {
         let Some(p) = self.proc(id).filter(|p| p.running()) else { return };
-        self.execute(ExecCtx::Top, &format!("Kill {}", p.pid), cx);
+        let target = p.pid.to_string();
+        match &mut self.backend {
+            crate::app::Backend::Local(server) => {
+                server.kill(&target);
+            }
+            crate::app::Backend::Remote(link) => link.send(&apex_server::proto::ClientMsg::Kill { targets: vec![target] }),
+        }
         self.after();
+        cx.notify();
     }
 
     /// Go to where process `id`'s output goes: its directory's errors

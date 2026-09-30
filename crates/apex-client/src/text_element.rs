@@ -1136,9 +1136,11 @@ fn shape(
             black
         } else if a < hn {
             match atom {
-                Some(Atom::Name | Atom::Typed | Atom::Proc(_)) => black,
-                Some(Atom::Verb(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
-                Some(Atom::Dir(_) | Atom::Untitled | Atom::Label | Atom::ProcKill(_)) => dimmed,
+                Some(Atom::Name | Atom::Typed) => black,
+                // a process's pill, quiet: its name in the secondary ink,
+                // its × as faint as the verbs
+                Some(Atom::Verb(_) | Atom::ProcKill(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
+                Some(Atom::Dir(_) | Atom::Untitled | Atom::Label | Atom::Proc(_)) => dimmed,
             }
         } else {
             tint.map(|t| t.text).unwrap_or(black)
@@ -1625,10 +1627,10 @@ impl Element for TextElement {
                     let (ds, _) = line.subs[sub];
                     let th = crate::theme::theme();
                     let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
-                    let tall = (ink(window, &pp.fontspec).1 + px(6.)).min(lh - px(2.));
+                    let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(lh - px(2.));
                     let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
                     let r = Bounds::from_corners(point(origin.x + x(a) - x(ds), sy), point(origin.x + x(b) - x(ds) + px(3.), sy + tall));
-                    window.paint_quad(fill(r, rgb(mix(th.text_dim, under, 0.8))).corner_radii(tall / 2.));
+                    window.paint_quad(fill(r, rgb(mix(th.text_dim, under, 0.9))).corner_radii(tall / 2.));
                 }
                 // the label on a chip of its own
                 for &(a, b, atom) in &line.atoms {
