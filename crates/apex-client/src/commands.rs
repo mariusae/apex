@@ -107,7 +107,7 @@ impl Acme {
         }
         let w = self.command_target();
         let ctx = w.map(ExecCtx::Window).unwrap_or(ExecCtx::Top);
-        let target = w.map(|w| self.node.window_name(w)).filter(|n| !n.is_empty()).unwrap_or_else(|| "the session".into());
+        let target = w.map(|w| crate::sidebar::names(&self.node, w).0).unwrap_or_else(|| "the session".into());
         let mut items: Vec<(String, Origin)> = Vec::new();
         let add = |items: &mut Vec<(String, Origin)>, s: &str, f: Origin| {
             let s = s.trim();
@@ -116,15 +116,18 @@ impl Acme {
             }
         };
         if let Some(w) = w {
-            // its tag's words, past its name
+            // apex's verbs for it, then its tag's words, the user's
+            for v in self.node.window_verbs(w) {
+                add(&mut items, v, Origin::Tag);
+            }
             if let Ok(win) = self.node.state.window(w) {
                 if let Ok(tag) = self.node.state.buffer(win.tag) {
-                    for word in tag.text.to_string().split_whitespace().skip(1) {
+                    for word in tag.text.to_string().split_whitespace() {
                         add(&mut items, word, Origin::Tag);
                     }
                 }
             }
-            for v in apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w), Some(w), self.node.window_owner(w)) {
+            for v in apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_path(w), self.node.window_kind(w), Some(w), self.node.window_owner(w)) {
                 add(&mut items, &v, Origin::Tool);
             }
         }

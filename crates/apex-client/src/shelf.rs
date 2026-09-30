@@ -41,7 +41,7 @@ const GRACE: Duration = Duration::from_millis(250);
 /// A scroll this far moves the choice one card.
 const NOTCH: f32 = 24.;
 /// The least the preview is, whatever size the window had (one stashed
-/// as it was made, an +Errors window, may have had a few lines): this
+/// as it was made, an errors window, may have had a few lines): this
 /// wide, and this tall or this much of the window's height.
 const PREVIEW_W: f32 = 480.;
 const PREVIEW_H: f32 = 320.;
@@ -162,13 +162,14 @@ impl Acme {
         self.node.state.layout.stash.iter().rev().map(|s| s.slot.window).collect()
     }
 
-    /// Stashed window `w`'s card's name: the last part of its name, or
-    /// what it is when it has none.
+    /// Stashed window `w`'s card's name: its label or the last part of
+    /// its path, or what it is when it has neither.
     fn shelf_label(&self, w: WindowId) -> String {
-        let name = self.node.window_name(w);
-        if !name.is_empty() {
-            return crate::sidebar::split_name(&name).0;
-        }
+        crate::sidebar::names(&self.node, w).0
+    }
+
+    #[allow(dead_code)]
+    fn shelf_kind_label(&self, w: WindowId) -> String {
         match self.node.window_kind(w) {
             apex_core::WinKind::Term => "Terminal".into(),
             apex_core::WinKind::Web => "New page".into(),

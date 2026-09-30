@@ -84,10 +84,9 @@ pub fn tag_line_height() -> Pixels {
 pub const CARD_RADIUS: f32 = 7.;
 
 
-/// apex's verbs in a window's tag (the words before its `|`), drawn as
-/// icons: each word laid out as one em space, an icon painted over it.
-/// Only a synonym, drawn: the text is the word, and a click, a sweep, B2
-/// and B3 take it as the word.
+/// apex's verbs in a window's tag (`Node::window_verbs`), drawn as icons
+/// in its head: each on one em space, an icon painted over it. B1 or B2
+/// on one runs it.
 pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Del", r#"<path d="M7 7l10 10M17 7L7 17"/>"#),
     ("Snarf", r#"<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>"#),
@@ -568,16 +567,20 @@ pub struct LineInfo {
     pub y: Pixels,
     pub subs: Vec<(usize, usize)>,
     pub colors: Vec<(usize, usize, Hsla)>,
-    /// A window's tag: where its `|` is, drawn as a hairline, and where its
-    /// verbs' icons stand (`VERB_ICONS`) -- display offsets; the text is
-    /// the tag's as ever.
+    /// A window's tag: where the divider before the user's words is,
+    /// drawn as a hairline, and where its verbs' icons stand
+    /// (`VERB_ICONS`) -- display offsets, in its head.
     pub bar: Option<usize>,
     pub icons: Vec<(usize, usize)>,
+    /// A window tag's first line: the head's bytes before the text (none
+    /// of them the text's: each is at its start), and what they show.
+    pub head: usize,
+    pub atoms: Vec<(usize, usize, Atom)>,
 }
 
 impl LineInfo {
     pub fn to_disp(&self, src: usize) -> usize {
-        self.map.partition_point(|&s| s < src).min(self.disp.len())
+        (self.head + self.map[self.head..].partition_point(|&s| s < src)).min(self.disp.len())
     }
     pub fn to_src(&self, d: usize) -> usize {
         self.map[d.min(self.map.len() - 1)]
@@ -673,55 +676,122 @@ impl TextLayout {
     pub fn lines_that_fit(&self) -> usize {
         ((self.bounds.size.height / self.line_height) as usize).max(1)
     }
+
+    /// The part of a window tag's head under `pos`, if any.
+    pub fn atom_at(&self, pos: Point<Pixels>) -> Option<Atom> {
+        let line = self.lines.first()?;
+        let (x, y) = (pos.x - self.text_origin.x, pos.y - self.text_origin.y - line.y);
+        if y < px(0.) || y >= line.height(self.line_height) {
+            return None;
+        }
+        let row = (y / self.line_height) as usize;
+        let &(ds, de) = line.subs.get(row)?;
+        let xs = |d: usize| line.layout.unwrapped_layout.x_for_index(d) - line.layout.unwrapped_layout.x_for_index(ds);
+        line.atoms.iter().find(|&&(a, b, _)| a >= ds && b <= de && x >= xs(a) - px(2.) && x < xs(b) + px(2.)).map(|x| x.2)
+    }
+
+    /// Where an atom of the head is drawn, in window coordinates.
+    pub fn atom_bounds(&self, atom: Atom) -> Option<Bounds<Pixels>> {
+        let line = self.lines.first()?;
+        let &(a, b, _) = line.atoms.iter().find(|x| x.2 == atom)?;
+        let row = line.subs.iter().position(|&(ds, de)| a >= ds && a < de)?;
+        let ds = line.subs[row].0;
+        let xs = |d: usize| line.layout.unwrapped_layout.x_for_index(d) - line.layout.unwrapped_layout.x_for_index(ds);
+        let top = self.text_origin.y + line.y + self.line_height * row as f32;
+        Some(Bounds::from_corners(point(self.text_origin.x + xs(a), top), point(self.text_origin.x + xs(b), top + self.line_height)))
+    }
+
+    /// Where the head's path is drawn, its folders and name together.
+    pub fn path_bounds(&self) -> Option<Bounds<Pixels>> {
+        let line = self.lines.first()?;
+        let parts: Vec<Bounds<Pixels>> = line.atoms.iter().filter(|x| matches!(x.2, Atom::Dir(_) | Atom::Name | Atom::Untitled)).filter_map(|x| self.atom_bounds(x.2)).collect();
+        let first = parts.first()?;
+        Some(parts.iter().fold(*first, |u, b| Bounds::from_corners(point(u.left().min(b.left()), u.top().min(b.top())), point(u.right().max(b.right()), u.bottom().max(b.bottom())))))
+    }
+}
+
+/// A part of what a window's tag shows ahead of the user's words, none
+/// of it the tag's text: the window's path (its folders and its name),
+/// its label, apex's verbs as icons.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Atom {
+    /// A folder of the path: the path up to and with its `/`, this many
+    /// bytes of it.
+    Dir(usize),
+    /// The path's last part.
+    Name,
+    /// A window with no path yet.
+    Untitled,
+    Label,
+    /// A verb of `VERB_ICONS`.
+    Verb(usize),
+}
+
+/// The head of a window's tag, laid out before its text on its first
+/// line: the path, a gap, the label, the verbs, the divider.
+#[derive(Clone, Default, Debug)]
+pub struct Head {
+    pub text: String,
+    pub atoms: Vec<(usize, usize, Atom)>,
+    /// The gap after the path, set in the mono face's wider space.
+    pub gap: Option<usize>,
+    /// The divider's cell, a hairline drawn in it.
+    pub bar: Option<usize>,
+}
+
+impl Head {
+    /// `split`: the path's folders each a part of their own (a file's
+    /// or a directory's path, not a URL); `untitled`: no path is shown
+    /// as Untitled (a window that could have one), else as nothing.
+    pub fn build(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool) -> Head {
+        let mut h = Head::default();
+        let push = |h: &mut Head, t: &str, atom: Option<Atom>| {
+            let a = h.text.len();
+            h.text.push_str(t);
+            if let Some(atom) = atom {
+                h.atoms.push((a, h.text.len(), atom));
+            }
+        };
+        if path.is_empty() {
+            if untitled {
+                push(&mut h, "Untitled", Some(Atom::Untitled));
+            }
+        } else if !split {
+            push(&mut h, path, Some(Atom::Name));
+        } else {
+            let name = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
+            let mut from = 0;
+            for (i, c) in path[..name].char_indices() {
+                if c == '/' {
+                    push(&mut h, &path[from..=i], Some(Atom::Dir(i + 1)));
+                    from = i + 1;
+                }
+            }
+            push(&mut h, &path[name..], Some(Atom::Name));
+        }
+        if !h.text.is_empty() {
+            h.gap = Some(h.text.len());
+            push(&mut h, " ", None);
+        }
+        if let Some(l) = label.filter(|l| !l.is_empty()) {
+            // its chip's room inside it
+            push(&mut h, &format!(" {l} "), Some(Atom::Label));
+            push(&mut h, " ", None);
+        }
+        for v in verbs {
+            if let Some(i) = VERB_ICONS.iter().position(|(n, _)| n == v) {
+                let mut cell = [0u8; 4];
+                push(&mut h, ICON_CELL.encode_utf8(&mut cell), Some(Atom::Verb(i)));
+                push(&mut h, " ", None);
+            }
+        }
+        h.bar = Some(h.text.len());
+        push(&mut h, "| ", None);
+        h
+    }
 }
 
 /// Expand tabs and build the display-byte to rune map.
-/// `expand`, and each verb in `icons` (its runes `ws..we`, which icon)
-/// laid out as one em space: every byte of it the word's start, the byte
-/// after it the word's end, so an offset in the word is at the icon's
-/// start or end. Where each icon stands, in display bytes.
-fn expand_icons(src: &str, start: usize, icons: &[(usize, usize, usize)]) -> (String, Vec<usize>, Vec<(usize, usize)>) {
-    if icons.is_empty() {
-        let (d, m) = expand(src, start);
-        return (d, m, Vec::new());
-    }
-    let (mut out, mut map, mut at) = (String::new(), Vec::new(), Vec::new());
-    let chars: Vec<char> = src.chars().collect();
-    let mut k = 0;
-    let mut col = 0;
-    while k < chars.len() {
-        let r = start + k;
-        if let Some(&(_, we, i)) = icons.iter().find(|&&(ws, we, _)| ws == r && we <= start + chars.len()) {
-            at.push((out.len(), i));
-            out.push(ICON_CELL);
-            for _ in 0..ICON_CELL.len_utf8() {
-                map.push(r);
-            }
-            col += 1;
-            k = we - start;
-            continue;
-        }
-        let c = chars[k];
-        if c == '\t' {
-            let n = TABSTOP - col % TABSTOP;
-            for _ in 0..n {
-                out.push(' ');
-                map.push(r);
-            }
-            col += n;
-        } else {
-            out.push(c);
-            for _ in 0..c.len_utf8() {
-                map.push(r);
-            }
-            col += 1;
-        }
-        k += 1;
-    }
-    map.push(start + chars.len());
-    (out, map, at)
-}
-
 fn expand(src: &str, start: usize) -> (String, Vec<usize>) {
     let mut out = String::with_capacity(src.len() + 8);
     let mut map = Vec::with_capacity(src.len() + 8);
@@ -751,6 +821,8 @@ fn expand(src: &str, start: usize) -> (String, Vec<usize>) {
 /// What the element needs from the app for one view.
 pub struct Source {
     pub kind: Kind,
+    /// A window's tag: what it shows before its text.
+    pub head: Option<Head>,
     /// A body scrolled by the pixel (the trackpad): how far its text is
     /// moved up from the top of the row its origin is on, negative when
     /// pulled down past the start.
@@ -799,7 +871,7 @@ pub struct Source {
     pub want_visible: bool,
     /// Bring this position on screen when it is not: acme's `textshow`,
     /// the position `quarters` quarters of the window down (one for new
-    /// `+Errors` text, three for a program's output into a win).
+    /// errors text, three for a program's output into a win).
     pub show_at: Option<(usize, usize)>,
 }
 
@@ -847,7 +919,7 @@ pub struct Prepaint {
 fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, q: usize, room: Pixels, height: Pixels) -> usize {
     let lh = fontspec.line_height;
     let text_len = text.len();
-    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.), None, &[]));
+    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.), None, None));
     let cl = text.line_of(q.min(text_len));
     let Some(li) = line(cl) else { return 0 };
     let r = li.row_of(q);
@@ -874,19 +946,13 @@ fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, w
     0
 }
 
-/// How a tag's text is inked: its name's directory (up to `dir_end`) in
-/// the secondary ink, its last part (up to `name_end`) in the primary and
-/// a weight heavier, and the commands after it in `rest` -- faint until
-/// the pointer is on the tag. Offsets are the text's, in characters.
+/// How a tag's text is inked: in `text` (the user's words in a window's
+/// tag; a column's tag and the top row, all commands, faint until the
+/// pointer is on them), a head's verbs in `rest`.
 #[derive(Clone, Copy)]
 pub struct Tint {
-    pub dir_end: usize,
-    pub name_end: usize,
     pub rest: Hsla,
-    /// A window's tag: its first `|` after the name, which parts apex's
-    /// words from the user's, and the ink of the user's words after it.
-    pub bar: Option<usize>,
-    pub yours: Hsla,
+    pub text: Hsla,
     /// The tag's selection: what of its secondary ink is in it is drawn in
     /// the primary, which reads on the selection where the secondary may
     /// not (a column tag's, on a dark ground).
@@ -904,15 +970,22 @@ fn shape(
     wrap_width: Option<Pixels>,
     y: Pixels,
     tint: Option<Tint>,
-    icons: &[(usize, usize, usize)],
+    head: Option<&Head>,
 ) -> LineInfo {
-    let (disp, map, icon_at) = expand_icons(line_text, start, icons);
+    let (mut disp, mut map) = expand(line_text, start);
+    let hn = head.map_or(0, |h| h.text.len());
+    if let Some(h) = head {
+        disp.insert_str(0, &h.text);
+        map.splice(0..0, std::iter::repeat_n(start, hn));
+    }
+    let icon_at: Vec<(usize, usize)> = head.map(|h| h.atoms.iter().filter_map(|&(a, _, x)| if let Atom::Verb(i) = x { Some((a, i)) } else { None }).collect()).unwrap_or_default();
+    let atom_of = |a: usize| head.and_then(|h| h.atoms.iter().find(|&&(p, q, _)| a >= p && a < q)).map(|x| x.2);
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
     let white = rgb(crate::theme::theme().sweep_text);
     let dimmed = rgb(crate::theme::theme().text_dim);
-    // a tag's name is set a weight heavier than the commands after it,
-    // as a title is over a toolbar's
+    // a tag's name is set a weight heavier than the words after it, as a
+    // title is over a toolbar's
     let strong = Font { weight: crate::fonts::weight(gpui::FontWeight::MEDIUM), ..fontspec.font.clone() };
     // an icon's cell: an em space in a face whose em space is an em (a
     // face's own may be narrower, or missing -- Styrene's -- and the
@@ -930,21 +1003,18 @@ fn shape(
         colors: Vec::new(),
         bar: None,
         icons: Vec::new(),
+        head: hn,
+        atoms: head.map(|h| h.atoms.clone()).unwrap_or_default(),
     };
-    // the line cut where its ink or face changes: the sweep, and a tag's
-    // parts -- its name's directory, its last part, the commands after
+    // the line cut where its ink or face changes: the sweep, and a head's
+    // parts -- its folders, its name, its label, its verbs
     let n = disp.len();
-    let at = |q: usize| if q <= start { 0 } else { info.to_disp(q.min(end)) };
-    let dir = tint.map(|t| at(t.dir_end));
-    let dim = tint.map(|t| at(t.name_end));
-    // a window's tag: its `|`, when it is on this line, a glyph left clear
-    // for the hairline drawn in its place
-    let bar = tint.and_then(|t| t.bar).filter(|&q| q >= start && q < end).map(|q| (info.to_disp(q), info.to_disp(q + 1)));
-    // the space after its name set in the mono face, whose space is
-    // wider, for air between the path and the first word (a real
-    // advance, so clicks and the caret agree with what is drawn)
-    let name_at = tint.filter(|t| start == 0 && t.name_end > 0).map(|t| at(t.name_end));
-    let gap = name_at.filter(|&p| disp.as_bytes().get(p) == Some(&b' ')).map(|p| (p, p + 1));
+    // the divider, a glyph left clear for the hairline drawn in its place
+    let bar = head.and_then(|h| h.bar).map(|d| (d, d + 1));
+    // the space after the path set in the mono face, whose space is
+    // wider, for air between the path and the rest (a real advance, so
+    // clicks agree with what is drawn)
+    let gap = head.and_then(|h| h.gap).map(|p| (p, p + 1));
     let wide = font_for(true).font;
     let sweep = match hl {
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
@@ -954,11 +1024,9 @@ fn shape(
         Some((lo, hi)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
     };
-    let mut cuts = vec![0, n];
-    cuts.extend(dim);
-    cuts.extend(dir);
-    for &(d, _) in &icon_at {
-        cuts.extend([d, d + ICON_CELL.len_utf8()]);
+    let mut cuts = vec![0, n, hn];
+    for &(a, b, _) in head.map(|h| h.atoms.as_slice()).unwrap_or_default() {
+        cuts.extend([a, b]);
     }
     if let Some((a, b)) = chosen {
         cuts.extend([a, b]);
@@ -983,30 +1051,28 @@ fn shape(
         }
         let swept = sweep.is_some_and(|(lo, hi)| a >= lo && b <= hi);
         let selected = chosen.is_some_and(|(lo, hi)| a >= lo && b <= hi);
-        let command = dim.is_some_and(|d| a >= d);
-        let folder = dir.is_some_and(|d| a < d) && !command;
         let is_bar = bar.is_some_and(|(p, q)| a >= p && b <= q);
-        let yours = bar.is_some_and(|(_, q)| a >= q) || tint.and_then(|t| t.bar).is_some_and(|q| q < start);
+        let atom = atom_of(a);
         let color = if is_bar {
             gpui::transparent_black()
         } else if swept {
             white
         } else if selected {
             black
-        } else if yours && command {
-            tint.map(|t| t.yours).unwrap_or(dimmed)
-        } else if command {
-            tint.map(|t| t.rest).unwrap_or(dimmed)
-        } else if folder {
-            dimmed
+        } else if a < hn {
+            match atom {
+                Some(Atom::Name) => black,
+                Some(Atom::Verb(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
+                Some(Atom::Dir(_) | Atom::Untitled | Atom::Label) => dimmed,
+            }
         } else {
-            black
+            tint.map(|t| t.text).unwrap_or(black)
         };
-        let face = if icon_at.iter().any(|&(d, _)| a >= d && b <= d + ICON_CELL.len_utf8()) {
+        let face = if matches!(atom, Some(Atom::Verb(_))) {
             cell_face.clone()
         } else if gap.is_some_and(|(p, q)| a >= p && b <= q) {
             wide.clone()
-        } else if dim.is_some_and(|d| d > 0 && a < d) && !folder {
+        } else if matches!(atom, Some(Atom::Name)) {
             strong.clone()
         } else {
             fontspec.font.clone()
@@ -1149,41 +1215,11 @@ impl Element for TextElement {
                 let th = crate::theme::theme();
                 let under = if kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
                 let rest = if src.hovered { rgb(mix(th.text_dim, under, 0.2)) } else { rgb(mix(th.text_dim, under, 0.5)) };
-                // the user's words, after the `|`: a step above apex's
-                let yours = rgb(th.text_dim);
-                let mut icons: Vec<(usize, usize, usize)> = Vec::new();
-                let tint = match kind {
-                    Kind::WinTag => {
-                        let whole = text.to_string();
-                        let name = &whole[..whole.find([' ', '\t']).unwrap_or(whole.len())];
-                        let name_end = name.chars().count();
-                        let trimmed = name.trim_end_matches('/');
-                        let dir_end = trimmed.rfind('/').map(|i| trimmed[..=i].chars().count()).unwrap_or(0);
-                        let bar = whole[name.len()..].find('|').map(|i| whole[..name.len() + i].chars().count());
-                        // apex's verbs, between the name and the `|` (or the
-                        // end): drawn as icons
-                        let till = bar.unwrap_or(whole.chars().count());
-                        let chars: Vec<char> = whole.chars().collect();
-                        let mut q = name_end;
-                        while q < till {
-                            while q < till && chars[q].is_whitespace() {
-                                q += 1;
-                            }
-                            let ws = q;
-                            while q < till && !chars[q].is_whitespace() {
-                                q += 1;
-                            }
-                            let word: String = chars[ws..q].iter().collect();
-                            if let Some(i) = VERB_ICONS.iter().position(|(v, _)| *v == word) {
-                                icons.push((ws, q, i));
-                            }
-                        }
-                        Some(Tint { dir_end, name_end, rest, bar, yours, sel: src.sel })
-                    }
-                    _ => Some(Tint { dir_end: 0, name_end: 0, rest, bar: None, yours, sel: src.sel }),
-                };
+                // the user's words in a window's tag: a step above apex's
+                let tint = Some(Tint { rest, text: if kind == Kind::WinTag { rgb(th.text_dim) } else { rest }, sel: src.sel });
+                let head = src.head.as_ref().filter(|_| kind == Kind::WinTag);
                 while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, &icons);
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, head.filter(|_| n == 0));
                     wrapped += li.subs.len().max(1);
                     y += li.height(lh);
                     lines.push(li);
@@ -1196,7 +1232,7 @@ impl Element for TextElement {
                 // line -- the view starts at the row it is on, the line
                 // wrapped from its own start whatever row is at the top --
                 // and down the rows to the bottom
-                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y, None, &[]));
+                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y, None, None));
                 let mut top = src.origin.min(text_len);
                 // a view being brought somewhere is at its row, not between;
                 // one whose selection is in view already (typing) stays
@@ -1223,7 +1259,7 @@ impl Element for TextElement {
                         break;
                     }
                     // what is to be shown: textshow's position, `quarters`
-                    // quarters of the window down (one for new `+Errors`
+                    // quarters of the window down (one for new errors
                     // text, three for a program's output), or the selection
                     // (a selection by its start: a line plumbed or looked
                     // to ends at the next line's start, and shown by its end
@@ -1502,6 +1538,19 @@ impl Element for TextElement {
                     }
                 }
 
+                // the label on a chip of its own
+                for &(a, b, atom) in &line.atoms {
+                    if atom != Atom::Label {
+                        continue;
+                    }
+                    let sub = line.subs.iter().position(|&(ds, de)| a >= ds && a < de).unwrap_or(0);
+                    let (ds, _) = line.subs[sub];
+                    let th = crate::theme::theme();
+                    let tall = (ink(window, &pp.fontspec).1 + px(6.)).min(lh - px(2.));
+                    let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
+                    let r = Bounds::from_corners(point(origin.x + x(a) - x(ds), sy), point(origin.x + x(b) - x(ds), sy + tall));
+                    window.paint_quad(fill(r, rgb(mix(th.text_dim, th.tag_bg, 0.86))).corner_radii(tall / 2.));
+                }
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
                 // apex's verbs, drawn as their icons on their em spaces, in
                 // the ink the word would have (faint, swept, hinted)
@@ -1515,7 +1564,8 @@ impl Element for TextElement {
                     let name: SharedString = format!("apex-verb-{i}.svg").into();
                     let _ = window.paint_svg(Bounds::new(point(c.x - side / 2., c.y - side / 2.), size(side, side)), name, Some(verb_svg(i)), gpui::TransformationMatrix::unit(), ink, cx);
                 }
-                // the tag's `|`, drawn as a hairline as tall as the ink
+                // the divider before the user's words, a hairline as tall
+                // as the ink
                 if let Some(d) = line.bar {
                     let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
                     let (ds, _) = line.subs[sub];
@@ -1668,24 +1718,26 @@ mod ligature_tests {
 }
 
 #[cfg(test)]
-mod icon_tests {
-    use super::{expand_icons, ICON_CELL};
+mod head_tests {
+    use super::{Atom, Head, ICON_CELL};
 
     #[test]
-    fn verbs_laid_out_as_icons_keep_their_words() {
-        // "/a Del Snarf | Look": Del (runes 3..6) and Snarf (7..12) as icons
-        let (disp, map, at) = expand_icons("/a Del Snarf | Look", 0, &[(3, 6, 0), (7, 12, 1)]);
-        let cell = ICON_CELL.len_utf8();
-        assert_eq!(disp, format!("/a {ICON_CELL} {ICON_CELL} | Look"));
-        assert_eq!(at, vec![(3, 0), (3 + cell + 1, 1)]);
-        // every byte of an icon is its word's start, the byte after it the
-        // word's end: an offset in the word is at the icon's start or end
-        assert!(map[3..3 + cell].iter().all(|&r| r == 3));
-        assert_eq!(map[3 + cell], 6);
-        let snarf = 3 + cell + 1;
-        assert!(map[snarf..snarf + cell].iter().all(|&r| r == 7));
-        assert_eq!(map[snarf + cell], 12);
-        assert_eq!(*map.last().unwrap(), 19);
-        assert_eq!(map.len(), disp.len() + 1);
+    fn a_head_is_the_path_in_parts_the_label_and_the_verbs() {
+        let h = Head::build("/a/b/notes.md", Some("mine"), &["Del", "Nothing", "Put"], true, true);
+        assert_eq!(h.text, format!("/a/b/notes.md  mine  {ICON_CELL} {ICON_CELL} | "));
+        let parts: Vec<(&str, Atom)> = h.atoms.iter().map(|&(a, b, x)| (&h.text[a..b], x)).collect();
+        assert_eq!(parts, vec![("/", Atom::Dir(1)), ("a/", Atom::Dir(3)), ("b/", Atom::Dir(5)), ("notes.md", Atom::Name), (" mine ", Atom::Label), (&*ICON_CELL.to_string(), Atom::Verb(0)), (&*ICON_CELL.to_string(), Atom::Verb(4))]);
+        assert_eq!(&h.text[h.bar.unwrap()..], "| ");
+        // a directory's name is its last folder; a URL is whole; no path
+        // is Untitled
+        let d = Head::build("/a/b/", None, &[], true, true);
+        assert_eq!(d.atoms.iter().map(|&(a, b, _)| &d.text[a..b]).collect::<Vec<_>>(), vec!["/", "a/", "b/"]);
+        assert_eq!(d.atoms.last().unwrap().2, Atom::Name);
+        let u = Head::build("https://x.org/a", None, &[], false, true);
+        assert_eq!(u.atoms, vec![(0, 15, Atom::Name)]);
+        assert_eq!(Head::build("", None, &[], true, true).atoms, vec![(0, 8, Atom::Untitled)]);
+        // the session's errors window: its label alone
+        let e = Head::build("", Some("Errors"), &["Del"], true, false);
+        assert_eq!(e.atoms[0], (0, 8, Atom::Label));
     }
 }

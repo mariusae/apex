@@ -53,7 +53,7 @@ impl Acme {
     /// The address field taken for typing: what is there, all selected.
     pub fn url_edit_start(&mut self, w: WindowId, cx: &mut Context<Self>) {
         let mut field = LineEdit::new();
-        field.set(&self.node.window_name(w));
+        field.set(&self.node.window_path(w));
         field.select_all();
         self.url_edit = Some(UrlEdit { window: w, field, caret_since: Instant::now() });
         cx.notify();
@@ -126,7 +126,7 @@ impl Acme {
                 )
         };
         let editing = self.url_edit.as_ref().filter(|e| e.window == w);
-        let name = self.node.window_name(w);
+        let name = self.node.window_path(w);
         let field: AnyElement = match editing {
             Some(e) => crate::field::field_view(&e.field, e.caret_on(), "Enter an address", true).into_any_element(),
             None if name.is_empty() => div().text_color(rgb(t.text_dim)).child("Enter an address").into_any_element(),

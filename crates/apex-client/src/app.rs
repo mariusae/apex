@@ -28,7 +28,7 @@ use crate::text_element::font_for;
 use crate::term_element::TermLayout;
 use crate::web::{Nav, WebEvent, Webs};
 use crate::pool::{Parked, Pool, TabId, WakeTarget};
-use crate::text_element::{Source, TextLayout};
+use crate::text_element::{Atom, Head, Source, TextLayout};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
@@ -146,6 +146,8 @@ impl Info for ClientInfo {
 #[derive(Clone, Copy, Debug)]
 enum Region {
     Text(usize),
+    /// A part of a window tag's head: its path's, its label, a verb.
+    Atom(Atom),
     Scrollbar,
     LayoutBox,
     Term(usize, usize),
@@ -429,7 +431,7 @@ pub struct Acme {
     /// Where the toasts were drawn last: a click anywhere else puts
     /// them away.
     pub toasts_at: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
-    /// +Errors windows the user has open (brought back from a toast):
+    /// errors windows the user has open (brought back from a toast):
     /// errors written there are seen there.
     pub errors_open: std::collections::HashSet<WindowId>,
     /// Windows on their way to where the tiling put them.
@@ -445,6 +447,14 @@ pub struct Acme {
     /// The title bar's session name being typed, and its sessions
     /// dropped down (`titlebar.rs`).
     pub session_edit: Option<crate::titlebar::SessionEdit>,
+    /// A tag's path or label being typed (`tagedit.rs`).
+    pub tag_edit: Option<crate::tagedit::TagEdit>,
+    /// The picker under a tag's path, and a click on the path waiting to
+    /// be a double-click before it comes down.
+    pub picker: Option<crate::tagedit::Picker>,
+    pub picker_due: Option<(WindowId, Atom, std::time::Instant)>,
+    /// A verb in a tag's head pressed: it runs if the button comes up on it.
+    pub atom_down: Option<(WindowId, Atom, MouseButton)>,
     pub session_menu: bool,
     /// Every known host and its sessions, for the sidebar: as last seen,
     /// then as each host answers (`sidebar_refresh`), and when it was
@@ -495,7 +505,7 @@ pub struct Acme {
     pub shelf: crate::shelf::Shelf,
     /// Whether AppKit's title bar container is hidden (full screen).
     pub native_bar_hidden: bool,
-    /// Positions to bring on screen (new `+Errors` text), by view.
+    /// Positions to bring on screen (new errors text), by view.
     pub(crate) show_at: HashMap<ViewId, (usize, usize)>,
     /// A place to go once its file is open (asked of the server).
     pub pending_goto: Option<Loc>,
@@ -1629,6 +1639,10 @@ impl Acme {
             overview: None,
             url_edit: None,
             session_edit: None,
+            tag_edit: None,
+            picker: None,
+            picker_due: None,
+            atom_down: None,
             session_menu: false,
             sidebar_hosts: Vec::new(),
             sidebar_asked: None,
@@ -1707,15 +1721,17 @@ impl Acme {
     /// user typed is ever more than a frame away from the daemon.
     pub fn sync(&mut self) {
         self.web_events();
-        // acme's winsettag: Undo/Redo/Put/Get come and go with the state
-        let _ = self.node.update_tags(&mut self.log);
         self.track_closed();
         // ^F's candidates, as they come: typed in, or listed
         for c in std::mem::take(&mut self.candidates) {
-            self.got_candidates(c);
+            if c.at == crate::tagedit::LISTING {
+                self.got_listing(c);
+            } else {
+                self.got_candidates(c);
+            }
         }
         for (v, q) in self.node.take_shows() {
-            // errors just written: a toast, the +Errors window stashed
+            // errors just written: a toast, the errors window stashed
             if let ViewId::Body(w) = v {
                 if self.toast_errors(w) {
                     continue;
@@ -2150,14 +2166,10 @@ impl Acme {
             Pending::Warp(Warp::WinButton(w)) => drawn(w).map(|(r, _)| row(r.x0 + SCROLLWID / 2, r.y0 + fonti / 2)),
             Pending::Warp(Warp::ColButton(c)) => l.column(c).map(|c| row(c.r.x0 + SCROLLWID / 2, c.r.y0 + fonti / 2)),
             Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
-                // movetodel: onto the next window's Del (its first word
-                // after the name, drawn as an icon), so a click closes
-                // that one too -- as the last frame drew it
-                let tag = self.node.state.window(w).ok().map(|x| x.tag);
-                let text = tag.and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
-                let n = text.chars().position(|c| c == ' ').map(|i| i + 1).unwrap_or(0);
-                let em = f32::from(crate::text_element::font_for(false).size);
-                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.point_of(n)).map(|q| point(q.x + px(em / 2.), q.y + font / 2.))
+                // movetodel: onto the next window's Del icon, so a click
+                // closes that one too -- as the last frame drew it
+                let del = crate::text_element::VERB_ICONS.iter().position(|(v, _)| *v == "Del").unwrap_or(0);
+                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.atom_bounds(Atom::Verb(del))).map(|b| b.center())
             }
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
             Pending::Warp(Warp::Sel(v)) => {
@@ -2622,6 +2634,7 @@ impl Acme {
             return Some(Source {
                 shift: 0.,
                 kind: Kind::of(view),
+                head: None,
                 mono,
                 dirty,
                 stale,
@@ -2646,6 +2659,10 @@ impl Acme {
         Some(Source {
             shift,
             kind: Kind::of(view),
+            head: match view {
+                ViewId::Tag(w) => Some(self.tag_head(w)),
+                _ => None,
+            },
             mono,
             dirty,
             stale,
@@ -2682,6 +2699,20 @@ impl Acme {
             want_visible: !view.window().is_some_and(|w| self.glide.gliding(w)) && self.want_visible.remove(&view),
             show_at: if view.window().is_some_and(|w| self.glide.gliding(w)) { None } else { self.show_at.remove(&view) },
         })
+    }
+
+    /// What a window's tag shows before the user's words: its path, its
+    /// label (an errors window's or a preview's kind when it has none),
+    /// and apex's verbs for it.
+    pub fn tag_head(&self, w: WindowId) -> Head {
+        let n = &self.node;
+        let kind = n.window_kind(w);
+        let label = n.window_label(w).or_else(|| match kind {
+            WinKind::Errors => Some("Errors".into()),
+            WinKind::Preview => Some("Preview".into()),
+            _ => None,
+        });
+        Head::build(&n.window_path(w), label.as_deref(), &n.window_verbs(w), kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w))
     }
 
     pub fn view_text(&self, view: ViewId) -> String {
@@ -2759,6 +2790,9 @@ impl Acme {
             }
             if l.layout_box.is_some_and(|b| b.contains(&pos)) {
                 return Some((Target::View(*v), Region::LayoutBox));
+            }
+            if let Some(a) = l.atom_at(pos) {
+                return Some((Target::View(*v), Region::Atom(a)));
             }
             return Some((Target::View(*v), Region::Text(l.offset_at(pos))));
         }
@@ -2927,6 +2961,13 @@ impl Acme {
         self.url_edit = None;
         self.session_edit = None;
         self.session_menu = false;
+        // and one off a tag's field or the path's picker puts it away
+        self.tag_edit = None;
+        self.picker_due = None;
+        self.atom_down = None;
+        if self.picker.take().is_some() {
+            cx.notify();
+        }
         // and one off ^F's list puts it away (its rows take their own)
         if self.completion.take().is_some() {
             cx.notify();
@@ -2991,10 +3032,6 @@ impl Acme {
         if let Some(w) = target.window() {
             self.attend(w);
         }
-        // a click in a tag commits the name typed there (acme's wincommit)
-        if let Target::View(ViewId::Tag(w)) = target {
-            let _ = self.node.commit_tag(&mut self.log, w);
-        }
         // the session's own square, while a tool wants the user: the oldest
         // notification is taken, and the pointer goes where it points
         if let (Target::View(ViewId::Top), Region::LayoutBox, MouseButton::Left) = (target, region, button) {
@@ -3011,6 +3048,13 @@ impl Acme {
             let past = self.layouts.get(&ViewId::Top).and_then(|l| l.point_of(q)).is_some_and(|p| e.position.x > p.x + px(6.));
             if plain && e.click_count == 1 && at_end && past {
                 window.start_window_move();
+                return;
+            }
+        }
+        // the head of a window's tag: its path, label and verbs
+        if let (Target::View(ViewId::Tag(w)), Region::Atom(a)) = (target, region) {
+            if self.mouse.b1.is_none() && self.mouse.b2.is_none() {
+                self.press_atom(w, a, button, e.click_count, window, cx);
                 return;
             }
         }
@@ -3314,6 +3358,9 @@ impl Acme {
     pub fn mouse_up(&mut self, e: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let button = if e.button == MouseButton::Left { self.mouse.left_as.take().unwrap_or(MouseButton::Left) } else { e.button };
         self.last_mouse = e.position;
+        if self.release_atom(e.position, button, cx) {
+            return;
+        }
         if self.mouse.scrolling.is_some_and(|(_, b, _)| b == button) {
             self.mouse.scrolling = None;
         }
@@ -3813,10 +3860,10 @@ impl Acme {
     }
 
     /// A web window's body landed at `bounds`: its native view goes there
-    /// (built on the window's name, the URL, the first time), hidden
+    /// (built on the window's path, the URL, the first time), hidden
     /// while a gpui overlay would be under it.
     pub fn web_place(&mut self, w: WindowId, bounds: gpui::Bounds<Pixels>, window: &Window) {
-        let name = self.node.window_name(w);
+        let name = self.node.window_path(w);
         if name.is_empty() {
             return;
         }
@@ -3835,10 +3882,15 @@ impl Acme {
                 // the buffer's HTML as a page, following its every version
                 let Ok(buf) = self.node.state.buffer(b) else { return };
                 let (text, version) = (buf.text.to_string(), buf.version);
-                let dir = std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default();
+                // a page is at a directory (its links are relative to it)
+                // or a file (its preview's links, to the file's)
+                let dir = match name.strip_suffix('/') {
+                    Some(d) => d.to_string(),
+                    None => std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default(),
+                };
                 self.webs.place_html(w, &text, version, &dir, bounds, window, visible);
                 // a preview follows dot in its source (WEB.md §3.3)
-                if let Some(line) = self.preview_source_line(&name) {
+                if let Some(line) = self.preview_source_line(w) {
                     self.webs.follow_line(w, line);
                 }
             }
@@ -3846,11 +3898,13 @@ impl Acme {
         }
     }
 
-    /// For a window named `FILE+Preview`: the line (from 1) dot is on in
-    /// FILE's window, when it is open.
-    fn preview_source_line(&self, name: &str) -> Option<usize> {
-        let source = name.strip_suffix("+Preview")?;
-        let w = self.node.state.windows.keys().copied().find(|w| self.node.window_name(*w) == source)?;
+    /// For a preview of FILE: the line (from 1) dot is on in FILE's
+    /// window, when it is open.
+    fn preview_source_line(&self, page: WindowId) -> Option<usize> {
+        if self.node.window_kind(page) != WinKind::Preview {
+            return None;
+        }
+        let w = self.node.window_of(&self.node.window_path(page), WinKind::File)?;
         let b = self.node.state.window(w).ok()?.body_buffer()?;
         let buf = self.node.state.buffer(b).ok()?;
         let (q0, _) = self.node.selection(ViewId::Body(w)).ok()?;
@@ -3870,7 +3924,7 @@ impl Acme {
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
         // and a walk held open by a modifier: the key coming up ends it
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu || self.tag_edit.is_some() || self.picker.is_some()
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):
@@ -3884,7 +3938,7 @@ impl Acme {
         cx.notify();
     }
 
-    /// What the pages did: a navigation moves the window's name and the
+    /// What the pages did: a navigation moves the window's path and the
     /// navigation stack (`WebNavigate`); titles are not kept yet.
     fn web_events(&mut self) {
         if self.webs.is_empty() {
@@ -3894,7 +3948,7 @@ impl Acme {
             match ev {
                 WebEvent::Navigated(url) => {
                     self.webs.navigated(w, &url);
-                    if self.node.window_name(w) != url {
+                    if self.node.window_path(w) != url {
                         perform(&mut self.node, &mut self.log, vec![Proposal::WebNavigate { window: w, url }]);
                     }
                 }
@@ -3925,7 +3979,7 @@ impl Acme {
                 // the host's loopback, by its bare name: through the proxy
                 WebEvent::Reroute(url) => {
                     self.webs.load(w, &url);
-                    if self.node.window_name(w) != url {
+                    if self.node.window_path(w) != url {
                         perform(&mut self.node, &mut self.log, vec![Proposal::WebNavigate { window: w, url }]);
                     }
                 }
@@ -4066,7 +4120,7 @@ impl Acme {
     /// item under the pointer on release runs as B2 would, none if it is
     /// released outside.
     fn menu_open(&mut self, w: WindowId, at: Point<Pixels>, window: &mut Window) {
-        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_name(w), self.node.window_kind(w), Some(w), self.node.window_owner(w));
+        let items = apex_core::plumb::verbs_for(&self.node.state.meta.rules, &self.node.window_path(w), self.node.window_kind(w), Some(w), self.node.window_owner(w));
         if items.is_empty() {
             return;
         }
@@ -4288,6 +4342,16 @@ impl Acme {
         if self.url_edit.is_some() {
             let ks = &e.keystroke;
             self.url_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            return;
+        }
+        if self.tag_edit.is_some() {
+            let ks = &e.keystroke;
+            self.tag_edit_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            return;
+        }
+        if self.picker.is_some() {
+            let ks = &e.keystroke;
+            self.picker_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
             return;
         }
         if self.session_edit.is_some() {
@@ -4709,7 +4773,7 @@ impl Acme {
 
     // ---- execute (B2) and look (B3) ---------------------------------------------
 
-    /// A line for the first column's `+Errors`: where the app tells the
+    /// A line for the first column's errors: where the app tells the
     /// user things, since acme has no dialogs.
     pub fn notice(&mut self, msg: &str) {
         let _ = self.node.errors(&mut self.log, None, msg);
@@ -4725,9 +4789,6 @@ impl Acme {
     }
 
     pub fn execute(&mut self, ctx: ExecCtx, text: &str, cx: &mut Context<Self>) {
-        if let ExecCtx::Window(w) = ctx {
-            let _ = self.node.commit_tag(&mut self.log, w);
-        }
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
         // End: the session ended (as apex end-session does), the window
         // closed -- as Del closes a window: a modified file warns first

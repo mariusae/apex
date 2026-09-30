@@ -1,4 +1,4 @@
-//! Errors as toasts. A command's errors go to its directory's `+Errors`
+//! Errors as toasts. A command's errors go to its directory's errors
 //! window, as ever -- the core's, and every client's -- but that window
 //! is not opened over the work: it goes to the stash, and what was just
 //! written shows in a toast at the foot of the column it came from (the
@@ -7,9 +7,9 @@
 //! itself after a while unless the pointer is on it, and at once on a
 //! click anywhere but on a toast. Its words answer as
 //! the window's would: B3 on one looks (plumbs a file:line, say), B2 runs
-//! it, both from the `+Errors` window; B1 anywhere on a toast is its
+//! it, both from the errors window; B1 anywhere on a toast is its
 //! Show All. The text is not for editing. An
-//! `+Errors` window already open and showing lines is shown as before,
+//! errors window already open and showing lines is shown as before,
 //! and toasts nothing.
 
 use std::time::{Duration, Instant};
@@ -35,12 +35,12 @@ pub struct Toast {
 }
 
 impl Acme {
-    /// Errors were written to `w` (an `+Errors` window) and it is to be
+    /// Errors were written to `w` (an errors window) and it is to be
     /// shown: unless it is open and showing lines, it goes to the stash
     /// and a toast says what was written. True when it
     /// was taken care of so.
     pub fn toast_errors(&mut self, w: WindowId) -> bool {
-        if !self.node.window_name(w).ends_with(apex_core::node::ERRORS) {
+        if self.node.window_kind(w) != apex_core::WinKind::Errors {
             return false;
         }
         let l = &self.node.state.layout;
@@ -109,7 +109,7 @@ impl Acme {
             let bottom = col.r.y1 as f32 - *below;
             *below += height + 6.;
             let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.22), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
-            let name = self.node.window_name(w);
+            let name = match crate::sidebar::names(&self.node, w) { (what, at) if at.is_empty() => what, (what, at) => format!("{what}  {at}") };
             let at = self.toasts_at.clone();
             let card = div()
                 .id(("toast", i))
@@ -209,7 +209,7 @@ impl Acme {
 }
 
 /// A toast's line, word by word: B3 on a word looks it up from the
-/// `+Errors` window (as a click in the window would: a file:line opens),
+/// errors window (as a click in the window would: a file:line opens),
 /// B2 runs it there; B1 is the toast's (Show All). The spaces between
 /// stay as they were.
 fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<Acme>) -> AnyElement {

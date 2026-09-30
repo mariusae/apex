@@ -29,6 +29,7 @@ mod miniature;
 mod restart;
 mod strips;
 mod switcher;
+mod tagedit;
 mod titlebar;
 mod toasts;
 mod webbar;
@@ -485,7 +486,7 @@ impl Render for Acme {
             area = area.child(toast);
         }
         // a blank page just made: its address to be typed, at once
-        let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Web && !self.url_asked.contains(*w) && self.node.window_name(**w).is_empty()).map(|(w, _)| *w);
+        let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Web && !self.url_asked.contains(*w) && self.node.window_path(**w).is_empty()).map(|(w, _)| *w);
         if let Some(w) = blank {
             self.url_asked.insert(w);
             self.url_edit_start(w, cx);
@@ -518,6 +519,8 @@ impl Render for Acme {
             Some(panel) => root.child(panel),
             None => root,
         };
+        // a tag's path or label being typed, and the path's picker
+        let root = root.children(self.tag_overlays(cx));
         // the overview (⌘⇧\), over everything
         let root = match self.overview_overlay(window, cx) {
             Some(o) => root.child(gpui::deferred(o).with_priority(3)),

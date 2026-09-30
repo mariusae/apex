@@ -332,12 +332,7 @@ impl Acme {
     fn window_row(&self, w: apex_core::WindowId, stashed: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme::theme();
         let hover = theme::step(t.strip, 1);
-        let mut name = self.node.window_name(w);
-        // a blank page, its address not yet typed
-        if name.is_empty() && self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web) {
-            name = "New page".into();
-        }
-        let (label, dir) = split_name(&name);
+        let (label, dir) = names(&self.node, w);
         let d = self.window_dot(w);
         div()
             .id(("win", w.0))
@@ -370,6 +365,43 @@ impl Acme {
 
 /// A window's name as a row shows it: its last part (a directory's with
 /// its slash), and the folder it is in, home as `~`.
+/// A window as a row or a card names it: what it is (its label, else
+/// its path's last part, else what kind of window it is), and where
+/// (its directory, or its whole path when the label said what it is),
+/// home as ~.
+pub(crate) fn names(node: &apex_core::Node, w: apex_core::WindowId) -> (String, String) {
+    use apex_core::WinKind;
+    let path = node.window_path(w);
+    let kind = node.window_kind(w);
+    let label = node.window_label(w).or_else(|| match kind {
+        WinKind::Errors => Some("Errors".into()),
+        WinKind::Preview => Some(format!("{} preview", split_name(&path).0)),
+        _ => None,
+    });
+    match label {
+        Some(l) => (l, tilde(&path)),
+        None if path.is_empty() => (
+            match kind {
+                WinKind::Term => "Terminal",
+                WinKind::Web => "New page",
+                _ => "Untitled",
+            }
+            .into(),
+            String::new(),
+        ),
+        None => split_name(&path),
+    }
+}
+
+/// A path with the home directory as ~.
+pub(crate) fn tilde(path: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    match path.strip_prefix(home.as_str()) {
+        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with('/')) => format!("~{rest}"),
+        _ => path.to_string(),
+    }
+}
+
 pub(crate) fn split_name(name: &str) -> (String, String) {
     let trimmed = name.trim_end_matches('/');
     let slash = if name.ends_with('/') && !trimmed.is_empty() { "/" } else { "" };

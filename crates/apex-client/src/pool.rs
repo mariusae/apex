@@ -580,7 +580,6 @@ impl Pool {
                 gone.push(*id);
                 continue;
             }
-            let _ = p.node.update_tags(&mut p.log);
             let _ = p.node.take_shows();
             let _ = p.link.take_made();
             for loc in p.node.take_gotos() {

@@ -1,5 +1,5 @@
 //! ⌘P: go to anything. Every open window of the session (files,
-//! directories, terminals, win, +Errors) and the files closed lately
+//! directories, terminals, win, errors) and the files closed lately
 //! (the last fifty, each once, kept per session on this machine), ranked
 //! the way Zed's file finder ranks: with nothing typed, what is open in
 //! layout order, then the closed files by recency; with a query, a fuzzy
@@ -31,14 +31,27 @@ const KEEP: usize = 50;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
-    /// The window's name (a file's path, `dir/`, `dir/-host`, `dir/+Errors`).
+    /// The window's path (a file's, `dir/`, a terminal's directory, a URL).
     pub name: String,
+    /// Its label, shown for it where it has one (a terminal's, a tool's
+    /// pane's).
+    pub label: Option<String>,
     /// The window, when one is open on it.
     pub window: Option<WindowId>,
     pub kind: WinKind,
     /// The tab it is in, across the tabs (⌘⇧P): the tab and its label;
     /// none for this session in the plain finder.
     pub tab: Option<(crate::pool::TabId, String)>,
+}
+
+impl Entry {
+    /// What a query is matched against: the path, and the label after.
+    fn search(&self) -> String {
+        match &self.label {
+            Some(l) => format!("{} {l}", self.name),
+            None => self.name.clone(),
+        }
+    }
 }
 
 /// A choice: an entry.
@@ -72,7 +85,7 @@ impl Finder {
         if q.is_empty() {
             self.entries.iter().filter(|e| e.window.is_some()).cloned().map(Pick::Entry).collect()
         } else {
-            let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| score(q, &e.name).map(|s| (s, i, e))).collect();
+            let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| score(q, &e.search()).map(|s| (s, i, e))).collect();
             // best first; open before closed; this tab before others; then
             // the order we had
             let here = |e: &Entry| e.tab.as_ref().map(|(id, _)| Some(*id) == self.here).unwrap_or(true);
@@ -210,15 +223,15 @@ fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label:
     let order = (0..l.cols.len()).flat_map(|ci| apex_core::tiling::stash_order(l, ci)).map(|(w, _)| w);
     let orphans = l.stash.iter().filter(|s| l.column(s.col).is_none()).map(|s| s.slot.window);
     for w in order.chain(orphans) {
-        let name = node.window_name(w);
-        if name.is_empty() {
+        let (name, label) = (node.window_path(w), node.window_label(w));
+        if name.is_empty() && label.is_none() {
             continue;
         }
-        out.push(Entry { name, window: Some(w), kind: node.window_kind(w), tab: tab.clone() });
+        out.push(Entry { name, label, window: Some(w), kind: node.window_kind(w), tab: tab.clone() });
     }
     for p in recently_closed(url) {
-        if !out.iter().any(|e| e.name == p) {
-            out.push(Entry { name: p, window: None, kind: WinKind::File, tab: tab.clone() });
+        if !out.iter().any(|e| e.name == p && e.kind == WinKind::File) {
+            out.push(Entry { name: p, label: None, window: None, kind: WinKind::File, tab: tab.clone() });
         }
     }
     out
@@ -344,14 +357,22 @@ impl Acme {
     /// Only within one session: when the window has switched to another,
     /// the windows of the one left are not gone, and not this one's.
     pub fn track_closed(&mut self) {
-        let now: BTreeMap<WindowId, String> = self.node.state.windows.keys().map(|w| (*w, self.node.window_name(*w))).collect();
+        // a file's window, not a scratch one: the files to go back to
+        let now: BTreeMap<WindowId, String> = self
+            .node
+            .state
+            .windows
+            .keys()
+            .filter(|w| self.node.window_kind(**w) == WinKind::File && !self.node.window_scratch(**w))
+            .map(|w| (*w, self.node.window_path(*w)))
+            .collect();
         if self.last_windows_of.as_ref() != Some(&self.url) {
             self.last_windows = now;
             self.last_windows_of = Some(self.url.clone());
             return;
         }
         for (w, name) in &self.last_windows {
-            if !now.contains_key(w) && name.starts_with('/') && !name.ends_with('/') && !name.contains("/+") && !name.rsplit('/').next().is_some_and(|n| n.starts_with('-')) {
+            if !now.contains_key(w) && name.starts_with('/') && !name.ends_with('/') && self.node.state.windows.get(w).is_none() {
                 note_closed(&self.url, name);
             }
         }
@@ -369,8 +390,9 @@ impl Acme {
             let picked = i == f.cursor;
             let dim = crate::shell::palette_dim(picked);
             let Pick::Entry(e) = pick;
-            let (dir, name) = match e.name.rfind('/') {
-                Some(k) if k + 1 < e.name.len() => (e.name[..=k].to_string(), e.name[k + 1..].to_string()),
+            let (dir, name) = match (&e.label, e.name.rfind('/')) {
+                (Some(l), _) => (e.name.clone(), l.clone()),
+                (None, Some(k)) if k + 1 < e.name.len() => (e.name[..=k].to_string(), e.name[k + 1..].to_string()),
                 _ => (String::new(), e.name.clone()),
             };
             let open = e.window.is_some();
@@ -447,8 +469,8 @@ mod tests {
             filter: "rs".into(),
             cursor: 0,
             entries: vec![
-                Entry { name: "/x/closed.rs".into(), window: None, kind: WinKind::File, tab: None },
-                Entry { name: "/x/open.rs".into(), window: Some(WindowId(1)), kind: WinKind::File, tab: None },
+                Entry { name: "/x/closed.rs".into(), label: None, window: None, kind: WinKind::File, tab: None },
+                Entry { name: "/x/open.rs".into(), label: None, window: Some(WindowId(1)), kind: WinKind::File, tab: None },
             ],
             caret_since: std::time::Instant::now(),
             all: false,
@@ -464,7 +486,7 @@ mod tests {
         let here = SessionUrl::local("main").with_id("aaaa");
         let there = SessionUrl::local("work").with_id("bbbb");
         let (t_here, t_there) = (crate::pool::TabId(1), crate::pool::TabId(2));
-        let e = |name: &str, w: u64, id: crate::pool::TabId, l: &str| Entry { name: name.into(), window: Some(WindowId(w)), kind: WinKind::File, tab: Some((id, l.into())) };
+        let e = |name: &str, w: u64, id: crate::pool::TabId, l: &str| Entry { name: name.into(), label: None, window: Some(WindowId(w)), kind: WinKind::File, tab: Some((id, l.into())) };
         let f = Finder {
             filter: "lib".into(),
             cursor: 0,

@@ -56,7 +56,7 @@ pub fn snapshot(node: &Node, t: &Theme) -> Mini {
         fills: vec![(0., 0., w, h, t.border)],
         lines: Vec::new(),
     };
-    let tag = |m: &mut Mini, b: BufferId, r: (f32, f32, f32, f32)| tag_into(m, node, b, r, t);
+    let tag = |m: &mut Mini, b: BufferId, r: (f32, f32, f32, f32)| tag_into(m, node, None, b, r, t);
     if let Some(top) = l.top {
         tag(&mut m, top, (0., 0., w, font));
     }
@@ -86,7 +86,7 @@ fn window_into(m: &mut Mini, node: &Node, w: WindowId, tag_r: (f32, f32, f32, f3
     let prop = font_for(false);
     let mono = font_for(true);
     let font = f32::from(prop.line_height);
-    tag_into(m, node, win.tag, tag_r, t);
+    tag_into(m, node, Some(w), win.tag, tag_r, t);
     let Some(clip) = body_r else { return };
     let b = (clip.0, clip.1, clip.2, clip.3);
     match win.body {
@@ -135,7 +135,7 @@ fn window_into(m: &mut Mini, node: &Node, w: WindowId, tag_r: (f32, f32, f32, f3
             // the page's paper, and its name in the middle
             let paper = if matches!(win.body, Body::Html(_)) { t.body_bg } else { 0xffffff };
             m.fills.push((clip.0, clip.1, clip.2, clip.3, paper));
-            let name = node.window_name(w);
+            let name = node.window_path(w);
             m.lines.push(Line {
                 x: b.0 + MARGIN,
                 y: b.1 + (b.3 - font) / 2.,
@@ -147,21 +147,27 @@ fn window_into(m: &mut Mini, node: &Node, w: WindowId, tag_r: (f32, f32, f32, f3
     }
 }
 
-/// A tag's first line into `r`: the name in the ink, the rest dim.
-fn tag_into(m: &mut Mini, node: &Node, b: BufferId, r: (f32, f32, f32, f32), t: &Theme) {
+/// A tag's first line into `r`: a window's path in the ink and its
+/// label, then the words in the tag dim.
+fn tag_into(m: &mut Mini, node: &Node, w: Option<WindowId>, b: BufferId, r: (f32, f32, f32, f32), t: &Theme) {
     m.fills.push((r.0, r.1, r.2, r.3, t.tag_bg));
     let Ok(buf) = node.state.buffer(b) else { return };
     let line = untab(&buf.text.line(0), 4);
-    let (name, rest) = match line.find(' ') {
-        Some(i) => (line[..i].to_string(), line[i..].to_string()),
-        None => (line, String::new()),
-    };
+    let mut runs = Vec::new();
+    if let Some(w) = w {
+        runs.push((node.window_path(w), t.text));
+        if let Some(l) = node.window_label(w) {
+            runs.push((format!("  {l}"), t.text_dim));
+        }
+        runs.push(("  ".to_string(), t.text_dim));
+    }
+    runs.push((line, t.text_dim));
     m.lines.push(Line {
         x: r.0 + MARGIN,
         y: r.1,
         clip: r,
         mono: false,
-        runs: vec![(name, t.text), (rest, t.text_dim)],
+        runs,
     });
 }
 
