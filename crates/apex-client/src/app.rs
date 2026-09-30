@@ -2708,7 +2708,8 @@ impl Acme {
                 _ => false,
             },
             // the keys' view: its caret the blue one, blinking
-            key_caret: (self.caret_view == Some(view)).then_some(self.caret_on),
+            // (not a tag's whose path is being picked: the caret is there)
+            key_caret: (self.caret_view == Some(view) && !self.picker.as_ref().is_some_and(|p| view == ViewId::Tag(p.window))).then_some(self.caret_on),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
@@ -2731,6 +2732,10 @@ impl Acme {
             WinKind::Preview => Some("Preview".into()),
             _ => None,
         });
+        // the path's picker down: the path being chosen, typed in place
+        if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
+            return Head::picking(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &n.window_verbs(w));
+        }
         Head::build(&n.window_path(w), label.as_deref(), &n.window_verbs(w), kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w))
     }
 

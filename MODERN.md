@@ -324,8 +324,10 @@ windows put away out of the tiling, which is the core's
 - **The path is a breadcrumb.** One click on a folder or the name
   brings a picker down under it, as VS Code's do: that folder's entries
   (the name's siblings), listed by the host as ^F's names are, so a
-  remote session's too, narrowed as a query typed after the folder's
-  whole path, as its next part. First come the windows open on the
+  remote session's too, narrowed as a query is typed -- in the tag
+  itself: while the picker is down the path shows the folder listed and
+  then what is typed, with its caret, where the rest of the path was;
+  the names below are in the tag's face, under it. First come the windows open on the
   folder or a file in it that are not a plain file's or folder's -- its
   errors, a file's preview, a terminal or a tool's pane there -- errors
   first, then previews: the quick way to them. Return (or a

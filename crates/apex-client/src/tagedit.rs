@@ -4,7 +4,9 @@
 //! A folder of the path, or its name, clicked brings a picker down under
 //! it, as VS Code's breadcrumbs do: the folder's entries (the name's
 //! siblings), listed by the host as ^F's names are, so a remote one's
-//! too, and narrowed as a query is typed; first, the windows open on the
+//! too, and narrowed as a query is typed in the tag itself (the path
+//! shows the folder, then what is typed, with its caret: `Head::picking`),
+//! the names below in the tag's face, under it; first, the windows open on the
 //! folder or on a file in it that are not its own (its errors, a file's
 //! preview, a terminal or a tool's pane there), to go to. Return (or a
 //! click) opens the
@@ -42,14 +44,19 @@ const ROWS: usize = 12;
 const MIN_ROWS: usize = 3;
 
 /// The picker's parts' heights, fixed, so how tall it can be is known
-/// when it comes down: as many rows as fit under the path.
-const ROW_H: f32 = 24.;
-const FIELD_H: f32 = 30.;
+/// when it comes down: as many rows as fit under the path. A row is a
+/// tag's line, in the tag's face: its names line up with the path's.
+fn row_h() -> f32 {
+    f32::from(crate::text_element::tag_line_height()).max(20.)
+}
 const NOTE_H: f32 = 18.;
-/// The picker less its rows: padding, the field, the line between
-/// windows and entries, the "more", the foot, the gaps.
-const PICKER_REST: f32 = 8. + FIELD_H + 5. + NOTE_H + NOTE_H + 4. * 2.;
+/// The picker less its rows: padding, the line between windows and
+/// entries, the "more", the foot, the gaps.
+const PICKER_REST: f32 = 8. + 5. + NOTE_H + NOTE_H + 4. * 2.;
 const PICKER_W: f32 = 420.;
+/// How far in from the picker's edge a row's name starts: its border,
+/// its padding, the row's.
+const TEXT_IN: f32 = 1. + 4. + 8.;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Part {
@@ -100,7 +107,7 @@ pub struct Picker {
     pub warned: bool,
 }
 
-fn caret_on(since: Instant) -> bool {
+pub(crate) fn caret_on(since: Instant) -> bool {
     (since.elapsed().as_millis() / 530) % 2 == 0
 }
 
@@ -308,10 +315,10 @@ impl Acme {
         let windows = self.associated(&dir, w);
         let (right, bottom) = (self.node.state.layout.r.x1 as f32 + self.left(), self.node.state.layout.r.y1 as f32 + self.top());
         let top = f32::from(b.bottom()) + 2.;
-        let rows = (((bottom - 8. - top - PICKER_REST) / ROW_H).floor().max(0.) as usize).clamp(MIN_ROWS, ROWS);
+        let rows = (((bottom - 8. - top - PICKER_REST) / row_h()).floor().max(0.) as usize).clamp(MIN_ROWS, ROWS);
         // its rows' text under the part's (the panel's padding and the
         // row's before it), unless that would take it past the right edge
-        let left = (f32::from(b.left()) - 12.).min(right - PICKER_W - 8.).max(8.);
+        let left = (f32::from(b.left()) - TEXT_IN).min(right - PICKER_W - 8.).max(8.);
         let at = point(px(left), px(top));
         self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
@@ -541,7 +548,7 @@ impl Acme {
             let rows = p.rows;
             let first = cursor.saturating_sub(rows - 1).min(picks.len().saturating_sub(rows));
             let mut list = div().flex().flex_col();
-            let note = |text: String| div().flex_none().h(px(ROW_H)).flex().items_center().px(px(8.)).text_color(rgb(t.panel_dim)).child(text);
+            let note = |text: String| div().flex_none().h(px(row_h())).flex().items_center().px(px(8.)).text_color(rgb(t.panel_dim)).child(text);
             let windows = picks.iter().filter(|c| matches!(c, Choice::Window(..))).count();
             for (i, choice) in picks.iter().enumerate().skip(first).take(rows) {
                 let picked = i == cursor;
@@ -553,7 +560,7 @@ impl Acme {
                 let mut row = div()
                     .id(("pick", i))
                     .flex_none()
-                    .h(px(ROW_H))
+                    .h(px(row_h()))
                     .items_center()
                     .px(px(8.))
                     .rounded(px(4.))
@@ -616,33 +623,25 @@ impl Acme {
                 .border_1()
                 .border_color(rgb(t.panel_border))
                 .shadow(vec![shadow])
+                // the tag's face, at its size and weight: a name below is
+                // set as it would be in the path above it
                 .font_family(fs.font.family.clone())
-                .text_size(px(13.))
+                .font_weight(fs.font.weight)
+                .text_size(fs.size)
                 .flex()
                 .flex_col()
                 .gap(px(2.))
                 .child(self.overlay_mark())
-                // the folder's whole path, and what is typed as its next part
-                .child(
-                    div()
-                        .flex_none()
-                        .h(px(FIELD_H))
-                        .mx(px(4.))
-                        .px(px(4.))
-                        .rounded(px(4.))
-                        .border_1()
-                        .border_color(rgb(t.panel_border))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        // a long one cut at its start, its end beside the field
-                        .child(div().flex_shrink(1.).min_w_0().overflow_hidden().flex().flex_row().justify_end().child(div().flex_none().whitespace_nowrap().text_color(rgb(t.panel_dim)).child(p.dir.clone())))
-                        .child(div().flex_1().min_w(px(60.)).child(crate::field::field_view(&p.filter, caret_on(p.caret_since), "", true))),
-                )
                 .child(list)
                 .child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(if p.warned { t.accent } else { t.panel_dim })).child(foot))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-            out.push(deferred(anchored().position(p.at).child(panel)).with_priority(2).into_any_element());
+            // its rows' names under what is typed in the tag, as that moves
+            // (a folder gone into, or up out of); as far left as the
+            // window's edge makes it, and at the top it came down to
+            let right = self.node.state.layout.r.x1 as f32 + self.left();
+            let typed = self.layouts.get(&ViewId::Tag(p.window)).and_then(|l| l.atom_bounds(Atom::Typed)).map(|b| f32::from(b.left()) - TEXT_IN);
+            let left = typed.unwrap_or(f32::from(p.at.x)).min(right - PICKER_W - 8.).max(8.);
+            out.push(deferred(anchored().position(point(px(left), p.at.y)).child(panel)).with_priority(2).into_any_element());
         }
         out
     }

@@ -576,6 +576,8 @@ pub struct LineInfo {
     /// of them the text's: each is at its start), and what they show.
     pub head: usize,
     pub atoms: Vec<(usize, usize, Atom)>,
+    /// The path's picker's caret, in the head.
+    pub caret: Option<usize>,
 }
 
 impl LineInfo {
@@ -725,6 +727,9 @@ pub enum Atom {
     Label,
     /// A verb of `VERB_ICONS`.
     Verb(usize),
+    /// What is typed after a folder while the path's picker is down: the
+    /// path being chosen, in the tag itself.
+    Typed,
 }
 
 /// The head of a window's tag, laid out before its text on its first
@@ -737,6 +742,8 @@ pub struct Head {
     pub gap: Option<usize>,
     /// The divider's cell, a hairline drawn in it.
     pub bar: Option<usize>,
+    /// Where the path's picker's caret is, in what is typed.
+    pub caret: Option<usize>,
 }
 
 impl Head {
@@ -745,49 +752,85 @@ impl Head {
     /// as Untitled (a window that could have one), else as nothing.
     pub fn build(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool) -> Head {
         let mut h = Head::default();
-        let push = |h: &mut Head, t: &str, atom: Option<Atom>| {
-            let a = h.text.len();
-            h.text.push_str(t);
-            if let Some(atom) = atom {
-                h.atoms.push((a, h.text.len(), atom));
+        h.path(path, split, untitled);
+        h.rest(label, verbs);
+        h
+    }
+
+    /// The head while the path's picker is down: the folder listed, then
+    /// what is typed after it (`cursor` characters in, the caret there
+    /// when `caret`), then the rest as ever.
+    pub fn picking(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, verbs: &[&str]) -> Head {
+        let mut h = Head::default();
+        // every part a folder: the name is being typed
+        let mut from = 0;
+        for (i, c) in dir.char_indices() {
+            if c == '/' {
+                h.push(&dir[from..=i], Some(Atom::Dir(i + 1)));
+                from = i + 1;
             }
-        };
+        }
+        let a = h.text.len();
+        h.text.push_str(typed);
+        h.atoms.push((a, h.text.len(), Atom::Typed));
+        if caret {
+            h.caret = Some(a + typed.char_indices().nth(cursor).map_or(typed.len(), |(i, _)| i));
+        }
+        h.rest(label, verbs);
+        h
+    }
+
+    fn push(&mut self, t: &str, atom: Option<Atom>) {
+        let a = self.text.len();
+        self.text.push_str(t);
+        if let Some(atom) = atom {
+            self.atoms.push((a, self.text.len(), atom));
+        }
+    }
+
+    /// The path: its folders each a part when `split`, then its name.
+    fn path(&mut self, path: &str, split: bool, untitled: bool) {
         if path.is_empty() {
             if untitled {
-                push(&mut h, "Untitled", Some(Atom::Untitled));
+                self.push("Untitled", Some(Atom::Untitled));
             }
         } else if !split {
-            push(&mut h, path, Some(Atom::Name));
+            self.push(path, Some(Atom::Name));
         } else {
             let name = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
             let mut from = 0;
             for (i, c) in path[..name].char_indices() {
                 if c == '/' {
-                    push(&mut h, &path[from..=i], Some(Atom::Dir(i + 1)));
+                    self.push(&path[from..=i], Some(Atom::Dir(i + 1)));
                     from = i + 1;
                 }
             }
-            push(&mut h, &path[name..], Some(Atom::Name));
+            if name < path.len() {
+                self.push(&path[name..], Some(Atom::Name));
+            }
         }
-        if !h.text.is_empty() {
-            h.gap = Some(h.text.len());
-            push(&mut h, " ", None);
+    }
+
+    /// After the path: a gap, the label, the verbs, the divider.
+    fn rest(&mut self, label: Option<&str>, verbs: &[&str]) {
+        if !self.text.is_empty() {
+            self.gap = Some(self.text.len());
+            self.push(" ", None);
         }
         if let Some(l) = label.filter(|l| !l.is_empty()) {
             // its chip's room inside it
-            push(&mut h, &format!(" {l} "), Some(Atom::Label));
-            push(&mut h, " ", None);
+            self.push(&format!(" {l} "), Some(Atom::Label));
+            self.push(" ", None);
         }
         for v in verbs {
             if let Some(i) = VERB_ICONS.iter().position(|(n, _)| n == v) {
                 let mut cell = [0u8; 4];
-                push(&mut h, ICON_CELL.encode_utf8(&mut cell), Some(Atom::Verb(i)));
-                push(&mut h, " ", None);
+                self.push(ICON_CELL.encode_utf8(&mut cell), Some(Atom::Verb(i)));
+                self.push(" ", None);
             }
         }
-        h.bar = Some(h.text.len());
-        push(&mut h, "| ", None);
-        h
+        self.bar = Some(self.text.len());
+        self.push("| ", None);
     }
 }
 
@@ -1005,6 +1048,7 @@ fn shape(
         icons: Vec::new(),
         head: hn,
         atoms: head.map(|h| h.atoms.clone()).unwrap_or_default(),
+        caret: head.and_then(|h| h.caret),
     };
     // the line cut where its ink or face changes: the sweep, and a head's
     // parts -- its folders, its name, its label, its verbs
@@ -1061,7 +1105,7 @@ fn shape(
             black
         } else if a < hn {
             match atom {
-                Some(Atom::Name) => black,
+                Some(Atom::Name | Atom::Typed) => black,
                 Some(Atom::Verb(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
                 Some(Atom::Dir(_) | Atom::Untitled | Atom::Label) => dimmed,
             }
@@ -1564,6 +1608,14 @@ impl Element for TextElement {
                     let name: SharedString = format!("apex-verb-{i}.svg").into();
                     let _ = window.paint_svg(Bounds::new(point(c.x - side / 2., c.y - side / 2.), size(side, side)), name, Some(verb_svg(i)), gpui::TransformationMatrix::unit(), ink, cx);
                 }
+                // the path's picker's caret, in what is typed in the head
+                if let Some(d) = line.caret {
+                    let sub = line.subs.iter().rposition(|&(ds, _)| ds <= d).unwrap_or(0);
+                    let (ds, _) = line.subs[sub];
+                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh - px(2.));
+                    let at = point(origin.x + x(d) - x(ds) - px(0.5), ly + lh * sub as f32 + (lh - tall) / 2.);
+                    window.paint_quad(fill(Bounds::new(at, size(px(2.), tall)), rgb(crate::theme::theme().accent)).corner_radii(px(1.)));
+                }
                 // the divider before the user's words, a hairline as tall
                 // as the ink
                 if let Some(d) = line.bar {
@@ -1736,6 +1788,10 @@ mod head_tests {
         let u = Head::build("https://x.org/a", None, &[], false, true);
         assert_eq!(u.atoms, vec![(0, 15, Atom::Name)]);
         assert_eq!(Head::build("", None, &[], true, true).atoms, vec![(0, 8, Atom::Untitled)]);
+        // picking: the folder, what is typed, the caret in it
+        let p = Head::picking("/a/", "no", 1, true, None, &["Del"]);
+        assert_eq!(p.atoms[..3], [(0, 1, Atom::Dir(1)), (1, 3, Atom::Dir(3)), (3, 5, Atom::Typed)]);
+        assert_eq!(p.caret, Some(4));
         // the session's errors window: its label alone
         let e = Head::build("", Some("Errors"), &["Del"], true, false);
         assert_eq!(e.atoms[0], (0, 8, Atom::Label));
