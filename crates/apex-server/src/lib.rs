@@ -217,7 +217,10 @@ impl Server {
             }
             let name = leader.window_path(w);
             let p = Path::new(&name);
-            if matches!(leader.window_kind(w), WinKind::Dir | WinKind::Errors) && p.is_dir() {
+            // a path with its slash is a directory, and the window's own:
+            // a directory's, an errors window's, and a scratch window's
+            // at one (win's shell, a tool's pane), whatever its kind
+            if (name.ends_with('/') || matches!(leader.window_kind(w), WinKind::Dir | WinKind::Errors)) && p.is_dir() {
                 return p.to_path_buf();
             }
             if let Some(parent) = p.parent() {

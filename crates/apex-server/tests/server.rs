@@ -1285,3 +1285,18 @@ fn candidates_are_the_names_that_complete_a_path() {
     assert!(server.candidates(&dir, "nowhere/x").is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A scratch window at a directory (win's shell, a tool's pane) is in
+/// that directory: B2 and B3 there resolve names in it, not its parent.
+#[test]
+fn a_window_at_a_directory_is_in_it() {
+    let (mut log, mut node, col, server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-at-dir-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    let at = |d: &std::path::Path| format!("{}/", d.display());
+    let w = perform(&mut node, &mut log, vec![Proposal::NewWindow { col, name: at(&dir), label: Some("sh".into()), scratch: true }]).expect("a window");
+    assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), dir);
+    let f = perform(&mut node, &mut log, vec![Proposal::NewWindow { col, name: dir.join("sub/notes.txt").display().to_string(), label: None, scratch: false }]).expect("a window");
+    assert_eq!(server.dir_of(&node, ExecCtx::Window(f)), dir.join("sub"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
