@@ -74,7 +74,7 @@ pub struct Palette {
 /// less the card's inset top and bottom) still has some round its text.
 /// The tiling's font height (a tag's, a column tag's, the top row's) is
 /// this.
-pub const TAG_PAD: f32 = 4.;
+pub const TAG_PAD: f32 = 6.;
 
 pub fn tag_line_height() -> Pixels {
     font_for(false).line_height + px(TAG_PAD)
@@ -689,7 +689,9 @@ impl TextLayout {
         let row = (y / self.line_height) as usize;
         let &(ds, de) = line.subs.get(row)?;
         let xs = |d: usize| line.layout.unwrapped_layout.x_for_index(d) - line.layout.unwrapped_layout.x_for_index(ds);
-        line.atoms.iter().find(|&&(a, b, _)| a >= ds && b <= de && x >= xs(a) - px(2.) && x < xs(b) + px(2.)).map(|x| x.2)
+        // an atom wrapped onto two rows (a long label) is hit on its part
+        // of each
+        line.atoms.iter().find(|&&(a, b, _)| a.max(ds) < b.min(de) && x >= xs(a.max(ds)) - px(2.) && x < xs(b.min(de)) + px(2.)).map(|x| x.2)
     }
 
     /// Where an atom of the head is drawn, in window coordinates.
@@ -1453,9 +1455,18 @@ impl Element for TextElement {
         let pal = palette(pp.kind);
         let lh = pp.fontspec.line_height;
         let lift = ink_lift(window, &pp.fontspec);
-        // a folded window's tag is its card, a little shorter than the
-        // line: the line centred in it, clipped as much top as bottom
-        let shift = if pp.kind != Kind::Body { (bounds.size.height - lh).min(px(0.)) / 2. } else { px(0.) };
+        // a tag's lines centred in its card, as much room over them as
+        // under (a tag's card is a pixel taller than its line, for its
+        // border); a folded window's card is a little shorter than the
+        // line, which is then clipped as much top as bottom. On whole
+        // pixels, so the text stays crisp.
+        let shift = if pp.kind != Kind::Body {
+            let rows: usize = pp.lines.iter().map(|l| l.subs.len().max(1)).sum::<usize>().max(1);
+            let scale = window.scale_factor();
+            px(((f32::from(bounds.size.height - lh * rows as f32) / 2.) * scale).round() / scale)
+        } else {
+            px(0.)
+        };
         let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else { px(MARGIN) };
         let origin = point(bounds.left() + margin, bounds.top() + shift);
 
@@ -1619,31 +1630,38 @@ impl Element for TextElement {
                     }
                 }
 
+                // a chip under display bytes `a..b`, a piece on each row it
+                // is on where the line wraps -- its ends rounded only where
+                // it starts and ends; as tall as the ink and a little, and
+                // never more than the card less a margin (a folded
+                // window's is shorter)
+                let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(lh) - px(3.));
+                let chip = |window: &mut Window, a: usize, b: usize, past: Pixels, color: Hsla| {
+                    for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                        let (s, e) = (a.max(ds), b.min(de));
+                        if s >= e {
+                            continue;
+                        }
+                        let sy = ly + lh * i as f32 + (lh - tall) / 2.;
+                        let x1 = origin.x + x(e) - x(ds) + if e == b { past } else { px(0.) };
+                        let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), sy), point(x1, sy + tall));
+                        let (open, shut) = (if s == a { tall / 2. } else { px(0.) }, if e == b { tall / 2. } else { px(0.) });
+                        window.paint_quad(fill(r, color).corner_radii(gpui::Corners { top_left: open, bottom_left: open, top_right: shut, bottom_right: shut }));
+                    }
+                };
+                let th = crate::theme::theme();
                 // a process on a pill: its name and its ×
                 for &(a, _, atom) in &line.atoms {
                     let Atom::Proc(id) = atom else { continue };
                     let Some(&(_, b, _)) = line.atoms.iter().find(|x| x.2 == Atom::ProcKill(id)) else { continue };
-                    let sub = line.subs.iter().position(|&(ds, de)| a >= ds && a < de).unwrap_or(0);
-                    let (ds, _) = line.subs[sub];
-                    let th = crate::theme::theme();
                     let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
-                    let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(lh - px(2.));
-                    let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
-                    let r = Bounds::from_corners(point(origin.x + x(a) - x(ds), sy), point(origin.x + x(b) - x(ds) + px(3.), sy + tall));
-                    window.paint_quad(fill(r, rgb(mix(th.text_dim, under, 0.9))).corner_radii(tall / 2.));
+                    chip(window, a, b, px(3.), rgb(mix(th.text_dim, under, 0.9)));
                 }
                 // the label on a chip of its own
                 for &(a, b, atom) in &line.atoms {
-                    if atom != Atom::Label {
-                        continue;
+                    if atom == Atom::Label {
+                        chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
                     }
-                    let sub = line.subs.iter().position(|&(ds, de)| a >= ds && a < de).unwrap_or(0);
-                    let (ds, _) = line.subs[sub];
-                    let th = crate::theme::theme();
-                    let tall = (ink(window, &pp.fontspec).1 + px(6.)).min(lh - px(2.));
-                    let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
-                    let r = Bounds::from_corners(point(origin.x + x(a) - x(ds), sy), point(origin.x + x(b) - x(ds), sy + tall));
-                    window.paint_quad(fill(r, rgb(mix(th.text_dim, th.tag_bg, 0.86))).corner_radii(tall / 2.));
                 }
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
                 // apex's verbs, drawn as their icons on their em spaces, in
