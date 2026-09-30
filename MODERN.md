@@ -324,7 +324,11 @@ windows put away out of the tiling, which is the core's
 - **The path is a breadcrumb.** One click on a folder or the name
   brings a picker down under it, as VS Code's do: that folder's entries
   (the name's siblings), listed by the host as ^F's names are, so a
-  remote session's too, narrowed as a query is typed. Return (or a
+  remote session's too, narrowed as a query typed after the folder's
+  whole path, as its next part. First come the windows open on the
+  folder or a file in it that are not a plain file's or folder's -- its
+  errors, a file's preview, a terminal or a tool's pane there -- errors
+  first, then previews: the quick way to them. Return (or a
   click) opens the one chosen, a file or a folder, in a window of its
   own; ⌥return opens it here, in place of what this window shows -- a
   file in a file's window, a folder in a folder's (asking again when it

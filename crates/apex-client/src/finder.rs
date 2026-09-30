@@ -332,7 +332,10 @@ impl Acme {
     /// first, and there once it is shown.
     pub fn pick(&mut self, p: Pick, window: &mut gpui::Window, cx: &mut Context<Self>) {
         self.finder = None;
-        let Pick::Entry(Entry { name, tab, .. }) = p;
+        let Pick::Entry(Entry { name, tab, window: open, .. }) = p;
+        // an open window by its id: its path may be another's too (a
+        // file's and its preview's)
+        let name = open.map(|w| w.0.to_string()).unwrap_or(name);
         let loc = Loc { session: None, name, pos: Pos::Keep };
         if let Some((id, _)) = tab.filter(|(id, _)| *id != self.tab) {
             self.switch_to(id, window, cx);

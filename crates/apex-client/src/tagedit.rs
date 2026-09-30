@@ -4,7 +4,10 @@
 //! A folder of the path, or its name, clicked brings a picker down under
 //! it, as VS Code's breadcrumbs do: the folder's entries (the name's
 //! siblings), listed by the host as ^F's names are, so a remote one's
-//! too, and narrowed as a query is typed. Return (or a click) opens the
+//! too, and narrowed as a query is typed; first, the windows open on the
+//! folder or on a file in it that are not its own (its errors, a file's
+//! preview, a terminal or a tool's pane there), to go to. Return (or a
+//! click) opens the
 //! one chosen, a file or a folder, in a window of its own; ⌥return in
 //! this window in place of what it shows, a file for a file's window and
 //! a folder for a folder's (a second time when this one is unsaved).
@@ -51,8 +54,19 @@ pub struct TagEdit {
     pub at: Bounds<Pixels>,
 }
 
+/// A row of the picker: a window open on the folder or a file in it
+/// (its id, what it is called, its kind), or one of the folder's entries
+/// (a folder's with `true`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Choice {
+    Window(WindowId, String, &'static str),
+    Entry(String, bool),
+}
+
 pub struct Picker {
     pub window: WindowId,
+    /// The windows open on the folder or a file in it, not its own.
+    pub windows: Vec<(WindowId, String, &'static str)>,
     /// The folder listed, with its slash.
     pub dir: String,
     pub filter: LineEdit,
@@ -73,19 +87,30 @@ fn caret_on(since: Instant) -> bool {
 }
 
 impl Picker {
-    /// The entries for what is typed: all of them, folders first, with
-    /// nothing typed; else the ones matching, best first.
-    pub fn picks(&self) -> Vec<(String, bool)> {
-        let Some(Ok(names)) = &self.names else { return Vec::new() };
+    /// The rows for what is typed: the windows first, then the entries --
+    /// all of them, folders first, with nothing typed; else the ones
+    /// matching, best first.
+    pub fn picks(&self) -> Vec<Choice> {
         let q = self.filter.trim();
+        let best = |a: &(f64, Choice), b: &(f64, Choice)| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal);
+        let mut out: Vec<Choice> = if q.is_empty() {
+            self.windows.iter().map(|(w, t, k)| Choice::Window(*w, t.clone(), k)).collect()
+        } else {
+            let mut v: Vec<(f64, Choice)> = self.windows.iter().filter_map(|(w, t, k)| crate::finder::score(q, t).map(|s| (s, Choice::Window(*w, t.clone(), k)))).collect();
+            v.sort_by(best);
+            v.into_iter().map(|x| x.1).collect()
+        };
+        let Some(Ok(names)) = &self.names else { return out };
         if q.is_empty() {
             let mut v = names.clone();
             v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
-            return v;
+            out.extend(v.into_iter().map(|(n, d)| Choice::Entry(n, d)));
+        } else {
+            let mut v: Vec<(f64, Choice)> = names.iter().filter_map(|n| crate::finder::score(q, &n.0).map(|s| (s, Choice::Entry(n.0.clone(), n.1)))).collect();
+            v.sort_by(best);
+            out.extend(v.into_iter().map(|x| x.1));
         }
-        let mut scored: Vec<(f64, &(String, bool))> = names.iter().filter_map(|n| crate::finder::score(q, &n.0).map(|s| (s, n))).collect();
-        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        scored.into_iter().map(|(_, n)| n.clone()).collect()
+        out
     }
 }
 
@@ -262,7 +287,8 @@ impl Acme {
         let Some((dir, current)) = folder_of(&path, atom) else { return };
         let Some(b) = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_bounds(atom)) else { return };
         self.tag_edit = None;
-        self.picker = Some(Picker { window: w, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at: point(b.left(), b.bottom()), caret_since: Instant::now(), current, warned: false });
+        let windows = self.associated(&dir, w);
+        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at: point(b.left(), b.bottom()), caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
         // blinking while it is up
         cx.spawn(async move |this, cx| loop {
@@ -304,7 +330,7 @@ impl Acme {
         }
         p.names = Some(c.names);
         let picks = p.picks();
-        p.cursor = p.current.as_ref().and_then(|n| picks.iter().position(|(x, _)| x == n)).unwrap_or(0);
+        p.cursor = p.current.as_ref().and_then(|n| picks.iter().position(|x| matches!(x, Choice::Entry(e, _) if e == n))).unwrap_or(0);
     }
 
     pub fn picker_key(&mut self, key: &str, ch: Option<&str>, mods: &gpui::Modifiers, cx: &mut Context<Self>) {
@@ -321,8 +347,8 @@ impl Acme {
                 }
             }
             // into the folder chosen (else → moves in what is typed)
-            "right" | "tab" if matches!(p.picks().get(p.cursor), Some((_, true))) => {
-                if let Some((name, _)) = p.picks().get(p.cursor).cloned() {
+            "right" | "tab" if matches!(p.picks().get(p.cursor), Some(Choice::Entry(_, true))) => {
+                if let Some(Choice::Entry(name, _)) = p.picks().get(p.cursor).cloned() {
                     self.picker_into(&name, cx);
                 }
             }
@@ -341,7 +367,20 @@ impl Acme {
 
     /// An entry chosen: a folder gone into; a file opened in a window of
     /// its own, or with ⌥ in this one in place of its file.
-    fn picker_pick(&mut self, (name, is_dir): (String, bool), alt: bool, cx: &mut Context<Self>) {
+    fn picker_pick(&mut self, choice: Choice, alt: bool, cx: &mut Context<Self>) {
+        let (name, is_dir) = match choice {
+            // a window: gone to, by its id (its path is another's too)
+            Choice::Window(w, _, _) => {
+                self.picker = None;
+                let loc = Loc { session: None, name: w.0.to_string(), pos: Pos::Keep };
+                let _ = apex_server::proposal::apply(&mut self.node, &mut self.log, Proposal::Goto { loc });
+                self.sync();
+                self.after();
+                cx.notify();
+                return;
+            }
+            Choice::Entry(name, is_dir) => (name, is_dir),
+        };
         let Some(p) = self.picker.as_mut() else { return };
         // a folder by its path with its slash, as its window is named
         let path = format!("{}{name}{}", p.dir, if is_dir { "/" } else { "" });
@@ -368,10 +407,48 @@ impl Acme {
         cx.notify();
     }
 
+    /// The windows open on folder `dir` or a file in it (or a folder: a
+    /// terminal in one) that are not a plain file's or folder's -- its
+    /// errors, a preview, a terminal, a tool's pane -- but for `except`:
+    /// its errors first, then previews, then the rest.
+    pub fn associated(&self, dir: &str, except: WindowId) -> Vec<(WindowId, String, &'static str)> {
+        let n = &self.node;
+        let mut out = Vec::new();
+        for w in n.state.windows.keys().copied().filter(|w| *w != except) {
+            let kind = n.window_kind(w);
+            if kind == WinKind::Web || (matches!(kind, WinKind::File | WinKind::Dir) && !n.window_scratch(w)) {
+                continue;
+            }
+            let path = n.window_path(w);
+            let Some(rest) = path.strip_prefix(dir).filter(|r| !r.trim_end_matches('/').contains('/')) else { continue };
+            let what = n.window_label(w).unwrap_or_else(|| {
+                match kind {
+                    WinKind::Errors => "Errors",
+                    WinKind::Preview => "Preview",
+                    WinKind::Term => "Terminal",
+                    _ => "Window",
+                }
+                .into()
+            });
+            let title = if rest.is_empty() { what } else { format!("{rest} · {what}") };
+            out.push((w, title, kind.name()));
+        }
+        let rank = |k: &str| match k {
+            "errors" => 0,
+            "preview" => 1,
+            _ => 2,
+        };
+        out.sort_by(|a, b| rank(a.2).cmp(&rank(b.2)).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase())));
+        out
+    }
+
     /// Into folder `name` of the one listed.
     fn picker_into(&mut self, name: &str, cx: &mut Context<Self>) {
-        let Some(p) = self.picker.as_mut() else { return };
+        let Some(p) = self.picker.as_ref() else { return };
         let dir = format!("{}{name}/", p.dir);
+        let windows = self.associated(&dir, p.window);
+        let Some(p) = self.picker.as_mut() else { return };
+        p.windows = windows;
         p.dir = dir.clone();
         p.names = None;
         p.current = None;
@@ -385,8 +462,11 @@ impl Acme {
 
     /// Up to the folder the one listed is in, on the one left.
     fn picker_up(&mut self) {
-        let Some(p) = self.picker.as_mut() else { return };
+        let Some(p) = self.picker.as_ref() else { return };
         let Some(up) = p.dir.trim_end_matches('/').rfind('/').map(|i| p.dir[..=i].to_string()) else { return };
+        let windows = self.associated(&up, p.window);
+        let Some(p) = self.picker.as_mut() else { return };
+        p.windows = windows;
         let (w, from) = (p.window, p.dir.trim_end_matches('/').rsplit('/').next().map(String::from));
         p.dir = up.clone();
         p.names = None;
@@ -435,67 +515,73 @@ impl Acme {
             let cursor = p.cursor.min(picks.len().saturating_sub(1));
             let first = cursor.saturating_sub(ROWS - 1).min(picks.len().saturating_sub(ROWS));
             let mut list = div().flex().flex_col();
-            match &p.names {
-                None => list = list.child(div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child("…")),
-                Some(Err(err)) => list = list.child(div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child(err.clone())),
-                Some(Ok(_)) if picks.is_empty() => list = list.child(div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child("Nothing matches")),
-                Some(Ok(_)) => {
-                    for (i, (name, dir)) in picks.iter().enumerate().skip(first).take(ROWS) {
-                        let picked = i == cursor;
-                        let pick = (name.clone(), *dir);
-                        list = list.child(
-                            div()
-                                .id(("pick", i))
-                                .px(px(8.))
-                                .py(px(2.))
-                                .rounded(px(4.))
-                                .flex()
-                                .flex_row()
-                                .cursor_default()
-                                .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
-                                .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
-                                .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
-                                .child(div().flex_none().child(name.clone()))
-                                .when(*dir, |d| d.child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child("/")))
-                                // a folder's way in, at the row's end
-                                .when(*dir, |d| {
-                                    let name = name.clone();
-                                    d.child(div().flex_1()).child(
-                                        div()
-                                            .id(("into", i))
-                                            .flex_none()
-                                            .px(px(6.))
-                                            .rounded(px(3.))
-                                            .when(!picked, |d| d.text_color(rgb(t.panel_dim)))
-                                            .hover(|s| s.bg(rgb(t.panel_hover)))
-                                            .child("›")
-                                            .on_mouse_down(
-                                                MouseButton::Left,
-                                                cx.listener(move |this, _, _, cx| {
-                                                    this.picker_into(&name, cx);
-                                                    cx.stop_propagation();
-                                                }),
-                                            ),
-                                    )
-                                })
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                                        this.picker_pick(pick.clone(), e.modifiers.alt, cx);
-                                        cx.stop_propagation();
-                                    }),
-                                ),
-                        );
+            let note = |text: String| div().px(px(8.)).py(px(3.)).text_color(rgb(t.panel_dim)).child(text);
+            let windows = picks.iter().filter(|c| matches!(c, Choice::Window(..))).count();
+            for (i, choice) in picks.iter().enumerate().skip(first).take(ROWS) {
+                let picked = i == cursor;
+                // a line between the windows and the entries
+                if i == windows && windows > 0 {
+                    list = list.child(div().mx(px(8.)).my(px(2.)).h(px(1.)).bg(rgb(t.panel_border)));
+                }
+                let dim = |d: gpui::Stateful<gpui::Div>| d.when(!picked, |d| d.text_color(rgb(t.panel_dim)));
+                let mut row = div()
+                    .id(("pick", i))
+                    .px(px(8.))
+                    .py(px(2.))
+                    .rounded(px(4.))
+                    .flex()
+                    .flex_row()
+                    .gap(px(1.))
+                    .cursor_default()
+                    .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
+                    .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
+                    .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))));
+                match choice {
+                    Choice::Window(_, title, kind) => {
+                        row = row.child(div().flex_1().min_w_0().truncate().child(title.clone())).child(dim(div().id(("kind", i)).flex_none().pl(px(8.)).text_size(px(11.))).child(*kind));
                     }
-                    if picks.len() > ROWS {
-                        list = list.child(div().px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - ROWS)));
+                    Choice::Entry(name, dir) => {
+                        row = row.child(div().flex_none().child(name.clone()));
+                        if *dir {
+                            let name = name.clone();
+                            row = row.child(dim(div().id(("slash", i)).flex_none()).child("/")).child(div().flex_1()).child(
+                                // a folder's way in, at the row's end
+                                dim(div().id(("into", i)).flex_none().px(px(6.)).rounded(px(3.)))
+                                    .hover(|s| s.bg(rgb(t.panel_hover)))
+                                    .child("›")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _, _, cx| {
+                                            this.picker_into(&name, cx);
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
+                            );
+                        }
                     }
                 }
+                let pick = choice.clone();
+                list = list.child(row.on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                        this.picker_pick(pick.clone(), e.modifiers.alt, cx);
+                        cx.stop_propagation();
+                    }),
+                ));
+            }
+            if picks.len() > first + ROWS {
+                list = list.child(div().px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - ROWS)));
+            }
+            match &p.names {
+                None => list = list.child(note("…".into())),
+                Some(Err(err)) => list = list.child(note(err.clone())),
+                Some(Ok(_)) if picks.is_empty() => list = list.child(note("Nothing matches".into())),
+                Some(Ok(_)) => {}
             }
             let foot = if p.warned { "Unsaved: ⌥↩ again to replace it" } else { "↩ open  ⌥↩ here  → in  ← up" };
             let panel = div()
                 .id("path-picker")
-                .w(px(320.))
+                .w(px(420.))
                 .p(px(4.))
                 .rounded(px(7.))
                 .bg(rgb(t.panel_bg))
@@ -508,8 +594,22 @@ impl Acme {
                 .flex_col()
                 .gap(px(2.))
                 .child(self.overlay_mark())
-                .child(div().px(px(8.)).py(px(2.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).truncate().child(crate::sidebar::tilde(&p.dir)))
-                .child(div().mx(px(4.)).px(px(4.)).py(px(2.)).rounded(px(4.)).border_1().border_color(rgb(t.panel_border)).child(crate::field::field_view(&p.filter, caret_on(p.caret_since), "Filter", true)))
+                // the folder's whole path, and what is typed as its next part
+                .child(
+                    div()
+                        .mx(px(4.))
+                        .px(px(4.))
+                        .py(px(2.))
+                        .rounded(px(4.))
+                        .border_1()
+                        .border_color(rgb(t.panel_border))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        // a long one cut at its start, its end beside the field
+                        .child(div().flex_shrink(1.).min_w_0().overflow_hidden().flex().flex_row().justify_end().child(div().flex_none().whitespace_nowrap().text_color(rgb(t.panel_dim)).child(p.dir.clone())))
+                        .child(div().flex_1().min_w(px(60.)).child(crate::field::field_view(&p.filter, caret_on(p.caret_since), "", true))),
+                )
                 .child(list)
                 .child(div().px(px(8.)).pt(px(2.)).text_size(px(11.)).text_color(rgb(if p.warned { t.accent } else { t.panel_dim })).child(foot))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
@@ -521,8 +621,33 @@ impl Acme {
 
 #[cfg(test)]
 mod tests {
-    use super::folder_of;
+    use super::{folder_of, Choice, Picker};
     use crate::text_element::Atom;
+    use apex_core::WindowId;
+
+    #[test]
+    fn the_windows_on_a_folder_come_before_its_entries() {
+        let mut p = Picker {
+            window: WindowId(1),
+            windows: vec![(WindowId(7), "Errors".into(), "errors"), (WindowId(8), "notes.md · Preview".into(), "preview")],
+            dir: "/a/".into(),
+            filter: crate::field::LineEdit::new(),
+            names: Some(Ok(vec![("notes.md".into(), false), ("src".into(), true)])),
+            cursor: 0,
+            at: gpui::point(gpui::px(0.), gpui::px(0.)),
+            caret_since: std::time::Instant::now(),
+            current: None,
+            warned: false,
+        };
+        let all = p.picks();
+        assert_eq!(all[0], Choice::Window(WindowId(7), "Errors".into(), "errors"));
+        assert_eq!(all[1], Choice::Window(WindowId(8), "notes.md · Preview".into(), "preview"));
+        // folders first among the entries
+        assert_eq!(&all[2..], &[Choice::Entry("src".into(), true), Choice::Entry("notes.md".into(), false)]);
+        // typed: the windows matching still first
+        p.filter.set("note");
+        assert_eq!(p.picks(), vec![Choice::Window(WindowId(8), "notes.md · Preview".into(), "preview"), Choice::Entry("notes.md".into(), false)]);
+    }
 
     #[test]
     fn a_part_of_the_path_is_a_folder_and_the_entry_it_goes_through() {
