@@ -128,3 +128,25 @@ fn del_typed_in_the_window_interrupts_what_the_shell_runs() {
     // and the DEL itself does not stay in the window
     assert!(until(&mut c, |n| !text(n).contains('\u{7f}')), "DEL left in the text:\n{:?}", text(&c.node));
 }
+
+/// B3 on a name in win's window finds it in the shell's directory, as
+/// it does anywhere else: the window is at that directory.
+#[test]
+fn b3_in_the_window_finds_files_in_its_directory() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-win-b3-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("hello.txt"), "hi\n").unwrap();
+    let (s2, d2) = (sock.clone(), dir.clone());
+    std::thread::spawn(move || {
+        let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
+    });
+    let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
+    let name = format!("{}/", dir.display());
+    assert!(until(&mut c, |n| n.state.windows.keys().any(|w| n.window_path(*w) == name)), "win's window");
+    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_path(*w) == name).unwrap();
+    // as the UI asks: no directory of its own, the window's
+    let trace = c.plumb_dry(ExecCtx::Window(w), "hello.txt", None, false, Duration::from_secs(5)).unwrap();
+    assert!(trace.iter().any(|l| l.ends_with("would open hello.txt")), "{trace:#?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
