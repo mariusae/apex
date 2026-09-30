@@ -24,6 +24,7 @@ mod shell;
 mod sidebar;
 mod commands;
 mod completion;
+mod cwdbar;
 mod glide;
 mod miniature;
 mod restart;
@@ -528,6 +529,8 @@ impl Render for Acme {
         let root = root.children(self.tag_overlays(cx));
         // a process's card, under its pill
         let root = root.children(self.proc_card());
+        // the title bar's crumbs' folders
+        let root = root.children(self.cwd_panel(cx));
         // the overview (⌘⇧\), over everything
         let root = match self.overview_overlay(window, cx) {
             Some(o) => root.child(gpui::deferred(o).with_priority(3)),
@@ -1151,6 +1154,8 @@ impl app::Acme {
                     .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
                     .child(bare("title-gap2").w(px(8.)))
             })
+            // the session's host and directory, the crumbs to change it by
+            .children(self.cwd_bar(cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).max_w(gpui::relative(0.45)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(10.)))))
             .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
             .child(bare("title-shelf").w(px(self.shelf_room(cx))));
         // the sidebar shown: its card goes up round the window's buttons

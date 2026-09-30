@@ -316,6 +316,11 @@ windows put away out of the tiling, which is the core's
   window's or a preview's kind when it has none); apex's verbs as
   icons, faint until the pointer is on the tag; a hairline. Then the
   user's words, a step stronger: all the tag's text holds.
+- **The session's place in the title bar**: the host, dim, and the
+  session's directory as crumbs; a crumb clicked lists the folders in it
+  to cd into (`./` for the folder itself). Paths inside the directory
+  are drawn relative to it in the tags (the directory itself as `./`),
+  and every other path whole.
 - **Processes as pills.** What runs for the session is shown before
   the top row's text, a pill each: its name and a ×. The × ends it; B1
   on it goes to its output, B3 to the window it was run from. The

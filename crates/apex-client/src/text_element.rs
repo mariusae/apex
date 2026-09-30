@@ -739,6 +739,13 @@ pub enum Atom {
     ProcKill(apex_core::Seq),
 }
 
+/// Where `path` goes on past `base` (a directory, with its slash) when it
+/// is inside it or is it: `base`'s length. None when it is elsewhere, or
+/// there is no base.
+fn inside(path: &str, base: &str) -> Option<usize> {
+    (!base.is_empty() && base.ends_with('/') && path.starts_with(base)).then_some(base.len())
+}
+
 /// The head of a window's tag, laid out before its text on its first
 /// line: the path, a gap, the label, the verbs, the divider.
 #[derive(Clone, Default, Debug)]
@@ -758,8 +765,16 @@ impl Head {
     /// or a directory's path, not a URL); `untitled`: no path is shown
     /// as Untitled (a window that could have one), else as nothing.
     pub fn build(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool) -> Head {
+        Head::build_in(path, label, verbs, split, untitled, "")
+    }
+
+    /// `build`, a path inside `base` (the session's directory, with its
+    /// slash) drawn from there on, and `base` itself as `./`. Only drawn
+    /// so: the parts are still the whole path's (`Atom::Dir`'s length is
+    /// the whole path's), so a click on one lists where it really is.
+    pub fn build_in(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool, base: &str) -> Head {
         let mut h = Head::default();
-        h.path(path, split, untitled);
+        h.path(path, split, untitled, base);
         h.rest(label, verbs);
         h
     }
@@ -768,10 +783,22 @@ impl Head {
     /// what is typed after it (`cursor` characters in, the caret there
     /// when `caret`), then the rest as ever.
     pub fn picking(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, verbs: &[&str]) -> Head {
+        Head::picking_in(dir, typed, cursor, caret, label, verbs, "")
+    }
+
+    /// `picking`, the folder drawn relative to `base` when it is in it (as
+    /// `build_in` draws a path), `./` when it is `base`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn picking_in(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, verbs: &[&str], base: &str) -> Head {
         let mut h = Head::default();
         // every part a folder: the name is being typed
-        let mut from = 0;
-        for (i, c) in dir.char_indices() {
+        let start = inside(dir, base);
+        if start == Some(dir.len()) {
+            h.push("./", Some(Atom::Dir(dir.len())));
+        }
+        let mut from = start.unwrap_or(0);
+        let skip = from;
+        for (i, c) in dir.char_indices().skip_while(|(i, _)| *i < skip) {
             if c == '/' {
                 h.push(&dir[from..=i], Some(Atom::Dir(i + 1)));
                 from = i + 1;
@@ -809,18 +836,22 @@ impl Head {
         }
     }
 
-    /// The path: its folders each a part when `split`, then its name.
-    fn path(&mut self, path: &str, split: bool, untitled: bool) {
+    /// The path: its folders each a part when `split`, then its name --
+    /// from `base` on when it is inside it, `./` when it is `base`.
+    fn path(&mut self, path: &str, split: bool, untitled: bool, base: &str) {
         if path.is_empty() {
             if untitled {
                 self.push("Untitled", Some(Atom::Untitled));
             }
         } else if !split {
             self.push(path, Some(Atom::Name));
+        } else if inside(path, base) == Some(path.len()) {
+            self.push("./", Some(Atom::Name));
         } else {
             let name = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
-            let mut from = 0;
-            for (i, c) in path[..name].char_indices() {
+            let mut from = inside(path, base).unwrap_or(0);
+            let skip = from;
+            for (i, c) in path[..name].char_indices().skip_while(|(i, _)| *i < skip) {
                 if c == '/' {
                     self.push(&path[from..=i], Some(Atom::Dir(i + 1)));
                     from = i + 1;
@@ -1861,6 +1892,18 @@ mod head_tests {
         assert_eq!(p.atoms[..3], [(0, 1, Atom::Dir(1)), (1, 3, Atom::Dir(3)), (3, 5, Atom::Typed)]);
         assert_eq!(p.caret, Some(4));
         // the session's errors window: its label alone
+        // inside the session's directory: from there on, and it as ./ --
+        // the parts still the whole path's
+        let r = Head::build_in("/a/b/src/x.rs", None, &[], true, true, "/a/b/");
+        assert_eq!(r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect::<Vec<_>>(), vec![("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
+        assert_eq!(Head::build_in("/a/b/", None, &[], true, true, "/a/b/").atoms[0], (0, 2, Atom::Name));
+        assert_eq!(&Head::build_in("/a/b/", None, &[], true, true, "/a/b/").text[..2], "./");
+        let out = Head::build_in("/a/c/x.rs", None, &[], true, true, "/a/b/");
+        assert!(out.text.starts_with("/a/c/x.rs"), "{:?}", out.text);
+        let p = Head::picking_in("/a/b/", "s", 1, false, None, &[], "/a/b/");
+        assert!(p.text.starts_with("./s"), "{:?}", p.text);
+        let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
+        assert!(p.text.starts_with("src/"), "{:?}", p.text);
         // the session's processes: a pill each, its name and its ×
         let p = Head::procs(&[(7, "make".into())]);
         assert_eq!(p.atoms.iter().map(|x| x.2).collect::<Vec<_>>(), vec![Atom::Proc(7), Atom::ProcKill(7)]);

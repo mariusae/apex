@@ -2549,3 +2549,27 @@ from or where its output went.
   the pid, the directory, when it started (the clock's time, and how
   long ago) and where it was run from.
 
+## The session's place
+
+*As built (protocol 41):* a session has a current directory, and knows
+the host it runs on: `MetaOp::Cwd { host, dir }` in its metalog, made
+with the session and changed by `ClientMsg::Cd` (`apex cd DIR`, the
+title bar's crumbs), which the daemon checks is a directory on the host
+-- resolved lexically, as a shell's `cd`, not through links, so it
+stays a prefix of the paths opened in it. The server's own directory
+follows it: commands run from the session's tag or a column's, and
+terminals made from them, run there.
+
+The title bar shows the host, dim, and the directory as crumbs, left of
+the session's tag. A crumb clicked lists the folders in it (folders
+only), typed after the crumbs to narrow them; `./` first, the folder
+itself: return cds there, → goes into a folder, ← up out of one.
+
+A window's tag draws a path inside the directory from there on
+(`src/main.rs`), the directory itself as `./`, and any other path whole,
+from `/` -- so the two cannot be taken for each other. Only drawn so
+(`Head::build_in`): the state has the whole path, and each part of it
+is still the whole path's, so a click on `src/` lists where it really is
+and the path's picker goes up past the directory into whole paths. The
+tag is drawn from the state every frame, so it follows a `cd` at once.
+

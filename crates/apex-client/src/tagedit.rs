@@ -348,15 +348,19 @@ impl Acme {
 
     /// Ask the host for a folder's entries, as ^F asks (`Acme::complete`).
     fn list_folder(&mut self, w: WindowId, dir: &str) {
-        let ctx = ExecCtx::Window(w);
-        let view = ViewId::Tag(w);
+        self.list_folder_as(ViewId::Tag(w), ExecCtx::Window(w), LISTING, dir);
+    }
+
+    /// `list_folder` for whoever asks: the answer comes back as
+    /// `Candidates` with `view` and `at`, which say whose it is.
+    pub(crate) fn list_folder_as(&mut self, view: ViewId, ctx: ExecCtx, at: usize, dir: &str) {
         match &mut self.backend {
             crate::app::Backend::Local(server) => {
                 let here = server.dir_of(&self.node, ctx);
                 let names = server.candidates(&here, dir);
-                self.candidates.push(apex_server::proto::Candidates { view, at: LISTING, prefix: dir.to_string(), names });
+                self.candidates.push(apex_server::proto::Candidates { view, at, prefix: dir.to_string(), names });
             }
-            crate::app::Backend::Remote(link) => link.send(&apex_server::proto::ClientMsg::Candidates { view, ctx, at: LISTING, prefix: dir.to_string() }),
+            crate::app::Backend::Remote(link) => link.send(&apex_server::proto::ClientMsg::Candidates { view, ctx, at, prefix: dir.to_string() }),
         }
     }
 

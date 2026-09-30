@@ -452,6 +452,8 @@ pub struct Acme {
     /// The picker under a tag's path, and a click on the path waiting to
     /// be a double-click before it comes down.
     pub picker: Option<crate::tagedit::Picker>,
+    /// The folders under a crumb of the title bar's directory (`cwdbar.rs`).
+    pub cwd_picker: Option<crate::cwdbar::CwdPicker>,
     pub picker_due: Option<(WindowId, Atom, std::time::Instant)>,
     /// A verb in a tag's head pressed: it runs if the button comes up on it.
     pub atom_down: Option<(WindowId, Atom, MouseButton)>,
@@ -1647,6 +1649,7 @@ impl Acme {
             session_edit: None,
             tag_edit: None,
             picker: None,
+            cwd_picker: None,
             picker_due: None,
             atom_down: None,
             proc_hover: None,
@@ -1734,6 +1737,8 @@ impl Acme {
         for c in std::mem::take(&mut self.candidates) {
             if c.at == crate::tagedit::LISTING {
                 self.got_listing(c);
+            } else if c.at == crate::cwdbar::CWD_LISTING {
+                self.got_cwd_listing(c);
             } else {
                 self.got_candidates(c);
             }
@@ -2739,9 +2744,10 @@ impl Acme {
         });
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
-            return Head::picking(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &n.window_verbs(w));
+            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &n.window_verbs(w), &n.state.meta.cwd);
         }
-        Head::build(&n.window_path(w), label.as_deref(), &n.window_verbs(w), kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w))
+        // a path in the session's directory from there on (only drawn so)
+        Head::build_in(&n.window_path(w), label.as_deref(), &n.window_verbs(w), kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
     }
 
     pub fn view_text(&self, view: ViewId) -> String {
@@ -2994,7 +3000,7 @@ impl Acme {
         self.tag_edit = None;
         self.picker_due = None;
         self.atom_down = None;
-        if self.picker.take().is_some() {
+        if self.picker.take().is_some() || self.cwd_picker.take().is_some() {
             cx.notify();
         }
         // and one off ^F's list puts it away (its rows take their own)
@@ -3966,7 +3972,7 @@ impl Acme {
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
         // and a walk held open by a modifier: the key coming up ends it
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu || self.tag_edit.is_some() || self.picker.is_some()
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu || self.tag_edit.is_some() || self.picker.is_some() || self.cwd_picker.is_some()
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):
@@ -4394,6 +4400,11 @@ impl Acme {
         if self.picker.is_some() {
             let ks = &e.keystroke;
             self.picker_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
+            return;
+        }
+        if self.cwd_picker.is_some() {
+            let ks = &e.keystroke;
+            self.cwd_picker_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, cx);
             return;
         }
         if self.session_edit.is_some() {
