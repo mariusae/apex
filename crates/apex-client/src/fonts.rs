@@ -17,6 +17,10 @@
 //!   7 and 8, and in pages Radon for its italics.
 //! - Inter: Inter and JetBrains Mono (both bundled, both OFL), as rsms
 //!   sets his Sublime Text theme.
+//! - Geist: Vercel's Geist and Geist Mono (bundled, OFL).
+//! - Styrene: Commercial Type's Styrene B, with JetBrains Mono. Not to
+//!   be bundled: the installed family, else its files from the iCloud
+//!   Drive `Fonts` folder, as H&Co's.
 //! - H&Co: Hoefler & Co.'s Ideal Sans (screen smart) and Operator Mono,
 //!   not to be bundled: the system's copies, or Operator Mono's files in
 //!   the user's iCloud Drive `Fonts` folder where it is not installed
@@ -40,9 +44,11 @@ pub enum Set {
     Nova,
     Hco,
     Inter,
+    Geist,
+    Styrene,
 }
 
-pub const ALL: [Set; 7] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter];
+pub const ALL: [Set; 9] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter, Set::Geist, Set::Styrene];
 
 impl Set {
     pub fn title(self) -> &'static str {
@@ -54,6 +60,8 @@ impl Set {
             Set::Nova => "Nova",
             Set::Hco => "H&Co",
             Set::Inter => "Inter",
+            Set::Geist => "Geist",
+            Set::Styrene => "Styrene",
         }
     }
 
@@ -66,6 +74,8 @@ impl Set {
             Set::Nova => "nova",
             Set::Hco => "hco",
             Set::Inter => "inter",
+            Set::Geist => "geist",
+            Set::Styrene => "styrene",
         }
     }
 }
@@ -173,12 +183,16 @@ fn text_as_set() -> Spec {
         Set::Nova => Spec { family: ".SystemUIFont", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: LEGIBLE },
         Set::Hco => Spec { family: IDEAL, size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
         Set::Inter => Spec { family: "Inter", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Geist => Spec { family: "Geist", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Styrene => Spec { family: STYRENE, size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
 /// Hoefler & Co.'s families, as their screen-smart cuts name themselves.
 const IDEAL: &str = "Ideal Sans SSm";
 const OPERATOR: &str = "Operator Mono SSm";
+/// Commercial Type's Styrene B, as its desktop cut names itself.
+const STYRENE: &str = "Styrene B LC";
 
 /// What mono windows and terminals are set in.
 pub fn mono() -> Spec {
@@ -202,7 +216,8 @@ fn mono_as_set() -> Spec {
         Set::Mona => Spec { family: "Monaspace Xenon", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: XENON },
         Set::Nova => Spec { family: "Menlo", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Hco => Spec { family: OPERATOR, size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
-        Set::Inter => Spec { family: "JetBrains Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Inter | Set::Styrene => Spec { family: "JetBrains Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Geist => Spec { family: "Geist Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
@@ -216,6 +231,8 @@ pub fn ui() -> &'static str {
         Set::Nova => ".AppleSystemUIFont",
         Set::Hco => IDEAL,
         Set::Inter => "Inter",
+        Set::Geist => "Geist",
+        Set::Styrene => STYRENE,
     }
 }
 
@@ -265,6 +282,17 @@ pub const FACES: &[Face] = &[
     face!("jetbrains", "JetBrainsMono-Bold.ttf", "JetBrains Mono", 700, false),
     face!("jetbrains", "JetBrainsMono-Italic.ttf", "JetBrains Mono", 400, true),
     face!("jetbrains", "JetBrainsMono-BoldItalic.ttf", "JetBrains Mono", 700, true),
+    face!("geist", "Geist-Regular.ttf", "Geist", 400, false),
+    face!("geist", "Geist-Medium.ttf", "Geist", 500, false),
+    face!("geist", "Geist-SemiBold.ttf", "Geist", 600, false),
+    face!("geist", "Geist-Bold.ttf", "Geist", 700, false),
+    face!("geist", "Geist-Italic.ttf", "Geist", 400, true),
+    face!("geist", "Geist-BoldItalic.ttf", "Geist", 700, true),
+    face!("geist", "GeistMono-Regular.ttf", "Geist Mono", 400, false),
+    face!("geist", "GeistMono-Medium.ttf", "Geist Mono", 500, false),
+    face!("geist", "GeistMono-Bold.ttf", "Geist Mono", 700, false),
+    face!("geist", "GeistMono-Italic.ttf", "Geist Mono", 400, true),
+    face!("geist", "GeistMono-BoldItalic.ttf", "Geist Mono", 700, true),
 ];
 
 /// Faces found on this machine rather than bundled (H&Co's where they
@@ -277,14 +305,19 @@ fn faces() -> impl Iterator<Item = &'static Face> {
     FACES.iter().chain(FOUND.get().into_iter().flatten())
 }
 
-/// H&Co's families not installed: their files from the user's iCloud
-/// Drive `Fonts` folder (the family's folder, or loose there), by the
-/// weight and slant each file's name says.
-fn hco_faces(installed: &[String]) -> Vec<Face> {
+/// H&Co's families and Styrene not installed: their files from the
+/// user's iCloud Drive `Fonts` folder (the family's folder, or loose
+/// there), by the weight and slant each file's name says.
+fn found_faces(installed: &[String]) -> Vec<Face> {
     let Some(home) = std::env::var_os("HOME") else { return Vec::new() };
     let fonts = std::path::Path::new(&home).join("Library/Mobile Documents/com~apple~CloudDocs/Fonts");
     let mut out = Vec::new();
-    for (family, prefix, dirs) in [(OPERATOR, "OperatorMonoSSm-", ["HCo_OperatorMonoSSm/OpenType", ""]), (IDEAL, "IdealSansSSm-", ["HCo_IdealSansSSm_Pro/OpenType", "HCo_IdealSansSSm_Basic/OpenType"])] {
+    for (family, prefix, dirs) in [
+        (OPERATOR, "OperatorMonoSSm-", ["HCo_OperatorMonoSSm/OpenType", ""]),
+        (IDEAL, "IdealSansSSm-", ["HCo_IdealSansSSm_Pro/OpenType", "HCo_IdealSansSSm_Basic/OpenType"]),
+        // "Styrene B-Bold Italic-Desktop.otf" and the like
+        (STYRENE, "Styrene B-", ["Styrene B", ""]),
+    ] {
         if installed.iter().any(|n| n == family) {
             continue;
         }
@@ -320,7 +353,7 @@ fn hco_faces(installed: &[String]) -> Vec<Face> {
 /// installed.
 pub fn install(cx: &mut App) {
     let installed = cx.text_system().all_font_names();
-    let found = hco_faces(&installed);
+    let found = found_faces(&installed);
     if !found.is_empty() {
         let bytes = found.iter().map(|f| std::borrow::Cow::Borrowed(f.bytes)).collect();
         if let Err(e) = cx.text_system().add_fonts(bytes) {
@@ -355,7 +388,8 @@ pub const PAGE_PATH: &str = "/.apex-font/";
 
 /// A bundled face by the file a page asks for.
 pub fn serve(path: &str) -> Option<(&'static [u8], &'static str)> {
-    let file = path.strip_prefix(PAGE_PATH)?;
+    // a name with spaces in it (Styrene's) comes asked for as a URL's
+    let file = path.strip_prefix(PAGE_PATH)?.replace("%20", " ");
     let f = faces().find(|f| f.file == file)?;
     Some((f.bytes, if file.ends_with(".otf") { "font/otf" } else { "font/ttf" }))
 }
@@ -384,6 +418,8 @@ pub fn page_css() -> String {
         Set::Mona => ("\"Mona Sans\", sans-serif", "\"Monaspace Xenon\", monospace", "normal", "\"calt\", \"ss02\", \"ss03\", \"ss07\", \"ss08\""),
         Set::Hco => ("\"Ideal Sans SSm\", sans-serif", "\"Operator Mono SSm\", monospace", "normal", "normal"),
         Set::Inter => ("\"Inter\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
+        Set::Geist => ("\"Geist\", sans-serif", "\"Geist Mono\", monospace", "normal", "normal"),
+        Set::Styrene => ("\"Styrene B LC\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
     };
     css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features}}}"));
     css
