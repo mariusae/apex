@@ -1974,6 +1974,24 @@ pub fn shell_in_named(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: Op
     (out, err, exit, name)
 }
 
+/// For a child, between fork and exec: every signal at its default and
+/// none blocked, as a program expects them, whatever this process was
+/// given. An ignored disposition survives exec: a daemon started with
+/// SIGTERM ignored (by whatever started the app) passed it to everything
+/// it ran, and Kill, the pills' ×, `apex kill` ended nothing.
+pub fn default_signals() -> std::io::Result<()> {
+    // SAFETY: signal and sigprocmask are async-signal-safe
+    unsafe {
+        for sig in [libc::SIGHUP, libc::SIGINT, libc::SIGQUIT, libc::SIGTERM, libc::SIGPIPE, libc::SIGCHLD, libc::SIGALRM, libc::SIGUSR1, libc::SIGUSR2, libc::SIGTSTP, libc::SIGTTIN, libc::SIGTTOU] {
+            libc::signal(sig, libc::SIG_DFL);
+        }
+        let mut none: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut none);
+        libc::sigprocmask(libc::SIG_SETMASK, &none, std::ptr::null_mut());
+    }
+    Ok(())
+}
+
 /// `shell_in_named`, telling `started` the pid once the command runs,
 /// and returning the pid (none when it could not be started).
 #[allow(clippy::too_many_arguments)]
@@ -1987,6 +2005,10 @@ pub fn shell_in_started(name: &str, ctx: ExecCtx, cmd: &str, dir: &Path, input: 
         command.env(k, v);
     }
     use std::os::unix::process::CommandExt;
+    // SAFETY: default_signals makes only async-signal-safe calls
+    unsafe {
+        command.pre_exec(default_signals);
+    }
     let child = command
         .arg("-c")
         .arg(cmd)

@@ -41,11 +41,13 @@ pub fn spawn_server(exe: &Path, socket: &Path, session: &str) -> io::Result<()> 
         .stdout(std::process::Stdio::null())
         // what the daemon says goes beside its socket, where it can be read
         .stderr(daemon_log(socket).map(std::process::Stdio::from).unwrap_or_else(std::process::Stdio::null));
-    // SAFETY: setsid in the child before exec; it only touches the child.
+    // SAFETY: setsid and the signals' defaults in the child before exec;
+    // they only touch the child. The daemon starts from what the app was
+    // given no more than a program does (an ignored SIGTERM, say).
     unsafe {
         cmd.pre_exec(|| {
             libc::setsid();
-            Ok(())
+            crate::default_signals()
         });
     }
     cmd.spawn()?;
