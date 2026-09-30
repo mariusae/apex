@@ -158,10 +158,9 @@ plane headlessly; it is the first thing to build after the frames.
 ### 2.1 State
 
 *As built (stage 4):* no web shard. `Body::Web` carries nothing; the
-URL is the window's name, the first word of its tag, exactly as a
-terminal's directory is (the buffer-less naming already existed), so
-`WebNavigate{window, url}` is a tag edit plus a `Visit` on the
-navigation stack, and `OpenWeb{col, url}` makes the window. Titles are
+URL is the window's path (`Window.path`), exactly as a terminal's
+directory is, so `WebNavigate{window, url}` is a `WindowOp::Path` plus
+a `Visit` on the navigation stack, and `OpenWeb{col, url}` makes the window. Titles are
 not kept yet. `WinKind::Web` for rules (`-kind=web`). A `Goto` to a URL
 no window shows opens a web window on it (the daemon and the client
 both), which is also what Back does after a page moved on: a new window
@@ -386,8 +385,9 @@ MIME types come from the extension; the response headers carry them.
 ### 2.5 HTML from a buffer
 
 *As built (stage 6):* `Body::Html(buffer)`, a text buffer the client
-shows as a page: `cmd | apex web [-name NAME]` (`Proposal::OpenHtml`,
-the name `DIR/+web` unless given), edited, put and got as text. The
+shows as a page: `cmd | apex web [-label LABEL]` (`Proposal::OpenHtml`,
+a scratch window at the current directory, labelled `web` unless
+given), edited and got as text. The
 view is built with the HTML and, on every later version, patched in
 place by an injected script (a small morphdom: nodes matched by
 position and name, attributes and text updated), so scroll and state
@@ -413,8 +413,8 @@ directory when there is one (the preview tool sets it; §3.2).
 
 *As built (stage 7):* `apex tool preview FILE` (crate
 `apex-tool-preview`, a command named `preview`) opens the file if need
-be (a `Goto`), finds or makes `FILE+Preview` as an HTML window
-(`OpenHtml`) in the column beside the source, marks it live, and
+be (a `Goto`), finds or makes FILE's preview, an HTML window of kind
+`Preview` at FILE's path (`OpenHtml`), in the column beside the source, marks it live, and
 renders the source buffer through the converter on every change once
 it has settled for 250 ms, writing the page as a minimal diff
 (`ReplaceRange` over the changed span); it ends with either window and
@@ -443,8 +443,9 @@ changes nothing. Watching the file on disk would be the wrong signal.
 
 The tool:
 
-- opens, or reuses, a web-bodied window named after the source with a
-  `+Preview` suffix (the `+Errors` convention), in the column beside it,
+- opens, or reuses, a web-bodied window at the source's path, of kind
+  `Preview` (as an errors window is one at its directory, of kind
+  `Errors`), in the column beside it,
   rendering from a buffer (§2.5);
 - injects `<base href="apexfile:///dir/of/the/source/">`, so relative
   images and stylesheets resolve through the plane;
@@ -523,7 +524,7 @@ with the client-side action and a watch stream behind it, as today.
 *As built (stage 8):* `apex md` writes an empty `<span class="apex-line"
 data-line="N">` before every block (paragraph, heading, quote, code,
 item, table, HTML block) with the source line it starts on, from 1;
-the client, placing a `FILE+Preview` page each frame, takes dot's line
+the client, placing FILE's preview page each frame, takes dot's line
 in FILE's window and scrolls the page so the last marker at or before
 it sits a quarter down the view, only when that line changed. Any
 converter that writes such markers gets the same.
@@ -612,7 +613,7 @@ has no origin WebKit lets navigate to a `file:` URL -- it refuses before
 the navigation handler hears of it -- and a link on apex's own scheme is
 asked about like any other, and taken as a file at a line.
 
-The window is scratch (its name's last part starts with `+`): made in the
+The window is scratch (a page labelled `Diff` at the directory): made in the
 last column the first time, written over after that, nothing for `Del` to
 ask about. Tools get the same: `Tool::diff(text, dir)` in apex-tool,
 `diff {text, dir?}` in the bridge, `Diff(text, dir)` in the Go package.

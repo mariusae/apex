@@ -822,7 +822,8 @@ converter (WEB.md §3, built): `Preview.EXT` names a command that reads
 the file on stdin and writes HTML (`apex md` for Markdown, `cat` for
 HTML and SVG unless set), the server keeps one rule per such extension
 running `apex tool preview $file`, and the tool renders the buffer into
-an HTML window `FILE+Preview` beside it as it changes. `Preview` alone
+an HTML window beside it as it changes: a preview (kind `Preview`) at
+FILE's path. `Preview` alone
 names the app a rule's `-client=preview` falls back to, else Quick
 Look. The client drives file I/O on the I/O
 plane (WEB.md §1, built): `GET file://path` is one-shot, with a `Watch`
@@ -1265,25 +1266,20 @@ through a callback that the loop puts on the pty; the colours it answers
 with are the client's, given to every terminal as they change.
 
 *As built, labels and environment:* the pty loop is ours, with `win`'s
-label scan in front of the parser. A terminal's name follows one
-rule, `{osc7 path}/-{title}` (`term::compose_name`): OSC 7
-(`file://host/path`) is the path, and once it has reported, nothing else
-ever is; the title is an xterm title (OSC 0/2) or plan9port's
-`ESC ] ; text BEL` label (`apex label`); with a title but no directory
-reported the name is `-title`. A title is made into one word first
-(`term::word`): a name is the first word of the tag and the bar after it
-is apex's, while a title is nobody's to choose -- a coding agent writes
-its state into one over and over, blanks, bar and all
-(`renaming... ⠹ | proj`) -- so runs of blanks and any bar become a
-single `␣` (U+2423), the blank written down: it reads as the space it
-stands for, and it is a word character, so the name is still one word to
-a double-click and to B3. `apex awd [LABEL]` reports the directory and titles the
-window `LABEL` (the host), so it reads `pwd/-host` as
-plan9port's awd names it. The reported directory is the terminal's,
-where B2/B3 resolve relative names. The win tool names its window by the
-same rule. A new terminal is `dir/-host` (win's naming); `Newterm cmd args` runs
-that through the login shell instead of a shell, named `dir/-cmd`, as
-`win cmd` does. The
+label scan in front of the parser. A terminal's window is placed by one
+rule (`term::place`): its path is the directory OSC 7
+(`file://host/path`) reports, with its slash, and once it has reported,
+nothing else ever is; its label is an xterm title (OSC 0/2) or
+plan9port's `ESC ] ; text BEL` label (`apex label`), whole, blanks, bars
+and all -- a coding agent writes its state into one over and over
+(`renaming... ⠹ | proj`), and the label is state beside the path, not a
+word in the tag, so nothing needs making into one word. `apex awd
+[LABEL]` reports the directory and labels the window `LABEL` (the
+host), as plan9port's awd names it. The reported directory is the
+terminal's, where B2/B3 resolve relative names. The win tool places its
+window by the same rule. A new terminal is at its directory, labelled
+with the host; `Newterm cmd args` runs that through the login shell
+instead of a shell, labelled with the command, as `win cmd` does. The
 shell is a truecolor `xterm-256color` with `TERM_PROGRAM=apex`,
 `apexsession` (the session's id), `apexsessionlabel`, `APEX_SOCKET` and
 `winid` (the terminal's window, as acme's win has it) set, so `apex`
@@ -1653,13 +1649,13 @@ left of the connection mark, the heartbeat's round trip and the log's
   of its own once, one colour more to tell from the rest. `Del` does not ask (the text is a transcript, not a file), and
   `apex win list` marks it `>`. The tag says the same: a live window is
   offered no `Put`, since there is no file of that name to write it to.
-  A window's *name* says it too, and says it whether or not anything is
-  behind it just now: the last part beginning with `-` (a program's own
-  window, as win names its `dir/-`) or `+` (auxiliary output beside
-  one, as acme's `+Errors`) means there is no file of that name -- no
-  `Undo`, `Redo`, `Put` or `Get` in the tag, and `Del` asks nothing
-  (`entry::is_scratch`, which generalises the `+Errors` and `/guide`
-  cases acme and apex already had).
+  A window's *scratch* flag says it too, and says it whether or not
+  anything is behind it just now: a scratch window (an errors window, a
+  terminal's, a tool's pane or transcript, a page) has no file behind
+  its path -- no `Undo`, `Redo`, `Put` or `Get` for it, and `Del` asks
+  nothing. The flag is the buffer's, set when the window is made
+  (`BufferOp::Create{kind, scratch}`), where once a name's last part
+  beginning with `-` or `+` said so; see *Windows are what they are*.
 - *As built:* a window is **owned** when a tool says it made it and
   writes it (`WindowOp::Own{by}`, `Tool::set_owner`), which is a
   different thing from live and outlasts it: live comes and goes with
@@ -2024,9 +2020,10 @@ commands it starts); the top row naming each running command at its
 front while it runs, "`name: exit status`" in `+Errors` when one ends
 badly (`waitthread`, `runproc`'s naming: the first word without its
 directory, `|sort` for a pipe); `Zerox` refusing directories; newline ignored in
-column and top tags; `+Errors` named `dir/+Errors` after the directory of
-the window whose command produced the output, made in the last column
-(`errorwin1`), with no `Undo`/`Put` words in its tag. Decided against
+column and top tags; acme's `+Errors` an errors window (kind `Errors`,
+scratch) at the directory of the window whose command produced the
+output, made in the last column (`errorwin1`), with no `Undo` or `Put`
+for it. Decided against
 acme, by design: `Exit` detaches this window and the session lives on
 (acme refuses while windows are dirty; nothing is lost here); there is no
 `Dump`/`Load`, sessions are the only persistence; `Send` on a terminal
@@ -2473,3 +2470,44 @@ second vote for the transcript being a shard.
   the door open.
 - Naming: keep acme's command vocabulary verbatim (`Newcol`, `Delcol`,
   `Zerox`, `Putall`) so muscle memory and existing scripts carry over.
+
+## Windows are what they are
+
+*As built (protocol 38):* a window's path, label, kind and scratch flag
+are its state, not words in its tag. acme names a window by the first
+word of its tag, and apex did too, which made the tag a little language
+-- `name verbs | yours` -- that everything parsed: a name with a space
+in it could not be one word, a terminal's title had its blanks turned
+into `␣`, auxiliary windows were told by a `+` or `-` in their last
+part (`+Errors`, `FILE+Preview`, `dir/-host`), apex rewrote the words
+before the `|` as the window's state changed (`update_tags`), and a
+name typed there was taken up when the pointer left (`commit_tag`).
+
+- The **path** is a text window's buffer's name, and a terminal's or a
+  page's own (`Window.path`, `WindowOp::Path`): the file, the
+  directory (with its slash), the terminal's directory, the URL.
+  `Node::set_window_path` sets it; `SetPath` proposes it.
+- The **label** is words beside the path (`Window.label`,
+  `WindowOp::Label`): a terminal's title or host, a tool's name for
+  its pane (`agents`, `claude 0b1c1425`). `SetLabel` proposes it.
+- The **kind** is stored (`Buffer.kind`): File, Dir, Term, Errors,
+  Web, Preview; an errors window is one at its directory, a preview one
+  at its file, found by path and kind (`Node::window_of`).
+- **Scratch** is stored (`Buffer.scratch`): never saved, never dirty.
+- The **verbs** apex offers (Del, Snarf, Undo, Redo, Put, Get, Back,
+  Fwd, Send) follow from these and the buffer's state
+  (`Node::window_verbs`), computed, not written anywhere.
+- The **tag**'s text is the user's words alone (`Look ` to begin).
+
+The client draws a tag's head from this state before the text: the path
+(its folders dim, its name strong; Untitled for a new window), the
+label on a chip, the verbs as icons, a hairline. B1 or B2 on a verb runs
+it; B3 on a folder or the name plumbs the path to there; a double-click
+on the path makes it a field, return renaming the window; one click on
+a folder or the name brings down a picker of that folder's entries,
+listed by the host as ^F's are, return opening one in its own window
+and ⌥return in this one. Tools and the CLI say the same things
+explicitly: `WindowInfo{path, label, kind, scratch}`, `Tool::rename`,
+`set_label`, `new_scratch(path, label)`; `apex win list` prints each,
+and `apex win rename`, `label` and `tag` set them.
+

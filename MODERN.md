@@ -161,7 +161,7 @@ windows put away out of the tiling, which is the core's
   them, fans them out, and the one under the pointer (or scrolled to)
   shows below the bar: the window itself, live, at the size it had
   (at least 480 wide and 320 or two fifths of the window tall: one put
-  away as it was made, an +Errors window, may have had a line or two;
+  away as it was made, an errors window, may have had a line or two;
   such a window comes back with an even share of its column, too).
   The pointer can go onto it and work in it as in any window --
   select, snarf, B2, B3, type, scroll -- and it stays stashed (a Look in
@@ -265,13 +265,13 @@ windows put away out of the tiling, which is the core's
   B2 on Newterm for a shell, ⌘⇧P for every command. Drawing only: the
   column's ground takes the buttons as ever.
 - **Errors as toasts** (`toasts.rs`): a command's errors still go to its
-  +Errors window, but that window goes to the stash and what was
+  errors window, but that window goes to the stash and what was
   written shows in a toast at the foot of its column, with Show All (the
   window shown in the stash's preview and left stashed, the pointer on
   the toast's first line there, selected; B1 anywhere on the toast
   does the same) and ×; it goes after eight
   seconds unless the pointer is on it, and at once on a click anywhere
-  off the toasts (in a page too). An +Errors window brought back is
+  off the toasts (in a page too). An errors window brought back is
   written to as before.
 - **Session previews**: the pointer on a session in the sidebar (not the
   one shown) brings its window up beside the row, live, as ctrl-tab's
@@ -292,7 +292,7 @@ windows put away out of the tiling, which is the core's
   the list away. One candidate is simply typed in, a directory with its
   slash, a file with a space after, as acme's ^F does. A completion done
   is done: the next list (a directory's names, say) comes only with the
-  next ^F. No more lists in +Errors.
+  next ^F. No more lists in the errors window.
 - **A preview's contents as a scrubber** (`web.rs`, `TOC_SCRIPT`): down
   the left edge (the scrollbar is at the right) of a page rendered from a buffer (a Markdown preview,
   apex diff), each heading a tick where it stands in the page, longer
@@ -308,21 +308,30 @@ windows put away out of the tiling, which is the core's
   narrower than 420 has no rail. Only with two headings or more; it hangs off the page's
   root, so the live morph leaves it be, and is laid out again as the
   page changes.
-- **A tag in three parts**, drawn from its text (which stays one text,
-  swept, typed and `Edit`ed across as ever): the window's name (its
-  path), the folder dim and the last part strong, a wider space after
-  it; then apex's words, faint until the pointer is on the tag; then
-  the `|`, drawn as a hairline as tall as the ink (the character still
-  there, only not drawn); then the user's words, a step stronger.
-- **apex's verbs as icons** (`VERB_ICONS`): the words apex keeps before
-  the `|` -- `Del` (×), `Snarf` (copy), `Undo` and `Redo` (curved
-  arrows), `Put` (into a tray), `Get` (reload), `Send` (a paper plane),
-  `Back` and `Fwd` (chevrons) -- are drawn as icons where the words
-  stand. Only drawn: each word is laid out as one em space with its
-  icon on it, and an offset in the word is at the icon's start or end,
-  so a click, a sweep, B2 and B3 and the ⌘/⌥ pill take the word as ever.
-  A word apex does not know stays a word. After a window closes, the
+- **A tag is what the window is, then your words.** The head is drawn
+  from the window's state (DESIGN.md, *Windows are what they are*), none
+  of it in the tag's text: the path, its folders dim and its name
+  strong (Untitled for a new window), a wider space after it; the label
+  on a chip (a terminal's title, a tool's name for its pane; an errors
+  window's or a preview's kind when it has none); apex's verbs as
+  icons, faint until the pointer is on the tag; a hairline. Then the
+  user's words, a step stronger: all the tag's text holds.
+- **apex's verbs as icons** (`VERB_ICONS`, `Node::window_verbs`): `Del`
+  (×), `Snarf` (copy), `Undo` and `Redo` (curved arrows), `Put` (into
+  a tray), `Get` (reload), `Send` (a paper plane), `Back` and `Fwd`
+  (chevrons). B1 or B2 on one runs it. After a window closes, the
   pointer goes to the next window's `Del`, as acme's does.
+- **The path is a breadcrumb.** One click on a folder or the name
+  brings a picker down under it, as VS Code's do: that folder's entries
+  (the name's siblings), listed by the host as ^F's names are, so a
+  remote session's too, narrowed as a query is typed. Return opens the
+  one chosen in a window of its own; ⌥return opens it here, in place of
+  this window's file (asking again when it is unsaved); a folder is gone
+  into, and backspace with nothing typed goes up. A double-click on the
+  path makes it a field (one click on Untitled): return renames the
+  window, a relative path in the folder it was in. A double-click on
+  the label edits it. B3 on a folder or the name plumbs the path to
+  there.
 - **Columns answer as windows do.** B1 on a column's box grows it a
   little. B2 maximizes it: the others minimized where they stand, as a
   maximized window leaves the others their tags, each remembering its
