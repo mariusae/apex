@@ -481,6 +481,9 @@ pub struct Acme {
     /// moves to the session parked last, or closes when there is none.
     pub leave_requested: bool,
     pending: Option<Pending>,
+    /// The view a warp riding a glide is taking the pointer to: it has the
+    /// keys and the ring on the way, not what the pointer passes over.
+    warp_onto: Option<ViewId>,
     /// The title last given to the OS window.
     pub title_shown: String,
     /// The link to the daemon is up (a socket, or a provider's bridge).
@@ -1663,6 +1666,7 @@ impl Acme {
             app_active: true,
             leave_requested: false,
             pending: None,
+            warp_onto: None,
             title_shown: String::new(),
             connected: true,
             last_ping: None,
@@ -1945,6 +1949,11 @@ impl Acme {
         if !self.app_active {
             return None;
         }
+        if let Some(v) = self.warp_onto {
+            // a terminal's keys are its own: none of acme's views then
+            let text = v.window().and_then(|w| self.node.state.window(w).ok()).is_some_and(|w| !matches!(w.body, Body::Term(_)));
+            return text.then_some(v);
+        }
         match self.locate(self.pointer.unwrap_or(self.last_mouse)) {
             Some((Target::View(v), _)) => Some(v),
             Some((Target::Term(..), _)) => None,
@@ -2186,6 +2195,16 @@ impl Acme {
                     None => v.window().and_then(drawn).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1(fonti) - s.r.y0) + 3)),
                 }
             }
+        };
+        // on its way, the pointer's destination has the keys and the
+        // ring, whatever it passes over (`key_view`)
+        self.warp_onto = if gliding {
+            match p {
+                Pending::Warp(Warp::Sel(v)) => Some(v),
+                _ => onto.map(ViewId::Body),
+            }
+        } else {
+            None
         };
         if gliding {
             if let Some(at) = target {
@@ -3262,6 +3281,8 @@ impl Acme {
         }
         if self.pointer.is_some_and(|p| (p.x - pos.x).abs() > px(1.) || (p.y - pos.y).abs() > px(1.)) {
             self.pointer = None;
+            // the mouse really moved: the keys follow it again
+            self.warp_onto = None;
         }
         self.last_mouse = pos;
         // the terminal under the pointer has the keyboard, and the window

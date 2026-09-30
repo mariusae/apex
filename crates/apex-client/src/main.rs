@@ -1123,8 +1123,9 @@ impl app::Acme {
         // away, and the rest moves up to the edge
         let lights = if self.fullscreen { 8. } else { LIGHTS_W };
         // the session: its name (a click to rename it), the chevron for
-        // the others, a mark when one of them wants the user; then acme's
-        // top row, and the stash's room at the right end
+        // the others, a mark when one of them wants the user -- not while
+        // the sidebar is out, which says all that; then acme's top row,
+        // and the stash's room at the right end
         let rest = div()
             .flex_1()
             .min_w_0()
@@ -1136,10 +1137,12 @@ impl app::Acme {
             .border_color(gpui::rgb(t.body_border))
             .when(!side, |d| d.child(bare("title-lights").w(px(lights))).child(toggle).child(bare("title-gap0").w(px(6.))))
             .when(side, |d| d.child(bare("title-gap0").w(px(10.))))
-            .child(self.session_title(h, cx))
-            .child(bare("title-gap").w(px(10.)))
-            .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
-            .child(bare("title-gap2").w(px(8.)))
+            .when(!side, |d| {
+                d.child(self.session_title(h, cx))
+                    .child(bare("title-gap").w(px(10.)))
+                    .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
+                    .child(bare("title-gap2").w(px(8.)))
+            })
             .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
             .child(bare("title-shelf").w(px(self.shelf_room(cx))));
         // the sidebar shown: its card goes up round the window's buttons
