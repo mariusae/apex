@@ -162,9 +162,9 @@ fn commands_are_logged_with_their_handler() {
     node.select(&mut log, v, 0, 0).unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "Look orl").unwrap();
     assert_eq!(sel(&node, v), (2, 5));
-    // Edit from the tag runs on the body and prints to +Errors
+    // Edit from the tag runs on the body and prints to the errors window
     node.exec(&mut log, ExecCtx::Window(w), "Edit ,p").unwrap();
-    let errors = node.state.buffers.values().find(|b| b.name == "+Errors").expect("+Errors created");
+    let errors = node.state.buffers.values().find(|b| b.kind == WinKind::Errors).expect("errors window created");
     assert_eq!(errors.text.to_string(), " world");
     // Exit asks the client to quit
     assert!(matches!(node.exec(&mut log, ExecCtx::Top, "Exit").unwrap(), Executed::Quit(_)));
@@ -176,7 +176,7 @@ fn end_warns_once_as_del_does_then_lets_the_session_go() {
     let (mut log, mut node, col) = session();
     // a clean file, a scratch window and a directory: nothing to ask
     let _ = node.new_window(&mut log, col, "/tmp/end-clean", "x").unwrap();
-    let s = node.new_window(&mut log, col, "/tmp/+Errors", "x").unwrap();
+    let s = node.new_window_as(&mut log, col, "/tmp/", "x", &Spec { kind: WinKind::Errors, scratch: true, label: None }).unwrap();
     node.insert(&mut log, ViewId::Body(s), "y").unwrap();
     assert!(node.session_clean(&mut log).unwrap());
     // a modified file, on two windows: warned once, and the session held
@@ -184,7 +184,7 @@ fn end_warns_once_as_del_does_then_lets_the_session_go() {
     node.insert(&mut log, ViewId::Body(f), "y").unwrap();
     let _ = node.zerox(&mut log, f).unwrap();
     assert!(!node.session_clean(&mut log).unwrap());
-    let errors: String = node.state.buffers.values().filter(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).collect();
+    let errors: String = node.state.buffers.values().filter(|b| b.kind == WinKind::Errors).map(|b| b.text.to_string()).collect();
     assert_eq!(errors.matches("/tmp/end-f modified").count(), 1, "{errors:?}");
     // asked again with nothing changed: it may go
     assert!(node.session_clean(&mut log).unwrap());
@@ -202,7 +202,7 @@ fn del_warns_once_on_a_dirty_buffer() {
     let r = node.exec(&mut log, ExecCtx::Window(w), "Del").unwrap();
     assert!(matches!(r, Executed::Done(_)));
     assert!(node.state.window(w).is_ok());
-    let errors = node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default();
+    let errors = node.state.buffers.values().find(|b| b.kind == WinKind::Errors).map(|b| b.text.to_string()).unwrap_or_default();
     assert!(errors.contains("f modified"), "{errors:?}");
     let r = node.exec(&mut log, ExecCtx::Window(w), "Del").unwrap();
     assert!(matches!(r, Executed::Done(_)));
@@ -458,82 +458,85 @@ fn errors_go_to_the_directory_window_in_the_last_column() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "/tmp/proj/main.rs", "fn main() {}\n").unwrap();
     let c2 = node.new_column(&mut log, None).unwrap();
-    // an error from main.rs's window lands in /tmp/proj/+Errors, in the last column
+    // an error from main.rs's window lands in /tmp/proj's errors window,
+    // in the last column: its path the directory, its kind errors
     let dir = node.error_dir(Some(w));
     assert_eq!(dir.as_deref(), Some("/tmp/proj"));
     let e = node.errors(&mut log, dir.as_deref(), "boom\n").unwrap();
-    assert_eq!(node.window_name(e), "/tmp/proj/+Errors");
+    assert_eq!(node.window_path(e), "/tmp/proj/");
+    assert_eq!(node.window_kind(e), WinKind::Errors);
+    assert!(node.window_scratch(e));
+    assert_eq!(node.errors_window(Some("/tmp/proj")), Some(e));
     assert_eq!(node.state.layout.column_of(e), Some(c2));
-    // its tag has no Undo/Put words (acme: filemenu off), and Del never asks
-    node.update_tags(&mut log).unwrap();
+    // no Undo/Put words (acme: filemenu off), and Del never asks; its
+    // tag holds the user's words alone
+    assert_eq!(node.window_verbs(e), vec!["Del", "Snarf"]);
     let tag = node.state.buffer(node.state.window(e).unwrap().tag).unwrap().text.to_string();
-    assert!(tag.starts_with("/tmp/proj/+Errors Del Snarf |"), "{tag}");
+    assert_eq!(tag, apex_core::node::WIN_TAG);
+    // its own errors go to it
+    assert_eq!(node.error_dir(Some(e)).as_deref(), Some("/tmp/proj"));
     assert!(matches!(node.exec(&mut log, ExecCtx::Window(e), "Del").unwrap(), Executed::Done(_)));
     assert!(node.state.window(e).is_err());
-    // no directory: plain +Errors
+    // no directory: the session's own
     let e = node.errors(&mut log, None, "x\n").unwrap();
-    assert_eq!(node.window_name(e), "+Errors");
+    assert_eq!(node.window_path(e), "");
+    assert_eq!(node.window_kind(e), WinKind::Errors);
 }
-
 /// A window a program writes is not a file: nothing to Put it to. It
 /// says so two ways -- by being live, which is a third state beside
-/// clean and dirty, and by its name (`+Errors`, `dir/-claude`), which
-/// says it whether or not anything is behind it just now.
+/// clean and dirty, and by being made scratch (errors, a tool's window,
+/// a transcript), which says it whether or not anything is behind it
+/// just now.
 #[test]
 fn a_live_window_is_not_put() {
     let (mut log, mut node, col) = session();
     let w = node.new_window(&mut log, col, "/tmp/proj/notes.txt", "").unwrap();
     node.insert(&mut log, ViewId::Body(w), "the agent says\n").unwrap();
-    let tag = |n: &Node| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
+    let put = |n: &Node, w: WindowId| n.window_verbs(w).contains(&"Put");
     // dirty and nobody behind it: Put, as any written-in window has
-    node.update_tags(&mut log).unwrap();
-    assert!(tag(&node).contains(" Put"), "{}", tag(&node));
+    assert!(put(&node, w), "{:?}", node.window_verbs(w));
     assert!(node.window_unsaved(w), "a handle shows it dirty");
-    // a tool says it is live: the handle says so, and the tag stops
+    // a tool says it is live: the handle says so, and the verbs stop
     // offering to write it to a file of that name
     let by = node.state.meta.attachments.keys().next().copied();
     node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Live { by })).unwrap();
     assert!(node.window_live(w));
-    node.update_tags(&mut log).unwrap();
-    assert!(!tag(&node).contains(" Put"), "{}", tag(&node));
+    assert!(!put(&node, w));
     // nor is it dirty to the handle: a transcript is never unsaved
     assert!(!node.window_unsaved(w));
     // and comes back when the program behind it is gone
     node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Live { by: None })).unwrap();
-    node.update_tags(&mut log).unwrap();
-    assert!(tag(&node).contains(" Put"), "{}", tag(&node));
-    // a window a tool owns is never Put either, and says so whatever it
-    // is called: acme drops the file menu for as long as a program
-    // holds the window's `event` file, and `Own` is that claim
+    assert!(put(&node, w));
+    // a window a tool owns is never Put either: acme drops the file menu
+    // for as long as a program holds the window's `event` file, and
+    // `Own` is that claim
     let f = node.new_window(&mut log, col, "/tmp/proj/report", "").unwrap();
     node.insert(&mut log, ViewId::Body(f), "written by a tool\n").unwrap();
-    node.update_tags(&mut log).unwrap();
-    let tag_of = |n: &Node, w: WindowId| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
-    assert!(tag_of(&node, f).contains(" Put"));
+    assert!(put(&node, f));
     node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by })).unwrap();
     assert_eq!(node.window_owner(f), Some("ui"));
-    node.update_tags(&mut log).unwrap();
-    assert!(!tag_of(&node, f).contains(" Put") && !tag_of(&node, f).contains(" Undo"), "{}", tag_of(&node, f));
+    assert!(!put(&node, f) && !node.window_verbs(f).contains(&"Undo"), "{:?}", node.window_verbs(f));
     assert!(node.winclean(&mut log, f, true).unwrap());
     assert!(!node.window_unsaved(f));
     // and lets go when the tool does
     node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by: None })).unwrap();
-    node.update_tags(&mut log).unwrap();
-    assert!(tag_of(&node, f).contains(" Put"));
-    // a window named as a program's is never Put, live or not: the
-    // last part of the name begins with `-` (its own) or `+` (output)
-    for name in ["/tmp/proj/-claude", "/tmp/proj/-claude+run", "/tmp/proj/+Errors", "/tmp/-"] {
-        let s = node.new_window(&mut log, col, name, "").unwrap();
+    assert!(put(&node, f));
+    // a scratch window is never Put, live or not, whatever it is called
+    // -- its name says nothing of it
+    for (name, label) in [("/tmp/proj/", Some("claude")), ("/tmp/proj/notes", None), ("/tmp/-", None)] {
+        let s = node.new_window_as(&mut log, col, name, "", &Spec::scratch(label.map(str::to_string))).unwrap();
         node.insert(&mut log, ViewId::Body(s), "written by a program\n").unwrap();
-        node.update_tags(&mut log).unwrap();
-        let t = node.state.buffer(node.state.window(s).unwrap().tag).unwrap().text.to_string();
-        assert!(!t.contains(" Put") && !t.contains(" Undo"), "{name}: {t}");
+        assert_eq!(node.window_label(s).as_deref(), label);
+        assert!(!put(&node, s) && !node.window_verbs(s).contains(&"Undo"), "{name}: {:?}", node.window_verbs(s));
         // and Del does not ask about what is in it
         assert!(node.winclean(&mut log, s, true).unwrap(), "{name}");
         assert!(!node.window_unsaved(s), "{name}");
     }
+    // and a name that once meant scratch is a file's like any other
+    let x = node.new_window(&mut log, col, "/tmp/proj/-notes", "").unwrap();
+    node.insert(&mut log, ViewId::Body(x), "mine\n").unwrap();
+    assert!(put(&node, x));
 }
-
 #[test]
 fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
     let (mut log, mut node, col) = session();
@@ -542,13 +545,13 @@ fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
     node.exec(&mut log, ExecCtx::Window(w), "Send").unwrap();
     let b = node.view_buffer(ViewId::Body(w)).unwrap();
     assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "a\nfrom snarf\n");
-    let d = node.new_window(&mut log, col, "/tmp/", "x\n").unwrap();
+    let d = node.new_window_as(&mut log, col, "/tmp/", "x\n", &Spec { kind: WinKind::Dir, ..Default::default() }).unwrap();
+    assert_eq!(node.window_verbs(d), vec!["Del", "Snarf", "Get"]);
     node.exec(&mut log, ExecCtx::Window(d), "Zerox").unwrap();
     assert_eq!(node.state.windows.values().filter(|x| x.body_buffer() == node.state.window(d).unwrap().body_buffer()).count(), 1);
-    let errs = node.state.buffers.values().find(|b| b.name.ends_with("+Errors")).map(|b| b.text.to_string()).unwrap_or_default();
+    let errs = node.state.buffers.values().find(|b| b.kind == WinKind::Errors).map(|b| b.text.to_string()).unwrap_or_default();
     assert!(errs.contains("is a directory; Zerox illegal"), "{errs}");
 }
-
 #[test]
 fn look_runs_backwards_for_shift_b3() {
     let mut log = Log::new();
@@ -577,25 +580,25 @@ fn look_runs_backwards_for_shift_b3() {
     assert_eq!(node.selection(v).unwrap(), (3, 5));
 }
 
-/// A name with a bar in it (an xterm title is one: codex writes
-/// `renaming... | proj`) does not make the tag grow. The bar that ends
-/// apex's half of the tag is the one after the name, not the first one
-/// in the text; taking the first one left the menu standing and wrote
-/// another in front of it at every `winsettag`.
+/// A name is a path, not words in a tag: one with a bar or a space in
+/// it (an xterm title is one: codex writes `renaming... | proj`) is
+/// kept whole, and the tag is the user's words alone.
 #[test]
-fn a_name_with_a_bar_does_not_grow_the_tag() {
+fn a_name_with_a_bar_or_a_space_is_a_path_whole() {
     let (mut log, mut node, col) = session();
-    let w = node.new_window(&mut log, col, "/tmp/proj/a|b.txt", "").unwrap();
-    let tag = |n: &Node| n.state.buffer(n.state.window(w).unwrap().tag).unwrap().text.to_string();
-    node.update_tags(&mut log).unwrap();
-    let once = tag(&node);
-    for _ in 0..5 {
-        node.update_tags(&mut log).unwrap();
-    }
-    assert_eq!(tag(&node), once, "the tag grew");
-    assert!(once.starts_with("/tmp/proj/a|b.txt Del Snarf |"), "{once}");
+    let w = node.new_window(&mut log, col, "/tmp/proj/a|b c.txt", "").unwrap();
+    assert_eq!(node.window_path(w), "/tmp/proj/a|b c.txt");
+    let tag = node.state.buffer(node.state.window(w).unwrap().tag).unwrap().text.to_string();
+    assert_eq!(tag, apex_core::node::WIN_TAG);
+    node.set_window_label(&mut log, w, Some("renaming... | proj")).unwrap();
+    assert_eq!(node.window_label(w).as_deref(), Some("renaming... | proj"));
+    node.set_window_path(&mut log, w, "/tmp/proj/other.txt").unwrap();
+    assert_eq!(node.window_path(w), "/tmp/proj/other.txt");
+    // and a zerox'd window keeps its label
+    let z = node.zerox(&mut log, w).unwrap();
+    assert_eq!(node.window_label(z).as_deref(), Some("renaming... | proj"));
+    assert_eq!(node.window_path(z), "/tmp/proj/other.txt");
 }
-
 #[test]
 fn notifications_are_a_windows_and_go_with_it() {
     let (mut log, mut node, col) = session();

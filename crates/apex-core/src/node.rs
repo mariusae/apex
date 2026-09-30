@@ -14,22 +14,27 @@ use crate::state::{Applied, ApplyError, Layout, State};
 use crate::text::Text;
 use crate::tiling::{self, Rect, Warp};
 
-/// What a new window's tag holds after its name; the words before `|`
-/// are kept up to date by [`Node::update_tags`], as acme's `winsettag`.
-pub const WIN_TAG_SUFFIX: &str = " Del Snarf | Look ";
+/// What a new window's tag holds: the user's words alone. Its path,
+/// label and apex's own words (Del, Snarf, Put...) are no text in it but
+/// the window's state, drawn before it (`Node::window_verbs`).
+pub const WIN_TAG: &str = "Look ";
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
 pub const TOP_TAG: &str = "Newcol Newterm Win Web Kill Putall Exit End ";
-pub const ERRORS: &str = "+Errors";
 
-/// Where the bar that divides apex's half of a window's tag from the
-/// user's stands (a rune offset), if it is there yet. It is the first
-/// bar *after* the name, not the first in the text: a name may hold a
-/// bar of its own -- a file called `a|b`, a terminal named after an
-/// xterm title (`renaming... | proj`) -- and that one is not it.
-pub fn tag_bar(tag: &str, name: &str) -> Option<usize> {
-    let word = |s: &str| s.split(' ').next().unwrap_or("").chars().count();
-    let start = if tag.starts_with(name) { name.chars().count() } else { word(tag) };
-    tag.chars().skip(start).position(|c| c == '|').map(|i| start + i)
+/// What a new text window is, beyond its path: its kind, whether it is
+/// scratch (no file behind it), and a label beside its path.
+#[derive(Clone, Debug, Default)]
+pub struct Spec {
+    pub kind: WinKind,
+    pub scratch: bool,
+    pub label: Option<String>,
+}
+
+impl Spec {
+    /// A scratch text window: a transcript, a tool's window.
+    pub fn scratch(label: Option<String>) -> Spec {
+        Spec { kind: WinKind::File, scratch: true, label }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -351,10 +356,16 @@ impl Node {
 
     // ---- buffers, windows, columns -------------------------------------------
 
+    /// A file's buffer (or a tag's, a column's: no file, no matter).
     pub fn create_buffer(&mut self, log: &mut Log, name: &str, text: &str, disk_hash: Option<String>) -> Result<BufferId> {
+        self.create_buffer_as(log, name, text, disk_hash, WinKind::File, false)
+    }
+
+    /// A buffer of the kind given, scratch or not.
+    pub fn create_buffer_as(&mut self, log: &mut Log, name: &str, text: &str, disk_hash: Option<String>, kind: WinKind, scratch: bool) -> Result<BufferId> {
         let id = BufferId(self.alloc());
         self.create_shard(log, Shard::Buffer(id))?;
-        self.append(log, Shard::Buffer(id), Op::Buffer(BufferOp::Create { name: name.into(), text: text.into(), disk_hash }))?;
+        self.append(log, Shard::Buffer(id), Op::Buffer(BufferOp::Create { name: name.into(), text: text.into(), disk_hash, kind, scratch }))?;
         Ok(id)
     }
 
@@ -403,10 +414,16 @@ impl Node {
         self.delete_shard(log, Shard::Buffer(tag))
     }
 
-    /// A window on a new buffer, in `col`, splitting the last window.
+    /// A window on a new buffer, in `col`, splitting the last window: a
+    /// file's, at `name`.
     pub fn new_window(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str) -> Result<WindowId> {
-        let body = self.create_buffer(log, name, text, None)?;
-        self.open_window(log, col, body)
+        self.new_window_as(log, col, name, text, &Spec::default())
+    }
+
+    /// A window on a new buffer at `name`, as `spec` says it is.
+    pub fn new_window_as(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str, spec: &Spec) -> Result<WindowId> {
+        let body = self.create_buffer_as(log, name, text, None, spec.kind, spec.scratch)?;
+        self.open_window_as(log, col, Body::Text(body), String::new(), spec.label.clone(), None)
     }
 
     /// A window on an existing buffer in `col`, at `y` if given, else
@@ -416,13 +433,21 @@ impl Node {
     }
 
     pub fn open_window_at(&mut self, log: &mut Log, col: ColumnId, body: BufferId, y: Option<i32>) -> Result<WindowId> {
-        let name = self.state.buffer(body)?.name.clone();
+        self.open_window_as(log, col, Body::Text(body), String::new(), None, y)
+    }
+
+    /// A window of any body: its tag (the user's words: `WIN_TAG`), its
+    /// log, its views, its place in `col` (at `y`, or splitting the last
+    /// window). `path` and `label` for a window with no text of its own.
+    fn open_window_as(&mut self, log: &mut Log, col: ColumnId, body: Body, path: String, label: Option<String>, y: Option<i32>) -> Result<WindowId> {
         let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{name}{WIN_TAG_SUFFIX}"), None)?;
+        let tag = self.create_buffer(log, "", WIN_TAG, None)?;
         self.create_shard(log, Shard::Window(id))?;
-        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Text(body) }))?;
+        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body, path, label }))?;
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
-        self.append(log, Shard::Buffer(body), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
+        if let Body::Text(b) | Body::Html(b) = body {
+            self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
+        }
         self.place(log, col, id, y)?;
         Ok(id)
     }
@@ -457,60 +482,69 @@ impl Node {
         Ok(w)
     }
 
-    /// A window whose body is a terminal (the term shard exists already).
-    pub fn open_term_window(&mut self, log: &mut Log, col: ColumnId, name: &str, term: TermId) -> Result<WindowId> {
-        let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf Send | Look "), None)?;
-        self.create_shard(log, Shard::Window(id))?;
-        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Term(term) }))?;
-        self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
-        self.place(log, col, id, None)?;
-        Ok(id)
+    /// A window whose body is a terminal (the term shard exists already),
+    /// in directory `dir`, its label (a title, its command) beside it.
+    pub fn open_term_window(&mut self, log: &mut Log, col: ColumnId, dir: &str, label: Option<String>, term: TermId) -> Result<WindowId> {
+        self.open_window_as(log, col, Body::Term(term), dir.to_string(), label, None)
     }
 
-    /// A web window on `url` in `col` (WEB.md §2): its tag names the URL,
-    /// as a terminal's names its directory; the client renders the page,
-    /// and Back, Fwd and Get in the tag are the page's history and reload.
+    /// A web window on `url` in `col` (WEB.md §2): its path is the URL, as
+    /// a terminal's is its directory; the client renders the page, and
+    /// Back, Fwd and Get are the page's history and reload.
     pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
-        let id = WindowId(self.alloc());
-        let tag = self.create_buffer(log, "", &format!("{url} Del Snarf Back Fwd Get | Look "), None)?;
-        self.create_shard(log, Shard::Window(id))?;
-        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Web }))?;
-        self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
-        self.place(log, col, id, None)?;
-        Ok(id)
+        self.open_window_as(log, col, Body::Web, url.to_string(), None, None)
     }
 
     /// A window whose text is HTML shown as a page (WEB.md §2.5): a
-    /// buffer named `name` holding `text`, as `new_window` makes one,
-    /// with a body the client renders.
-    pub fn open_html_window(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str) -> Result<WindowId> {
-        let id = WindowId(self.alloc());
-        let body = self.create_buffer(log, name, text, None)?;
-        let tag = self.create_buffer(log, "", &format!("{name} Del Snarf | Look "), None)?;
-        self.create_shard(log, Shard::Window(id))?;
-        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body: Body::Html(body) }))?;
-        self.append(log, Shard::Buffer(body), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
-        self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
-        self.place(log, col, id, None)?;
-        Ok(id)
+    /// preview of the file at `path` (a Markdown file's, a diff's), its
+    /// buffer scratch, with a body the client renders; `label` beside the
+    /// path (what shows it: a diff's range).
+    pub fn open_html_window(&mut self, log: &mut Log, col: ColumnId, path: &str, text: &str, label: Option<String>) -> Result<WindowId> {
+        let body = self.create_buffer_as(log, path, text, None, WinKind::Preview, true)?;
+        self.open_window_as(log, col, Body::Html(body), String::new(), label, None)
     }
 
-    /// A web window went somewhere: its name follows the page, and the
+    /// Where window `w` is, set: a text window's buffer renamed (acme's
+    /// wincommit, and Put's rename), a terminal's directory or a page's
+    /// address changed.
+    pub fn set_window_path(&mut self, log: &mut Log, w: WindowId, path: &str) -> Result<()> {
+        let win = self.state.window(w)?;
+        match win.body_buffer() {
+            Some(b) => {
+                if self.state.buffer(b)?.name != path {
+                    self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Rename { name: path.to_string() }))?;
+                }
+            }
+            None => {
+                if win.path != path {
+                    self.append(log, Shard::Window(w), Op::Window(WindowOp::Path { path: path.to_string() }))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Window `w`'s label, set (none, empty).
+    pub fn set_window_label(&mut self, log: &mut Log, w: WindowId, label: Option<&str>) -> Result<()> {
+        let label = label.map(str::trim).filter(|l| !l.is_empty()).map(str::to_string);
+        if self.state.window(w)?.label != label {
+            self.append(log, Shard::Window(w), Op::Window(WindowOp::Label { label }))?;
+        }
+        Ok(())
+    }
+
+    /// A web window went somewhere: its path follows the page, and the
     /// place it left goes onto the navigation stack, so Back returns.
     pub fn web_navigate(&mut self, log: &mut Log, w: WindowId, url: &str) -> Result<()> {
         let win = self.state.window(w)?;
         if win.body != Body::Web {
             return Err(CoreError::Missing(format!("window {w}: not a web window")));
         }
-        let from = self.window_name(w);
+        let from = self.window_path(w);
         if from == url {
             return Ok(());
         }
-        let tag = win.tag;
-        let rest = self.state.buffer(tag).map(|t| t.text.to_string()).unwrap_or_default();
-        let rest = rest.split_once(' ').map(|(_, r)| r.to_string()).unwrap_or_default();
-        self.set_content(log, tag, &format!("{url} {rest}"))?;
+        self.append(log, Shard::Window(w), Op::Window(WindowOp::Path { path: url.to_string() }))?;
         // a blank page was nowhere to come back to
         let from = (!from.is_empty()).then(|| Loc { session: None, name: from, pos: Pos::Keep });
         self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
@@ -764,7 +798,7 @@ impl Node {
     pub fn sort_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
         let ci = self.column_index(col)?;
         let mut l = self.state.layout.clone();
-        let names: BTreeMap<WindowId, String> = l.cols[ci].wins.iter().map(|s| (s.window, self.window_name(s.window))).collect();
+        let names: BTreeMap<WindowId, String> = l.cols[ci].wins.iter().map(|s| (s.window, self.window_path(s.window))).collect();
         tiling::colsort(&mut l, ci, |w| names.get(&w).cloned().unwrap_or_default(), &*self.tiling);
         self.arrange(log, &l)
     }
@@ -806,19 +840,6 @@ impl Node {
         self.end_typing();
         let group = self.new_group();
         self.edit_op(log, buffer, q0, nd, text, group)
-    }
-
-    /// acme's `wincommit` for a tag: the name typed into it becomes the
-    /// buffer's name (a click in the tag, or a command from it, commits).
-    /// A relative name stays relative here; `Put` makes it absolute.
-    pub fn commit_tag(&mut self, log: &mut Log, window: WindowId) -> Result<()> {
-        let w = self.state.window(window)?;
-        let Some(b) = w.body_buffer() else { return Ok(()) };
-        let typed = self.state.buffer(w.tag)?.text.to_string().split(' ').next().unwrap_or("").to_string();
-        if typed != self.state.buffer(b)?.name {
-            self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::Rename { name: typed }))?;
-        }
-        Ok(())
     }
 
     /// The tool that owns this window, by the name it attached under
@@ -865,32 +886,83 @@ impl Node {
         self.notifications().any(|n| n.window == w)
     }
 
-    /// What kind of window this is, for plumbing rules.
+    /// What window this is: its text's kind (a file, a directory,
+    /// errors, a preview), or a terminal, or a page. Said when it was
+    /// made; for plumbing rules too.
     pub fn window_kind(&self, window: WindowId) -> WinKind {
         let Ok(w) = self.state.window(window) else { return WinKind::File };
-        if matches!(w.body, Body::Term(_)) {
-            return WinKind::Term;
-        }
-        if matches!(w.body, Body::Web | Body::Html(_)) {
-            return WinKind::Web;
-        }
-        let name = self.window_name(window);
-        if name.ends_with("+Errors") {
-            WinKind::Errors
-        } else if name.ends_with('/') {
-            WinKind::Dir
-        } else {
-            WinKind::File
+        match w.body {
+            Body::Text(b) | Body::Html(b) => self.state.buffer(b).map(|b| b.kind).unwrap_or_default(),
+            Body::Term(_) => WinKind::Term,
+            Body::Web => WinKind::Web,
         }
     }
 
-    pub fn window_name(&self, window: WindowId) -> String {
+    /// Where a window is: its file's or directory's path (the directory
+    /// an errors window is for, the file a preview shows), a terminal's
+    /// directory, a page's address. Empty for a new window not yet named.
+    pub fn window_path(&self, window: WindowId) -> String {
         let Ok(w) = self.state.window(window) else { return String::new() };
         match w.body_buffer() {
             Some(b) => self.state.buffer(b).map(|b| b.name.clone()).unwrap_or_default(),
-            // a terminal has no file: its name lives in its tag, as win's does
-            None => self.state.buffer(w.tag).map(|t| t.text.to_string().split(' ').next().unwrap_or("").to_string()).unwrap_or_default(),
+            None => w.path.clone(),
         }
+    }
+
+    /// The label beside a window's path: a terminal's title, a tool's
+    /// window's name.
+    pub fn window_label(&self, window: WindowId) -> Option<String> {
+        self.state.window(window).ok()?.label.clone()
+    }
+
+    /// Is a window scratch: no file behind it (a transcript, a tool's
+    /// window, errors, a preview; a terminal, a page)?
+    pub fn window_scratch(&self, window: WindowId) -> bool {
+        let Ok(w) = self.state.window(window) else { return true };
+        match w.body_buffer() {
+            Some(b) => self.state.buffer(b).map(|b| b.scratch).unwrap_or(true),
+            None => true,
+        }
+    }
+
+    /// The words apex gives a window (acme's `winsettag1`), from its
+    /// state: `Del Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they
+    /// apply to a file's (or directory's) window; `Back Fwd Get` on a
+    /// page, `Send` on a terminal. Drawn before the user's words, and
+    /// run as any word is.
+    pub fn window_verbs(&self, w: WindowId) -> Vec<&'static str> {
+        let mut out = vec!["Del", "Snarf"];
+        let Ok(win) = self.state.window(w) else { return out };
+        // live is a third state beside clean and dirty: the text is a
+        // program's, so there is nothing to Put; a tool that owns it
+        // says the same (acme drops the file menu while a program holds
+        // the window's `event` file); and a scratch window has no file
+        let filemenu = self.window_owner(w).is_none() && !self.window_scratch(w);
+        if let (Some(b), true) = (win.body_buffer(), filemenu) {
+            if let Ok(buf) = self.state.buffer(b) {
+                if !buf.undo.is_empty() {
+                    out.push("Undo");
+                }
+                if !buf.redo.is_empty() {
+                    out.push("Redo");
+                }
+                let isdir = buf.kind == WinKind::Dir;
+                if !isdir && !buf.name.is_empty() && buf.dirty() && !self.window_live(w) {
+                    out.push("Put");
+                }
+                if isdir {
+                    out.push("Get");
+                }
+            }
+        }
+        match win.body {
+            // a page's history and reload (the client does them)
+            Body::Web => out.extend(["Back", "Fwd", "Get"]),
+            // win's Send: the selection, else the snarf buffer, to the shell
+            Body::Term(_) => out.push("Send"),
+            _ => {}
+        }
+        out
     }
 
     /// acme's `zeroxx`: `coladd(w->col, nil, w, -1)`, another window on
@@ -898,8 +970,9 @@ impl Node {
     pub fn zerox(&mut self, log: &mut Log, window: WindowId) -> Result<WindowId> {
         let w = self.state.window(window)?;
         let body = w.body_buffer().ok_or_else(|| CoreError::Missing("no body buffer".into()))?;
+        let label = w.label.clone();
         let col = self.column_of(window)?;
-        self.open_window(log, col, body)
+        self.open_window_as(log, col, Body::Text(body), String::new(), label, None)
     }
 
     /// Close a window (acme's `colclose`). The body buffer's shard goes
@@ -1243,15 +1316,15 @@ impl Node {
         }
     }
 
-    /// acme's `winclean`: may this window go? Scratch windows (`+Errors`,
-    /// `guide`) and directories always; a dirty window warns once
+    /// acme's `winclean`: may this window go? Scratch windows (errors,
+    /// previews, transcripts) and directories always; a dirty window warns once
     /// ("name modified") and goes the second time, as acme clears its
     /// dirty flag after warning.
     pub fn winclean(&mut self, log: &mut Log, w: WindowId, _conservative: bool) -> Result<bool> {
         if !self.window_unsaved(w) {
             return Ok(true);
         }
-        let name = self.window_name(w);
+        let name = self.window_path(w);
         let Some(b) = self.state.window(w)?.body_buffer() else { return Ok(true) };
         let (version, len) = {
             let buf = self.state.buffer(b)?;
@@ -1303,80 +1376,6 @@ impl Node {
         Ok(clean)
     }
 
-    /// acme's `winsettag1`: the words before `|` in every window's tag —
-    /// `Del Snarf`, then `Undo`, `Redo`, `Put`, `Get` as they apply, and
-    /// `Back Fwd Get` on a web window — brought up to date. The text
-    /// after `|` is the user's.
-    pub fn update_tags(&mut self, log: &mut Log) -> Result<()> {
-        let wins: Vec<WindowId> = self.state.windows.keys().copied().collect();
-        for w in wins {
-            // live is a third state beside clean and dirty
-            // (`window_live`): the text is a program's, not a file's,
-            // so there is nothing to Put, as there is nothing for Del
-            // to ask about. acme's win says the same by writing `clean`
-            // to its ctl after every write.
-            let live = self.window_live(w);
-            // a tool owns it: what is in it is the tool's doing, so
-            // there is no file menu at all, as acme drops it while a
-            // program holds the window's `event` file
-            let owned = self.window_owner(w).is_some();
-            let Ok(win) = self.state.window(w) else { continue };
-            let tag = win.tag;
-            let name = self.window_name(w);
-            let mut new = format!("{name} Del Snarf");
-            // a program's window is no file: nothing to Undo into, and
-            // nothing to Put it to, whether it says so by being owned
-            // or by the name it is called (§ `is_scratch`)
-            let filemenu = !owned && !crate::entry::is_scratch(&name);
-            if let (Some(b), true) = (win.body_buffer(), filemenu) {
-                let buf = self.state.buffer(b)?;
-                if !buf.undo.is_empty() {
-                    new.push_str(" Undo");
-                }
-                if !buf.redo.is_empty() {
-                    new.push_str(" Redo");
-                }
-                let isdir = name.ends_with('/');
-                if !isdir && !name.is_empty() && buf.dirty() && !live {
-                    new.push_str(" Put");
-                }
-                if isdir {
-                    new.push_str(" Get");
-                }
-            }
-            if win.body == Body::Web {
-                // a page's history and reload (the client does them)
-                new.push_str(" Back Fwd Get");
-            }
-            if matches!(win.body, Body::Term(_)) {
-                // win's Send: the selection, else the snarf buffer, to the shell
-                new.push_str(" Send");
-            }
-            new.push_str(" |");
-            let old = self.state.buffer(tag)?.text.to_string();
-            // a name typed into the tag stays until it is committed (acme's
-            // wincommit): only what follows the first word is ours
-            let typed = old.split(' ').next().unwrap_or("").to_string();
-            if typed != name && win.body_buffer().is_some() {
-                new = format!("{typed}{}", &new[name.len()..]);
-            }
-            // the bar past the name, not the first in the text (§ `tag_bar`):
-            // taking the first left the menu standing and wrote another in
-            // front of it at every pass, so the tag grew without bound
-            let bar = tag_bar(&old, &name);
-            let k = bar.map(|i| i + 1).unwrap_or(old.chars().count());
-            let head: String = old.chars().take(k).collect();
-            if head != new {
-                if bar.is_none() {
-                    new.push_str(" Look ");
-                }
-                let group = self.new_group();
-                self.edit_op(log, tag, 0, k, &new, group)?;
-            }
-        }
-        Ok(())
-    }
-
     /// Run an Edit program on a window's body as leader and lower its
     /// changes into entries. Effects come back as intents.
     pub fn run_edit(&mut self, log: &mut Log, window: WindowId, program: &str) -> Result<EditRun> {
@@ -1412,36 +1411,50 @@ impl Node {
         Ok(EditRun { output, intents, warnings })
     }
 
-    /// Append to a column's `+Errors` window, creating it if needed.
-    /// acme's `errorwin`: the directory of a window's file, which names its
-    /// `+Errors` window. `None` for unnamed windows and terminals.
+    /// acme's `errorwin`: the directory a window's errors go to -- its
+    /// file's, a directory's own, a terminal's, an errors window's.
+    /// `None` for unnamed windows (their errors are the session's).
     pub fn error_dir(&self, w: Option<WindowId>) -> Option<String> {
-        let name = self.window_name(w?);
-        if name.is_empty() || name.starts_with('+') {
+        let w = w?;
+        let path = self.window_path(w);
+        if path.is_empty() {
             return None;
         }
-        if name.ends_with('/') {
-            return Some(name.trim_end_matches('/').to_string());
+        match self.window_kind(w) {
+            WinKind::Dir | WinKind::Errors | WinKind::Term => Some(match path.trim_end_matches('/') {
+                "" => "/".to_string(),
+                d => d.to_string(),
+            }),
+            WinKind::Web => None,
+            _ => path.rsplit_once('/').map(|(d, _)| if d.is_empty() { "/".to_string() } else { d.to_string() }),
         }
-        name.rsplit_once('/').map(|(d, _)| if d.is_empty() { "/".to_string() } else { d.to_string() })
     }
 
-    /// acme's `errorwin1`: append `text` to `dir/+Errors` (or `+Errors`),
-    /// making the window in the last column if there is none.
+    /// A directory's errors window (acme's `dir/+Errors`), or the
+    /// session's with no directory: its path the directory's, with its
+    /// slash.
+    pub fn errors_window(&self, dir: Option<&str>) -> Option<WindowId> {
+        self.window_of(&errors_path(dir), WinKind::Errors)
+    }
+
+    /// The window of this kind at this path: a directory's errors window,
+    /// a file's preview.
+    pub fn window_of(&self, path: &str, kind: WinKind) -> Option<WindowId> {
+        self.state.windows.keys().copied().find(|w| self.window_kind(*w) == kind && self.window_path(*w) == path)
+    }
+
+    /// acme's `errorwin1`: append `text` to `dir`'s errors window (or the
+    /// session's), making it in the last column if there is none.
     pub fn errors(&mut self, log: &mut Log, dir: Option<&str>, text: &str) -> Result<WindowId> {
-        let name = match dir {
-            Some(d) if !d.is_empty() => format!("{}/{ERRORS}", d.trim_end_matches('/')),
-            _ => ERRORS.to_string(),
-        };
-        let existing = self.state.windows.keys().copied().find(|w| self.window_name(*w) == name);
-        let window = match existing {
+        let path = errors_path(dir);
+        let window = match self.errors_window(dir) {
             Some(w) => w,
             None => {
                 let col = match self.state.layout.cols.last() {
                     Some(c) => c.id,
                     None => self.new_column(log, None)?,
                 };
-                self.new_window(log, col, &name, "")?
+                self.new_window_as(log, col, &path, "", &Spec { kind: WinKind::Errors, scratch: true, label: None })?
             }
         };
         let view = ViewId::Body(window);
@@ -1471,7 +1484,9 @@ impl Node {
         }
     }
 
-    /// The window a place names: by name, or by id as digits.
+    /// The window a place names: by path, or by id as digits. A path
+    /// several windows are at is the file's (or directory's) own window,
+    /// not its errors window or preview.
     pub fn window_named(&self, name: &str) -> Option<WindowId> {
         if let Ok(n) = name.parse::<u64>() {
             let w = WindowId(n);
@@ -1479,7 +1494,8 @@ impl Node {
                 return Some(w);
             }
         }
-        self.state.windows.keys().copied().find(|w| self.window_name(*w) == name)
+        let at: Vec<WindowId> = self.state.windows.keys().copied().filter(|w| self.window_path(*w) == name).collect();
+        at.iter().copied().find(|w| !matches!(self.window_kind(*w), WinKind::Errors | WinKind::Preview)).or(at.first().copied())
     }
 
     pub fn take_gotos(&mut self) -> Vec<Loc> {
@@ -1511,7 +1527,7 @@ impl Node {
     pub fn current_loc(&self) -> Option<Loc> {
         let v = self.seltext?;
         let w = v.window()?;
-        let name = self.window_name(w);
+        let name = self.window_path(w);
         if name.is_empty() {
             return None;
         }
@@ -1637,7 +1653,7 @@ impl Node {
     pub fn claimed(&self, ctx: ExecCtx, text: &str) -> bool {
         let ExecCtx::Window(w) = ctx else { return false };
         let Some(verb) = text.split_whitespace().next() else { return false };
-        crate::plumb::claims_verb(&self.state.meta.rules, verb, &self.window_name(w), self.window_kind(w), w, self.window_owner(w))
+        crate::plumb::claims_verb(&self.state.meta.rules, verb, &self.window_path(w), self.window_kind(w), w, self.window_owner(w))
     }
 
     /// Which handler a command resolves to here: the rules first, so a
@@ -1657,7 +1673,7 @@ impl Node {
         if text.trim() == "Get" && !self.claimed(ctx, "Get") {
             if let ExecCtx::Window(w) = ctx {
                 let len = self.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.state.buffer(b).ok()).map(|b| b.text.len()).unwrap_or(0);
-                if len > 0 && !self.window_name(w).ends_with('/') && !self.winclean(log, w, true)? {
+                if len > 0 && self.window_kind(w) != WinKind::Dir && !self.winclean(log, w, true)? {
                     return Ok(Executed::Done(0));
                 }
             }
@@ -1814,7 +1830,7 @@ impl Node {
                         self.append(log, Shard::Window(w), Op::Window(WindowOp::Tab { n }))?;
                     }
                     _ => {
-                        let (name, tab) = (self.window_name(w), self.state.window(w)?.tabstop);
+                        let (name, tab) = (self.window_path(w), self.state.window(w)?.tabstop);
                         let dir = self.error_dir(Some(w));
                         self.errors(log, dir.as_deref(), &format!("{name}: Tab {tab}\n"))?;
                     }
@@ -1836,8 +1852,8 @@ impl Node {
             }
             "Zerox" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Zerox needs a window".into()))?;
-                let name = self.window_name(w);
-                if name.ends_with('/') {
+                let name = self.window_path(w);
+                if self.window_kind(w) == WinKind::Dir {
                     let dir = self.error_dir(Some(w));
                     self.errors(log, dir.as_deref(), &format!("{name} is a directory; Zerox illegal\n"))?;
                 } else {
@@ -1850,7 +1866,7 @@ impl Node {
                 // with neither, a blank page, its address to be typed
                 let arg = text.trim().strip_prefix("Web").map(str::trim).unwrap_or("").to_string();
                 let target = if !arg.is_empty() { arg } else { self.seltext.and_then(|v| self.selected_text(v).ok()).unwrap_or_default().trim().to_string() };
-                let dir = win.map(|w| self.window_name(w)).and_then(|n| std::path::Path::new(&n).parent().map(|d| d.display().to_string())).unwrap_or_default();
+                let dir = self.error_dir(win).unwrap_or_default();
                 let url = if target.is_empty() { String::new() } else { web_url(&target, &dir) };
                 let col = win.and_then(|w| self.column_of(w).ok()).or_else(|| self.state.layout.cols.first().map(|c| c.id)).ok_or_else(|| CoreError::Missing("no column".into()))?;
                 let w = self.open_web_window(log, col, &url)?;
@@ -1894,15 +1910,13 @@ impl Node {
     }
 
     /// Does the window hold edits a file has not had: dirty, and a file's
-    /// window at all? Scratch windows (`+Errors`, `guide`, a program's
-    /// `-` and `+` names), directories, and windows a tool owns or keeps
-    /// live are not: their text is a transcript, not a file, so it is
-    /// never unsaved however it changed. What `Del` asks about, and what
-    /// a handle shows as dirty.
+    /// window at all? Scratch windows (errors, previews, transcripts, a
+    /// tool's), directories, and windows a tool owns or keeps live are
+    /// not: their text is not a file's, so it is never unsaved however
+    /// it changed. What `Del` asks about, and what a handle shows as
+    /// dirty.
     pub fn window_unsaved(&self, w: WindowId) -> bool {
-        let name = self.window_name(w);
-        let isscratch = crate::entry::is_scratch(&name) || name.ends_with("/guide");
-        if isscratch || name.ends_with('/') || self.window_owner(w).is_some() || self.window_live(w) {
+        if self.window_scratch(w) || self.window_kind(w) == WinKind::Dir || self.window_owner(w).is_some() || self.window_live(w) {
             return false;
         }
         self.window_dirty(w)
@@ -1919,6 +1933,15 @@ impl Node {
             .and_then(|x| x.body_buffer())
             .and_then(|b| self.state.buffer(b).ok())
             .is_some_and(|b| b.views.iter().filter(|(v, _)| matches!(v, ViewId::Body(_))).count() <= 1)
+    }
+}
+
+/// The path of a directory's errors window: the directory with its
+/// slash, or empty for the session's own.
+pub fn errors_path(dir: Option<&str>) -> String {
+    match dir {
+        Some(d) if !d.is_empty() => format!("{}/", d.trim_end_matches('/')),
+        _ => String::new(),
     }
 }
 

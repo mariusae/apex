@@ -44,6 +44,11 @@ pub struct Group {
 pub struct Buffer {
     pub id: BufferId,
     pub name: String,
+    /// What it is: a file's text, a directory's, errors, a preview's.
+    pub kind: crate::entry::WinKind,
+    /// No file behind it (a transcript, a tool's window, errors, a
+    /// preview): nothing to Put, nothing for Del to ask about.
+    pub scratch: bool,
     pub text: Text,
     /// Number of modifying entries applied.
     pub version: Version,
@@ -93,6 +98,8 @@ impl Buffer {
         Buffer {
             id,
             name: name.to_string(),
+            kind: crate::entry::WinKind::File,
+            scratch: false,
             text: Text::new(text),
             version: 0,
             clean_version: 0,
@@ -227,7 +234,7 @@ impl Buffer {
     pub fn hash_into(&self, h: &mut blake3::Hasher) {
         h.update(&self.id.0.to_le_bytes());
         h.update(self.name.as_bytes());
-        h.update(&[0]);
+        h.update(&[0, self.kind as u8, self.scratch as u8]);
         self.text.hash_into(h);
         h.update(&self.version.to_le_bytes());
         h.update(&self.clean_version.to_le_bytes());

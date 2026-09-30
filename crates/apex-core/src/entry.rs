@@ -47,8 +47,8 @@ impl Op {
 pub enum Body {
     Text(BufferId),
     Term(TermId),
-    /// A web page, rendered by the client; the URL is the window's name
-    /// (its tag's first word), nothing else is session state (WEB.md §2).
+    /// A web page, rendered by the client; the URL is the window's path
+    /// (`Window::path`), nothing else is session state (WEB.md §2).
     Web,
     /// A text buffer holding HTML, rendered by the client as a page
     /// (`cmd | apex web`, a Preview): edited, put and got as text, shown
@@ -58,8 +58,12 @@ pub enum Body {
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum BufferOp {
-    /// First entry of a buffer's log.
-    Create { name: String, text: String, disk_hash: Option<String> },
+    /// First entry of a buffer's log: its name (a file's or directory's
+    /// path, the directory an errors window is for, the file a preview
+    /// shows), what it is, and whether it is scratch -- no file behind
+    /// it to Put, nothing for Del to ask about (a transcript, a tool's
+    /// window, errors, a preview).
+    Create { name: String, text: String, disk_hash: Option<String>, kind: WinKind, scratch: bool },
     /// Replace `nd` runes at `q0` (of the text at `version`) with `text`.
     /// Consecutive edits with the same `group` undo together.
     Edit { version: Version, q0: usize, nd: usize, text: String, group: GroupId },
@@ -122,8 +126,16 @@ pub enum ExecStatusOp {
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum WindowOp {
-    /// First entry of a window's log.
-    Create { tag: BufferId, body: Body },
+    /// First entry of a window's log: its tag (the user's words alone:
+    /// apex's own are drawn from the window's state), its body, and for a
+    /// window with no text of its own, where it is (a terminal's
+    /// directory, a page's address); and a label beside that (a
+    /// terminal's title, a tool's window's name).
+    Create { tag: BufferId, body: Body, path: String, label: Option<String> },
+    /// A terminal's directory, a page's address, changed.
+    Path { path: String },
+    /// The window's label (a terminal's title, a tool's window's name).
+    Label { label: Option<String> },
     /// Toggle the alternate (monospace) font.
     Font { mono: bool },
     /// acme's `Tab n`: the body's tab stop.
@@ -301,17 +313,6 @@ pub struct PlumbRule {
     pub to: Option<RunTo>,
 }
 
-/// Is this a window a program writes rather than a file? The last part
-/// of the name begins with `-`, a program's own window (acme's win
-/// names its `dir/-`), or `+`, auxiliary output beside one (acme's
-/// `+Errors`) -- so `dir/-claude` and `dir/-claude+run` are both, and
-/// `dir/main.rs` is not. There is no file of that name to `Put` it to,
-/// and nothing in it for `Del` to ask about: the text is a transcript.
-pub fn is_scratch(name: &str) -> bool {
-    let last = name.rsplit('/').next().unwrap_or(name);
-    last.starts_with('+') || last.starts_with('-')
-}
-
 /// Is this name a URL (a web window's), not a path? `scheme://...`.
 pub fn is_url(name: &str) -> bool {
     match name.split_once("://") {
@@ -348,14 +349,21 @@ pub enum Pos {
     LineCol(usize, usize),
 }
 
-/// What kind of window a rule applies to.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+/// What a window is -- said when it is made, never read off its name --
+/// and what kind of window a rule applies to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum WinKind {
+    /// A file's text (or text with no file: a scratch window's).
+    #[default]
     File,
+    /// A directory's listing.
     Dir,
     Term,
+    /// A directory's errors (acme's `dir/+Errors`).
     Errors,
     Web,
+    /// A file shown as a page (a Markdown preview, a diff).
+    Preview,
 }
 
 impl WinKind {
@@ -366,6 +374,7 @@ impl WinKind {
             "term" => Some(WinKind::Term),
             "errors" => Some(WinKind::Errors),
             "web" => Some(WinKind::Web),
+            "preview" => Some(WinKind::Preview),
             _ => None,
         }
     }
@@ -376,6 +385,7 @@ impl WinKind {
             WinKind::Term => "term",
             WinKind::Errors => "errors",
             WinKind::Web => "web",
+            WinKind::Preview => "preview",
         }
     }
 }

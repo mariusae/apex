@@ -64,6 +64,12 @@ pub struct Window {
     pub live: Option<AttachmentId>,
     /// The attachment working behind this window (`WindowOp::Working`).
     pub working: Option<AttachmentId>,
+    /// Where a window with no text of its own is: a terminal's
+    /// directory, a page's address. (A text window's is its buffer's
+    /// name.)
+    pub path: String,
+    /// A name beside the path: a terminal's title, a tool's window's.
+    pub label: Option<String>,
 }
 
 impl Window {
@@ -449,11 +455,14 @@ impl State {
 
     fn apply_buffer(&mut self, id: BufferId, op: &BufferOp) -> Result<Applied, ApplyError> {
         match op {
-            BufferOp::Create { name, text, disk_hash } => {
+            BufferOp::Create { name, text, disk_hash, kind, scratch } => {
                 if self.buffers.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("buffer {id}")));
                 }
-                self.buffers.insert(id, Buffer::new(id, name, text, disk_hash.clone()));
+                let mut b = Buffer::new(id, name, text, disk_hash.clone());
+                b.kind = *kind;
+                b.scratch = *scratch;
+                self.buffers.insert(id, b);
             }
             BufferOp::Edit { version, q0, nd, text, group } => {
                 let b = self.buffer_mut(id)?;
@@ -508,12 +517,14 @@ impl State {
 
     fn apply_window(&mut self, id: WindowId, op: &WindowOp, seq: Seq) -> Result<Applied, ApplyError> {
         match op {
-            WindowOp::Create { tag, body } => {
+            WindowOp::Create { tag, body, path, label } => {
                 if self.windows.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("window {id}")));
                 }
-                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None });
+                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None, path: path.clone(), label: label.clone() });
             }
+            WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
+            WindowOp::Label { label } => self.window_mut(id)?.label = label.clone(),
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),
             WindowOp::Indent { on } => self.window_mut(id)?.autoindent = *on,
@@ -764,6 +775,10 @@ impl State {
             }
             h.update(&[w.mono as u8, w.autoindent as u8, w.tagexpand as u8]);
             h.update(&w.tabstop.to_le_bytes());
+            h.update(w.path.as_bytes());
+            h.update(&[0]);
+            h.update(w.label.as_deref().unwrap_or("").as_bytes());
+            h.update(&[w.label.is_some() as u8]);
             for (seq, e) in &w.execs {
                 h.update(&seq.to_le_bytes());
                 h.update(e.text.as_bytes());

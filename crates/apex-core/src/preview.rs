@@ -71,11 +71,6 @@ fn regex_unescape(s: &str) -> String {
     out
 }
 
-/// The window a preview of `file` lives in.
-pub fn preview_name(file: &str) -> String {
-    format!("{file}+Preview")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +90,5 @@ mod tests {
         assert_eq!(e, vec!["htm", "html", "markdown", "rst", "svg"]);
         assert_eq!(ext_of_pattern(&pattern_of_ext("c++")).as_deref(), Some("c++"));
         assert_eq!(pattern_of_ext("md"), r"(?i)\.md$");
-        assert_eq!(preview_name("/a/b.md"), "/a/b.md+Preview");
     }
 }
