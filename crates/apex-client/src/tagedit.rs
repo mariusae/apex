@@ -4,10 +4,12 @@
 //! A folder of the path, or its name, clicked brings a picker down under
 //! it, as VS Code's breadcrumbs do: the folder's entries (the name's
 //! siblings), listed by the host as ^F's names are, so a remote one's
-//! too, and narrowed as a query is typed. Return opens the one chosen in
-//! a window of its own, ⌥return in this window in place of its file (a
-//! second time when this one is unsaved); a folder chosen is gone into,
-//! and backspace with nothing typed goes up. B3 on a folder or the name
+//! too, and narrowed as a query is typed. Return (or a click) opens the
+//! one chosen, a file or a folder, in a window of its own; ⌥return in
+//! this window in place of what it shows, a file for a file's window and
+//! a folder for a folder's (a second time when this one is unsaved).
+//! → or tab (or the › on its row) goes into a folder; ← or backspace
+//! with nothing typed goes up. B3 on a folder or the name
 //! plumbs the path to there; B1 or B2 on a verb runs it.
 
 use std::time::{Duration, Instant};
@@ -318,18 +320,14 @@ impl Acme {
                     self.picker_pick(pick, mods.alt, cx);
                 }
             }
-            // nothing typed: up a folder
-            "backspace" if p.filter.is_empty() => {
-                let up = p.dir.trim_end_matches('/').rfind('/').map(|i| p.dir[..=i].to_string());
-                if let Some(up) = up {
-                    let (w, from) = (p.window, p.dir.trim_end_matches('/').rsplit('/').next().map(String::from));
-                    p.dir = up.clone();
-                    p.names = None;
-                    p.current = from;
-                    p.warned = false;
-                    self.list_folder(w, &up);
+            // into the folder chosen (else → moves in what is typed)
+            "right" | "tab" if matches!(p.picks().get(p.cursor), Some((_, true))) => {
+                if let Some((name, _)) = p.picks().get(p.cursor).cloned() {
+                    self.picker_into(&name, cx);
                 }
             }
+            // nothing typed: up a folder
+            "backspace" | "left" if p.filter.is_empty() => self.picker_up(),
             _ => {
                 if p.filter.key(key, ch, mods) == Edited::No {
                     return;
@@ -345,21 +343,13 @@ impl Acme {
     /// its own, or with ⌥ in this one in place of its file.
     fn picker_pick(&mut self, (name, is_dir): (String, bool), alt: bool, cx: &mut Context<Self>) {
         let Some(p) = self.picker.as_mut() else { return };
-        let path = format!("{}{name}", p.dir);
+        // a folder by its path with its slash, as its window is named
+        let path = format!("{}{name}{}", p.dir, if is_dir { "/" } else { "" });
         let w = p.window;
-        if is_dir {
-            let dir = format!("{path}/");
-            p.dir = dir.clone();
-            p.names = None;
-            p.current = None;
-            p.cursor = 0;
-            p.warned = false;
-            p.filter.clear();
-            self.list_folder(w, &dir);
-            cx.notify();
-            return;
-        }
-        let here = self.node.window_kind(w) == WinKind::File && !self.node.window_scratch(w) && !self.node.window_live(w);
+        // here: in place of what this window shows, when it shows the
+        // same kind of thing and is a file's or a folder's own
+        let kind = self.node.window_kind(w);
+        let here = kind == if is_dir { WinKind::Dir } else { WinKind::File } && !self.node.window_scratch(w) && !self.node.window_live(w);
         if alt && here {
             if self.node.window_unsaved(w) && !p.warned {
                 p.warned = true;
@@ -376,6 +366,34 @@ impl Acme {
         }
         self.after();
         cx.notify();
+    }
+
+    /// Into folder `name` of the one listed.
+    fn picker_into(&mut self, name: &str, cx: &mut Context<Self>) {
+        let Some(p) = self.picker.as_mut() else { return };
+        let dir = format!("{}{name}/", p.dir);
+        p.dir = dir.clone();
+        p.names = None;
+        p.current = None;
+        p.cursor = 0;
+        p.warned = false;
+        p.filter.clear();
+        let w = p.window;
+        self.list_folder(w, &dir);
+        cx.notify();
+    }
+
+    /// Up to the folder the one listed is in, on the one left.
+    fn picker_up(&mut self) {
+        let Some(p) = self.picker.as_mut() else { return };
+        let Some(up) = p.dir.trim_end_matches('/').rfind('/').map(|i| p.dir[..=i].to_string()) else { return };
+        let (w, from) = (p.window, p.dir.trim_end_matches('/').rsplit('/').next().map(String::from));
+        p.dir = up.clone();
+        p.names = None;
+        p.current = from;
+        p.cursor = 0;
+        p.warned = false;
+        self.list_folder(w, &up);
     }
 
     /// The field over the path or label, and the picker under the path.
@@ -439,6 +457,27 @@ impl Acme {
                                 .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
                                 .child(div().flex_none().child(name.clone()))
                                 .when(*dir, |d| d.child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child("/")))
+                                // a folder's way in, at the row's end
+                                .when(*dir, |d| {
+                                    let name = name.clone();
+                                    d.child(div().flex_1()).child(
+                                        div()
+                                            .id(("into", i))
+                                            .flex_none()
+                                            .px(px(6.))
+                                            .rounded(px(3.))
+                                            .when(!picked, |d| d.text_color(rgb(t.panel_dim)))
+                                            .hover(|s| s.bg(rgb(t.panel_hover)))
+                                            .child("›")
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(move |this, _, _, cx| {
+                                                    this.picker_into(&name, cx);
+                                                    cx.stop_propagation();
+                                                }),
+                                            ),
+                                    )
+                                })
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
@@ -453,7 +492,7 @@ impl Acme {
                     }
                 }
             }
-            let foot = if p.warned { "Unsaved: ⌥↩ again to replace it" } else { "↩ open  ⌥↩ here  ⌫ up" };
+            let foot = if p.warned { "Unsaved: ⌥↩ again to replace it" } else { "↩ open  ⌥↩ here  → in  ← up" };
             let panel = div()
                 .id("path-picker")
                 .w(px(320.))

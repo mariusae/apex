@@ -324,10 +324,12 @@ windows put away out of the tiling, which is the core's
 - **The path is a breadcrumb.** One click on a folder or the name
   brings a picker down under it, as VS Code's do: that folder's entries
   (the name's siblings), listed by the host as ^F's names are, so a
-  remote session's too, narrowed as a query is typed. Return opens the
-  one chosen in a window of its own; ⌥return opens it here, in place of
-  this window's file (asking again when it is unsaved); a folder is gone
-  into, and backspace with nothing typed goes up. A double-click on the
+  remote session's too, narrowed as a query is typed. Return (or a
+  click) opens the one chosen, a file or a folder, in a window of its
+  own; ⌥return opens it here, in place of what this window shows -- a
+  file in a file's window, a folder in a folder's (asking again when it
+  is unsaved). → or tab (or the › at a folder's row's end) goes into a
+  folder; ← or backspace with nothing typed goes up. A double-click on the
   path makes it a field (one click on Untitled): return renames the
   window, a relative path in the folder it was in. A double-click on
   the label edits it. B3 on a folder or the name plumbs the path to

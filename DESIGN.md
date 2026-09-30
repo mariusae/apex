@@ -2505,8 +2505,9 @@ label on a chip, the verbs as icons, a hairline. B1 or B2 on a verb runs
 it; B3 on a folder or the name plumbs the path to there; a double-click
 on the path makes it a field, return renaming the window; one click on
 a folder or the name brings down a picker of that folder's entries,
-listed by the host as ^F's are, return opening one in its own window
-and ⌥return in this one. Tools and the CLI say the same things
+listed by the host as ^F's are, return opening one (a file or a
+folder) in its own window and ⌥return in this one, → going into a
+folder and ← back up. Tools and the CLI say the same things
 explicitly: `WindowInfo{path, label, kind, scratch}`, `Tool::rename`,
 `set_label`, `new_scratch(path, label)`; `apex win list` prints each,
 and `apex win rename`, `label` and `tag` set them.
