@@ -29,8 +29,21 @@ fn daemon() -> PathBuf {
     path
 }
 
+/// What the tests call a window: its path, its label in parentheses,
+/// and its kind before them when it is not a file's (`errors `, the
+/// session's errors window; `preview DIR/ (claude 0b1c1425)`, a page).
+fn name_of(c: &Remote, w: WindowId) -> String {
+    let n = &c.node;
+    let kind = match n.window_kind(w) {
+        WinKind::File => String::new(),
+        k => format!("{} ", k.name()),
+    };
+    let label = n.window_label(w).map(|l| format!(" ({l})")).unwrap_or_default();
+    format!("{kind}{}{label}", n.window_path(w))
+}
+
 fn window_named(c: &Remote, name: &str) -> Option<WindowId> {
-    c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w) == name)
+    c.node.state.windows.keys().copied().find(|w| name_of(c, *w) == name)
 }
 
 /// Whether the window's body is dirty: written and not said to be whole.
@@ -59,7 +72,7 @@ fn wait_text(c: &mut Remote, name: &str, ok: impl Fn(&str) -> bool) -> String {
             }
         }
     }
-    let all: Vec<(String, String)> = c.node.state.windows.keys().map(|w| (c.node.window_name(*w), text_of(c, *w))).collect();
+    let all: Vec<(String, String)> = c.node.state.windows.keys().map(|w| (name_of(c, *w), text_of(c, *w))).collect();
     panic!("{name}: waited in vain; last saw {last:?}; windows: {all:?}");
 }
 
@@ -124,7 +137,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
         }
         r
     });
-    let pane_name = format!("{}/-agents", tmp.display());
+    let pane_name = format!("{}/ (agents)", tmp.display());
     let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
     let text = wait_text(&mut c, &pane_name, |t| t.contains("Read: /etc/hosts"));
     let home = std::env::var("HOME").unwrap_or_default();
@@ -145,7 +158,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let at = chars.windows(6).position(|w| w.iter().collect::<String>() == "claude").unwrap();
     let span = Span { buffer: b, q0: at, q1: at + 6 };
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "claude".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
-    let detail_name = format!("{}/-claude+0b1c1425", proj.display());
+    let detail_name = format!("{}/ (claude 0b1c1425)", proj.display());
     let text = wait_text(&mut c, &detail_name, |t| t.contains("Read"));
     // the call the hooks said was running is marked so, though the
     // transcript only knows it was made
@@ -175,7 +188,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     // turn ends
     c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
-    let page_name = format!("{detail_name}+Preview");
+    let page_name = format!("preview {detail_name}");
     let text = wait_text(&mut c, &page_name, |t| t.contains("localhost"));
     assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
     event::append(&logs, &Event { text: Some("and /etc/passwd?".into()), ..ev("UserPromptSubmit") }).unwrap();
@@ -184,7 +197,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     assert_eq!(text, "> and /etc/passwd?\n\nUsers, one a line.\n");
     let page = window_named(&c, &page_name).unwrap();
     let tag = c.node.state.window(page).ok().and_then(|w| c.node.state.buffer(w.tag).ok()).map(|b| b.text.to_string()).unwrap();
-    assert!(tag.contains("| Look Back Fwd Latest"), "{tag:?}");
+    assert_eq!(tag, "Look Back Fwd Latest ");
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Back".into() }, Duration::from_secs(5)).unwrap();
     let text = wait_text(&mut c, &page_name, |t| t.contains("hosts"));
     assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
@@ -211,7 +224,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let mut said = String::new();
     while Instant::now() < deadline && !said.contains("not started in an apex window") {
         let _ = c.step(Duration::from_millis(20));
-        said = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
+        said = c.node.state.windows.keys().filter(|x| c.node.window_kind(**x) == WinKind::Errors).map(|x| text_of(&c, *x)).collect();
     }
     assert!(said.contains("Goto 0b1c1425: claude was not started in an apex window"), "{said:?}");
     // a question: the block offers the words that answer it, +Errors
@@ -219,7 +232,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     event::append(&logs, &Event { apex: Some("main".into()), win: Some(1), call: Some("t7".into()), title: Some("Bash: Remove the build directory".into()), ..ev("PermissionRequest") }).unwrap();
     let text = wait_text(&mut c, &pane_name, |t| t.contains("\n? claude"));
     assert!(text.contains("  ? Bash: Remove the build directory  Allow Deny Ask\n"), "{text}");
-    let errs = wait_text(&mut c, "+Errors", |t| t.contains("asks:"));
+    let errs = wait_text(&mut c, "errors ", |t| t.contains("asks:"));
     assert!(errs.contains("claude 0b1c1425 asks: Bash: Remove the build directory\n"), "{errs:?}");
     let from = std::fs::metadata(event::log_path(&logs, "0b1c1425-aaaa")).unwrap().len();
     let log = event::log_path(&logs, "0b1c1425-aaaa");
@@ -238,14 +251,14 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     // window at its root, each hunk saying where it lands
     std::fs::write(proj.join("src/a.rs"), "a\nB\nb\n").unwrap();
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Changes 0b1c".into() }, Duration::from_secs(5)).unwrap();
-    let diff_name = format!("{}/-claude+0b1c1425+diff", proj.display());
+    let diff_name = format!("{}/ (claude 0b1c1425 diff)", proj.display());
     let text = wait_text(&mut c, &diff_name, |t| t.contains("@@"));
     assert!(text.starts_with(&format!("– changes in {} since the session began ({})\n\n M src/a.rs\n\n", proj.display(), &rev[..12])), "{text}");
     assert!(text.contains("+++ src/a.rs\n@@ -1,2 +1,3 @@  src/a.rs:1\n"), "{text}");
 
     // History: the directory's past sessions; B3 on an id opens its transcript
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "History".into() }, Duration::from_secs(5)).unwrap();
-    let hist_name = format!("{}/-agents+history", tmp.display());
+    let hist_name = format!("{}/ (agents history)", tmp.display());
     let text = wait_text(&mut c, &hist_name, |t| t.contains("deadbeef-1111"));
     assert!(text.contains("  deadbeef-1111  "), "{text}");
     assert!(text.contains("  claude  an old prompt\n"), "{text}");
@@ -254,7 +267,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let at = text.chars().collect::<Vec<char>>().windows(8).position(|x| x.iter().collect::<String>() == "deadbeef").unwrap();
     let span = Span { buffer: hb, q0: at, q1: at + 8 };
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(hw), text: "deadbeef".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
-    let past_name = format!("{}/-claude+deadbeef", tmp.display());
+    let past_name = format!("{}/ (claude deadbeef)", tmp.display());
     let text = wait_text(&mut c, &past_name, |t| t.contains("old answer"));
     assert!(text.starts_with("– a past session, last worked in "), "{text}");
     assert!(text.ends_with("~\n\nan old prompt\n\n• an old answer\n"), "{text}");
@@ -263,12 +276,12 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Goto 0b1c".into() }, Duration::from_secs(5)).unwrap();
     std::thread::sleep(Duration::from_millis(300));
     let _ = c.step(Duration::from_millis(20));
-    let said: String = c.node.state.windows.keys().filter(|x| c.node.window_name(**x).ends_with("+Errors")).map(|x| text_of(&c, *x)).collect();
+    let said: String = c.node.state.windows.keys().filter(|x| c.node.window_kind(**x) == WinKind::Errors).map(|x| text_of(&c, *x)).collect();
     assert_eq!(said.matches("Goto").count(), 1, "{said:?}");
     // an agent in a terminal of this very session: its verbs are offered
     // on that window too, and the three that answer while it asks
     let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
-    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/-term", proj.display()) }, Duration::from_secs(5)).unwrap().unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true }, Duration::from_secs(5)).unwrap().unwrap();
     let sid = c.node.state.meta.id.clone();
     assert!(!sid.is_empty());
     // the window's tools menu, once every verb wanted is in it (or,
@@ -278,7 +291,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
         let mut v = Vec::new();
         while Instant::now() < deadline {
             let _ = c.step(Duration::from_millis(20));
-            v = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w), Some(w), c.node.window_owner(w));
+            v = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(w), c.node.window_kind(w), Some(w), c.node.window_owner(w));
             if (want.is_empty() && !v.iter().any(|x| x == "Allow")) || (!want.is_empty() && want.iter().all(|x| v.iter().any(|y| y == x))) {
                 break;
             }
@@ -311,12 +324,12 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
 
     // Send with nothing to type into is said too; with somewhere, it wants apex
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Send 0b1c hello".into() }, Duration::from_secs(5)).unwrap();
-    let said = wait_text(&mut c, "+Errors", |t| t.contains("Send:"));
+    let said = wait_text(&mut c, "errors ", |t| t.contains("Send:"));
     assert!(said.contains("Send: ") && (said.contains("apex term send") || said.contains("no apex command") || said.contains("session")), "{said:?}");
 
     // CopyContext in a file's window: its selection, or the line at dot
     // with no selection, with where it is, into the snarf buffer
-    let fw = c.propose(apex_server::Proposal::NewWindow { col, name: proj.join("src/a.rs").display().to_string() }, Duration::from_secs(5)).unwrap().unwrap();
+    let fw = c.propose(apex_server::Proposal::NewWindow { col, name: proj.join("src/a.rs").display().to_string(), label: None, scratch: false }, Duration::from_secs(5)).unwrap().unwrap();
     let v = menu(&mut c, fw, &["CopyContext"]);
     assert!(v.iter().any(|x| x == "CopyContext"), "{v:?}");
     let fb = c.node.state.window(fw).unwrap().body_buffer().unwrap();
@@ -347,7 +360,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     while dirty(&mut c, w) && since.elapsed() < Duration::from_secs(3) {}
     assert!(!dirty(&mut c, w), "the pane stayed dirty with no agents");
     let text = wait_text(&mut c, &detail_name, |t| t.contains("gone"));
-    let all: Vec<(String, String)> = c.node.state.windows.keys().map(|w| (c.node.window_name(*w), text_of(&c, *w))).collect();
+    let all: Vec<(String, String)> = c.node.state.windows.keys().map(|w| (name_of(&c, *w), text_of(&c, *w))).collect();
     assert!(text.ends_with("• It names localhost.\n– the agent is gone\n"), "{text:?}; windows: {all:?}");
     let deadline = Instant::now() + Duration::from_secs(3);
     while event::log_path(&logs, "0b1c1425-aaaa").exists() && Instant::now() < deadline {
@@ -399,7 +412,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     assert!(!sid.is_empty());
     // the terminal the agent runs in
     let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
-    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/-term", proj.display()) }, Duration::from_secs(5)).unwrap().unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true }, Duration::from_secs(5)).unwrap().unwrap();
 
     let ev = |event: &str| Event {
         ms: event::now_ms(),
@@ -431,10 +444,10 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     let mut menu = Vec::new();
     while Instant::now() < deadline && !["Transcript", "Preview", "Changes"].iter().all(|x| menu.iter().any(|y| y == x)) {
         let _ = c.step(Duration::from_millis(20));
-        menu = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(tw), c.node.window_kind(tw), Some(tw), c.node.window_owner(tw));
+        menu = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(tw), c.node.window_kind(tw), Some(tw), c.node.window_owner(tw));
     }
     assert!(["Transcript", "Preview", "Changes"].iter().all(|x| menu.iter().any(|y| y == x)), "{menu:?}");
-    assert!(window_named(&c, &format!("{}/-agents", tmp.display())).is_none(), "no pane was asked for");
+    assert!(window_named(&c, &format!("{}/ (agents)", tmp.display())).is_none(), "no pane was asked for");
     // at work, it wants nothing
     assert_eq!(flags(&c), Vec::new());
 

@@ -1,5 +1,5 @@
 //! apex lsp against a fake language server: documents open and sync
-//! incrementally, diagnostics land in root/+lsp, B3 goes to the
+//! incrementally, diagnostics land in a window at root/ labelled lsp, B3 goes to the
 //! definition, and verbs act.
 
 use std::path::PathBuf;
@@ -34,7 +34,18 @@ fn until(c: &mut Remote, mut done: impl FnMut(&Node) -> bool) -> bool {
 }
 
 fn text_of(n: &Node, name: &str) -> Option<String> {
-    n.state.buffers.values().find(|b| b.name.ends_with(name)).map(|b| b.text.to_string())
+    n.state.buffers.values().find(|b| b.kind == WinKind::File && !b.scratch && b.name.ends_with(name)).map(|b| b.text.to_string())
+}
+
+/// The text of the window that is `pick`.
+fn window_text(n: &Node, pick: impl Fn(&Node, WindowId) -> bool) -> Option<String> {
+    let w = n.state.windows.keys().copied().find(|w| pick(n, *w))?;
+    let b = n.state.window(w).ok()?.body_buffer()?;
+    Some(n.state.buffer(b).ok()?.text.to_string())
+}
+
+fn errors_text(n: &Node) -> Option<String> {
+    window_text(n, |n, w| n.window_kind(w) == WinKind::Errors)
 }
 
 #[test]
@@ -63,9 +74,9 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert!(!c.node.state.meta.rules.values().any(|r| r.rule.verb == "Fmt"), "verbs before ready");
     assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Fmt")), "verbs installed once ready");
     let (b, _) = c.node.state.buffers.values().find(|b| b.name.ends_with("main.go")).map(|b| (b.id, b.version)).unwrap();
-    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w).ends_with("main.go")).unwrap();
+    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_path(*w).ends_with("main.go")).unwrap();
     // The diagnostics window then contains the opened text's length.
-    let lsp = |n: &Node| text_of(n, "+lsp").unwrap_or_default();
+    let lsp = |n: &Node| window_text(n, |n, w| n.window_label(w).as_deref() == Some("lsp")).unwrap_or_default();
     assert!(until(&mut c, |n| lsp(n).contains("len=25 first=package")), "diagnostics: {}", lsp(&c.node));
     assert!(lsp(&c.node).contains("main.go:1:1: warning:"), "{}", lsp(&c.node));
     // an edit syncs incrementally: the server sees the new length
@@ -76,14 +87,14 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     c.propose(Proposal::Select { view: ViewId::Body(w), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "f".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: 18, q1: 18 }), sel: Some(Span { buffer: b, q0: 18, q1: 19 }), alt: None, reverse: false, verb: Some("Def".into()) });
     assert!(until(&mut c, |n| n.selection(ViewId::Body(w)).ok() == Some((18, 19))), "selection: {:?}", c.node.selection(ViewId::Body(w)));
-    // Hov: the hover text lands in +Errors
+    // Hov: the hover text lands in the errors window
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Hov".into() }, Duration::from_secs(5)).unwrap();
-    assert!(until(&mut c, |n| text_of(n, "+Errors").unwrap_or_default().contains("hover: f is a func")), "hover: {:?}", text_of(&c.node, "+Errors"));
+    assert!(until(&mut c, |n| errors_text(n).unwrap_or_default().contains("hover: f is a func")), "hover: {:?}", errors_text(&c.node));
     // Fmt: the server's edit replaces the text
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "Fmt".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text_of(n, "main.go").as_deref() == Some("package main\n\nfunc f() {}\n")), "formatted: {:?}", text_of(&c.node, "main.go"));
     // what the verbs menu would offer this window: the lsp's, and the stack's
-    let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w), Some(w), None);
+    let verbs = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(w), c.node.window_kind(w), Some(w), None);
     let want: Vec<String> = apex_tool_lsp::VERBS.iter().chain(apex_tool_lsp::NAV_VERBS.iter()).map(|s| s.to_string()).collect();
     assert_eq!(verbs, want);
     // Def recorded where we came from: Back returns there

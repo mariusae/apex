@@ -208,25 +208,39 @@ With -stdio, attach instead copies bytes between the daemon's socket and
 its own stdin and stdout, starting the daemon if none answers. That is
 what runs on a host: `ssh host apex -session=NAME attach -stdio` is the
 whole remote story." },
-    Cmd { name: "new", usage: "apex new [LABEL]", short: "a new window, with stdin in it", flags: &[], run: new, long: "\
+    Cmd { name: "new", usage: "apex new [PATH]", short: "a new window, with stdin in it", flags: &[], run: new, long: "\
 New makes a new, empty window in the session and prints its id. When
 stdin is not a terminal, its content goes into the window:
 
 	./somecommand | apex new
 
-A LABEL names the window (relative to the current directory when it is
-not absolute); it can be edited in the tag later, and Put writes the
-window to the name in its tag. See apex help windows." },
+A PATH is the window's file (relative to the current directory when it
+is not absolute): Put writes the window there. Double-click the path in
+the tag, or apex win rename, to change it later. See apex help windows." },
     Cmd { name: "open", usage: "apex open FILE...", short: "open files", flags: &[], run: open, long: "\
 Open opens each FILE (relative to the current directory) in the first
 column, as B2 on `New FILE` would, and prints the id and name of each
 window. A file already open gets no second window." },
-    Cmd { name: "win", usage: "apex win list | apex win del WIN", short: "list windows, delete one", flags: &[], run: win, long: "\
-Win list prints every window: its id, a mark (* for unsaved text, > for
-a live window: a process behind it, a terminal's or a win's, which is
-neither clean nor dirty), and its name, column by column. Win del WIN deletes a window as Del would: a
-dirty window is warned once, and deleted the second time. WIN is a window
-id or a unique substring of a name (see apex help windows)." },
+    Cmd { name: "win", usage: "apex win list [-json] | del WIN | rename WIN PATH | label WIN [TEXT] | tag WIN [TEXT]", short: "list windows; delete, rename, label or tag one", flags: &[], run: win, long: "\
+Win list prints every window, column by column, a line each, the
+fields separated by tabs: its id, its kind (file, dir, term, errors,
+web, preview), its marks (* for unsaved text; > for a live window, a
+process behind it, a terminal's or a win's, which is neither clean nor
+dirty; + for a scratch window, which is never saved; - for none), its
+path, and its label. With -json, each line is instead a JSON object
+with the fields id, kind, path, label, scratch, live and dirty.
+
+Win del WIN deletes a window as Del would: a dirty window is warned
+once, and deleted the second time. Win rename WIN PATH moves the
+window to another file (relative to the current directory); nothing is
+written until Put. Win label WIN TEXT sets the window's label, the
+words shown beside its path; no TEXT clears it. Win tag WIN prints the
+user's text in the tag, the words after the path, label and verbs; with
+TEXT, it replaces them.
+
+WIN is a window id, its path, its label, its kind when it is the only
+window of that kind (errors), or a unique substring of a path or label
+(see apex help windows)." },
     Cmd { name: "text", usage: "apex text read [-addr=ADDR] WIN", short: "read a window's text", flags: &[flag("addr", "print only this address (sam syntax: 3,5 or /re/)")], run: text, long: "\
 Text read prints the body of window WIN. With -addr, only the text the
 address selects, in the Edit language's address syntax: a line range
@@ -284,17 +298,17 @@ is a terminal's id, or its window's id or name.
 
 A terminal keeps Newterm.scrollback lines of history (apex set
 Newterm.scrollback N in the profile), 10000 by default." },
-    Cmd { name: "web", usage: "apex web open URL | apex web [-name NAME] <HTML", short: "web windows", flags: &[flag("name", "the window's name (default DIR/+web)")], run: web, long: "\
+    Cmd { name: "web", usage: "apex web open URL | apex web [-label LABEL] <HTML", short: "web windows", flags: &[flag("label", "the window's label (default web)")], run: web, long: "\
 Web open makes a web window on URL in the session, as Newweb URL in a
 tag does, and prints the window's id. The page is rendered by the
-client showing the session; only the URL is session state (its name in
-the tag), so a reattach loads the page anew, and where the page goes
-the name follows, with Back and Fwd along the navigation stack.
+client showing the session; only the URL is session state (the window's
+path), so a reattach loads the page anew, and where the page goes the
+path follows, with Back and Fwd along the navigation stack.
 
 Web alone reads HTML on stdin into a window shown as a page: the HTML
 is the window's text (edit, Put and Get it as text; the page follows
-every change in place), named NAME, or +web in the current directory.
-Relative links in it resolve against the window's directory on the
+every change in place), a scratch window in the current directory,
+labelled LABEL, or web. Relative links in it resolve against the window's directory on the
 host (apexfile://). A link followed in such a page opens a web window
 on it." },
     Cmd { name: "plumb", usage: "apex plumb [-dry-run] [-edit] [-win=WIN] TEXT | apex plumb rule add FLAGS | rm ID | ls", short: "plumb text; the rule table", flags: &[switch("dry-run", "only say what each rule would do"), switch("edit", "plan 9's B: only rules that open in the session, else TEXT as a path"), flag("win", "plumb as from window WIN (an id or a name), as B3 there would")], run: plumb, long: "\
@@ -406,7 +420,7 @@ not end on its own." },
 Preview shows FILE as a page (Preview in its tag does the same): the
 file's buffer, opened if it is not, goes through the converter its
 extension names in the settings (Preview.EXT, see apex help set) and
-the HTML is a window named FILE+Preview beside it, kept so as the
+the HTML is a preview window at FILE beside it, kept so as the
 buffer changes, unsaved edits included. The converter runs on the
 host as apex tool preview FILE, a command named preview (apex ps,
 Kill preview); it ends with either window. Relative links in the page
@@ -487,7 +501,7 @@ Its rules, gone when it exits: cmd-B3 on an identifier in a source file
 goes to the definition (B3 itself stays acme's look; on a laptop, where
 cmd-click is B3, ctrl-cmd-click is cmd-B3), and the tools menu of a
 source window offers Def Refs Type Hov Sig Fmt Rn. Definitions open and select; references, hover and signatures go
-to +Errors; Fmt replaces the text with the server's formatting; Rn NAME
+to the errors window; Fmt replaces the text with the server's formatting; Rn NAME
 renames. Back and Fwd, offered everywhere, walk the session's navigation
 stack: every jump (Def, B3 on file:line, apex B, the app's cmd-p) records
 where it left from, and Back returns there, Fwd undoes a Back; cmd-[ and
@@ -539,7 +553,7 @@ is the session's setup on the machine running the daemon; the client's
 machine both live in the same ~/.apex, each run once in its role. When
 a session is made, one rc on its host sources the host's profile. It runs
 like any command, named profile in the top row with its output in
-+Errors, with apexsession (the session's id), apexsessionlabel and
+the errors window, with apexsession (the session's id), apexsessionlabel and
 APEX_SOCKET set, so apex in it
 configures the session: apex open, apex exec Newcol, apex set, apex
 plumb rule add, apex tool lsp &. The profile's environment at its end
@@ -580,13 +594,13 @@ Predicates (all given must hold):
 	              empty one, so -owner='' means a real file
 	-win=ID       the window is the one with this id, whatever its name
 	              (ids are never reused: a tool's rules for its own window)
-	-kind=K       file, dir, term, errors or web
+	-kind=K       file, dir, term, errors, web or preview
 	-isfile=EXPR  EXPR, expanded, is a file (relative to the window's directory)
 	-isdir=EXPR   ... a directory
 Actions (exactly one):
 	-edit=EXPR    open EXPR (name, or name:line) in the session
 	-run=CMD      run CMD on the host in the window's directory, the
-	              selection on stdin, output to dir/+Errors
+	              selection on stdin, output to dir's errors window
 	-client=VERB -args=ARGS
 	              ask the UI that asked to do VERB with ARGS (open a URL,
 	              say); a UI that cannot refuses, and the walk goes on
@@ -601,15 +615,24 @@ does. The session starts with three rules at priority -100 that open name
 and name:line when they exist, as B3 always did. apex plumb -dry-run TEXT
 prints what each rule would do."),
     ("windows", "naming windows", "\
-Commands take a window as WIN: its id (apex win list), or a unique
-substring of its name. A window's name is the first word of its tag; a
-file's window is named by its path, a directory's ends in /, a terminal's
-is dir/-host (or dir/-cmd), command output goes to dir/+Errors.
+A window has a path, a kind and perhaps a label, and these are its
+state, not words in its tag. A file's window has the file's path; a
+directory's ends in /; a terminal's is the directory its shell is in,
+labelled with the host or the command; a directory's errors window
+(command output) and a file's preview are at the directory or file,
+of kind errors and preview. A web window's path is its URL. A scratch
+window (errors, a tool's pane) is never saved and never dirty.
 
-The name in a tag can be edited: type a new one and Put writes the window
-there, the buffer taking the name; ^F completes file names in the tag.
-That is how an empty window from New (or apex new, with stdin in it)
-becomes a file."),
+Commands take a window as WIN: its id (apex win list), its path, its
+label, its kind when only one window has it (errors), or a unique
+substring of a path or label.
+
+The tag shows the path, the label and the window's verbs (Del, Put,
+Undo...) ahead of the user's own text, which is all the tag's text
+holds. Double-click the path to rename the window (Put then writes it
+there); an empty window from New (or apex new, with stdin in it) is
+Untitled until it is given one. apex win rename and apex win label do
+the same from a shell."),
 ];
 
 fn main() {
@@ -1150,13 +1173,32 @@ fn find_window(c: &Remote, spec: &str) -> Result<WindowId, String> {
             return Err(format!("{spec}: window {n} of another session; use -session={session}"));
         }
     }
-    // a name exactly first (notes.md beside notes.md+Preview), then a
-    // unique substring
-    let exact: Vec<WindowId> = c.node.state.windows.keys().copied().filter(|w| c.node.window_name(*w) == spec).collect();
+    // a path exactly first (notes.md, not its preview), then a label
+    // exactly, then a unique substring of either
+    let ws: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
+    let exact: Vec<WindowId> = ws.iter().copied().filter(|w| c.node.window_path(*w) == spec).collect();
+    if exact.len() > 1 {
+        let files: Vec<WindowId> = exact.iter().copied().filter(|w| c.node.window_kind(*w) == WinKind::File && !c.node.window_scratch(*w)).collect();
+        if files.len() == 1 {
+            return Ok(files[0]);
+        }
+    }
     if exact.len() == 1 {
         return Ok(exact[0]);
     }
-    let hits: Vec<WindowId> = c.node.state.windows.keys().copied().filter(|w| c.node.window_name(*w).contains(spec)).collect();
+    let labelled: Vec<WindowId> = ws.iter().copied().filter(|w| c.node.window_label(*w).as_deref() == Some(spec)).collect();
+    if labelled.len() == 1 {
+        return Ok(labelled[0]);
+    }
+    // a kind with one window of it: `errors`, the session's one errors
+    // window, when there is one
+    if let Some(k) = WinKind::parse(&spec.to_lowercase()) {
+        let kinds: Vec<WindowId> = ws.iter().copied().filter(|w| c.node.window_kind(*w) == k).collect();
+        if kinds.len() == 1 {
+            return Ok(kinds[0]);
+        }
+    }
+    let hits: Vec<WindowId> = ws.iter().copied().filter(|w| c.node.window_path(*w).contains(spec) || c.node.window_label(*w).is_some_and(|l| l.contains(spec))).collect();
     match hits.len() {
         1 => Ok(hits[0]),
         0 => Err(format!("no window matches {spec:?}")),
@@ -1164,13 +1206,27 @@ fn find_window(c: &Remote, spec: &str) -> Result<WindowId, String> {
     }
 }
 
+/// A path as the user wrote it, made absolute against the current
+/// directory; a trailing slash (a directory) is kept.
+fn absolute(p: &str) -> Result<String, String> {
+    if p.starts_with('/') {
+        return Ok(p.to_string());
+    }
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let mut s = cwd.join(p).display().to_string();
+    if p.ends_with('/') && !s.ends_with('/') {
+        s.push('/');
+    }
+    Ok(s)
+}
+
 fn body_text(c: &Remote, w: WindowId) -> Result<String, String> {
     let b = c.node.view_buffer(ViewId::Body(w)).map_err(|e| e.to_string())?;
     Ok(c.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string())
 }
 
-/// `apex new [LABEL]`: a new window, always; stdin's content in it when
-/// stdin is not a terminal; LABEL as its name.
+/// `apex new [PATH]`: a new window, always; stdin's content in it when
+/// stdin is not a terminal; PATH as its file.
 fn new(ctx: &Ctx, p: &Parsed) -> R {
     let label = match p.args.as_slice() {
         [] => None,
@@ -1192,8 +1248,8 @@ fn new(ctx: &Ctx, p: &Parsed) -> R {
         }
     }
     if let Some(l) = label {
-        let name = if l.starts_with('/') { l } else { std::env::current_dir().map_err(|e| e.to_string())?.join(l).display().to_string() };
-        c.propose(Proposal::Rename { buffer: b, window: w, name }, TIMEOUT)?;
+        let path = absolute(&l)?;
+        c.propose(Proposal::SetPath { window: w, path }, TIMEOUT)?;
     }
     println!("{}", w.0);
     Ok(())
@@ -1218,7 +1274,7 @@ fn open(ctx: &Ctx, p: &Parsed) -> R {
     for f in &p.args {
         let path = cwd.join(f).to_string_lossy().to_string();
         if let Ok(w) = find_window(&c, &path) {
-            println!("{}\t{}", w.0, c.node.window_name(w));
+            println!("{}\t{}", w.0, c.node.window_path(w));
         }
     }
     Ok(())
@@ -1228,15 +1284,59 @@ fn win(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     match p.args.first().map(|s| s.as_str()) {
         Some("list") | None => {
+            let f = parse(&[switch("json", "one JSON object a line")], &p.args[p.args.len().min(1)..]).map_err(|e| if e == "help" { "usage".to_string() } else { e })?;
+            let json = f.is("json");
             let l = &c.node.state.layout;
             // the stashed ones too: where they stood in their columns, and
             // those whose column is gone at the end
             let order = (0..l.cols.len()).flat_map(|ci| apex_core::tiling::stash_order(l, ci)).map(|(w, _)| w);
             let orphans = l.stash.iter().filter(|s| l.column(s.col).is_none()).map(|s| s.slot.window);
             for w in order.chain(orphans) {
-                let dirty = c.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| c.node.state.buffer(b).ok()).is_some_and(|b| b.dirty());
-                let mark = if c.node.window_live(w) { ">" } else if dirty { "*" } else { " " };
-                println!("{}\t{mark}{}", w.0, c.node.window_name(w));
+                let n = &c.node;
+                let dirty = n.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).is_some_and(|b| b.dirty());
+                let (kind, path, label, scratch, live) = (n.window_kind(w), n.window_path(w), n.window_label(w), n.window_scratch(w), n.window_live(w));
+                let dirty = dirty && !scratch && !live;
+                if json {
+                    let v = serde_json::json!({"id": w.0, "kind": kind.name(), "path": path, "label": label, "scratch": scratch, "live": live, "dirty": dirty});
+                    println!("{v}");
+                } else {
+                    let marks: String = [(dirty, '*'), (live, '>'), (scratch, '+')].iter().filter(|(on, _)| *on).map(|(_, c)| *c).collect();
+                    println!("{}\t{}\t{}\t{}\t{}", w.0, kind.name(), if marks.is_empty() { "-" } else { &marks }, path, label.unwrap_or_default());
+                }
+            }
+            Ok(())
+        }
+        Some("rename") => {
+            let [_, spec, path] = p.args.as_slice() else { return Err("usage".into()) };
+            let w = find_window(&c, spec)?;
+            c.propose(Proposal::SetPath { window: w, path: absolute(path)? }, TIMEOUT)?;
+            Ok(())
+        }
+        Some("label") => {
+            let (spec, label) = match p.args.as_slice() {
+                [_, spec] => (spec, None),
+                [_, spec, rest @ ..] => (spec, Some(rest.join(" ")).filter(|l| !l.trim().is_empty())),
+                _ => return Err("usage".into()),
+            };
+            let w = find_window(&c, spec)?;
+            c.propose(Proposal::SetLabel { window: w, label }, TIMEOUT)?;
+            Ok(())
+        }
+        Some("tag") => {
+            let (spec, text) = match p.args.as_slice() {
+                [_, spec] => (spec, None),
+                [_, spec, rest @ ..] => (spec, Some(rest.join(" "))),
+                _ => return Err("usage".into()),
+            };
+            let w = find_window(&c, spec)?;
+            let b = c.node.state.window(w).map_err(|e| e.to_string())?.tag;
+            let buf = c.node.state.buffer(b).map_err(|e| e.to_string())?;
+            match text {
+                None => println!("{}", buf.text.to_string().trim_end()),
+                Some(text) => {
+                    let (len, version) = (buf.text.len(), buf.version);
+                    c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: len, text: format!("{} ", text.trim()) }, TIMEOUT)?;
+                }
             }
             Ok(())
         }
@@ -1266,7 +1366,7 @@ fn text(ctx: &Ctx, p: &Parsed) -> R {
                 Some(a) => {
                     let t = Text::new(&text);
                     let (q0, q1) = c.node.selection(ViewId::Body(w)).unwrap_or((0, 0));
-                    let name = c.node.window_name(w);
+                    let name = c.node.window_path(w);
                     let outcome = apex_edit::Edit::new().run(&t, (q0, q1), Some(&name), &format!("{a}p")).map_err(|e| e.to_string())?;
                     outcome.output_string()
                 }
@@ -1495,7 +1595,7 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     eprintln!("editor: editing {file}");
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
-    let open = |r: &Remote| r.node.state.windows.keys().any(|w| r.node.window_name(*w) == file);
+    let open = |r: &Remote| r.node.state.windows.keys().any(|w| r.node.window_path(*w) == file && r.node.window_kind(*w) == WinKind::File);
     wait(&mut c, |r| open(r)).map_err(|_| format!("{file}: not opened"))?;
     loop {
         if !open(&c) {
@@ -1735,12 +1835,12 @@ fn web(ctx: &Ctx, p: &Parsed) -> R {
                 std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
             }
             let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-            let name = match p.get("name") {
-                Some(n) if n.starts_with('/') => n.to_string(),
-                Some(n) => cwd.join(n).display().to_string(),
-                None => cwd.join("+web").display().to_string(),
-            };
-            c.propose(Proposal::OpenHtml { col, name, text }, TIMEOUT)?;
+            let mut path = cwd.display().to_string();
+            if !path.ends_with('/') {
+                path.push('/');
+            }
+            let label = Some(p.get("label").unwrap_or("web").to_string());
+            c.propose(Proposal::OpenHtml { col, path, text, label }, TIMEOUT)?;
         }
         _ => return Err("usage".into()),
     }

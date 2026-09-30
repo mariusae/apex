@@ -878,10 +878,18 @@ const VERBS: [&str; 5] = ["Send", "Interrupt", "Preview", "Transcript", "Stop"];
 const UNLISTED: [&str; 8] = ["Allow", "Always", "Deny", "Never", "Mode", "Commands", "Login", "Resume"];
 
 impl Win {
+    /// The main window's path and label, for the windows made beside it.
+    fn place(&self) -> (String, String) {
+        let info = self.t.window(self.w);
+        let dir = info.as_ref().map(|i| i.path.clone()).unwrap_or_default();
+        let label = info.and_then(|i| i.label).unwrap_or_else(|| "agent".to_string());
+        (dir, label)
+    }
+
     fn run(cwd: PathBuf, label: String, thoughts: bool, transcript: bool, out: mpsc::Receiver<Out>, inbox: tokio::sync::mpsc::UnboundedSender<In>) -> apex_tool::Result<()> {
         let mut t = Tool::attach("acp")?;
-        let name = format!("{}/-{label}", cwd.display().to_string().trim_end_matches('/'));
-        let w = t.new_window(&name)?;
+        let dir = format!("{}/", cwd.display().to_string().trim_end_matches('/'));
+        let w = t.new_scratch(&dir, Some(&label))?;
         t.watch(w)?;
         // ours: what is in it is the agent's talk, not a file's text,
         // so the tag offers nothing to write it with and Del asks
@@ -1256,8 +1264,8 @@ impl Win {
                 Ok(())
             }
             None => {
-                let name = format!("{}+transcript", self.t.window_name(self.w).unwrap_or_else(|| "-agent".to_string()));
-                let w = self.t.new_window(&name)?;
+                let (dir, label) = self.place();
+                let w = self.t.new_scratch(&dir, Some(&format!("{label} transcript")))?;
                 // ours, as the run window is: Del does not ask about it
                 let _ = self.t.set_owner(w, true);
                 let _ = self.t.set_live(w, true);
@@ -1670,9 +1678,9 @@ impl Win {
                 Ok(())
             }
             None => {
-                let name = format!("{}+Preview", self.t.window_name(self.w).unwrap_or_else(|| "-agent".to_string()));
+                let (dir, label) = self.place();
                 let html = self.rendered();
-                let w = self.t.new_page(&name, &html)?;
+                let w = self.t.new_page(&dir, Some(&format!("{label} preview")), &html)?;
                 // ours, as the preview tool's page is: Del does not ask
                 let _ = self.t.set_owner(w, true);
                 let _ = self.t.set_live(w, true);
@@ -1775,8 +1783,8 @@ impl Win {
             self.run = None;
             self.wrote = None;
         }
-        let name = format!("{}+run", self.t.window_name(self.w).unwrap_or_else(|| "-agent".to_string()));
-        let w = self.t.new_window(&name)?;
+        let (dir, label) = self.place();
+        let w = self.t.new_scratch(&dir, Some(&format!("{label} run")))?;
         // ours, as the page is: Del does not ask about the text in it
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_live(w, true);
@@ -2389,8 +2397,8 @@ impl Win {
                 }
                 // the output itself is in the run window: the line
                 // names it, so B3 opens it
-                ToolCallContent::Terminal(t) => match self.run.and_then(|w| self.t.window_name(w)) {
-                    Some(n) => b.push_str(&format!("    {}\n", self.shown(Path::new(&n)))),
+                ToolCallContent::Terminal(t) => match self.run.and_then(|w| self.t.window(w)) {
+                    Some(i) => b.push_str(&format!("    in the {} window\n", i.label.unwrap_or_else(|| "run".into()))),
                     None => b.push_str(&format!("    terminal {}\n", t.terminal_id.0)),
                 },
                 ToolCallContent::Content(c) => {
@@ -2449,7 +2457,7 @@ impl Win {
     /// into any clean window later.
     fn write_file(&mut self, path: &Path, content: &str) -> Result<(), String> {
         let name = path.display().to_string();
-        let open = self.t.windows().into_iter().find(|w| w.name == name).map(|w| w.id);
+        let open = self.t.windows().into_iter().find(|w| w.path == name && w.kind == apex_tool::WinKind::File && !w.scratch).map(|w| w.id);
         match open {
             Some(w) => {
                 self.t.replace(w, 0, apex_tool::END, content).map_err(|e| e.0)?;
@@ -2463,7 +2471,7 @@ impl Win {
     /// else the disk's. `line` is 1-based; `limit` counts lines.
     fn read_file(&self, path: &Path, line: Option<u32>, limit: Option<u32>) -> Result<String, String> {
         let name = path.display().to_string();
-        let open = self.t.windows().into_iter().find(|w| w.name == name).map(|w| w.id);
+        let open = self.t.windows().into_iter().find(|w| w.path == name && w.kind == apex_tool::WinKind::File && !w.scratch).map(|w| w.id);
         let text = match open {
             Some(w) => self.t.read(w).map_err(|e| e.0)?,
             None => std::fs::read_to_string(path).map_err(|e| format!("{name}: {e}"))?,

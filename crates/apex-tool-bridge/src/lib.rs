@@ -10,8 +10,13 @@
 //! are answered, in order, with `{"id": N, "ok": true, ...}` or
 //! `{"id": N, "ok": false, "error": "..."}`:
 //!
-//! - `windows` → `windows: [{id, name, kind, live}]`
-//! - `new {name}` → `window` (a new, empty window of that name)
+//! - `windows` → `windows: [{id, path, label, kind, scratch, live}]`;
+//!   `window {window}` → the same for one. A window's path is where it
+//!   is (a file's or directory's, the directory an errors window is for,
+//!   the file a preview shows, a terminal's directory, a page's address),
+//!   its label a name beside it (a terminal's title, a tool's window's)
+//! - `new {path, scratch?, label?}` → `window` (a new, empty window for
+//!   the file at that path; `scratch`, one with no file behind it)
 //! - `open {name, line?}` → `window` (a file, opened or shown, at a line)
 //! - `read {window}` → `text`; `selection {window}` → `q0, q1`
 //! - `write {window, q0, q1, text}` (a range replaced; `q0`/`q1` of -1
@@ -19,20 +24,23 @@
 //! - `show {window, at}` or `show {window, line}`: the text there brought
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
-//! - `rename {window, name}`, `live {window, on}`, `working {window, on}`, `delete {window}`
+//! - `rename {window, path}`, `label {window, label?}`, `live {window, on}`,
+//!   `working {window, on}`, `delete {window}`
 //! - `notify {window}`: the user's attention asked for about a window (its
 //!   handle shows it, and the session's handle and tab take the colour; a
 //!   click on the session's handle goes there); `unnotify {window}`
 //!   retracts it; `notified {window}` → `on`: whether it is still raised
 //!   (false once the user has taken it or used the window)
-//! - `tag {window}` → `text`, `settag {window, text}`: the user's half of
-//!   the window's tag, what follows `|` (the words before it are apex's)
-//! - `page {name, html}` → `window` (a window showing HTML as a page;
-//!   `write` on it rewrites the page)
+//! - `tag {window}` → `text`, `settag {window, text}`: the window's tag,
+//!   the user's words (apex's own, and the path and label, are no text
+//!   in it)
+//! - `page {path, html, label?}` → `window` (a window showing HTML as a
+//!   page, about that path; `write` on it rewrites the page)
 //! - `diff {text, dir?}` → `window`: a unified diff shown as a page, side
 //!   by side, every line a link into its file (paths under `dir`, else
-//!   the bridge's own directory), in the window `DIR/+Diff`
-//! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (+Errors)
+//!   the bridge's own directory), in `dir`'s page labelled Diff
+//! - `exec {window?, text}` (B2 there), `errors {dir?, text}` (the
+//!   directory's errors window)
 //! - `snarf {text}`: the snarf buffer, and the UIs' clipboards, set
 //! - `switch {session, window?}`: another session shown (by id, a prefix
 //!   or label), at a window there
@@ -60,8 +68,8 @@
 //! groups, at?, sel?}` when a rule of ours matched (`rule` says which;
 //! `at` and `sel` are `{q0, q1}` in the window's body); `edit {window,
 //! q0, nd, text}` for a watched window, edits by others only; `renamed
-//! {window, name}` and `deleted {window}` for windows we made, opened
-//! or watched; `bye` when the session or the link ends, after which the
+//! {window, path}`, `relabeled {window, label}` and `deleted {window}`
+//! for windows we made, opened or watched; `bye` when the session or the link ends, after which the
 //! bridge exits. Offsets count characters, as apex does throughout.
 
 use std::io::{BufRead, Write};
@@ -145,7 +153,8 @@ impl Bridge {
         let v = match ev {
             Event::Plumb(p) => plumb_json(&p),
             Event::Edit(e) => json!({ "event": "edit", "window": e.window.0, "q0": e.q0, "nd": e.nd, "text": e.text }),
-            Event::Renamed { window, name } => json!({ "event": "renamed", "window": window.0, "name": name }),
+            Event::Renamed { window, path } => json!({ "event": "renamed", "window": window.0, "path": path }),
+            Event::Relabeled { window, label } => json!({ "event": "relabeled", "window": window.0, "label": label }),
             Event::Deleted { window } => json!({ "event": "deleted", "window": window.0 }),
         };
         self.emit(v);
@@ -171,17 +180,22 @@ impl Bridge {
         let e = |e: apex_tool::Error| e.to_string();
         match cmd {
             "windows" => {
-                let list: Vec<Value> = self.tool.windows().into_iter().map(|w| json!({ "id": w.id.0, "name": w.name, "kind": w.kind.name(), "live": w.live })).collect();
+                let list: Vec<Value> = self.tool.windows().into_iter().map(|w| window_json(&w)).collect();
                 Ok(json!({ "windows": list }))
             }
+            "window" => {
+                let w = self.tool.window(window(v)?).ok_or("no such window")?;
+                Ok(window_json(&w))
+            }
             "new" => {
-                let name = v["name"].as_str().ok_or("name")?;
-                Ok(json!({ "window": self.tool.new_window(name).map_err(e)?.0 }))
+                let path = v["path"].as_str().ok_or("path")?;
+                let w = if v["scratch"].as_bool().unwrap_or(false) { self.tool.new_scratch(path, v["label"].as_str()) } else { self.tool.new_window(path) };
+                Ok(json!({ "window": w.map_err(e)?.0 }))
             }
             "page" => {
-                let name = v["name"].as_str().ok_or("name")?;
+                let path = v["path"].as_str().ok_or("path")?;
                 let html = v["html"].as_str().unwrap_or("");
-                Ok(json!({ "window": self.tool.new_page(name, html).map_err(e)?.0 }))
+                Ok(json!({ "window": self.tool.new_page(path, v["label"].as_str(), html).map_err(e)?.0 }))
             }
             "diff" => {
                 let text = v["text"].as_str().ok_or("text")?;
@@ -227,7 +241,11 @@ impl Bridge {
                 Ok(json!({ "q0": r.q0, "q1": r.q1 }))
             }
             "rename" => {
-                self.tool.rename(window(v)?, v["name"].as_str().ok_or("name")?).map_err(e)?;
+                self.tool.rename(window(v)?, v["path"].as_str().ok_or("path")?).map_err(e)?;
+                Ok(json!({}))
+            }
+            "label" => {
+                self.tool.set_label(window(v)?, v["label"].as_str()).map_err(e)?;
                 Ok(json!({}))
             }
             "tag" => Ok(json!({ "text": self.tool.tag(window(v)?).map_err(e)? })),
@@ -348,4 +366,10 @@ fn plumb_json(p: &Plumb) -> Value {
         "event": "plumb", "plumb": p.id, "rule": p.rule.0, "verb": p.verb, "text": p.text, "dir": p.dir,
         "window": p.window.map(|w| w.0), "groups": p.groups, "at": range(p.at), "sel": range(p.sel),
     })
+}
+
+/// A window as the bridge speaks of it: its id, path, label, kind, and
+/// whether it is scratch and live.
+fn window_json(w: &apex_tool::WindowInfo) -> Value {
+    json!({ "id": w.id.0, "path": w.path, "label": w.label, "kind": w.kind.name(), "scratch": w.scratch, "live": w.live })
 }

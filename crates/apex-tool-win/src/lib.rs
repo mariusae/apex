@@ -179,8 +179,9 @@ struct Win {
     /// Ranges to take out of the window once the entries at hand have
     /// landed (raw mode's keys, DEL): `before` runs ahead of the replica.
     to_remove: Vec<(usize, usize)>,
-    /// What the shell reported (OSC 7, a title), the name made of them
-    /// by the terminals' rule; where it started, and its label, before.
+    /// What the shell reported (OSC 7, a title), the window's path and
+    /// label made of them by the terminals' rule; where it started, and
+    /// its label, before.
     cwd: Option<PathBuf>,
     title: Option<String>,
     initial_dir: PathBuf,
@@ -217,15 +218,15 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
     let mut remote = Remote::connect_as(socket, session, &name, AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
     // `apex tool win` is called win, not apex, in the top row and ps
     remote.announce("win");
-    // the window: dir/-host, or dir/-cmd, as win names it
+    // the window: the directory, labelled with the host or the command,
+    // as win names it; scratch -- a transcript, no file
     let label = match cmd.first() {
         Some(c) => apex_server::command_name(c),
         None => apex_server::term::sysname(),
     };
-    let wname = format!("{}/-{label}", dir.display().to_string().trim_end_matches('/'));
-    let label = label.to_string();
+    let (wpath, label) = apex_server::term::place(None, None, dir, &label);
     let col = remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-    let window = match remote.propose(Proposal::NewWindow { col, name: wname.clone() }, TIMEOUT)? {
+    let window = match remote.propose(Proposal::NewWindow { col, name: wpath, label: Some(label.clone()), scratch: true }, TIMEOUT)? {
         Some(w) => w,
         None => return Err("no window made".into()),
     };
@@ -512,7 +513,7 @@ impl Win {
         }
         let (bytes, labels) = scan(&mut self.carry, &bytes);
         if !labels.is_empty() {
-            let was = self.window_name();
+            let was = self.window_place();
             for (_, l) in labels {
                 match l {
                     Label::Name(t) => self.title = Some(t),
@@ -525,9 +526,12 @@ impl Win {
                     Label::Mark(..) => {}
                 }
             }
-            let now = self.window_name();
-            if now != was {
-                let _ = self.propose(Proposal::Rename { buffer: self.buffer, window: self.window, name: now }, TIMEOUT);
+            let now = self.window_place();
+            if now.0 != was.0 {
+                let _ = self.propose(Proposal::SetPath { window: self.window, path: now.0.clone() }, TIMEOUT);
+            }
+            if now.1 != was.1 {
+                let _ = self.propose(Proposal::SetLabel { window: self.window, label: Some(now.1) }, TIMEOUT);
             }
         }
         let bytes = self.echocancel(&bytes);
@@ -539,9 +543,10 @@ impl Win {
         self.insert_output(text);
     }
 
-    /// The window's name under the terminals' rule: `{osc7}/-{title}`.
-    fn window_name(&self) -> String {
-        apex_server::term::compose_name(self.cwd.as_deref(), self.title.as_deref(), &self.initial_dir, &self.label)
+    /// The window's path and label under the terminals' rule: OSC 7's
+    /// directory, and the title.
+    fn window_place(&self) -> (String, String) {
+        apex_server::term::place(self.cwd.as_deref(), self.title.as_deref(), &self.initial_dir, &self.label)
     }
 
     /// win's `echocancel`: what the pty echoes of what we sent is not

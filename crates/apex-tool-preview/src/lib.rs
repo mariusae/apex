@@ -1,6 +1,6 @@
 //! `apex tool preview FILE` (WEB.md §3): the file's buffer, piped through
 //! the converter its extension names in the settings (`Preview.md`),
-//! shown as a page in a window named `FILE+Preview` beside it, and kept
+//! shown as a page in a preview window at FILE beside it, and kept
 //! so as the buffer changes: live from the text, not the file, so
 //! unsaved edits show. The tool ends with either window.
 //!
@@ -55,8 +55,14 @@ struct Tool {
 }
 
 impl Tool {
-    fn window_named(&self, name: &str) -> Option<WindowId> {
-        self.remote.node.state.windows.keys().copied().find(|w| self.remote.node.window_name(*w) == name)
+    /// The file's own window at `path` (not its preview).
+    fn window_named(&self, path: &str) -> Option<WindowId> {
+        self.remote.node.window_named(path).filter(|w| self.remote.node.window_kind(*w) != WinKind::Preview)
+    }
+
+    /// The file's preview, if it has one.
+    fn preview_window(&self) -> Option<WindowId> {
+        self.remote.node.window_of(&self.file, WinKind::Preview)
     }
 
     /// One message, through `before` first; false when the link ended.
@@ -127,10 +133,9 @@ impl Tool {
         let src_buf = self.remote.node.state.window(src).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
         self.source = Some((src, src_buf));
         // a preview someone else keeps: show it and be done
-        let name = apex_core::preview::preview_name(&self.file);
-        if let Some(w) = self.window_named(&name) {
+        if let Some(w) = self.preview_window() {
             if self.remote.node.window_live(w) {
-                let loc = Loc { session: None, name: name.clone(), pos: Pos::Keep };
+                let loc = Loc { session: None, name: w.0.to_string(), pos: Pos::Keep };
                 let _ = self.propose(Proposal::Goto { loc }, TIMEOUT);
                 return Err("shown".into());
             }
@@ -139,9 +144,9 @@ impl Tool {
         let cols = &self.remote.node.state.layout.cols;
         let ci = self.remote.node.column_of(src).ok().and_then(|c| cols.iter().position(|x| x.id == c)).unwrap_or(0);
         let col = cols.get(ci + 1).or(cols.get(ci)).map(|c| c.id).ok_or("no column")?;
-        let page = match self.window_named(&name) {
+        let page = match self.preview_window() {
             Some(w) => w,
-            None => self.propose(Proposal::OpenHtml { col, name: name.clone(), text: String::new() }, TIMEOUT)?.ok_or("no preview window")?,
+            None => self.propose(Proposal::OpenHtml { col, path: self.file.clone(), text: String::new(), label: None }, TIMEOUT)?.ok_or("no preview window")?,
         };
         let page_buf = self.remote.node.state.window(page).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
         if debug() {

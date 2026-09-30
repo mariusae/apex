@@ -85,7 +85,7 @@ fn scripts_drive_a_headless_session() {
     // a pipe through the shell, as B2 would: the selection ("apple") sorts
     // to itself, but the replacement dirties the window
     ok(&sock, &["exec", "notes.txt", "|sort"]);
-    let dirty = |sock: &PathBuf| ok(sock, &["win", "list"]).lines().any(|l| l.contains("\t*") && l.ends_with("notes.txt"));
+    let dirty = |sock: &PathBuf| ok(sock, &["win", "list"]).lines().any(|l| { let f: Vec<&str> = l.split('\t').collect(); f[2].contains('*') && f[3].ends_with("notes.txt") });
     let deadline = Instant::now() + Duration::from_secs(5);
     while !dirty(&sock) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
@@ -116,7 +116,7 @@ fn scripts_drive_a_headless_session() {
     // delete the window: acme warns once while it is dirty, then goes
     ok(&sock, &["win", "del", "notes.txt"]);
     assert!(ok(&sock, &["win", "list"]).contains("notes.txt"));
-    assert!(ok(&sock, &["text", "read", "+Errors"]).contains("notes.txt modified"));
+    assert!(ok(&sock, &["text", "read", "errors"]).contains("notes.txt modified"));
     ok(&sock, &["win", "del", "notes.txt"]);
     assert!(!ok(&sock, &["win", "list"]).contains("notes.txt"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -176,8 +176,8 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     let errors = |sock: &PathBuf, session: &str| -> String {
         ok(sock, &[&format!("-session={session}"), "win", "list"])
             .lines()
-            .filter(|l| l.ends_with("+Errors"))
-            .map(|l| l.split('\t').nth(1).unwrap_or("").trim_start_matches('*').to_string())
+            .filter(|l| l.split('\t').nth(1) == Some("errors"))
+            .map(|l| l.split('\t').next().unwrap_or("").to_string())
             .map(|w| format!("{w}:\n{}", ok(sock, &[&format!("-session={session}"), "text", "read", &w])))
             .collect()
     };
@@ -202,7 +202,7 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     assert!(env.contains(&format!("ORDER={id}\n")), "{env}");
     assert!(env.contains("apexsessionlabel=s2\n"), "{env}");
     // the init's name left the top row when it was done
-    assert!(!ok(&sock, &["-session=s2", "text", "read", "+Errors"]).contains("exit"), "init exited cleanly");
+    assert!(!ok(&sock, &["-session=s2", "text", "read", "errors"]).contains("exit"), "init exited cleanly");
     // a terminal made now sees the environment
     let t = ok(&sock, &["-session=s2", "term", "new"]);
     let t = t.trim().to_string();
@@ -314,11 +314,11 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     assert!(!ok(&sock, &["plumb", "rule", "ls"]).contains("-tool=t"));
     // Preview shows in the .md window's tag, and B2 runs it
     let (_, wins, _) = apex(&sock, &["win", "list"]);
-    let w = wins.lines().find(|l| l.ends_with("readme.md")).and_then(|l| l.split('\t').next()).unwrap().to_string();
+    let w = wins.lines().find(|l| l.split('\t').nth(3).is_some_and(|p| p.ends_with("readme.md"))).and_then(|l| l.split('\t').next()).unwrap().to_string();
     ok(&sock, &["exec", &w, "Preview"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     // (the errors window appears with the first output)
-    let errors = || apex(&sock, &["text", "read", "+Errors"]).1;
+    let errors = || apex(&sock, &["text", "read", "errors"]).1;
     while !errors().contains(&format!("preview {md}")) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -544,7 +544,7 @@ fn editor_opens_the_file_and_returns_when_its_window_goes() {
         (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string(), String::from_utf8_lossy(&out.stderr).to_string())
     });
     let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
-    let open = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w) == path);
+    let open = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w) == path);
     let deadline = Instant::now() + Duration::from_secs(5);
     while open(&c).is_none() && Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(20));
@@ -820,7 +820,7 @@ fn preview_is_a_live_pipe_through_a_converter() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.txt$"));
-    // a file, not open: the tool opens it, makes FILE+Preview beside it
+    // a file, not open: the tool opens it, makes a preview of it beside it
     // with the converter's output, live
     let dir = std::env::temp_dir().join(format!("apex-cli-preview-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -829,18 +829,17 @@ fn preview_is_a_live_pipe_through_a_converter() {
     let path = file.display().to_string();
     let mut tool = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "tool", "preview", &path]).stderr(std::process::Stdio::piped()).spawn().unwrap();
     let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
-    let preview = format!("{path}+Preview");
-    let find = |r: &Remote, name: &str| r.node.state.windows.keys().copied().find(|w| r.node.window_name(*w) == name);
+    let find = |r: &Remote, kind: WinKind| r.node.window_of(&path, kind);
     let text_of = |r: &Remote, w: WindowId| r.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| r.node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(50));
-        if find(&c, &preview).is_some_and(|w| text_of(&c, w).contains("<p>ONE</p>")) {
+        if find(&c, WinKind::Preview).is_some_and(|w| text_of(&c, w).contains("<p>ONE</p>")) {
             break;
         }
     }
-    let src = find(&c, &path).expect("the file opened");
-    let page = find(&c, &preview).expect("a preview window");
+    let src = find(&c, WinKind::File).expect("the file opened");
+    let page = find(&c, WinKind::Preview).expect("a preview window");
     assert_eq!(text_of(&c, page), "<p>ONE</p>\n");
     assert!(matches!(c.node.state.window(page).unwrap().body, Body::Html(_)));
     assert!(c.node.window_live(page), "the page is live while the tool runs");
@@ -1008,10 +1007,10 @@ fn the_profiles_environment_at_its_end_is_the_sessions() {
     // a command started now has the function
     ok(&sock, &["exec", "g there"]);
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !apex(&sock, &["text", "read", "+Errors"]).1.contains("hi there") && Instant::now() < deadline {
+    while !apex(&sock, &["text", "read", "errors"]).1.contains("hi there") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }
-    let errors = apex(&sock, &["text", "read", "+Errors"]).1;
+    let errors = apex(&sock, &["text", "read", "errors"]).1;
     assert!(errors.contains("hi there\n"), "{errors}");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -1050,7 +1049,7 @@ fn the_bridge_speaks_json_for_tools() {
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 1, "cmd": "nothing" }));
     assert_eq!(r["ok"], false, "{r}");
     assert!(r["error"].as_str().unwrap().contains("no such command"));
-    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 2, "cmd": "new", "name": "/tmp/bridge-notes" }));
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 2, "cmd": "new", "path": "/tmp/bridge-notes" }));
     assert_eq!(r["ok"], true, "{r}");
     let w = r["window"].as_u64().unwrap();
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 3, "cmd": "write", "window": w, "q0": -1, "q1": -1, "text": "hello\n" }));
@@ -1058,7 +1057,13 @@ fn the_bridge_speaks_json_for_tools() {
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 4, "cmd": "read", "window": w }));
     assert_eq!(r["text"], "hello\n", "{r}");
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 5, "cmd": "windows" }));
-    assert!(r["windows"].as_array().unwrap().iter().any(|x| x["id"] == w && x["name"] == "/tmp/bridge-notes"), "{r}");
+    assert!(r["windows"].as_array().unwrap().iter().any(|x| x["id"] == w && x["path"] == "/tmp/bridge-notes" && x["kind"] == "file" && x["scratch"] == false), "{r}");
+    // path and label are the window's, set apart from its tag
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 51, "cmd": "label", "window": w, "label": "notes for t" }));
+    assert_eq!(r["ok"], true, "{r}");
+    let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 52, "cmd": "window", "window": w }));
+    assert_eq!(r["label"], "notes for t", "{r}");
+    assert!(ok(&sock, &["win", "list"]).lines().any(|l| l.ends_with("\t/tmp/bridge-notes\tnotes for t")), "{}", ok(&sock, &["win", "list"]));
     // a verb offered in that window: B2 on it comes back as a plumb event
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 6, "cmd": "rule", "verb": "Shout", "window": w }));
     assert_eq!(r["ok"], true, "{r}");
@@ -1148,7 +1153,7 @@ fn notify_waits_until_the_user_dismisses_it() {
     let sock = daemon();
     let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
     let col = ui.node.state.layout.cols.first().map(|c| c.id).unwrap();
-    let w = ui.propose(apex_server::Proposal::NewWindow { col, name: "/tmp/notify-origin".into() }, Duration::from_secs(5)).unwrap().unwrap();
+    let w = ui.propose(apex_server::Proposal::NewWindow { col, name: "/tmp/notify-origin".into(), label: None, scratch: false }, Duration::from_secs(5)).unwrap().unwrap();
     let s2 = sock.clone();
     let wid = w.0.to_string();
     let child = std::thread::spawn(move || apex(&s2, &["notify", &format!("-win={wid}")]));

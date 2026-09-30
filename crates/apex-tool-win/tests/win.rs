@@ -46,9 +46,10 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
         let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
     });
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
-    let name = format!("{}/-sh", dir.display());
-    assert!(until(&mut c, |n| n.state.windows.keys().any(|w| n.window_name(*w) == name)), "win's window");
-    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w) == name).unwrap();
+    let name = format!("{}/", dir.display());
+    let is_win = |n: &Node, w: WindowId| n.window_path(w) == name && n.window_label(w).as_deref() == Some("sh") && n.window_scratch(w);
+    assert!(until(&mut c, |n| n.state.windows.keys().any(|w| is_win(n, *w))), "win's window");
+    let w = c.node.state.windows.keys().copied().find(|w| is_win(&c.node, *w)).unwrap();
     let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
     let text = |n: &Node| n.state.buffer(b).map(|x| x.text.to_string()).unwrap_or_default();
     // after the prompt, type a command at the end
@@ -83,9 +84,9 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     assert!(t.rfind("win-42\n").unwrap() > t.find("again\n").unwrap(), "{t}");
     // the window renamed (the shell's awd on cd): the rules are the
     // window's, so the menu's verbs, and B2 sending, are there as before
-    let renamed = format!("{}/elsewhere/-sh", dir.display());
-    c.propose(Proposal::Rename { buffer: b, window: w, name: renamed.clone() }, Duration::from_secs(5)).unwrap();
-    assert!(until(&mut c, |n| n.window_name(w) == renamed));
+    let renamed = format!("{}/elsewhere/", dir.display());
+    c.propose(Proposal::SetPath { window: w, path: renamed.clone() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut c, |n| n.window_path(w) == renamed));
     assert_eq!(apex_core::plumb::verbs_for(&c.node.state.meta.rules, &renamed, WinKind::File, Some(w), None), vec!["Interrupt", "EOF"]);
     c.propose(Proposal::Exec { ctx: ExecCtx::Window(w), text: "echo win-$((6*7))".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut c, |n| text(n).matches("win-42\n").count() == 3), "output:\n{}", text(&c.node));
@@ -104,9 +105,10 @@ fn del_typed_in_the_window_interrupts_what_the_shell_runs() {
         let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
     });
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
-    let name = format!("{}/-sh", dir.display());
-    assert!(until(&mut c, |n| n.state.windows.keys().any(|w| n.window_name(*w) == name)), "win's window");
-    let w = c.node.state.windows.keys().copied().find(|w| c.node.window_name(*w) == name).unwrap();
+    let name = format!("{}/", dir.display());
+    let is_win = |n: &Node, w: WindowId| n.window_path(w) == name && n.window_label(w).as_deref() == Some("sh") && n.window_scratch(w);
+    assert!(until(&mut c, |n| n.state.windows.keys().any(|w| is_win(n, *w))), "win's window");
+    let w = c.node.state.windows.keys().copied().find(|w| is_win(&c.node, *w)).unwrap();
     let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
     let text = |n: &Node| n.state.buffer(b).map(|x| x.text.to_string()).unwrap_or_default();
     assert!(until(&mut c, |n| text(n).ends_with("$ ")), "prompt:\n{}", text(&c.node));

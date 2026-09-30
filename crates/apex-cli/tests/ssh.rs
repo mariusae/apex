@@ -106,7 +106,7 @@ fn attaching_over_ssh_bridges_to_a_daemon_on_the_host() {
     assert_eq!(c.acked(Shard::Buffer(b)), want, "acked over the bridge");
     // another client on the same "host" sees it
     let again = Remote::via(&ssh::attach_command("box", "default").unwrap(), "default", "again", AttachmentKind::Tool).unwrap();
-    assert!(again.node.state.windows.keys().any(|w| again.node.window_name(*w) == "remote-notes"));
+    assert!(again.node.state.windows.keys().any(|w| again.node.window_path(*w) == "remote-notes"));
     drop(again);
     drop(c);
     stop_host(&sock);

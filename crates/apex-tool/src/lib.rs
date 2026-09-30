@@ -108,8 +108,15 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowInfo {
     pub id: WindowId,
-    pub name: String,
+    /// Where it is: a file's or directory's path, the directory an errors
+    /// window is for, the file a preview shows, a terminal's directory, a
+    /// page's address. Empty for a window not yet named.
+    pub path: String,
+    /// The label beside the path: a terminal's title, a tool's window's.
+    pub label: Option<String>,
     pub kind: WinKind,
+    /// No file behind it (errors, a preview, a transcript, a terminal).
+    pub scratch: bool,
     /// A process is behind it (a shell's, a tool's).
     pub live: bool,
 }
@@ -170,9 +177,12 @@ pub enum Event {
     Plumb(Plumb),
     /// A watched window's body was edited by someone else.
     Edit(Edit),
-    /// A window the tool made, opened or watches was renamed (a shell's
-    /// cd, a Put under a new name).
-    Renamed { window: WindowId, name: String },
+    /// A window the tool made, opened or watches is somewhere else now (a
+    /// Put under a new name, a rename, a shell's cd), by someone else's
+    /// doing: the tool's own `rename` is not reported, nor its `set_label`.
+    Renamed { window: WindowId, path: String },
+    /// Such a window's label changed (a terminal's title).
+    Relabeled { window: WindowId, label: Option<String> },
     /// Such a window was deleted.
     Deleted { window: WindowId },
 }
@@ -265,7 +275,7 @@ pub struct Tool {
     watched: BTreeSet<WindowId>,
     /// Windows we made, opened or watch, with their names as last seen:
     /// renames and deletions are reported for these.
-    ours: BTreeMap<WindowId, String>,
+    ours: BTreeMap<WindowId, (String, Option<String>)>,
     events: VecDeque<Event>,
     /// Replacements of ours in watched windows still to come back: the
     /// leader applies proposals as itself, so an edit's entries do not
@@ -406,13 +416,18 @@ impl Tool {
             self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel) }));
         }
         let mut gone = Vec::new();
-        for (w, name) in self.ours.iter_mut() {
+        for (w, (path, label)) in self.ours.iter_mut() {
             match self.remote.node.state.window(*w) {
                 Ok(_) => {
-                    let now = self.remote.node.window_name(*w);
-                    if now != *name {
-                        *name = now.clone();
-                        self.events.push_back(Event::Renamed { window: *w, name: now });
+                    let now = self.remote.node.window_path(*w);
+                    if now != *path {
+                        *path = now.clone();
+                        self.events.push_back(Event::Renamed { window: *w, path: now });
+                    }
+                    let now = self.remote.node.window_label(*w);
+                    if now != *label {
+                        *label = now.clone();
+                        self.events.push_back(Event::Relabeled { window: *w, label: now });
                     }
                 }
                 Err(_) => gone.push(*w),
@@ -455,36 +470,51 @@ impl Tool {
     /// The session's windows.
     pub fn windows(&self) -> Vec<WindowInfo> {
         let node = &self.remote.node;
-        let mut out: Vec<WindowInfo> = node.state.windows.keys().copied().map(|w| WindowInfo { id: w, name: node.window_name(w), kind: node.window_kind(w), live: node.window_live(w) }).collect();
+        let mut out: Vec<WindowInfo> = node.state.windows.keys().copied().map(|w| self.window_info(w)).collect();
         out.sort_by_key(|w| w.id);
         out
     }
 
-    /// A window's name, if it exists.
-    pub fn window_name(&self, w: WindowId) -> Option<String> {
-        self.remote.node.state.window(w).ok().map(|_| self.remote.node.window_name(w))
+    fn window_info(&self, w: WindowId) -> WindowInfo {
+        let node = &self.remote.node;
+        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w) }
+    }
+
+    /// A window, if it exists: its path, label, kind and so on.
+    pub fn window(&self, w: WindowId) -> Option<WindowInfo> {
+        self.remote.node.state.window(w).ok().map(|_| self.window_info(w))
     }
 
     fn body_of(&self, w: WindowId) -> Result<BufferId> {
         self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.body_buffer().ok_or_else(|| "not a text window".into())
     }
 
-    /// A new, empty window with this name in the last column.
-    pub fn new_window(&mut self, name: &str) -> Result<WindowId> {
+    /// A new, empty window for a file at `path` in the last column.
+    pub fn new_window(&mut self, path: &str) -> Result<WindowId> {
+        self.new_window_as(path, None, false)
+    }
+
+    /// A new, empty scratch window (no file behind it: a transcript, a
+    /// report) at `path` -- a directory, say -- labelled.
+    pub fn new_scratch(&mut self, path: &str, label: Option<&str>) -> Result<WindowId> {
+        self.new_window_as(path, label, true)
+    }
+
+    fn new_window_as(&mut self, path: &str, label: Option<&str>, scratch: bool) -> Result<WindowId> {
         let col = self.remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-        let w = self.propose(Proposal::NewWindow { col, name: name.to_string() })?.ok_or("no window made")?;
+        let w = self.propose(Proposal::NewWindow { col, name: path.to_string(), label: label.map(str::to_string), scratch })?.ok_or("no window made")?;
         self.remember(w);
         Ok(w)
     }
 
     /// A new window in the last column showing `html` as a page (WEB.md
-    /// §3). Its body is the HTML, so `replace` rewrites the page in
-    /// place: a tool with something to show that is not text keeps one
-    /// window and writes it again. The name is a path, as every
-    /// window's is, and says nothing about where the HTML came from.
-    pub fn new_page(&mut self, name: &str, html: &str) -> Result<WindowId> {
+    /// §3), at `path` (the file or directory it is about), labelled. Its
+    /// body is the HTML, so `replace` rewrites the page in place: a tool
+    /// with something to show that is not text keeps one window and
+    /// writes it again. It is scratch, so nothing for Del to ask about.
+    pub fn new_page(&mut self, path: &str, label: Option<&str>, html: &str) -> Result<WindowId> {
         let col = self.remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-        let w = self.propose(Proposal::OpenHtml { col, name: name.to_string(), text: html.to_string() })?.ok_or("no window made")?;
+        let w = self.propose(Proposal::OpenHtml { col, path: path.to_string(), text: html.to_string(), label: label.map(str::to_string) })?.ok_or("no window made")?;
         self.remember(w);
         Ok(w)
     }
@@ -492,22 +522,22 @@ impl Tool {
     /// A diff (what `diff -u` or `git diff` writes) as a page: side by
     /// side, in acme's colours, every file name, line number and line a
     /// link that opens the file there -- the paths in the diff taken
-    /// under `dir` (the tool's own directory when empty). It is the
-    /// window `DIR/+Diff`, made in the last column the first time and
+    /// under `dir` (the tool's own directory when empty). It is `dir`'s
+    /// page labelled Diff, made in the last column the first time and
     /// written over after that, and shown either way; a scratch window,
     /// so there is nothing for `Del` to ask about. Its tag has Prev and
     /// Next, which step between the chunks of changes.
     pub fn diff(&mut self, text: &str, dir: &str) -> Result<WindowId> {
         let dir = if dir.is_empty() { std::env::current_dir().map_err(|e| e.to_string())? } else { std::path::absolute(dir).map_err(|e| format!("{dir}: {e}"))? };
         let html = apex_diff::render(text, &dir);
-        let name = format!("{}/+Diff", dir.display().to_string().trim_end_matches('/'));
-        let w = match self.windows().into_iter().find(|w| w.name == name) {
+        let path = format!("{}/", dir.display().to_string().trim_end_matches('/'));
+        let w = match self.windows().into_iter().find(|w| w.kind == WinKind::Preview && w.path == path && w.label.as_deref() == Some("Diff")) {
             Some(w) => {
                 self.replace(w.id, 0, END, &html)?;
-                self.open(&name, None)?;
+                self.propose(Proposal::Show { view: ViewId::Body(w.id), at: 0 })?;
                 w.id
             }
-            None => self.new_page(&name, &html)?,
+            None => self.new_page(&path, Some("Diff"), &html)?,
         };
         // the page's own words, where B2 finds them: Prev and Next go
         // between chunks (the page answers them). Put in front of what the
@@ -527,7 +557,7 @@ impl Tool {
         // the file may be on its way: wait for its window
         let deadline = std::time::Instant::now() + TIMEOUT;
         loop {
-            if let Some(w) = self.remote.node.state.windows.keys().copied().find(|w| self.remote.node.window_name(*w) == name) {
+            if let Some(w) = self.remote.node.window_named(name) {
                 self.remember(w);
                 return Ok(w);
             }
@@ -538,6 +568,14 @@ impl Tool {
                 return Err("the session is gone".into());
             }
         }
+    }
+
+    /// Take the user to one of the session's windows (as `open` does a
+    /// file's): shown, and landed on.
+    pub fn bring(&mut self, w: WindowId) -> Result<()> {
+        self.tag_of(w)?;
+        self.propose(Proposal::Goto { loc: Loc { session: None, name: w.0.to_string(), pos: Pos::Keep } })?;
+        Ok(())
     }
 
     /// Show another session, at a window there when given: a UI leading
@@ -647,34 +685,22 @@ impl Tool {
         Ok(self.line(w, n)?.q0)
     }
 
-    /// The user's half of the window's tag: what follows `|`. The words
-    /// before it are apex's own (`Del Snarf Undo Put` ...), kept up to
-    /// date by the leader; what comes after is whoever's wrote it.
+    /// The window's tag: the user's words (and a tool's). apex's own
+    /// (`Del Snarf Undo Put` ...) are no text in it but the window's
+    /// state, and its path and label are its own (`window`).
     pub fn tag(&self, w: WindowId) -> Result<String> {
         let b = self.tag_of(w)?;
-        let text = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string();
-        // the bar past the name (§ `apex_core::tag_bar`): a name may hold
-        // one of its own, and that one divides nothing
-        Ok(match apex_core::tag_bar(&text, &self.remote.node.window_name(w)) {
-            Some(i) => text.chars().skip(i + 1).collect(),
-            None => String::new(),
-        })
+        Ok(self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string())
     }
 
-    /// Write it: one space after the `|`, then `text`. Nothing that was
-    /// there is put back, `Look` included, so a tool furnishing its
-    /// window's tag says the whole of it (`"Look Send"`).
+    /// Write it: `text`, the whole of it -- nothing that was there is put
+    /// back, `Look` included, so a tool furnishing its window's tag says
+    /// all of it (`"Look Send"`).
     pub fn set_tag(&mut self, w: WindowId, text: &str) -> Result<()> {
         let b = self.tag_of(w)?;
         let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
         let (len, version) = (buf.text.len(), buf.version);
-        let (at, text) = match apex_core::tag_bar(&buf.text.to_string(), &self.remote.node.window_name(w)) {
-            Some(i) => (i + 1, format!(" {} ", text.trim())),
-            // no bar yet: make one (the leader writes it, but a tag it
-            // has not reached is still a tag)
-            None => (len, format!(" | {} ", text.trim())),
-        };
-        self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: at, q1: len, text })?;
+        self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: len, text: format!("{} ", text.trim()) })?;
         Ok(())
     }
 
@@ -682,11 +708,23 @@ impl Tool {
         Ok(self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.tag)
     }
 
-    /// Give the window (its buffer) a new name.
-    pub fn rename(&mut self, w: WindowId, name: &str) -> Result<()> {
-        let b = self.body_of(w)?;
-        self.propose(Proposal::Rename { buffer: b, window: w, name: name.to_string() })?;
-        self.ours.entry(w).and_modify(|n| *n = name.to_string());
+    /// Put the window somewhere else: a text window's file renamed (its
+    /// buffer's, and so every window on it), a terminal's directory.
+    pub fn rename(&mut self, w: WindowId, path: &str) -> Result<()> {
+        self.tag_of(w)?;
+        // known before it comes back, as it does while the proposal is
+        // answered: not an event of ours
+        self.ours.entry(w).and_modify(|(p, _)| *p = path.to_string());
+        self.propose(Proposal::SetPath { window: w, path: path.to_string() })?;
+        Ok(())
+    }
+
+    /// Give the window a label beside its path (none to take it away).
+    pub fn set_label(&mut self, w: WindowId, label: Option<&str>) -> Result<()> {
+        self.tag_of(w)?;
+        let label = label.map(str::trim).filter(|l| !l.is_empty()).map(str::to_string);
+        self.ours.entry(w).and_modify(|(_, l)| *l = label.clone());
+        self.propose(Proposal::SetLabel { window: w, label })?;
         Ok(())
     }
 
@@ -825,8 +863,8 @@ impl Tool {
     }
 
     fn remember(&mut self, w: WindowId) {
-        let name = self.remote.node.window_name(w);
-        self.ours.insert(w, name);
+        let (path, label) = (self.remote.node.window_path(w), self.remote.node.window_label(w));
+        self.ours.insert(w, (path, label));
     }
 
     // ---- rules ------------------------------------------------------------

@@ -69,7 +69,7 @@ fn a_rule_may_name_the_tool_that_owns_the_window() {
         for _ in 0..40 {
             let _ = c.step(Duration::from_millis(20));
         }
-        apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_name(w), c.node.window_kind(w), Some(w), c.node.window_owner(w))
+        apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(w), c.node.window_kind(w), Some(w), c.node.window_owner(w))
     };
     assert_eq!(menu(&mut c, a), vec!["Snarfout"]);
     assert_eq!(c.node.window_owner(a), Some("win-42"));
@@ -117,7 +117,7 @@ fn a_tool_works_a_window_and_answers_its_verb() {
     t.append(w, "hello\n").unwrap();
     t.replace(w, 0, 1, "H").unwrap();
     assert_eq!(t.read(w).unwrap(), "Hello\n");
-    assert!(t.windows().iter().any(|x| x.id == w && x.name == "/tmp/shout-notes"));
+    assert!(t.windows().iter().any(|x| x.id == w && x.path == "/tmp/shout-notes" && x.kind == WinKind::File && !x.scratch));
     // a verb offered in that window, run there: a Plumb event with the
     // window's dot as its range
     let shout = t.offer(Rule::verb("Shout").window(w)).unwrap();
@@ -155,74 +155,68 @@ fn a_tool_works_a_window_and_answers_its_verb() {
     other.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: END.min(16), q1: 16, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
     let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("an edit");
     assert_eq!(ev, Event::Edit(apex_tool::Edit { window: w, q0: 16, nd: 0, text: "typed\n".into() }));
-    // a rename and a deletion are events too (live, so Del does not ask)
-    t.rename(w, "/tmp/shout-renamed").unwrap();
+    // our own rename and label are not events, as our edits are not
+    t.rename(w, "/tmp/shout-mine").unwrap();
+    t.set_label(w, Some("shouted")).unwrap();
+    assert_eq!(t.next_event(Some(Duration::from_millis(200))).unwrap(), None);
+    // someone else's rename and relabel, and a deletion, are (live, so
+    // Del does not ask)
     t.set_live(w, true).unwrap();
+    other.propose(apex_server::Proposal::SetPath { window: w, path: "/tmp/shout-renamed".into() }, Duration::from_secs(5)).unwrap();
     let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("a rename");
-    assert_eq!(ev, Event::Renamed { window: w, name: "/tmp/shout-renamed".into() });
+    assert_eq!(ev, Event::Renamed { window: w, path: "/tmp/shout-renamed".into() });
+    other.propose(apex_server::Proposal::SetLabel { window: w, label: None }, Duration::from_secs(5)).unwrap();
+    let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("a relabel");
+    assert_eq!(ev, Event::Relabeled { window: w, label: None });
     other.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
     let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("a deletion");
     assert_eq!(ev, Event::Deleted { window: w });
     // nothing more, and the session goes on
     assert_eq!(t.next_event(Some(Duration::from_millis(200))).unwrap(), None);
-    assert!(t.window_name(w).is_none());
+    assert!(t.window(w).is_none());
 }
 
 #[test]
 fn a_page_window_is_made_and_written_again() {
     let sock = daemon();
     let mut t = Tool::attach_to(&sock, "main", "shower").unwrap();
-    let w = t.new_page("/tmp/shower+Preview", "<h1>one</h1>").unwrap();
+    let w = t.new_page("/tmp/shower", Some("shown"), "<h1>one</h1>").unwrap();
     assert_eq!(t.read(w).unwrap(), "<h1>one</h1>");
-    assert!(t.windows().iter().any(|x| x.id == w && x.name == "/tmp/shower+Preview"));
+    assert!(t.windows().iter().any(|x| x.id == w && x.path == "/tmp/shower" && x.label.as_deref() == Some("shown") && x.kind == WinKind::Preview && x.scratch));
+    // a label changed is an event for no one but those who watch; it is state
+    t.set_label(w, Some("shown again")).unwrap();
+    assert_eq!(t.window(w).and_then(|x| x.label), Some("shown again".into()));
     // the page is its body: written again, it is another page
     t.replace(w, 0, END, "<h1>two</h1>").unwrap();
     assert_eq!(t.read(w).unwrap(), "<h1>two</h1>");
 }
 
-/// The tag's two halves: the leader keeps the words before `|` up to
-/// date, a tool writes what follows and it stays written.
+/// The tag is the user's words alone: the path, the label and apex's
+/// verbs are the window's state, drawn beside them, never in the text.
 #[test]
 fn a_tool_furnishes_its_window_tag() {
     let sock = daemon();
     let mut t = Tool::attach_to(&sock, "main", "tagger").unwrap();
     let w = t.new_window("/tmp/tagger-notes").unwrap();
+    assert_eq!(t.tag(w).unwrap(), "Look ");
     t.set_tag(w, "Look Send").unwrap();
-    assert_eq!(t.tag(w).unwrap(), " Look Send ");
-    // words of apex's own come and go in the head (the buffer is
-    // dirty, so Undo and Put), and the tool's half is left alone
+    assert_eq!(t.tag(w).unwrap(), "Look Send ");
+    // apex's verbs follow the window (dirty: Undo and Put), the tag
+    // text is left alone
     t.append(w, "a line\n").unwrap();
     let mut other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
-    let mut tag = String::new();
-    while Instant::now() < deadline {
+    while !other.node.window_verbs(w).contains(&"Put") && Instant::now() < deadline {
         let _ = other.step(Duration::from_millis(20));
-        if let Some(text) = other.node.state.window(w).ok().and_then(|win| other.node.state.buffer(win.tag).ok()).map(|b| b.text.to_string()) {
-            tag = text;
-            if tag.contains("Put") {
-                break;
-            }
-        }
     }
-    assert_eq!(tag, "/tmp/tagger-notes Del Snarf Undo Put | Look Send ");
-    assert_eq!(t.tag(w).unwrap(), " Look Send ");
-    // a name with a bar of its own: the tool's half is still what
-    // follows the bar past the name, and writing it leaves the name
-    let b = t.new_window("/tmp/tagger|notes").unwrap();
+    assert_eq!(other.node.window_verbs(w), vec!["Del", "Snarf", "Undo", "Put"]);
+    let tag = other.node.state.window(w).ok().and_then(|win| other.node.state.buffer(win.tag).ok()).map(|b| b.text.to_string());
+    assert_eq!(tag.as_deref(), Some("Look Send "));
+    // a path with a bar or a space in it is a path whole
+    let b = t.new_window("/tmp/tagger| notes").unwrap();
     t.set_tag(b, "Look Send").unwrap();
-    assert_eq!(t.tag(b).unwrap(), " Look Send ");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut tag = String::new();
-    while Instant::now() < deadline {
-        let _ = other.step(Duration::from_millis(20));
-        if let Some(text) = other.node.state.window(b).ok().and_then(|win| other.node.state.buffer(win.tag).ok()).map(|x| x.text.to_string()) {
-            tag = text;
-            if tag.contains("Send") {
-                break;
-            }
-        }
-    }
-    assert_eq!(tag, "/tmp/tagger|notes Del Snarf | Look Send ");
+    assert_eq!(t.tag(b).unwrap(), "Look Send ");
+    assert_eq!(t.window(b).map(|x| x.path), Some("/tmp/tagger| notes".into()));
 }
 #[test]
 fn work_behind_a_window_shows_while_the_tool_is_there() {

@@ -652,14 +652,15 @@ impl Tool {
         }
     }
 
-    /// `root/+lsp`: every diagnostic the server has, one per line, the
-    /// window made when there is something to say.
+    /// The root's diagnostics window (at the root, labelled lsp, scratch):
+    /// every diagnostic the server has, one per line, the window made
+    /// when there is something to say.
     fn show_diagnostics(&mut self, key: &(String, PathBuf)) {
         let Some(s) = self.servers.get(key) else { return };
         let text: String = s.diagnostics.values().flat_map(|v| v.iter()).map(|l| format!("{l}\n")).collect();
-        let name = format!("{}/+lsp", key.1.display().to_string().trim_end_matches('/'));
+        let name = format!("{}/", key.1.display().to_string().trim_end_matches('/'));
         let node = &self.remote.node;
-        let existing = node.state.windows.keys().copied().find(|w| node.window_name(*w) == name);
+        let existing = node.state.windows.keys().copied().find(|w| node.window_path(*w) == name && node.window_label(*w).as_deref() == Some("lsp") && node.window_scratch(*w));
         let w = match existing {
             Some(w) => w,
             None => {
@@ -667,7 +668,7 @@ impl Tool {
                     return;
                 }
                 let Some(col) = node.state.layout.cols.last().map(|c| c.id) else { return };
-                match self.propose(Proposal::NewWindow { col, name: name.clone() }, TIMEOUT) {
+                match self.propose(Proposal::NewWindow { col, name: name.clone(), label: Some("lsp".into()), scratch: true }, TIMEOUT) {
                     Ok(Some(w)) => {
                         // its entries may still be on their way
                         let deadline = std::time::Instant::now() + TIMEOUT;

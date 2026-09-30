@@ -1,9 +1,9 @@
-//! The windows: what each verb opens -- a transcript window,
-//! `AGENTDIR/-claude+ID`, named for the agent's own directory so that a
-//! `path:line` in it is B3'd from where the agent worked; its page,
-//! `+Preview`; its changes, `+diff`, at the root of its repository --
-//! and, with `-a`, the pane, `DIR/-agents`, with a block an agent, and
-//! its own `+history`. All are the tool's own (`set_owner`): what is in
+//! The windows: what each verb opens -- a transcript window, at the
+//! agent's own directory (labelled with the agent and its session) so
+//! that a `path:line` in it is B3'd from where the agent worked; its
+//! page; its changes, at the root of its repository -- and, with `-a`,
+//! the pane at DIR, labelled agents, with a block an agent, and its own
+//! history. All are scratch windows, at a directory and labelled. All are the tool's own (`set_owner`): what is in
 //! them is the agents' doing and not a file's contents. Without `-a`
 //! there is no pane, and the tool's whole face is the verbs it offers
 //! on the agents' own windows and the notifications it raises for them.
@@ -232,8 +232,8 @@ impl Pane {
         // tool has no window of its own, and what it offers is offered
         // on the agents' own windows instead
         let (w, look) = if opts.pane {
-            let name = format!("{}/-agents", opts.cwd.display().to_string().trim_end_matches('/'));
-            let w = t.new_window(&name)?;
+            let dir = format!("{}/", opts.cwd.display().to_string().trim_end_matches('/'));
+            let w = t.new_scratch(&dir, Some("agents"))?;
             let _ = t.set_owner(w, true);
             let _ = t.set_tag(w, &format!("Look {}", VERBS.join(" ")));
             for v in VERBS {
@@ -450,7 +450,7 @@ impl Pane {
         let r = context_range(&text, at);
         let sel: String = text.chars().skip(r.q0).take(r.q1 - r.q0).collect();
         let line = text.chars().take(r.q0).filter(|c| *c == '\n').count() + 1;
-        let name = self.t.window_name(w).unwrap_or_default();
+        let name = self.t.window(w).map(|i| i.path).unwrap_or_default();
         self.t.snarf(&quoted(&name, line, &sel))?;
         Ok(true)
     }
@@ -1024,10 +1024,10 @@ impl Pane {
         }
         let Some(a) = self.agents.get(&key).cloned() else { return Ok(true) };
         let kind = if a.kind.is_empty() { "agent" } else { &a.kind };
-        let name = format!("{}/-{kind}+{}+Preview", a.cwd.trim_end_matches('/'), a.short());
+        let dir = format!("{}/", a.cwd.trim_end_matches('/'));
         let at = a.exchanges.len().checked_sub(1);
         let html = page::render(&self.t, Path::new(&a.cwd), at.and_then(|i| a.exchanges.get(i)).map(|x| (x.asked.as_str(), x.said.as_str())));
-        let w = self.t.new_page(&name, &html)?;
+        let w = self.t.new_page(&dir, Some(&format!("{kind} {}", a.short())), &html)?;
         // ours, as the preview tool's page is: Del does not ask
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_live(w, true);
@@ -1114,8 +1114,8 @@ impl Pane {
         let w = match self.diffs.iter().find(|(_, s)| **s == key).map(|(w, _)| *w) {
             Some(w) => w,
             None => {
-                let name = format!("{}/-{kind}+{}+diff", root.display().to_string().trim_end_matches('/'), a.short());
-                let w = self.t.new_window(&name)?;
+                let dir = format!("{}/", root.display().to_string().trim_end_matches('/'));
+                let w = self.t.new_scratch(&dir, Some(&format!("{kind} {} diff", a.short())))?;
                 let _ = self.t.set_owner(w, true);
                 let _ = self.t.set_live(w, true);
                 let _ = self.t.set_tag(w, "Look Changes");
@@ -1146,8 +1146,7 @@ impl Pane {
         let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &dir);
         let text = history::listing(&dir, &past, history::now());
         self.past = past.into_iter().map(|p| (p.id.clone(), p)).collect();
-        let name = format!("{}/-agents+history", dir.trim_end_matches('/'));
-        let w = self.t.new_window(&name)?;
+        let w = self.t.new_scratch(&format!("{}/", dir.trim_end_matches('/')), Some("agents history"))?;
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_tag(w, "Look Resume");
         let resume = self.t.offer(Rule::verb("Resume").window(w).unlisted())?;
@@ -1164,8 +1163,7 @@ impl Pane {
     #[allow(clippy::too_many_arguments)]
     fn detail_window(&mut self, session: &str, kind: &str, cwd: &str, short: &str, transcript: Option<&Path>, note: Option<String>, running: &[(String, String)], asking: Option<&str>) -> apex_tool::Result<()> {
         let kind = if kind.is_empty() { "agent" } else { kind };
-        let name = format!("{}/-{kind}+{short}", cwd.trim_end_matches('/'));
-        let w = self.t.new_window(&name)?;
+        let w = self.t.new_scratch(&format!("{}/", cwd.trim_end_matches('/')), Some(&format!("{kind} {short}")))?;
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_live(w, true);
         // Enter does not send here (a prompt is as many lines as it
@@ -1219,9 +1217,7 @@ impl Pane {
     fn open_detail(&mut self, session: &str) -> apex_tool::Result<()> {
         if let Some(d) = self.details.values().find(|d| d.session == session) {
             let w = d.w;
-            if let Some(name) = self.t.window_name(w) {
-                let _ = self.t.open(&name, None);
-            }
+            let _ = self.t.bring(w);
             return Ok(());
         }
         let Some(a) = self.agents.get(session).cloned() else { return Ok(()) };
@@ -1237,9 +1233,7 @@ impl Pane {
     fn open_past(&mut self, p: Past) -> apex_tool::Result<()> {
         if let Some(d) = self.details.values().find(|d| d.session == p.id) {
             let w = d.w;
-            if let Some(name) = self.t.window_name(w) {
-                let _ = self.t.open(&name, None);
-            }
+            let _ = self.t.bring(w);
             return Ok(());
         }
         let short: String = p.id.chars().take(8).collect();
