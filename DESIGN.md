@@ -2535,10 +2535,17 @@ from or where its output went.
 - The server reports a shell command's start with its pid from the
   thread that runs it, before it can end, on the channel its end comes
   by; it appends the record as it pumps (`Server::flush_procs`).
+- A terminal's shell is a process too (kind `Term`), started when its
+  window's shell is, ended when it exits or is hung up with its window.
+  `apex ps` lists the record (with -a, the last few that ended and how);
+  the pills and the sidebar leave terminals to their windows.
 - The top row is the user's text; the client draws the running
   processes before it as pills (`Head::procs`), each its name and a ×.
   The × ends it (`Kill` by its pid); B1 on it goes to its output (the
   errors window, made if its output has not come yet, or the window
   whose selection it replaces); B3 to the window it was run from. The
   sidebar lists them under the session's windows, the same three ways.
+  The pointer on a pill brings a card under it: the whole command line,
+  the pid, the directory, when it started (the clock's time, and how
+  long ago) and where it was run from.
 

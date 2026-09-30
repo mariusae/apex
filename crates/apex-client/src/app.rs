@@ -455,6 +455,9 @@ pub struct Acme {
     pub picker_due: Option<(WindowId, Atom, std::time::Instant)>,
     /// A verb in a tag's head pressed: it runs if the button comes up on it.
     pub atom_down: Option<(WindowId, Atom, MouseButton)>,
+    /// The process pill the pointer is on, and where it is drawn: its
+    /// card goes under it (`procs.rs`).
+    pub proc_hover: Option<(apex_core::Seq, gpui::Bounds<Pixels>)>,
     pub session_menu: bool,
     /// Every known host and its sessions, for the sidebar: as last seen,
     /// then as each host answers (`sidebar_refresh`), and when it was
@@ -1646,6 +1649,7 @@ impl Acme {
             picker: None,
             picker_due: None,
             atom_down: None,
+            proc_hover: None,
             session_menu: false,
             sidebar_hosts: Vec::new(),
             sidebar_asked: None,
@@ -3278,6 +3282,12 @@ impl Acme {
         };
         if over != self.hover_view {
             self.hover_view = over;
+            cx.notify();
+        }
+        // a process's pill under the pointer: its card
+        let pill = if self.over_overlay(pos) { None } else { self.pill_at(pos) };
+        if pill.map(|p| p.0) != self.proc_hover.map(|p| p.0) {
+            self.proc_hover = pill;
             cx.notify();
         }
         // a box held: where it would land follows the pointer

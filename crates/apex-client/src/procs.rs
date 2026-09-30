@@ -2,11 +2,15 @@
 //! each in the session's tag, and rows in the sidebar. The × on one ends
 //! the process (`Kill` by its pid); B1 on it goes to its output (its
 //! directory's errors window, or the window whose text it replaces); B3
-//! to the window it was run from.
+//! to the window it was run from. The pointer on a pill brings a card
+//! under it: the whole command line, the pid, the directory, when it
+//! started and where from. A terminal's shell is its window's, and is
+//! not among them (`apex ps` lists it).
 
-use gpui::{Context, MouseButton};
+use gpui::prelude::*;
+use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Bounds, Context, MouseButton, Pixels};
 
-use apex_core::entry::ProcOut;
+use apex_core::entry::{ProcKind, ProcOut};
 use apex_core::Seq;
 use apex_core::state::Proc;
 use apex_core::{Body, ExecCtx, Loc, Pos, WindowId};
@@ -16,9 +20,61 @@ use crate::app::Acme;
 use crate::text_element::{Atom, Head};
 
 impl Acme {
-    /// The processes running, oldest first.
+    /// The processes running, oldest first, but for terminals' shells
+    /// (seen in their windows).
     pub fn running_procs(&self) -> Vec<Proc> {
-        self.node.state.meta.procs.iter().filter(|p| p.running()).cloned().collect()
+        self.node.state.meta.procs.iter().filter(|p| p.running() && p.kind != ProcKind::Term).cloned().collect()
+    }
+
+    /// The pill under the pointer at `pos`, and where it is drawn: taken
+    /// as the pointer moves, from the layouts as they are then.
+    pub fn pill_at(&self, pos: gpui::Point<Pixels>) -> Option<(Seq, Bounds<Pixels>)> {
+        let l = self.layouts.get(&apex_core::ViewId::Top)?;
+        let id = match l.atom_at(pos)? {
+            Atom::Proc(id) | Atom::ProcKill(id) => id,
+            _ => return None,
+        };
+        let (a, b) = (l.atom_bounds(Atom::Proc(id))?, l.atom_bounds(Atom::ProcKill(id))?);
+        Some((id, Bounds::from_corners(a.origin, b.bottom_right())))
+    }
+
+    /// The card under the pill the pointer is on: the process's whole
+    /// command line, its pid and directory, when it started and where
+    /// it was run from.
+    pub fn proc_card(&self) -> Option<AnyElement> {
+        let (id, at) = self.proc_hover?;
+        let p = self.proc(id).filter(|p| p.running())?;
+        let t = crate::theme::theme();
+        let from = match p.origin {
+            ExecCtx::Window(w) if self.node.state.window(w).is_ok() => format!("from {}", crate::sidebar::names(&self.node, w).0),
+            ExecCtx::Window(_) => "from a window since closed".into(),
+            ExecCtx::Column(_) => "from a column's tag".into(),
+            ExecCtx::Top if p.kind == ProcKind::Adopted => "announced itself".into(),
+            ExecCtx::Top => "from the session's tag".into(),
+        };
+        let dim = |s: String| div().text_color(rgb(t.panel_dim)).child(s);
+        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
+        let card = div()
+            .max_w(px(520.))
+            .px(px(10.))
+            .py(px(8.))
+            .rounded(px(8.))
+            .bg(rgb(t.panel_bg))
+            .border_1()
+            .border_color(rgb(t.panel_border))
+            .shadow(vec![shadow])
+            .font_family(crate::fonts::ui())
+            .text_size(px(12.))
+            .text_color(rgb(t.panel_text))
+            .flex()
+            .flex_col()
+            .gap(px(3.))
+            .child(self.overlay_mark())
+            // the command as the shell got it, in the fixed face
+            .child(div().font_family(crate::text_element::font_for(true).font.family.clone()).child(p.cmd.clone()))
+            .child(dim(format!("pid {}  ·  {}", p.pid, crate::sidebar::tilde(&p.dir))))
+            .child(dim(format!("started {} ({} ago)  ·  {from}", apex_server::local_time(p.started), apex_server::ago(p.started))));
+        Some(deferred(anchored().position(point(at.left(), at.bottom() + px(4.))).child(card)).with_priority(3).into_any_element())
     }
 
     /// The session's tag's head: a pill for each process running.

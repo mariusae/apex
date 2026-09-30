@@ -526,6 +526,8 @@ impl Render for Acme {
         };
         // a tag's path or label being typed, and the path's picker
         let root = root.children(self.tag_overlays(cx));
+        // a process's card, under its pill
+        let root = root.children(self.proc_card());
         // the overview (⌘⇧\), over everything
         let root = match self.overview_overlay(window, cx) {
             Some(o) => root.child(gpui::deferred(o).with_priority(3)),
