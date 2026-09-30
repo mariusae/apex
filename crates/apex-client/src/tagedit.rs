@@ -38,14 +38,18 @@ const DOUBLE: Duration = Duration::from_millis(250);
 /// The picker's rows at once.
 const ROWS: usize = 12;
 
-/// The picker's parts' heights, fixed, so its tallest is known when it
-/// comes down and it can be put where that fits (`PICKER_H`), to stay.
+/// The fewest rows it shows, however little room there is under the path.
+const MIN_ROWS: usize = 3;
+
+/// The picker's parts' heights, fixed, so how tall it can be is known
+/// when it comes down: as many rows as fit under the path.
 const ROW_H: f32 = 24.;
 const FIELD_H: f32 = 30.;
 const NOTE_H: f32 = 18.;
-/// The tallest the picker is: padding, the field, a full list with its
-/// line between windows and entries and its "more", the foot, the gaps.
-const PICKER_H: f32 = 8. + FIELD_H + ROWS as f32 * ROW_H + 5. + NOTE_H + NOTE_H + 4. * 2.;
+/// The picker less its rows: padding, the field, the line between
+/// windows and entries, the "more", the foot, the gaps.
+const PICKER_REST: f32 = 8. + FIELD_H + 5. + NOTE_H + NOTE_H + 4. * 2.;
+const PICKER_W: f32 = 420.;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Part {
@@ -82,10 +86,13 @@ pub struct Picker {
     /// The folder's entries (a folder's with `true`), once the host said.
     pub names: Option<Result<Vec<(String, bool)>, String>>,
     pub cursor: usize,
-    /// Where its top left is: under the part clicked when it fits there at
-    /// its tallest, else as high as it must be to -- decided once, so it
-    /// does not move as the list grows and shrinks.
+    /// Where its top left is: right under the part clicked, as VS Code's
+    /// breadcrumbs' are (left of it only as far as the window's edge
+    /// makes it) -- decided once, so it does not move as the list grows
+    /// and shrinks.
     pub at: Point<Pixels>,
+    /// The rows it shows at once: as many as fit under the path.
+    pub rows: usize,
     pub caret_since: Instant,
     /// The entry to start on: the one the path goes through.
     pub current: Option<String>,
@@ -299,11 +306,14 @@ impl Acme {
         let Some(b) = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_bounds(atom)) else { return };
         self.tag_edit = None;
         let windows = self.associated(&dir, w);
-        let bottom = self.node.state.layout.r.y1 as f32 + self.top();
-        let below = f32::from(b.bottom()) + 2.;
-        let top = if below + PICKER_H + 8. <= bottom { below } else { (bottom - PICKER_H - 8.).max(8.) };
-        let at = point(b.left() - px(6.), px(top));
-        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, caret_since: Instant::now(), current, warned: false });
+        let (right, bottom) = (self.node.state.layout.r.x1 as f32 + self.left(), self.node.state.layout.r.y1 as f32 + self.top());
+        let top = f32::from(b.bottom()) + 2.;
+        let rows = (((bottom - 8. - top - PICKER_REST) / ROW_H).floor().max(0.) as usize).clamp(MIN_ROWS, ROWS);
+        // its rows' text under the part's (the panel's padding and the
+        // row's before it), unless that would take it past the right edge
+        let left = (f32::from(b.left()) - 12.).min(right - PICKER_W - 8.).max(8.);
+        let at = point(px(left), px(top));
+        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
         // blinking while it is up
         cx.spawn(async move |this, cx| loop {
@@ -528,11 +538,12 @@ impl Acme {
             let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.2), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
             let picks = p.picks();
             let cursor = p.cursor.min(picks.len().saturating_sub(1));
-            let first = cursor.saturating_sub(ROWS - 1).min(picks.len().saturating_sub(ROWS));
+            let rows = p.rows;
+            let first = cursor.saturating_sub(rows - 1).min(picks.len().saturating_sub(rows));
             let mut list = div().flex().flex_col();
             let note = |text: String| div().flex_none().h(px(ROW_H)).flex().items_center().px(px(8.)).text_color(rgb(t.panel_dim)).child(text);
             let windows = picks.iter().filter(|c| matches!(c, Choice::Window(..))).count();
-            for (i, choice) in picks.iter().enumerate().skip(first).take(ROWS) {
+            for (i, choice) in picks.iter().enumerate().skip(first).take(rows) {
                 let picked = i == cursor;
                 // a line between the windows and the entries
                 if i == windows && windows > 0 {
@@ -586,8 +597,8 @@ impl Acme {
                     }),
                 ));
             }
-            if picks.len() > first + ROWS {
-                list = list.child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - ROWS)));
+            if picks.len() > first + rows {
+                list = list.child(div().flex_none().h(px(NOTE_H)).px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", picks.len() - first - rows)));
             }
             match &p.names {
                 None => list = list.child(note("…".into())),
@@ -598,7 +609,7 @@ impl Acme {
             let foot = if p.warned { "Unsaved: ⌥↩ again to replace it" } else { "↩ open  ⌥↩ here  → in  ← up" };
             let panel = div()
                 .id("path-picker")
-                .w(px(420.))
+                .w(px(PICKER_W))
                 .p(px(4.))
                 .rounded(px(7.))
                 .bg(rgb(t.panel_bg))
@@ -653,6 +664,7 @@ mod tests {
             names: Some(Ok(vec![("notes.md".into(), false), ("src".into(), true)])),
             cursor: 0,
             at: gpui::point(gpui::px(0.), gpui::px(0.)),
+            rows: super::ROWS,
             caret_since: std::time::Instant::now(),
             current: None,
             warned: false,
