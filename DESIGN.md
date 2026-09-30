@@ -2565,9 +2565,14 @@ the session's tag. A crumb clicked lists the folders in it (folders
 only), typed after the crumbs to narrow them; `./` first, the folder
 itself: return cds there, → goes into a folder, ← up out of one.
 
-A window's tag draws a path inside the directory from there on
-(`src/main.rs`), the directory itself as `./`, and any other path whole,
-from `/` -- so the two cannot be taken for each other. Only drawn so
+A window's tag draws a path inside the directory from there on, led by
+the directory's icon (a folder) where `./` would be -- `<icon>/src/main.rs`,
+the directory itself `<icon>/` -- and any other path whole, from `/`, so
+the two cannot be taken for each other. The icon is a part of the path
+as any other, and means the directory: a click on it lists the
+directory, B3 plumbs its whole path (not `./`, which would be the
+window's own directory). The title bar leads its crumbs with the same
+icon, the legend for it, which does the same. Only drawn so
 (`Head::build_in`): the state has the whole path, and each part of it
 is still the whole path's, so a click on `src/` lists where it really is
 and the path's picker goes up past the directory into whole paths. The

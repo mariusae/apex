@@ -97,11 +97,22 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Send", r#"<path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/>"#),
     ("Back", r#"<path d="M15 6l-6 6 6 6"/>"#),
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
+    // not a verb: the session's directory, where a path is drawn from
+    // when it is inside it (`Head::here`), and the title bar's crumbs'
+    (HERE, r#"<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>"#),
 ];
+
+/// The session's directory's icon's name in `VERB_ICONS`: `./`, drawn.
+pub const HERE: &str = ".";
+
+/// Where an icon is in `VERB_ICONS`.
+pub fn icon_index(name: &str) -> usize {
+    VERB_ICONS.iter().position(|(v, _)| *v == name).unwrap_or(0)
+}
 
 /// The icon of verb `i` as an SVG document, stroked, for `paint_svg`
 /// (which draws its shape in the ink it is given).
-fn verb_svg(i: usize) -> &'static [u8] {
+pub fn verb_svg(i: usize) -> &'static [u8] {
     thread_local! {
         static SVGS: Vec<&'static [u8]> = VERB_ICONS
             .iter()
@@ -758,6 +769,9 @@ pub struct Head {
     pub bar: Option<usize>,
     /// Where the path's picker's caret is, in what is typed.
     pub caret: Option<usize>,
+    /// Icons drawn in the path, not a verb's: where each one's cell is,
+    /// and which (`HERE`, the session's directory).
+    pub glyphs: Vec<(usize, usize)>,
 }
 
 impl Head {
@@ -793,8 +807,8 @@ impl Head {
         let mut h = Head::default();
         // every part a folder: the name is being typed
         let start = inside(dir, base);
-        if start == Some(dir.len()) {
-            h.push("./", Some(Atom::Dir(dir.len())));
+        if let Some(b) = start {
+            h.here(b, Atom::Dir(b));
         }
         let mut from = start.unwrap_or(0);
         let skip = from;
@@ -828,6 +842,19 @@ impl Head {
         h
     }
 
+    /// The session's directory as the path's first part: its icon and a
+    /// slash, `./` drawn -- a part as any other, `atom` (a folder's, or
+    /// the name when the path is the directory itself).
+    fn here(&mut self, k: usize, atom: Atom) {
+        let a = self.text.len();
+        self.glyphs.push((a, icon_index(HERE)));
+        let mut cell = [0u8; 4];
+        self.text.push_str(ICON_CELL.encode_utf8(&mut cell));
+        self.text.push('/');
+        let _ = k;
+        self.atoms.push((a, self.text.len(), atom));
+    }
+
     fn push(&mut self, t: &str, atom: Option<Atom>) {
         let a = self.text.len();
         self.text.push_str(t);
@@ -846,9 +873,12 @@ impl Head {
         } else if !split {
             self.push(path, Some(Atom::Name));
         } else if inside(path, base) == Some(path.len()) {
-            self.push("./", Some(Atom::Name));
+            self.here(path.len(), Atom::Name);
         } else {
             let name = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
+            if let Some(b) = inside(path, base) {
+                self.here(b, Atom::Dir(b));
+            }
             let mut from = inside(path, base).unwrap_or(0);
             let skip = from;
             for (i, c) in path[..name].char_indices().skip_while(|(i, _)| *i < skip) {
@@ -1083,9 +1113,11 @@ fn shape(
                     Atom::ProcKill(_) => Some((a, del)),
                     _ => None,
                 })
+                .chain(h.glyphs.iter().copied())
                 .collect()
         })
         .unwrap_or_default();
+    let glyph_cell = |a: usize| head.is_some_and(|h| h.glyphs.iter().any(|&(d, _)| a >= d && a < d + ICON_CELL.len_utf8()));
     let atom_of = |a: usize| head.and_then(|h| h.atoms.iter().find(|&&(p, q, _)| a >= p && a < q)).map(|x| x.2);
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
@@ -1136,6 +1168,9 @@ fn shape(
     for &(a, b, _) in head.map(|h| h.atoms.as_slice()).unwrap_or_default() {
         cuts.extend([a, b]);
     }
+    for &(d, _) in head.map(|h| h.glyphs.as_slice()).unwrap_or_default() {
+        cuts.extend([d, d + ICON_CELL.len_utf8()]);
+    }
     if let Some((a, b)) = chosen {
         cuts.extend([a, b]);
     }
@@ -1178,7 +1213,7 @@ fn shape(
         } else {
             tint.map(|t| t.text).unwrap_or(black)
         };
-        let face = if matches!(atom, Some(Atom::Verb(_) | Atom::ProcKill(_))) {
+        let face = if matches!(atom, Some(Atom::Verb(_) | Atom::ProcKill(_))) || glyph_cell(a) {
             cell_face.clone()
         } else if gap.is_some_and(|(p, q)| a >= p && b <= q) {
             wide.clone()
@@ -1894,16 +1929,20 @@ mod head_tests {
         // the session's errors window: its label alone
         // inside the session's directory: from there on, and it as ./ --
         // the parts still the whole path's
+        // (the directory drawn as its icon and a slash, ./ drawn: a part of
+        // its own, the directory's)
+        let here = format!("{ICON_CELL}/");
         let r = Head::build_in("/a/b/src/x.rs", None, &[], true, true, "/a/b/");
-        assert_eq!(r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect::<Vec<_>>(), vec![("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
-        assert_eq!(Head::build_in("/a/b/", None, &[], true, true, "/a/b/").atoms[0], (0, 2, Atom::Name));
-        assert_eq!(&Head::build_in("/a/b/", None, &[], true, true, "/a/b/").text[..2], "./");
+        assert_eq!(r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect::<Vec<_>>(), vec![(here.as_str(), Atom::Dir(5)), ("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
+        assert_eq!(r.glyphs, vec![(0, super::icon_index(super::HERE))]);
+        let d = Head::build_in("/a/b/", None, &[], true, true, "/a/b/");
+        assert_eq!((&d.text[..here.len()], d.atoms[0].2), (here.as_str(), Atom::Name));
         let out = Head::build_in("/a/c/x.rs", None, &[], true, true, "/a/b/");
         assert!(out.text.starts_with("/a/c/x.rs"), "{:?}", out.text);
         let p = Head::picking_in("/a/b/", "s", 1, false, None, &[], "/a/b/");
-        assert!(p.text.starts_with("./s"), "{:?}", p.text);
+        assert!(p.text.starts_with(&format!("{here}s")), "{:?}", p.text);
         let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
-        assert!(p.text.starts_with("src/"), "{:?}", p.text);
+        assert!(p.text.starts_with(&format!("{here}src/")), "{:?}", p.text);
         // the session's processes: a pill each, its name and its ×
         let p = Head::procs(&[(7, "make".into())]);
         assert_eq!(p.atoms.iter().map(|x| x.2).collect::<Vec<_>>(), vec![Atom::Proc(7), Atom::ProcKill(7)]);
