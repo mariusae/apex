@@ -644,6 +644,7 @@ fn main() {
         cx.on_action(|_: &shell::FontInter, cx| shell::set_fonts(fonts::Set::Inter, cx));
         cx.on_action(|_: &shell::FontGeist, cx| shell::set_fonts(fonts::Set::Geist, cx));
         cx.on_action(|_: &shell::FontStyrene, cx| shell::set_fonts(fonts::Set::Styrene, cx));
+        cx.on_action(|_: &shell::FontLucida, cx| shell::set_fonts(fonts::Set::Lucida, cx));
         cx.on_action(|_: &shell::FontBigger, cx| shell::resize_fonts(1, cx));
         cx.on_action(|_: &shell::FontSmaller, cx| shell::resize_fonts(-1, cx));
         cx.on_action(|_: &shell::FontActual, cx| shell::resize_fonts(0, cx));

@@ -8,6 +8,9 @@
 //!   and SF Mono -- Terminal's own copy, which is the whole family, at
 //!   its Medium weight, since the Regular draws thin at 12.
 //! - Classic: Lucida Grande and Menlo, apex's as it was.
+//! - Lucida: Lucida Grande and Lucida Grande Mono (Bigelow & Holmes's
+//!   W1G cut) where it is installed, Menlo where it is not. Not to be
+//!   bundled: the installed family.
 //! - Go: Go and Go Mono (bundled).
 //! - Nova: as Panic's Nova is set, SF (with its high legibility set and
 //!   tabular figures, as System's) for text and the interface, and Menlo
@@ -43,9 +46,10 @@ pub enum Set {
     Inter,
     Geist,
     Styrene,
+    Lucida,
 }
 
-pub const ALL: [Set; 9] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter, Set::Geist, Set::Styrene];
+pub const ALL: [Set; 10] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter, Set::Geist, Set::Styrene, Set::Lucida];
 
 impl Set {
     pub fn title(self) -> &'static str {
@@ -59,6 +63,7 @@ impl Set {
             Set::Inter => "Inter",
             Set::Geist => "Geist",
             Set::Styrene => "Styrene",
+            Set::Lucida => "Lucida",
         }
     }
 
@@ -73,6 +78,7 @@ impl Set {
             Set::Inter => "inter",
             Set::Geist => "geist",
             Set::Styrene => "styrene",
+            Set::Lucida => "lucida",
         }
     }
 }
@@ -163,6 +169,10 @@ const LEGIBLE: &[(&str, u32)] = &[("ss06", 1), ("tnum", 1)];
 static SF_MONO: AtomicBool = AtomicBool::new(false);
 /// The system's own copy of it, `.SF NS Mono`, was, where Terminal's is not.
 static SF_NS_MONO: AtomicBool = AtomicBool::new(false);
+/// Lucida Grande Mono as it is installed, by the family name it gives
+/// (`install` looks: its W1G cut, or another): the Lucida set's mono,
+/// else Menlo.
+static LUCIDA_MONO: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 /// What text windows and tags are set in.
 pub fn text() -> Spec {
@@ -182,6 +192,7 @@ fn text_as_set() -> Spec {
         Set::Inter => Spec { family: "Inter", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
         Set::Geist => Spec { family: "Geist", size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
         Set::Styrene => Spec { family: STYRENE, size: px(14.), line_height: px(20.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Lucida => Spec { family: "Lucida Grande", size: px(13.), line_height: px(17.), weight: FontWeight::NORMAL, features: &[] },
     }
 }
 
@@ -236,6 +247,10 @@ fn mono_as_set() -> Spec {
         Set::Hco => Spec { family: OPERATOR, size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Inter | Set::Styrene => Spec { family: "JetBrains Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
         Set::Geist => Spec { family: "Geist Mono", size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] },
+        Set::Lucida => {
+            let family = LUCIDA_MONO.get().map(String::as_str).unwrap_or("Menlo");
+            Spec { family, size: px(12.), line_height: px(16.), weight: FontWeight::NORMAL, features: &[] }
+        }
     }
 }
 
@@ -251,6 +266,7 @@ pub fn ui() -> &'static str {
         Set::Inter => "Inter",
         Set::Geist => "Geist",
         Set::Styrene => STYRENE,
+        Set::Lucida => "Lucida Grande",
     }
 }
 
@@ -330,6 +346,13 @@ pub fn install(cx: &mut App) {
         .filter_map(|e| std::fs::read(e.path()).ok())
         .map(std::borrow::Cow::Owned)
         .collect();
+    // Lucida Grande Mono: the Lucida set's mono where it is installed,
+    // the W1G cut first, as the family it names itself
+    let names = cx.text_system().all_font_names();
+    let lucida = names.iter().find(|n| n.as_str() == "Lucida Grande Mono W1G").or_else(|| names.iter().find(|n| n.starts_with("Lucida Grande Mono")));
+    if let Some(name) = lucida {
+        let _ = LUCIDA_MONO.set(name.clone());
+    }
     if !terminal.is_empty() && cx.text_system().add_fonts(terminal).is_ok() {
         SF_MONO.store(true, Ordering::Relaxed);
     } else if let Ok(bytes) = std::fs::read("/System/Library/Fonts/SFNSMono.ttf") {
@@ -388,6 +411,7 @@ pub fn page_css() -> String {
         Set::Inter => ("\"Inter\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
         Set::Geist => ("\"Geist\", sans-serif", "\"Geist Mono\", monospace", "normal", "normal"),
         Set::Styrene => ("\"Styrene B LC\", sans-serif", "\"JetBrains Mono\", monospace", "normal", "normal"),
+        Set::Lucida => ("\"Lucida Grande\", \"Lucida Sans Unicode\", sans-serif", "\"Lucida Grande Mono W1G\", \"Lucida Grande Mono\", Menlo, monospace", "normal", "normal"),
     };
     css.push_str(&format!(":root{{--apex-font:{sans};--apex-mono:{mono};--apex-font-features:{sans_features};--apex-mono-features:{mono_features}}}"));
     css
