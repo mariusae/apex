@@ -327,6 +327,14 @@ windows put away out of the tiling, which is the core's
   pointer riding with the window it goes to. Off, the layout is where it
   goes at once; the overview, the stash's fan, a session sliding in, the
   scrolling and the status marks keep theirs.
+- **Splitting a column by dragging**, as VS Code's and Zed's editors
+  split: a window's box let go near a column's left or right edge (its
+  outer eighth) makes a new column there, half the column wide, the
+  window in it; the drag's shadow shows the window filling it. The
+  window's own column too: at its left edge with the pointer pushed onto
+  the edge itself (so a drag up or down drifting left still just moves
+  it), at its right after a clear move right; never for a column's only
+  window, nor a column too narrow to halve.
 - **Processes as pills.** What runs for the session is shown before
   the top row's text, a pill each: its name and a ×. The × ends it; B1
   on it goes to its output, B3 to the window it was run from. The

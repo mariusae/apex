@@ -1003,3 +1003,61 @@ fn a_window_restashed_is_the_latest_and_still_comes_back_where_it_was() {
     back(&mut l, 3, None);
     assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
 }
+
+/// Two windows in the one column of `row()`: 1 above, 2 below.
+fn two() -> Layout {
+    let mut l = row();
+    add(&mut l, 0, 1, None);
+    add(&mut l, 0, 2, None);
+    l
+}
+
+fn split(l: &mut Layout, ci: usize, wi: usize, op: (i32, i32), p: (i32, i32)) -> bool {
+    match split_at(l, ci, wi, op, p) {
+        Some((tc, side)) => coldragsplit(l, ci, wi, tc, side, AddingCol::New { id: ColumnId(9), tag: BufferId(9) }, &info()).is_some(),
+        None => false,
+    }
+}
+
+#[test]
+fn a_window_let_go_at_its_columns_right_edge_makes_a_column_there() {
+    let mut l = two();
+    let y = l.cols[0].wins[1].r.y0 + 5;
+    assert!(split(&mut l, 0, 1, (5, y), (990, y)));
+    assert_eq!(l.cols.len(), 2);
+    // the new column the right half, with the window; the old one keeps 1
+    assert_eq!((l.cols[1].id, wins(&l, 1).iter().map(|w| w.0).collect::<Vec<_>>()), (ColumnId(9), vec![2]));
+    assert_eq!(wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1]);
+    assert!((l.cols[1].r.x0 - 500).abs() <= 4, "{:?}", l.cols[1].r);
+}
+
+#[test]
+fn at_its_own_left_edge_only_on_the_edge_itself() {
+    let mut l = two();
+    let y = l.cols[0].wins[1].r.y0 + 5;
+    // a drag up the column drifting a little left is a move, not a split
+    assert_eq!(split_at(&l, 0, 1, (8, y), (4, y - 200)), None);
+    assert!(split(&mut l, 0, 1, (8, y), (1, y)));
+    assert_eq!((l.cols[0].id, wins(&l, 0).iter().map(|w| w.0).collect::<Vec<_>>()), (ColumnId(9), vec![2]));
+    assert_eq!(wins(&l, 1).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1]);
+    assert!(l.cols[0].r.x1 < l.cols[1].r.x0, "{:?} {:?}", l.cols[0].r, l.cols[1].r);
+}
+
+#[test]
+fn another_columns_edges_split_it_and_a_lone_window_does_not_split_its_own() {
+    let mut l = two();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(2), tag: BufferId(2) }, None, &info());
+    add(&mut l, 1, 3, None);
+    let (r1, y) = (l.cols[1].r, 300);
+    // window 1, from the first column, let go at the second's left edge:
+    // a column between them
+    assert!(split(&mut l, 0, 0, (5, 40), (r1.x0 + 6, y)));
+    assert_eq!(l.cols.iter().map(|c| c.id.0).collect::<Vec<_>>(), vec![1, 9, 2]);
+    assert_eq!(wins(&l, 1).iter().map(|w| w.0).collect::<Vec<_>>(), vec![1]);
+    // the lone window of a column, at its own right edge: nothing to split
+    let r = l.cols[2].r;
+    assert_eq!(split_at(&l, 2, 0, (r.x0 + 5, 40), (r.x1 - 3, 300)), None);
+    // the middle of a column is no split: an ordinary move
+    assert_eq!(split_at(&l, 0, 0, (5, 40), (r.x0 + r.dx() / 2, 300)), None);
+}
+

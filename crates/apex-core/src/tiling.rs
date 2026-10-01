@@ -814,6 +814,73 @@ pub fn colsort(l: &mut Layout, ci: usize, name: impl Fn(WindowId) -> String, inf
 /// `but` at `op` and released at `p`. A click grows; a drag moves the
 /// window within its column, to another column, or resizes against the
 /// window above. Returns where the mouse goes.
+/// Which side of a column a new one goes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+/// A window's box (window `wi` of column `ci`), pressed at `op`, let go at
+/// `p` near a column's left or right edge: a new column there, the window
+/// in it (as VS Code's and Zed's editors split) -- which column, which
+/// side. Near is the outer eighth of the column (16 to 48 across). The
+/// window's own column, whose box is at its left: its left edge only with
+/// the pointer pushed onto the edge itself, so a drag up or down drifting
+/// left does not split it; its right only after a move clearly right; and
+/// not at all for its only window, which would only move it. A column too
+/// narrow to halve is not split.
+pub fn split_at(l: &Layout, ci: usize, wi: usize, op: (i32, i32), p: (i32, i32)) -> Option<(usize, Side)> {
+    if (p.0 - op.0).abs() < 5 && (p.1 - op.1).abs() < 5 {
+        return None;
+    }
+    let tc = rowwhichcol(l, p)?;
+    let r = l.cols[tc].r;
+    if r.dx() < 200 || is_strip(r) {
+        return None;
+    }
+    let own = tc == ci;
+    if own && l.cols[ci].wins.len() == 1 {
+        return None;
+    }
+    let _ = wi;
+    let near = (r.dx() / 8).clamp(16, 48);
+    if p.0 >= r.x1 - near && (!own || p.0 - op.0 > 30) {
+        return Some((tc, Side::Right));
+    }
+    if (own && p.0 <= r.x0 + 2) || (!own && p.0 <= r.x0 + near) {
+        return Some((tc, Side::Left));
+    }
+    None
+}
+
+/// The split `split_at` found: column `tc` halved, `new` the half on
+/// `side`, and window `wi` of column `ci` moved into it.
+pub fn coldragsplit(l: &mut Layout, ci: usize, wi: usize, tc: usize, side: Side, new: AddingCol, info: &dyn Info) -> Option<Warp> {
+    unfull(l, ci, info);
+    let w = l.cols[ci].wins[wi].window;
+    let r = l.cols[tc].r;
+    // the new column on the right half (rowadd adds after the column it
+    // splits); on the left, it and the old one change places
+    let mut ni = rowadd(l, new, Some(r.x0 + r.dx() / 2), info)?;
+    if side == Side::Left {
+        let oi = ni - 1;
+        let (ra, rb) = (l.cols[oi].r, l.cols[ni].r);
+        l.cols.swap(oi, ni);
+        colresize(l, oi, ra, info);
+        colresize(l, ni, rb, info);
+        ni = oi;
+    }
+    // the window, from wherever its column now is, into the new one
+    let ci = l.cols.iter().position(|c| c.wins.iter().any(|s| s.window == w))?;
+    let wi = l.cols[ci].wins.iter().position(|s| s.window == w)?;
+    let above = stash_above(l, ci, w);
+    let (slot, _) = colclose(l, ci, wi, info);
+    left(l, ci, w, above);
+    coladd(l, ni, Adding::Existing(slot), None, info);
+    Some(Warp::WinButton(w))
+}
+
 pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32), p: (i32, i32), info: &dyn Info) -> Option<Warp> {
     let font = info.font_height().max(1);
     let n = l.cols[ci].wins.len();

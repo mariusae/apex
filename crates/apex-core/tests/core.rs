@@ -748,3 +748,29 @@ fn a_new_window_meant_for_a_minimized_column_lands_in_an_open_one() {
         assert_eq!(follower(&log).state.hash(), node.state.hash());
     }
 }
+
+/// A window's box let go at its column's right edge: a new column there,
+/// with a tag of its own, the window in it -- where the drag's preview
+/// said it would be.
+#[test]
+fn a_window_dragged_to_its_columns_edge_makes_a_column_for_it() {
+    let (mut log, mut node, col) = session();
+    let ci = node.state.layout.column_index(col).unwrap();
+    let a = node.new_window(&mut log, col, "/tmp/a", "a\n").unwrap();
+    let b = node.new_window(&mut log, col, "/tmp/b", "b\n").unwrap();
+    let r = node.state.layout.cols[ci].r;
+    let s = *node.state.layout.slot(b).unwrap();
+    let (op, p) = ((s.r.x0 + 4, s.r.y0 + 4), (r.x1 - 3, s.r.y0 + 4));
+    let n = node.state.layout.cols.len();
+    let preview = node.drag_window_preview(b, 1, op, p).expect("a preview");
+    node.drag_window(&mut log, b, 1, op, p).unwrap();
+    assert_eq!(node.state.layout.cols.len(), n + 1);
+    let (bc, _) = node.state.layout.place_of(b).unwrap();
+    let (ac, _) = node.state.layout.place_of(a).unwrap();
+    assert_ne!(ac, bc);
+    assert_eq!(node.state.layout.cols[bc].wins.len(), 1);
+    assert_eq!(node.state.layout.slot(b).unwrap().r, preview, "the preview is where it went");
+    // its tag is a column's
+    let tag = node.state.layout.cols[bc].tag;
+    assert!(node.state.buffer(tag).unwrap().views.contains_key(&ViewId::ColTag(node.state.layout.cols[bc].id)));
+}

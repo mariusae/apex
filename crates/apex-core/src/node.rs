@@ -707,6 +707,23 @@ impl Node {
     /// acme's `coldragwin`: a window's layout box pressed with `but` at
     /// `op` and released at `p` (row coordinates).
     pub fn drag_window(&mut self, log: &mut Log, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
+        // let go near a column's edge: a new column there, the window in it
+        let (ci, wi) = self.place_of(w)?;
+        if let Some((tc, side)) = tiling::split_at(&self.state.layout, ci, wi, op, p) {
+            let id = ColumnId(self.alloc());
+            let tag = self.create_buffer(log, "", COL_TAG, None)?;
+            self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::ColTag(id) }))?;
+            let mut l = self.state.layout.clone();
+            match tiling::coldragsplit(&mut l, ci, wi, tc, side, tiling::AddingCol::New { id, tag }, &*self.tiling) {
+                Some(warp) => {
+                    self.arrange(log, &l)?;
+                    self.activecol = Some(id);
+                    self.warp = Some(warp);
+                }
+                None => self.delete_shard(log, Shard::Buffer(tag))?,
+            }
+            return Ok(());
+        }
         let (l, warp) = self.dragged(w, but, op, p)?;
         if l != self.state.layout {
             self.arrange(log, &l)?;
@@ -723,6 +740,15 @@ impl Node {
     fn dragged(&self, w: WindowId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<(Layout, Option<Warp>)> {
         let mut l = self.state.layout.clone();
         let (ci, wi) = self.place_of(w)?;
+        // a split: the new column made with ids that are no one's, for the
+        // preview (`drag_window` makes it with its own)
+        if let Some((tc, side)) = tiling::split_at(&l, ci, wi, op, p) {
+            let new = tiling::AddingCol::New { id: ColumnId(u64::MAX), tag: BufferId(u64::MAX) };
+            if let Some(warp) = tiling::coldragsplit(&mut l, ci, wi, tc, side, new, &*self.tiling) {
+                return Ok((l, Some(warp)));
+            }
+            l = self.state.layout.clone();
+        }
         let warp = tiling::coldragwin(&mut l, ci, wi, but, op, p, &*self.tiling);
         Ok((l, warp))
     }
