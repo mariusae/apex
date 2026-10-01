@@ -3,6 +3,7 @@
 :root {
   --apex-bg: #FFFFEA; --apex-fg: #000000; --apex-code-bg: #E8E8DC;
   --apex-rule: #C8C8B8; --apex-border: #99994C; --apex-link: #000099;
+  --apex-link-bg: #E6E6EE; --apex-link-hover: #D8D8E6;
   --apex-sel: #EEEE9E; --apex-dim: #6F6F60; --apex-tag-bg: #EAFFFF;
 }
 html, body { margin: 0; background: var(--apex-bg); color: var(--apex-fg); }
@@ -18,8 +19,24 @@ body {
 h1, h2, h3, h4, h5, h6 { font-weight: bold; line-height: 1.25; margin: 1.4em 0 0.5em; }
 h1 { font-size: 1.7em; } h2 { font-size: 1.4em; } h3 { font-size: 1.2em; } h4 { font-size: 1.05em; } h5, h6 { font-size: 1em; }
 p, ul, ol, dl, table, pre, blockquote { margin: 0 0 0.9em; }
-a { color: var(--apex-link); text-decoration: none; }
-a:hover { text-decoration: underline; }
+/* a link as a chat app draws one, as apex draws B3: a pale wash, the
+   text in the link's blue, softly rounded; one that leaves the host
+   (http, https) led by a link mark, one to the host's own files not */
+a {
+  color: var(--apex-link); background: var(--apex-link-bg); text-decoration: none;
+  border-radius: 4px; padding: 1px 3px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+a:hover { background: var(--apex-link-hover); }
+a[href^="http:"]::before, a[href^="https:"]::before {
+  content: ""; display: inline-block; width: 0.95em; height: 0.95em;
+  margin-right: 0.22em; vertical-align: -0.14em; background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* a picture that links, and a footnote's mark: no chip */
+a:has(img), sup.footnote-reference a { background: none; padding: 0; }
+a:has(img)::before { content: none; }
 code, pre, kbd, samp, tt { font-family: var(--apex-mono, Menlo, "DejaVu Sans Mono", monospace); font-size: 12px; font-feature-settings: var(--apex-mono-features, normal); }
 pre { background: var(--apex-code-bg); padding: 10px 12px; border-radius: 4px; overflow: auto; line-height: 1.4; position: relative; }
 blockquote { margin-left: 0; padding: 0 1em; color: var(--apex-dim); border-left: 3px solid var(--apex-border); }
@@ -32,7 +49,7 @@ th, td { border: 1px solid var(--apex-rule); padding: 4px 10px; text-align: left
 th { background: var(--apex-tag-bg); }
 img { max-width: 100%; }
 dt { font-weight: bold; } dd { margin-left: 1.5em; }
-sup.footnote-ref a, .footnote-definition { font-size: 0.9em; }
+sup.footnote-reference a, .footnote-definition { font-size: 0.9em; }
 .apex-line { display: inline; }
 
 /* a mermaid diagram: drawn by the client in place of its source, on the

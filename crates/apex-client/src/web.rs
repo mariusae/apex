@@ -67,7 +67,11 @@ fn theme_css() -> String {
     let t = crate::theme::theme();
     let hex = |c: u32| format!("#{c:06X}");
     let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2A2A2C, 0x3A3A3C, t.text_dim) } else { (0xF0F0EE, 0xDCDCD9, t.text_dim) };
-    let link = if crate::theme::is_dark() { t.panel_accent } else { t.dirty };
+    // links as B3's sweep is drawn: its pale wash, its ink, and the wash
+    // a little stronger under the pointer
+    let (link_bg, link) = t.sweep(false);
+    let link_hover = crate::text_element::mix(t.body_bg, t.look_hl, if crate::theme::is_dark() { 0.34 } else { 0.2 });
+    let links = format!(":root{{--apex-link-bg:{};--apex-link-hover:{}}}", hex(link_bg), hex(link_hover));
     // a diff's added and removed lines (apex diff): pale, one tint each.
     // Removed is orange rather than red, which stays apart from the green
     // for a reader with deuteranopia where red does not (under a
@@ -81,7 +85,7 @@ fn theme_css() -> String {
     // the font set's faces and families (View ▸ Font), for a page's
     // stylesheet to set itself in
     let accent = format!(":root{{--apex-accent:{}}}", hex(t.accent));
-    diff + &accent + &crate::fonts::page_css() + &format!(
+    diff + &accent + &links + &crate::fonts::page_css() + &format!(
         ":root{{--apex-bg:{};--apex-fg:{};--apex-code-bg:{};--apex-rule:{};--apex-border:{};--apex-link:{};--apex-sel:{};--apex-dim:{};--apex-tag-bg:{}}}\
          html{{background:{}}}\
          .apex-copy{{position:absolute;top:4px;right:4px;font:11px var(--apex-font);color:{};background:{};border:1px solid {};border-radius:4px;padding:1px 6px;cursor:pointer;opacity:0;transition:opacity .15s}}\
