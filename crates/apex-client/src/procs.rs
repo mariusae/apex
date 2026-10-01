@@ -77,10 +77,18 @@ impl Acme {
         Some(deferred(anchored().position(point(at.left(), at.bottom() + px(4.))).child(card)).with_priority(3).into_any_element())
     }
 
-    /// The session's tag's head: a pill for each process running.
+    /// The session's tag's head: a pill for each process running, after
+    /// a chevron from the directory when the title bar shows it.
     pub fn top_head(&self) -> Head {
         let procs: Vec<(Seq, String)> = self.running_procs().into_iter().map(|p| (p.id, p.name)).collect();
-        Head::procs(&procs)
+        Head::procs(&procs, !self.node.state.meta.cwd.is_empty())
+    }
+
+    /// The top row after the directory, with nothing for its square to
+    /// say (the leases held, no notification to take): no room kept for
+    /// the square, so the chevron follows the directory as the others do.
+    pub fn top_bare(&self) -> bool {
+        !self.node.state.meta.cwd.is_empty() && !self.fenced() && self.notification_head().is_none()
     }
 
     fn proc(&self, id: Seq) -> Option<Proc> {

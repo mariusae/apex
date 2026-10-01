@@ -829,17 +829,37 @@ impl Head {
     }
 
     /// The session's tag's head: its running processes, each a pill of
-    /// its name and a × (`Atom::Proc`, `Atom::ProcKill`).
-    pub fn procs(procs: &[(apex_core::Seq, String)]) -> Head {
+    /// its name and a × (`Atom::Proc`, `Atom::ProcKill`); with `after`
+    /// (the session's directory drawn before it) a chevron first, and
+    /// one between the pills and the text: directory › pills › text.
+    pub fn procs(procs: &[(apex_core::Seq, String)], after: bool) -> Head {
         let mut h = Head::default();
-        for (id, name) in procs {
+        if after {
+            h.chevron();
+        }
+        for (i, (id, name)) in procs.iter().enumerate() {
+            if i > 0 {
+                h.push(" ", None);
+            }
             // the pill's room inside it, as a label's
             h.push(&format!(" {name}\u{2009}"), Some(Atom::Proc(*id)));
             let mut cell = [0u8; 4];
             h.push(ICON_CELL.encode_utf8(&mut cell), Some(Atom::ProcKill(*id)));
-            h.push("  ", None);
+            h.push(" ", None);
+        }
+        if !procs.is_empty() {
+            h.chevron();
         }
         h
+    }
+
+    /// A chevron, faint, and a space: what comes next is in what came
+    /// before (the title bar's directory › its processes › its text).
+    fn chevron(&mut self) {
+        let mut cell = [0u8; 4];
+        self.glyphs.push((self.text.len(), icon_index("Fwd")));
+        self.push(ICON_CELL.encode_utf8(&mut cell), None);
+        self.push(" ", None);
     }
 
     /// The session's directory as the path's first part: its icon and a
@@ -986,6 +1006,10 @@ pub struct Source {
     /// just now (it blinks). None for any other view, whose caret is the
     /// plain one.
     pub key_caret: Option<bool>,
+    /// The top row with the session's directory before it and nothing
+    /// for its square to say: no room kept for the square, its head's
+    /// chevron right after the directory.
+    pub bare: bool,
     pub text: Text,
     pub sel: (usize, usize),
     pub origin: usize,
@@ -1033,6 +1057,7 @@ pub struct Prepaint {
     lane: bool,
     hiding: bool,
     key_caret: Option<bool>,
+    bare: bool,
 }
 
 /// The row to have at the top so that the row `q` is on starts `room`
@@ -1287,9 +1312,9 @@ impl Element for TextElement {
             (window.request_layout(style, [], cx), ())
         } else {
             // the top row: its processes' pills, then its text
-            let text: SharedString = {
+            let (text, bare): (SharedString, bool) = {
                 let acme = self.acme.read(cx);
-                format!("{}{}", acme.top_head().text, acme.view_text(self.view)).into()
+                (format!("{}{}", acme.top_head().text, acme.view_text(self.view)).into(), acme.top_bare())
             };
             let mut fontspec = font_for(false);
             fontspec.line_height = tag_line_height();
@@ -1300,7 +1325,7 @@ impl Element for TextElement {
                         AvailableSpace::Definite(w) => Some(w),
                         _ => None,
                     });
-                    let wrap = width.map(|w| (w - px(MARGIN) - px(4.)).max(px(10.)));
+                    let wrap = width.map(|w| (w - if bare { px(0.) } else { px(MARGIN) } - px(4.)).max(px(10.)));
                     let run = TextRun {
                         len: text.len(),
                         font: fontspec.font.clone(),
@@ -1341,7 +1366,7 @@ impl Element for TextElement {
                 fontspec.line_height = tag_line_height();
             }
             let lh = fontspec.line_height;
-            let margin = if kind == Kind::Body { px(BODY_MARGIN) } else { px(MARGIN) };
+            let margin = if kind == Kind::Body { px(BODY_MARGIN) } else if src.bare { px(0.) } else { px(MARGIN) };
             let wrap = Some((bounds.size.width - margin - px(4.)).max(px(10.)));
             let height = bounds.size.height;
             let text = &src.text;
@@ -1503,6 +1528,7 @@ impl Element for TextElement {
                 lane: acme.lane_open(view),
                 hiding: src.hiding,
                 key_caret: src.key_caret,
+                bare: src.bare,
             })
         })
     }
@@ -1533,7 +1559,7 @@ impl Element for TextElement {
         } else {
             px(0.)
         };
-        let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else { px(MARGIN) };
+        let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else if pp.bare { px(0.) } else { px(MARGIN) };
         let origin = point(bounds.left() + margin, bounds.top() + shift);
 
         // a notified window's header in a pale tint of the accent, as
@@ -1594,6 +1620,8 @@ impl Element for TextElement {
                     paint_grip_as(window, b, rgb(crate::theme::theme().text_dim), pp.hiding);
                     layout_box = Some(b);
                 }
+                // bare: nothing for the square to say, and no room for it
+                Kind::Top if pp.bare => {}
                 Kind::Top => {
                     // the session's own square: nothing to drag, so no grip;
                     // red when this client has lost its leases and only
@@ -1944,7 +1972,10 @@ mod head_tests {
         let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
         assert!(p.text.starts_with(&format!("{here}src/")), "{:?}", p.text);
         // the session's processes: a pill each, its name and its ×
-        let p = Head::procs(&[(7, "make".into())]);
+        let p = Head::procs(&[(7, "make".into())], true);
+        assert_eq!(p.glyphs.len(), 2, "a chevron each side of the pills");
+        assert_eq!(Head::procs(&[], true).glyphs.len(), 1, "no pills, one chevron");
+        assert!(Head::procs(&[], false).text.is_empty());
         assert_eq!(p.atoms.iter().map(|x| x.2).collect::<Vec<_>>(), vec![Atom::Proc(7), Atom::ProcKill(7)]);
         let e = Head::build("", Some("Errors"), &["Del"], true, false);
         assert_eq!(e.atoms[0], (0, 8, Atom::Label));

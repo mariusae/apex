@@ -1155,7 +1155,7 @@ impl app::Acme {
                     .child(bare("title-gap2").w(px(8.)))
             })
             // the session's host and directory, the crumbs to change it by
-            .children(self.cwd_bar(cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).max_w(gpui::relative(0.45)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(10.)))))
+            .children(self.cwd_bar(cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).max_w(gpui::relative(0.45)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(3.)))))
             .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
             .child(bare("title-shelf").w(px(self.shelf_room(cx))));
         // the sidebar shown: its card goes up round the window's buttons

@@ -2675,6 +2675,7 @@ impl Acme {
                 scroller: (0., false),
                 hiding: false,
                 key_caret: None,
+                bare: false,
                 text: apex_core::text::Text::new(""),
                 sel: (0, 0),
                 origin: 0,
@@ -2720,6 +2721,7 @@ impl Acme {
             // the keys' view: its caret the blue one, blinking
             // (not a tag's whose path is being picked: the caret is there)
             key_caret: (self.caret_view == Some(view) && !self.picker.as_ref().is_some_and(|p| view == ViewId::Tag(p.window))).then_some(self.caret_on),
+            bare: view == ViewId::Top && self.top_bare(),
             text: buf.text.clone(),
             sel: (v.q0, v.q1),
             origin: v.origin,
