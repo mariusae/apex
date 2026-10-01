@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -146,6 +146,7 @@ pub fn menus() -> Vec<Menu> {
             disabled: false,
             items: vec![
                 MenuItem::action("New", NewFile),
+                MenuItem::action("Open…", OpenPath),
                 MenuItem::action("New Tab", NewTab),
                 MenuItem::action("Close Tab", CloseTab),
                 MenuItem::action("Previous Tab", PrevTab),
@@ -255,6 +256,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-h", HideApp, None),
         // acme's commands on the text under the pointer, the Mac way
         KeyBinding::new("cmd-n", NewFile, None),
+        KeyBinding::new("cmd-o", OpenPath, None),
         KeyBinding::new("cmd-s", Put, None),
         KeyBinding::new("cmd-t", NewTab, None),
         KeyBinding::new("cmd-w", Del, None),
@@ -1366,6 +1368,10 @@ impl Acme {
             f.caret_since = std::time::Instant::now();
             return Some(&mut f.filter);
         }
+        if let Some(q) = self.quick.as_mut() {
+            q.caret_since = std::time::Instant::now();
+            return Some(&mut q.filter);
+        }
         None
     }
 
@@ -1379,6 +1385,8 @@ impl Acme {
             }
         } else if let Some(f) = self.finder.as_mut() {
             f.cursor = 0;
+        } else if self.quick.is_some() {
+            self.quick_changed();
         }
         cx.notify();
     }

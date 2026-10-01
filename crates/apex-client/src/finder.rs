@@ -117,63 +117,8 @@ impl Finder {
 /// alignment is taken, and the score is the mean per query character,
 /// nudged up for matches inside the file name.
 pub fn score(query: &str, path: &str) -> Option<f64> {
-    let q: Vec<char> = query.chars().collect();
-    let p: Vec<char> = path.chars().collect();
-    if q.is_empty() || q.len() > p.len() {
-        return None;
-    }
-    let name_at = path.rfind('/').map(|i| path[..i].chars().count() + 1).unwrap_or(0);
-    // memo over (query index, path index): the best score from there
-    let mut memo: BTreeMap<(usize, usize, bool), Option<f64>> = BTreeMap::new();
-    fn best(q: &[char], p: &[char], qi: usize, pi: usize, prev_matched: bool, name_at: usize, memo: &mut BTreeMap<(usize, usize, bool), Option<f64>>) -> Option<f64> {
-        if qi == q.len() {
-            return Some(0.0);
-        }
-        if let Some(m) = memo.get(&(qi, pi, prev_matched)) {
-            return *m;
-        }
-        let mut out: Option<f64> = None;
-        let remaining = q.len() - qi;
-        for j in pi..=p.len().saturating_sub(remaining) {
-            let pc = p[j];
-            let qc = q[qi];
-            if pc.to_lowercase().ne(qc.to_lowercase()) {
-                continue;
-            }
-            let mut s = if j == name_at {
-                1.0
-            } else if j > 0 && p[j - 1] == '/' {
-                0.9
-            } else if prev_matched && j == pi {
-                1.0
-            } else if j > 0 && (matches!(p[j - 1], '-' | '_' | '.' | ' ') || p[j - 1].is_numeric() || (p[j - 1].is_lowercase() && pc.is_uppercase())) {
-                0.8
-            } else {
-                0.55
-            };
-            if pc != qc && !(pc.is_lowercase() == qc.is_lowercase()) {
-                s *= 0.5;
-            }
-            if j >= name_at {
-                s += 0.15; // in the file name
-            }
-            if let Some(rest) = best(q, p, qi + 1, j + 1, true, name_at, memo) {
-                let total = s + rest;
-                if out.is_none_or(|o| total > o) {
-                    out = Some(total);
-                }
-            }
-            // a gap: the next tries are not consecutive
-            if qi < q.len() && !(prev_matched && j == pi) {
-                // nothing: the loop itself explores later positions
-            }
-        }
-        memo.insert((qi, pi, prev_matched), out);
-        out
-    }
-    let total = best(&q, &p, 0, 0, false, name_at, &mut memo)?;
-    // per query character, and a little less for long paths, as Zed does
-    Some(total / q.len() as f64 - (p.len() as f64) * 0.0005)
+    // the core's, which ⌘O's listing on the host uses too
+    apex_core::fuzzy::score(query, path)
 }
 
 // ---- the closed files, per session, on this machine ------------------------

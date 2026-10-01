@@ -335,6 +335,15 @@ windows put away out of the tiling, which is the core's
   the edge itself (so a drag up or down drifting left still just moves
   it), at its right after a clear move right; never for a column's only
   window, nor a column too narrow to halve.
+- **⌘O: open a file or folder in the session's directory.** The host
+  lists everything under it and matches what is typed there, so a huge
+  tree never crosses the wire: the walk (breadth first, leaving out
+  dot-directories, node_modules and their like, stopping at a million)
+  streams into an index; the matcher (Zed's fuzzy scoring, across the
+  cores) sends only the best page, again as the walk goes on; a newer
+  query abandons an older one, a longer one narrows the last one's
+  matches; scrolling near the end asks for the next page; closing it
+  stops both on the host. The list fills in from the first moment.
 - **Processes as pills.** What runs for the session is shown before
   the top row's text, a pill each: its name and a ×. The × ends it; B1
   on it goes to its output, B3 to the window it was run from. The

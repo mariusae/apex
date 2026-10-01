@@ -447,6 +447,9 @@ pub struct Acme {
     /// The title bar's session name being typed, and its sessions
     /// dropped down (`titlebar.rs`).
     pub session_edit: Option<crate::titlebar::SessionEdit>,
+    /// ⌘O's panel (`quickopen.rs`), and the last listing asked for.
+    pub quick: Option<crate::quickopen::QuickOpen>,
+    pub next_find: u64,
     /// A tag's path or label being typed (`tagedit.rs`).
     pub tag_edit: Option<crate::tagedit::TagEdit>,
     /// The picker under a tag's path, and a click on the path waiting to
@@ -1647,6 +1650,8 @@ impl Acme {
             overview: None,
             url_edit: None,
             session_edit: None,
+            quick: None,
+            next_find: 0,
             tag_edit: None,
             picker: None,
             cwd_picker: None,
@@ -3018,6 +3023,10 @@ impl Acme {
             self.close_finder(cx); // a click anywhere else dismisses it
             return;
         }
+        if self.quick.is_some() {
+            self.close_quick(cx); // as the finder: a click elsewhere
+            return;
+        }
         if self.selector.is_some() {
             // a click anywhere else dismisses the dropdown
             self.close_selector(cx);
@@ -3974,7 +3983,7 @@ impl Acme {
     fn overlay_up(&self) -> bool {
         // an address being typed keeps the keys from the pages too
         // and a walk held open by a modifier: the key coming up ends it
-        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu || self.tag_edit.is_some() || self.picker.is_some() || self.cwd_picker.is_some()
+        self.menu.is_some() || self.finder.is_some() || self.selector.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.switcher.is_some() || self.overview.is_some() || self.session_edit.is_some() || self.session_menu || self.tag_edit.is_some() || self.picker.is_some() || self.cwd_picker.is_some() || self.quick.is_some()
     }
 
     /// A web window's handle pressed (its header draws it, not a tag):
@@ -4296,7 +4305,7 @@ impl Acme {
 
     pub fn scroll_wheel(&mut self, e: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
         // an overlay up has the wheel (its list scrolls itself)
-        if self.selector.is_some() || self.finder.is_some() {
+        if self.selector.is_some() || self.finder.is_some() || self.quick.is_some() {
             return;
         }
         let Some((target, region)) = self.locate(e.position) else { return };
@@ -4387,6 +4396,11 @@ impl Acme {
         if self.finder.is_some() {
             let ks = &e.keystroke;
             self.finder_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
+            return;
+        }
+        if self.quick.is_some() && !(e.keystroke.modifiers.platform && e.keystroke.key == "o") {
+            let ks = &e.keystroke;
+            self.quick_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
             return;
         }
         if self.url_edit.is_some() {
@@ -4496,7 +4510,7 @@ impl Acme {
     /// A menu item that is an acme command: `Put`, `Del`, `New`, `Edit ,`
     /// run in the window under the pointer, as B2 there would.
     pub fn menu_command(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if self.selector.is_some() || self.finder.is_some() {
+        if self.selector.is_some() || self.finder.is_some() || self.quick.is_some() {
             // an overlay has the keyboard: select all is its field's
             if text == "Edit ," {
                 self.overlay_edit("select-all", cx);
@@ -4537,7 +4551,7 @@ impl Acme {
     pub fn menu_edit(&mut self, what: &str, window: &mut Window, cx: &mut Context<Self>) {
         // an overlay (the session picker, the finder) has the keyboard:
         // the Edit menu works on its field, not on the text below
-        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() || self.commands.is_some() {
+        if self.selector.is_some() || self.finder.is_some() || self.url_edit.is_some() || self.commands.is_some() || self.quick.is_some() {
             self.overlay_edit(what, cx);
             return;
         }

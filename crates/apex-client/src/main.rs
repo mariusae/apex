@@ -36,6 +36,7 @@ mod toasts;
 mod webbar;
 mod term_element;
 mod pool;
+mod quickopen;
 mod procs;
 mod text_element;
 mod theme;
@@ -153,6 +154,7 @@ impl Render for Acme {
             // the host's profile, the session's setup: opened, or made
             .on_action(cx.listener(|this, _: &shell::Profile, window, cx| this.menu_command("New ~/.apex/profile", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Goto, _, cx| this.open_finder(false, cx)))
+            .on_action(cx.listener(|this, _: &shell::OpenPath, _, cx| this.open_quick(cx)))
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
             .on_action(cx.listener(|this, _: &shell::StashWindow, window, cx| this.stash_key(window, cx)))
@@ -513,6 +515,10 @@ impl Render for Acme {
             None => root,
         };
         let root = match self.finder_panel(cx) {
+            Some(panel) => root.child(panel),
+            None => root,
+        };
+        let root = match self.quick_panel(cx) {
             Some(panel) => root.child(panel),
             None => root,
         };
