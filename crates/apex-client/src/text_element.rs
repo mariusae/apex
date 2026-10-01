@@ -99,7 +99,8 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
     // not a verb: the session's directory, where a path is drawn from
     // when it is inside it (`Head::here`), and the title bar's crumbs'
-    (HERE, r#"<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>"#),
+    // a folder with a dot in it: `.`, this one
+    (HERE, r#"<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="2" fill="black" stroke="none"/>"#),
 ];
 
 /// The session's directory's icon's name in `VERB_ICONS`: `./`, drawn.
