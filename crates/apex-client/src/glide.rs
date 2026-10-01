@@ -6,7 +6,9 @@
 //! appears (made, recalled) opens down from its top. The OS window
 //! resizing, or another session shown, is no move: everything is where
 //! it is at once. While a window glides its terminal keeps its size and
-//! its text keeps its scroll, both settled once it lands.
+//! its text keeps its scroll, both settled once it lands. With View ▸
+//! Layout Animations off, nothing glides: every move is there at once,
+//! and the pointer, which rides a glide, goes straight to where it goes.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -86,7 +88,9 @@ impl Acme {
         g.moving_w.retain(|_, (_, _, at, d)| at.elapsed() < *d);
         g.moving_c.retain(|_, (_, _, at, d)| at.elapsed() < *d);
         let here = (l.r, self.tab);
-        let snap = g.row != Some(here);
+        // the window resized, another session shown, or the layout's
+        // animations turned off (View ▸ Layout Animations): there at once
+        let snap = g.row != Some(here) || !crate::theme::animate_layout();
         g.row = Some(here);
         if snap {
             g.moving_w.clear();

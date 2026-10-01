@@ -644,6 +644,7 @@ fn main() {
         cx.on_action(|_: &shell::ToggleContrast, cx| shell::toggle_contrast(cx));
         cx.on_action(|_: &shell::ToggleBlink, cx| shell::toggle_blink(cx));
         cx.on_action(|_: &shell::ToggleSmoothCaret, cx| shell::toggle_smooth_caret(cx));
+        cx.on_action(|_: &shell::ToggleLayoutAnimations, cx| shell::toggle_layout_animations(cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             // the action arrives while the focused window is mid-update,

@@ -322,6 +322,11 @@ windows put away out of the tiling, which is the core's
   are drawn in the tags from its icon, a folder, where `./` would be
   (`<icon>/src/main.rs`), and every other path whole; the icon is the
   directory: a click lists it, B3 plumbs it.
+- **Layout Animations** (View menu, on by default): windows and columns
+  gliding to their places, a window opening down from its top, the
+  pointer riding with the window it goes to. Off, the layout is where it
+  goes at once; the overview, the stash's fan, a session sliding in, the
+  scrolling and the status marks keep theirs.
 - **Processes as pills.** What runs for the session is shown before
   the top row's text, a pill each: its name and a ×. The × ends it; B1
   on it goes to its output, B3 to the window it was run from. The

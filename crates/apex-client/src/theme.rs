@@ -556,6 +556,26 @@ pub fn set_smooth_caret(on: bool) {
     let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
 }
 
+/// View ▸ Layout Animations: windows and columns glide to their places,
+/// a window opening down from its top, the pointer riding along with the
+/// window it goes to (`glide.rs`) -- the layout's own moves, the most
+/// common in a session. Off, they are there at once. On until turned off;
+/// kept in the `layoutanim` state file.
+static ANIMATE_LAYOUT: AtomicBool = AtomicBool::new(true);
+
+pub fn animate_layout() -> bool {
+    ANIMATE_LAYOUT.load(Ordering::Relaxed)
+}
+
+pub fn set_animate_layout(on: bool) {
+    ANIMATE_LAYOUT.store(on, Ordering::Relaxed);
+    let p = crate::shell::state_file().with_file_name("layoutanim");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
+}
+
 pub fn contrast() -> bool {
     CONTRAST.load(Ordering::Relaxed)
 }
@@ -579,6 +599,8 @@ pub fn load() {
     BLINK.store(blink, Ordering::Relaxed);
     let smooth = std::fs::read_to_string(crate::shell::state_file().with_file_name("smoothcaret")).map(|s| s.trim() == "on").unwrap_or(false);
     SMOOTH_CARET.store(smooth, Ordering::Relaxed);
+    let layout = std::fs::read_to_string(crate::shell::state_file().with_file_name("layoutanim")).map(|s| s.trim() != "off").unwrap_or(true);
+    ANIMATE_LAYOUT.store(layout, Ordering::Relaxed);
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
     // "system" was Xcode's palette's name before it had its own
     let pal = if pal.trim() == "system" { "xcode" } else { pal.trim() };

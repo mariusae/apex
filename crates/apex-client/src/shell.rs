@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -66,6 +66,13 @@ pub fn toggle_contrast(cx: &mut App) {
 /// every window drawn again.
 pub fn toggle_blink(cx: &mut App) {
     crate::theme::set_blink(!crate::theme::blink());
+    cx.set_menus(menus());
+    cx.refresh_windows();
+}
+
+/// View ▸ Layout Animations toggled: kept, the menus remade with the mark.
+pub fn toggle_layout_animations(cx: &mut App) {
+    crate::theme::set_animate_layout(!crate::theme::animate_layout());
     cx.set_menus(menus());
     cx.refresh_windows();
 }
@@ -182,6 +189,7 @@ pub fn menus() -> Vec<Menu> {
                 let contrast = if crate::theme::contrast() { "Correct Terminal Contrast ✓" } else { "Correct Terminal Contrast" };
                 let blink = if crate::theme::blink() { "Blink Cursor ✓" } else { "Blink Cursor" };
                 let smooth = if crate::theme::smooth_caret() { "Smooth Cursor ✓" } else { "Smooth Cursor" };
+                let layout = if crate::theme::animate_layout() { "Layout Animations ✓" } else { "Layout Animations" };
                 let side = if crate::theme::sidebar() { "Hide Sidebar" } else { "Show Sidebar" };
                 vec![
                     MenuItem::action(mark("Light", crate::theme::Mode::Light), ThemeLight),
@@ -234,6 +242,7 @@ pub fn menus() -> Vec<Menu> {
                     MenuItem::action(contrast, ToggleContrast),
                     MenuItem::action(blink, ToggleBlink),
                     MenuItem::action(smooth, ToggleSmoothCaret),
+                    MenuItem::action(layout, ToggleLayoutAnimations),
                 ]
             },
         },
