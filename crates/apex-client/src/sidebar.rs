@@ -476,18 +476,18 @@ pub(crate) fn names(node: &apex_core::Node, w: apex_core::WindowId) -> (String, 
 }
 
 /// A path as apex says it outside a tag: whole, from `/` -- or, inside
-/// the session's directory `cwd` (with its slash), from the chevron that
-/// stands for it, as a tag draws it (`›src/main.rs`, the directory
-/// itself `›`). Never home as `~`: the chevron is the one abbreviation.
+/// the session's directory `cwd` (with its slash), from there on, as a
+/// tag draws it (`src/main.rs`, the directory itself `./`). Never home as
+/// `~`: the session's directory is the one abbreviation.
 pub(crate) fn shown(path: &str, cwd: &str) -> String {
     if cwd.is_empty() || !cwd.ends_with('/') {
         return path.to_string();
     }
     if path == cwd || format!("{path}/") == cwd {
-        return "›".to_string();
+        return "./".to_string();
     }
     match path.strip_prefix(cwd) {
-        Some(rest) => format!("›{rest}"),
+        Some(rest) => rest.to_string(),
         None => path.to_string(),
     }
 }
@@ -545,9 +545,9 @@ mod tests {
     fn a_path_is_whole_or_from_the_sessions_chevron_and_never_from_home() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/me".into());
         let cwd = format!("{home}/src/apex/");
-        assert_eq!(shown(&format!("{home}/src/apex/notes.md"), &cwd), "›notes.md");
-        assert_eq!(shown(&cwd, &cwd), "›");
-        assert_eq!(shown(cwd.trim_end_matches('/'), &cwd), "›");
+        assert_eq!(shown(&format!("{home}/src/apex/notes.md"), &cwd), "notes.md");
+        assert_eq!(shown(&cwd, &cwd), "./");
+        assert_eq!(shown(cwd.trim_end_matches('/'), &cwd), "./");
         assert_eq!(shown(&format!("{home}/elsewhere/x"), &cwd), format!("{home}/elsewhere/x"));
         assert_eq!(shown(&format!("{home}/elsewhere/x"), ""), format!("{home}/elsewhere/x"));
     }

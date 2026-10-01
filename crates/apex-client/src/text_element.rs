@@ -97,6 +97,9 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Send", r#"<path d="M21 3L10 14M21 3l-7 18-4-7-7-4z"/>"#),
     ("Back", r#"<path d="M15 6l-6 6 6 6"/>"#),
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
+    // the session's directory itself, `./` drawn: a middle dot, and a
+    // slash a little apart from it
+    (HERE, r#"<circle cx="7.4" cy="12" r="2" fill="black" stroke="none"/><path d="M11 19.5L17 4.5"/>"#),
     // not a verb: the session's directory, where a path is drawn from
     // when it is inside it (`Head::here`), and the title bar's crumbs'
 ];
@@ -104,6 +107,8 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
 /// The cell a narrow glyph stands on: a figure space, a little over half
 /// an em (as many bytes as `ICON_CELL`, so the cells are measured alike).
 const NARROW_CELL: char = '\u{2007}';
+/// The session's directory's icon's name in `VERB_ICONS`.
+pub const HERE: &str = "./";
 
 /// Where an icon is in `VERB_ICONS`.
 pub fn icon_index(name: &str) -> usize {
@@ -809,8 +814,8 @@ impl Head {
         let mut h = Head::default();
         // every part a folder: the name is being typed
         let start = inside(dir, base);
-        if let Some(b) = start {
-            h.here(b, Atom::Dir(b));
+        if start == Some(dir.len()) {
+            h.here(dir.len(), Atom::Dir(dir.len()));
         }
         let mut from = start.unwrap_or(0);
         let skip = from;
@@ -864,14 +869,14 @@ impl Head {
         self.push(" ", None);
     }
 
-    /// The session's directory as the path's first part, where `./`
-    /// would be: a chevron, on a narrow cell -- a part as any other,
-    /// `atom` (a folder's, or the name when the path is the directory
-    /// itself): `›src/main.rs`.
+    /// The session's directory itself, as a part of a path: `./` drawn,
+    /// on a narrow cell -- `atom` (the name, the path being the
+    /// directory; or, picking in it, the folder listed). A path inside
+    /// the directory has no mark: it is drawn from there on.
     fn here(&mut self, k: usize, atom: Atom) {
         let _ = k;
         let a = self.text.len();
-        self.glyphs.push((a, icon_index("Fwd")));
+        self.glyphs.push((a, icon_index(HERE)));
         self.text.push(NARROW_CELL);
         self.atoms.push((a, self.text.len(), atom));
     }
@@ -897,9 +902,7 @@ impl Head {
             self.here(path.len(), Atom::Name);
         } else {
             let name = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
-            if let Some(b) = inside(path, base) {
-                self.here(b, Atom::Dir(b));
-            }
+            // inside the session's directory: from there on, no mark
             let mut from = inside(path, base).unwrap_or(0);
             let skip = from;
             for (i, c) in path[..name].char_indices().skip_while(|(i, _)| *i < skip) {
@@ -1942,7 +1945,7 @@ mod ligature_tests {
 
 #[cfg(test)]
 mod head_tests {
-    use super::{Atom, Head, ICON_CELL};
+    use super::{icon_index, Atom, Head, HERE, ICON_CELL};
 
     #[test]
     fn a_head_is_the_path_in_parts_the_label_and_the_verbs() {
@@ -1966,23 +1969,23 @@ mod head_tests {
         assert_eq!(p.atoms[..3], [(0, 1, Atom::Dir(1)), (1, 3, Atom::Dir(3)), (3, 5, Atom::Typed)]);
         assert_eq!(p.caret, Some(4));
         // the session's errors window: its label alone
-        // inside the session's directory: from there on, and it as ./ --
-        // the parts still the whole path's
-        // (the directory drawn as View ▸ Directory Mark has it, where ./
-        // would be: a part of its own, the directory's)
+        // inside the session's directory: from there on, unmarked -- the
+        // parts still the whole path's
         let r = Head::build_in("/a/b/src/x.rs", None, &[], true, true, "/a/b/");
         let parts: Vec<(&str, Atom)> = r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect();
-        assert_eq!(parts[0].1, Atom::Dir(5));
-        assert_eq!(&parts[1..], &[("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
-        let here = parts[0].0.to_string();
+        assert_eq!(&parts[..2], &[("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
+        assert!(r.glyphs.iter().all(|&(_, i)| i != icon_index(HERE)));
+        // the directory itself: ./ drawn, the name
         let d = Head::build_in("/a/b/", None, &[], true, true, "/a/b/");
         assert_eq!(d.atoms[0].2, Atom::Name);
+        assert_eq!(d.glyphs[0], (0, icon_index(HERE)));
+        let here = d.text[d.atoms[0].0..d.atoms[0].1].to_string();
         let out = Head::build_in("/a/c/x.rs", None, &[], true, true, "/a/b/");
         assert!(out.text.starts_with("/a/c/x.rs"), "{:?}", out.text);
         let p = Head::picking_in("/a/b/", "s", 1, false, None, &[], "/a/b/");
         assert!(p.text.starts_with(&format!("{here}s")), "{:?}", p.text);
         let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
-        assert!(p.text.starts_with(&format!("{here}src/")), "{:?}", p.text);
+        assert!(p.text.starts_with("src/"), "{:?}", p.text);
         // the session's processes: a pill each, its name and its ×
         let p = Head::procs(&[(7, "make".into())], true);
         assert_eq!(p.glyphs.len(), 2, "a chevron each side of the pills");

@@ -319,9 +319,8 @@ windows put away out of the tiling, which is the core's
 - **The session's place in the title bar**: the host, dim, and the
   session's directory as crumbs; a crumb clicked lists the folders in it
   to cd into (`./` for the folder itself). Paths inside the directory
-  are drawn in the tags from a chevron where `./` would be
-  (`›src/main.rs`), and every other path whole; the chevron is the
-  directory: a click lists it, B3 plumbs it.
+  are drawn in the tags from there on, unmarked (`src/main.rs`), and
+  every other path whole; the directory itself is a drawn `./`.
 - **Layout Animations** (View menu, on by default): windows and columns
   gliding to their places, a window opening down from its top, the
   pointer riding with the window it goes to. Off, the layout is where it
