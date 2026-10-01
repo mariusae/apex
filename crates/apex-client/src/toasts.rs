@@ -1,8 +1,8 @@
 //! Errors as toasts. A command's errors go to its directory's errors
 //! window, as ever -- the core's, and every client's -- but that window
 //! is not opened over the work: it goes to the stash, and what was just
-//! written shows in a toast at the foot of the rightmost column shown,
-//! where errors windows are made, with Show All (the window shown in the
+//! written shows in a toast at the app's lower right, over whatever
+//! columns are there, with Show All (the window shown in the
 //! stash's preview) and ×. A toast goes by
 //! itself after a while unless the pointer is on it, and at once on a
 //! click anywhere but on a toast. Its words answer as
@@ -95,24 +95,18 @@ impl Acme {
         self.toasts.retain(|t| t.hovered || t.at.elapsed() < STAY);
         let t = crate::theme::theme();
         let mut out = Vec::new();
-        // one stack per column, the newest at the bottom
-        let mut up_by: std::collections::HashMap<apex_core::ColumnId, f32> = std::collections::HashMap::new();
+        // one stack at the app's lower right, over whatever columns are
+        // there, the newest at the bottom
+        let mut below = 8.;
         for (i, toast) in self.toasts.iter().enumerate().rev() {
             let w = toast.window;
-            // the rightmost column shown, where errors windows are made --
-            // not the one this window was stashed from, which a column
-            // added since (a split) may have left in the middle
-            let open = (0..l.cols.len()).rev().find(|&i| l.shows(i) && !apex_core::tiling::is_strip(l.cols[i].r));
-            let Some(col) = open.map(|i| &l.cols[i]).or(l.cols.last()) else { continue };
-            let _ = w;
             let lines: Vec<&str> = toast.text.trim_end().lines().collect();
             let shown = lines[lines.len().saturating_sub(LINES)..].join("\n");
             let more = lines.len() > LINES;
-            let width = (col.r.dx() as f32 - 16.).clamp(200., 520.);
-            let below = up_by.entry(col.id).or_insert(8.);
+            let width = (l.r.dx() as f32 - 16.).clamp(200., 520.);
             let height = 44. + 16. * shown.lines().count().max(1) as f32;
-            let bottom = col.r.y1 as f32 - *below;
-            *below += height + 6.;
+            let bottom = l.r.y1 as f32 - below;
+            below += height + 6.;
             let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.22), offset: gpui::point(px(0.), px(4.)), blur_radius: px(14.), spread_radius: px(0.), inset: false };
             let name = match crate::sidebar::names(&self.node, w) { (what, at) if at.is_empty() => what, (what, at) => format!("{what}  {at}") };
             let at = self.toasts_at.clone();
@@ -120,7 +114,7 @@ impl Acme {
                 .id(("toast", i))
                 .child(canvas(move |b, _, _| at.borrow_mut().push(b), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
                 .absolute()
-                .left(px(col.r.x1 as f32 - width - 8.))
+                .left(px(l.r.x1 as f32 - width - 8.))
                 .top(px(bottom - height))
                 .w(px(width))
                 .flex()
