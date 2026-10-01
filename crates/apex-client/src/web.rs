@@ -1062,9 +1062,10 @@ impl Webs {
         };
         b = b
             .with_navigation_handler(move |u| {
-                if let Some((path, line)) = file_link(&u) {
-                    // a file link with a line: the file in a text window there
-                    let _ = tx1.send((w, WebEvent::Open(path, Some(line))));
+                // a file link with a line, or to a file a view does not
+                // show (source, text): the file in a text window, there
+                if let Some((path, line)) = host_file(&u).filter(|(p, line)| line.is_some() || !shown_as_page(p)) {
+                    let _ = tx1.send((w, WebEvent::Open(path, line)));
                     if let Some(k) = &wake1 {
                         k();
                     }
@@ -1380,7 +1381,10 @@ impl Fetcher {
         if let Some((bytes, mime)) = url.strip_prefix("apexfile://localhost").and_then(crate::fonts::serve) {
             return respond(responder, 200, mime, bytes.to_vec());
         }
-        let path = match file_url_path(&format!("file://{}", url.strip_prefix("apexfile://").unwrap_or(&url))) {
+        // (the loopback alias, should one have come with it, is no host)
+        let rest = url.strip_prefix("apexfile://").unwrap_or(&url);
+        let rest = rest.strip_prefix(&format!("localhost{}", apex_server::plane::HOST_ALIAS)).unwrap_or(rest);
+        let path = match file_url_path(&format!("file://{rest}")) {
             Some(p) => p,
             None => return respond(responder, 400, "text/plain", format!("{url}: not a host file").into_bytes()),
         };
@@ -1719,10 +1723,13 @@ fn js_string(s: &str) -> String {
 /// `apexfile://localhost/path`; and the host's loopback goes under the
 /// alias the proxy undoes, since a view never proxies a loopback name.
 fn webkit_url(url: &str) -> String {
-    match url.strip_prefix("apexfile:///") {
-        Some(rest) => format!("apexfile://localhost/{rest}"),
-        None => alias_loopback_url(url),
+    if let Some(rest) = url.strip_prefix("apexfile:///") {
+        return format!("apexfile://localhost/{rest}");
     }
+    if let Some(rest) = url.strip_prefix(&format!("apexfile://localhost{}/", apex_server::plane::HOST_ALIAS)) {
+        return format!("apexfile://localhost/{rest}");
+    }
+    alias_loopback_url(url)
 }
 
 /// The form the session names a page by, back from the view's; a
@@ -1764,14 +1771,49 @@ pub fn page_verbs(html: &str) -> Vec<String> {
 /// never hears of it -- so a page apex writes itself (apex diff) links
 /// through its own scheme, which is asked about like any other.
 fn file_link(url: &str) -> Option<(String, usize)> {
+    let (path, line) = host_file(url)?;
+    Some((path, line?))
+}
+
+/// A link to a host file (`file://`, `apexfile://`, with a host of
+/// `localhost` or none, or the loopback alias): the file, and a line
+/// when the link says one -- `?line=N`, `#LN`, or `:N` (`:N:M`) after
+/// the path, as a compiler writes a place.
+fn host_file(url: &str) -> Option<(String, Option<usize>)> {
     let rest = url.strip_prefix("file://").or_else(|| url.strip_prefix("apexfile://"))?;
+    let rest = rest.strip_prefix(&format!("localhost{}", apex_server::plane::HOST_ALIAS)).unwrap_or(rest);
     let (before_frag, frag) = rest.split_once('#').map(|(a, b)| (a, Some(b))).unwrap_or((rest, None));
     let (path_part, query) = before_frag.split_once('?').map(|(a, b)| (a, Some(b))).unwrap_or((before_frag, None));
-    let line = query
+    let mut line = query
         .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("line=")).and_then(|v| v.parse().ok()))
-        .or_else(|| frag.and_then(|f| f.strip_prefix('L')).and_then(|v| v.split('-').next()).and_then(|v| v.parse().ok()))?;
+        .or_else(|| frag.and_then(|f| f.strip_prefix('L')).and_then(|v| v.split('-').next()).and_then(|v| v.parse().ok()));
+    // file.rs:64, file.rs:64:1: a place, the numbers off the path
+    let mut path_part = path_part;
+    if line.is_none() {
+        let mut nums: Vec<usize> = Vec::new();
+        while let Some((head, tail)) = path_part.rsplit_once(':') {
+            match tail.parse::<usize>() {
+                Ok(n) if !tail.is_empty() && !head.is_empty() => {
+                    nums.push(n);
+                    path_part = head;
+                }
+                _ => break,
+            }
+            if nums.len() == 2 {
+                break;
+            }
+        }
+        line = nums.last().copied();
+    }
     let path = file_url_path(&format!("file://{path_part}"))?;
     Some((path.display().to_string(), line))
+}
+
+/// What a web view shows as itself: a page, an image, a PDF. A link to
+/// any other host file (source, text) opens the file in a window.
+fn shown_as_page(path: &str) -> bool {
+    let ext = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "html" | "htm" | "xhtml" | "svg" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "pdf")
 }
 
 /// Where the pointer is, in the window's own coordinates, asked of the
@@ -1866,6 +1908,16 @@ mod tests {
         assert_eq!(apex_url("file:///a/b.html"), "apexfile:///a/b.html");
         assert_eq!(webkit_url("apexfile:///a/b.html"), "apexfile://localhost/a/b.html");
         assert_eq!(webkit_url("http://localhost:8/"), "http://localhost.apex-host:8/");
+        // a host file keeps its host, whatever form it comes in
+        assert_eq!(webkit_url("apexfile://localhost/a/b.rs"), "apexfile://localhost/a/b.rs");
+        assert_eq!(webkit_url("apexfile://localhost.apex-host/a/b.rs"), "apexfile://localhost/a/b.rs");
+        // a compiler's place: the file, at its line
+        assert_eq!(host_file("apexfile://localhost/data/x/runtime.rs:64"), Some(("/data/x/runtime.rs".to_string(), Some(64))));
+        assert_eq!(host_file("apexfile://localhost/a/b.rs:12:5"), Some(("/a/b.rs".to_string(), Some(12))));
+        assert_eq!(host_file("apexfile://localhost.apex-host/a/b.rs:3"), Some(("/a/b.rs".to_string(), Some(3))));
+        assert_eq!(host_file("file:///a/b.rs"), Some(("/a/b.rs".to_string(), None)));
+        // source opens as a file; a page, an image, a PDF as themselves
+        assert!(!shown_as_page("/a/b.rs") && shown_as_page("/a/b.html") && shown_as_page("/a/c.PNG"));
     }
 }
 

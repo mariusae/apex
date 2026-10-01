@@ -161,7 +161,13 @@ pub fn is_loopback_host(host: &str) -> bool {
 }
 
 /// A URL with a loopback host under the alias; anything else as it is.
+/// Only the web's own schemes (http, https, ws, wss), which go through
+/// the proxy: a host file's `apexfile://localhost/...` is no loopback's.
 pub fn alias_loopback_url(url: &str) -> String {
+    let web = ["http://", "https://", "ws://", "wss://"].iter().any(|s| url.get(..s.len()).is_some_and(|p| p.eq_ignore_ascii_case(s)));
+    if !web {
+        return url.to_string();
+    }
     let Some((a, b)) = url_host(url) else { return url.to_string() };
     let host = &url[a..b];
     if !is_loopback_host(host) || host.starts_with('[') {
@@ -322,6 +328,9 @@ mod tests {
     fn loopback_hosts_travel_under_an_alias() {
         assert_eq!(alias_loopback_url("http://127.0.0.1:2626/a?b#c"), "http://127-0-0-1.apex-host:2626/a?b#c");
         assert_eq!(alias_loopback_url("http://localhost/"), "http://localhost.apex-host/");
+        // a host file is no loopback's: its scheme is not the web's
+        assert_eq!(alias_loopback_url("apexfile://localhost/a/b.rs"), "apexfile://localhost/a/b.rs");
+        assert_eq!(alias_loopback_url("file://localhost/a/b.rs"), "file://localhost/a/b.rs");
         assert_eq!(alias_loopback_url("https://example.com/"), "https://example.com/");
         assert_eq!(alias_loopback_url("apexfile:///p"), "apexfile:///p");
         assert_eq!(unalias_url("http://127-0-0-1.apex-host:2626/a"), "http://127.0.0.1:2626/a");
