@@ -146,8 +146,9 @@ impl Picker {
 }
 
 /// The folder a part of the path names, with its slash, and the entry in
-/// it the path goes through: a folder's own child, or the name itself
-/// among its siblings.
+/// it the path goes through: a folder's own child, a file's name among
+/// its siblings -- and a directory's name, the directory itself (its
+/// entries listed, as the title bar's crumbs list theirs).
 pub fn folder_of(path: &str, atom: Atom) -> Option<(String, Option<String>)> {
     let name_at = path.trim_end_matches('/').rfind('/').map_or(0, |i| i + 1);
     match atom {
@@ -156,6 +157,7 @@ pub fn folder_of(path: &str, atom: Atom) -> Option<(String, Option<String>)> {
             let next = rest.split('/').next().filter(|s| !s.is_empty()).map(String::from);
             Some((path[..k].to_string(), next))
         }
+        Atom::Name if path.ends_with('/') => Some((path.to_string(), None)),
         Atom::Name if name_at > 0 => Some((path[..name_at].to_string(), Some(path[name_at..].trim_end_matches('/').to_string()))),
         _ => None,
     }
@@ -716,8 +718,8 @@ mod tests {
         assert_eq!(folder_of(p, Atom::Dir(3)), Some(("/a/".into(), Some("b".into()))));
         assert_eq!(folder_of(p, Atom::Dir(5)), Some(("/a/b/".into(), Some("notes.md".into()))));
         assert_eq!(folder_of(p, Atom::Name), Some(("/a/b/".into(), Some("notes.md".into()))));
-        // a directory's name: among its parent's entries
-        assert_eq!(folder_of("/a/b/", Atom::Name), Some(("/a/".into(), Some("b".into()))));
+        // a directory's name: the directory itself
+        assert_eq!(folder_of("/a/b/", Atom::Name), Some(("/a/b/".into(), None)));
         assert_eq!(folder_of("notes.md", Atom::Name), None);
     }
 }
