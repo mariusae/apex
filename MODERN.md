@@ -105,6 +105,10 @@ windows put away out of the tiling, which is the core's
   name's directory in the secondary, its last part in the primary, and
   its commands faintly until the pointer is on the tag (the column tags
   and the top row likewise). Selections and sweeps are softly rounded.
+  B2 and B3 sweeps (and their pills) are drawn as a chat app draws a
+  link: a pale wash of the button's colour -- the blue for B3, the
+  action's orange for B2 -- with the text in that colour, deepened to
+  read on it, and corners a little rounder than a selection's.
   The window the keys go to has a soft ring in the accent.
 - **The title bar is the top row** (`main.rs`, `title_bar`), as a
   modern Mac app's: across the whole window, the window's buttons, the

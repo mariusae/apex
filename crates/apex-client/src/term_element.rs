@@ -158,8 +158,8 @@ impl Element for TermElement {
             let highlight = |x: usize, y: usize| -> Option<(Hsla, Hsla)> {
                 if let Some((b, r)) = hl {
                     if within(x, y, r) {
-                        let bg = if b == gpui::MouseButton::Middle { th.exec_hl } else { th.look_hl };
-                        return Some((rgb(bg), rgb(th.sweep_text)));
+                        let (bg, ink) = th.sweep(b == gpui::MouseButton::Middle);
+                        return Some((rgb(bg), rgb(ink)));
                     }
                 }
                 if sel.is_some_and(|r| within(x, y, r)) {

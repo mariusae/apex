@@ -127,6 +127,10 @@ pub fn verb_svg(i: usize) -> &'static [u8] {
     SVGS.with(|v| v[i])
 }
 
+/// A B2/B3 sweep's corners, and the pill's under what a click would take:
+/// a chat app's link's, a little rounder than the selection's.
+const SWEEP_RADIUS: f32 = 4.;
+
 /// The em space a verb's icon stands on.
 const ICON_CELL: char = '\u{2003}';
 
@@ -1153,7 +1157,6 @@ fn shape(
     let atom_of = |a: usize| head.and_then(|h| h.atoms.iter().find(|&&(p, q, _)| a >= p && a < q)).map(|x| x.2);
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
-    let white = rgb(crate::theme::theme().sweep_text);
     let dimmed = rgb(crate::theme::theme().text_dim);
     // a tag's name is set a weight heavier than the words after it, as a
     // title is over a toolbar's
@@ -1192,6 +1195,7 @@ fn shape(
         Some((lo, hi, _)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
     };
+    let sweep_ink = rgb(crate::theme::theme().sweep(matches!(hl, Some((_, _, HlKind::Exec)))).1);
     let chosen = match tint.map(|t| t.sel) {
         Some((lo, hi)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
@@ -1231,7 +1235,7 @@ fn shape(
         let color = if is_bar {
             gpui::transparent_black()
         } else if swept {
-            white
+            sweep_ink
         } else if selected {
             black
         } else if a < hn {
@@ -1659,8 +1663,8 @@ impl Element for TextElement {
                 let ranges: [(usize, usize, Hsla); 2] = [
                     if sel_is_pill { (0, 0, pal.sel) } else { (q0, q1, pal.sel) },
                     match pp.hl {
-                        Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().exec_hl)),
-                        Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().look_hl)),
+                        Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().sweep(true).0)),
+                        Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().sweep(false).0)),
                         None => (0, 0, pal.sel),
                     },
                 ];
@@ -1670,8 +1674,8 @@ impl Element for TextElement {
                 {
                     let th = crate::theme::theme();
                     let pill = match pp.hint {
-                        Some((a, b, HlKind::Look)) => Some((a, b, th.look_hl)),
-                        Some((a, b, HlKind::Exec)) => Some((a, b, th.exec_hl)),
+                        Some((a, b, HlKind::Look)) => Some((a, b, th.sweep(false).0)),
+                        Some((a, b, HlKind::Exec)) => Some((a, b, th.sweep(true).0)),
                         None => None,
                     };
                     if let Some((a, b, color)) = pill {
@@ -1683,13 +1687,13 @@ impl Element for TextElement {
                                 if s < e {
                                     let sy = ly + lh * i as f32;
                                     let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(3.), sy + px(1.)), point(origin.x + x(e) - x(ds) + px(3.), sy + lh - px(1.)));
-                                    window.paint_quad(fill(r, rgb(color)).corner_radii(px(5.)));
+                                    window.paint_quad(fill(r, rgb(color)).corner_radii(px(SWEEP_RADIUS)));
                                 }
                             }
                         }
                     }
                 }
-                for (a, b, color) in ranges {
+                for (k, (a, b, color)) in ranges.into_iter().enumerate() {
                     if a >= b {
                         continue;
                     }
@@ -1724,7 +1728,7 @@ impl Element for TextElement {
                             // row's corners would notch its edges
                             let top = a >= line.start && dlo >= ds && (dlo < de || last);
                             let bottom = if incl_nl { last && b == line.end + 1 } else { dhi > ds && dhi <= de };
-                            let r = px(3.);
+                            let r = px(if k == 1 { SWEEP_RADIUS } else { 3. });
                             let radii = gpui::Corners {
                                 top_left: if top { r } else { px(0.) },
                                 top_right: if top { r } else { px(0.) },

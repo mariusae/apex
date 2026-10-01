@@ -32,8 +32,6 @@ pub struct Theme {
     /// What is going on or chosen: live and working handles, a chosen
     /// row, the focus.
     pub accent: u32,
-    /// The text over a B2/B3 sweep.
-    pub sweep_text: u32,
     /// The borders between columns and windows (acme's black).
     pub border: u32,
     /// A column where no window is (acme's white).
@@ -99,7 +97,6 @@ pub const LIGHT: Theme = Theme {
     text: 0x32383F,
     text_dim: 0x57606A,
     accent: 0x0969DA,
-    sweep_text: 0xFFFFFF,
     border: 0xD0D7DE,
     column: 0xEFF2F5,
     dirty: 0x424A53,
@@ -146,7 +143,6 @@ pub const DARK: Theme = Theme {
     text: 0xADBAC7,
     text_dim: 0x768390,
     accent: 0x539BF5,
-    sweep_text: 0xFFFFFF,
     border: 0x373E47,
     column: 0x1C2128,
     dirty: 0xADBAC7,
@@ -182,7 +178,7 @@ pub const DARK: Theme = Theme {
 /// The colours a palette chooses; the rest of a theme follows from them
 /// (`make`), as GitHub's are laid out: popovers (sheets, menus) on
 /// `popover`, a chosen row in `chosen` with white on it, B2 and B3's
-/// sweeps in white on `exec` and `look`.
+/// sweeps a pale wash of `exec` and `look`, the text in that colour (`Theme::sweep`).
 struct Keys {
     paper: u32,
     sel: u32,
@@ -221,7 +217,6 @@ const fn make(k: Keys) -> Theme {
         text: k.ink,
         text_dim: k.dim,
         accent: k.accent,
-        sweep_text: 0xFFFFFF,
         border: k.line,
         column: k.column,
         dirty: k.dirty,
@@ -467,6 +462,22 @@ pub fn is_dark() -> bool {
         Mode::Light => false,
         Mode::Dark => true,
         Mode::System => SYSTEM_DARK.load(Ordering::Relaxed),
+    }
+}
+
+impl Theme {
+    /// A B2 (`exec`) or B3 sweep, and the pill under what a click would
+    /// take, as a chat app draws a link: a pale wash of the button's
+    /// colour on the paper, the text in that colour -- the action's for
+    /// B2, the blue for B3 -- deepened (or, on dark, lightened) to read on
+    /// it. (background, ink)
+    pub fn sweep(&self, exec: bool) -> (u32, u32) {
+        let c = if exec { self.exec_hl } else { self.look_hl };
+        if is_dark() {
+            (crate::text_element::mix(self.body_bg, c, 0.24), crate::text_element::mix(c, 0xFFFFFF, 0.4))
+        } else {
+            (crate::text_element::mix(self.body_bg, c, 0.12), crate::text_element::mix(c, 0x000000, 0.2))
+        }
     }
 }
 
