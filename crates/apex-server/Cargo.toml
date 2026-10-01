@@ -16,6 +16,7 @@ notify = "8"
 libc = "0.2"
 ureq = "3"
 rustix-openpty = "0.2.0"
+rayon = "1.12"
 
 [build-dependencies]
 sha2 = "0.10"

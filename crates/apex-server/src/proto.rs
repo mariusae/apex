@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 41;
+pub const PROTOCOL: u32 = 42;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -162,6 +162,14 @@ pub enum ClientMsg {
     /// crumbs): `dir` absolute, or relative to the session's. A directory
     /// on the host, or an `Error` answers.
     Cd { dir: String },
+    /// ⌘O: list everything under `dir` on the host, as request `id` of
+    /// this connection (`find.rs`); the matches come as `Found`.
+    FindStart { id: u64, dir: String },
+    /// Match `query` from now on, the best `limit` sent (a page), as
+    /// generation `gen` (answers to an older one are not sent).
+    FindQuery { id: u64, gen: u64, query: String, limit: u32 },
+    /// Done with request `id`: its walk and matching stop.
+    FindStop { id: u64 },
     /// A running program says what it is called: the command of process
     /// group `group` (the shell's pid) takes `name` in the top row, `ps`
     /// and `Kill`; a program of no known group (started from the profile,
@@ -307,6 +315,11 @@ pub enum ServerMsg {
     Ended { id: String, label: String },
     /// The answer to `ClientMsg::Candidates`, to the connection that asked.
     Candidates(Candidates),
+    /// ⌘O's matches for request `id`'s generation `gen`: the best first
+    /// (paths relative to its directory, and whether each is one), how
+    /// many match, how many are indexed, whether the walk is done or
+    /// stopped at its cap, and why it could not walk at all.
+    Found { id: u64, gen: u64, items: Vec<(String, bool)>, matched: u64, indexed: u64, done: bool, capped: bool, error: Option<String> },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

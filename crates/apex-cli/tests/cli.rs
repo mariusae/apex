@@ -1241,3 +1241,51 @@ fn the_session_has_a_current_directory() {
     assert!(!c.node.state.meta.host.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ⌘O's listing through the daemon: started for a directory, matched as
+/// queries come, answered a page at a time, and stopped.
+#[test]
+fn a_listing_is_matched_on_the_host_a_page_at_a_time() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-find-cli-{}", std::process::id()));
+    for i in 0..300 {
+        let p = dir.join(format!("d{}/f{i}.txt", i % 7));
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, "").unwrap();
+    }
+    std::fs::write(dir.join("needle.rs"), "").unwrap();
+    let mut c = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
+    use apex_server::proto::{ClientMsg, ServerMsg};
+    c.send(&ClientMsg::FindStart { id: 1, dir: dir.display().to_string() });
+    let answer = |c: &mut Remote, gen: u64| -> (Vec<(String, bool)>, u64, u64) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            let _ = c.step(Duration::from_millis(20));
+            for m in std::mem::take(&mut c.link.found) {
+                if let ServerMsg::Found { gen: g, items, matched, indexed, done: true, .. } = m {
+                    if g == gen {
+                        return (items, matched, indexed);
+                    }
+                }
+            }
+        }
+        panic!("no answer for generation {gen}");
+    };
+    c.send(&ClientMsg::FindQuery { id: 1, gen: 1, query: String::new(), limit: 50 });
+    let (items, matched, indexed) = answer(&mut c, 1);
+    assert_eq!(items.len(), 50, "a page");
+    assert_eq!((matched, indexed), (308, 308), "every file and folder counted");
+    c.send(&ClientMsg::FindQuery { id: 1, gen: 2, query: "ndl".into(), limit: 50 });
+    let (items, matched, _) = answer(&mut c, 2);
+    assert_eq!((items.first().map(|i| i.0.as_str()), matched), (Some("needle.rs"), 1));
+    c.send(&ClientMsg::FindStop { id: 1 });
+    let _ = c.step(Duration::from_millis(100));
+    c.link.found.clear();
+    c.send(&ClientMsg::FindQuery { id: 1, gen: 3, query: "f".into(), limit: 50 });
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(c.link.found.is_empty(), "stopped: nothing more");
+    let _ = std::fs::remove_dir_all(&dir);
+}

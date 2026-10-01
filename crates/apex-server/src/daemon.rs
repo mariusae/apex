@@ -194,6 +194,8 @@ pub struct Daemon {
     /// Plumbs handed to tools: our id → (session id, plumb id, asker).
     tool_plumbs: HashMap<u64, (u64, u64, u64)>,
     next_tool_plumb: u64,
+    /// ⌘O's listings under way, by connection and request.
+    finds: HashMap<(u64, u64), crate::find::Job>,
     rx: Receiver<Event>,
     tx: Sender<Event>,
 }
@@ -228,7 +230,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, finds: HashMap::new(), rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -468,6 +470,8 @@ impl Daemon {
     }
 
     fn gone(&mut self, id: u64) {
+        // its listings stop with it
+        self.finds.retain(|(conn, _), _| *conn != id);
         if let Some(name) = self.conns.get(&id).and_then(|c| c.session).and_then(|sid| self.name_of(sid)) {
             self.drop_streams(id, &name);
         }
@@ -751,6 +755,24 @@ impl Daemon {
                         c.adopted.push(pid);
                     }
                 }
+            }
+            ClientMsg::FindStart { id: req, dir } => {
+                let Some(out) = self.conns.get(&id).map(|c| c.out.clone()) else { return };
+                let job = crate::find::Job::start(req, PathBuf::from(dir), move |m| {
+                    let _ = out.send(m);
+                });
+                self.finds.insert((id, req), job);
+                return;
+            }
+            ClientMsg::FindQuery { id: req, gen, query, limit } => {
+                if let Some(job) = self.finds.get(&(id, req)) {
+                    job.query(gen, &query, limit as usize);
+                }
+                return;
+            }
+            ClientMsg::FindStop { id: req } => {
+                self.finds.remove(&(id, req));
+                return;
             }
             ClientMsg::Cd { dir } => match s.server.cd(&dir) {
                 Ok(op) => {
