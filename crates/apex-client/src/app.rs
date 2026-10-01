@@ -450,6 +450,9 @@ pub struct Acme {
     /// ⌘O's panel (`quickopen.rs`), and the last listing asked for.
     pub quick: Option<crate::quickopen::QuickOpen>,
     pub next_find: u64,
+    /// A bunny is drawn in an empty column (`bunny.rs`): the mouse
+    /// moving draws again, for her eyes.
+    pub bunnies: bool,
     /// A tag's path or label being typed (`tagedit.rs`).
     pub tag_edit: Option<crate::tagedit::TagEdit>,
     /// The picker under a tag's path, and a click on the path waiting to
@@ -1655,6 +1658,7 @@ impl Acme {
             session_edit: None,
             quick: None,
             next_find: 0,
+            bunnies: false,
             tag_edit: None,
             picker: None,
             cwd_picker: None,
@@ -3313,6 +3317,10 @@ impl Acme {
             cx.notify();
         }
         if self.update_hint(pos) {
+            cx.notify();
+        }
+        // a bunny watching the mouse
+        if self.bunnies {
             cx.notify();
         }
         // a scroller's lane under the pointer: its thumb shows

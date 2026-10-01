@@ -22,6 +22,7 @@ mod menu;
 mod shelf;
 mod shell;
 mod sidebar;
+mod bunny;
 mod commands;
 mod completion;
 mod cwdbar;
@@ -314,6 +315,9 @@ impl Render for Acme {
             }
         };
         let mut area = rest(div().relative().left(px(slide_off))).overflow_hidden().cursor(pointer);
+        // whether a bunny is drawn: her eyes follow the mouse, so it moving
+        // draws again
+        let mut bunnies = false;
         // web windows drawn this frame keep their native views; the rest hide
         let mut webs_shown = std::collections::HashSet::new();
         // the ground the windows stand on, and the one the keys go to
@@ -346,7 +350,10 @@ impl Render for Acme {
             // where there is room for it (it takes no clicks: the ground's
             // buttons are acme's as ever)
             if col.wins.is_empty() && col.r.dx() >= EMPTY_W && col.r.dy() - font >= EMPTY_H {
-                area = area.child(at(col.r.x0, col.r.y0 + font, col.r.dx(), col.r.dy() - font, empty_column(&t)));
+                // Glenda above the hints, where there is room for her too
+                let glenda = col.r.dy() - font >= EMPTY_H + bunny::HEIGHT as i32 + 40;
+                bunnies |= glenda;
+                area = area.child(at(col.r.x0, col.r.y0 + font, col.r.dx(), col.r.dy() - font, empty_column(&t, glenda)));
             }
             for s in &col.wins {
                 if col.hides(s.window) {
@@ -460,6 +467,7 @@ impl Render for Acme {
         for r in rings {
             area = area.child(r);
         }
+        self.bunnies = bunnies;
         // the lines between the columns: a drag of one makes the columns
         // on either side wider and narrower (the column's box moves it
         // too, and more)
@@ -996,7 +1004,7 @@ const EMPTY_H: i32 = 120;
 /// An empty column's hint, in the middle of it: the ways to put something
 /// there, each key (or command) and what it does, faint -- in the
 /// interface's face, as the sidebar's, not the text's.
-fn empty_column(t: &theme::Theme) -> gpui::AnyElement {
+fn empty_column(t: &theme::Theme, glenda: bool) -> gpui::AnyElement {
     use gpui::{div, prelude::*, px};
     let ink = gpui::Hsla::from(gpui::rgb(t.text_dim)).opacity(0.75);
     let faint = gpui::Hsla::from(gpui::rgb(t.text_dim)).opacity(0.55);
@@ -1013,6 +1021,9 @@ fn empty_column(t: &theme::Theme) -> gpui::AnyElement {
         .flex()
         .items_center()
         .justify_center()
+        .flex_col()
+        .gap(px(22.))
+        .when(glenda, |d| d.child(crate::bunny::bunny(text_element::ground(t), t.text)))
         .child(
             div()
                 .flex()
