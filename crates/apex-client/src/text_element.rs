@@ -911,6 +911,11 @@ impl Head {
                 self.chips.push((a, self.text.len()));
                 self.text.push('\u{200a}');
             }
+            crate::theme::CwdMark::Chevron => {
+                // Fwd's chevron, in place of ./ as the ligatures are
+                self.glyphs.push((a, icon_index("Fwd")));
+                self.text.push(NARROW_CELL);
+            }
             crate::theme::CwdMark::Bolt => {
                 self.glyphs.push((a, icon_index(BOLT)));
                 let mut cell = [0u8; 4];
