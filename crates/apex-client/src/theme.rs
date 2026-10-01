@@ -579,12 +579,13 @@ pub fn set_animate_layout(on: bool) {
 /// How a path's part that is the session's directory is drawn, where
 /// `./` would be (View ▸ Directory Mark): `//` (the root of here, as
 /// Bazel has it), a slash on a chip, or a bookmark icon. Kept in the
-/// `cwdmark` state file.
+/// `cwdmark` state file. Or `./` itself, set as one mark.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum CwdMark {
     Double,
     Chip,
     Bookmark,
+    DotSlash,
 }
 
 static CWD_MARK: AtomicU8 = AtomicU8::new(0);
@@ -593,6 +594,7 @@ pub fn cwd_mark() -> CwdMark {
     match CWD_MARK.load(Ordering::Relaxed) {
         1 => CwdMark::Chip,
         2 => CwdMark::Bookmark,
+        3 => CwdMark::DotSlash,
         _ => CwdMark::Double,
     }
 }
@@ -602,6 +604,7 @@ pub fn set_cwd_mark(m: CwdMark) {
         CwdMark::Double => (0, "double"),
         CwdMark::Chip => (1, "chip"),
         CwdMark::Bookmark => (2, "bookmark"),
+        CwdMark::DotSlash => (3, "dotslash"),
     };
     CWD_MARK.store(n, Ordering::Relaxed);
     let p = crate::shell::state_file().with_file_name("cwdmark");
@@ -641,6 +644,7 @@ pub fn load() {
         match mark.trim() {
             "chip" => 1,
             "bookmark" => 2,
+            "dotslash" => 3,
             _ => 0,
         },
         Ordering::Relaxed,

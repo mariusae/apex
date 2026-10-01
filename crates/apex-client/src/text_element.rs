@@ -101,6 +101,10 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     // when it is inside it (`Head::here`), and the title bar's crumbs'
     // two slashes set close, as one mark: `//`, the root of here
     (DOUBLE, r#"<path d="M6.5 19.5L12 4.5M12 19.5L17.5 4.5"/>"#),
+    // `./` as one mark: a dot at the foot and a slash close after it, a
+    // little heavier than the text's slash (about 1.3 px at a tag's
+    // size, the face's being 1.1), so it reads as a mark, not as text
+    (DOT_SLASH, r#"<circle cx="6.8" cy="18" r="2.1" fill="black" stroke="none"/><path d="M10.5 19.5L16.5 4.5" stroke-width="2.4"/>"#),
     // a bookmark: the place kept, where paths are drawn from
     (HERE, r#"<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>"#),
 ];
@@ -109,6 +113,8 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
 pub const HERE: &str = ".";
 /// `//` set as one mark, closer than two slashes in the text's face.
 pub const DOUBLE: &str = "//";
+/// `./` set as one mark.
+pub const DOT_SLASH: &str = "./";
 /// The cell a narrow glyph stands on: a figure space, a little over half
 /// an em (as many bytes as `ICON_CELL`, so the cells are measured alike).
 const NARROW_CELL: char = '\u{2007}';
@@ -886,6 +892,10 @@ impl Head {
             crate::theme::CwdMark::Double => {
                 // drawn, the two slashes closer than the face sets them
                 self.glyphs.push((a, icon_index(DOUBLE)));
+                self.text.push(NARROW_CELL);
+            }
+            crate::theme::CwdMark::DotSlash => {
+                self.glyphs.push((a, icon_index(DOT_SLASH)));
                 self.text.push(NARROW_CELL);
             }
             crate::theme::CwdMark::Chip => {
