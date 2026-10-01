@@ -361,7 +361,11 @@ has it as a function." },
 Editor is plan9port's editinacme for apex, for use as $EDITOR: it opens
 FILE in the session (through the rules that open in the session, as B
 does, so an open window is shown and the pointer warped to it), waits
-until the file's window is deleted, and exits. Terminals and commands
+until the file's window is deleted, and exits. While it waits the window
+is labelled $EDITOR for the program waiting on it (git, say: the first
+of its callers that is not a shell), since closing that window is what
+the program waits for; interrupted, it puts the label back as it was.
+Terminals and commands
 have EDITOR set to apex-editor, a link to the apex binary beside it that
 does the same (one word, since zsh and rc do not split $EDITOR into
 words), unless the profile says otherwise." },
@@ -1653,11 +1657,26 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     let mut c = tool(ctx)?;
     eprintln!("editor: editing {file}");
     c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
-    let open = |r: &Remote| r.node.state.windows.keys().any(|w| r.node.window_path(*w) == file && r.node.window_kind(*w) == WinKind::File);
-    wait(&mut c, |r| open(r)).map_err(|_| format!("{file}: not opened"))?;
+    let window = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w) == file && r.node.window_kind(*w) == WinKind::File);
+    wait(&mut c, |r| window(r).is_some()).map_err(|_| format!("{file}: not opened"))?;
+    // labelled for what it is while it is: closing it is the answer a
+    // program waits on ($EDITOR for git), not only a window gone. Put
+    // back as it was if we are interrupted first.
+    apex_server::catch_interrupts();
+    let w = window(&c).ok_or_else(|| format!("{file}: not opened"))?;
+    let was = c.node.window_label(w);
+    let label = match apex_server::waiting_program() {
+        Some(p) => format!("$EDITOR for {p}"),
+        None => "$EDITOR".to_string(),
+    };
+    let _ = c.propose(Proposal::SetLabel { window: w, label: Some(label) }, TIMEOUT);
     loop {
-        if !open(&c) {
+        if window(&c).is_none() {
             return Ok(());
+        }
+        if apex_server::INTERRUPTED.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = c.propose(Proposal::SetLabel { window: w, label: was }, TIMEOUT);
+            return Err("interrupted".into());
         }
         match c.step(Duration::from_millis(100)) {
             Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}

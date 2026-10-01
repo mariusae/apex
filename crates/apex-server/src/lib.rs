@@ -1802,6 +1802,50 @@ impl Server {
     }
 }
 
+/// The program waiting on this process: the first of its ancestors that
+/// is not a shell (git, which runs $EDITOR through `sh -c`), by the last
+/// part of its command's name. None when only shells are found.
+pub fn waiting_program() -> Option<String> {
+    // SAFETY: a plain query
+    let mut pid = unsafe { libc::getppid() } as u32;
+    for _ in 0..6 {
+        let out = Command::new("ps").args(["-o", "ppid=,comm=", "-p", &pid.to_string()]).output().ok()?;
+        let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let (ppid, comm) = line.split_once(char::is_whitespace)?;
+        let name = comm.trim().rsplit('/').next().unwrap_or("").trim_start_matches('-').to_string();
+        if name.is_empty() {
+            return None;
+        }
+        if !matches!(name.as_str(), "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish" | "rc" | "tcsh" | "csh" | "env") {
+            return Some(name);
+        }
+        pid = ppid.trim().parse().ok()?;
+        if pid <= 1 {
+            return None;
+        }
+    }
+    None
+}
+
+/// Set when SIGINT, SIGTERM or SIGHUP has come, once `catch_interrupts`
+/// is called: for a command that waits to undo what it did first.
+pub static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// From now on, SIGINT, SIGTERM and SIGHUP set `INTERRUPTED` rather than
+/// end the process.
+pub fn catch_interrupts() {
+    extern "C" fn caught(_: libc::c_int) {
+        INTERRUPTED.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    // SAFETY: the handler only stores to an atomic, which is
+    // async-signal-safe
+    unsafe {
+        for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+            libc::signal(sig, caught as extern "C" fn(libc::c_int) as libc::sighandler_t);
+        }
+    }
+}
+
 /// A directory's path with its slash, as a directory's window has it.
 fn with_slash(p: &Path) -> String {
     let s = p.display().to_string();

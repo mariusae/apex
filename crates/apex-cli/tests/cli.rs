@@ -556,6 +556,13 @@ fn editor_opens_the_file_and_returns_when_its_window_goes() {
         let _ = c.step(Duration::from_millis(20));
     }
     let w = open(&c).expect("the file's window");
+    // labelled for what waits on it (here the test, the first of the
+    // editor's callers that is not a shell)
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !c.node.window_label(w).is_some_and(|l| l.starts_with("$EDITOR")) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(c.node.window_label(w).is_some_and(|l| l.starts_with("$EDITOR for ")), "{:?}", c.node.window_label(w));
     std::thread::sleep(Duration::from_millis(300));
     assert!(!child.is_finished(), "editor returned while the window was open");
     // Del: the window goes and the editor returns
@@ -1289,3 +1296,35 @@ fn a_listing_is_matched_on_the_host_a_page_at_a_time() {
     assert!(c.link.found.is_empty(), "stopped: nothing more");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// apex editor interrupted while it waits: the window's label is put
+/// back as it was, and the window stays.
+#[test]
+fn an_editor_interrupted_puts_the_label_back() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-editor-int-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("msg.txt");
+    std::fs::write(&file, "x\n").unwrap();
+    let path = file.display().to_string();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "editor", &path]).stderr(std::process::Stdio::null()).spawn().unwrap();
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let window = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w) == path);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !window(&c).is_some_and(|w| c.node.window_label(w).is_some()) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let w = window(&c).expect("the window");
+    assert!(c.node.window_label(w).is_some(), "labelled");
+    let _ = Command::new("kill").args(["-INT", &child.id().to_string()]).status();
+    let status = child.wait().unwrap();
+    assert!(!status.success());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.window_label(w).is_some() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert_eq!(c.node.window_label(w), None, "the label as it was");
+    assert!(c.node.state.window(w).is_ok(), "the window stays");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
