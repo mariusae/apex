@@ -320,9 +320,8 @@ windows put away out of the tiling, which is the core's
   session's directory as crumbs; a crumb clicked lists the folders in it
   to cd into (`./` for the folder itself). Paths inside the directory
   are drawn in the tags from its icon, a folder, where `./` would be
-  (`<icon>/src/main.rs`), and every other path whole; the icon leads the
-  title bar's crumbs too, and is the directory wherever it is: a click
-  lists it, B3 plumbs it.
+  (`<icon>/src/main.rs`), and every other path whole; the icon is the
+  directory: a click lists it, B3 plumbs it.
 - **Processes as pills.** What runs for the session is shown before
   the top row's text, a pill each: its name and a ×. The × ends it; B1
   on it goes to its output, B3 to the window it was run from. The

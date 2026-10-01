@@ -7,9 +7,6 @@
 //! the session's directory, as `apex cd` does; → or tab (or the › on its
 //! row) goes into a folder; ← or backspace with nothing typed goes up.
 //! B3 on a crumb plumbs the path to there, as on a tag's path.
-//! Before the crumbs, the directory's icon: tags draw a path inside the
-//! directory from it (`<icon>/src/main.rs`, `./` drawn), and it is the
-//! directory here too -- a click lists its folders, B3 plumbs it.
 
 use std::time::{Duration, Instant};
 
@@ -161,45 +158,6 @@ impl Acme {
         if let Some(p) = picking {
             row = row.child(div().flex_none().min_w(px(40.)).text_color(rgb(t.text)).child(crate::field::field_view(&p.filter, crate::tagedit::caret_on(p.caret_since), "", true)));
         }
-        // the directory's icon, as tags draw it where they draw a path
-        // from it: the legend for it, and the directory itself -- a click
-        // lists its folders, B3 (or cmd-click) plumbs it
-        let cwd = meta.cwd.clone();
-        let icon = div()
-            .id("cwd-here")
-            .flex_none()
-            .size(px(18.))
-            .rounded(px(4.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_default()
-            .hover(move |s| s.bg(rgb(hover)))
-            .child(gpui::svg().data(crate::text_element::verb_svg(crate::text_element::icon_index(crate::text_element::HERE))).size(px(14.)).text_color(rgb(t.text_dim)))
-            .on_mouse_down(MouseButton::Left, {
-                let cwd = cwd.clone();
-                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                    if e.modifiers.platform {
-                        this.cwd_picker = None;
-                        this.look(ExecCtx::Top, &cwd);
-                        this.after();
-                        cx.notify();
-                    } else {
-                        this.open_cwd_picker(cwd.clone(), None, e.position.x, cx);
-                    }
-                    cx.stop_propagation();
-                })
-            })
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, _, _, cx| {
-                    this.cwd_picker = None;
-                    this.look(ExecCtx::Top, &cwd);
-                    this.after();
-                    cx.notify();
-                    cx.stop_propagation();
-                }),
-            );
         Some(
             div()
                 .flex_shrink(1.)
@@ -212,7 +170,6 @@ impl Acme {
                 .text_size(px(13.))
                 .font_family(crate::fonts::ui())
                 .child(div().flex_none().text_size(px(12.)).text_color(rgb(crate::text_element::mix(t.text_dim, crate::text_element::ground(&t), 0.35))).child(meta.host.clone()))
-                .child(icon)
                 // a long one cut at its start, its end beside the top row
                 .child(div().flex_shrink(1.).min_w_0().overflow_hidden().flex().flex_row().justify_end().child(row))
                 .into_any_element(),

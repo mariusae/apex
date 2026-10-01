@@ -2571,8 +2571,7 @@ the directory itself `<icon>/` -- and any other path whole, from `/`, so
 the two cannot be taken for each other. The icon is a part of the path
 as any other, and means the directory: a click on it lists the
 directory, B3 plumbs its whole path (not `./`, which would be the
-window's own directory). The title bar leads its crumbs with the same
-icon, the legend for it, which does the same. Only drawn so
+window's own directory). The title bar shows the directory itself, as crumbs, without the icon. Only drawn so
 (`Head::build_in`): the state has the whole path, and each part of it
 is still the whole path's, so a click on `src/` lists where it really is
 and the path's picker goes up past the directory into whole paths. The
