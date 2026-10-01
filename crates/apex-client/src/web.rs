@@ -204,6 +204,36 @@ const COPY_SCRIPT: &str = r#"(function () {
 /// its body, so a preview's morph (which redoes the body) leaves it be,
 /// and it is laid out again whenever the page changes (a morph, an image
 /// or a diagram coming in, the view resized).
+/// What a page's own scripts make (and what a link is when clicked): a
+/// host file's `file://` URL as apex's scheme, as `file_to_apexfile`
+/// does to the page as written.
+const FILE_SCRIPT: &str = r#"(function () {
+  var ATTRS = ['href', 'src', 'poster', 'action'];
+  var HOST = /^file:\/\/(localhost)?\//i;
+  function fix(el) {
+    if (!el || el.nodeType !== 1) return;
+    for (var i = 0; i < ATTRS.length; i++) {
+      var v = el.getAttribute(ATTRS[i]);
+      if (v && HOST.test(v)) el.setAttribute(ATTRS[i], v.replace(HOST, 'apexfile://localhost/'));
+    }
+  }
+  function scan(root) {
+    fix(root);
+    if (root.querySelectorAll) root.querySelectorAll('[href^="file:" i],[src^="file:" i],[poster^="file:" i],[action^="file:" i]').forEach(fix);
+  }
+  new MutationObserver(function (ms) {
+    ms.forEach(function (m) {
+      if (m.type === 'attributes') fix(m.target);
+      else m.addedNodes.forEach(scan);
+    });
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ATTRS });
+  document.addEventListener('DOMContentLoaded', function () { scan(document); });
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (a) fix(a);
+  }, true);
+})();"#;
+
 const TOC_SCRIPT: &str = r#"(function () {
   if (window.__apexToc) return;
   window.__apexToc = true;
@@ -1058,7 +1088,7 @@ impl Webs {
                 }
                 b.with_url(&webkit_url(url))
             }
-            Page::Html { html, dir, .. } => b.with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_initialization_script(TOC_SCRIPT).with_html(dress(html, dir)),
+            Page::Html { html, dir, .. } => b.with_initialization_script(FILE_SCRIPT).with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_initialization_script(TOC_SCRIPT).with_html(dress(html, dir)),
         };
         b = b
             .with_navigation_handler(move |u| {
@@ -1639,13 +1669,56 @@ impl WebHost {
 /// theme's colours as `--apex-*` (a page whose stylesheet uses them,
 /// `apex md`'s, takes the editor's look; another is not touched).
 fn dress(html: &str, dir: &str) -> String {
-    let html = with_base(html, dir);
+    let html = file_to_apexfile(html);
+    let html = with_base(&html, dir);
     let style = format!("<style id=\"apex-theme\">{}</style>", theme_css());
     let lower = html.to_ascii_lowercase();
     match lower.find("</head>") {
         Some(i) => format!("{}{}{}", &html[..i], style, &html[i..]),
         None => format!("{style}{html}"),
     }
+}
+
+/// A host file's `file://` URL in a page's links and sources (`href`,
+/// `src`, `srcset`, `poster`, `action`, a style's `url(...)`) as apex's
+/// own scheme, which the view serves -- WebKit lets no app answer
+/// `file://` itself, nor a page like ours go to it -- so a page may be
+/// written with `file://` and work. Text that only shows such a URL is
+/// left as it is; `FILE_SCRIPT` does the same to what the page's own
+/// scripts make.
+fn file_to_apexfile(html: &str) -> String {
+    const ATTRS: [&str; 5] = ["href", "src", "srcset", "poster", "action"];
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut from = 0;
+    while let Some(k) = lower[from..].find("file://") {
+        let at = from + k;
+        let before = lower[..at].trim_end_matches(['"', '\'', '(']);
+        let is_url_fn = lower[..at].trim_end_matches(['"', '\'']).ends_with("url(");
+        let is_attr = before.strip_suffix('=').map(str::trim_end).is_some_and(|b| ATTRS.iter().any(|a| b.ends_with(a) && b[..b.len() - a.len()].ends_with(|c: char| c.is_whitespace())));
+        let rest = &html[at + "file://".len()..];
+        // file:///x and file://localhost/x: the host's; another host's is not
+        let path_at = if rest.starts_with('/') {
+            Some(0)
+        } else if rest.len() >= 10 && rest[..10].eq_ignore_ascii_case("localhost/") {
+            Some(9)
+        } else {
+            None
+        };
+        match path_at.filter(|_| is_attr || is_url_fn) {
+            Some(p) => {
+                out.push_str(&html[from..at]);
+                out.push_str("apexfile://localhost");
+                from = at + "file://".len() + p;
+            }
+            None => {
+                out.push_str(&html[from..at + "file://".len()]);
+                from = at + "file://".len();
+            }
+        }
+    }
+    out.push_str(&html[from..]);
+    out
 }
 
 fn with_base(html: &str, dir: &str) -> String {
@@ -1916,6 +1989,13 @@ mod tests {
         assert_eq!(host_file("apexfile://localhost/a/b.rs:12:5"), Some(("/a/b.rs".to_string(), Some(12))));
         assert_eq!(host_file("apexfile://localhost.apex-host/a/b.rs:3"), Some(("/a/b.rs".to_string(), Some(3))));
         assert_eq!(host_file("file:///a/b.rs"), Some(("/a/b.rs".to_string(), None)));
+        // file:// in a page's links and sources is apex's scheme; in its
+        // text it is left be, and another host's is not the host's
+        let page = r#"<a href="file:///a/b.rs:3">x</a> <img src='file://localhost/i.png'> <p style="background:url(file:///bg.png)">file:///shown/in/text</p> <a href="file://other/x">y</a>"#;
+        assert_eq!(
+            file_to_apexfile(page),
+            r#"<a href="apexfile://localhost/a/b.rs:3">x</a> <img src='apexfile://localhost/i.png'> <p style="background:url(apexfile://localhost/bg.png)">file:///shown/in/text</p> <a href="file://other/x">y</a>"#
+        );
         // source opens as a file; a page, an image, a PDF as themselves
         assert!(!shown_as_page("/a/b.rs") && shown_as_page("/a/b.html") && shown_as_page("/a/c.PNG"));
     }
