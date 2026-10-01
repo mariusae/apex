@@ -99,12 +99,19 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
     // not a verb: the session's directory, where a path is drawn from
     // when it is inside it (`Head::here`), and the title bar's crumbs'
+    // two slashes set close, as one mark: `//`, the root of here
+    (DOUBLE, r#"<path d="M6.5 19.5L12 4.5M12 19.5L17.5 4.5"/>"#),
     // a bookmark: the place kept, where paths are drawn from
     (HERE, r#"<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>"#),
 ];
 
 /// The session's directory's icon's name in `VERB_ICONS`: `./`, drawn.
 pub const HERE: &str = ".";
+/// `//` set as one mark, closer than two slashes in the text's face.
+pub const DOUBLE: &str = "//";
+/// The cell a narrow glyph stands on: a figure space, a little over half
+/// an em (as many bytes as `ICON_CELL`, so the cells are measured alike).
+const NARROW_CELL: char = '\u{2007}';
 
 /// Where an icon is in `VERB_ICONS`.
 pub fn icon_index(name: &str) -> usize {
@@ -590,6 +597,8 @@ pub struct LineInfo {
     pub atoms: Vec<(usize, usize, Atom)>,
     /// The path's picker's caret, in the head.
     pub caret: Option<usize>,
+    /// Chips drawn under parts of the head (`Head::chips`).
+    pub chips: Vec<(usize, usize)>,
 }
 
 impl LineInfo {
@@ -773,6 +782,9 @@ pub struct Head {
     /// Icons drawn in the path, not a verb's: where each one's cell is,
     /// and which (`HERE`, the session's directory).
     pub glyphs: Vec<(usize, usize)>,
+    /// Chips drawn under parts of the path (the session's directory's
+    /// slash, with `CwdMark::Chip`).
+    pub chips: Vec<(usize, usize)>,
 }
 
 impl Head {
@@ -863,16 +875,32 @@ impl Head {
         self.push(" ", None);
     }
 
-    /// The session's directory as the path's first part: its icon and a
-    /// slash, `./` drawn -- a part as any other, `atom` (a folder's, or
-    /// the name when the path is the directory itself).
+    /// The session's directory as the path's first part, where `./`
+    /// would be, as View ▸ Directory Mark draws it -- `//`, a slash on a
+    /// chip, or a bookmark and a slash: a part as any other, `atom` (a
+    /// folder's, or the name when the path is the directory itself).
     fn here(&mut self, k: usize, atom: Atom) {
-        let a = self.text.len();
-        self.glyphs.push((a, icon_index(HERE)));
-        let mut cell = [0u8; 4];
-        self.text.push_str(ICON_CELL.encode_utf8(&mut cell));
-        self.text.push('/');
         let _ = k;
+        let a = self.text.len();
+        match crate::theme::cwd_mark() {
+            crate::theme::CwdMark::Double => {
+                // drawn, the two slashes closer than the face sets them
+                self.glyphs.push((a, icon_index(DOUBLE)));
+                self.text.push(NARROW_CELL);
+            }
+            crate::theme::CwdMark::Chip => {
+                // the chip's room inside it, and a hair after it
+                self.text.push_str("\u{2009}/\u{2009}");
+                self.chips.push((a, self.text.len()));
+                self.text.push('\u{200a}');
+            }
+            crate::theme::CwdMark::Bookmark => {
+                self.glyphs.push((a, icon_index(HERE)));
+                let mut cell = [0u8; 4];
+                self.text.push_str(ICON_CELL.encode_utf8(&mut cell));
+                self.text.push('/');
+            }
+        }
         self.atoms.push((a, self.text.len(), atom));
     }
 
@@ -1171,6 +1199,7 @@ fn shape(
         head: hn,
         atoms: head.map(|h| h.atoms.clone()).unwrap_or_default(),
         caret: head.and_then(|h| h.caret),
+        chips: head.map(|h| h.chips.clone()).unwrap_or_default(),
     };
     // the line cut where its ink or face changes: the sweep, and a head's
     // parts -- its folders, its name, its label, its verbs
@@ -1758,6 +1787,11 @@ impl Element for TextElement {
                         chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
                     }
                 }
+                // the session's directory's slash, on its chip
+                let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
+                for &(a, b) in &line.chips {
+                    chip(window, a, b, px(0.), rgb(mix(th.text_dim, under, 0.82)));
+                }
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
                 // apex's verbs, drawn as their icons on their em spaces, in
                 // the ink the word would have (faint, swept, hinted)
@@ -1958,14 +1992,15 @@ mod head_tests {
         // the session's errors window: its label alone
         // inside the session's directory: from there on, and it as ./ --
         // the parts still the whole path's
-        // (the directory drawn as its icon and a slash, ./ drawn: a part of
-        // its own, the directory's)
-        let here = format!("{ICON_CELL}/");
+        // (the directory drawn as View ▸ Directory Mark has it, where ./
+        // would be: a part of its own, the directory's)
         let r = Head::build_in("/a/b/src/x.rs", None, &[], true, true, "/a/b/");
-        assert_eq!(r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect::<Vec<_>>(), vec![(here.as_str(), Atom::Dir(5)), ("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
-        assert_eq!(r.glyphs, vec![(0, super::icon_index(super::HERE))]);
+        let parts: Vec<(&str, Atom)> = r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect();
+        assert_eq!(parts[0].1, Atom::Dir(5));
+        assert_eq!(&parts[1..], &[("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
+        let here = parts[0].0.to_string();
         let d = Head::build_in("/a/b/", None, &[], true, true, "/a/b/");
-        assert_eq!((&d.text[..here.len()], d.atoms[0].2), (here.as_str(), Atom::Name));
+        assert_eq!(d.atoms[0].2, Atom::Name);
         let out = Head::build_in("/a/c/x.rs", None, &[], true, true, "/a/b/");
         assert!(out.text.starts_with("/a/c/x.rs"), "{:?}", out.text);
         let p = Head::picking_in("/a/b/", "s", 1, false, None, &[], "/a/b/");
