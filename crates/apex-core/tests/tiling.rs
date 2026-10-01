@@ -1061,3 +1061,32 @@ fn another_columns_edges_split_it_and_a_lone_window_does_not_split_its_own() {
     assert_eq!(split_at(&l, 0, 0, (5, 40), (r.x0 + r.dx() / 2, 300)), None);
 }
 
+#[test]
+fn a_column_a_drag_leaves_empty_goes_and_one_made_empty_stays() {
+    // two columns, the second with one window: dragged into the first,
+    // the second goes and the first takes the row
+    let mut l = two();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(2), tag: BufferId(2) }, None, &info());
+    add(&mut l, 1, 3, None);
+    let r1 = l.cols[1].r;
+    let y = l.cols[0].wins[1].r.y0 + 5;
+    coldragwin(&mut l, 1, 0, 1, (r1.x0 + 5, r1.y0 + 30), (300, y), &info());
+    assert_eq!(l.cols.iter().map(|c| c.id.0).collect::<Vec<_>>(), vec![1]);
+    assert_eq!(l.cols[0].r.x1, l.r.x1);
+    assert_eq!(l.cols[0].wins.len(), 3);
+    // a column made empty (Newcol) is left be
+    rowadd(&mut l, AddingCol::New { id: ColumnId(3), tag: BufferId(3) }, None, &info());
+    assert_eq!(l.cols.len(), 2);
+    assert!(l.cols[1].wins.is_empty());
+    // a lone window split out to another column's edge: its column goes
+    let mut l = two();
+    rowadd(&mut l, AddingCol::New { id: ColumnId(2), tag: BufferId(2) }, None, &info());
+    add(&mut l, 1, 3, None);
+    let r0 = l.cols[0].r;
+    let r1 = l.cols[1].r;
+    assert!(split(&mut l, 1, 0, (r1.x0 + 5, r1.y0 + 30), (r0.x1 - 3, 300)));
+    assert_eq!(l.cols.iter().map(|c| c.id.0).collect::<Vec<_>>(), vec![1, 9]);
+    assert_eq!(wins(&l, 1).iter().map(|w| w.0).collect::<Vec<_>>(), vec![3]);
+    assert_eq!(l.cols[1].r.x1, l.r.x1);
+}
+

@@ -878,7 +878,18 @@ pub fn coldragsplit(l: &mut Layout, ci: usize, wi: usize, tc: usize, side: Side,
     let (slot, _) = colclose(l, ci, wi, info);
     left(l, ci, w, above);
     coladd(l, ni, Adding::Existing(slot), None, info);
+    close_if_left_empty(l, ci, info);
     Some(Warp::WinButton(w))
+}
+
+/// Column `ci`, which a window was just dragged out of: gone, its room
+/// to its neighbour, if that left it with none -- an empty column made
+/// so (Newcol) stays, but one emptied by a drag is no one's. Not the
+/// last column of all.
+fn close_if_left_empty(l: &mut Layout, ci: usize, info: &dyn Info) {
+    if ci < l.cols.len() && l.cols[ci].wins.is_empty() && l.cols.len() > 1 {
+        rowclose(l, ci, info);
+    }
 }
 
 pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32), p: (i32, i32), info: &dyn Info) -> Option<Warp> {
@@ -922,6 +933,7 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
             let (slot, _) = colclose(l, ci, wi, info);
             left(l, ci, w, above);
             coladd(l, nc, Adding::Existing(slot), Some(py), info);
+            close_if_left_empty(l, ci, info);
             return Some(Warp::WinButton(w));
         }
     }

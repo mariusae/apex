@@ -398,6 +398,20 @@ impl Node {
         Ok(id)
     }
 
+    /// `arrange`, and the tags of the columns `l` no longer has (one a
+    /// drag left empty) deleted with them.
+    fn arrange_dropping(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
+        let gone: Vec<(ColumnId, BufferId)> = self.state.layout.cols.iter().filter(|c| l.column(c.id).is_none()).map(|c| (c.id, c.tag)).collect();
+        self.arrange(log, l)?;
+        for (col, tag) in gone {
+            if self.activecol == Some(col) {
+                self.activecol = None;
+            }
+            self.delete_shard(log, Shard::Buffer(tag))?;
+        }
+        Ok(())
+    }
+
     pub fn delete_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
         let ci = self.column_index(col)?;
         let c = &self.state.layout.cols[ci];
@@ -716,7 +730,7 @@ impl Node {
             let mut l = self.state.layout.clone();
             match tiling::coldragsplit(&mut l, ci, wi, tc, side, tiling::AddingCol::New { id, tag }, &*self.tiling) {
                 Some(warp) => {
-                    self.arrange(log, &l)?;
+                    self.arrange_dropping(log, &l)?;
                     self.activecol = Some(id);
                     self.warp = Some(warp);
                 }
@@ -726,7 +740,7 @@ impl Node {
         }
         let (l, warp) = self.dragged(w, but, op, p)?;
         if l != self.state.layout {
-            self.arrange(log, &l)?;
+            self.arrange_dropping(log, &l)?;
         }
         if let Some(c) = self.state.layout.column_of(w) {
             self.activecol = Some(c);

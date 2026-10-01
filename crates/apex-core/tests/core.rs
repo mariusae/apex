@@ -774,3 +774,20 @@ fn a_window_dragged_to_its_columns_edge_makes_a_column_for_it() {
     let tag = node.state.layout.cols[bc].tag;
     assert!(node.state.buffer(tag).unwrap().views.contains_key(&ViewId::ColTag(node.state.layout.cols[bc].id)));
 }
+
+/// A column's last window dragged out: the column goes, and its tag
+/// with it.
+#[test]
+fn a_column_a_drag_leaves_empty_goes_with_its_tag() {
+    let (mut log, mut node, col) = session();
+    let other = node.new_column(&mut log, None).unwrap();
+    let a = node.new_window(&mut log, col, "/tmp/a", "a\n").unwrap();
+    let b = node.new_window(&mut log, other, "/tmp/b", "b\n").unwrap();
+    let tag = node.state.layout.column(other).unwrap().tag;
+    let s = *node.state.layout.slot(b).unwrap();
+    let to = node.state.layout.slot(a).unwrap().r;
+    node.drag_window(&mut log, b, 1, (s.r.x0 + 4, s.r.y0 + 4), (to.x0 + to.dx() / 2, to.y0 + to.dy() / 2)).unwrap();
+    assert!(node.state.layout.column(other).is_none(), "the emptied column is gone");
+    assert!(node.state.buffer(tag).is_err(), "and its tag");
+    assert_eq!(node.state.layout.column_of(b), Some(col));
+}
