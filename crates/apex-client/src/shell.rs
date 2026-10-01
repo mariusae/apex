@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, CwdMarkDouble, CwdMarkChip, CwdMarkBookmark, CwdMarkDotSlash, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, CwdMarkDouble, CwdMarkChip, CwdMarkBookmark, CwdMarkDotSlash, CwdMarkBolt, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -262,6 +262,7 @@ pub fn menus() -> Vec<Menu> {
                                 MenuItem::action(mark("./ (Dot Slash)", crate::theme::CwdMark::DotSlash), CwdMarkDotSlash),
                                 MenuItem::action(mark("/ on a Chip", crate::theme::CwdMark::Chip), CwdMarkChip),
                                 MenuItem::action(mark("Bookmark", crate::theme::CwdMark::Bookmark), CwdMarkBookmark),
+                                MenuItem::action(mark("Bolt", crate::theme::CwdMark::Bolt), CwdMarkBolt),
                             ]
                         },
                     }),

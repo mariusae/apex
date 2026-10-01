@@ -107,6 +107,9 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     // (the dot at the slash's middle height, as close to it there as
     // it was at the foot)
     (DOT_SLASH, r#"<circle cx="8.6" cy="12" r="2.1" fill="black" stroke="none"/><path d="M10.5 19.5L16.5 4.5" stroke-width="2.4"/>"#),
+    // a bolt lying on its side, outlined (SF Symbols' bolt.horizontal):
+    // a band zigzagging from its left point to its right one
+    (BOLT, r#"<path d="M2 16L9 9L14.5 13.5L22 8L15 16.2L9.5 11.8Z"/>"#),
     // a bookmark: the place kept, where paths are drawn from
     (HERE, r#"<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>"#),
 ];
@@ -117,6 +120,8 @@ pub const HERE: &str = ".";
 pub const DOUBLE: &str = "//";
 /// `./` set as one mark.
 pub const DOT_SLASH: &str = "./";
+/// A bolt lying on its side.
+pub const BOLT: &str = "bolt";
 /// The cell a narrow glyph stands on: a figure space, a little over half
 /// an em (as many bytes as `ICON_CELL`, so the cells are measured alike).
 const NARROW_CELL: char = '\u{2007}';
@@ -905,6 +910,12 @@ impl Head {
                 self.text.push_str("\u{2009}/\u{2009}");
                 self.chips.push((a, self.text.len()));
                 self.text.push('\u{200a}');
+            }
+            crate::theme::CwdMark::Bolt => {
+                self.glyphs.push((a, icon_index(BOLT)));
+                let mut cell = [0u8; 4];
+                self.text.push_str(ICON_CELL.encode_utf8(&mut cell));
+                self.text.push('/');
             }
             crate::theme::CwdMark::Bookmark => {
                 self.glyphs.push((a, icon_index(HERE)));

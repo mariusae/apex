@@ -649,6 +649,7 @@ fn main() {
         cx.on_action(|_: &shell::CwdMarkChip, cx| shell::set_cwd_mark(crate::theme::CwdMark::Chip, cx));
         cx.on_action(|_: &shell::CwdMarkBookmark, cx| shell::set_cwd_mark(crate::theme::CwdMark::Bookmark, cx));
         cx.on_action(|_: &shell::CwdMarkDotSlash, cx| shell::set_cwd_mark(crate::theme::CwdMark::DotSlash, cx));
+        cx.on_action(|_: &shell::CwdMarkBolt, cx| shell::set_cwd_mark(crate::theme::CwdMark::Bolt, cx));
         cx.bind_keys(shell::bindings());
         cx.on_action(|_: &shell::Quit, cx| {
             // the action arrives while the focused window is mid-update,

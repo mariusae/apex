@@ -586,6 +586,7 @@ pub enum CwdMark {
     Chip,
     Bookmark,
     DotSlash,
+    Bolt,
 }
 
 static CWD_MARK: AtomicU8 = AtomicU8::new(0);
@@ -595,6 +596,7 @@ pub fn cwd_mark() -> CwdMark {
         1 => CwdMark::Chip,
         2 => CwdMark::Bookmark,
         3 => CwdMark::DotSlash,
+        4 => CwdMark::Bolt,
         _ => CwdMark::Double,
     }
 }
@@ -605,6 +607,7 @@ pub fn set_cwd_mark(m: CwdMark) {
         CwdMark::Chip => (1, "chip"),
         CwdMark::Bookmark => (2, "bookmark"),
         CwdMark::DotSlash => (3, "dotslash"),
+        CwdMark::Bolt => (4, "bolt"),
     };
     CWD_MARK.store(n, Ordering::Relaxed);
     let p = crate::shell::state_file().with_file_name("cwdmark");
@@ -645,6 +648,7 @@ pub fn load() {
             "chip" => 1,
             "bookmark" => 2,
             "dotslash" => 3,
+            "bolt" => 4,
             _ => 0,
         },
         Ordering::Relaxed,
