@@ -368,7 +368,7 @@ impl Acme {
             .hover(move |s| s.bg(rgb(hover)))
             .child(dot_element(&d))
             .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(p.name.clone()))
-            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(tilde(&p.dir)))
+            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(shown(&p.dir, &self.node.state.meta.cwd)))
             .child(
                 div()
                     .id(("proc-kill", id))
@@ -442,23 +442,23 @@ impl Acme {
     }
 }
 
-/// A window's name as a row shows it: its last part (a directory's with
-/// its slash), and the folder it is in, home as `~`.
 /// A window as a row or a card names it: what it is (its label, else
 /// its path's last part, else what kind of window it is), and where
 /// (its directory, or its whole path when the label said what it is),
-/// home as ~.
+/// as `shown` says a path: from the session's directory's chevron when
+/// it is in it, else whole.
 pub(crate) fn names(node: &apex_core::Node, w: apex_core::WindowId) -> (String, String) {
     use apex_core::WinKind;
     let path = node.window_path(w);
     let kind = node.window_kind(w);
+    let cwd = &node.state.meta.cwd;
     let label = node.window_label(w).or_else(|| match kind {
         WinKind::Errors => Some("Errors".into()),
         WinKind::Preview => Some(format!("{} preview", split_name(&path).0)),
         _ => None,
     });
     match label {
-        Some(l) => (l, tilde(&path)),
+        Some(l) => (l, shown(&path, cwd)),
         None if path.is_empty() => (
             match kind {
                 WinKind::Term => "Terminal",
@@ -468,16 +468,27 @@ pub(crate) fn names(node: &apex_core::Node, w: apex_core::WindowId) -> (String, 
             .into(),
             String::new(),
         ),
-        None => split_name(&path),
+        None => {
+            let (last, dir) = split_name(&path);
+            (last, if dir.is_empty() { dir } else { shown(&format!("{dir}/"), cwd) })
+        }
     }
 }
 
-/// A path with the home directory as ~.
-pub(crate) fn tilde(path: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    match path.strip_prefix(home.as_str()) {
-        Some(rest) if !home.is_empty() && (rest.is_empty() || rest.starts_with('/')) => format!("~{rest}"),
-        _ => path.to_string(),
+/// A path as apex says it outside a tag: whole, from `/` -- or, inside
+/// the session's directory `cwd` (with its slash), from the chevron that
+/// stands for it, as a tag draws it (`›src/main.rs`, the directory
+/// itself `›`). Never home as `~`: the chevron is the one abbreviation.
+pub(crate) fn shown(path: &str, cwd: &str) -> String {
+    if cwd.is_empty() || !cwd.ends_with('/') {
+        return path.to_string();
+    }
+    if path == cwd || format!("{path}/") == cwd {
+        return "›".to_string();
+    }
+    match path.strip_prefix(cwd) {
+        Some(rest) => format!("›{rest}"),
+        None => path.to_string(),
     }
 }
 
@@ -488,13 +499,8 @@ pub(crate) fn split_name(name: &str) -> (String, String) {
         Some(i) => (&trimmed[..i], &trimmed[i + 1..]),
         None => ("", trimmed),
     };
-    let home = std::env::var("HOME").unwrap_or_default();
-    let dir = match dir.strip_prefix(home.as_str()) {
-        Some(rest) if !home.is_empty() => format!("~{rest}"),
-        _ => dir.to_string(),
-    };
     let label = if last.is_empty() { name.to_string() } else { format!("{last}{slash}") };
-    (label, dir)
+    (label, dir.to_string())
 }
 
 /// The handle's dot as a row draws it: the same marks, at a row's size.
@@ -526,13 +532,24 @@ pub fn sidebar_glyph(ink: u32) -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
-    use super::split_name;
+    use super::{shown, split_name};
 
     #[test]
     fn a_window_row_names_the_last_part_and_its_folder() {
         assert_eq!(split_name("/tmp/proj/main.rs"), ("main.rs".into(), "/tmp/proj".into()));
         assert_eq!(split_name("/tmp/proj/"), ("proj/".into(), "/tmp".into()));
         assert_eq!(split_name("+Errors"), ("+Errors".into(), "".into()));
+    }
+
+    #[test]
+    fn a_path_is_whole_or_from_the_sessions_chevron_and_never_from_home() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/me".into());
+        let cwd = format!("{home}/src/apex/");
+        assert_eq!(shown(&format!("{home}/src/apex/notes.md"), &cwd), "›notes.md");
+        assert_eq!(shown(&cwd, &cwd), "›");
+        assert_eq!(shown(cwd.trim_end_matches('/'), &cwd), "›");
+        assert_eq!(shown(&format!("{home}/elsewhere/x"), &cwd), format!("{home}/elsewhere/x"));
+        assert_eq!(shown(&format!("{home}/elsewhere/x"), ""), format!("{home}/elsewhere/x"));
     }
 }
 
