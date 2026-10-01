@@ -1319,3 +1319,26 @@ fn a_window_at_a_directory_is_in_it() {
     assert_eq!(server.dir_of(&node, ExecCtx::Window(f)), dir.join("sub"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A full-screen program taking the alternate screen, and giving it
+/// back: the terminal's state says so, for the UI to know its screen is
+/// the program's to redraw.
+#[test]
+fn the_alternate_screen_is_the_terminals_state() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let t = node.state.terms.keys().next().copied().expect("terminal");
+    prompt(&mut log, &mut node, &mut server, &mut rx, t);
+    server.close_orphan_terms(&mut log, &node);
+    assert!(!node.state.terms[&t].alt);
+    let typed = |server: &mut Server, log: &mut Log, s: &str| {
+        for c in s.chars() {
+            server.term_key(log, t, &apex_server::TermKey { key: c.to_string(), text: Some(c.to_string()), shift: false, control: false, alt: false });
+        }
+    };
+    typed(&mut server, &mut log, "printf '\\033[?1049h'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms[&t].alt), "the alternate screen");
+    typed(&mut server, &mut log, "printf '\\033[?1049l'\r");
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !n.state.terms[&t].alt), "back");
+}

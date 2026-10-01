@@ -294,6 +294,9 @@ pub struct Term {
     /// The shell's prompt marks (OSC 133): each command's prompt,
     /// output and end.
     pub marks: Vec<PromptMark>,
+    /// A full-screen program has the alternate screen (`TermOp::Screen`).
+    #[serde(default)]
+    pub alt: bool,
 }
 
 // ---- meta -------------------------------------------------------------------
@@ -662,6 +665,7 @@ impl State {
                         working: false,
                         progress: None,
                         marks: Vec::new(),
+                        alt: false,
                     },
                 );
             }
@@ -700,6 +704,7 @@ impl State {
                         t.progress = *at;
                     }
                     TermOp::Marks { marks } => t.marks = marks.clone(),
+                    TermOp::Screen { alt } => t.alt = *alt,
                     TermOp::Create { .. } => unreachable!(),
                 }
             }
@@ -887,7 +892,7 @@ impl State {
                     h.update(&[c.flags]);
                 }
             }
-            h.update(&[t.cursor.0 as u8, t.cursor.1 as u8, t.cursor_visible as u8]);
+            h.update(&[t.cursor.0 as u8, t.cursor.1 as u8, t.cursor_visible as u8, t.alt as u8]);
             h.update(&postcard::to_stdvec(&t.marks).unwrap_or_default());
             h.update(&t.exit.unwrap_or(-1).to_le_bytes());
         }

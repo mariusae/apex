@@ -240,6 +240,7 @@ struct Published {
     links: Vec<String>,
     rows: Vec<Vec<Cell>>,
     cursor: (u16, u16, bool),
+    alt: bool,
 }
 
 impl TermHost {
@@ -637,9 +638,10 @@ impl TermHost {
     /// cursor when it moved. Nothing when nothing changed.
     pub fn changed_ops(&mut self) -> Vec<TermOp> {
         let all = self.snapshot_ops();
-        let (mut top, mut total, mut links, mut rows, mut cursor) = (0u64, 0u64, Vec::new(), Vec::new(), (0u16, 0u16, true));
+        let (mut top, mut total, mut links, mut rows, mut cursor, mut alt) = (0u64, 0u64, Vec::new(), Vec::new(), (0u16, 0u16, true), false);
         for op in all {
             match op {
+                TermOp::Screen { alt: a } => alt = a,
                 TermOp::View { top: t, total: n } => {
                     top = t;
                     total = n;
@@ -675,15 +677,19 @@ impl TermHost {
                 if p.cursor != cursor {
                     out.push(TermOp::Cursor { col: cursor.0, row: cursor.1, visible: cursor.2 });
                 }
+                if p.alt != alt {
+                    out.push(TermOp::Screen { alt });
+                }
             }
             _ => {
                 out.push(TermOp::View { top, total });
                 out.push(TermOp::Links { links: links.clone() });
                 out.push(TermOp::Rows { first: 0, rows: rows.clone() });
                 out.push(TermOp::Cursor { col: cursor.0, row: cursor.1, visible: cursor.2 });
+                out.push(TermOp::Screen { alt });
             }
         }
-        self.last = Some(Published { top, total, links, rows, cursor });
+        self.last = Some(Published { top, total, links, rows, cursor, alt });
         out
     }
 
@@ -696,6 +702,7 @@ impl TermHost {
         // the scrollbar measures the view against the whole screen, the
         // history and the viewport together
         let (_, total, _) = t.size();
+        let alt = t.mode(Mode::AltScreen);
         let screen = t.screen();
         let total = total.max(screen.rows as u64);
         let (cols, rows_n) = (screen.cols as usize, screen.rows as usize);
@@ -711,6 +718,7 @@ impl TermHost {
             TermOp::Links { links: screen.links.clone() },
             TermOp::Rows { first: 0, rows },
             TermOp::Cursor { col: screen.cursor.0, row: screen.cursor.1, visible: screen.cursor_visible },
+            TermOp::Screen { alt },
         ]
     }
 

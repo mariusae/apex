@@ -246,6 +246,11 @@ pub enum TermOp {
     /// The shell's prompt marks (OSC 133, its semantic prompts), each
     /// command's: the whole list, as it now stands.
     Marks { marks: Vec<PromptMark> },
+    /// A full-screen program has the alternate screen (DECSET 1049: a
+    /// coding agent, an editor, a pager), or has given it back: what is
+    /// on the screen is the program's to redraw, as any input may have
+    /// it do.
+    Screen { alt: bool },
 }
 
 /// A command as the shell marked it (OSC 133): the history line its
