@@ -101,10 +101,12 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     // when it is inside it (`Head::here`), and the title bar's crumbs'
     // two slashes set close, as one mark: `//`, the root of here
     (DOUBLE, r#"<path d="M6.5 19.5L12 4.5M12 19.5L17.5 4.5"/>"#),
-    // `./` as one mark: a dot at the foot and a slash close after it, a
+    // `./` as one mark: a dot and a slash close after it, a
     // little heavier than the text's slash (about 1.3 px at a tag's
     // size, the face's being 1.1), so it reads as a mark, not as text
-    (DOT_SLASH, r#"<circle cx="6.8" cy="18" r="2.1" fill="black" stroke="none"/><path d="M10.5 19.5L16.5 4.5" stroke-width="2.4"/>"#),
+    // (the dot at the slash's middle height, as close to it there as
+    // it was at the foot)
+    (DOT_SLASH, r#"<circle cx="8.6" cy="12" r="2.1" fill="black" stroke="none"/><path d="M10.5 19.5L16.5 4.5" stroke-width="2.4"/>"#),
     // a bookmark: the place kept, where paths are drawn from
     (HERE, r#"<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>"#),
 ];
