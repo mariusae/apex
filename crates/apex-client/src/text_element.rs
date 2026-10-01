@@ -1553,10 +1553,15 @@ impl Element for TextElement {
         // border); a folded window's card is a little shorter than the
         // line, which is then clipped as much top as bottom. On whole
         // pixels, so the text stays crisp.
+        // Text wrapped to more rows than its tag has room for (a narrow
+        // column's tag) keeps its top where it was, as acme's does: only
+        // spare room is shared out, and a single line clipped evenly.
         let shift = if pp.kind != Kind::Body {
             let rows: usize = pp.lines.iter().map(|l| l.subs.len().max(1)).sum::<usize>().max(1);
+            let spare = bounds.size.height - lh * rows as f32;
+            let half = if spare >= px(0.) || rows == 1 { f32::from(spare) / 2. } else { 0. };
             let scale = window.scale_factor();
-            px(((f32::from(bounds.size.height - lh * rows as f32) / 2.) * scale).round() / scale)
+            px((half * scale).round() / scale)
         } else {
             px(0.)
         };
