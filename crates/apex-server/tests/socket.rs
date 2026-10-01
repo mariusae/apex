@@ -449,3 +449,34 @@ fn places_in_other_sessions_become_switches_for_the_ui() {
     let back = ui.node.state.layout.nav_back.last().cloned();
     assert!(back.as_ref().is_some_and(|l| l.session.as_deref() == Some(here.as_str()) && l.name == "/tmp/here"), "{:?}", ui.node.state.layout.nav_back);
 }
+
+/// A click in an errors window on `./dir/file.rs:183:1:impl Foo {` -- a
+/// compiler's line, as a toast plumbs it now: the file at its line, the
+/// `./` and the text run on after the column no matter.
+#[test]
+fn a_click_on_a_dot_slash_file_line_with_text_run_on_opens_it_there() {
+    let dir = std::env::temp_dir().join(format!("apex-dotslash-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    std::fs::write(dir.join("sub/f.txt"), "one\ntwo\nthree\n").unwrap();
+    let sock = daemon();
+    let mut ui = Remote::connect(&sock, "main", "ui").unwrap();
+    let col = ui.node.state.layout.cols[0].id;
+    // an errors window at the directory, with the line in it
+    let at = format!("{}/", dir.display());
+    let w = ui.propose(apex_server::Proposal::Errors { dir: Some(dir.display().to_string()), text: "warning: x\n --> ./sub/f.txt:2:1:impl Foo {\n".into() }, Duration::from_secs(5)).ok().flatten();
+    let errs = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_kind(*w) == WinKind::Errors && r.node.window_path(*w) == at);
+    assert!(wait(&mut ui, |r| errs(r).is_some()), "errors window ({w:?})");
+    let e = errs(&ui).unwrap();
+    let b = ui.node.state.window(e).unwrap().body_buffer().unwrap();
+    let text = ui.node.state.buffer(b).unwrap().text.to_string();
+    ui.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: dir.join("sub/f.txt").display().to_string() });
+    let find = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w).ends_with("sub/f.txt"));
+    assert!(wait(&mut ui, |r| find(r).is_some()));
+    let f = find(&ui).unwrap();
+    ui.propose(apex_server::Proposal::Select { view: ViewId::Body(f), q0: 0, q1: 0 }, Duration::from_secs(5)).unwrap();
+    // a click on "sub" in it
+    let q = text[..text.find("sub/").unwrap()].chars().count() + 1;
+    ui.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(e), text: "sub".into(), dir: None, edit_only: false, dry: false, at: Some(Span { buffer: b, q0: q, q1: q }), sel: None, alt: None, reverse: false, verb: None });
+    assert!(wait(&mut ui, |r| r.node.selection(ViewId::Body(f)).ok().map(|s| s.0) == Some(4)), "line 2: {:?}", ui.node.selection(ViewId::Body(f)));
+    let _ = std::fs::remove_dir_all(&dir);
+}

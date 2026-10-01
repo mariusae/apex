@@ -215,16 +215,23 @@ fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<
     let mut row = div().id(("toast-line", toast * 1000 + n)).flex().flex_row().overflow_hidden().whitespace_nowrap();
     let mut rest = line;
     let mut k = 0;
+    // how far into the line, in characters: where a word is, for B3 to
+    // look from there in the errors window as a click there would
+    let mut col = 0;
     while !rest.is_empty() {
         let gap = rest.len() - rest.trim_start().len();
         if gap > 0 {
             row = row.child(div().flex_none().child(rest[..gap].to_string()));
+            col += rest[..gap].chars().count();
             rest = &rest[gap..];
             continue;
         }
         let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
         let word = rest[..end].to_string();
+        let at = col;
+        col += word.chars().count();
         rest = &rest[end..];
+        let (line1, line2) = (line.to_string(), line.to_string());
         let look = word.trim_matches(|c| !crate::app::is_file_char(c)).to_string();
         let run = word.trim_matches(|c| !crate::app::is_exec_char(c)).to_string();
         let (look1, run1) = (look.clone(), run.clone());
@@ -241,7 +248,7 @@ fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<
                     MouseButton::Left,
                     cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
                         if e.modifiers.platform {
-                            this.look(apex_core::ExecCtx::Window(w), &look1);
+                            this.look_in_errors(w, &line1, at, &look1);
                         } else if e.modifiers.alt {
                             this.execute(apex_core::ExecCtx::Window(w), &run1, cx);
                         } else {
@@ -254,7 +261,7 @@ fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |this, _, _, cx| {
-                        this.look(apex_core::ExecCtx::Window(w), &look);
+                        this.look_in_errors(w, &line2, at, &look);
                         cx.stop_propagation();
                         cx.notify();
                     }),
@@ -271,3 +278,21 @@ fn toast_line(w: WindowId, toast: usize, n: usize, line: &str, cx: &mut Context<
     }
     row.into_any_element()
 }
+
+impl Acme {
+    /// B3 on a toast's word: looked from where it is in the errors window
+    /// (its line, the last of that text there; `col` characters in), as a
+    /// click there would -- the server expanding from that point where
+    /// the files are, so `./dir/file.rs:183:1:impl` is the file at its
+    /// line. The word alone when the line is not to be found.
+    pub fn look_in_errors(&mut self, w: WindowId, line: &str, col: usize, word: &str) {
+        let at = self.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| {
+            let text = self.node.state.buffer(b).ok()?.text.to_string();
+            let i = text.rfind(line)?;
+            let q = text[..i].chars().count() + col;
+            Some(apex_core::Span { buffer: b, q0: q, q1: q })
+        });
+        self.look_at(apex_core::ExecCtx::Window(w), word, at, None, None, false, None);
+    }
+}
+
