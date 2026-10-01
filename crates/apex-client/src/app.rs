@@ -2571,7 +2571,23 @@ impl Acme {
         self.sync();
     }
 
+    /// Input going to terminal `t`: while a full-screen program has it
+    /// (the alternate screen), what is on it is the program's to redraw
+    /// as the input may have it do, so a selection over it no longer
+    /// says what it did -- it goes. (A shell's screen keeps it: the text
+    /// stays where it was.)
+    fn input_to(&mut self, t: TermId) {
+        if !self.node.state.terms.get(&t).is_some_and(|x| x.alt) {
+            return;
+        }
+        let w = self.node.state.windows.values().find(|w| w.body == Body::Term(t)).map(|w| w.id);
+        if w.is_some() && self.term_sel.is_some_and(|(sw, _, _)| Some(sw) == w) {
+            self.term_sel = None;
+        }
+    }
+
     fn term_key(&mut self, t: TermId, key: TermKey) {
+        self.input_to(t);
         match &mut self.backend {
             Backend::Local(server) => server.term_key(&mut self.log, t, &key),
             Backend::Remote(link) => link.send(&ClientMsg::TermKey { term: t, key }),
@@ -2581,6 +2597,7 @@ impl Acme {
     /// Type text into a terminal: what is sent runs, where a paste would
     /// be held on the line by a shell that asked for bracketed paste.
     fn term_type(&mut self, t: TermId, text: String) {
+        self.input_to(t);
         match &mut self.backend {
             Backend::Local(server) => server.term_type(&mut self.log, t, &text),
             Backend::Remote(link) => link.send(&ClientMsg::TermType { term: t, text }),
@@ -2588,6 +2605,7 @@ impl Acme {
     }
 
     fn term_paste(&mut self, t: TermId, text: String) {
+        self.input_to(t);
         match &mut self.backend {
             Backend::Local(server) => server.term_paste(&mut self.log, t, &text),
             Backend::Remote(link) => link.send(&ClientMsg::TermPaste { term: t, text }),
@@ -2600,6 +2618,7 @@ impl Acme {
 
     /// The wheel at a cell (`at`), which the program may be reading.
     fn term_wheel(&mut self, t: TermId, delta: isize, at: Option<(u16, u16)>) {
+        self.input_to(t);
         match &mut self.backend {
             Backend::Local(server) => server.term_wheel(&mut self.log, t, delta, at),
             Backend::Remote(link) => link.send(&ClientMsg::TermScroll { term: t, delta: delta as i64, at }),
