@@ -278,9 +278,10 @@ Ps lists the processes the session is running, as its record has them
 (shell commands, Win, the profile and attach scripts, tools started
 from them). One per line: the pid, the name (the first word, what Kill
 and apex kill go by), where it was started from (a window id, or top),
-when, its directory, and the whole command line. With -a the last few
-that ended are listed too, and a last field says how each is: running,
-done, exit N, signal N or hangup, and when it ended. Terminals' shells are listed too while they run, named
+when (3:04PM today, Mon3:04PM this week, 2Jan06 before), its directory,
+and the whole command line. With -a the last few that ended are listed
+too, and a last field says how each is: running, done, exit N, signal N
+or hangup, and when it ended. Terminals' shells are listed too while they run, named
 after the shell (or the command Newterm was given). A program may say
 what it is called (apex tool lsp is lsp, not apex); one the server did
 not start is listed for as long as it stays connected." },
@@ -908,7 +909,7 @@ fn print_proc(pid: u32, name: &str, ctx: ExecCtx, started: u64, dir: &str, cmd: 
         ExecCtx::Column(c) => format!("col {c}"),
         ExecCtx::Top => "top".into(),
     };
-    let when = format!("{} ago", apex_server::ago(started));
+    let when = apex_server::when(started);
     match status {
         Some(st) => println!("{pid}\t{name}\t{from}\t{when}\t{dir}\t{cmd}\t{st}"),
         None => println!("{pid}\t{name}\t{from}\t{when}\t{dir}\t{cmd}"),
@@ -930,9 +931,9 @@ fn ps(ctx: &Ctx, p: &Parsed) -> R {
     for r in c.node.state.meta.procs.iter().filter(|r| all || r.running()) {
         let status = all.then(|| match &r.exit {
             None => "running".to_string(),
-            Some((st, at)) if st.is_empty() => format!("done {} ago", apex_server::ago(*at)),
-            Some((st, at)) if st.starts_with("signal") || st == "hangup" => format!("{st} {} ago", apex_server::ago(*at)),
-            Some((st, at)) => format!("exit {st} {} ago", apex_server::ago(*at)),
+            Some((st, at)) if st.is_empty() => format!("done {}", apex_server::when(*at)),
+            Some((st, at)) if st.starts_with("signal") || st == "hangup" => format!("{st} {}", apex_server::when(*at)),
+            Some((st, at)) => format!("exit {st} {}", apex_server::when(*at)),
         });
         print_proc(r.pid, &r.name, r.origin, r.started, &r.dir, &r.cmd, status);
     }

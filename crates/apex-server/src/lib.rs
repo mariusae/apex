@@ -1752,34 +1752,30 @@ fn proc_out(m: &ShellMode) -> ProcOut {
     }
 }
 
-/// A time (seconds since the epoch) as the clock here says it: `14:03:12`,
-/// and the day before it when that is not today (`Sep 29 14:03:12`).
-pub fn local_time(secs: u64) -> String {
-    let at = |s: u64| {
-        let t = s as libc::time_t;
-        // SAFETY: tm is a plain struct localtime_r fills in
-        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-        let ok = !unsafe { libc::localtime_r(&t, &mut tm) }.is_null();
-        ok.then_some(tm)
-    };
-    let (Some(tm), Some(now)) = (at(secs), at(now_secs())) else { return String::new() };
-    let hms = format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
-    if (tm.tm_year, tm.tm_yday) == (now.tm_year, now.tm_yday) {
-        return hms;
-    }
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    format!("{} {} {hms}", MONTHS[tm.tm_mon.clamp(0, 11) as usize], tm.tm_mday)
+/// A time (seconds since the epoch) as apex says it to people, at the
+/// resolution that tells it apart: the time of day within a day
+/// (`3:04PM`, Go's time.Kitchen), the weekday and the time within a
+/// week (`Mon3:04PM`), the date beyond it (`2Jan06`). In this machine's
+/// zone, the one the day is being had in.
+pub fn when(t: u64) -> String {
+    when_at(t, now_secs())
 }
 
-/// How long ago a time (seconds since the epoch) was: `12s`, `4m`, `2h05m`.
-pub fn ago(secs: u64) -> String {
-    let d = now_secs().saturating_sub(secs);
-    if d < 60 {
-        format!("{d}s")
-    } else if d < 3600 {
-        format!("{}m", d / 60)
-    } else {
-        format!("{}h{:02}m", d / 3600, (d % 3600) / 60)
+/// `when`, as it would be said at `now`.
+pub fn when_at(t: u64, now: u64) -> String {
+    const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let secs = t as libc::time_t;
+    // SAFETY: tm is a plain struct localtime_r fills in
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
+        return String::new();
+    }
+    let clock = format!("{}:{:02}{}", if tm.tm_hour % 12 == 0 { 12 } else { tm.tm_hour % 12 }, tm.tm_min, if tm.tm_hour < 12 { "AM" } else { "PM" });
+    match now.saturating_sub(t) {
+        d if d > 7 * 24 * 3600 => format!("{}{}{:02}", tm.tm_mday, MONTHS[(tm.tm_mon as usize).min(11)], (tm.tm_year + 1900).rem_euclid(100)),
+        d if d > 24 * 3600 => format!("{}{clock}", DAYS[(tm.tm_wday as usize).min(6)]),
+        _ => clock,
     }
 }
 
@@ -2215,3 +2211,26 @@ mod exe_tests {
         assert_eq!(super::undeleted(std::path::Path::new("/usr/local/bin/apex")), std::path::PathBuf::from("/usr/local/bin/apex"));
     }
 }
+
+#[cfg(test)]
+mod when_tests {
+    use super::when_at;
+
+    #[test]
+    fn a_time_is_the_clock_today_the_weekday_this_week_and_the_date_before() {
+        // in this machine's zone, whatever it is: the shapes, and the
+        // switches at a day and at a week
+        let now = 1_790_000_000u64;
+        let clock = when_at(now - 60, now);
+        assert!(clock.ends_with("AM") || clock.ends_with("PM"), "{clock}");
+        assert!(clock.chars().next().unwrap().is_ascii_digit(), "{clock}");
+        let week = when_at(now - 2 * 24 * 3600, now);
+        assert!(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].iter().any(|d| week.starts_with(d)) && week.ends_with('M'), "{week}");
+        let date = when_at(now - 30 * 24 * 3600, now);
+        assert!(date.chars().next().unwrap().is_ascii_digit() && !date.ends_with('M') && date.len() <= 7, "{date}");
+        // a day exactly is still the clock; a week exactly the weekday
+        assert!(when_at(now - 24 * 3600, now).chars().next().unwrap().is_ascii_digit());
+        assert!(!when_at(now - 7 * 24 * 3600, now).chars().next().unwrap().is_ascii_digit());
+    }
+}
+

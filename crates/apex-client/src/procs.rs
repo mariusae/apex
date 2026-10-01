@@ -73,7 +73,7 @@ impl Acme {
             // the command as the shell got it, in the fixed face
             .child(div().font_family(crate::text_element::font_for(true).font.family.clone()).child(p.cmd.clone()))
             .child(dim(format!("pid {}  ·  {}", p.pid, crate::sidebar::shown(&p.dir, &self.node.state.meta.cwd))))
-            .child(dim(format!("started {} ({} ago)  ·  {from}", apex_server::local_time(p.started), apex_server::ago(p.started))));
+            .child(dim(format!("started {}  ·  {from}", apex_server::when(p.started))));
         Some(deferred(anchored().position(point(at.left(), at.bottom() + px(4.))).child(card)).with_priority(3).into_any_element())
     }
 
