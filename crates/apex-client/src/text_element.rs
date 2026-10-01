@@ -916,13 +916,12 @@ impl Head {
 
     /// After the path: a gap, the label, the verbs, the divider.
     fn rest(&mut self, label: Option<&str>, verbs: &[&str]) {
-        // after the path, the gap between a label's chip and the icon
-        // after it: a space, and the icon's inset in its em cell (a
-        // quarter em for Del's ×, which is always first) -- so two spaces
-        // before a chip, one before an icon, and every gap the same
+        // after the path, the gap a label's chip has before the × after
+        // it: a space and a hair before a chip, as drawn, and one space
+        // before an icon (whose inset in its cell makes up the rest)
         if !self.text.is_empty() {
             let chip = label.is_some_and(|l| !l.is_empty());
-            self.push(if chip { "  " } else { " " }, None);
+            self.push(if chip { " \u{200a}" } else { " " }, None);
         }
         if let Some(l) = label.filter(|l| !l.is_empty()) {
             // its chip's room inside it
@@ -1948,9 +1947,9 @@ mod head_tests {
     #[test]
     fn a_head_is_the_path_in_parts_the_label_and_the_verbs() {
         let h = Head::build("/a/b/notes.md", Some("mine"), &["Del", "Nothing", "Put"], true, true);
-        // (two spaces before the chip, one after it: the gap a space and
-        // the ×'s inset make, the same each side)
-        assert_eq!(h.text, format!("/a/b/notes.md   mine  {ICON_CELL} {ICON_CELL} | "));
+        // (a space and a hair before the chip, a space after it: with the
+        // ×'s inset, the same gap each side)
+        assert_eq!(h.text, format!("/a/b/notes.md \u{200a} mine  {ICON_CELL} {ICON_CELL} | "));
         let parts: Vec<(&str, Atom)> = h.atoms.iter().map(|&(a, b, x)| (&h.text[a..b], x)).collect();
         assert_eq!(parts, vec![("/", Atom::Dir(1)), ("a/", Atom::Dir(3)), ("b/", Atom::Dir(5)), ("notes.md", Atom::Name), (" mine ", Atom::Label), (&*ICON_CELL.to_string(), Atom::Verb(0)), (&*ICON_CELL.to_string(), Atom::Verb(4))]);
         assert_eq!(&h.text[h.bar.unwrap()..], "| ");
