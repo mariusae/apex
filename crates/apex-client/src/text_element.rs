@@ -99,29 +99,8 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     ("Fwd", r#"<path d="M9 6l6 6-6 6"/>"#),
     // not a verb: the session's directory, where a path is drawn from
     // when it is inside it (`Head::here`), and the title bar's crumbs'
-    // two slashes set close, as one mark: `//`, the root of here
-    (DOUBLE, r#"<path d="M6.5 19.5L12 4.5M12 19.5L17.5 4.5"/>"#),
-    // `./` as one mark: a dot and a slash close after it, a
-    // little heavier than the text's slash (about 1.3 px at a tag's
-    // size, the face's being 1.1), so it reads as a mark, not as text
-    // (the dot at the slash's middle height, as close to it there as
-    // it was at the foot)
-    (DOT_SLASH, r#"<circle cx="8.6" cy="12" r="2.1" fill="black" stroke="none"/><path d="M10.5 19.5L16.5 4.5" stroke-width="2.4"/>"#),
-    // a bolt lying on its side, outlined (SF Symbols' bolt.horizontal):
-    // a band zigzagging from its left point to its right one
-    (BOLT, r#"<path d="M2 16L9 9L14.5 13.5L22 8L15 16.2L9.5 11.8Z"/>"#),
-    // a bookmark: the place kept, where paths are drawn from
-    (HERE, r#"<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>"#),
 ];
 
-/// The session's directory's icon's name in `VERB_ICONS`: `./`, drawn.
-pub const HERE: &str = ".";
-/// `//` set as one mark, closer than two slashes in the text's face.
-pub const DOUBLE: &str = "//";
-/// `./` set as one mark.
-pub const DOT_SLASH: &str = "./";
-/// A bolt lying on its side.
-pub const BOLT: &str = "bolt";
 /// The cell a narrow glyph stands on: a figure space, a little over half
 /// an em (as many bytes as `ICON_CELL`, so the cells are measured alike).
 const NARROW_CELL: char = '\u{2007}';
@@ -610,8 +589,6 @@ pub struct LineInfo {
     pub atoms: Vec<(usize, usize, Atom)>,
     /// The path's picker's caret, in the head.
     pub caret: Option<usize>,
-    /// Chips drawn under parts of the head (`Head::chips`).
-    pub chips: Vec<(usize, usize)>,
 }
 
 impl LineInfo {
@@ -793,17 +770,15 @@ pub struct Head {
     /// Where the path's picker's caret is, in what is typed.
     pub caret: Option<usize>,
     /// Icons drawn in the path, not a verb's: where each one's cell is,
-    /// and which (`HERE`, the session's directory).
+    /// and which (the chevron that marks the session's directory).
     pub glyphs: Vec<(usize, usize)>,
-    /// Chips drawn under parts of the path (the session's directory's
-    /// slash, with `CwdMark::Chip`).
-    pub chips: Vec<(usize, usize)>,
 }
 
 impl Head {
     /// `split`: the path's folders each a part of their own (a file's
     /// or a directory's path, not a URL); `untitled`: no path is shown
     /// as Untitled (a window that could have one), else as nothing.
+    #[cfg(test)]
     pub fn build(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool) -> Head {
         Head::build_in(path, label, verbs, split, untitled, "")
     }
@@ -822,6 +797,7 @@ impl Head {
     /// The head while the path's picker is down: the folder listed, then
     /// what is typed after it (`cursor` characters in, the caret there
     /// when `caret`), then the rest as ever.
+    #[cfg(test)]
     pub fn picking(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, verbs: &[&str]) -> Head {
         Head::picking_in(dir, typed, cursor, caret, label, verbs, "")
     }
@@ -889,46 +865,14 @@ impl Head {
     }
 
     /// The session's directory as the path's first part, where `./`
-    /// would be, as View ▸ Directory Mark draws it -- `//`, a slash on a
-    /// chip, or a bookmark and a slash: a part as any other, `atom` (a
-    /// folder's, or the name when the path is the directory itself).
+    /// would be: a chevron, on a narrow cell -- a part as any other,
+    /// `atom` (a folder's, or the name when the path is the directory
+    /// itself): `›src/main.rs`.
     fn here(&mut self, k: usize, atom: Atom) {
         let _ = k;
         let a = self.text.len();
-        match crate::theme::cwd_mark() {
-            crate::theme::CwdMark::Double => {
-                // drawn, the two slashes closer than the face sets them
-                self.glyphs.push((a, icon_index(DOUBLE)));
-                self.text.push(NARROW_CELL);
-            }
-            crate::theme::CwdMark::DotSlash => {
-                self.glyphs.push((a, icon_index(DOT_SLASH)));
-                self.text.push(NARROW_CELL);
-            }
-            crate::theme::CwdMark::Chip => {
-                // the chip's room inside it, and a hair after it
-                self.text.push_str("\u{2009}/\u{2009}");
-                self.chips.push((a, self.text.len()));
-                self.text.push('\u{200a}');
-            }
-            crate::theme::CwdMark::Chevron => {
-                // Fwd's chevron, in place of ./ as the ligatures are
-                self.glyphs.push((a, icon_index("Fwd")));
-                self.text.push(NARROW_CELL);
-            }
-            crate::theme::CwdMark::Bolt => {
-                self.glyphs.push((a, icon_index(BOLT)));
-                let mut cell = [0u8; 4];
-                self.text.push_str(ICON_CELL.encode_utf8(&mut cell));
-                self.text.push('/');
-            }
-            crate::theme::CwdMark::Bookmark => {
-                self.glyphs.push((a, icon_index(HERE)));
-                let mut cell = [0u8; 4];
-                self.text.push_str(ICON_CELL.encode_utf8(&mut cell));
-                self.text.push('/');
-            }
-        }
+        self.glyphs.push((a, icon_index("Fwd")));
+        self.text.push(NARROW_CELL);
         self.atoms.push((a, self.text.len(), atom));
     }
 
@@ -1227,7 +1171,6 @@ fn shape(
         head: hn,
         atoms: head.map(|h| h.atoms.clone()).unwrap_or_default(),
         caret: head.and_then(|h| h.caret),
-        chips: head.map(|h| h.chips.clone()).unwrap_or_default(),
     };
     // the line cut where its ink or face changes: the sweep, and a head's
     // parts -- its folders, its name, its label, its verbs
@@ -1814,11 +1757,6 @@ impl Element for TextElement {
                     if atom == Atom::Label {
                         chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
                     }
-                }
-                // the session's directory's slash, on its chip
-                let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
-                for &(a, b) in &line.chips {
-                    chip(window, a, b, px(0.), rgb(mix(th.text_dim, under, 0.82)));
                 }
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
                 // apex's verbs, drawn as their icons on their em spaces, in

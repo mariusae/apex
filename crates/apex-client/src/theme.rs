@@ -576,50 +576,6 @@ pub fn set_animate_layout(on: bool) {
     let _ = std::fs::write(p, if on { "on\n" } else { "off\n" });
 }
 
-/// How a path's part that is the session's directory is drawn, where
-/// `./` would be (View ▸ Directory Mark): `//` (the root of here, as
-/// Bazel has it), a slash on a chip, or a bookmark icon. Kept in the
-/// `cwdmark` state file. Or `./` itself, set as one mark.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CwdMark {
-    Double,
-    Chip,
-    Bookmark,
-    DotSlash,
-    Bolt,
-    Chevron,
-}
-
-static CWD_MARK: AtomicU8 = AtomicU8::new(0);
-
-pub fn cwd_mark() -> CwdMark {
-    match CWD_MARK.load(Ordering::Relaxed) {
-        1 => CwdMark::Chip,
-        2 => CwdMark::Bookmark,
-        3 => CwdMark::DotSlash,
-        4 => CwdMark::Bolt,
-        5 => CwdMark::Chevron,
-        _ => CwdMark::Double,
-    }
-}
-
-pub fn set_cwd_mark(m: CwdMark) {
-    let (n, word) = match m {
-        CwdMark::Double => (0, "double"),
-        CwdMark::Chip => (1, "chip"),
-        CwdMark::Bookmark => (2, "bookmark"),
-        CwdMark::DotSlash => (3, "dotslash"),
-        CwdMark::Bolt => (4, "bolt"),
-        CwdMark::Chevron => (5, "chevron"),
-    };
-    CWD_MARK.store(n, Ordering::Relaxed);
-    let p = crate::shell::state_file().with_file_name("cwdmark");
-    if let Some(d) = p.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    let _ = std::fs::write(p, format!("{word}\n"));
-}
-
 pub fn contrast() -> bool {
     CONTRAST.load(Ordering::Relaxed)
 }
@@ -645,18 +601,6 @@ pub fn load() {
     SMOOTH_CARET.store(smooth, Ordering::Relaxed);
     let layout = std::fs::read_to_string(crate::shell::state_file().with_file_name("layoutanim")).map(|s| s.trim() != "off").unwrap_or(true);
     ANIMATE_LAYOUT.store(layout, Ordering::Relaxed);
-    let mark = std::fs::read_to_string(crate::shell::state_file().with_file_name("cwdmark")).unwrap_or_default();
-    CWD_MARK.store(
-        match mark.trim() {
-            "chip" => 1,
-            "bookmark" => 2,
-            "dotslash" => 3,
-            "bolt" => 4,
-            "chevron" => 5,
-            _ => 0,
-        },
-        Ordering::Relaxed,
-    );
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
     // "system" was Xcode's palette's name before it had its own
     let pal = if pal.trim() == "system" { "xcode" } else { pal.trim() };

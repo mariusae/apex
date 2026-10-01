@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, CwdMarkDouble, CwdMarkChip, CwdMarkBookmark, CwdMarkDotSlash, CwdMarkBolt, CwdMarkChevron, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -66,14 +66,6 @@ pub fn toggle_contrast(cx: &mut App) {
 /// every window drawn again.
 pub fn toggle_blink(cx: &mut App) {
     crate::theme::set_blink(!crate::theme::blink());
-    cx.set_menus(menus());
-    cx.refresh_windows();
-}
-
-/// View ▸ Directory Mark chosen: kept, the menus remade with the choice
-/// marked, every window redrawn.
-pub fn set_cwd_mark(m: crate::theme::CwdMark, cx: &mut App) {
-    crate::theme::set_cwd_mark(m);
     cx.set_menus(menus());
     cx.refresh_windows();
 }
@@ -251,22 +243,6 @@ pub fn menus() -> Vec<Menu> {
                     MenuItem::action(blink, ToggleBlink),
                     MenuItem::action(smooth, ToggleSmoothCaret),
                     MenuItem::action(layout, ToggleLayoutAnimations),
-                    MenuItem::submenu(Menu {
-                        name: "Directory Mark".into(),
-                        disabled: false,
-                        items: {
-                            let m = crate::theme::cwd_mark();
-                            let mark = |s: &str, x: crate::theme::CwdMark| if m == x { format!("{s} ✓") } else { s.to_string() };
-                            vec![
-                                MenuItem::action(mark("// (Double Slash)", crate::theme::CwdMark::Double), CwdMarkDouble),
-                                MenuItem::action(mark("./ (Dot Slash)", crate::theme::CwdMark::DotSlash), CwdMarkDotSlash),
-                                MenuItem::action(mark("/ on a Chip", crate::theme::CwdMark::Chip), CwdMarkChip),
-                                MenuItem::action(mark("Bookmark", crate::theme::CwdMark::Bookmark), CwdMarkBookmark),
-                                MenuItem::action(mark("Bolt", crate::theme::CwdMark::Bolt), CwdMarkBolt),
-                                MenuItem::action(mark("Chevron", crate::theme::CwdMark::Chevron), CwdMarkChevron),
-                            ]
-                        },
-                    }),
                 ]
             },
         },

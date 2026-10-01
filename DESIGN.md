@@ -2566,12 +2566,11 @@ only), typed after the crumbs to narrow them; `./` first, the folder
 itself: return cds there, → goes into a folder, ← up out of one.
 
 A window's tag draws a path inside the directory from there on, led by
-the directory's mark where `./` would be -- `//src/main.rs`, the
-directory itself `//` -- and any other path whole, from `/`, so the two
-cannot be taken for each other. The mark is View ▸ Directory Mark's:
-`//` set close as one mark (Bazel's root of here; the default), a slash
-on a chip, or a bookmark and a slash. It is a part of the path as any
-other, and means the directory: a click on it lists the
+a chevron where `./` would be -- `›src/main.rs`, the directory itself
+`›` -- and any other path whole, from `/`, so the two cannot be taken
+for each other. (`//`, `./` set as one mark, a slash on a chip, a
+bookmark and a bolt were tried and let go.) The chevron is a part of the
+path as any other, and means the directory: a click on it lists the
 directory, B3 plumbs its whole path (not `./`, which would be the
 window's own directory). The title bar shows the directory itself, as crumbs, without the icon. Only drawn so
 (`Head::build_in`): the state has the whole path, and each part of it
