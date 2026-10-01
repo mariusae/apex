@@ -458,6 +458,9 @@ pub struct Acme {
     /// The folders under a crumb of the title bar's directory (`cwdbar.rs`).
     pub cwd_picker: Option<crate::cwdbar::CwdPicker>,
     pub picker_due: Option<(WindowId, Atom, std::time::Instant)>,
+    /// The window whose path's picker a click just brought down, and
+    /// when: a second click on its tag soon after is a double-click.
+    pub picker_opened: Option<(WindowId, std::time::Instant)>,
     /// A verb in a tag's head pressed: it runs if the button comes up on it.
     pub atom_down: Option<(WindowId, Atom, MouseButton)>,
     /// The process pill the pointer is on, and where it is drawn: its
@@ -1656,6 +1659,7 @@ impl Acme {
             picker: None,
             cwd_picker: None,
             picker_due: None,
+            picker_opened: None,
             atom_down: None,
             proc_hover: None,
             session_menu: false,
@@ -3094,6 +3098,16 @@ impl Acme {
             let past = self.layouts.get(&ViewId::Top).and_then(|l| l.point_of(q)).is_some_and(|p| e.position.x > p.x + px(6.));
             if plain && e.click_count == 1 && at_end && past {
                 window.start_window_move();
+                return;
+            }
+        }
+        // the second click of a double-click on a tag whose picker the
+        // first brought down: the path a field, wherever it lands (the
+        // tag shows the folder being typed in by now, not the name)
+        if let Some((pw, at)) = self.picker_opened.take() {
+            if e.click_count >= 2 && button == MouseButton::Left && at.elapsed() < crate::tagedit::DOUBLE && target == Target::View(ViewId::Tag(pw)) {
+                self.picker = None;
+                self.tag_edit_start(pw, crate::tagedit::Part::Path, cx);
                 return;
             }
         }

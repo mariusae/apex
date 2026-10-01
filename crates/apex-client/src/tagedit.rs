@@ -33,9 +33,9 @@ use crate::text_element::{Atom, VERB_ICONS};
 /// a caret's offset).
 pub const LISTING: usize = usize::MAX;
 
-/// How long a click on the path waits to be a double-click before the
-/// picker comes down.
-const DOUBLE: Duration = Duration::from_millis(250);
+/// How soon a second click on the tag whose picker a click just brought
+/// down is the double-click that makes its path a field.
+pub const DOUBLE: Duration = Duration::from_millis(500);
 
 /// The picker's rows at once.
 const ROWS: usize = 12;
@@ -178,19 +178,11 @@ impl Acme {
             (MouseButton::Left, Atom::Untitled) => self.tag_edit_start(w, Part::Path, cx),
             (MouseButton::Left, Atom::Label) if clicks >= 2 => self.tag_edit_start(w, Part::Label, cx),
             // the picker, unless this is the first of a double-click
+            // the picker at once; a second click, a double-click, takes it
+            // away for the field (`mouse_down`, `picker_opened`)
             (MouseButton::Left, Atom::Dir(_) | Atom::Name) => {
-                let at = Instant::now();
-                self.picker_due = Some((w, atom, at));
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(DOUBLE).await;
-                    let _ = this.update(cx, |acme, cx| {
-                        if acme.picker_due.is_some_and(|(_, _, t)| t == at) {
-                            acme.picker_due = None;
-                            acme.open_path_picker(w, atom, cx);
-                        }
-                    });
-                })
-                .detach();
+                self.open_path_picker(w, atom, cx);
+                self.picker_opened = Some((w, Instant::now()));
             }
             // B3 on the path: plumbed, as far as the part
             (MouseButton::Right, Atom::Dir(k)) => {
@@ -327,8 +319,12 @@ impl Acme {
         // its rows' text under the part's (the panel's padding and the
         // row's before it), unless that would take it past the right edge
         let left = (f32::from(b.left()) - TEXT_IN).min(right - PICKER_MIN_W - 8.).max(8.);
+        // where what is typed will start, from the first frame: after a
+        // folder (or a directory listed as itself), where a file's name
+        // was -- so the panel is in its place as it comes
+        let typed_x = Some(f32::from(if matches!(atom, Atom::Name) && !path.ends_with('/') { b.left() } else { b.right() }));
         let at = point(px(left), px(top));
-        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, typed_x: None, caret_since: Instant::now(), current, warned: false });
+        self.picker = Some(Picker { window: w, windows, dir: dir.clone(), filter: LineEdit::new(), names: None, cursor: 0, at, rows, typed_x, caret_since: Instant::now(), current, warned: false });
         self.list_folder(w, &dir);
         // blinking while it is up
         cx.spawn(async move |this, cx| loop {
