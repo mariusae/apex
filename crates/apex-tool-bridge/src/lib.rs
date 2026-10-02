@@ -15,8 +15,10 @@
 //!   is (a file's or directory's, the directory an errors window is for,
 //!   the file a preview shows, a terminal's directory, a page's address),
 //!   its label a name beside it (a terminal's title, a tool's window's)
-//! - `new {path, scratch?, label?}` → `window` (a new, empty window for
-//!   the file at that path; `scratch`, one with no file behind it)
+//! - `new {path, scratch?, label?, diagnostic?}` → `window` (a new, empty
+//!   window for the file at that path; `scratch`, one with no file behind
+//!   it; `diagnostic`, a scratch one made stashed, as an +Errors window
+//!   is, what is new in it said in a toast)
 //! - `open {name, line?}` → `window` (a file, opened or shown, at a line)
 //! - `read {window}` → `text`; `selection {window}` → `q0, q1`
 //! - `write {window, q0, q1, text}` (a range replaced; `q0`/`q1` of -1
@@ -25,7 +27,8 @@
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
 //! - `rename {window, path}`, `label {window, label?}`, `live {window, on}`,
-//!   `working {window, on}`, `delete {window}`
+//!   `working {window, on}`, `progress {window, at?}` (working and how
+//!   far along, in percent; no `at`, done), `delete {window}`
 //! - `notify {window}`: the user's attention asked for about a window (its
 //!   handle shows it, and the session's handle and tab take the colour; a
 //!   click on the session's handle goes there); `unnotify {window}`
@@ -190,7 +193,13 @@ impl Bridge {
             }
             "new" => {
                 let path = v["path"].as_str().ok_or("path")?;
-                let w = if v["scratch"].as_bool().unwrap_or(false) { self.tool.new_scratch(path, v["label"].as_str()) } else { self.tool.new_window(path) };
+                let w = if v["diagnostic"].as_bool().unwrap_or(false) {
+                    self.tool.new_diagnostic(path, v["label"].as_str())
+                } else if v["scratch"].as_bool().unwrap_or(false) {
+                    self.tool.new_scratch(path, v["label"].as_str())
+                } else {
+                    self.tool.new_window(path)
+                };
                 Ok(json!({ "window": w.map_err(e)?.0 }))
             }
             "page" => {
@@ -265,6 +274,10 @@ impl Bridge {
             "notified" => Ok(json!({ "on": self.tool.notified(window(v)?) })),
             "working" => {
                 self.tool.set_working(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
+                Ok(json!({}))
+            }
+            "progress" => {
+                self.tool.set_progress(window(v)?, v["at"].as_u64().map(|p| p.min(100) as u8)).map_err(e)?;
                 Ok(json!({}))
             }
             "live" => {

@@ -491,18 +491,27 @@ impl Tool {
 
     /// A new, empty window for a file at `path` in the last column.
     pub fn new_window(&mut self, path: &str) -> Result<WindowId> {
-        self.new_window_as(path, None, false)
+        self.new_window_as(path, None, false, false)
     }
 
     /// A new, empty scratch window (no file behind it: a transcript, a
     /// report) at `path` -- a directory, say -- labelled.
     pub fn new_scratch(&mut self, path: &str, label: Option<&str>) -> Result<WindowId> {
-        self.new_window_as(path, label, true)
+        self.new_window_as(path, label, true, false)
     }
 
-    fn new_window_as(&mut self, path: &str, label: Option<&str>, scratch: bool) -> Result<WindowId> {
+    /// A new diagnostic window (scratch, at `path`, labelled): the
+    /// tool's report on how things stand -- its errors, a server's
+    /// diagnostics and state -- made stashed, as an +Errors window is,
+    /// what is new in it said in a toast; its progress
+    /// (`set_progress`) shown on its card in the stash.
+    pub fn new_diagnostic(&mut self, path: &str, label: Option<&str>) -> Result<WindowId> {
+        self.new_window_as(path, label, true, true)
+    }
+
+    fn new_window_as(&mut self, path: &str, label: Option<&str>, scratch: bool, diagnostic: bool) -> Result<WindowId> {
         let col = self.remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-        let w = self.propose(Proposal::NewWindow { col, name: path.to_string(), label: label.map(str::to_string), scratch })?.ok_or("no window made")?;
+        let w = self.propose(Proposal::NewWindow { col, name: path.to_string(), label: label.map(str::to_string), scratch, diagnostic })?.ok_or("no window made")?;
         self.remember(w);
         Ok(w)
     }
@@ -769,7 +778,16 @@ impl Tool {
     /// thinking, a build running), so the window says it is not idle.
     pub fn set_working(&mut self, w: WindowId, on: bool) -> Result<()> {
         let by = on.then_some(self.remote.attachment());
-        self.propose(Proposal::Working { window: w, by })?;
+        self.propose(Proposal::Working { window: w, by, at: None })?;
+        Ok(())
+    }
+
+    /// Working, and how far along, in percent (`Some`), or not working
+    /// (`None`): the handle pulses, and a bar across the window's top --
+    /// or its card's foot, stashed -- says how far.
+    pub fn set_progress(&mut self, w: WindowId, at: Option<u8>) -> Result<()> {
+        let by = at.map(|_| self.remote.attachment());
+        self.propose(Proposal::Working { window: w, by, at: at.map(|p| p.min(100)) })?;
         Ok(())
     }
 

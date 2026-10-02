@@ -176,7 +176,7 @@ fn end_warns_once_as_del_does_then_lets_the_session_go() {
     let (mut log, mut node, col) = session();
     // a clean file, a scratch window and a directory: nothing to ask
     let _ = node.new_window(&mut log, col, "/tmp/end-clean", "x").unwrap();
-    let s = node.new_window_as(&mut log, col, "/tmp/", "x", &Spec { kind: WinKind::Errors, scratch: true, label: None }).unwrap();
+    let s = node.new_window_as(&mut log, col, "/tmp/", "x", &Spec { kind: WinKind::Errors, scratch: true, ..Default::default() }).unwrap();
     node.insert(&mut log, ViewId::Body(s), "y").unwrap();
     assert!(node.session_clean(&mut log).unwrap());
     // a modified file, on two windows: warned once, and the session held
@@ -844,4 +844,27 @@ fn a_notified_window_is_not_left_hidden() {
     let first = l.column(col).unwrap();
     assert!(l.full.is_none() && first.full.is_none() && !first.hides(a));
     assert!(is_strip(first.r));
+}
+#[test]
+fn a_diagnostic_window_is_made_stashed_and_says_how_far_along() {
+    let (mut log, mut node, col) = session();
+    let f = node.new_window(&mut log, col, "/tmp/f", "x\n").unwrap();
+    let before = node.state.layout.column(col).unwrap().wins.clone();
+    let d = node.new_window_as(&mut log, col, "/tmp/", "", &Spec { scratch: true, label: Some("lsp".into()), diagnostic: true, ..Default::default() }).unwrap();
+    // in the stash, never laid out: the column as it was
+    assert!(node.window_diagnostic(d) && !node.window_diagnostic(f));
+    assert!(node.state.layout.is_stashed(d));
+    assert_eq!(node.state.layout.column(col).unwrap().wins, before);
+    // an errors window is one too
+    let e = node.errors(&mut log, Some("/tmp"), "oops\n").unwrap();
+    assert!(node.window_diagnostic(e) && node.state.layout.is_stashed(e));
+    // working, and how far along; done, none
+    node.append(&mut log, Shard::Window(d), Op::Window(WindowOp::Working { by: Some(SERVER), at: Some(40) })).unwrap();
+    assert_eq!(node.window_progress(d), Some(40));
+    node.append(&mut log, Shard::Window(d), Op::Window(WindowOp::Working { by: None, at: Some(40) })).unwrap();
+    assert_eq!(node.window_progress(d), None);
+    assert!(!node.window_working(d));
+    // and a replica sees the same
+    let r = follower(&log);
+    assert!(r.window_diagnostic(d) && r.state.layout.is_stashed(d));
 }

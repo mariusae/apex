@@ -62,8 +62,13 @@ pub struct Window {
     pub owner: Option<AttachmentId>,
     /// The attachment whose process is behind this window (`WindowOp::Live`).
     pub live: Option<AttachmentId>,
-    /// The attachment working behind this window (`WindowOp::Working`).
+    /// The attachment working behind this window (`WindowOp::Working`),
+    /// and how far along it said it is, in percent.
     pub working: Option<AttachmentId>,
+    pub progress: Option<u8>,
+    /// A diagnostic window (`WindowOp::Diagnostic`): made stashed, its
+    /// news said in toasts, as an +Errors window's are.
+    pub diagnostic: bool,
     /// Where a window with no text of its own is: a terminal's
     /// directory, a page's address. (A text window's is its buffer's
     /// name.)
@@ -565,7 +570,7 @@ impl State {
                 if self.windows.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("window {id}")));
                 }
-                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None, path: path.clone(), label: label.clone() });
+                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None, progress: None, diagnostic: false, path: path.clone(), label: label.clone() });
             }
             WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
             WindowOp::Label { label } => self.window_mut(id)?.label = label.clone(),
@@ -575,7 +580,12 @@ impl State {
             WindowOp::TagExpand { on } => self.window_mut(id)?.tagexpand = *on,
             WindowOp::Own { by } => self.window_mut(id)?.owner = *by,
             WindowOp::Live { by } => self.window_mut(id)?.live = *by,
-            WindowOp::Working { by } => self.window_mut(id)?.working = *by,
+            WindowOp::Working { by, at } => {
+                let w = self.window_mut(id)?;
+                w.working = *by;
+                w.progress = if by.is_some() { *at } else { None };
+            }
+            WindowOp::Diagnostic { on } => self.window_mut(id)?.diagnostic = *on,
             WindowOp::Exec(x) => {
                 self.window_mut(id)?.execs.insert(seq, ExecRecord::new(x));
             }

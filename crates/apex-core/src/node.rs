@@ -28,12 +28,15 @@ pub struct Spec {
     pub kind: WinKind,
     pub scratch: bool,
     pub label: Option<String>,
+    /// A diagnostic window (`WindowOp::Diagnostic`): made in the stash.
+    /// An +Errors window is one whatever this says.
+    pub diagnostic: bool,
 }
 
 impl Spec {
     /// A scratch text window: a transcript, a tool's window.
     pub fn scratch(label: Option<String>) -> Spec {
-        Spec { kind: WinKind::File, scratch: true, label }
+        Spec { kind: WinKind::File, scratch: true, label, diagnostic: false }
     }
 }
 
@@ -437,7 +440,8 @@ impl Node {
     /// A window on a new buffer at `name`, as `spec` says it is.
     pub fn new_window_as(&mut self, log: &mut Log, col: ColumnId, name: &str, text: &str, spec: &Spec) -> Result<WindowId> {
         let body = self.create_buffer_as(log, name, text, None, spec.kind, spec.scratch)?;
-        self.open_window_as(log, col, Body::Text(body), String::new(), spec.label.clone(), None)
+        let diagnostic = spec.diagnostic || spec.kind == WinKind::Errors;
+        self.open_window_as(log, col, Body::Text(body), String::new(), spec.label.clone(), None, diagnostic)
     }
 
     /// A window on an existing buffer in `col`, at `y` if given, else
@@ -447,17 +451,21 @@ impl Node {
     }
 
     pub fn open_window_at(&mut self, log: &mut Log, col: ColumnId, body: BufferId, y: Option<i32>) -> Result<WindowId> {
-        self.open_window_as(log, col, Body::Text(body), String::new(), None, y)
+        self.open_window_as(log, col, Body::Text(body), String::new(), None, y, false)
     }
 
     /// A window of any body: its tag (the user's words: `WIN_TAG`), its
     /// log, its views, its place in `col` (at `y`, or splitting the last
     /// window). `path` and `label` for a window with no text of its own.
-    fn open_window_as(&mut self, log: &mut Log, col: ColumnId, body: Body, path: String, label: Option<String>, y: Option<i32>) -> Result<WindowId> {
+    /// A `diagnostic` one is made in the stash instead (`place`).
+    fn open_window_as(&mut self, log: &mut Log, col: ColumnId, body: Body, path: String, label: Option<String>, y: Option<i32>, diagnostic: bool) -> Result<WindowId> {
         let id = WindowId(self.alloc());
         let tag = self.create_buffer(log, "", WIN_TAG, None)?;
         self.create_shard(log, Shard::Window(id))?;
         self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body, path, label }))?;
+        if diagnostic {
+            self.append(log, Shard::Window(id), Op::Window(WindowOp::Diagnostic { on: true }))?;
+        }
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
         if let Body::Text(b) | Body::Html(b) = body {
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
@@ -499,14 +507,14 @@ impl Node {
     /// A window whose body is a terminal (the term shard exists already),
     /// in directory `dir`, its label (a title, its command) beside it.
     pub fn open_term_window(&mut self, log: &mut Log, col: ColumnId, dir: &str, label: Option<String>, term: TermId) -> Result<WindowId> {
-        self.open_window_as(log, col, Body::Term(term), dir.to_string(), label, None)
+        self.open_window_as(log, col, Body::Term(term), dir.to_string(), label, None, false)
     }
 
     /// A web window on `url` in `col` (WEB.md §2): its path is the URL, as
     /// a terminal's is its directory; the client renders the page, and
     /// Back, Fwd and Get are the page's history and reload.
     pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
-        self.open_window_as(log, col, Body::Web, url.to_string(), None, None)
+        self.open_window_as(log, col, Body::Web, url.to_string(), None, None, false)
     }
 
     /// A window whose text is HTML shown as a page (WEB.md §2.5): a
@@ -515,7 +523,7 @@ impl Node {
     /// path (what shows it: a diff's range).
     pub fn open_html_window(&mut self, log: &mut Log, col: ColumnId, path: &str, text: &str, label: Option<String>) -> Result<WindowId> {
         let body = self.create_buffer_as(log, path, text, None, WinKind::Preview, true)?;
-        self.open_window_as(log, col, Body::Html(body), String::new(), label, None)
+        self.open_window_as(log, col, Body::Html(body), String::new(), label, None, false)
     }
 
     /// Where window `w` is, set: a text window's buffer renamed (acme's
@@ -585,6 +593,14 @@ impl Node {
         let ci = self.column_index(col)?;
         let mut l = self.state.layout.clone();
         tiling::coladd(&mut l, ci, tiling::Adding::New(w), y, &*self.tiling);
+        // a diagnostic window is made stashed: in the column, to come
+        // back to, and put away in the same breath -- never laid out
+        if self.window_diagnostic(w) {
+            if let Some(wi) = l.cols[ci].wins.iter().position(|s| s.window == w) {
+                tiling::stash(&mut l, ci, wi, &*self.tiling);
+            }
+            return self.arrange(log, &l);
+        }
         self.arrange(log, &l)?;
         self.warp = Some(Warp::NewWindow(w));
         Ok(())
@@ -948,6 +964,17 @@ impl Node {
         win.working.is_some_and(|a| a == SERVER || self.state.meta.attachments.contains_key(&a))
     }
 
+    /// How far along the work behind the window says it is, in percent,
+    /// while it is working and says.
+    pub fn window_progress(&self, w: WindowId) -> Option<u8> {
+        self.window_working(w).then(|| self.state.window(w).ok().and_then(|x| x.progress)).flatten()
+    }
+
+    /// Is it a diagnostic window (`WindowOp::Diagnostic`)?
+    pub fn window_diagnostic(&self, w: WindowId) -> bool {
+        self.state.window(w).is_ok_and(|x| x.diagnostic)
+    }
+
     /// The session's notifications, oldest first, of the windows still
     /// here: a window's goes with it.
     pub fn notifications(&self) -> impl Iterator<Item = &crate::state::Notification> {
@@ -1049,7 +1076,7 @@ impl Node {
         let body = w.body_buffer().ok_or_else(|| CoreError::Missing("no body buffer".into()))?;
         let label = w.label.clone();
         let col = self.column_of(window)?;
-        self.open_window_as(log, col, Body::Text(body), String::new(), label, None)
+        self.open_window_as(log, col, Body::Text(body), String::new(), label, None, false)
     }
 
     /// Close a window (acme's `colclose`). The body buffer's shard goes
@@ -1531,7 +1558,7 @@ impl Node {
                     Some(c) => c.id,
                     None => self.new_column(log, None)?,
                 };
-                self.new_window_as(log, col, &path, "", &Spec { kind: WinKind::Errors, scratch: true, label: None })?
+                self.new_window_as(log, col, &path, "", &Spec { kind: WinKind::Errors, scratch: true, label: None, diagnostic: true })?
             }
         };
         let view = ViewId::Body(window);

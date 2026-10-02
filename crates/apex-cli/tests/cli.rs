@@ -1166,7 +1166,7 @@ fn notify_waits_until_the_user_dismisses_it() {
     let sock = daemon();
     let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
     let col = ui.node.state.layout.cols.first().map(|c| c.id).unwrap();
-    let w = ui.propose(apex_server::Proposal::NewWindow { col, name: "/tmp/notify-origin".into(), label: None, scratch: false }, Duration::from_secs(5)).unwrap().unwrap();
+    let w = ui.propose(apex_server::Proposal::NewWindow { col, name: "/tmp/notify-origin".into(), label: None, scratch: false, diagnostic: false }, Duration::from_secs(5)).unwrap().unwrap();
     let s2 = sock.clone();
     let wid = w.0.to_string();
     let child = std::thread::spawn(move || apex(&s2, &["notify", &format!("-win={wid}")]));

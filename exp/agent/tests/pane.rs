@@ -281,7 +281,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     // an agent in a terminal of this very session: its verbs are offered
     // on that window too, and the three that answer while it asks
     let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
-    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true }, Duration::from_secs(5)).unwrap().unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true, diagnostic: false }, Duration::from_secs(5)).unwrap().unwrap();
     let sid = c.node.state.meta.id.clone();
     assert!(!sid.is_empty());
     // the window's tools menu, once every verb wanted is in it (or,
@@ -329,7 +329,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
 
     // CopyContext in a file's window: its selection, or the line at dot
     // with no selection, with where it is, into the snarf buffer
-    let fw = c.propose(apex_server::Proposal::NewWindow { col, name: proj.join("src/a.rs").display().to_string(), label: None, scratch: false }, Duration::from_secs(5)).unwrap().unwrap();
+    let fw = c.propose(apex_server::Proposal::NewWindow { col, name: proj.join("src/a.rs").display().to_string(), label: None, scratch: false, diagnostic: false }, Duration::from_secs(5)).unwrap().unwrap();
     let v = menu(&mut c, fw, &["CopyContext"]);
     assert!(v.iter().any(|x| x == "CopyContext"), "{v:?}");
     let fb = c.node.state.window(fw).unwrap().body_buffer().unwrap();
@@ -412,7 +412,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     assert!(!sid.is_empty());
     // the terminal the agent runs in
     let col = c.node.state.layout.cols.first().map(|x| x.id).unwrap();
-    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true }, Duration::from_secs(5)).unwrap().unwrap();
+    let tw = c.propose(apex_server::Proposal::NewWindow { col, name: format!("{}/", proj.display()), label: Some("term".into()), scratch: true, diagnostic: false }, Duration::from_secs(5)).unwrap().unwrap();
 
     let ev = |event: &str| Event {
         ms: event::now_ms(),

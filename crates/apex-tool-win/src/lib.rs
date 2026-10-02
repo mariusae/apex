@@ -226,7 +226,7 @@ pub fn run(socket: &Path, session: &str, dir: &Path, cmd: &[String]) -> Result<(
     };
     let (wpath, label) = apex_server::term::place(None, None, dir, &label);
     let col = remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-    let window = match remote.propose(Proposal::NewWindow { col, name: wpath, label: Some(label.clone()), scratch: true }, TIMEOUT)? {
+    let window = match remote.propose(Proposal::NewWindow { col, name: wpath, label: Some(label.clone()), scratch: true, diagnostic: false }, TIMEOUT)? {
         Some(w) => w,
         None => return Err("no window made".into()),
     };

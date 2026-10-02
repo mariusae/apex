@@ -292,6 +292,19 @@ func (t *Tool) NewScratch(path, label string) (*Window, error) {
 	return t.newWindow(args)
 }
 
+// NewDiagnostic makes a new diagnostic window at path, labelled: the
+// tool's report on how things stand (its errors, a server's diagnostics
+// and state), a scratch window made stashed as an +Errors window is,
+// what is new in it said in a toast, its progress (SetProgress) shown on
+// its card in the stash.
+func (t *Tool) NewDiagnostic(path, label string) (*Window, error) {
+	args := map[string]any{"path": path, "scratch": true, "diagnostic": true}
+	if label != "" {
+		args["label"] = label
+	}
+	return t.newWindow(args)
+}
+
 func (t *Tool) newWindow(args map[string]any) (*Window, error) {
 	var r struct {
 		Window int `json:"window"`
@@ -515,6 +528,18 @@ func (w *Window) SetTag(text string) error {
 // its handle pulses until it is turned off, or until the tool detaches.
 func (w *Window) SetWorking(on bool) error {
 	return w.t.call("working", map[string]any{"window": w.ID, "on": on}, nil)
+}
+
+// SetProgress says the tool is working behind the window and how far
+// along, in percent (0 to 100): the handle pulses, and a bar across the
+// window's top, or its card's foot while stashed, says how far. A
+// negative at says the work is done.
+func (w *Window) SetProgress(at int) error {
+	args := map[string]any{"window": w.ID}
+	if at >= 0 {
+		args["at"] = min(at, 100)
+	}
+	return w.t.call("progress", args, nil)
 }
 
 // Notify asks for the user's attention about the window: its handle shows

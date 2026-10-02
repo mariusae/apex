@@ -208,7 +208,7 @@ With -stdio, attach instead copies bytes between the daemon's socket and
 its own stdin and stdout, starting the daemon if none answers. That is
 what runs on a host: `ssh host apex -session=NAME attach -stdio` is the
 whole remote story." },
-    Cmd { name: "new", usage: "apex new [PATH]", short: "a new window, with stdin in it", flags: &[], run: new, long: "\
+    Cmd { name: "new", usage: "apex new [-diagnostic] [-label=LABEL] [PATH]", short: "a new window, with stdin in it", flags: &[switch("diagnostic", "a diagnostic window: scratch, made stashed, what is new in it said in a toast"), flag("label", "the window's label, beside its path")], run: new, long: "\
 New makes a new, empty window in the session and prints its id. When
 stdin is not a terminal, its content goes into the window:
 
@@ -216,7 +216,13 @@ stdin is not a terminal, its content goes into the window:
 
 A PATH is the window's file (relative to the current directory when it
 is not absolute): Put writes the window there. Double-click the path in
-the tag, or apex win rename, to change it later. See apex help windows." },
+the tag, or apex win rename, to change it later. See apex help windows.
+
+With -diagnostic the window is a diagnostic one, as an +Errors window
+is: a scratch window (PATH is where it is about, the current directory
+by default) made in the stash, not laid out; what is written to it
+after (apex win write, a tool) is said in a toast while it is stashed.
+For a script's report on how things stand." },
     Cmd { name: "open", usage: "apex open FILE...", short: "open files", flags: &[], run: open, long: "\
 Open opens each FILE (relative to the current directory) in the first
 column, as B2 on `New FILE` would, and prints the id and name of each
@@ -1297,6 +1303,29 @@ fn new(ctx: &Ctx, p: &Parsed) -> R {
         _ => return Err("usage".into()),
     };
     let mut c = tool(ctx)?;
+    if p.is("diagnostic") {
+        let path = match &label {
+            Some(l) => absolute(l)?,
+            None => format!("{}/", std::env::current_dir().map_err(|e| e.to_string())?.display().to_string().trim_end_matches('/')),
+        };
+        let col = c.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
+        let w = c.propose(Proposal::NewWindow { col, name: path, label: p.get("label").map(String::from), scratch: true, diagnostic: true }, TIMEOUT)?.ok_or("no window made")?;
+        wait(&mut c, |r| r.node.state.window(w).is_ok())?;
+        if !std::io::stdin().is_terminal() {
+            let mut text = String::new();
+            std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+            let b = c.node.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
+            if !text.is_empty() {
+                let version = c.node.state.buffer(b).map_err(|e| e.to_string())?.version;
+                c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: 0, text }, TIMEOUT)?;
+            }
+        }
+        println!("{}", w.0);
+        return Ok(());
+    }
+    if p.get("label").is_some() {
+        return Err("new: -label goes with -diagnostic".into());
+    }
     let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
     c.propose(Proposal::Exec { ctx: ExecCtx::Top, text: "New".into() }, TIMEOUT)?;
     wait(&mut c, |r| r.node.state.windows.keys().any(|w| !before.contains(w)))?;

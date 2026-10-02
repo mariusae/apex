@@ -1313,9 +1313,9 @@ fn a_window_at_a_directory_is_in_it() {
     let dir = std::env::temp_dir().join(format!("apex-at-dir-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     let at = |d: &std::path::Path| format!("{}/", d.display());
-    let w = perform(&mut node, &mut log, vec![Proposal::NewWindow { col, name: at(&dir), label: Some("sh".into()), scratch: true }]).expect("a window");
+    let w = perform(&mut node, &mut log, vec![Proposal::NewWindow { col, name: at(&dir), label: Some("sh".into()), scratch: true, diagnostic: false }]).expect("a window");
     assert_eq!(server.dir_of(&node, ExecCtx::Window(w)), dir);
-    let f = perform(&mut node, &mut log, vec![Proposal::NewWindow { col, name: dir.join("sub/notes.txt").display().to_string(), label: None, scratch: false }]).expect("a window");
+    let f = perform(&mut node, &mut log, vec![Proposal::NewWindow { col, name: dir.join("sub/notes.txt").display().to_string(), label: None, scratch: false, diagnostic: false }]).expect("a window");
     assert_eq!(server.dir_of(&node, ExecCtx::Window(f)), dir.join("sub"));
     let _ = std::fs::remove_dir_all(&dir);
 }

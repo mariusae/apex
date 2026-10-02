@@ -163,8 +163,17 @@ pub enum WindowOp {
     /// slow: an agent thinking, a build running): the handle pulses
     /// while it lasts. `by` is the attachment that keeps it so; the
     /// state ends with that attachment, or with `None`. Beside live,
-    /// not instead of it: a window can be both.
-    Working { by: Option<AttachmentId> },
+    /// not instead of it: a window can be both. `at`: how far along, in
+    /// percent, when the work says (an LSP server indexing).
+    Working {
+        by: Option<AttachmentId>,
+        #[serde(default)]
+        at: Option<u8>,
+    },
+    /// The window is a diagnostic one, as an +Errors window is: a tool's
+    /// report on how things stand (its errors, a language server's
+    /// diagnostics and state), made stashed, its news said in toasts.
+    Diagnostic { on: bool },
     /// B2 (or the CLI) executed something in this window.
     Exec(ExecOp),
     Status { exec: Seq, status: ExecStatusOp },

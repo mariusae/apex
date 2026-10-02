@@ -15,7 +15,15 @@ pub enum Proposal {
     /// A window on a new, empty buffer at this path (`New path`): a
     /// file's, or scratch (a tool's window, a transcript), with a label
     /// beside the path.
-    NewWindow { col: ColumnId, name: String, label: Option<String>, scratch: bool },
+    NewWindow {
+        col: ColumnId,
+        name: String,
+        label: Option<String>,
+        scratch: bool,
+        /// Diagnostic (`WindowOp::Diagnostic`): made in the stash.
+        #[serde(default)]
+        diagnostic: bool,
+    },
     /// A window on a terminal the server created, in directory `dir`,
     /// labelled (its command, else the host).
     TermWindow { col: ColumnId, dir: String, label: Option<String>, term: TermId },
@@ -86,7 +94,13 @@ pub enum Proposal {
     Live { window: WindowId, by: Option<AttachmentId> },
     /// Work is going on behind a window: its handle pulses while it is
     /// so. `by` is the attachment that keeps it (`None` ends it).
-    Working { window: WindowId, by: Option<AttachmentId> },
+    Working {
+        window: WindowId,
+        by: Option<AttachmentId>,
+        /// How far along, in percent, when the work says.
+        #[serde(default)]
+        at: Option<u8>,
+    },
     /// Put in an autoindent window (acme's `trimspaces`): the file on
     /// disk is the buffer at `version` without the blanks at the ends of
     /// its lines. The leader deletes those `runs` (from the end backwards)
@@ -134,9 +148,12 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.seltext = Some(ViewId::Body(w));
             Ok(Some(w))
         }
-        Proposal::NewWindow { col, name, label, scratch } => {
-            let w = node.new_window_as(log, col, &name, "", &Spec { kind: WinKind::File, scratch, label })?;
-            node.seltext = Some(ViewId::Body(w));
+        Proposal::NewWindow { col, name, label, scratch, diagnostic } => {
+            let w = node.new_window_as(log, col, &name, "", &Spec { kind: WinKind::File, scratch, label, diagnostic })?;
+            // (a diagnostic one, stashed, is no place for the keys)
+            if !diagnostic {
+                node.seltext = Some(ViewId::Body(w));
+            }
             Ok(Some(w))
         }
         Proposal::TermWindow { col, dir, label, term } => {
@@ -288,8 +305,8 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.run_builtin(log, ctx, &text)?;
             Ok(None)
         }
-        Proposal::Working { window, by } => {
-            node.append(log, Shard::Window(window), Op::Window(WindowOp::Working { by }))?;
+        Proposal::Working { window, by, at } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Working { by, at }))?;
             Ok(None)
         }
         Proposal::Own { window, by } => {

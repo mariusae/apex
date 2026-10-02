@@ -599,7 +599,7 @@ impl Server {
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: on, at }));
                             if was != on {
                                 if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                                    props.push(Proposal::Working { window: w, by: on.then_some(SERVER) });
+                                    props.push(Proposal::Working { window: w, by: on.then_some(SERVER), at: None });
                                 }
                             }
                         }
@@ -613,7 +613,7 @@ impl Server {
                             h.progress = None;
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: false, at: None }));
                             if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                                props.push(Proposal::Working { window: w, by: None });
+                                props.push(Proposal::Working { window: w, by: None, at: None });
                             }
                         }
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status }));
@@ -993,7 +993,7 @@ impl Server {
                 if path.exists() {
                     props.push(self.open_file(col, win, &dir, name, None)?);
                 } else {
-                    props.push(Proposal::NewWindow { col, name: path.to_string_lossy().to_string(), label: None, scratch: false });
+                    props.push(Proposal::NewWindow { col, name: path.to_string_lossy().to_string(), label: None, scratch: false, diagnostic: false });
                 }
             }
             "Newterm" => {

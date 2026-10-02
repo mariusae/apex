@@ -668,7 +668,7 @@ impl Tool {
                     return;
                 }
                 let Some(col) = node.state.layout.cols.last().map(|c| c.id) else { return };
-                match self.propose(Proposal::NewWindow { col, name: name.clone(), label: Some("lsp".into()), scratch: true }, TIMEOUT) {
+                match self.propose(Proposal::NewWindow { col, name: name.clone(), label: Some("lsp".into()), scratch: true, diagnostic: true }, TIMEOUT) {
                     Ok(Some(w)) => {
                         // its entries may still be on their way
                         let deadline = std::time::Instant::now() + TIMEOUT;
