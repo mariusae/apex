@@ -1127,3 +1127,50 @@ fn a_tags_pad_is_the_tags_once_not_each_lines() {
         assert_eq!(s.body.y0, s.tag_y1() + 1, "window {w}: the line, then the body");
     }
 }
+
+#[test]
+fn shift_b1_minimizes_a_window_to_its_tag_and_a_column_to_a_strip() {
+    // a window: down to its tag where it stands, its room to the one
+    // under it -- or, the last, to the one over it, its tag at the foot
+    let mut l = row();
+    add(&mut l, 0, 1, None);
+    add(&mut l, 0, 2, None);
+    add(&mut l, 0, 3, None);
+    let foot = l.cols[0].r.y1;
+    colminimize(&mut l, 0, 0, &info());
+    let w = wins(&l, 0);
+    assert_eq!(w[0].2 - w[0].1, FONT, "the first, a tag: {w:?}");
+    assert_eq!(w[1].1, w[0].2 + BORDER, "the next up to it: {w:?}");
+    assert_eq!(w[2].2, foot);
+    colminimize(&mut l, 0, 2, &info());
+    let w = wins(&l, 0);
+    assert_eq!((w[2].1, w[2].2), (foot - FONT, foot), "the last, a tag at the foot: {w:?}");
+    assert_eq!(w[1].2 + BORDER, w[2].1, "the one over it down to it: {w:?}");
+    assert!(l.cols[0].wins[1].body.dy() > 0);
+    // a tag already, or alone in its column: as it was
+    let before = l.clone();
+    colminimize(&mut l, 0, 0, &info());
+    assert_eq!(l, before);
+    // and B1 on its box grows it again
+    colgrow(&mut l, 0, 0, 1, &info());
+    assert!(l.cols[0].wins[0].body.dy() > 0);
+
+    // a column: a strip where it stands, its width to the one right of
+    // it, and back at that width with B1 on the strip
+    let mut l = three();
+    let had = widths(&l);
+    rowminimize(&mut l, 1, &info());
+    tiles(&l);
+    assert_eq!(ids(&l), vec![1, 2, 3]);
+    assert!(is_strip(l.cols[1].r) && !l.cols[1].stashed);
+    assert_eq!(widths(&l)[0], had[0], "the left one as it was");
+    rowgrow(&mut l, 1, 1, &info());
+    tiles(&l);
+    assert!((wid(&l, 2) - had[1]).abs() <= 1, "back at its width: {:?} vs {had:?}", widths(&l));
+    // the last with room is not minimized
+    rowminimize(&mut l, 0, &info());
+    rowminimize(&mut l, 2, &info());
+    let before = l.clone();
+    rowminimize(&mut l, 1, &info());
+    assert_eq!(l, before, "the last with room: {:?}", widths(&l));
+}

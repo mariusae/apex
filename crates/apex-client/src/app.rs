@@ -2133,11 +2133,14 @@ impl Acme {
     }
 
     /// A strip pressed: its column's box, as the column tag's box is.
-    pub fn press_col_box(&mut self, c: ColumnId, button: MouseButton, pos: Point<Pixels>, cx: &mut Context<Self>) {
+    pub fn press_col_box(&mut self, c: ColumnId, button: MouseButton, pos: Point<Pixels>, shift: bool, cx: &mut Context<Self>) {
+        cx.stop_propagation();
+        if self.minimize_box(BoxTarget::Col(c), button, shift, cx) {
+            return;
+        }
         if self.mouse.b1.is_none() {
             self.mouse.box_drag = Some((BoxTarget::Col(c), button, pos));
         }
-        cx.stop_propagation();
         cx.notify();
     }
 
@@ -3221,6 +3224,9 @@ impl Acme {
                     _ => None,
                 };
                 if let Some(bt) = bt {
+                    if self.minimize_box(bt, button, e.modifiers.shift, cx) {
+                        return;
+                    }
                     self.mouse.box_drag = Some((bt, button, e.position));
                     cx.notify(); // the pointer becomes the box
                     return;
@@ -4096,7 +4102,31 @@ impl Acme {
 
     /// A web window's handle pressed (its header draws it, not a tag):
     /// acme's box, as any window's.
-    pub fn press_handle(&mut self, w: WindowId, button: MouseButton, pos: Point<Pixels>, cx: &mut Context<Self>) {
+    /// Shift-B1 on a layout box: the window minimized -- down to its tag,
+    /// where it stands -- or the column, a strip where it stands. True
+    /// when it was.
+    fn minimize_box(&mut self, bt: BoxTarget, button: MouseButton, shift: bool, cx: &mut Context<Self>) -> bool {
+        if !shift || button != MouseButton::Left || self.mouse.b1.is_some() {
+            return false;
+        }
+        let r = match bt {
+            BoxTarget::Win(w) => self.node.minimize_window(&mut self.log, w),
+            BoxTarget::Col(c) => self.node.minimize_column(&mut self.log, c),
+            BoxTarget::Edge(_) => return false,
+        };
+        if let Err(err) = r {
+            eprintln!("layout: {err}");
+        }
+        self.after();
+        cx.notify();
+        true
+    }
+
+    pub fn press_handle(&mut self, w: WindowId, button: MouseButton, pos: Point<Pixels>, shift: bool, cx: &mut Context<Self>) {
+        if self.minimize_box(BoxTarget::Win(w), button, shift, cx) {
+            cx.stop_propagation();
+            return;
+        }
         self.url_edit = None;
         if self.mouse.b1.is_none() {
             self.mouse.box_drag = Some((BoxTarget::Win(w), button, pos));

@@ -410,6 +410,13 @@ windows put away out of the tiling, which is the core's
   on a column's box does nothing. A column an older apex put away at
   the row's right is still drawn as the edges of sheets on their sides,
   and B1 brings it back where it stood.
+- **Shift-B1 minimizes** (`tiling::colminimize`, `rowminimize`): on a
+  window's box (or handle), the window down to its tag where it stands,
+  its room to the window under it (over it, the last); on a column's
+  box, the column a strip where it stands, its width to the nearest
+  column with room, right of it first, and remembered for B1 on the
+  strip to give back. B1 on a minimized window's box grows it again. A
+  window alone in its column, or the last column with room, stays.
 - **Menus.** The B4 tools menu is a Mac context menu (`menu.rs`,
   `Menu::place`) with menuhit's ways: up while the button is held, run on
   release over an item, the last choice remembered and opened under the

@@ -645,6 +645,37 @@ pub fn is_maximized_win(c: &Column, wi: usize) -> bool {
     c.wins.len() > 1 && c.wins.iter().enumerate().all(|(j, s)| j == wi || s.body.dy() <= 0) && c.wins.iter().any(|s| s.premax > 0)
 }
 
+/// Shift-B1 on a window's box: minimized -- down to its tag, where it
+/// stands in the column, as B2 on another's box leaves it -- its body's
+/// room to the window under it (over it, the last). A window alone in
+/// its column, or down to its tag already, stays as it is. B1 on its box
+/// grows it again (`colgrow`).
+pub fn colminimize(l: &mut Layout, ci: usize, wi: usize, info: &dyn Info) {
+    unfull(l, ci, info);
+    let n = l.cols[ci].wins.len();
+    if n < 2 || wi >= n || l.cols[ci].wins[wi].body.dy() <= 0 {
+        return;
+    }
+    let s = l.cols[ci].wins[wi];
+    let tag = tag_height(info, s.taglines.max(1));
+    if wi + 1 < n {
+        // the one under it comes up to its tag
+        let mine = Rect::new(s.r.x0, s.r.y0, s.r.x1, s.r.y0 + tag);
+        winresize(l, ci, wi, mine, true, info);
+        let below = l.cols[ci].wins[wi + 1].r;
+        let r = Rect::new(below.x0, mine.y1 + BORDER, below.x1, below.y1);
+        winresize(l, ci, wi + 1, r, wi + 1 == n - 1, info);
+    } else {
+        // the last: its tag at the column's foot, the one over it down to it
+        let foot = l.cols[ci].r.y1;
+        let mine = Rect::new(s.r.x0, foot - tag, s.r.x1, foot);
+        let above = l.cols[ci].wins[wi - 1].r;
+        let r = Rect::new(above.x0, above.y0, above.x1, mine.y0 - BORDER);
+        winresize(l, ci, wi - 1, r, true, info);
+        winresize(l, ci, wi, mine, true, info);
+    }
+}
+
 /// B2 on a window's box: maximized -- as big as it can be, the others in
 /// the column down to their tags, as acme's B2: the share each had kept,
 /// for B1 on its box to give back.
@@ -1424,6 +1455,31 @@ pub fn rowmaximize(l: &mut Layout, ci: usize, info: &dyn Info) {
     }
     let total = (l.r.dx() - (n as i32 - 1) * BORDER).max(0);
     w[ci] = total - (0..n).filter(|&j| j != ci).map(|j| w[j]).sum::<i32>();
+    rowpack(l, &w, info);
+}
+
+/// Shift-B1 on a column's box: minimized where it stands -- a strip, as
+/// B2 on another's box leaves it -- its width to the nearest column with
+/// room, right of it first, and kept for B1 on the strip to give back.
+/// Not the last column with room. A column given the whole row (B3) is
+/// laid out as it was first.
+pub fn rowminimize(l: &mut Layout, ci: usize, info: &dyn Info) {
+    if ci >= l.cols.len() {
+        return;
+    }
+    let id = l.cols[ci].id;
+    reveal(l, info);
+    let Some(ci) = l.column_index(id) else { return };
+    if is_strip(l.cols[ci].r) || l.cols[ci].stashed {
+        return;
+    }
+    let roomy = |j: usize| !l.cols[j].stashed && !is_strip(l.cols[j].r);
+    let n = l.cols.len();
+    let Some(to) = (ci + 1..n).find(|&j| roomy(j)).or_else(|| (0..ci).rev().find(|&j| roomy(j))) else { return };
+    let mut w: Vec<i32> = l.cols.iter().map(|c| c.r.dx().max(0)).collect();
+    remember(l, ci, w[ci]);
+    w[to] += w[ci] - STRIP;
+    w[ci] = STRIP;
     rowpack(l, &w, info);
 }
 

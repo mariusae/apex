@@ -97,9 +97,9 @@ impl Acme {
             .cursor(gpui::CursorStyle::OpenHand)
             .child(gpui::canvas(|_, _, _| {}, move |b, _, window, _| crate::text_element::paint_dot(window, &d, gpui::point(b.left() + px(7.5), b.top() + b.size.height / 2.))).size_full())
             // the handle's buttons as any window's: acme's box
-            .on_mouse_down(MouseButton::Left, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Left, e.position, cx)))
-            .on_mouse_down(MouseButton::Middle, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Middle, e.position, cx)))
-            .on_mouse_down(MouseButton::Right, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Right, e.position, cx)));
+            .on_mouse_down(MouseButton::Left, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Left, e.position, e.modifiers.shift, cx)))
+            .on_mouse_down(MouseButton::Middle, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Middle, e.position, e.modifiers.shift, cx)))
+            .on_mouse_down(MouseButton::Right, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Right, e.position, e.modifiers.shift, cx)));
         let button = |id: &'static str, glyph: &'static str, nav: Nav| {
             div()
                 .id((id, w.0))

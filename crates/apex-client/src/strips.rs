@@ -97,7 +97,7 @@ impl Acme {
             },
         )
         .size_full();
-        let press = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_col_box(c, b, e.position, cx));
+        let press = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_col_box(c, b, e.position, e.modifiers.shift, cx));
         div()
             .id(("strip", ci))
             .size_full()
@@ -142,7 +142,7 @@ impl Acme {
             },
         )
         .size_full();
-        let press = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_col_box(c, b, e.position, cx));
+        let press = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_col_box(c, b, e.position, e.modifiers.shift, cx));
         let mut el = div()
             .id(("minimized", ci))
             .relative()
@@ -154,7 +154,7 @@ impl Acme {
             .on_mouse_down(MouseButton::Right, press(MouseButton::Right));
         // each handle its window's box, as a folded window's is
         for (k, &(w, y)) in handles.iter().enumerate() {
-            let hit = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, b, e.position, cx));
+            let hit = |b: MouseButton| cx.listener(move |this: &mut Acme, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, b, e.position, e.modifiers.shift, cx));
             el = el.child(
                 div()
                     .id(("minimized-handle", ci * 1000 + k))

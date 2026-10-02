@@ -709,6 +709,30 @@ impl Node {
         Ok(())
     }
 
+    /// Window `w` minimized where it stands (shift-B1 on its box): down to
+    /// its tag, as `tiling::colminimize` has it.
+    pub fn minimize_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let (ci, wi) = self.place_of(w)?;
+        let mut l = self.state.layout.clone();
+        tiling::colminimize(&mut l, ci, wi, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
+    /// Column `col` minimized where it stands (shift-B1 on its box), a
+    /// strip, as `tiling::rowminimize` has it.
+    pub fn minimize_column(&mut self, log: &mut Log, col: ColumnId) -> Result<()> {
+        let ci = self.column_index(col)?;
+        let mut l = self.state.layout.clone();
+        tiling::rowminimize(&mut l, ci, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
     /// Window `w` put in the session's stash (⌘M, `Stash`): out of its
     /// column, its space going to a neighbour.
     pub fn stash_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
