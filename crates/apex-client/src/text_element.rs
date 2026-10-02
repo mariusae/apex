@@ -80,6 +80,14 @@ pub fn tag_line_height() -> Pixels {
     font_for(false).line_height + px(TAG_PAD)
 }
 
+/// A tag's rows, one under the other: a body's line and a pixel. The
+/// pad that makes a tag's line taller is the card's, over and under its
+/// rows (the paint centres them in the room it has), not between them --
+/// a tag wrapped to two rows is not two tags' worth of air.
+pub fn tag_row_height() -> Pixels {
+    font_for(false).line_height + px(1.)
+}
+
 /// The radius of a card's corners (a window on the ground).
 pub const CARD_RADIUS: f32 = 7.;
 
@@ -678,6 +686,9 @@ pub struct TextLayout {
     pub first_line: usize,
     pub scrollbar: Option<Bounds<Pixels>>,
     pub layout_box: Option<Bounds<Pixels>>,
+    /// A tag's: its card's pad over its first row and under its last is
+    /// those rows' to a click, not the text's start or end.
+    pub padded: bool,
 }
 
 impl TextLayout {
@@ -685,7 +696,11 @@ impl TextLayout {
     pub fn offset_at(&self, pos: Point<Pixels>) -> usize {
         let Some(first) = self.lines.first() else { return self.text_len };
         let x = pos.x - self.text_origin.x;
-        let y = pos.y - self.text_origin.y;
+        let mut y = pos.y - self.text_origin.y;
+        if self.padded {
+            let last = self.lines.last().unwrap();
+            y = y.max(first.y).min(last.y + last.height(self.line_height) - px(0.5));
+        }
         if y < first.y {
             return first.start;
         }
@@ -1370,7 +1385,8 @@ impl Element for TextElement {
                 (format!("{}{}", acme.top_head().text, acme.view_text(self.view)).into(), acme.top_bare())
             };
             let mut fontspec = font_for(false);
-            fontspec.line_height = tag_line_height();
+            fontspec.line_height = tag_row_height();
+            let pad = tag_line_height() - tag_row_height();
             let id = window.request_measured_layout(
                 style,
                 move |known: Size<Option<Pixels>>, avail: Size<AvailableSpace>, window, _cx| {
@@ -1393,7 +1409,7 @@ impl Element for TextElement {
                         .map(|ls| ls.iter().map(|l| l.wrap_boundaries().len() + 1).sum())
                         .unwrap_or(1);
                     let extra = if kind == Kind::WinTag { px(1.) } else { px(0.) };
-                    size(width.unwrap_or(px(100.)), fontspec.line_height * n.max(1) as f32 + extra)
+                    size(width.unwrap_or(px(100.)), fontspec.line_height * n.max(1) as f32 + pad + extra)
                 },
             );
             (id, ())
@@ -1414,9 +1430,9 @@ impl Element for TextElement {
             let src = acme.source(view)?;
             let kind = src.kind;
             let mut fontspec = font_for(src.mono && kind == Kind::Body);
-            // a tag's line a little taller than a body's
+            // a tag's rows (its card's pad over and under them)
             if kind != Kind::Body {
-                fontspec.line_height = tag_line_height();
+                fontspec.line_height = tag_row_height();
             }
             let lh = fontspec.line_height;
             let margin = if kind == Kind::Body { px(BODY_MARGIN) } else if src.bare { px(0.) } else { px(MARGIN) };
@@ -1785,7 +1801,9 @@ impl Element for TextElement {
                 // it starts and ends; as tall as the ink and a little, and
                 // never more than the card less a margin (a folded
                 // window's is shorter)
-                let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(lh) - px(3.));
+                // (capped by the card's line, not the rows' pitch: a
+                // wrapped one's chips keep their height, a gap between)
+                let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(tag_line_height()) - px(3.)).min(lh - px(1.));
                 let chip = |window: &mut Window, a: usize, b: usize, past: Pixels, color: Hsla| {
                     for (i, &(ds, de)) in line.subs.iter().enumerate() {
                         let (s, e) = (a.max(ds), b.min(de));
@@ -1903,6 +1921,7 @@ impl Element for TextElement {
                 first_line: pp.first_line,
                 scrollbar,
                 layout_box,
+                padded: pp.kind != Kind::Body,
             };
             let view = self.view;
             self.acme.update(cx, |acme, _| {
@@ -1930,6 +1949,7 @@ mod row_tests {
             first_line: 0,
             scrollbar: None,
             layout_box: None,
+            padded: false,
         }
     }
 
