@@ -1186,9 +1186,8 @@ impl Node {
             let rest: Vec<WindowId> = stack.iter().copied().filter(|&x| x != window).collect();
             let mut l = self.state.layout.clone();
             tiling::restack(&mut l, stack[0], &rest, &*self.tiling);
-            if stack[0] == window {
-                next = rest.first().copied();
-            }
+            // (and the pointer left be: onto the Del of the one coming back
+            // -- a terminal -- a second click would close it too)
             self.arrange(log, &l)?;
         } else if let Some((ci, wi)) = self.state.layout.place_of(window) {
             let mut l = self.state.layout.clone();

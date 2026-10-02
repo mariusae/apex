@@ -27,7 +27,7 @@ use apex_server::Proposal;
 
 use crate::app::Acme;
 use crate::field::{Edited, LineEdit};
-use crate::text_element::{Atom, VERB_ICONS};
+use crate::text_element::Atom;
 
 /// `Candidates::at` for a listing the picker asked for (a completion's is
 /// a caret's offset).
@@ -207,7 +207,7 @@ impl Acme {
         let here = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_at(pos));
         if here == Some(atom) {
             if let Atom::Verb(i) = atom {
-                self.execute(ExecCtx::Window(w), VERB_ICONS[i].0, cx);
+                self.execute(ExecCtx::Window(w), crate::text_element::verb_command(i), cx);
                 self.after();
             }
         }

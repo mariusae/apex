@@ -1951,9 +1951,22 @@ impl Acme {
         l.column_of(w).and_then(|c| l.column(c)).is_some_and(|c| c.hiding() && c.full.is_some_and(|f| f.window == w))
     }
 
-    /// Does the window carry a notification this client shows?
+    /// Does the window carry a notification this client shows -- it, or
+    /// a window it covers (whose handle is this one's while it is)?
     pub fn window_notified(&self, w: WindowId) -> bool {
-        self.shown_notifications().any(|n| n.window == w)
+        let ws = self.handle_of(w);
+        self.shown_notifications().any(|n| ws.contains(&n.window))
+    }
+
+    /// The windows a window's handle speaks for: itself, and, the top of
+    /// a stack (`Cover`), the windows under it.
+    fn handle_of(&self, w: WindowId) -> Vec<WindowId> {
+        let l = &self.node.state.layout;
+        if l.over(w).is_none() && l.under(w).is_some() {
+            l.stack(w)
+        } else {
+            vec![w]
+        }
     }
 
     /// When this client first saw each notification it shows, kept as
@@ -1968,8 +1981,9 @@ impl Acme {
 
     /// How long ago window `w`'s notification came, if it has one shown.
     pub fn note_age(&self, w: WindowId) -> Option<f32> {
-        let n = self.shown_notifications().find(|n| n.window == w)?;
-        Some(self.noted.get(&(w, n.at)).map_or(f32::MAX, |t| t.elapsed().as_secs_f32()))
+        // the latest of the windows its handle speaks for
+        let ws = self.handle_of(w);
+        self.shown_notifications().filter(|n| ws.contains(&n.window)).map(|n| self.noted.get(&(n.window, n.at)).map_or(f32::MAX, |t| t.elapsed().as_secs_f32())).reduce(f32::min)
     }
 
     fn take_notification(&mut self, cx: &mut Context<Self>) {
@@ -2257,8 +2271,9 @@ impl Acme {
             Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
                 // movetodel: onto the next window's Del icon, so a click
                 // closes that one too -- as the last frame drew it
-                let del = crate::text_element::VERB_ICONS.iter().position(|(v, _)| *v == "Del").unwrap_or(0);
-                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.atom_bounds(Atom::Verb(del))).map(|b| b.center())
+                let del = crate::text_element::icon_index("Del");
+                let stacked = crate::text_element::icon_index(crate::text_element::DEL_STACKED);
+                self.layouts.get(&ViewId::Tag(w)).and_then(|tl| tl.atom_bounds(Atom::Verb(del)).or_else(|| tl.atom_bounds(Atom::Verb(stacked)))).map(|b| b.center())
             }
             Pending::Warp(Warp::Closed { next: None, .. }) => None,
             Pending::Warp(Warp::Sel(v)) => {
@@ -2840,6 +2855,8 @@ impl Acme {
     pub fn tag_head(&self, w: WindowId) -> Head {
         let n = &self.node;
         let kind = n.window_kind(w);
+        // over another window: its Del closes this one only, and says so
+        let verbs: Vec<&str> = n.window_verbs(w).into_iter().map(|v| if v == "Del" && n.state.layout.under(w).is_some() { crate::text_element::DEL_STACKED } else { v }).collect();
         let label = n.window_label(w).or_else(|| match kind {
             WinKind::Errors => Some("Errors".into()),
             WinKind::Preview => Some("Preview".into()),
@@ -2847,10 +2864,10 @@ impl Acme {
         });
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
-            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &n.window_verbs(w), &n.state.meta.cwd);
+            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &verbs, &n.state.meta.cwd);
         }
         // a path in the session's directory from there on (only drawn so)
-        Head::build_in(&n.window_path(w), label.as_deref(), &n.window_verbs(w), kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
+        Head::build_in(&n.window_path(w), label.as_deref(), &verbs, kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
     }
 
     pub fn view_text(&self, view: ViewId) -> String {
