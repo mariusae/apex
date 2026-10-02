@@ -158,7 +158,7 @@ pub fn palette(kind: Kind) -> Palette {
 /// header and puts pjw's face at its far end. Any mark goes with any other.
 /// The handle is acme's layout box all the same: B1, B2 and B3 on it do
 /// what they always have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Dot {
     /// Dirty or stale: the circle filled.
     pub fill: Option<u32>,
@@ -169,8 +169,10 @@ pub struct Dot {
     pub core: Option<u32>,
     /// Working: the arc turning.
     pub spin: Option<u32>,
-    /// Notified: the header tinted, pjw's face at its end.
-    pub badge: bool,
+    /// Notified, this long ago (seconds, as this client first saw it): a
+    /// ring ripples out of the handle and leaves a pale halo round it,
+    /// there while the notification waits (`paint_note`).
+    pub note: Option<f32>,
     /// Grown to the whole column, others hidden behind it: square, not
     /// round.
     pub square: bool,
@@ -182,7 +184,7 @@ impl Dot {
     }
 }
 
-pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, working: bool, notified: bool) -> Dot {
+pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, working: bool, note: Option<f32>) -> Dot {
     let fill = if stale {
         Some(th.stale)
     } else if dirty {
@@ -195,7 +197,7 @@ pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, worki
         ring: if live { Some(th.accent) } else if fill.is_none() { Some(th.text_dim) } else { None },
         core: (live && fill.is_none()).then_some(th.accent),
         spin: working.then_some(th.accent),
-        badge: notified,
+        note,
         square: false,
     }
 }
@@ -205,7 +207,42 @@ const DOT_R: f32 = 3.75;
 const RING_R: f32 = 5.;
 const SPIN_R: f32 = 5.25;
 
+/// A notification round a handle: as it comes, a disc grows out of the
+/// handle with a ring at its edge, the ring fading as the disc reaches
+/// its size, and a fainter ring ripples on past it; then the disc stays,
+/// a pale halo, until the notification goes. `age` in seconds.
+const HALO_R: f32 = 8.5;
+const PING_IN: f32 = 0.55;
+const PING_OUT: f32 = 0.9;
+
+pub fn paint_note(window: &mut Window, age: f32, c: Point<Pixels>) {
+    let th = crate::theme::theme();
+    let ink = rgb(th.accent);
+    let circle = |r: f32| Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(2. * r), px(2. * r)));
+    let ease = |t: f32| 1. - (1. - t.clamp(0., 1.)).powi(3);
+    let halo = if crate::theme::is_dark() { 0.30 } else { 0.22 };
+    let k = (age / PING_IN).clamp(0., 1.);
+    let r = RING_R + (HALO_R - RING_R) * ease(k);
+    window.paint_quad(fill(circle(r), ink.opacity(halo * ease(k))).corner_radii(px(r)));
+    let ring = |window: &mut Window, r: f32, a: f32| {
+        window.paint_quad(gpui::quad(circle(r), px(r), gpui::transparent_black(), px(1.5), ink.opacity(a), gpui::BorderStyle::Solid));
+    };
+    if k < 1. {
+        ring(window, r, 0.9 * (1. - k));
+    }
+    let k2 = (age - PING_IN) / PING_OUT;
+    if (0. ..1.).contains(&k2) {
+        ring(window, HALO_R + 6. * ease(k2), 0.5 * (1. - k2));
+    }
+    if age < PING_IN + PING_OUT {
+        window.request_animation_frame();
+    }
+}
+
 pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
+    if let Some(age) = d.note {
+        paint_note(window, age, c);
+    }
     let circle = |r: f32| Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(2. * r), px(2. * r)));
     // square: the same size, its corners barely rounded
     let round = |r: f32| if d.square { px(r.min(1.25)) } else { px(r) };
@@ -997,10 +1034,9 @@ pub struct Source {
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
     pub fenced: bool,
-    /// Notified: for the top row, some window in the session is (its
-    /// square says so, and a click on it takes the oldest); for a window's
-    /// tag, that window is (its handle says so).
-    pub notified: bool,
+    /// A window's tag: how long ago its notification came (`Dot::note`),
+    /// which its handle says.
+    pub note: Option<f32>,
     /// The pointer is on it: a tag's commands at their full secondary ink,
     /// faint otherwise.
     pub hovered: bool,
@@ -1061,7 +1097,7 @@ pub struct Prepaint {
     live: bool,
     pulse: Option<f32>,
     fenced: bool,
-    notified: bool,
+    note: Option<f32>,
     round: (bool, bool),
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
@@ -1533,7 +1569,7 @@ impl Element for TextElement {
                 live: src.live,
                 pulse: src.pulse,
                 fenced: src.fenced,
-                notified: src.notified,
+                note: src.note,
                 round: src.round,
                 scroller: src.scroller,
                 lane: acme.lane_open(view),
@@ -1578,18 +1614,8 @@ impl Element for TextElement {
         let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else if pp.bare { px(0.) } else { px(MARGIN) };
         let origin = point(bounds.left() + margin, bounds.top() + shift);
 
-        // a notified window's header in a pale tint of the accent, as
-        // Mail tints a flagged row: the whole bar says it wants the user.
-        // Pale enough that a selection in the tag still shows on it: with
-        // the GitHub palettes' accents, 6 to 9 in CIELAB from the plain
-        // header and from the tag's selection, light and dark, under a
-        // deuteranopia simulation too
-        let header_bg = if pp.kind == Kind::WinTag && pp.notified {
-            let th = crate::theme::theme();
-            rgb(mix(th.tag_bg, th.accent, 0.10))
-        } else {
-            pal.bg
-        };
+        // (a notified window says so by its handle, not its header)
+        let header_bg = pal.bg;
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             // a card's corners where it has them; the column tags and the
             // top row on the ground, with no card of their own
@@ -1626,7 +1652,7 @@ impl Element for TextElement {
                 Kind::WinTag => {
                     let th = crate::theme::theme();
                     let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
-                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.notified).squared(pp.hiding);
+                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.note).squared(pp.hiding);
                     // in from the card's rounded corner
                     paint_dot(window, &d, point(b.left() + px(7.5), b.top() + lh / 2.));
                     layout_box = Some(b);
@@ -1913,18 +1939,18 @@ mod dot_tests {
     fn a_handle_is_a_circle_with_its_marks() {
         let th = crate::theme::theme();
         // clean: a hollow circle; dirty and stale: filled
-        let clean = dot(&th, false, false, false, false, false);
-        assert_eq!((clean.fill, clean.ring, clean.core, clean.spin, clean.badge), (None, Some(th.text_dim), None, None, false));
-        assert_eq!(dot(&th, false, true, false, false, false).fill, Some(th.dirty));
-        assert_eq!(dot(&th, true, true, false, false, false).fill, Some(th.stale));
+        let clean = dot(&th, false, false, false, false, None);
+        assert_eq!((clean.fill, clean.ring, clean.core, clean.spin, clean.note), (None, Some(th.text_dim), None, None, None));
+        assert_eq!(dot(&th, false, true, false, false, None).fill, Some(th.dirty));
+        assert_eq!(dot(&th, true, true, false, false, None).fill, Some(th.stale));
         // live: the accent round it, and in its middle when clean
-        let live = dot(&th, false, false, true, false, false);
+        let live = dot(&th, false, false, true, false, None);
         assert_eq!((live.ring, live.core), (Some(th.accent), Some(th.accent)));
-        let dirty_live = dot(&th, false, true, true, false, false);
+        let dirty_live = dot(&th, false, true, true, false, None);
         assert_eq!((dirty_live.fill, dirty_live.ring, dirty_live.core), (Some(th.dirty), Some(th.accent), None));
         // all of it at once: each mark still there
-        let all = dot(&th, false, true, true, true, true);
-        assert!(all.fill.is_some() && all.ring.is_some() && all.spin.is_some() && all.badge, "{all:?}");
+        let all = dot(&th, false, true, true, true, Some(0.));
+        assert!(all.fill.is_some() && all.ring.is_some() && all.spin.is_some() && all.note.is_some(), "{all:?}");
     }
 }
 

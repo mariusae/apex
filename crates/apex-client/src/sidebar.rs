@@ -353,7 +353,7 @@ impl Acme {
         let hover = theme::step(t.strip, 1);
         let press = theme::step(t.strip, 2);
         let id = p.id;
-        let d = crate::text_element::dot(&t, false, false, true, false, false);
+        let d = crate::text_element::dot(&t, false, false, true, false, None);
         div()
             .id(("proc", id))
             .flex_none()
@@ -505,6 +505,14 @@ pub(crate) fn split_name(name: &str) -> (String, String) {
 
 /// The handle's dot as a row draws it: the same marks, at a row's size.
 pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
+    // a notification's halo behind it, and its ping as it comes
+    let note = d.note.map(|age| {
+        gpui::canvas(|_, _, _| {}, move |b, _, window, _| crate::text_element::paint_note(window, age, b.center()))
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .size_full()
+    });
     let mut el = div().flex_none().size(px(9.)).rounded_full();
     if let Some(f) = d.fill {
         el = el.bg(rgb(f));
@@ -515,7 +523,7 @@ pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
     if let Some(c) = d.core {
         el = el.flex().items_center().justify_center().child(div().size(px(3.5)).rounded_full().bg(rgb(c)));
     }
-    el
+    div().flex_none().relative().size(px(9.)).children(note).child(el)
 }
 
 /// The sidebar button's glyph: a window with a panel down its left.

@@ -249,11 +249,27 @@ the tool still sees it raised and lowered, as it would any the user
 attended to. Coming to a window that is already notified is not
 attending to it: that one stays.
 
-A notified window's handle wears Peter J. Weinberger's face (below)
-over whatever else it shows, frame and all, in the text's ink or, on
-the dirty colour, the paper's: a handle is a colour with marks laid over
-it, so the face says it where a colour may not, and dirty, live or
-working still shows around and under it. The session's square says
+A notified window's handle says so, and nothing else of the window
+does (its header was once tinted, and pjw's face once sat on the
+handle): as the notification comes, a ring ripples out of the handle,
+the disc it leaves behind a pale halo of the accent round it, there
+until the notification goes. Dirty, live or working still shows in the
+handle itself, and a halo is a shape apart from any of their colours.
+Every handle shows it: a tag's, a minimized column's, a stash card's,
+a sidebar row's.
+
+A notification does not leave its window hidden (`Node::notice`, which
+the daemon proposes as it records one). A window hidden behind one
+grown to its column brings the column's windows back, as B1 on the
+grown one's box would; one in a column hidden behind one given the row
+brings the row's columns back as strips, as B1 on that column's box
+would -- either way the notified tag, its handle haloed, is in sight.
+A stashed window stays stashed: its card, if under the top one, is drawn
+out of the bunch far enough to show its handle and the start of its
+name (each further notified card as far again), keeping its place in
+the order; a click on it brings it back, as on any card.
+
+The session's square says
 nothing of it -- it filled with an azure once, which the face in the
 tab (below) made one signal too many -- but a click on it still takes
 the oldest: the window is revealed and the pointer landed on it, as a

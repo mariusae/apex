@@ -31,6 +31,11 @@ const CARD_H: f32 = 22.;
 const CARD_TEXT: f32 = 12.;
 const PEEK: f32 = 5.;
 const PEEKS: usize = 4;
+/// How far a notified card under the top one is drawn out of the bunch,
+/// leftward -- its handle and the start of its name -- each further one
+/// as far again past it; and how long it takes to come out.
+const PULL: f32 = 34.;
+const PULL_IN: f32 = 0.3;
 /// Between the cards fanned out, and the narrowest they get to fit.
 const GAP: f32 = 4.;
 const MIN_W: f32 = 72.;
@@ -260,8 +265,27 @@ impl Acme {
         if n == 0 {
             0.
         } else {
-            self.shelf_card_w(cx) + PEEK * (n - 1).min(PEEKS) as f32 + 20.
+            let wins = self.shelved();
+            let pulls = self.shelf_pulls(&wins);
+            let out = (0..n).map(|i| PEEK * i.min(PEEKS) as f32 + pulls[i]).fold(0., f32::max);
+            self.shelf_card_w(cx) + out + 20.
         }
+    }
+
+    /// How far each card (latest first) is drawn out of the bunch: a
+    /// notified one under the top card, so its handle shows (`PULL`).
+    fn shelf_pulls(&self, wins: &[WindowId]) -> Vec<f32> {
+        let mut out = 0.;
+        wins.iter()
+            .enumerate()
+            .map(|(i, &w)| match self.note_age(w).filter(|_| i > 0) {
+                Some(age) => {
+                    out += PULL * ease((age / PULL_IN).clamp(0., 1.));
+                    out
+                }
+                None => out,
+            })
+            .collect()
     }
 
     /// The cards, at the right end of a bar `h` high and `bar_w` wide:
@@ -280,12 +304,13 @@ impl Acme {
         let full_w = self.shelf_card_w(cx);
         let fan_w = (((bar_w / 2.) / n as f32) - GAP).clamp(MIN_W.min(full_w), full_w);
         let card_w = full_w + (fan_w - full_w) * k;
+        let pulls = self.shelf_pulls(&wins);
         let right_of = |i: usize| {
-            let bunched = PEEK * i.min(PEEKS) as f32;
+            let bunched = PEEK * i.min(PEEKS) as f32 + pulls[i];
             let fanned = (fan_w + GAP) * i as f32;
             bunched + (fanned - bunched) * k
         };
-        let width = right_of(n - 1) + card_w;
+        let width = (0..n).map(right_of).fold(0., f32::max) + card_w;
         let top = (h - CARD_H) / 2.;
         let mut stack = div()
             .id("shelf")
@@ -376,10 +401,8 @@ impl Acme {
     /// in from the stack's right end, `w_px` wide.
     fn shelf_card(&self, w: WindowId, i: usize, right: f32, w_px: f32, picked: bool, cx: &mut Context<Self>) -> AnyElement {
         let t = crate::theme::theme();
-        let notified = self.window_notified(w);
-        let bg = if notified {
-            crate::text_element::mix(t.tag_bg, t.accent, 0.10)
-        } else if picked {
+        // (notified, its handle says so)
+        let bg = if picked {
             crate::theme::step(t.tag_bg, 1)
         } else {
             t.tag_bg

@@ -86,9 +86,8 @@ impl Acme {
     /// A web window's header in its tag's place, `h` high.
     pub fn web_header(&self, w: WindowId, h: f32, cx: &mut Context<Self>) -> AnyElement {
         let t = crate::theme::theme();
-        let notified = self.window_notified(w);
-        let bg = if notified { crate::text_element::mix(t.tag_bg, t.accent, 0.10) } else { t.tag_bg };
-        let d = crate::text_element::dot(&t, false, false, true, self.webs.loading(w), notified).squared(self.hides_others(w));
+        let bg = t.tag_bg;
+        let d = crate::text_element::dot(&t, false, false, true, self.webs.loading(w), self.note_age(w)).squared(self.hides_others(w));
         let lane = crate::text_element::SCROLLWID;
         let handle = div()
             .id(("web-handle", w.0))

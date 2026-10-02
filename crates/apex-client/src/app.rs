@@ -416,6 +416,9 @@ pub struct Acme {
     /// Each overlay's bounds this frame, and how far past them its hole
     /// in the pages reaches (its shadow's room).
     pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
+    /// When each notification shown came, as this client first saw it
+    /// (`sync_notes`): a raised one again is a new ping.
+    pub noted: std::collections::HashMap<(WindowId, Seq), std::time::Instant>,
     /// Holes in the web views for what is drawn over a page but is no
     /// overlay -- the pointer over it still is the page's for hovering,
     /// the caret and the wheel: the outline of where a dragged window
@@ -1670,6 +1673,7 @@ impl Acme {
             strip_leaving: None,
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
+            noted: Default::default(),
             web_cuts: Default::default(),
             switcher: None,
             switch_slide: None,
@@ -1935,6 +1939,22 @@ impl Acme {
     /// Does the window carry a notification this client shows?
     pub fn window_notified(&self, w: WindowId) -> bool {
         self.shown_notifications().any(|n| n.window == w)
+    }
+
+    /// When this client first saw each notification it shows, kept as
+    /// they come and go (each frame): what its handle's ping runs from.
+    pub fn sync_notes(&mut self) {
+        let now: Vec<(WindowId, Seq)> = self.shown_notifications().map(|n| (n.window, n.at)).collect();
+        self.noted.retain(|k, _| now.contains(k));
+        for k in now {
+            self.noted.entry(k).or_insert_with(std::time::Instant::now);
+        }
+    }
+
+    /// How long ago window `w`'s notification came, if it has one shown.
+    pub fn note_age(&self, w: WindowId) -> Option<f32> {
+        let n = self.shown_notifications().find(|n| n.window == w)?;
+        Some(self.noted.get(&(w, n.at)).map_or(f32::MAX, |t| t.elapsed().as_secs_f32()))
     }
 
     fn take_notification(&mut self, cx: &mut Context<Self>) {
@@ -2683,9 +2703,9 @@ impl Acme {
         };
         // a window's handle while it is notified (the session's square
         // says nothing of it: the tab's face does)
-        let notified = match view {
-            ViewId::Tag(w) => self.shown_notifications().any(|n| n.window == w),
-            _ => false,
+        let note = match view {
+            ViewId::Tag(w) => self.note_age(w),
+            _ => None,
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         let hint = self.hint.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
@@ -2721,7 +2741,7 @@ impl Acme {
                 live,
                 pulse,
                 fenced: false,
-                notified,
+                note,
                 hovered: false,
                 round: (false, false),
                 scroller: (0., false),
@@ -2751,7 +2771,7 @@ impl Acme {
             live,
             pulse,
             fenced: self.fenced(),
-            notified,
+            note,
             scroller,
             // a tag with the pointer on it shows its commands plainly
             hovered: self.hover_view == Some(view),
