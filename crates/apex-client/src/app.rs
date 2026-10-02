@@ -111,6 +111,7 @@ enum Pending {
 /// What acme's tiling asks about text, measured off the last frame.
 struct ClientInfo {
     font: i32,
+    row: i32,
     prop: i32,
     mono: i32,
     /// wrapped tag lines and whether the tag ends with a newline
@@ -122,6 +123,10 @@ struct ClientInfo {
 impl Info for ClientInfo {
     fn font_height(&self) -> i32 {
         self.font
+    }
+    // a tag's further lines a body's line each: its pad is once, the tag's
+    fn tag_row(&self) -> i32 {
+        self.row
     }
     fn taglines(&self, w: WindowId, _width: i32, maxlines: i32) -> i32 {
         let (n, nl) = self.tags.get(&w).copied().unwrap_or((1, false));
@@ -2243,7 +2248,7 @@ impl Acme {
         let drawn = |w: WindowId| l.slot(w).map(|s| (self.glide.drawn_at(w).filter(|_| gliding).unwrap_or(s.r), s));
         let target = match p {
             Pending::Restore(at) => Some(at),
-            Pending::Warp(Warp::NewWindow(w)) => drawn(w).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1(fonti) - s.r.y0) + 3)),
+            Pending::Warp(Warp::NewWindow(w)) => drawn(w).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1() - s.r.y0) + 3)),
             Pending::Warp(Warp::WinButton(w)) => drawn(w).map(|(r, _)| row(r.x0 + SCROLLWID / 2, r.y0 + fonti / 2)),
             Pending::Warp(Warp::ColButton(c)) => l.column(c).map(|c| row(c.r.x0 + SCROLLWID / 2, c.r.y0 + fonti / 2)),
             Pending::Warp(Warp::Closed { next: Some(w), .. }) => {
@@ -2264,7 +2269,7 @@ impl Acme {
                     // layout to find the selection in: the top of it, where
                     // a new window is landed on, so a Goto to a terminal
                     // still arrives
-                    None => v.window().and_then(drawn).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1(fonti) - s.r.y0) + 3)),
+                    None => v.window().and_then(drawn).map(|(r, s)| row(r.x0 + SCROLLWID + 3, r.y0 + (s.tag_y1() - s.r.y0) + 3)),
                 }
             }
         };
@@ -2405,7 +2410,8 @@ impl Acme {
             };
             bodies.insert(*w, (win.mono, lines, term));
         }
-        self.node.tiling = Box::new(ClientInfo { font, prop, mono, tags, bodies });
+        let row = f32::from(crate::text_element::tag_row_height()) as i32;
+        self.node.tiling = Box::new(ClientInfo { font, row, prop, mono, tags, bodies });
         // the OS window
         // the row's top tag is drawn in the title bar (`title_bar`): its
         // line in the tiling is above the area, the columns start at its top
@@ -2425,7 +2431,7 @@ impl Acme {
             .flat_map(|c| c.wins.iter().filter(move |s| !c.hides(s.window)))
             .filter(|s| {
                 self.tag_need.get(&ViewId::Tag(s.window)).is_some_and(|(n, nl)| {
-                    let fit = (s.r.dy() / font).max(0);
+                    let fit = tiling::tag_lines_fit(&*self.node.tiling, s.r.dy()).max(0);
                     tiling::taglines_rule(*n as i32, *nl, fit.max(s.taglines)) != s.taglines
                 })
             })
@@ -2439,13 +2445,13 @@ impl Acme {
             // push it down as a tag expands over it
             if let (Some(b), Some(a)) = (before, after) {
                 let m = self.row_pt(self.last_mouse);
-                let in_tag = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.r.y0 <= y && y < s.tag_y1(font);
+                let in_tag = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.r.y0 <= y && y < s.tag_y1();
                 let in_body = |s: &apex_core::state::Slot, y: i32| s.r.x0 <= m.0 && m.0 < s.r.x1 && s.body.y0 <= y && y < s.body.y1;
                 let mut to = None;
                 if in_tag(&b, m.1) && !in_tag(&a, m.1) {
-                    to = Some(a.tag_y1(font) - 3);
+                    to = Some(a.tag_y1() - 3);
                 } else if in_body(&b, m.1) && in_tag(&a, m.1) {
-                    to = Some(a.tag_y1(font) + 3);
+                    to = Some(a.tag_y1() + 3);
                 }
                 if let Some(y) = to {
                     let at = point(self.last_mouse.x, px(y as f32 + self.top()));

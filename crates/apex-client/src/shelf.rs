@@ -516,10 +516,11 @@ impl Acme {
         // at this width (`tag_need`) -- not as it stood in its column, which
         // was another width, or, for a window made stashed (a diagnostic
         // one), never was; until it has been drawn, as it stood
-        let most = ((ph / 2.) / font).floor().max(1.) as i32;
+        let most = (1. + ((ph / 2. - font) / f32::from(crate::text_element::tag_row_height())).floor()).max(1.) as i32;
         let need = self.tag_need.get(&ViewId::Tag(w)).map(|&(n, nl)| apex_core::tiling::taglines_rule(n as i32, nl, most));
         let stood = slot.filter(|s| s.body.dy() > 0).map(|s| (s.body.y0 - s.r.y0) as f32).unwrap_or(font + 1.);
-        let tag_h = need.map_or(stood, |n| n as f32 * font + 1.).clamp(font, (ph / 2.).max(font));
+        let row = f32::from(crate::text_element::tag_row_height());
+        let tag_h = need.map_or(stood, |n| font + (n - 1).max(0) as f32 * row + 1.).clamp(font, (ph / 2.).max(font));
         // drawn at this width for the first time, or wrapping anew: once
         // more, at the height it now says
         let me_ = cx.entity();

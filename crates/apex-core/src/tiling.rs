@@ -65,8 +65,15 @@ impl Rect {
 /// What the algorithms ask about text: acme reads these off its frames.
 pub trait Info {
     /// The tag font's height (acme's global `font->height`); also the
-    /// height of column tags and the top row.
+    /// height of column tags and the top row. A one-line tag's.
     fn font_height(&self) -> i32;
+    /// How much each line after its first adds to a tag: the font's
+    /// height, as acme has it -- or less, where a tag's line has a pad
+    /// over and under it that is the tag's, not each line's (the client's:
+    /// a body's line). See `tag_height`.
+    fn tag_row(&self) -> i32 {
+        self.font_height()
+    }
     /// acme's `wintaglines`: the lines a window's tag needs at `width`,
     /// never more than `maxlines` (how many fit the window).
     fn taglines(&self, w: WindowId, width: i32, maxlines: i32) -> i32;
@@ -102,6 +109,28 @@ impl Info for Headless {
     }
     fn body_nlines(&self, _w: WindowId, _width: i32, maxlines: i32) -> i32 {
         maxlines
+    }
+}
+
+/// A tag of `n` lines: its first a whole tag line (`font_height`, its
+/// pad over and under it), each after that a row (`tag_row`) -- the pad
+/// is the tag's, not each line's. acme's `n * font->height` where the two
+/// are one.
+pub fn tag_height(info: &dyn Info, n: i32) -> i32 {
+    if n <= 0 {
+        0
+    } else {
+        info.font_height() + (n - 1) * info.tag_row().max(1)
+    }
+}
+
+/// How many tag lines fit in `dy` (`tag_height`'s inverse, rounded down).
+pub fn tag_lines_fit(info: &dyn Info, dy: i32) -> i32 {
+    let font = info.font_height().max(1);
+    if dy < font {
+        0
+    } else {
+        1 + (dy - font) / info.tag_row().max(1)
     }
 }
 
@@ -148,9 +177,14 @@ impl Slot {
     pub fn tagtop_y1(&self, font: i32) -> i32 {
         self.r.y0 + font
     }
-    /// The bottom of the tag (`w->tag.all.max.y`).
-    pub fn tag_y1(&self, font: i32) -> i32 {
-        (self.r.y0 + self.taglines * font).min(self.r.y1.max(self.r.y0))
+    /// The bottom of the tag (`w->tag.all.max.y`): where the body
+    /// begins, less the line between them when there is a body.
+    pub fn tag_y1(&self) -> i32 {
+        if self.body.dy() > 0 {
+            self.body.y0 - 1
+        } else {
+            self.body.y0
+        }
     }
     /// `w->body.fr.maxlines`: whole body lines that fit (zero while
     /// obscured).
@@ -158,8 +192,8 @@ impl Slot {
         self.frmax
     }
     /// `Dy(w->body.all)`: from the tag's bottom to the window's bottom.
-    pub fn body_all_dy(&self, font: i32) -> i32 {
-        self.r.y1 - self.tag_y1(font)
+    pub fn body_all_dy(&self) -> i32 {
+        self.r.y1 - self.tag_y1()
     }
 }
 
@@ -192,14 +226,13 @@ fn sync_shares(l: &mut Layout, ci: usize) {
 }
 
 fn winresize_in(l: &mut Layout, ci: usize, wi: usize, r: Rect, keepextra: bool, info: &dyn Info) -> i32 {
-    let font = info.font_height().max(1);
     let id = l.cols[ci].wins[wi].window;
     // wintaglines: the tag laid out in all of r tells how many lines fit
-    let tag_maxlines = (r.dy() / font).max(0);
+    let tag_maxlines = tag_lines_fit(info, r.dy()).max(0);
     // in a strip the tag is its box: one line, whatever its text would
     // wrap to (the text is not drawn there to be measured)
     let taglines = if is_strip(r) { tag_maxlines.min(1) } else { info.taglines(id, r.dx(), tag_maxlines).max(0) };
-    let y = (r.y0 + taglines * font).min(r.y1.max(r.y0));
+    let y = (r.y0 + tag_height(info, taglines)).min(r.y1.max(r.y0));
     let bf = info.body_font_height(id).max(1);
     let mut body = r;
     if y + 1 + bf <= r.y1 {
@@ -276,7 +309,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
             let c = &l.cols[ci];
             let v = &c.wins[vi];
             let bf = info.body_font_height(v.window).max(1);
-            if v.fr_maxlines(bf) > 3 && v.body_all_dy(font) > minht {
+            if v.fr_maxlines(bf) > 3 && v.body_all_dy() > minht {
                 break;
             }
             j += 1;
@@ -303,7 +336,7 @@ pub fn coladd(l: &mut Layout, ci: usize, w: Adding, y: Option<i32>, info: &dyn I
         r = v.r;
         r.y1 = ymax;
         let mut r1 = r;
-        y = y.min(ymax - (font * v.taglines + bf + BORDER + 1));
+        y = y.min(ymax - (tag_height(info, v.taglines) + bf + BORDER + 1));
         r1.y1 = y.min(v.body.y0 + v.nlines * bf);
         r1.y0 = winresize(l, ci, vi, r1, false, info);
         r1.y1 = r1.y0 + BORDER;

@@ -247,10 +247,11 @@ windows put away out of the tiling, which is the core's
   run, on a pill in B2's. In tags as in bodies, and only with the
   modifier held.
 - **Tag lines** are six pixels taller than a body's (`TAG_PAD`): the
-  tiling's font height is theirs. The pad is the card's, over and under
-  its rows, not between them: a tag wrapped to several rows has them a
-  body's line apart (`tag_row_height`), centred in the room the tiling
-  gives it, and a click in the pad is its nearest row's. What is drawn a
+  tiling's font height is theirs. The pad is the tag's, once, over its
+  first row and under its last, not between them: a tag of `n` lines is
+  a tag line and `n - 1` rows (`tiling::tag_height`, the client's
+  `Info::tag_row` a body's line, `tag_row_height`), its rows a body's
+  line apart, and a click in the pad is its nearest row's. What is drawn a
   tag's line high -- the handle's box, a selection, a sweep, a pill --
   still is, reaching into the pad over the first row and under the
   last, so a one-row tag is drawn as it always was. Text is centred by its ink, not by

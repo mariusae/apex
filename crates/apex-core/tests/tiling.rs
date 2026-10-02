@@ -1090,3 +1090,40 @@ fn a_column_a_drag_leaves_empty_goes_and_one_made_empty_stays() {
     assert_eq!(l.cols[1].r.x1, l.r.x1);
 }
 
+
+#[test]
+fn a_tags_pad_is_the_tags_once_not_each_lines() {
+    // a tag line of 23 (17 and a pad of 6), each line after it 17
+    struct Padded;
+    impl Info for Padded {
+        fn font_height(&self) -> i32 {
+            23
+        }
+        fn tag_row(&self) -> i32 {
+            17
+        }
+        fn taglines(&self, w: WindowId, _: i32, maxlines: i32) -> i32 {
+            taglines_rule(if w == WindowId(2) { 3 } else { 1 }, false, maxlines)
+        }
+        fn body_font_height(&self, _: WindowId) -> i32 {
+            17
+        }
+        fn body_nlines(&self, _: WindowId, _: i32, maxlines: i32) -> i32 {
+            maxlines
+        }
+    }
+    let i = Padded;
+    assert_eq!((tag_height(&i, 0), tag_height(&i, 1), tag_height(&i, 3)), (0, 23, 23 + 2 * 17));
+    assert_eq!((tag_lines_fit(&i, 22), tag_lines_fit(&i, 23), tag_lines_fit(&i, 39), tag_lines_fit(&i, 40), tag_lines_fit(&i, 57)), (0, 1, 1, 2, 3));
+    let mut l = Layout { r: Rect::new(0, 0, 1000, 700), ..Default::default() };
+    rowadd(&mut l, AddingCol::New { id: ColumnId(1), tag: BufferId(1) }, None, &i);
+    coladd(&mut l, 0, Adding::New(WindowId(1)), None, &i);
+    coladd(&mut l, 0, Adding::New(WindowId(2)), None, &i);
+    // a one-line tag a whole tag line; a three-line one that and two rows
+    for (w, lines) in [(1, 1), (2, 3)] {
+        let s = l.slot(WindowId(w)).unwrap();
+        assert_eq!(s.taglines, lines);
+        assert_eq!(s.tag_y1() - s.r.y0, tag_height(&i, lines), "window {w}");
+        assert_eq!(s.body.y0, s.tag_y1() + 1, "window {w}: the line, then the body");
+    }
+}
