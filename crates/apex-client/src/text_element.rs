@@ -80,12 +80,16 @@ pub fn tag_line_height() -> Pixels {
     font_for(false).line_height + px(TAG_PAD)
 }
 
-/// A tag's rows, one under the other: a body's line and a pixel. The
-/// pad that makes a tag's line taller is the card's, over and under its
-/// rows (the paint centres them in the room it has), not between them --
-/// a tag wrapped to two rows is not two tags' worth of air.
+/// A tag's rows, one under the other: a body's line apart. The pad that
+/// makes a tag's line taller is the card's, over and under its rows (the
+/// paint centres them in the room it has), not between them -- a tag
+/// wrapped to two rows is not two tags' worth of air. What is drawn the
+/// height of a tag's line (its handle's box, a selection, a sweep, a
+/// pill) still is, reaching half the pad past its row each way
+/// (`TAG_PAD` even, so a whole number of pixels): a one-row tag is drawn
+/// as it always was.
 pub fn tag_row_height() -> Pixels {
-    font_for(false).line_height + px(1.)
+    font_for(false).line_height
 }
 
 /// The radius of a card's corners (a window on the ground).
@@ -1625,8 +1629,11 @@ impl Element for TextElement {
         // Text wrapped to more rows than its tag has room for (a narrow
         // column's tag) keeps its top where it was, as acme's does: only
         // spare room is shared out, and a single line clipped evenly.
+        let rows: usize = pp.lines.iter().map(|l| l.subs.len().max(1)).sum::<usize>().max(1);
+        // a tag's line past its row, each way: what is drawn the height of
+        // a line reaches into the card's pad (`tag_row_height`)
+        let ext = if pp.kind != Kind::Body { (tag_line_height() - lh) / 2. } else { px(0.) };
         let shift = if pp.kind != Kind::Body {
-            let rows: usize = pp.lines.iter().map(|l| l.subs.len().max(1)).sum::<usize>().max(1);
             let spare = bounds.size.height - lh * rows as f32;
             let half = if spare >= px(0.) || rows == 1 { f32::from(spare) / 2. } else { 0. };
             let scale = window.scale_factor();
@@ -1636,6 +1643,12 @@ impl Element for TextElement {
         };
         let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else if pp.bare { px(0.) } else { px(MARGIN) };
         let origin = point(bounds.left() + margin, bounds.top() + shift);
+        // how far a band on the row at `sy` reaches past it, up and down:
+        // into the pad over the first row and under the last, not into
+        // another row
+        let first_y = origin.y + pp.lines.first().map_or(px(0.), |l| l.y);
+        let last_y = first_y + lh * (rows - 1) as f32;
+        let reach = move |sy: Pixels| (if sy <= first_y + px(0.5) { ext } else { px(0.) }, if sy >= last_y - px(0.5) { ext } else { px(0.) });
 
         // (a notified window says so by its handle, not its header)
         let header_bg = pal.bg;
@@ -1681,14 +1694,14 @@ impl Element for TextElement {
                 }
                 Kind::WinTag => {
                     let th = crate::theme::theme();
-                    let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
+                    let b = Bounds::new(point(bounds.left(), origin.y - ext), size(px(SCROLLWID), lh + ext * 2.));
                     let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.note).squared(pp.hiding);
                     // in from the card's rounded corner
-                    paint_dot(window, &d, point(b.left() + px(7.5), b.top() + lh / 2.));
+                    paint_dot(window, &d, point(b.left() + px(7.5), b.top() + b.size.height / 2.));
                     layout_box = Some(b);
                 }
                 Kind::ColTag => {
-                    let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
+                    let b = Bounds::new(point(bounds.left(), origin.y - ext), size(px(SCROLLWID), lh + ext * 2.));
                     paint_grip_as(window, b, rgb(crate::theme::theme().text_dim), pp.hiding);
                     layout_box = Some(b);
                 }
@@ -1698,10 +1711,10 @@ impl Element for TextElement {
                     // the session's own square: nothing to drag, so no grip;
                     // red when this client has lost its leases and only
                     // watches, and a click takes the oldest notification
-                    let b = Bounds::new(point(bounds.left(), origin.y), size(px(SCROLLWID), lh));
+                    let b = Bounds::new(point(bounds.left(), origin.y - ext), size(px(SCROLLWID), lh + ext * 2.));
                     if pp.fenced {
                         let th = crate::theme::theme();
-                        let r = Bounds::new(point(b.left() + px(1.), b.top() + (lh - px(10.)) / 2.), size(px(10.), px(10.)));
+                        let r = Bounds::new(point(b.left() + px(1.), b.top() + (b.size.height - px(10.)) / 2.), size(px(10.), px(10.)));
                         window.paint_quad(fill(r, rgb(th.fenced)).corner_radii(px(3.)));
                     }
                     layout_box = Some(b);
@@ -1742,7 +1755,8 @@ impl Element for TextElement {
                                 let (s, e) = (dlo.max(ds), dhi.min(de));
                                 if s < e {
                                     let sy = ly + lh * i as f32;
-                                    let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(3.), sy + px(1.)), point(origin.x + x(e) - x(ds) + px(3.), sy + lh - px(1.)));
+                                    let (up, down) = reach(sy);
+                                    let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(3.), sy - up + px(1.)), point(origin.x + x(e) - x(ds) + px(3.), sy + lh + down - px(1.)));
                                     window.paint_quad(fill(r, rgb(color)).corner_radii(px(SWEEP_RADIUS)));
                                 }
                             }
@@ -1791,7 +1805,8 @@ impl Element for TextElement {
                                 bottom_left: if bottom { r } else { px(0.) },
                                 bottom_right: if bottom { r } else { px(0.) },
                             };
-                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy), point(origin.x + x1, sy + lh)), color).corner_radii(radii));
+                            let (up, down) = reach(sy);
+                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy - up), point(origin.x + x1, sy + lh + down)), color).corner_radii(radii));
                         }
                     }
                 }
@@ -1801,9 +1816,10 @@ impl Element for TextElement {
                 // it starts and ends; as tall as the ink and a little, and
                 // never more than the card less a margin (a folded
                 // window's is shorter)
-                // (capped by the card's line, not the rows' pitch: a
-                // wrapped one's chips keep their height, a gap between)
-                let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(tag_line_height()) - px(3.)).min(lh - px(1.));
+                // (capped by the card's line, as ever -- and, the tag
+                // wrapped, by its rows' pitch, a gap between each row's)
+                let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(lh + ext * 2.) - px(3.));
+                let tall = if rows > 1 { tall.min(lh - px(1.)) } else { tall };
                 let chip = |window: &mut Window, a: usize, b: usize, past: Pixels, color: Hsla| {
                     for (i, &(ds, de)) in line.subs.iter().enumerate() {
                         let (s, e) = (a.max(ds), b.min(de));
@@ -1838,7 +1854,7 @@ impl Element for TextElement {
                     let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
                     let (ds, _) = line.subs[sub];
                     let (x0, x1) = (origin.x + x(d) - x(ds), origin.x + x(d + ICON_CELL.len_utf8()) - x(ds));
-                    let side = pp.fontspec.size.min(lh - px(4.));
+                    let side = pp.fontspec.size.min(lh + ext * 2. - px(4.));
                     let c = point((x0 + x1) / 2., ly + lh * sub as f32 + lh / 2.);
                     let ink = line.colors.iter().find(|&&(a, b, _)| d >= a && d < b).map(|c| c.2).unwrap_or_else(|| rgb(crate::theme::theme().text_dim));
                     let name: SharedString = format!("apex-verb-{i}.svg").into();
@@ -1848,7 +1864,7 @@ impl Element for TextElement {
                 if let Some(d) = line.caret {
                     let sub = line.subs.iter().rposition(|&(ds, _)| ds <= d).unwrap_or(0);
                     let (ds, _) = line.subs[sub];
-                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh - px(2.));
+                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh + ext * 2. - px(2.));
                     let at = point(origin.x + x(d) - x(ds) - px(0.5), ly + lh * sub as f32 + (lh - tall) / 2.);
                     window.paint_quad(fill(Bounds::new(at, size(px(2.), tall)), rgb(crate::theme::theme().accent)).corner_radii(px(1.)));
                 }
@@ -1891,7 +1907,7 @@ impl Element for TextElement {
                     // as tall as the ink (ascender to descender) and a pixel
                     // over each way, centred on the line as the ink is --
                     // not the line's height, which a tag's air makes taller
-                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh - px(2.));
+                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh + ext * 2. - px(2.));
                     let cy = ty + (lh - tall) / 2.;
                     if keys {
                         // gliding there, with Smooth Cursor on

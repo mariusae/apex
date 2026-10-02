@@ -249,8 +249,11 @@ windows put away out of the tiling, which is the core's
 - **Tag lines** are six pixels taller than a body's (`TAG_PAD`): the
   tiling's font height is theirs. The pad is the card's, over and under
   its rows, not between them: a tag wrapped to several rows has them a
-  body's line and a pixel apart (`tag_row_height`), centred in the room
-  the tiling gives it, and a click in the pad is its nearest row's. Text is centred by its ink, not by
+  body's line apart (`tag_row_height`), centred in the room the tiling
+  gives it, and a click in the pad is its nearest row's. What is drawn a
+  tag's line high -- the handle's box, a selection, a sweep, a pill --
+  still is, reaching into the pad over the first row and under the
+  last, so a one-row tag is drawn as it always was. Text is centred by its ink, not by
   the face's ascent and descent (`ink_lift`: a face keeps room over its
   ascenders for accents, so text centred the usual way sits low), so
   there is as much air over the ascenders as under the descenders, in a
