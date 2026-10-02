@@ -628,6 +628,36 @@ fn editor_in_a_terminal_edits_over_it_and_gives_it_back() {
 }
 
 #[test]
+fn editor_from_any_window_edits_over_it() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-editor-any-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("MSG");
+    std::fs::write(&file, "subject\n").unwrap();
+    let path = file.display().to_string();
+    // a text window (as a command run from its tag has it as $winid)
+    let t = WindowId(ok(&sock, &["new"]).trim().parse().unwrap());
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let (s2, p2) = (sock.clone(), path.clone());
+    let child = std::thread::spawn(move || Command::new(env!("CARGO_BIN_EXE_apex")).env("APEX_SOCKET", &s2).env("apexsession", "main").env("winid", t.0.to_string()).args(["editor", &p2]).output().unwrap());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.state.layout.over(t).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let e = c.node.state.layout.over(t).expect("a window over the text window");
+    assert_eq!(c.node.window_path(e), path);
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(e), text: "Del".into() }, Duration::from_secs(5)).unwrap();
+    let out = child.join().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while c.node.state.layout.slot(t).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(c.node.state.layout.slot(t).is_some(), "the window back");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn newterm_shell_is_a_setting() {
     let sock = daemon();
     ok(&sock, &["set", "Newterm.shell", "/bin/sh"]);

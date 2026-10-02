@@ -368,11 +368,11 @@ has it as a function." },
 Editor is plan9port's editinacme for apex, for use as $EDITOR: it opens
 FILE in the session (through the rules that open in the session, as B
 does, so an open window is shown and the pointer warped to it), waits
-until the file's window is deleted, and exits. Run in a terminal window
-(win's, Newterm's: $winid says which), it opens FILE over the terminal
-instead, in its place -- a window of its own, on the file's text if it is
-open elsewhere too -- and the terminal comes back when that window goes;
-Swap in its tag shows the terminal meanwhile. While it waits the window
+until the file's window is deleted, and exits. Run in a window ($winid says
+which: a terminal, win's, a command run from a tag), it opens FILE over
+that window instead, in its place -- a window of its own, on the file's
+text if it is open elsewhere too -- and that window comes back when the
+file's goes; Swap in its tag shows it meanwhile. While it waits the window
 is labelled $EDITOR for the program waiting on it (git, say: the first
 of its callers that is not a shell), since closing that window is what
 the program waits for; interrupted, it puts the label back as it was.
@@ -1690,9 +1690,10 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
     let mut c = tool(ctx)?;
     eprintln!("editor: editing {file}");
-    // run in a terminal (win's, Newterm's): the file over it, in its place,
-    // the terminal back when its window goes; else opened as B would
-    let term = std::env::var("winid").ok().and_then(|s| s.parse::<u64>().ok()).map(WindowId).filter(|w| c.node.state.window(*w).is_ok_and(|x| matches!(x.body, apex_core::Body::Term(_))));
+    // run in a window ($winid: a terminal, win's, a command's from a tag):
+    // the file over it, in its place, that window back when the file's
+    // goes; else opened as B would
+    let term = std::env::var("winid").ok().and_then(|s| s.parse::<u64>().ok()).map(WindowId).filter(|w| c.node.state.window(*w).is_ok());
     let w = match term {
         Some(under) => {
             c.send(&ClientMsg::EditOver { under, name: file.clone() });

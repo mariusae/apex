@@ -108,10 +108,10 @@ pub enum ClientMsg {
     TermRead { term: TermId, from: u64, to: u64 },
     /// Open a file (relative to the window's directory) in a column.
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
-    /// Open a file (relative to the window's directory) over terminal
-    /// window `under`, in its place (`apex editor` run in it): a window of
-    /// its own, on the file's buffer if it is open already, covering the
-    /// terminal until it goes (`state::Cover`).
+    /// Open a file (relative to the window's directory) over window
+    /// `under`, in its place (`apex editor` run in it): a window of its
+    /// own, on the file's buffer if it is open already, covering `under`
+    /// until it goes (`state::Cover`).
     EditOver { under: WindowId, name: String },
     /// B3, or `apex plumb`: the rule table decides. `dir` stands in for
     /// the context's directory (a terminal's cwd); `edit_only` is plan 9's

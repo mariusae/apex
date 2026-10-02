@@ -410,8 +410,9 @@ windows put away out of the tiling, which is the core's
   the row's right is still drawn as the edges of sheets on their sides,
   and B1 brings it back where it stood.
 - **A window over another** (`state::Cover`): `apex editor` run in a
-  terminal ($EDITOR for git, say) opens the file over the terminal, in
-  its place, rather than somewhere else: a window of its own, on the
+  window -- a terminal, win's, a command from a tag: `$winid` -- ($EDITOR
+  for git, say) opens the file over that window, in its place, rather
+  than somewhere else: a window of its own, on the
   file's text if it is open elsewhere too (as Zerox makes one). The
   terminal is under it, out of the tiling and still running, and comes
   back in the place when the window over it goes -- wherever that window
@@ -422,8 +423,8 @@ windows put away out of the tiling, which is the core's
   notification taken -- brings it to the top the same way, and a
   notification on one under shows on the top's handle. Windows over one
   another are a stack: each covers the one under it, and closing one
-  closes the stack over it. Only a terminal is covered so, and only by
-  `apex editor`; anything else opens as ever.
+  closes the stack over it. Only `apex editor` covers a window so;
+  anything else opens as ever.
 - **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
   everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,

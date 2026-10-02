@@ -19,7 +19,7 @@ pub enum Proposal {
         text: String,
         hash: String,
         select_line: Option<usize>,
-        /// Over this terminal window, in its place, rather than in `col`
+        /// Over this window, in its place, rather than in `col`
         /// (`ClientMsg::EditOver`): a window of its own, the file's buffer
         /// shared if it is open already.
         #[serde(default)]
@@ -146,9 +146,10 @@ pub enum Proposal {
 pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<WindowId>, CoreError> {
     match p {
         Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, cover } => {
-            // over a terminal: a window of its own in its place, on the
-            // buffer open already (as Zerox makes one) or a new one
-            if let Some(under) = cover.filter(|u| node.state.window(*u).is_ok_and(|w| matches!(w.body, Body::Term(_)))) {
+            // over a window (the one apex editor ran in): a window of its
+            // own in its place, on the buffer open already (as Zerox makes
+            // one) or a new one
+            if let Some(under) = cover.filter(|u| node.state.window(*u).is_ok()) {
                 let b = match node.window_of(&name, kind).and_then(|w| node.state.window(w).ok()).and_then(|w| w.body_buffer()) {
                     Some(b) => b,
                     None => node.create_buffer_as(log, &name, &text, Some(hash), kind, false)?,
