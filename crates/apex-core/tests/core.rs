@@ -546,6 +546,10 @@ fn send_appends_to_a_text_window_and_zerox_refuses_directories() {
     let b = node.view_buffer(ViewId::Body(w)).unwrap();
     assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "a\nfrom snarf\n");
     let d = node.new_window_as(&mut log, col, "/tmp/", "x\n", &Spec { kind: WinKind::Dir, ..Default::default() }).unwrap();
+    // Get only when the folder changed under edits not yet put
+    assert_eq!(node.window_verbs(d), vec!["Del", "Snarf"]);
+    let db = node.view_buffer(ViewId::Body(d)).unwrap();
+    node.append(&mut log, Shard::Buffer(db), Op::Buffer(BufferOp::Stale { disk_hash: "h".into() })).unwrap();
     assert_eq!(node.window_verbs(d), vec!["Del", "Snarf", "Get"]);
     node.exec(&mut log, ExecCtx::Window(d), "Zerox").unwrap();
     assert_eq!(node.state.windows.values().filter(|x| x.body_buffer() == node.state.window(d).unwrap().body_buffer()).count(), 1);

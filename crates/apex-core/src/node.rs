@@ -990,7 +990,10 @@ impl Node {
                 if !isdir && !buf.name.is_empty() && buf.dirty() && !self.window_live(w) {
                     out.push("Put");
                 }
-                if isdir {
+                // only when there is something to get: the file (or the
+                // folder) changed under edits not yet put -- a clean
+                // buffer takes the change itself
+                if buf.stale {
                     out.push("Get");
                 }
             }
