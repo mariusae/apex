@@ -764,6 +764,11 @@ impl Acme {
         self.mouse = Mouse::default();
         self.want_visible.clear();
         self.typed_start.clear();
+        // the toasts are its, and go; what it had seen goes with it
+        self.toasts.clear();
+        self.pulled.clear();
+        let seen = crate::pool::Seen { diag: std::mem::take(&mut self.diag_seen), noted: std::mem::take(&mut self.noted) };
+        self.diag_primed = false;
         Some(Parked {
             link,
             log,
@@ -775,6 +780,7 @@ impl Acme {
             snarfouts: std::mem::take(&mut self.snarfouts),
             pending_goto: self.pending_goto.take(),
             parked_at: std::time::Instant::now(),
+            seen: Some(seen),
         })
     }
 
@@ -1025,6 +1031,16 @@ impl Acme {
         self.live = p.live;
         self.snarfouts = p.snarfouts;
         self.pending_goto = p.pending_goto;
+        // what this window had seen of it, so only what came meanwhile is
+        // news; a session never shown here holds none yet
+        match p.seen {
+            Some(s) => {
+                self.diag_seen = s.diag;
+                self.noted = s.noted;
+                self.diag_primed = true;
+            }
+            None => self.forget_seen(),
+        }
         self.win_under_pointer = None;
         self.entered = None;
         self.suppressed.clear();
@@ -1458,6 +1474,8 @@ impl Acme {
         // of the old session are over
         self.previews.clear();
         self.live.clear();
+        // and nothing it holds already is news
+        self.forget_seen();
         window.set_window_title(&Self::title(url));
         crate::shell::note_recent(url);
         self.open_initial(col, files);
@@ -1967,6 +1985,19 @@ impl Acme {
         } else {
             vec![w]
         }
+    }
+
+    /// A session shown here for the first time: what it already holds is
+    /// not news -- no toast for its diagnostic windows' text (primed when
+    /// next looked at), no ping for its notifications -- and the other
+    /// session's toasts are gone.
+    fn forget_seen(&mut self) {
+        self.toasts.clear();
+        self.pulled.clear();
+        self.diag_seen.clear();
+        self.diag_primed = false;
+        let long_ago = std::time::Instant::now().checked_sub(std::time::Duration::from_secs(60)).unwrap_or_else(std::time::Instant::now);
+        self.noted = self.shown_notifications().map(|n| ((n.window, n.at), long_ago)).collect();
     }
 
     /// When this client first saw each notification it shows, kept as

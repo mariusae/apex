@@ -153,6 +153,18 @@ pub struct Parked {
     pub snarfouts: Vec<(u64, TermId)>,
     pub pending_goto: Option<Loc>,
     pub parked_at: Instant,
+    /// What the window had seen of the session when it was put aside
+    /// (`Seen`): none for one never shown.
+    pub seen: Option<Seen>,
+}
+
+/// What a window has seen of a session's news, kept with it while it is
+/// parked, so showing it again says only what came meanwhile: each
+/// diagnostic window's text (its toasts), and when each notification
+/// came (its handle's ping).
+pub struct Seen {
+    pub diag: HashMap<WindowId, String>,
+    pub noted: HashMap<(WindowId, Seq), Instant>,
 }
 
 pub struct Pool {
@@ -378,7 +390,7 @@ impl Pool {
                     }
                     None => {
                         crate::shell::log_line(&format!("{id} ({real}): attached, parked"));
-                        let parked = Parked { link, log, node, url: real, target, previews: Vec::new(), live: HashMap::new(), snarfouts: Vec::new(), pending_goto: None, parked_at: Instant::now() };
+                        let parked = Parked { link, log, node, url: real, target, previews: Vec::new(), live: HashMap::new(), snarfouts: Vec::new(), pending_goto: None, parked_at: Instant::now(), seen: None };
                         Pool::park(cx, id, parked);
                     }
                 }
