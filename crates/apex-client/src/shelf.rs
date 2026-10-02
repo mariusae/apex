@@ -512,7 +512,25 @@ impl Acme {
         let left = (centre - pw / 2.).clamp(8., (bar_w - pw - 8.).max(8.));
         let me = cx.entity();
         let font = f32::from(crate::text_element::tag_line_height());
-        let tag_h = slot.filter(|s| s.body.dy() > 0).map(|s| (s.body.y0 - s.r.y0) as f32).unwrap_or(font + 1.).clamp(font, (ph / 2.).max(font));
+        // the tag as many rows as it wraps to here, as it was last drawn
+        // at this width (`tag_need`) -- not as it stood in its column, which
+        // was another width, or, for a window made stashed (a diagnostic
+        // one), never was; until it has been drawn, as it stood
+        let most = ((ph / 2.) / font).floor().max(1.) as i32;
+        let need = self.tag_need.get(&ViewId::Tag(w)).map(|&(n, nl)| apex_core::tiling::taglines_rule(n as i32, nl, most));
+        let stood = slot.filter(|s| s.body.dy() > 0).map(|s| (s.body.y0 - s.r.y0) as f32).unwrap_or(font + 1.);
+        let tag_h = need.map_or(stood, |n| n as f32 * font + 1.).clamp(font, (ph / 2.).max(font));
+        // drawn at this width for the first time, or wrapping anew: once
+        // more, at the height it now says
+        let me_ = cx.entity();
+        let settle = canvas(|_, _, _| {}, move |_, _, window, cx| {
+            let now = me_.read(cx).tag_need.get(&ViewId::Tag(w)).map(|&(n, nl)| apex_core::tiling::taglines_rule(n as i32, nl, most));
+            if now != need {
+                window.refresh();
+            }
+        })
+        .absolute()
+        .size(px(0.));
         let body = self.node.state.window(w).map(|x| x.body).ok();
         let content: AnyElement = match body {
             Some(Body::Text(_)) | Some(Body::Term(_)) => {
@@ -556,6 +574,7 @@ impl Acme {
                 .child(self.overlay_mark())
                 .child(mark)
                 .child(content)
+                .child(settle)
                 // typing into it is no leaving it
                 .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
                 .on_hover(cx.listener(|this, on: &bool, _, cx| {
