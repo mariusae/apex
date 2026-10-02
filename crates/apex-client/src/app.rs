@@ -439,9 +439,11 @@ pub struct Acme {
     /// Where the toasts were drawn last: a click anywhere else puts
     /// them away.
     pub toasts_at: std::rc::Rc<std::cell::RefCell<Vec<gpui::Bounds<Pixels>>>>,
-    /// errors windows the user has open (brought back from a toast):
-    /// errors written there are seen there.
-    pub errors_open: std::collections::HashSet<WindowId>,
+    /// Each diagnostic window's text as this client last saw it: what is
+    /// new against it is a toast (`diagnostic_news`).
+    pub diag_seen: std::collections::HashMap<WindowId, String>,
+    /// The diagnostic windows there at the start have been seen.
+    pub diag_primed: bool,
     /// Windows on their way to where the tiling put them.
     pub glide: crate::glide::Glide,
     /// ^F's list under the caret (`completion.rs`), and the candidates
@@ -1699,7 +1701,8 @@ impl Acme {
             glide: Default::default(),
             toasts: Vec::new(),
             toasts_at: Default::default(),
-            errors_open: std::collections::HashSet::new(),
+            diag_seen: Default::default(),
+            diag_primed: false,
             sidebar_hover: None,
             sidebar_rows: Default::default(),
             url_asked: std::collections::HashSet::new(),
@@ -1780,10 +1783,13 @@ impl Acme {
                 self.got_candidates(c);
             }
         }
+        // what is new in the diagnostic windows: toasts
+        self.diagnostic_news();
         for (v, q) in self.node.take_shows() {
-            // errors just written: a toast, the errors window stashed
+            // errors just written to a diagnostic window not open: its
+            // toast says them, and it is not brought out
             if let ViewId::Body(w) = v {
-                if self.toast_errors(w) {
+                if self.node.window_diagnostic(w) && !self.diagnostic_seen(w) {
                     continue;
                 }
             }
@@ -2703,6 +2709,10 @@ impl Acme {
         };
         // a window's handle while it is notified (the session's square
         // says nothing of it: the tab's face does)
+        let progress = match view {
+            ViewId::Body(w) => self.node.window_progress(w),
+            _ => None,
+        };
         let note = match view {
             ViewId::Tag(w) => self.note_age(w),
             _ => None,
@@ -2740,6 +2750,7 @@ impl Acme {
                 stale,
                 live,
                 pulse,
+                progress,
                 fenced: false,
                 note,
                 hovered: false,
@@ -2770,6 +2781,7 @@ impl Acme {
             stale,
             live,
             pulse,
+            progress,
             fenced: self.fenced(),
             note,
             scroller,

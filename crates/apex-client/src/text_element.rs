@@ -1031,6 +1031,9 @@ pub struct Source {
     /// far (0..1) the handle is from its colour towards pale this
     /// instant.
     pub pulse: Option<f32>,
+    /// A body whose window's work says how far along it is, in percent
+    /// (`Node::window_progress`): a bar across its top, as a terminal's.
+    pub progress: Option<u8>,
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
     pub fenced: bool,
@@ -1096,6 +1099,7 @@ pub struct Prepaint {
     stale: bool,
     live: bool,
     pulse: Option<f32>,
+    progress: Option<u8>,
     fenced: bool,
     note: Option<f32>,
     round: (bool, bool),
@@ -1568,6 +1572,7 @@ impl Element for TextElement {
                 stale: src.stale,
                 live: src.live,
                 pulse: src.pulse,
+                progress: src.progress,
                 fenced: src.fenced,
                 note: src.note,
                 round: src.round,
@@ -1646,6 +1651,13 @@ impl Element for TextElement {
                     overlay = Some((s0, s1, shows));
                     if fading {
                         window.request_animation_frame();
+                    }
+                    // work behind it that says how far: the bar a
+                    // terminal's program draws, across the top
+                    if let Some(at) = pp.progress {
+                        let part = f32::from(at.min(100)) / 100.;
+                        let bar = Bounds::new(point(bounds.left(), bounds.top()), size((bounds.size.width * part).max(px(1.)), px(2.)));
+                        window.paint_quad(fill(bar, rgb(crate::theme::theme().progress)));
                     }
                     scrollbar = Some(sb);
                 }

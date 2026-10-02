@@ -31,9 +31,10 @@ const CARD_H: f32 = 22.;
 const CARD_TEXT: f32 = 12.;
 const PEEK: f32 = 5.;
 const PEEKS: usize = 4;
-/// How far a notified card under the top one is drawn out of the bunch,
-/// leftward -- its handle and the start of its name -- each further one
-/// as far again past it; and how long it takes to come out.
+/// How far a notified card under the top one -- or one whose window is
+/// working (a language server indexing) -- is drawn out of the bunch,
+/// leftward: its handle and the start of its name, each further one as
+/// far again past it; and how long a notified one takes to come out.
 const PULL: f32 = 34.;
 const PULL_IN: f32 = 0.3;
 /// Between the cards fanned out, and the narrowest they get to fit.
@@ -273,17 +274,22 @@ impl Acme {
     }
 
     /// How far each card (latest first) is drawn out of the bunch: a
-    /// notified one under the top card, so its handle shows (`PULL`).
+    /// notified or working one under the top card, so its handle shows
+    /// (`PULL`) -- and a working one's bar along its foot.
     fn shelf_pulls(&self, wins: &[WindowId]) -> Vec<f32> {
         let mut out = 0.;
         wins.iter()
             .enumerate()
-            .map(|(i, &w)| match self.note_age(w).filter(|_| i > 0) {
-                Some(age) => {
-                    out += PULL * ease((age / PULL_IN).clamp(0., 1.));
-                    out
-                }
-                None => out,
+            .map(|(i, &w)| {
+                let k = if i == 0 {
+                    0.
+                } else if self.node.window_working(w) {
+                    1.
+                } else {
+                    self.note_age(w).map_or(0., |age| ease((age / PULL_IN).clamp(0., 1.)))
+                };
+                out += PULL * k;
+                out
             })
             .collect()
     }
@@ -434,6 +440,10 @@ impl Acme {
             .cursor_default()
             .child(crate::sidebar::dot_element(&d))
             .child(div().flex_1().min_w_0().truncate().child(label))
+            // work behind it that says how far: a bar along the foot
+            .children(self.node.window_progress(w).map(|at| {
+                div().absolute().bottom(px(0.)).left(px(0.)).h(px(2.)).w(gpui::relative(f32::from(at.min(100)) / 100.)).bg(rgb(t.progress))
+            }))
             .on_hover(cx.listener(move |this, on: &bool, _, cx| {
                 if *on {
                     this.shelf.pick = Some(w);

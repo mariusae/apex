@@ -1,16 +1,20 @@
-//! Errors as toasts. A command's errors go to its directory's errors
-//! window, as ever -- the core's, and every client's -- but that window
-//! is not opened over the work: it goes to the stash, and what was just
-//! written shows in a toast at the app's lower right, over whatever
-//! columns are there, with Show All (the window shown in the
-//! stash's preview) and ×. A toast goes by
+//! A diagnostic window's news as toasts. A command's errors go to its
+//! directory's errors window, as ever -- the core's, and every client's
+//! -- and a tool's report (a language server's diagnostics) to its
+//! diagnostic window; neither is opened over the work: each is made in
+//! the stash, and what is new in it shows in a toast at the app's lower
+//! right, over whatever columns are there, with Show All (the window
+//! shown in the stash's preview) and ×. What is new is what this client
+//! had not seen in it: what was added at its end, or, its text written
+//! anew, the lines that were not there before -- less those about the
+//! file being typed in, which are in front of the user already (an
+//! unfinished line's errors come and go with each key). A toast goes by
 //! itself after a while unless the pointer is on it, and at once on a
 //! click anywhere but on a toast. Its words answer as
 //! the window's would: B3 on one looks (plumbs a file:line, say), B2 runs
 //! it, both from the errors window; B1 anywhere on a toast is its
-//! Show All. The text is not for editing. An
-//! errors window already open and showing lines is shown as before,
-//! and toasts nothing.
+//! Show All. The text is not for editing. A diagnostic window open
+//! and showing lines is seen as it is written, and toasts nothing.
 
 use std::time::{Duration, Instant};
 
@@ -18,7 +22,7 @@ use gpui::prelude::*;
 use gpui::{canvas, div, px, rgb, AnyElement, Context, MouseButton};
 
 use apex_core::state::Layout;
-use apex_core::{ViewId, WindowId};
+use apex_core::WindowId;
 
 use crate::app::Acme;
 
@@ -35,35 +39,51 @@ pub struct Toast {
 }
 
 impl Acme {
-    /// Errors were written to `w` (an errors window) and it is to be
-    /// shown: unless it is open and showing lines, it goes to the stash
-    /// and a toast says what was written. True when it
-    /// was taken care of so.
-    pub fn toast_errors(&mut self, w: WindowId) -> bool {
-        if self.node.window_kind(w) != apex_core::WinKind::Errors {
-            return false;
-        }
-        let l = &self.node.state.layout;
-        // one the user has open (brought back, or opened) and showing
-        // lines: seen as it is written. One just made for these errors
-        // is laid out too, but is not theirs yet.
-        if self.errors_open.contains(&w) && l.slot(w).is_some_and(|s| s.frmax > 0) {
-            return false;
-        }
-        // what was just written: the core selects it (acme's flushwarnings)
-        let v = ViewId::Body(w);
-        let text = self.node.selected_text(v).unwrap_or_default();
-        if l.place_of(w).is_some() {
-            let _ = self.node.stash_window(&mut self.log, w);
-        }
-        match self.toasts.iter_mut().find(|t| t.window == w) {
-            Some(t) => {
-                t.text.push_str(&text);
-                t.at = Instant::now();
+    /// Is diagnostic window `w` open and showing lines, so that what is
+    /// written to it is seen there (and toasts nothing)?
+    pub fn diagnostic_seen(&self, w: WindowId) -> bool {
+        self.node.state.layout.slot(w).is_some_and(|s| s.frmax > 0)
+    }
+
+    /// Every diagnostic window's text against what this client last saw
+    /// of it: what is new, a toast, unless the window is open and showing
+    /// lines (one laid out but showing none goes to the stash, as an
+    /// errors window always has). The windows there when this client
+    /// first looks say nothing of what they already held; one made since
+    /// is new from its first line.
+    pub fn diagnostic_news(&mut self) {
+        let ws: Vec<WindowId> = self.node.state.windows.values().filter(|w| w.diagnostic).map(|w| w.id).collect();
+        self.diag_seen.retain(|w, _| ws.contains(w));
+        // the file being typed in: the window the keys go to, unsaved
+        let typing = self.node.seltext.and_then(|v| v.window()).filter(|&w| self.node.window_unsaved(w)).map(|w| self.node.window_path(w));
+        for w in ws {
+            let Some(text) = self.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.node.state.buffer(b).ok()).map(|b| b.text.to_string()) else { continue };
+            let old = match self.diag_seen.insert(w, text.clone()) {
+                Some(old) => old,
+                None if self.diag_primed => String::new(),
+                None => continue,
+            };
+            if old == text {
+                continue;
             }
-            None => self.toasts.push(Toast { window: w, text, at: Instant::now(), hovered: false }),
+            let new = news(&old, &text, typing.as_deref());
+            if new.trim().is_empty() || self.diagnostic_seen(w) {
+                continue;
+            }
+            if self.node.state.layout.place_of(w).is_some() {
+                let _ = self.node.stash_window(&mut self.log, w);
+            }
+            match self.toasts.iter_mut().find(|t| t.window == w) {
+                Some(t) => {
+                    t.text.push_str(&new);
+                    t.at = Instant::now();
+                }
+                None => self.toasts.push(Toast { window: w, text: new, at: Instant::now(), hovered: false }),
+            }
         }
-        true
+        // (not on a session not here yet: a window waiting for its link
+        // holds none, and every window coming would be news)
+        self.diag_primed |= !self.node.state.layout.cols.is_empty();
     }
 
     /// Show All (or B1 on the toast): its window shown -- stashed, in the
@@ -75,7 +95,6 @@ impl Acme {
         if self.node.state.layout.is_stashed(w) {
             self.peek_errors(w, &said, cx);
         } else {
-            self.errors_open.insert(w);
             self.reveal_window(w, cx);
         }
     }
@@ -296,3 +315,48 @@ impl Acme {
     }
 }
 
+
+/// What is new in a diagnostic window's `text` since `old`: what was
+/// added at its end, or, written anew, the lines not there before (as
+/// many times as they are new) -- less lines about the file `typing`
+/// (`path:...`), the one the user is typing in.
+pub(crate) fn news(old: &str, text: &str, typing: Option<&str>) -> String {
+    let about_typing = |l: &str| typing.is_some_and(|p| !p.is_empty() && l.strip_prefix(p).is_some_and(|r| r.starts_with(':')));
+    let fresh: Vec<&str> = match text.strip_prefix(old) {
+        Some(added) => added.lines().collect(),
+        None => {
+            let mut had: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            for l in old.lines() {
+                *had.entry(l).or_default() += 1;
+            }
+            text.lines()
+                .filter(|l| match had.get_mut(l) {
+                    Some(n) if *n > 0 => {
+                        *n -= 1;
+                        false
+                    }
+                    _ => true,
+                })
+                .collect()
+        }
+    };
+    fresh.into_iter().filter(|l| !l.trim().is_empty() && !about_typing(l)).map(|l| format!("{l}\n")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::news;
+
+    #[test]
+    fn news_is_what_was_added_or_the_lines_not_there_before() {
+        // added at the end
+        assert_eq!(news("a\n", "a\nb\nc\n", None), "b\nc\n");
+        // written anew: the lines not there before, once each they are new
+        assert_eq!(news("x:1: e\ny:2: e\n", "y:2: e\nz:3: e\ny:2: e\n", None), "z:3: e\ny:2: e\n");
+        // lines going say nothing
+        assert_eq!(news("x:1: e\ny:2: e\n", "y:2: e\n", None), "");
+        // not about the file being typed in
+        assert_eq!(news("", "/a/f.rs:1:2: error: x\n/a/g.rs:3:1: error: y\n", Some("/a/f.rs")), "/a/g.rs:3:1: error: y\n");
+        assert_eq!(news("", "/a/f.rsx:1: e\n", Some("/a/f.rs")), "/a/f.rsx:1: e\n");
+    }
+}
