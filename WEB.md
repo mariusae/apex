@@ -393,7 +393,10 @@ place by an injected script (a small morphdom: nodes matched by
 position and name, attributes and text updated), so scroll and state
 survive; a `<base>` on the window's directory (`apexfile://`) is
 added unless the HTML brings one. A link followed in such a page does
-not navigate it: it opens a web window on the link (a `Goto`).
+not navigate it: one that leaves the host (`http`, `https`, not the
+host's loopback) opens in the system's browser, as a link in a document
+does; one to the host's files or loopback opens a window on it (a
+`Goto`).
 `WinKind::Web` too.
 
 A web body may render a text buffer instead of a URL: `cmd | apex web`

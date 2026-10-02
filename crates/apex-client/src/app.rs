@@ -416,6 +416,11 @@ pub struct Acme {
     /// Each overlay's bounds this frame, and how far past them its hole
     /// in the pages reaches (its shadow's room).
     pub overlay_bounds: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
+    /// Holes in the web views for what is drawn over a page but is no
+    /// overlay -- the pointer over it still is the page's for hovering,
+    /// the caret and the wheel: the outline of where a dragged window
+    /// would land.
+    pub web_cuts: std::rc::Rc<std::cell::RefCell<Vec<(gpui::Bounds<Pixels>, Pixels)>>>,
     /// ctrl-tab, control still held: the walk through the sessions.
     pub switcher: Option<crate::switcher::Switcher>,
     /// A session sliding in (ctrl-tab), and the overview up (⌘⇧\).
@@ -1043,6 +1048,20 @@ impl Acme {
             .into_any_element()
     }
 
+    /// A hole in the web views where this element lands (`web_cuts`),
+    /// `margin` past it, which is no overlay.
+    pub fn web_cut_by(&self, margin: Pixels) -> gpui::AnyElement {
+        use gpui::prelude::*;
+        let rc = self.web_cuts.clone();
+        gpui::div()
+            .absolute()
+            .top(px(0.))
+            .left(px(0.))
+            .size_full()
+            .child(gpui::canvas(move |b, _, _| rc.borrow_mut().push((b, margin)), |_, _, _, _| {}).size_full())
+            .into_any_element()
+    }
+
     /// What the daemon must know of this client beyond presentation:
     /// the terminal colours programs are told (the theme's). Sent when
     /// a link is made and again when the theme changes; then the
@@ -1651,6 +1670,7 @@ impl Acme {
             strip_leaving: None,
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
+            web_cuts: Default::default(),
             switcher: None,
             switch_slide: None,
             overview: None,
@@ -3306,6 +3326,7 @@ impl Acme {
     pub fn mouse_move(&mut self, e: &MouseMoveEvent, _window: &mut Window, cx: &mut Context<Self>) {
         let pos = e.position;
         self.last_mouse = pos;
+        self.hint_mods(e.modifiers);
         if self.caret_tick() {
             cx.notify();
         }
@@ -4054,7 +4075,15 @@ impl Acme {
                 }
                 WebEvent::Title(_) => {}
                 WebEvent::Reload => self.webs.reload(w),
-                // a link followed in a page of ours: a web window on it
+                // a link followed in a page of ours that leaves the host:
+                // the system's browser, as a link in a document is; one
+                // to the host's files, or its loopback (which only the
+                // host reaches, through Web's proxy), a window on it
+                WebEvent::Link(url) if (url.starts_with("http://") || url.starts_with("https://")) && apex_server::plane::alias_loopback_url(&url) == url => {
+                    if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&url).spawn() {
+                        eprintln!("web: open {url}: {e}");
+                    }
+                }
                 WebEvent::Link(url) => self.goto(Loc { session: None, name: url, pos: Pos::Keep }),
                 // a file link with a line: the file, at that line
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
@@ -4093,6 +4122,17 @@ impl Acme {
     /// underlines a link under ⌘ -- the selection when the pointer is in
     /// it, else the word B3 would look for or open, or the one B2 would
     /// run. True when it changed.
+    /// ⌘ and ⌥ as an event says they are now. Their release can go
+    /// where gpui never hears it -- to a page with the keys, another
+    /// window, another app -- and the pill (and the hand with it) would
+    /// stay on every move after, until a click; the pointer's own events
+    /// say what is held. (Control is left to `modifiers_changed`, which
+    /// ends the ctrl-tab walk on its release.)
+    pub fn hint_mods(&mut self, m: gpui::Modifiers) {
+        self.mouse.mods.platform = m.platform;
+        self.mouse.mods.alt = m.alt;
+    }
+
     pub fn update_hint(&mut self, pos: Point<Pixels>) -> bool {
         let m = self.mouse.mods;
         let held = self.mouse.b1.is_some() || self.mouse.b2.is_some() || self.mouse.b3.is_some() || self.mouse.box_drag.is_some();
@@ -4484,6 +4524,12 @@ impl Acme {
             self.selector_key(&ks.key, ks.key_char.as_deref(), &ks.modifiers, window, cx);
             return;
         }
+        // the pointer on a page: the key was the page's, which let it go
+        // (an arrow at its top or foot) and WebKit passed it up to us --
+        // not the last selected text's, a window beside it
+        if !e.keystroke.modifiers.platform && crate::web::native_mouse(window).and_then(|p| self.webs.window_at(p)).is_some() {
+            return;
+        }
         let pos = self.pointer(window);
         let target = match self.locate(pos) {
             // on a toast or a panel: where the keys went before
@@ -4580,7 +4626,12 @@ impl Acme {
     /// The pointer is left where it is: put back where it last was here,
     /// it jumped under the hand whenever the window came forward (a new
     /// window, the dock, cmd-tab).
-    pub fn window_activated(&mut self, active: bool, _window: &mut Window) {
+    pub fn window_activated(&mut self, active: bool, window: &mut Window) {
+        // ⌘ or ⌥ let go while another window (or app) had the keys: as
+        // they are now, and the pill with them
+        self.hint_mods(window.modifiers());
+        let at = self.last_mouse;
+        self.update_hint(at);
         let under = self.term_under_pointer;
         self.note_active(self.win_under_pointer, active);
         self.term_focus_now(under, active);

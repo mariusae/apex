@@ -117,6 +117,7 @@ impl Render for Acme {
         // the overlays record where they land this frame; the last thing
         // laid out cuts the web views' holes to match (`Webs::set_holes`)
         self.overlay_bounds.borrow_mut().clear();
+        self.web_cuts.borrow_mut().clear();
         self.toasts_at.borrow_mut().clear();
         let root = div()
             .id("apex")
@@ -483,14 +484,23 @@ impl Render for Acme {
             area = area.child(at(col.r.x0 - 6, col.r.y0, 7, col.r.dy(), edge.into_any_element()));
         }
         // where what is held would land: shaded, as Manifold shows where
-        // a dragged sheet would go
+        // a dragged sheet would go. Over a page, holes along its edges
+        // only, so the outline shows and the page stays (its shade does
+        // not reach the page)
         if let Some(r) = self.drag_preview() {
+            let edge = |d: gpui::Div| d.absolute().child(self.web_cut_by(px(1.)));
             let shade = div()
                 .size_full()
                 .rounded(px(6.))
                 .bg(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.12))
                 .border_2()
-                .border_color(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.6));
+                .border_color(gpui::Hsla::from(gpui::rgb(t.accent)).opacity(0.6))
+                // (4 wide, from 2 outside: the border, whether placed
+                // inside it or not)
+                .child(edge(div().top(px(-2.)).left(px(-2.)).right(px(-2.)).h(px(4.))))
+                .child(edge(div().bottom(px(-2.)).left(px(-2.)).right(px(-2.)).h(px(4.))))
+                .child(edge(div().top(px(-2.)).bottom(px(-2.)).left(px(-2.)).w(px(4.))))
+                .child(edge(div().top(px(-2.)).bottom(px(-2.)).right(px(-2.)).w(px(4.))));
             area = area.child(at(r.x0, r.y0, r.dx(), r.dy(), shade.into_any_element()));
         }
         // a strip under the pointer: its column, live, beside it
@@ -556,11 +566,12 @@ impl Render for Acme {
             None => root,
         };
         let holes = self.overlay_bounds.clone();
+        let cuts = self.web_cuts.clone();
         let me3 = me.clone();
         let cutter = gpui::deferred(
             div().absolute().top(px(0.)).left(px(0.)).w(px(0.)).h(px(0.)).child(canvas(
                 move |_, _, cx| {
-                    let holes: Vec<(Bounds<gpui::Pixels>, gpui::Pixels)> = holes.borrow().clone();
+                    let holes: Vec<(Bounds<gpui::Pixels>, gpui::Pixels)> = holes.borrow().iter().chain(cuts.borrow().iter()).copied().collect();
                     me3.update(cx, |acme, _| {
                         acme.webs.set_holes(&holes);
                         // the pages go quiet with the rest while the
@@ -911,9 +922,10 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
             }).detach();
             // cmd-` back into this window: the pointer where it was
             view.update(cx, |_, cx| {
-                cx.observe_window_activation(window, |acme: &mut Acme, window, _| {
+                cx.observe_window_activation(window, |acme: &mut Acme, window, cx| {
                     let active = window.is_window_active();
                     acme.window_activated(active, window);
+                    cx.notify();
                 })
                 .detach();
                 // where the window is, remembered as it moves: after this
