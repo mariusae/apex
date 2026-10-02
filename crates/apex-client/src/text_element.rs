@@ -258,6 +258,8 @@ pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
     }
     if let Some(ink) = d.spin {
         paint_spinner(window, c, SPIN_R, 1.5, rgb(ink));
+        // (turning wherever it is drawn: a minimized column's handles too)
+        window.request_animation_frame();
     }
 }
 

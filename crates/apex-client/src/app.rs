@@ -419,6 +419,9 @@ pub struct Acme {
     /// When each notification shown came, as this client first saw it
     /// (`sync_notes`): a raised one again is a new ping.
     pub noted: std::collections::HashMap<(WindowId, Seq), std::time::Instant>,
+    /// Each stashed window's card: out of the bunch (working or notified)
+    /// or not, and since when -- what its sliding runs from (`sync_pulls`).
+    pub pulled: std::collections::HashMap<WindowId, (bool, std::time::Instant)>,
     /// Holes in the web views for what is drawn over a page but is no
     /// overlay -- the pointer over it still is the page's for hovering,
     /// the caret and the wheel: the outline of where a dragged window
@@ -1676,6 +1679,7 @@ impl Acme {
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
             noted: Default::default(),
+            pulled: Default::default(),
             web_cuts: Default::default(),
             switcher: None,
             switch_slide: None,
@@ -2527,8 +2531,12 @@ impl Acme {
         }
         let made = link.take_made();
         let outputs = link.take_outputs();
+        // (a diagnostic window is made stashed, and stays there: its
+        // news is a toast, its work its card's)
         for w in made {
-            self.show(w);
+            if !self.node.window_diagnostic(w) {
+                self.show(w);
+            }
         }
         // acme's rule for a program's output (xfidwrite's shouldscroll):
         // a window follows it when the point it went in at was on screen,

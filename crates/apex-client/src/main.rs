@@ -118,6 +118,7 @@ impl Render for Acme {
         // laid out cuts the web views' holes to match (`Webs::set_holes`)
         self.overlay_bounds.borrow_mut().clear();
         self.sync_notes();
+        self.sync_pulls();
         self.web_cuts.borrow_mut().clear();
         self.toasts_at.borrow_mut().clear();
         let root = div()

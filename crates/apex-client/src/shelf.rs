@@ -273,20 +273,51 @@ impl Acme {
         }
     }
 
+    /// Each stashed window's card out of the bunch or not -- working, or
+    /// notified -- and since when, kept as that changes (each frame), so
+    /// it slides out as the work or the notification comes and back as
+    /// it goes.
+    pub fn sync_pulls(&mut self) {
+        let stashed: Vec<WindowId> = self.shelved();
+        self.pulled.retain(|w, _| stashed.contains(w));
+        for w in stashed {
+            let out = self.node.window_working(w) || self.window_notified(w);
+            match self.pulled.get(&w) {
+                Some(&(was, _)) if was == out => {}
+                // first seen in, as it always was: nothing to slide
+                None if !out => {}
+                _ => {
+                    self.pulled.insert(w, (out, Instant::now()));
+                }
+            }
+        }
+    }
+
+    /// Is a card on its way out of the bunch or back?
+    fn pulling(&self) -> bool {
+        self.pulled.values().any(|(_, t)| t.elapsed().as_secs_f32() < PULL_IN)
+    }
+
     /// How far each card (latest first) is drawn out of the bunch: a
     /// notified or working one under the top card, so its handle shows
-    /// (`PULL`) -- and a working one's bar along its foot.
+    /// (`PULL`) -- and a working one's bar along its foot -- sliding as
+    /// that comes and goes (`sync_pulls`).
     fn shelf_pulls(&self, wins: &[WindowId]) -> Vec<f32> {
         let mut out = 0.;
         wins.iter()
             .enumerate()
             .map(|(i, &w)| {
-                let k = if i == 0 {
-                    0.
-                } else if self.node.window_working(w) {
-                    1.
-                } else {
-                    self.note_age(w).map_or(0., |age| ease((age / PULL_IN).clamp(0., 1.)))
+                let k = match self.pulled.get(&w) {
+                    _ if i == 0 => 0.,
+                    Some(&(on, at)) => {
+                        let e = ease((at.elapsed().as_secs_f32() / PULL_IN).clamp(0., 1.));
+                        if on {
+                            e
+                        } else {
+                            1. - e
+                        }
+                    }
+                    None => 0.,
                 };
                 out += PULL * k;
                 out
@@ -370,6 +401,7 @@ impl Acme {
         // a selection swept out of the preview)
         let me = cx.entity();
         let left = self.shelf.left_at;
+        let pulling = self.pulling();
         let tick = canvas(
             move |_, window, cx| {
                 if let Some(at) = left {
@@ -387,7 +419,7 @@ impl Acme {
                 }
             },
             move |_, _, window, _| {
-                if moving {
+                if moving || pulling {
                     window.request_animation_frame();
                 }
             },

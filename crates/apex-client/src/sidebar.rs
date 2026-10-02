@@ -513,6 +513,17 @@ pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
             .left(px(0.))
             .size_full()
     });
+    // working: the arc turning round it, as a tag's handle has
+    let spin = d.spin.map(|ink| {
+        gpui::canvas(|_, _, _| {}, move |b, _, window, _| {
+            crate::text_element::paint_spinner(window, b.center(), 5.25, 1.5, rgb(ink).into());
+            window.request_animation_frame();
+        })
+        .absolute()
+        .top(px(0.))
+        .left(px(0.))
+        .size_full()
+    });
     let mut el = div().flex_none().size(px(9.)).rounded_full();
     if let Some(f) = d.fill {
         el = el.bg(rgb(f));
@@ -523,7 +534,7 @@ pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
     if let Some(c) = d.core {
         el = el.flex().items_center().justify_center().child(div().size(px(3.5)).rounded_full().bg(rgb(c)));
     }
-    div().flex_none().relative().size(px(9.)).children(note).child(el)
+    div().flex_none().relative().size(px(9.)).children(note).child(el).children(spin)
 }
 
 /// The sidebar button's glyph: a window with a panel down its left.
