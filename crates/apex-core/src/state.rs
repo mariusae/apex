@@ -127,6 +127,17 @@ pub struct Slot {
     pub premax: i32,
 }
 
+/// A window covered by another (`apex editor` from a terminal: the file
+/// in the terminal's place): out of the tiling while it is, and back in
+/// the place of the one over it when that one goes. The windows over one
+/// another are a stack, the top in the tiling (or the stash) and each
+/// under the one before it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Cover {
+    pub top: WindowId,
+    pub under: WindowId,
+}
+
 /// A window put away in the session's stash (⌘M, `Stash`): out of the
 /// tiling, and brought back where it was, at the size it had.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -222,6 +233,9 @@ pub struct Layout {
     /// The windows put away (⌘M, `Stash`), in the order they went.
     #[serde(default)]
     pub stash: Vec<Stashed>,
+    /// The windows covered by others (`Cover`), each once.
+    #[serde(default)]
+    pub covers: Vec<Cover>,
 }
 
 impl Layout {
@@ -254,6 +268,37 @@ impl Layout {
     pub fn is_stashed(&self, w: WindowId) -> bool {
         self.stashed_of(w).is_some()
     }
+    /// The window right under `w`, when it covers one.
+    pub fn under(&self, w: WindowId) -> Option<WindowId> {
+        self.covers.iter().find(|c| c.top == w).map(|c| c.under)
+    }
+    /// The window right over `w`, when it is covered.
+    pub fn over(&self, w: WindowId) -> Option<WindowId> {
+        self.covers.iter().find(|c| c.under == w).map(|c| c.top)
+    }
+    /// The top of the stack `w` is in (`w` itself, when it is covered by
+    /// none): the window in the tiling in their place.
+    pub fn stack_top(&self, w: WindowId) -> WindowId {
+        let mut t = w;
+        for _ in 0..=self.covers.len() {
+            match self.over(t) {
+                Some(o) => t = o,
+                None => break,
+            }
+        }
+        t
+    }
+    /// The stack `w` is in, its top first.
+    pub fn stack(&self, w: WindowId) -> Vec<WindowId> {
+        let mut out = vec![self.stack_top(w)];
+        while let Some(u) = self.under(*out.last().unwrap()) {
+            if out.contains(&u) {
+                break;
+            }
+            out.push(u);
+        }
+        out
+    }
     pub fn column(&self, id: ColumnId) -> Option<&Column> {
         self.cols.iter().find(|c| c.id == id)
     }
@@ -272,6 +317,14 @@ impl Layout {
             c.wins.retain(|s| s.window != w);
         }
         self.stash.retain(|s| s.slot.window != w);
+        // a window gone from a stack: the one under it under the one over
+        // it (the leader says where the top's place goes; a replica keeps
+        // the stack whole)
+        let (over, under) = (self.over(w), self.under(w));
+        self.covers.retain(|c| c.top != w && c.under != w);
+        if let (Some(o), Some(u)) = (over, under) {
+            self.covers.push(Cover { top: o, under: u });
+        }
     }
 }
 
@@ -616,10 +669,10 @@ impl State {
                 l.top = Some(*top);
                 l.r = *r;
             }
-            LayoutOp::Arrange { r, cols, full, stash } => {
-                // a window may sit in one place only
+            LayoutOp::Arrange { r, cols, full, stash, covers } => {
+                // a window may sit in one place only (covered is a place)
                 let mut seen = std::collections::BTreeSet::new();
-                for w in cols.iter().flat_map(|c| c.wins.iter().map(|s| s.window)).chain(stash.iter().map(|s| s.slot.window)) {
+                for w in cols.iter().flat_map(|c| c.wins.iter().map(|s| s.window)).chain(stash.iter().map(|s| s.slot.window)).chain(covers.iter().map(|c| c.under)) {
                     if !seen.insert(w) {
                         return Err(ApplyError::Exists(format!("window {w} placed twice")));
                     }
@@ -627,6 +680,7 @@ impl State {
                 l.r = *r;
                 l.cols = cols.clone();
                 l.stash = stash.clone();
+                l.covers = covers.clone();
                 l.full = full.filter(|f| cols.iter().any(|c| c.id == *f));
             }
             LayoutOp::Snarf { text } => l.snarf = text.clone(),

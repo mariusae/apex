@@ -368,7 +368,11 @@ has it as a function." },
 Editor is plan9port's editinacme for apex, for use as $EDITOR: it opens
 FILE in the session (through the rules that open in the session, as B
 does, so an open window is shown and the pointer warped to it), waits
-until the file's window is deleted, and exits. While it waits the window
+until the file's window is deleted, and exits. Run in a terminal window
+(win's, Newterm's: $winid says which), it opens FILE over the terminal
+instead, in its place -- a window of its own, on the file's text if it is
+open elsewhere too -- and the terminal comes back when that window goes;
+Swap in its tag shows the terminal meanwhile. While it waits the window
 is labelled $EDITOR for the program waiting on it (git, say: the first
 of its callers that is not a shell), since closing that window is what
 the program waits for; interrupted, it puts the label back as it was.
@@ -1686,14 +1690,29 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
     let mut c = tool(ctx)?;
     eprintln!("editor: editing {file}");
-    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
-    let window = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w) == file && r.node.window_kind(*w) == WinKind::File);
-    wait(&mut c, |r| window(r).is_some()).map_err(|_| format!("{file}: not opened"))?;
+    // run in a terminal (win's, Newterm's): the file over it, in its place,
+    // the terminal back when its window goes; else opened as B would
+    let term = std::env::var("winid").ok().and_then(|s| s.parse::<u64>().ok()).map(WindowId).filter(|w| c.node.state.window(*w).is_ok_and(|x| matches!(x.body, apex_core::Body::Term(_))));
+    let w = match term {
+        Some(under) => {
+            c.send(&ClientMsg::EditOver { under, name: file.clone() });
+            // the window over the terminal on the file: this one, whatever
+            // other windows the file has
+            let over = |r: &Remote| r.node.state.layout.stack(under).into_iter().find(|w| *w != under && r.node.window_path(*w) == file);
+            wait(&mut c, |r| over(r).is_some()).map_err(|_| format!("{file}: not opened"))?;
+            over(&c).ok_or_else(|| format!("{file}: not opened"))?
+        }
+        None => {
+            c.send(&ClientMsg::Plumb { ctx: ExecCtx::Top, text: file.clone(), dir: None, edit_only: true, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
+            let window = |r: &Remote| r.node.state.windows.keys().copied().find(|w| r.node.window_path(*w) == file && r.node.window_kind(*w) == WinKind::File);
+            wait(&mut c, |r| window(r).is_some()).map_err(|_| format!("{file}: not opened"))?;
+            window(&c).ok_or_else(|| format!("{file}: not opened"))?
+        }
+    };
     // labelled for what it is while it is: closing it is the answer a
     // program waits on ($EDITOR for git), not only a window gone. Put
     // back as it was if we are interrupted first.
     apex_server::catch_interrupts();
-    let w = window(&c).ok_or_else(|| format!("{file}: not opened"))?;
     let was = c.node.window_label(w);
     let label = match apex_server::waiting_program() {
         Some(p) => format!("$EDITOR for {p}"),
@@ -1701,7 +1720,7 @@ fn editor(ctx: &Ctx, p: &Parsed) -> R {
     };
     let _ = c.propose(Proposal::SetLabel { window: w, label: Some(label) }, TIMEOUT);
     loop {
-        if window(&c).is_none() {
+        if c.node.state.window(w).is_err() {
             return Ok(());
         }
         if apex_server::INTERRUPTED.load(std::sync::atomic::Ordering::Relaxed) {

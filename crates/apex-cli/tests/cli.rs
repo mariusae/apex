@@ -579,6 +579,55 @@ fn editor_opens_the_file_and_returns_when_its_window_goes() {
 }
 
 #[test]
+fn editor_in_a_terminal_edits_over_it_and_gives_it_back() {
+    let sock = daemon();
+    ok(&sock, &["set", "Newterm.shell", "/bin/sh"]);
+    let dir = std::env::temp_dir().join(format!("apex-editor-over-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("MSG");
+    std::fs::write(&file, "subject\n").unwrap();
+    let path = file.display().to_string();
+    let term: u64 = ok(&sock, &["term", "new"]).trim().parse().unwrap();
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    // its window ($winid in it)
+    let win = |r: &Remote| r.node.state.windows.values().find(|w| w.body == apex_core::Body::Term(apex_core::TermId(term))).map(|w| w.id).filter(|w| r.node.state.layout.slot(*w).is_some());
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while win(&c).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let t = win(&c).expect("the terminal's window, laid out");
+    let place = c.node.state.layout.slot(t).unwrap().r;
+    // run in the terminal ($winid): the file over it, in its place
+    let (s2, p2) = (sock.clone(), path.clone());
+    let child = std::thread::spawn(move || {
+        let out = Command::new(env!("CARGO_BIN_EXE_apex")).env("APEX_SOCKET", &s2).env("apexsession", "main").env("winid", t.0.to_string()).args(["editor", &p2]).output().unwrap();
+        (out.status.success(), String::from_utf8_lossy(&out.stderr).to_string())
+    });
+    let over = |r: &Remote| r.node.state.layout.over(t);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while over(&c).is_none() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let e = over(&c).expect("a window over the terminal");
+    assert_eq!(c.node.window_path(e), path);
+    assert_eq!(c.node.state.layout.slot(e).map(|s| s.r.y0), Some(place.y0));
+    assert!(c.node.state.layout.place_of(t).is_none(), "the terminal under it");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!child.is_finished(), "editor returned while the window was open");
+    // Del: the file's window goes, the terminal is back, the editor returns
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(e), text: "Del".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !child.is_finished() && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let (success, err) = child.join().unwrap();
+    assert!(success, "{err}");
+    assert_eq!(c.node.state.layout.slot(t).map(|s| s.r.y0), Some(place.y0), "the terminal back in its place");
+    assert!(c.node.state.layout.covers.is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn newterm_shell_is_a_setting() {
     let sock = daemon();
     ok(&sock, &["set", "Newterm.shell", "/bin/sh"]);

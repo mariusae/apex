@@ -11,7 +11,20 @@ pub enum Proposal {
     /// Open a window showing a file's contents, or a directory's listing
     /// (`kind` says which): in the active column, else the column of
     /// `from`, else `col` (acme's `makenewwindow`).
-    OpenWindow { col: ColumnId, from: Option<WindowId>, name: String, kind: WinKind, text: String, hash: String, select_line: Option<usize> },
+    OpenWindow {
+        col: ColumnId,
+        from: Option<WindowId>,
+        name: String,
+        kind: WinKind,
+        text: String,
+        hash: String,
+        select_line: Option<usize>,
+        /// Over this terminal window, in its place, rather than in `col`
+        /// (`ClientMsg::EditOver`): a window of its own, the file's buffer
+        /// shared if it is open already.
+        #[serde(default)]
+        cover: Option<WindowId>,
+    },
     /// A window on a new, empty buffer at this path (`New path`): a
     /// file's, or scratch (a tool's window, a transcript), with a label
     /// beside the path.
@@ -132,7 +145,19 @@ pub enum Proposal {
 /// searched in, if any.
 pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<WindowId>, CoreError> {
     match p {
-        Proposal::OpenWindow { col, from, name, kind, text, hash, select_line } => {
+        Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, cover } => {
+            // over a terminal: a window of its own in its place, on the
+            // buffer open already (as Zerox makes one) or a new one
+            if let Some(under) = cover.filter(|u| node.state.window(*u).is_ok_and(|w| matches!(w.body, Body::Term(_)))) {
+                let b = match node.window_of(&name, kind).and_then(|w| node.state.window(w).ok()).and_then(|w| w.body_buffer()) {
+                    Some(b) => b,
+                    None => node.create_buffer_as(log, &name, &text, Some(hash), kind, false)?,
+                };
+                let w = node.cover_window(log, under, b, None)?;
+                select(node, log, w, select_line)?;
+                node.seltext = Some(ViewId::Body(w));
+                return Ok(Some(w));
+            }
             if let Some(w) = node.window_of(&name, kind) {
                 // acme's openfile: show it (a window with no lines grows a
                 // few), and jump the mouse to the selection

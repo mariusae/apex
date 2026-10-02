@@ -868,3 +868,39 @@ fn a_diagnostic_window_is_made_stashed_and_says_how_far_along() {
     let r = follower(&log);
     assert!(r.window_diagnostic(d) && r.state.layout.is_stashed(d));
 }
+#[test]
+fn a_window_covers_another_in_its_place_and_gives_it_back() {
+    let (mut log, mut node, col) = session();
+    let t = node.new_window(&mut log, col, "/tmp/term", "$ git commit\n").unwrap();
+    let other = node.new_window(&mut log, col, "/tmp/other", "x\n").unwrap();
+    let place = node.state.layout.slot(t).unwrap().r;
+    let msg = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
+    // the file over the terminal: in its place, the terminal out of the
+    // tiling, under it
+    let e = node.cover_window(&mut log, t, msg, None).unwrap();
+    assert_eq!(node.state.layout.slot(e).unwrap().r, place);
+    assert!(node.state.layout.place_of(t).is_none());
+    assert_eq!((node.state.layout.under(e), node.state.layout.over(t)), (Some(t), Some(e)));
+    assert_eq!(node.state.layout.stack(t), vec![e, t]);
+    assert!(node.window_verbs(e).contains(&"Swap") && !node.window_verbs(other).contains(&"Swap"));
+    // Swap: the terminal on top, the file under it
+    node.exec(&mut log, ExecCtx::Window(e), "Swap").unwrap();
+    assert_eq!(node.state.layout.stack(e), vec![t, e]);
+    assert_eq!(node.state.layout.slot(t).unwrap().r.y0, place.y0);
+    // going to the file brings it back up
+    node.reveal(&mut log, e).unwrap();
+    assert_eq!(node.state.layout.stack(t), vec![e, t]);
+    // and a replica sees the same
+    assert_eq!(follower(&log).state.layout.stack(t), vec![e, t]);
+    // the top deleted: the terminal back in its place, the stack gone
+    node.delete_window(&mut log, e).unwrap();
+    assert_eq!(node.state.layout.slot(t).unwrap().r.y0, place.y0);
+    assert!(node.state.layout.covers.is_empty());
+    // a covered window gone: the stack closes over it
+    let msg2 = node.create_buffer_as(&mut log, "/tmp/COMMIT_EDITMSG", "", None, WinKind::File, false).unwrap();
+    let e2 = node.cover_window(&mut log, t, msg2, None).unwrap();
+    node.delete_window(&mut log, t).unwrap();
+    assert!(node.state.layout.covers.is_empty());
+    assert!(node.state.layout.place_of(e2).is_some());
+    assert_eq!(f_hash(&log), node.state.hash());
+}

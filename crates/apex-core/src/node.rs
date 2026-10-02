@@ -244,7 +244,7 @@ impl Node {
 
     /// Append the whole tiling as it now stands in `l`.
     fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone() }))?;
+        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone(), covers: l.covers.clone() }))?;
         Ok(())
     }
 
@@ -459,6 +459,14 @@ impl Node {
     /// window). `path` and `label` for a window with no text of its own.
     /// A `diagnostic` one is made in the stash instead (`place`).
     fn open_window_as(&mut self, log: &mut Log, col: ColumnId, body: Body, path: String, label: Option<String>, y: Option<i32>, diagnostic: bool) -> Result<WindowId> {
+        let id = self.make_window_shards(log, body, path, label, diagnostic)?;
+        self.place(log, col, id, y)?;
+        Ok(id)
+    }
+
+    /// A window's log, its tag and its views -- not yet anywhere in the
+    /// tiling.
+    fn make_window_shards(&mut self, log: &mut Log, body: Body, path: String, label: Option<String>, diagnostic: bool) -> Result<WindowId> {
         let id = WindowId(self.alloc());
         let tag = self.create_buffer(log, "", WIN_TAG, None)?;
         self.create_shard(log, Shard::Window(id))?;
@@ -470,8 +478,55 @@ impl Node {
         if let Body::Text(b) | Body::Html(b) = body {
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
         }
-        self.place(log, col, id, y)?;
         Ok(id)
+    }
+
+    /// A window on `body` over window `under` (and what is over it): in
+    /// its place, the stack's new top -- `apex editor` from a terminal,
+    /// the file where the terminal was, the terminal back when it goes.
+    pub fn cover_window(&mut self, log: &mut Log, under: WindowId, body: BufferId, label: Option<String>) -> Result<WindowId> {
+        let top = self.state.layout.stack_top(under);
+        if self.state.layout.place_of(top).is_none() && !self.state.layout.is_stashed(top) {
+            return Err(CoreError::Missing(format!("window {under} is not placed")));
+        }
+        let id = self.make_window_shards(log, Body::Text(body), String::new(), label, false)?;
+        let mut stack = self.state.layout.stack(top);
+        stack.insert(0, id);
+        let mut l = self.state.layout.clone();
+        tiling::restack(&mut l, top, &stack, &*self.tiling);
+        self.arrange(log, &l)?;
+        self.warp = Some(Warp::NewWindow(id));
+        Ok(id)
+    }
+
+    /// `Swap`: the window and the one it covers change places -- that one
+    /// on top, in the place, this one right under it.
+    pub fn swap_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let stack = self.state.layout.stack(w);
+        if stack.len() < 2 || stack[0] != w {
+            return Ok(());
+        }
+        let mut next = stack.clone();
+        next.swap(0, 1);
+        let mut l = self.state.layout.clone();
+        tiling::restack(&mut l, w, &next, &*self.tiling);
+        self.arrange(log, &l)?;
+        self.warp = Some(Warp::WinButton(next[0]));
+        Ok(())
+    }
+
+    /// A covered window brought to the top of its stack, the rest under it
+    /// in their order: what going to it does.
+    pub fn raise_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let stack = self.state.layout.stack(w);
+        if stack[0] == w {
+            return Ok(());
+        }
+        let mut next: Vec<WindowId> = stack.iter().copied().filter(|&x| x != w).collect();
+        next.insert(0, w);
+        let mut l = self.state.layout.clone();
+        tiling::restack(&mut l, stack[0], &next, &*self.tiling);
+        self.arrange(log, &l)
     }
 
     /// acme's `makenewwindow`: a window on `body` in the active column
@@ -654,6 +709,10 @@ impl Node {
     /// tag, or obscured): grow it a little (`colgrow` with button 1) so
     /// what is shown can be seen. No mouse warp: that is the caller's.
     pub fn reveal(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        // a covered one comes to the top of its stack, the rest under it
+        if self.state.layout.over(w).is_some() {
+            self.raise_window(log, w)?;
+        }
         // a stashed window is never a dead end: whatever goes to it
         // brings it back where it was; nor is one hidden behind a window
         // grown to the whole column
@@ -684,6 +743,8 @@ impl Node {
     /// What each had before the B3 is still what B1 on the box gives
     /// back. A stashed window stays put: its card in the stash says so.
     pub fn notice(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        // covered: the stack's top is what shows (its handle says it)
+        let w = self.state.layout.stack_top(w);
         let Some((ci, _)) = self.state.layout.place_of(w) else { return Ok(()) };
         let mut l = self.state.layout.clone();
         let mut moved = false;
@@ -1083,6 +1144,10 @@ impl Node {
                 }
             }
         }
+        // over another window: the two change places
+        if self.state.layout.under(w).is_some() {
+            out.push("Swap");
+        }
         match win.body {
             // a page's history and reload (the client does them)
             Body::Web => out.extend(["Back", "Fwd", "Get"]),
@@ -1114,7 +1179,18 @@ impl Node {
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewDel { view: ViewId::Body(window) }))?;
         }
         let mut next = None;
-        if let Some((ci, wi)) = self.state.layout.place_of(window) {
+        let stack = self.state.layout.stack(window);
+        if stack.len() > 1 {
+            // in a stack: the one under it takes its place (when it is the
+            // top), or the stack closes over it
+            let rest: Vec<WindowId> = stack.iter().copied().filter(|&x| x != window).collect();
+            let mut l = self.state.layout.clone();
+            tiling::restack(&mut l, stack[0], &rest, &*self.tiling);
+            if stack[0] == window {
+                next = rest.first().copied();
+            }
+            self.arrange(log, &l)?;
+        } else if let Some((ci, wi)) = self.state.layout.place_of(window) {
             let mut l = self.state.layout.clone();
             let above = tiling::stash_above(&l, ci, window);
             let (_, n) = tiling::colclose(&mut l, ci, wi, &*self.tiling);
@@ -1767,7 +1843,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Stash" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "Web" => Handler::Leader,
+            | "Stash" | "Swap" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "Web" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -1950,6 +2026,10 @@ impl Node {
             "Stash" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Stash needs a window".into()))?;
                 self.stash_window(log, w)?;
+            }
+            "Swap" => {
+                let w = win.ok_or_else(|| CoreError::Missing("Swap needs a window".into()))?;
+                self.swap_window(log, w)?;
             }
             "Tab" => {
                 let w = win.ok_or_else(|| CoreError::Missing("Tab needs a window".into()))?;

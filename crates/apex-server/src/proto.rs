@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 45;
+pub const PROTOCOL: u32 = 46;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -108,6 +108,11 @@ pub enum ClientMsg {
     TermRead { term: TermId, from: u64, to: u64 },
     /// Open a file (relative to the window's directory) in a column.
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
+    /// Open a file (relative to the window's directory) over terminal
+    /// window `under`, in its place (`apex editor` run in it): a window of
+    /// its own, on the file's buffer if it is open already, covering the
+    /// terminal until it goes (`state::Cover`).
+    EditOver { under: WindowId, name: String },
     /// B3, or `apex plumb`: the rule table decides. `dir` stands in for
     /// the context's directory (a terminal's cwd); `edit_only` is plan 9's
     /// `B` (only rules that open in the session, else the text as a path);

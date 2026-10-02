@@ -15,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::*;
-use crate::state::{Column, Full, Layout, Slot, Stashed};
+use crate::state::{Column, Cover, Full, Layout, Slot, Stashed};
 
 /// acme's `Border`: between columns and between windows.
 pub const BORDER: i32 = 2;
@@ -643,6 +643,34 @@ fn whole_shares(l: &mut Layout, ci: usize) {
 /// out down to its tag, and the shares they had kept to go back to.
 pub fn is_maximized_win(c: &Column, wi: usize) -> bool {
     c.wins.len() > 1 && c.wins.iter().enumerate().all(|(j, s)| j == wi || s.body.dy() <= 0) && c.wins.iter().any(|s| s.premax > 0)
+}
+
+/// The stack in `top`'s place (`state::Cover`) made `stack`: its first
+/// the window in that place -- in a column, refitted there, or in the
+/// stash -- each after it under the one before. `stack` holds the windows
+/// that stack is to have, the old top among them or not (gone).
+pub fn restack(l: &mut Layout, top: WindowId, stack: &[WindowId], info: &dyn Info) {
+    let Some(&first) = stack.first() else { return };
+    let old = l.stack(top);
+    if first != top {
+        if let Some((ci, wi)) = l.place_of(top) {
+            l.cols[ci].wins[wi].window = first;
+            if let Some(f) = l.cols[ci].full.as_mut().filter(|f| f.window == top) {
+                f.window = first;
+            }
+            colgrow(l, ci, wi, -1, info);
+        } else if let Some(si) = l.stashed_of(top) {
+            l.stash[si].slot.window = first;
+        }
+        // what was to come back under the old top comes back under this
+        for s in l.stash.iter_mut().filter(|s| s.above == Some(top)) {
+            s.above = Some(first);
+        }
+    }
+    l.covers.retain(|c| !old.contains(&c.top) && !old.contains(&c.under) && !stack.contains(&c.top) && !stack.contains(&c.under));
+    for p in stack.windows(2) {
+        l.covers.push(Cover { top: p[0], under: p[1] });
+    }
 }
 
 /// Shift-B1 on a window's box: minimized -- down to its tag, where it

@@ -200,6 +200,9 @@ pub enum LayoutOp {
         /// The session's stash: windows put away, out of every column.
         #[serde(default)]
         stash: Vec<crate::state::Stashed>,
+        /// The windows covered by others (`state::Cover`).
+        #[serde(default)]
+        covers: Vec<crate::state::Cover>,
     },
     /// The snarf buffer (acme's is global; the client mirrors the system clipboard).
     Snarf { text: String },

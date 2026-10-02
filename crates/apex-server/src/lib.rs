@@ -273,7 +273,7 @@ impl Server {
         let (display, text) = self.read_path(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let hash = Text::new(&text).content_hash();
         let kind = if path.is_dir() { WinKind::Dir } else { WinKind::File };
-        Ok(Proposal::OpenWindow { col, from, name: display, kind, text, hash, select_line })
+        Ok(Proposal::OpenWindow { col, from, name: display, kind, text, hash, select_line, cover: None })
     }
 
     fn put(&mut self, view: &Node, w: WindowId, arg: Option<&str>) -> Result<Vec<Proposal>, String> {

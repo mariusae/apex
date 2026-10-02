@@ -680,6 +680,18 @@ impl Daemon {
                     Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
                 });
             }
+            ClientMsg::EditOver { under, name: file } => {
+                let ctx = ExecCtx::Window(under);
+                let dir = s.server.dir_of(&s.view, ctx);
+                let top = s.view.state.layout.stack_top(under);
+                let col = s.view.state.layout.column_of(top).or_else(|| s.view.state.layout.cols.last().map(|c| c.id));
+                let Some(col) = col else { return };
+                props.push(match s.server.open_file(col, Some(under), &dir, &file, None) {
+                    Ok(Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, .. }) => Proposal::OpenWindow { col, from, name, kind, text, hash, select_line, cover: Some(under) },
+                    Ok(p) => p,
+                    Err(e) => Proposal::Errors { dir: Some(dir.to_string_lossy().to_string()), text: format!("{e}\n") },
+                });
+            }
             ClientMsg::Plumb { ctx, text, dir, edit_only, dry, at, sel, alt, reverse, verb } => {
                 let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: verb.unwrap_or_else(|| "plumb".into()), edit_only, dry, exec: None, at, sel, alt, reverse };
                 let (pid, step) = s.server.plumb_start(&s.view, req);
