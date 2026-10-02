@@ -1059,9 +1059,13 @@ const LIGHTS_W: f32 = 86.;
 
 /// The tools menu painted as a tag is: a card of a tag's ground, its
 /// hairline and corners, lifted as a stash card is; each row a tag's line
-/// in a tag's face and ink, the one under the pointer as B2 sweeping it
-/// would show it (`Theme::sweep`), the remembered one with a dot in the
-/// margin; and the scrolling lane's thumb a slim scroller's.
+/// in a tag's face and ink, the word under the pointer on B2's pill
+/// (`Theme::sweep`), as B2 on it in a tag would have it; and the
+/// scrolling lane's thumb a slim scroller's. (The one chosen last is
+/// where the menu opens, under the pointer: no mark says it.)
+/// The wash each side of a word on a B2 pill (the tag's, `text_element`).
+const PILL_PAD: f32 = 3.;
+
 fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
     let t = theme::theme();
@@ -1089,25 +1093,30 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
         let text = m.items.get(at).cloned().unwrap_or_default();
         let hl = i == m.lasti;
         let ink = if hl { sweep_ink } else { t.text };
-        let mut row = div()
+        // the word under the pointer on B2's pill, as in a tag: it is B2
+        // on it -- three pixels of wash each side of it, a tag's line less
+        // a pixel over and under, its corners the sweep's
+        let pill = div()
+            .flex_none()
+            .h(px((ir.dy() - 2) as f32))
+            .px(px(PILL_PAD))
+            .flex()
+            .items_center()
+            .rounded(px(4.))
+            .when(hl, |d| d.bg(rgb(sweep_bg)))
+            .child(text);
+        let row = div()
             .absolute()
             .left(px((ir.x0 - r.x0 - EDGE) as f32))
             .top(px((ir.y0 - r.y0 - EDGE) as f32))
             .w(px(ir.dx() as f32))
             .h(px(ir.dy() as f32))
-            .rounded(px(4.))
             .flex()
             .items_center()
-            .pl(px((menu::LEAD - menu::INSET) as f32))
+            .pl(px((menu::LEAD - menu::INSET) as f32 - PILL_PAD))
             .text_size(fs.size)
             .text_color(rgb(ink))
-            .when(hl, |d| d.bg(rgb(sweep_bg)))
-            .child(text);
-        if m.checked == Some(at) {
-            // the remembered one: a dot in the margin, the secondary ink's
-            let dot = if hl { sweep_ink } else { t.text_dim };
-            row = row.child(div().absolute().left(px(6.)).top(px(0.)).h_full().flex().items_center().child(div().size(px(4.)).rounded_full().bg(rgb(dot))));
-        }
+            .child(pill);
         el = el.child(row);
     }
     if m.scrolling {

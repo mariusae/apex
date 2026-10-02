@@ -439,10 +439,10 @@ windows put away out of the tiling, which is the core's
   lands on it), a part and a lane past 25 items. It looks like a tag: a
   card of a tag's ground with its hairline and corners, lifted a little
   as a stash card is; rows a tag's lines in a tag's face and ink; the
-  item under the pointer as B2 sweeping it in a tag would show it (the
-  action's wash, its ink), since choosing one is running it; the
-  remembered one a dot in the margin; the lane down its right with a
-  slim thumb.
+  item under the pointer on B2's pill, as B2 on it in a tag would have
+  it (the action's wash round the word, its ink), since choosing one is
+  running it; no mark on the remembered one, which is where the menu
+  opens; the lane down its right with a slim thumb.
 - **Columns on paper.** A column is the body's paper where its windows
   leave it (a body's part line at its foot, the gaps), with a hairline
   where each window meets the one above, as acme's column is white with

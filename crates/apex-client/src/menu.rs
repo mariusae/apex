@@ -6,9 +6,9 @@
 //! so that it sits under the pointer, which is landed on it, so a click
 //! alone repeats it; past 25 items, a part of them and a lane to scroll
 //! them by. What it looks like is a tag's: a card as a tag is, its rows
-//! a tag's lines in a tag's face, the item under the pointer as B2
-//! sweeping it in a tag would show it (choosing one is running it), the
-//! remembered one marked by a dot in the margin.
+//! a tag's lines in a tag's face, the item under the pointer on B2's
+//! pill, as B2 on it in a tag would have it (choosing one is running
+//! it); the remembered one is where the menu opens, unmarked.
 
 use apex_core::tiling::Rect;
 use apex_core::WindowId;
@@ -21,9 +21,8 @@ pub const IH: i32 = 22;
 pub const PAD_Y: i32 = 4;
 /// The highlight, in from the menu's sides.
 pub const INSET: i32 = 4;
-/// From the menu's edge to an item's text: the remembered one's dot's
-/// column.
-pub const LEAD: i32 = 18;
+/// From the menu's edge to an item's text (its pill's wash before it).
+pub const LEAD: i32 = 12;
 /// From an item's text to the menu's far edge.
 pub const TRAIL: i32 = 14;
 /// No narrower than this.
@@ -48,8 +47,6 @@ pub struct Menu {
     /// The highlighted item, relative to `off`; -1 for none.
     pub lasti: i32,
     pub ih: i32,
-    /// The item chosen last time, which the checkmark marks.
-    pub checked: Option<usize>,
 }
 
 impl Menu {
@@ -77,7 +74,7 @@ impl Menu {
         let lane = if scrolling { SCROLLWID } else { 0 };
         let textr = Rect::new(menur.x0 + INSET, menur.y0 + PAD_Y, menur.x1 - INSET - lane, menur.y0 + PAD_Y + nitemdrawn * ih);
         let scrollr = if scrolling { Rect::new(menur.x1 - SCROLLWID - 2, menur.y0 + PAD_Y, menur.x1 - 2, menur.y1 - PAD_Y) } else { Rect::new(0, 0, 0, 0) };
-        Menu { window, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih, checked }
+        Menu { window, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih }
     }
 
     /// The rectangle of drawn row `i`: what its highlight fills.
