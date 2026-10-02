@@ -659,23 +659,33 @@ impl Node {
         self.arrange(log, &l)
     }
 
-    /// Window `w` notified: not left where it cannot be seen. Hidden
-    /// behind a window grown to its column, the column's windows come
-    /// back (as B1 on the grown one's box); in a column hidden behind one
-    /// given the row, the row's columns come back, the others as strips
-    /// (as B1 on its box) -- either way its tag shows, its handle saying
-    /// so. A stashed window stays put: its card in the stash says so.
+    /// Window `w` notified: not left where it cannot be seen, and nothing
+    /// moved more than it must be. A maximize that hides it (B3) becomes
+    /// one that shows the rest as tags or strips (B2's), the maximized
+    /// window or column keeping the room -- so its handle shows, in a tag
+    /// behind a window grown to its column, in a strip behind a column
+    /// given the row (and both, a window hidden in a column hidden so).
+    /// What each had before the B3 is still what B1 on the box gives
+    /// back. A stashed window stays put: its card in the stash says so.
     pub fn notice(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
         let Some((ci, _)) = self.state.layout.place_of(w) else { return Ok(()) };
         let mut l = self.state.layout.clone();
         let mut moved = false;
         if let Some(fi) = l.full_index().filter(|&fi| fi != ci) {
+            let id = l.cols[fi].id;
+            // the row as it was (a click on the box), then B2's
             tiling::rowgrow(&mut l, fi, 1, &*self.tiling);
+            if let Some(fi) = l.column_index(id) {
+                tiling::rowmaximize(&mut l, fi, &*self.tiling);
+            }
             moved = true;
         }
-        if l.cols[ci].hides(w) {
-            tiling::unfull(&mut l, ci, &*self.tiling);
-            moved = true;
+        // (the window's column found again: the row laid out anew)
+        if let Some((ci, _)) = l.place_of(w).filter(|&(ci, _)| l.cols[ci].hides(w)) {
+            if let Some(gi) = l.cols[ci].full.and_then(|f| l.cols[ci].wins.iter().position(|s| s.window == f.window)) {
+                tiling::colmaximize(&mut l, ci, gi, &*self.tiling);
+                moved = true;
+            }
         }
         if moved {
             self.arrange(log, &l)?;

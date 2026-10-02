@@ -797,28 +797,51 @@ fn a_column_a_drag_leaves_empty_goes_with_its_tag() {
 }
 #[test]
 fn a_notified_window_is_not_left_hidden() {
+    use apex_core::tiling::{is_maximized_col, is_maximized_win, is_strip};
     let (mut log, mut node, col) = session();
     let a = node.new_window(&mut log, col, "/tmp/a", "a\n").unwrap();
     let b = node.new_window(&mut log, col, "/tmp/b", "b\n").unwrap();
-    // b given the column: a hidden behind it, until a is notified
+    let before: Vec<_> = node.state.layout.column(col).unwrap().wins.iter().map(|s| s.r).collect();
+    // b given the column (B3): a hidden behind it, until a is notified --
+    // then b maximized as B2 does, a down to its tag
     node.grow_window(&mut log, b, 3).unwrap();
     let ci = node.state.layout.place_of(a).unwrap().0;
     assert!(node.state.layout.cols[ci].hides(a));
     node.notice(&mut log, a).unwrap();
-    assert!(!node.state.layout.cols[ci].hides(a));
-    assert!(node.state.layout.cols[ci].full.is_none());
-    // a column given the row: the others back, as strips, when a window
-    // in one is notified
+    let c = &node.state.layout.cols[ci];
+    assert!(c.full.is_none() && !c.hides(a));
+    let bi = c.wins.iter().position(|s| s.window == b).unwrap();
+    assert!(is_maximized_win(c, bi), "b maximized, the rest their tags");
+    // and B1 on b's box gives back what each had before the B3
+    node.grow_window(&mut log, b, 1).unwrap();
+    let after: Vec<_> = node.state.layout.column(col).unwrap().wins.iter().map(|s| s.r).collect();
+    assert_eq!(after, before);
+    // a column given the row (B3): when a window in another is notified,
+    // that column maximized as B2 does, the others strips
     let c2 = node.new_column(&mut log, None).unwrap();
     let c = node.new_window(&mut log, c2, "/tmp/c", "c\n").unwrap();
     let r = node.state.layout.column(c2).unwrap().r;
     node.drag_column(&mut log, c2, 3, (r.x0 + 2, r.y0 + 2), (r.x0 + 2, r.y0 + 2)).unwrap();
     assert_eq!(node.state.layout.full, Some(c2), "the column given the row");
     node.notice(&mut log, a).unwrap();
-    assert_eq!(node.state.layout.full, None);
-    // and notifying one in the column given the row changes nothing
+    let l = &node.state.layout;
+    assert_eq!(l.full, None);
+    assert!(is_maximized_col(l, l.column_index(c2).unwrap()));
+    assert!(is_strip(l.column(col).unwrap().r));
+    // notifying one in the column given the row changes nothing
+    let r = node.state.layout.column(c2).unwrap().r;
     node.drag_column(&mut log, c2, 3, (r.x0 + 2, r.y0 + 2), (r.x0 + 2, r.y0 + 2)).unwrap();
+    assert_eq!(node.state.layout.full, Some(c2));
     let before = node.state.layout.clone();
     node.notice(&mut log, c).unwrap();
     assert_eq!(node.state.layout, before);
+    // a window hidden in a column hidden so: both, its column a strip
+    // whose windows all stand where they are (none hidden behind another)
+    node.grow_window(&mut log, b, 3).unwrap();
+    assert!(node.state.layout.column(col).unwrap().hides(a));
+    node.notice(&mut log, a).unwrap();
+    let l = &node.state.layout;
+    let first = l.column(col).unwrap();
+    assert!(l.full.is_none() && first.full.is_none() && !first.hides(a));
+    assert!(is_strip(first.r));
 }
