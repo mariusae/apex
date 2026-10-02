@@ -1473,7 +1473,10 @@ impl Element for TextElement {
                     n += 1;
                 }
                 let trailing = text_len > 0 && text.char_at(text_len - 1) == '\n';
-                acme.tag_need.insert(view, (wrapped, trailing));
+                // acme's wintaglines counts the rows of text and adds the
+                // line a trailing newline leaves the caret on; the text's
+                // lines have that empty one already, counted once here
+                acme.tag_need.insert(view, (wrapped - usize::from(trailing), trailing));
             } else if kind == Kind::Body {
                 // acme's frame: from the origin, which may be anywhere in a
                 // line -- the view starts at the row it is on, the line
