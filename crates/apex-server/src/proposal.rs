@@ -110,6 +110,8 @@ pub enum Proposal {
     /// win's output point) has it moved past the text, so typing stays
     /// after the output: win's Insert and its Select in one round trip.
     Insert { buffer: BufferId, version: Version, at: usize, text: String, follow: bool },
+    /// A window was notified: not left hidden (`Node::notice`).
+    Notice { window: WindowId },
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -359,6 +361,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             // a program moving dot (win's, after its output) is not a
             // look into the window: no scrolling to it, no focus
             node.select(log, view, q0, q1)?;
+            Ok(None)
+        }
+        Proposal::Notice { window } => {
+            node.notice(log, window)?;
             Ok(None)
         }
         Proposal::Show { view, at } => {

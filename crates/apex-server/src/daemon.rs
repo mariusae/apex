@@ -730,6 +730,8 @@ impl Daemon {
                 }
                 let e = s.log.notify(me, window);
                 let _ = s.view.state.apply(Shard::Meta, &e);
+                // and not hidden: the leader lays it out where it shows
+                props.push(Proposal::Notice { window });
             }
             ClientMsg::Unnotify { window } => {
                 let Some(conn) = self.conns.get(&id) else { return };

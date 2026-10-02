@@ -795,3 +795,30 @@ fn a_column_a_drag_leaves_empty_goes_with_its_tag() {
     assert!(node.state.buffer(tag).is_err(), "and its tag");
     assert_eq!(node.state.layout.column_of(b), Some(col));
 }
+#[test]
+fn a_notified_window_is_not_left_hidden() {
+    let (mut log, mut node, col) = session();
+    let a = node.new_window(&mut log, col, "/tmp/a", "a\n").unwrap();
+    let b = node.new_window(&mut log, col, "/tmp/b", "b\n").unwrap();
+    // b given the column: a hidden behind it, until a is notified
+    node.grow_window(&mut log, b, 3).unwrap();
+    let ci = node.state.layout.place_of(a).unwrap().0;
+    assert!(node.state.layout.cols[ci].hides(a));
+    node.notice(&mut log, a).unwrap();
+    assert!(!node.state.layout.cols[ci].hides(a));
+    assert!(node.state.layout.cols[ci].full.is_none());
+    // a column given the row: the others back, as strips, when a window
+    // in one is notified
+    let c2 = node.new_column(&mut log, None).unwrap();
+    let c = node.new_window(&mut log, c2, "/tmp/c", "c\n").unwrap();
+    let r = node.state.layout.column(c2).unwrap().r;
+    node.drag_column(&mut log, c2, 3, (r.x0 + 2, r.y0 + 2), (r.x0 + 2, r.y0 + 2)).unwrap();
+    assert_eq!(node.state.layout.full, Some(c2), "the column given the row");
+    node.notice(&mut log, a).unwrap();
+    assert_eq!(node.state.layout.full, None);
+    // and notifying one in the column given the row changes nothing
+    node.drag_column(&mut log, c2, 3, (r.x0 + 2, r.y0 + 2), (r.x0 + 2, r.y0 + 2)).unwrap();
+    let before = node.state.layout.clone();
+    node.notice(&mut log, c).unwrap();
+    assert_eq!(node.state.layout, before);
+}

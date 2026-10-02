@@ -659,6 +659,30 @@ impl Node {
         self.arrange(log, &l)
     }
 
+    /// Window `w` notified: not left where it cannot be seen. Hidden
+    /// behind a window grown to its column, the column's windows come
+    /// back (as B1 on the grown one's box); in a column hidden behind one
+    /// given the row, the row's columns come back, the others as strips
+    /// (as B1 on its box) -- either way its tag shows, its handle saying
+    /// so. A stashed window stays put: its card in the stash says so.
+    pub fn notice(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some((ci, _)) = self.state.layout.place_of(w) else { return Ok(()) };
+        let mut l = self.state.layout.clone();
+        let mut moved = false;
+        if let Some(fi) = l.full_index().filter(|&fi| fi != ci) {
+            tiling::rowgrow(&mut l, fi, 1, &*self.tiling);
+            moved = true;
+        }
+        if l.cols[ci].hides(w) {
+            tiling::unfull(&mut l, ci, &*self.tiling);
+            moved = true;
+        }
+        if moved {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
     /// Window `w` put in the session's stash (⌘M, `Stash`): out of its
     /// column, its space going to a neighbour.
     pub fn stash_window(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
