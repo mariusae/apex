@@ -1,5 +1,5 @@
 //! apex lsp against a fake language server: documents open and sync
-//! incrementally, diagnostics land in a window at root/ labelled lsp, B3 goes to the
+//! incrementally, diagnostics land in the server's diagnostic window at root/ (labelled with its name), B3 goes to the
 //! definition, and verbs act.
 
 use std::path::PathBuf;
@@ -59,7 +59,7 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     let fake = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fake-lsp.py");
     // a tool (the test) sets the server and opens the file
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
-    c.send(&ClientMsg::Set { key: "lsp.go".into(), value: format!("python3 {} --delay-initialize", fake.display()), attachment: None });
+    c.send(&ClientMsg::Set { key: "lsp.go".into(), value: format!("python3 {} --delay-initialize --hold-indexing", fake.display()), attachment: None });
     let col = c.node.state.layout.cols[0].id;
     c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: main.display().to_string() });
     assert!(until(&mut c, |n| text_of(n, "main.go").is_some()), "file opened");
@@ -73,10 +73,22 @@ fn documents_sync_diagnostics_show_and_verbs_act() {
     assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Back")), "nav rules installed");
     assert!(!c.node.state.meta.rules.values().any(|r| r.rule.verb == "Fmt"), "verbs before ready");
     assert!(until(&mut c, |n| n.state.meta.rules.values().any(|r| r.rule.verb == "Fmt")), "verbs installed once ready");
+    // the server's diagnostic window, made stashed as it started,
+    // labelled with its name: working (ready now, it indexes), as far
+    // as its indexing says, and done when that ends
+    let diag = |n: &Node| n.state.windows.keys().copied().find(|w| n.window_diagnostic(*w) && n.window_label(*w).as_deref() == Some("fake-lsp.py"));
+    assert!(until(&mut c, |n| diag(n).is_some()), "the server's window");
+    let d = diag(&c.node).unwrap();
+    assert!(until(&mut c, |n| n.state.layout.is_stashed(d)), "made stashed");
+    assert!(until(&mut c, |n| n.window_working(d)), "working");
+    assert!(until(&mut c, |n| n.window_progress(d) == Some(30)), "indexing: {:?}", c.node.window_progress(d));
+    assert!(until(&mut c, |n| !n.window_working(d)), "indexing done");
     let (b, _) = c.node.state.buffers.values().find(|b| b.name.ends_with("main.go")).map(|b| (b.id, b.version)).unwrap();
     let w = c.node.state.windows.keys().copied().find(|w| c.node.window_path(*w).ends_with("main.go")).unwrap();
     // The diagnostics window then contains the opened text's length.
-    let lsp = |n: &Node| window_text(n, |n, w| n.window_label(w).as_deref() == Some("lsp")).unwrap_or_default();
+    let lsp = |n: &Node| window_text(n, |n, w| n.window_label(w).as_deref() == Some("fake-lsp.py")).unwrap_or_default();
+    // what it said for the user, below its diagnostics
+    assert!(until(&mut c, |n| lsp(n).contains("fake-lsp.py: fake ready")), "message: {}", lsp(&c.node));
     assert!(until(&mut c, |n| lsp(n).contains("len=25 first=package")), "diagnostics: {}", lsp(&c.node));
     assert!(lsp(&c.node).contains("main.go:1:1: warning:"), "{}", lsp(&c.node));
     // an edit syncs incrementally: the server sees the new length

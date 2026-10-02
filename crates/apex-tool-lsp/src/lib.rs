@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -32,6 +32,12 @@ use apex_server::Proposal;
 pub mod pos;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a server's diagnostics are left to settle before they are
+/// written to its window: a line being typed has errors that go with the
+/// next key, and would be a toast each.
+const SETTLE: Duration = Duration::from_millis(1500);
+/// The most of a server's messages its window keeps.
+const MESSAGES: usize = 20;
 /// The verbs offered in source windows.
 pub const VERBS: [&str; 7] = ["Def", "Refs", "Type", "Hov", "Sig", "Fmt", "Rn"];
 /// Offered everywhere: the session's navigation stack (Goto records
@@ -156,8 +162,24 @@ struct Server {
     queued: Vec<(String, Value)>,
     /// Buffers open in this server, by uri: our version counter.
     open: HashMap<String, i64>,
-    /// Diagnostics per file, as last published.
+    /// Diagnostics per file, as last published; and as last written to
+    /// the window, once they had settled (`SETTLE`).
     diagnostics: BTreeMap<String, Vec<String>>,
+    settled: BTreeMap<String, Vec<String>>,
+    /// When the last diagnostics came, until they are written.
+    unsettled: Option<Instant>,
+    /// What it is called in the session: its command's name (the label
+    /// of its diagnostic window, which a restarted tool finds again).
+    name: String,
+    /// Its diagnostic window, once made or found.
+    window: Option<WindowId>,
+    /// What the server said for the user (`window/showMessage`), and of
+    /// itself (exited), the latest last: below its diagnostics.
+    messages: Vec<String>,
+    /// Its work going on (`$/progress`), by token: how far, if it says.
+    progress: HashMap<String, Option<u8>>,
+    /// The progress last said on its window: (working, how far).
+    said: Option<(bool, Option<u8>)>,
 }
 
 impl Server {
@@ -187,7 +209,23 @@ impl Server {
             }
             let _ = tx.send(Event::LspGone(k));
         });
-        Ok(Server { child, stdin: Arc::new(Mutex::new(stdin)), next_id: 1, initialized: false, queued: Vec::new(), open: HashMap::new(), diagnostics: BTreeMap::new() })
+        let name = server_name(cmd);
+        Ok(Server {
+            child,
+            stdin: Arc::new(Mutex::new(stdin)),
+            next_id: 1,
+            initialized: false,
+            queued: Vec::new(),
+            open: HashMap::new(),
+            diagnostics: BTreeMap::new(),
+            settled: BTreeMap::new(),
+            unsettled: None,
+            name,
+            window: None,
+            messages: Vec::new(),
+            progress: HashMap::new(),
+            said: None,
+        })
     }
 
     fn send(&self, v: &Value) {
@@ -214,6 +252,31 @@ impl Server {
         }
         self.send(&json!({ "jsonrpc": "2.0", "method": method, "params": params }));
     }
+}
+
+/// What a server is called in the session (its diagnostic window's
+/// label): its command's name -- the script's, when an interpreter runs
+/// one (`python3 x/fake-lsp.py` is fake-lsp.py).
+fn server_name(cmd: &str) -> String {
+    const RUNNERS: [&str; 10] = ["python", "python3", "node", "ruby", "perl", "sh", "bash", "env", "npx", "uvx"];
+    let base = |w: &str| Path::new(w).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| w.to_string());
+    let mut words = cmd.split_whitespace();
+    let first = words.next().unwrap_or("");
+    if RUNNERS.contains(&base(first).as_str()) {
+        if let Some(script) = words.find(|w| !w.starts_with('-') && !w.contains('=')) {
+            return base(script);
+        }
+    }
+    base(first)
+}
+
+#[test]
+fn a_server_is_called_by_its_command_or_its_script() {
+    assert_eq!(server_name("rust-analyzer"), "rust-analyzer");
+    assert_eq!(server_name("/usr/local/bin/gopls -remote=auto"), "gopls");
+    assert_eq!(server_name("pyright-langserver --stdio"), "pyright-langserver");
+    assert_eq!(server_name("python3 /x/tests/fake-lsp.py --delay-initialize"), "fake-lsp.py");
+    assert_eq!(server_name("env FOO=1 clangd"), "clangd");
 }
 
 fn read_message<R: BufRead>(r: &mut R) -> Option<Value> {
@@ -434,16 +497,32 @@ impl Tool {
                 match ev {
                     Event::Lsp(key, v) => self.on_lsp(key, v),
                     Event::LspGone(key) => {
-                        // it died: say so, its verbs go, and it is not started again
+                        // it died: say so in its window, its verbs go, it
+                        // is at work no longer, and it is not started again
+                        self.log(&format!("the {} server for {} exited (APEX_LSP_DEBUG=1 shows its stderr)", key.0, key.1.display()));
+                        if let Some(s) = self.servers.get_mut(&key) {
+                            s.progress.clear();
+                            s.initialized = true;
+                            s.messages.push(format!("{} exited (APEX_LSP_DEBUG=1 shows why)", s.name));
+                        }
+                        self.say_progress(&key);
+                        self.write_window(&key);
                         self.servers.remove(&key);
                         self.docs.retain(|_, (k, _)| *k != key);
                         self.failed.push(key.clone());
                         self.remove_verbs(&key.0);
-                        self.log(&format!("the {} server for {} exited (APEX_LSP_DEBUG=1 shows its stderr)", key.0, key.1.display()));
-                        let msg = format!("lsp: the {} server for {} exited (APEX_LSP_DEBUG=1 shows why)\n", key.0, key.1.display());
-                        self.errors(Some(&key.1.display().to_string()), &msg);
                     }
                 }
+            }
+            // diagnostics that have settled: written
+            let settled: Vec<(String, PathBuf)> = self.servers.iter().filter(|(_, s)| s.unsettled.is_some_and(|t| t.elapsed() >= SETTLE)).map(|(k, _)| k.clone()).collect();
+            for key in settled {
+                busy = true;
+                if let Some(s) = self.servers.get_mut(&key) {
+                    s.unsettled = None;
+                    s.settled = s.diagnostics.clone();
+                }
+                self.write_window(&key);
             }
             self.sync_docs();
             if !busy {
@@ -513,13 +592,17 @@ impl Tool {
                                         "synchronization": { "didSave": false },
                                         "hover": { "contentFormat": ["plaintext", "markdown"] },
                                         "publishDiagnostics": {}
-                                    }
+                                    },
+                                    "window": { "workDoneProgress": true }
                                 },
                                 "workspaceFolders": [{ "uri": uri_of(&root), "name": root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() }]
                             }),
                         );
                         self.waiting.insert((key.clone(), id), Waiting::Initialize);
                         self.servers.insert(key.clone(), s);
+                        // its window, stashed, working until it is ready
+                        self.write_window(&key);
+                        self.say_progress(&key);
                     }
                     Err(e) => {
                         self.log(&format!("start {cmd}: {e}"));
@@ -587,6 +670,7 @@ impl Tool {
                     if let Err(e) = self.install_verbs(&key.0.clone()) {
                         self.log(&format!("rules for {}: {e}", key.0));
                     }
+                    self.say_progress(&key);
                 }
                 Waiting::Plumb { plumb, verb, buffer, ctx, dir } => {
                     let ok = self.answer(&key, &verb, buffer, ctx, &dir, &v);
@@ -609,10 +693,41 @@ impl Tool {
                     Some("end") => self.log(&format!("{}: {title} done{message}", key.0)),
                     _ => self.vlog(&format!("{}: {title}{pct}{message}", key.0)),
                 }
+                // on its window: working while any of its work goes on,
+                // as far along as the least far
+                let token = match &v["params"]["token"] {
+                    Value::String(s) => s.clone(),
+                    t => t.to_string(),
+                };
+                let at = val["percentage"].as_u64().map(|p| p.min(100) as u8);
+                if let Some(s) = self.servers.get_mut(&key) {
+                    match val["kind"].as_str() {
+                        Some("end") => {
+                            s.progress.remove(&token);
+                        }
+                        Some("begin") => {
+                            s.progress.insert(token, at);
+                        }
+                        _ => {
+                            if let Some(p) = s.progress.get_mut(&token) {
+                                *p = at.or(*p);
+                            }
+                        }
+                    }
+                }
+                self.say_progress(&key);
             }
             Some("window/showMessage") => {
+                // for the user: in its window, which says it in a toast
                 let m = v["params"]["message"].as_str().unwrap_or("");
                 self.log(&format!("{}: {m}", key.0));
+                if let Some(s) = self.servers.get_mut(&key) {
+                    let line = m.lines().next().unwrap_or("").to_string();
+                    s.messages.push(format!("{}: {line}", s.name));
+                    let n = s.messages.len();
+                    s.messages.drain(..n.saturating_sub(MESSAGES));
+                }
+                self.write_window(&key);
             }
             Some("window/logMessage") => {
                 let m = v["params"]["message"].as_str().unwrap_or("");
@@ -639,51 +754,89 @@ impl Tool {
                     })
                     .unwrap_or_default();
                 self.vlog(&format!("{}: {} diagnostic{} for {path}", key.0, lines.len(), if lines.len() == 1 { "" } else { "s" }));
+                // written once they settle (`SETTLE`): a line being typed
+                // has errors that go with the next key
                 if let Some(s) = self.servers.get_mut(&key) {
                     if lines.is_empty() {
                         s.diagnostics.remove(&path);
                     } else {
                         s.diagnostics.insert(path, lines);
                     }
+                    s.unsettled = Some(Instant::now());
                 }
-                self.show_diagnostics(&key);
             }
             _ => {}
         }
     }
 
-    /// The root's diagnostics window (at the root, labelled lsp, scratch):
-    /// every diagnostic the server has, one per line, the window made
-    /// when there is something to say.
-    fn show_diagnostics(&mut self, key: &(String, PathBuf)) {
-        let Some(s) = self.servers.get(key) else { return };
-        let text: String = s.diagnostics.values().flat_map(|v| v.iter()).map(|l| format!("{l}\n")).collect();
+    /// The server's diagnostic window (at its root, labelled with its
+    /// name, made stashed): found, or made.
+    fn server_window(&mut self, key: &(String, PathBuf)) -> Option<WindowId> {
+        let s = self.servers.get(key)?;
+        if let Some(w) = s.window.filter(|w| self.remote.node.state.window(*w).is_ok()) {
+            return Some(w);
+        }
+        let label = s.name.clone();
         let name = format!("{}/", key.1.display().to_string().trim_end_matches('/'));
         let node = &self.remote.node;
-        let existing = node.state.windows.keys().copied().find(|w| node.window_path(*w) == name && node.window_label(*w).as_deref() == Some("lsp") && node.window_scratch(*w));
-        let w = match existing {
+        let found = node.state.windows.keys().copied().find(|w| node.window_path(*w) == name && node.window_label(*w).as_deref() == Some(label.as_str()) && node.window_diagnostic(*w));
+        let w = match found {
             Some(w) => w,
             None => {
-                if text.is_empty() {
-                    return;
+                let col = node.state.layout.cols.last().map(|c| c.id)?;
+                let w = self.propose(Proposal::NewWindow { col, name, label: Some(label), scratch: true, diagnostic: true }, TIMEOUT).ok().flatten()?;
+                // its entries may still be on their way
+                let deadline = Instant::now() + TIMEOUT;
+                while self.remote.node.state.window(w).is_err() && Instant::now() < deadline {
+                    let _ = self.step(Duration::from_millis(20));
                 }
-                let Some(col) = node.state.layout.cols.last().map(|c| c.id) else { return };
-                match self.propose(Proposal::NewWindow { col, name: name.clone(), label: Some("lsp".into()), scratch: true, diagnostic: true }, TIMEOUT) {
-                    Ok(Some(w)) => {
-                        // its entries may still be on their way
-                        let deadline = std::time::Instant::now() + TIMEOUT;
-                        while self.remote.node.state.window(w).is_err() && std::time::Instant::now() < deadline {
-                            let _ = self.step(Duration::from_millis(20));
-                        }
-                        w
-                    }
-                    _ => return,
-                }
+                w
             }
         };
+        if let Some(s) = self.servers.get_mut(key) {
+            s.window = Some(w);
+        }
+        Some(w)
+    }
+
+    /// The server's window written: its diagnostics as they last
+    /// settled, one per line, and below them what it said for the user.
+    /// The client says what is new in it in a toast.
+    fn write_window(&mut self, key: &(String, PathBuf)) {
+        let Some(w) = self.server_window(key) else { return };
+        let Some(s) = self.servers.get(key) else { return };
+        let mut text: String = s.settled.values().flat_map(|v| v.iter()).map(|l| format!("{l}\n")).collect();
+        if !s.messages.is_empty() {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.extend(s.messages.iter().map(|m| format!("{m}\n")));
+        }
         let Some(buffer) = self.remote.node.state.window(w).ok().and_then(|x| x.body_buffer()) else { return };
+        if self.remote.node.state.buffer(buffer).is_ok_and(|b| b.text.to_string() == text) {
+            return;
+        }
         let hash = Text::new(&text).content_hash();
         let _ = self.propose(Proposal::SetContent { buffer, version: None, text, hash }, TIMEOUT);
+    }
+
+    /// The server's work on its window: working from its start until it
+    /// is ready, and while any of its `$/progress` goes on, as far along
+    /// as the least far that says.
+    fn say_progress(&mut self, key: &(String, PathBuf)) {
+        let Some(s) = self.servers.get(key) else { return };
+        let working = !s.initialized || !s.progress.is_empty();
+        let at = if working { s.progress.values().flatten().copied().min() } else { None };
+        if s.said == Some((working, at)) {
+            return;
+        }
+        let Some(w) = self.server_window(key) else { return };
+        let by = working.then(|| self.remote.attachment());
+        if self.propose(Proposal::Working { window: w, by, at }, TIMEOUT).is_ok() {
+            if let Some(s) = self.servers.get_mut(key) {
+                s.said = Some((working, at));
+            }
+        }
     }
 
     /// A rule named us: a verb from the menu, or cmd-B3 (`Def`).

@@ -269,8 +269,10 @@ windows put away out of the tiling, which is the core's
   B2 on Newterm for a shell, ⌘⇧P for every command. Drawing only: the
   column's ground takes the buttons as ever.
 - **Errors as toasts** (`toasts.rs`): a command's errors still go to its
-  errors window, but that window goes to the stash and what was
-  written shows in a toast at the foot of its column, with Show All (the
+  errors window, but that window is made in the stash (as every
+  diagnostic window is: a language server's, a script's
+  `apex new -diagnostic`) and what is new in it shows in a toast at the
+  app's lower right, with Show All (the
   window shown in the stash's preview and left stashed, the pointer on
   the toast's first line there, selected; B1 anywhere on the toast
   does the same) and ×; it goes after eight

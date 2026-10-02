@@ -1738,7 +1738,43 @@ left of the connection mark, the heartbeat's round trip and the log's
   whole width while it does not say (`TermOp::Progress{going, at}`, the
   terminal's own state, so every client draws the same bar). The session itself says this one
   (`SERVER`), which is in no attachment table and outlives every tool,
-  so `window_working` takes it as always there.
+  so `window_working` takes it as always there. A tool may say how far
+  along too (`WindowOp::Working{by, at}`, `Tool::set_progress`): a
+  text window then has the terminal's bar across its top, and its card
+  in the stash a bar along its foot -- the same blue, as far as it says.
+  (A terminal's bar is still its own state, said by its program; the two
+  are one thing in two places, which may yet become one.)
+- *As built:* a window may be **diagnostic** (`WindowOp::Diagnostic`,
+  `Tool::new_diagnostic`, `apex new -diagnostic`): a tool's report on
+  how things stand -- its errors, a language server's diagnostics and
+  what it says, its state -- that is not the user's work and is not
+  laid out over it. Every +Errors window is one. A diagnostic window is
+  made in the stash, in the same layout entry that places it, so it is
+  never seen in a column first; what is new in it is a toast
+  (`toasts.rs`), whatever wrote it: added at its end (an errors window's
+  appends), or, its text written anew (a server's diagnostics, replaced
+  whole), the lines that were not there before -- never lines going,
+  and not the lines about the file the user is typing in (the window
+  the keys go to, unsaved), which are in front of them and come and go
+  with each key. The windows already there when a client first sees the
+  session say nothing of what they held. One the user has brought out
+  and is showing lines is seen as it is written, and toasts nothing;
+  one laid out but showing none goes back to the stash, as an errors
+  window always has. Working, its card comes out of the stash's bunch
+  as a notified one does, its handle turning and its bar along its
+  foot, and goes back when the work ends.
+- *As built:* `apex tool lsp` gives each server it starts (one a
+  language and a project root) a diagnostic window at the root,
+  labelled with the server's name (its command's, or its script's when
+  an interpreter runs one), made as the server starts: working from
+  then until the server is ready, and while any of its `$/progress`
+  goes on (indexing), as far along as the least far that says. Its text
+  is the server's diagnostics, written once they have been still for a
+  second and a half -- a line being typed has errors that go with the
+  next key -- and below them what the server said for the user
+  (`window/showMessage`), and that it exited, if it does. The preview
+  tool says a converter's complaint in the file's directory's errors
+  window, the page left as it was, rather than ending.
 - *As built:* apex has one window. Everything else it has open is a tab
   in it, so two views of one session -- which could only fence each
   other -- cannot happen, and a session is where the user left it. The

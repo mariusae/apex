@@ -41,7 +41,15 @@ while True:
             time.sleep(2)
         send({"jsonrpc": "2.0", "id": id_, "result": {"capabilities": {"textDocumentSync": 2, "definitionProvider": True,
               "hoverProvider": True, "documentFormattingProvider": True, "referencesProvider": True}}})
+        # indexing, a third of the way, until the first document opens;
+        # and a word for the user
+        send({"jsonrpc": "2.0", "method": "$/progress", "params": {"token": "idx", "value": {"kind": "begin", "title": "indexing", "percentage": 30}}})
+        send({"jsonrpc": "2.0", "method": "window/showMessage", "params": {"type": 3, "message": "fake ready"}})
+        indexing = True
     elif method == "textDocument/didOpen":
+        if "--hold-indexing" in sys.argv:
+            time.sleep(1.5)
+        send({"jsonrpc": "2.0", "method": "$/progress", "params": {"token": "idx", "value": {"kind": "end"}}})
         td = m["params"]["textDocument"]
         docs[td["uri"]] = td["text"]
         diagnose(td["uri"])

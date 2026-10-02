@@ -156,7 +156,7 @@ impl Tool {
         self.rendered = self.remote.node.state.buffer(page_buf).map(|b| b.text.to_string()).unwrap_or_default();
         let me = self.remote.attachment();
         let _ = self.propose(Proposal::Live { window: page, by: Some(me) }, TIMEOUT);
-        self.render()?;
+        self.render_or_say();
         Ok(())
     }
 
@@ -180,7 +180,7 @@ impl Tool {
                 return Ok(());
             }
             if self.dirty && self.last_edit.elapsed() >= SETTLE {
-                self.render()?;
+                self.render_or_say();
             }
         }
     }
@@ -193,6 +193,17 @@ impl Tool {
                 self.dirty = true;
                 self.last_edit = Instant::now();
             }
+        }
+    }
+
+    /// A render, or what kept it from being one said in the file's
+    /// directory's errors window (a diagnostic one: a toast) -- the page
+    /// left as it was, and the preview going on, the next edit another try.
+    fn render_or_say(&mut self) {
+        if let Err(e) = self.render() {
+            let dir = Path::new(&self.file).parent().map(|d| d.display().to_string());
+            let text = format!("preview: {}: {}\n", self.file, e.trim_end());
+            let _ = self.propose(Proposal::Errors { dir, text }, TIMEOUT);
         }
     }
 
