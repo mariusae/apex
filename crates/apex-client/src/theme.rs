@@ -65,12 +65,6 @@ pub struct Theme {
     /// The sixteen ANSI colours a program in a terminal gets when it
     /// names one and has not set the palette itself.
     pub ansi: [u32; 16],
-    // the tools menu (menuhit's: greenish, negative selection)
-    pub menu_bg: u32,
-    pub menu_hl: u32,
-    pub menu_border: u32,
-    pub menu_text: u32,
-    pub menu_hl_text: u32,
     /// apex diff's added and removed lines' tints (blue and orange, as
     /// the colour-blind themes have them).
     pub diff_add: u32,
@@ -118,11 +112,6 @@ pub const LIGHT: Theme = Theme {
     field_sel: 0xC7DBF4,
     // xterm's, as the server sent them before the theme
     ansi: [0x24292F, 0xB35900, 0x0550AE, 0x4D2D00, 0x0969DA, 0x8250DF, 0x1B7C83, 0x6E7781, 0x57606A, 0x8A4600, 0x0969DA, 0x633C01, 0x218BFF, 0xA475F9, 0x3192AA, 0x8C959F],
-    menu_bg: 0xFFFFFF,
-    menu_hl: 0x0969DA,
-    menu_border: 0xD0D7DE,
-    menu_text: 0x24292F,
-    menu_hl_text: 0xFFFFFF,
     diff_add: 0xE9F7FF,
     diff_del: 0xFFF5E7,
 };
@@ -166,11 +155,6 @@ pub const DARK: Theme = Theme {
     // the ink, the rest lighter and a little softer; the bright ones
     // brighter still
     ansi: [0x545D68, 0xF69D50, 0x539BF5, 0xC69026, 0x539BF5, 0xB083F0, 0x39C5CF, 0x909DAB, 0x636E7B, 0xFFBC6F, 0x6CB6FF, 0xDAAA3F, 0x6CB6FF, 0xDCBDFB, 0x56D4DD, 0xCDD9E5],
-    menu_bg: 0x2D333B,
-    menu_hl: 0x316DCA,
-    menu_border: 0x444C56,
-    menu_text: 0xADBAC7,
-    menu_hl_text: 0xFFFFFF,
     diff_add: 0x243145,
     diff_del: 0x372E2C,
 };
@@ -237,11 +221,6 @@ const fn make(k: Keys) -> Theme {
         panel_danger_hover: k.danger_hover,
         field_sel: k.sel,
         ansi: k.ansi,
-        menu_bg: k.popover,
-        menu_hl: k.chosen,
-        menu_border: k.line,
-        menu_text: k.ink,
-        menu_hl_text: 0xFFFFFF,
         diff_add: k.diff_add,
         diff_del: k.diff_del,
     }

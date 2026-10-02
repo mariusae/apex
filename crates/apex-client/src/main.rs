@@ -1057,13 +1057,16 @@ fn empty_column(t: &theme::Theme, glenda: bool) -> gpui::AnyElement {
 /// the sidebar's button after them.
 const LIGHTS_W: f32 = 86.;
 
-/// The tools menu painted as a Mac context menu: the card rounded and
-/// lifted, a hairline round it; each row in the system font, the
-/// highlighted one an accent pill in from the sides, the remembered one
-/// checked; and the scrolling lane's thumb a slim scroller's.
+/// The tools menu painted as a tag is: a card of a tag's ground, its
+/// hairline and corners, lifted as a stash card is; each row a tag's line
+/// in a tag's face and ink, the one under the pointer as B2 sweeping it
+/// would show it (`Theme::sweep`), the remembered one with a dot in the
+/// margin; and the scrolling lane's thumb a slim scroller's.
 fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
     let t = theme::theme();
+    let fs = text_element::font_for(false);
+    let (sweep_bg, sweep_ink) = t.sweep(true);
     let r = m.menur;
     // children are placed from the menu's corner, inside its hairline
     const EDGE: i32 = 1;
@@ -1073,35 +1076,37 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
         .top(px(r.y0 as f32))
         .w(px(r.dx() as f32))
         .h(px(r.dy() as f32))
-        .bg(rgb(t.menu_bg))
+        .bg(rgb(t.tag_bg))
         .border(px(EDGE as f32))
-        .border_color(rgb(t.menu_border))
-        .rounded(px(menu::RADIUS))
-        .shadow_lg()
-        .font_family(crate::fonts::ui())
+        .border_color(rgb(t.body_border))
+        .rounded(px(text_element::CARD_RADIUS))
+        .shadow(vec![gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(2.)), blur_radius: px(8.), spread_radius: px(0.), inset: false }])
+        .font(fs.font.clone())
         .child(mark);
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);
         let at = (i + m.off) as usize;
         let text = m.items.get(at).cloned().unwrap_or_default();
         let hl = i == m.lasti;
-        let ink = if hl { t.menu_hl_text } else { t.menu_text };
+        let ink = if hl { sweep_ink } else { t.text };
         let mut row = div()
             .absolute()
             .left(px((ir.x0 - r.x0 - EDGE) as f32))
             .top(px((ir.y0 - r.y0 - EDGE) as f32))
             .w(px(ir.dx() as f32))
             .h(px(ir.dy() as f32))
-            .rounded(px(menu::ROW_RADIUS))
+            .rounded(px(4.))
             .flex()
             .items_center()
             .pl(px((menu::LEAD - menu::INSET) as f32))
-            .text_size(px(13.))
+            .text_size(fs.size)
             .text_color(rgb(ink))
-            .when(hl, |d| d.bg(rgb(t.menu_hl)))
+            .when(hl, |d| d.bg(rgb(sweep_bg)))
             .child(text);
         if m.checked == Some(at) {
-            row = row.child(div().absolute().left(px(5.)).top(px(0.)).h_full().flex().items_center().text_size(px(12.)).text_color(rgb(ink)).child("✓"));
+            // the remembered one: a dot in the margin, the secondary ink's
+            let dot = if hl { sweep_ink } else { t.text_dim };
+            row = row.child(div().absolute().left(px(6.)).top(px(0.)).h_full().flex().items_center().child(div().size(px(4.)).rounded_full().bg(rgb(dot))));
         }
         el = el.child(row);
     }

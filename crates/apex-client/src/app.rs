@@ -4359,14 +4359,14 @@ impl Acme {
         if items.is_empty() {
             return;
         }
-        // the items measured in the face the menu sets them in, the
-        // system's at a menu's size
-        let face = gpui::font(crate::fonts::ui());
-        let run = |len: usize| gpui::TextRun { len, font: face.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
-        let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), px(13.), &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
+        // the items measured in the face the menu sets them in, a tag's
+        let fs = crate::text_element::font_for(false);
+        let run = |len: usize| gpui::TextRun { len, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
+        let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), fs.size, &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
         let checked = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l));
-        // the screen, for menuhit, is acme's area
-        let m = menu::Menu::place(w, items, checked, maxwid, self.row_pt(at), self.node.state.layout.r);
+        // its rows a tag's lines; the screen, for menuhit, acme's area
+        let ih = f32::from(crate::text_element::tag_line_height()) as i32;
+        let m = menu::Menu::place(w, items, checked, maxwid, ih, self.row_pt(at), self.node.state.layout.r);
         // moveto: the pointer onto the item, so a click alone repeats it
         let ir = m.item_rect(m.lasti);
         let center = point(px(((ir.x0 + ir.x1) / 2) as f32 + self.left()), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
