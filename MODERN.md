@@ -406,11 +406,11 @@ windows put away out of the tiling, which is the core's
   B1 on its box gives them back where they stood, it at the width it
   had (its share of the row, `Column::restore`). Anything that changes
   the row -- a column added, closed or dragged, B2, going to a window in
-  a hidden one -- gives them back first. Columns are not put away: B4
-  on a column's box does nothing. A column an older apex put away at
+  a hidden one -- gives them back first. Columns are not put away. A column an older apex put away at
   the row's right is still drawn as the edges of sheets on their sides,
   and B1 brings it back where it stood.
-- **Shift-B1 minimizes** (`tiling::colminimize`, `rowminimize`): on a
+- **B4 on a box minimizes** -- shift-B1 on a laptop, which is B4
+  everywhere (`tiling::colminimize`, `rowminimize`): on a
   window's box (or handle), the window down to its tag where it stands,
   its room to the window under it (over it, the last); on a column's
   box, the column a strip where it stands, its width to the nearest

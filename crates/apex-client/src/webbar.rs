@@ -99,7 +99,8 @@ impl Acme {
             // the handle's buttons as any window's: acme's box
             .on_mouse_down(MouseButton::Left, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Left, e.position, e.modifiers.shift, cx)))
             .on_mouse_down(MouseButton::Middle, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Middle, e.position, e.modifiers.shift, cx)))
-            .on_mouse_down(MouseButton::Right, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Right, e.position, e.modifiers.shift, cx)));
+            .on_mouse_down(MouseButton::Right, cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Right, e.position, e.modifiers.shift, cx)))
+            .on_mouse_down(MouseButton::Navigate(gpui::NavigationDirection::Back), cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_handle(w, MouseButton::Navigate(gpui::NavigationDirection::Back), e.position, false, cx)));
         let button = |id: &'static str, glyph: &'static str, nav: Nav| {
             div()
                 .id((id, w.0))

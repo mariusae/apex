@@ -3133,12 +3133,15 @@ impl Acme {
         }
         if matches!(self.logical_button_peek(e), MouseButton::Navigate(_)) {
             let button = self.logical_button(e);
-            // B4 on a column's box: taken as a click there when the button
-            // comes up, which does nothing (a column has no tools menu, and
-            // is not put away)
-            if let Some((Target::View(ViewId::ColTag(c)), Region::LayoutBox)) = self.locate(e.position) {
-                self.mouse.box_drag = Some((BoxTarget::Col(c), button, e.position));
-                cx.notify();
+            // B4 on a layout box (shift-B1 on a laptop): the window down to
+            // its tag, the column a strip -- minimized where they stand
+            let boxed = match self.locate(e.position) {
+                Some((Target::View(ViewId::Tag(w)), Region::LayoutBox)) => Some(BoxTarget::Win(w)),
+                Some((Target::View(ViewId::ColTag(c)), Region::LayoutBox)) => Some(BoxTarget::Col(c)),
+                _ => None,
+            };
+            if let Some(bt) = boxed {
+                self.minimize_box(bt, button, false, cx);
                 return;
             }
             let at = match self.locate(e.position) {
@@ -3224,9 +3227,6 @@ impl Acme {
                     _ => None,
                 };
                 if let Some(bt) = bt {
-                    if self.minimize_box(bt, button, e.modifiers.shift, cx) {
-                        return;
-                    }
                     self.mouse.box_drag = Some((bt, button, e.position));
                     cx.notify(); // the pointer becomes the box
                     return;
@@ -4102,11 +4102,13 @@ impl Acme {
 
     /// A web window's handle pressed (its header draws it, not a tag):
     /// acme's box, as any window's.
-    /// Shift-B1 on a layout box: the window minimized -- down to its tag,
-    /// where it stands -- or the column, a strip where it stands. True
-    /// when it was.
+    /// B4 on a layout box -- shift-B1 on a laptop, as everywhere -- the
+    /// window minimized, down to its tag where it stands, or the column, a
+    /// strip where it stands. True when it was. (`shift`: a press heard
+    /// by its own element, as B1, before the mapping to B4.)
     fn minimize_box(&mut self, bt: BoxTarget, button: MouseButton, shift: bool, cx: &mut Context<Self>) -> bool {
-        if !shift || button != MouseButton::Left || self.mouse.b1.is_some() {
+        let b4 = matches!(button, MouseButton::Navigate(_)) || (shift && button == MouseButton::Left);
+        if !b4 || self.mouse.b1.is_some() {
             return false;
         }
         let r = match bt {
