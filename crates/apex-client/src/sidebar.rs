@@ -513,10 +513,12 @@ pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
             .left(px(0.))
             .size_full()
     });
-    // working: the arc turning round it, as a tag's handle has
+    // working: the arc turning round it, as a tag's handle has (or the
+    // circle filled as far as the work says)
+    let at = d.at;
     let spin = d.spin.map(|ink| {
         gpui::canvas(|_, _, _| {}, move |b, _, window, _| {
-            crate::text_element::paint_spinner(window, b.center(), 5.25, 1.5, rgb(ink).into());
+            crate::text_element::paint_work(window, b.center(), 5.25, 1.5, rgb(ink).into(), at);
             window.request_animation_frame();
         })
         .absolute()

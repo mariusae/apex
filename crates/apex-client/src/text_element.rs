@@ -196,8 +196,10 @@ pub struct Dot {
     pub ring: Option<u32>,
     /// Live and clean: the accent in the middle.
     pub core: Option<u32>,
-    /// Working: the arc turning.
+    /// Working: the arc turning -- or, the work saying how far along it
+    /// is (`at`, in percent), the circle round the handle filled that far.
     pub spin: Option<u32>,
+    pub at: Option<u8>,
     /// Notified, this long ago (seconds, as this client first saw it): a
     /// ring ripples out of the handle and leaves a pale halo round it,
     /// there while the notification waits (`paint_note`).
@@ -210,6 +212,10 @@ pub struct Dot {
 impl Dot {
     pub fn squared(self, square: bool) -> Dot {
         Dot { square, ..self }
+    }
+    /// How far along the work is, when it says (only while it works).
+    pub fn at(self, at: Option<u8>) -> Dot {
+        Dot { at: at.filter(|_| self.spin.is_some()), ..self }
     }
 }
 
@@ -227,6 +233,7 @@ pub fn dot(th: &crate::theme::Theme, stale: bool, dirty: bool, live: bool, worki
         core: (live && fill.is_none()).then_some(th.accent),
         spin: working.then_some(th.accent),
         note,
+        at: None,
         square: false,
     }
 }
@@ -286,7 +293,7 @@ pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
         window.paint_quad(fill(circle(1.75), rgb(core)).corner_radii(round(1.75)));
     }
     if let Some(ink) = d.spin {
-        paint_spinner(window, c, SPIN_R, 1.5, rgb(ink));
+        paint_work(window, c, SPIN_R, 1.5, rgb(ink), d.at);
         // (turning wherever it is drawn: a minimized column's handles too)
         window.request_animation_frame();
     }
@@ -295,6 +302,41 @@ pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
 /// The system's spinner, as an arc: a quarter and a bit of a circle of
 /// radius `r` round `c`, once round in 0.9 s (the window is drawn again
 /// each tick while anything spins).
+/// Work round a handle: the arc turning (`paint_spinner`) while it does
+/// not say how far along it is; when it does, the circle filled that far,
+/// clockwise from the top, over a faint whole one -- as a download's ring.
+pub fn paint_work(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink: Hsla, at: Option<u8>) {
+    let Some(at) = at else {
+        paint_spinner(window, c, r, width, ink);
+        return;
+    };
+    let ring = |window: &mut Window, color: Hsla| {
+        let b = Bounds::new(point(c.x - px(r), c.y - px(r)), size(px(2. * r), px(2. * r)));
+        window.paint_quad(gpui::quad(b, px(r), gpui::transparent_black(), px(width), color, gpui::BorderStyle::Solid));
+    };
+    ring(window, ink.opacity(0.25));
+    let part = f32::from(at.min(100)) / 100.;
+    if part >= 1. {
+        ring(window, ink);
+        return;
+    }
+    if part <= 0. {
+        return;
+    }
+    // (the ring's stroke is inside its bounds; the arc's centred on its
+    // radius: the same circle, the arc's drawn half a stroke in)
+    let rr = r - width / 2.;
+    let a0 = -std::f32::consts::FRAC_PI_2;
+    let a1 = a0 + part * std::f32::consts::TAU;
+    let at_ = |a: f32| point(c.x + px(rr * a.cos()), c.y + px(rr * a.sin()));
+    let mut p = gpui::PathBuilder::stroke(px(width));
+    p.move_to(at_(a0));
+    p.arc_to(point(px(rr), px(rr)), px(0.), part > 0.5, true, at_(a1));
+    if let Ok(path) = p.build() {
+        window.paint_path(path, ink);
+    }
+}
+
 pub fn paint_spinner(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink: Hsla) {
     let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis() % 900).unwrap_or(0);
     let a0 = ms as f32 / 900. * std::f32::consts::TAU;
@@ -1069,8 +1111,8 @@ pub struct Source {
     /// far (0..1) the handle is from its colour towards pale this
     /// instant.
     pub pulse: Option<f32>,
-    /// A body whose window's work says how far along it is, in percent
-    /// (`Node::window_progress`): a bar across its top, as a terminal's.
+    /// A tag whose window's work says how far along it is, in percent
+    /// (`Node::window_progress`): its handle's circle filled that far.
     pub progress: Option<u8>,
     /// This client no longer leads (its leases went elsewhere): the top
     /// row's square says so.
@@ -1703,19 +1745,12 @@ impl Element for TextElement {
                     if fading {
                         window.request_animation_frame();
                     }
-                    // work behind it that says how far: the bar a
-                    // terminal's program draws, across the top
-                    if let Some(at) = pp.progress {
-                        let part = f32::from(at.min(100)) / 100.;
-                        let bar = Bounds::new(point(bounds.left(), bounds.top()), size((bounds.size.width * part).max(px(1.)), px(2.)));
-                        window.paint_quad(fill(bar, rgb(crate::theme::theme().progress)));
-                    }
                     scrollbar = Some(sb);
                 }
                 Kind::WinTag => {
                     let th = crate::theme::theme();
                     let b = Bounds::new(point(bounds.left(), origin.y - ext), size(px(SCROLLWID), lh + ext * 2.));
-                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.note).squared(pp.hiding);
+                    let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.note).at(pp.progress).squared(pp.hiding);
                     // in from the card's rounded corner
                     paint_dot(window, &d, point(b.left() + px(7.5), b.top() + b.size.height / 2.));
                     layout_box = Some(b);
@@ -2021,6 +2056,9 @@ mod dot_tests {
         // all of it at once: each mark still there
         let all = dot(&th, false, true, true, true, Some(0.));
         assert!(all.fill.is_some() && all.ring.is_some() && all.spin.is_some() && all.note.is_some(), "{all:?}");
+        // how far along: only of work going on
+        assert_eq!(dot(&th, false, false, false, true, None).at(Some(50)).at, Some(50));
+        assert_eq!(dot(&th, false, false, false, false, None).at(Some(50)).at, None);
     }
 }
 

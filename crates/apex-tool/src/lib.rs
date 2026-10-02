@@ -783,8 +783,8 @@ impl Tool {
     }
 
     /// Working, and how far along, in percent (`Some`), or not working
-    /// (`None`): the handle pulses, and a bar across the window's top --
-    /// or its card's foot, stashed -- says how far.
+    /// (`None`): the circle round the window's handle filled that far
+    /// (where `set_working`'s turns), wherever the handle is drawn.
     pub fn set_progress(&mut self, w: WindowId, at: Option<u8>) -> Result<()> {
         let by = at.map(|_| self.remote.attachment());
         self.propose(Proposal::Working { window: w, by, at: at.map(|p| p.min(100)) })?;

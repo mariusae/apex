@@ -1739,11 +1739,15 @@ left of the connection mark, the heartbeat's round trip and the log's
   terminal's own state, so every client draws the same bar). The session itself says this one
   (`SERVER`), which is in no attachment table and outlives every tool,
   so `window_working` takes it as always there. A tool may say how far
-  along too (`WindowOp::Working{by, at}`, `Tool::set_progress`): a
-  text window then has the terminal's bar across its top, and its card
-  in the stash a bar along its foot -- the same blue, as far as it says.
-  (A terminal's bar is still its own state, said by its program; the two
-  are one thing in two places, which may yet become one.)
+  along too (`WindowOp::Working{by, at}`, `Tool::set_progress`): busy is
+  what progress is said of, and the handle says both -- its arc turning
+  while the work does not say how far, the circle round it filled
+  clockwise from the top as far as it does, over a faint whole one,
+  wherever the handle is drawn (a tag, a stash card, a minimized
+  column, the sidebar). A terminal's program saying it (OSC 9;4) fills
+  its window's handle so too, and still has the bar across the
+  terminal's top that other terminals draw, the terminal's own state;
+  the two are one thing in two places, which may yet become one.
 - *As built:* a window may be **diagnostic** (`WindowOp::Diagnostic`,
   `Tool::new_diagnostic`, `apex new -diagnostic`): a tool's report on
   how things stand -- its errors, a language server's diagnostics and
@@ -1761,8 +1765,8 @@ left of the connection mark, the heartbeat's round trip and the log's
   and is showing lines is seen as it is written, and toasts nothing;
   one laid out but showing none goes back to the stash, as an errors
   window always has. Working, its card comes out of the stash's bunch
-  as a notified one does, its handle turning and its bar along its
-  foot, and goes back when the work ends.
+  as a notified one does, its handle turning (or filling), and goes back
+  when the work ends.
 - *As built:* `apex tool lsp` gives each server it starts (one a
   language and a project root) a diagnostic window at the root,
   labelled with the server's name (its command's, or its script's when

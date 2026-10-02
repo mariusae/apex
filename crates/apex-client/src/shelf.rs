@@ -300,7 +300,7 @@ impl Acme {
 
     /// How far each card (latest first) is drawn out of the bunch: a
     /// notified or working one under the top card, so its handle shows
-    /// (`PULL`) -- and a working one's bar along its foot -- sliding as
+    /// (`PULL`), its handle turning or filling -- sliding as
     /// that comes and goes (`sync_pulls`).
     fn shelf_pulls(&self, wins: &[WindowId]) -> Vec<f32> {
         let mut out = 0.;
@@ -472,10 +472,6 @@ impl Acme {
             .cursor_default()
             .child(crate::sidebar::dot_element(&d))
             .child(div().flex_1().min_w_0().truncate().child(label))
-            // work behind it that says how far: a bar along the foot
-            .children(self.node.window_progress(w).map(|at| {
-                div().absolute().bottom(px(0.)).left(px(0.)).h(px(2.)).w(gpui::relative(f32::from(at.min(100)) / 100.)).bg(rgb(t.progress))
-            }))
             .on_hover(cx.listener(move |this, on: &bool, _, cx| {
                 if *on {
                     this.shelf.pick = Some(w);

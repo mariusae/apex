@@ -2742,7 +2742,7 @@ impl Acme {
         // a window's handle while it is notified (the session's square
         // says nothing of it: the tab's face does)
         let progress = match view {
-            ViewId::Body(w) => self.node.window_progress(w),
+            ViewId::Tag(w) => self.node.window_progress(w),
             _ => None,
         };
         let note = match view {

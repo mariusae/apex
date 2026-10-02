@@ -531,8 +531,8 @@ func (w *Window) SetWorking(on bool) error {
 }
 
 // SetProgress says the tool is working behind the window and how far
-// along, in percent (0 to 100): the handle pulses, and a bar across the
-// window's top, or its card's foot while stashed, says how far. A
+// along, in percent (0 to 100): the circle round the window's handle is
+// filled that far (where it turns while the work does not say). A
 // negative at says the work is done.
 func (w *Window) SetProgress(at int) error {
 	args := map[string]any{"window": w.ID}

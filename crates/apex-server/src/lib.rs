@@ -593,14 +593,12 @@ impl Server {
                     // a tool at work behind one
                     TermEvent::Working(on, at) => {
                         if (h.working, h.progress) != (on, at) {
-                            let was = h.working;
                             (h.working, h.progress) = (on, at);
-                            // the terminal carries the bar, the window the pulse
+                            // the terminal carries the bar, the window its
+                            // handle -- turning, or filled as far as it says
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: on, at }));
-                            if was != on {
-                                if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                                    props.push(Proposal::Working { window: w, by: on.then_some(SERVER), at: None });
-                                }
+                            if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
+                                props.push(Proposal::Working { window: w, by: on.then_some(SERVER), at: if on { at } else { None } });
                             }
                         }
                     }
