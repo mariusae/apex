@@ -70,7 +70,7 @@ fn theme_css() -> String {
     // links as B3's sweep is drawn: its pale wash, its ink, and the wash
     // a little stronger under the pointer
     let (link_bg, link) = t.sweep(false);
-    let link_hover = crate::text_element::mix(t.body_bg, t.look_hl, if crate::theme::is_dark() { 0.34 } else { 0.2 });
+    let link_hover = crate::text_element::mix(t.body_bg, t.look_hl, if crate::theme::is_dark() { 0.48 } else { 0.2 });
     let links = format!(":root{{--apex-link-bg:{};--apex-link-hover:{}}}", hex(link_bg), hex(link_hover));
     // a diff's added and removed lines (apex diff): pale, one tint each.
     // Removed is orange rather than red, which stays apart from the green

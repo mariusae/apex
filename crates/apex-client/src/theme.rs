@@ -474,7 +474,10 @@ impl Theme {
     pub fn sweep(&self, exec: bool) -> (u32, u32) {
         let c = if exec { self.exec_hl } else { self.look_hl };
         if is_dark() {
-            (crate::text_element::mix(self.body_bg, c, 0.24), crate::text_element::mix(c, 0xFFFFFF, 0.4))
+            // on dark, a wash that stands off the paper (1.3 to 1.6 from
+            // it) and its text lighter (6 to 7.5 on it) -- a pale wash
+            // reads on white as a dim one does not on black
+            (crate::text_element::mix(self.body_bg, c, 0.36), crate::text_element::mix(c, 0xFFFFFF, 0.62))
         } else {
             (crate::text_element::mix(self.body_bg, c, 0.12), crate::text_element::mix(c, 0x000000, 0.2))
         }
