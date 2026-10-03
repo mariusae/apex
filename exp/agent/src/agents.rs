@@ -83,11 +83,14 @@ pub struct Agent {
     /// has: `allow`, `deny`, or `ask` (the terminal's prompt has it).
     pub decided: Option<String>,
     pub mode: Option<String>,
+    /// Its plan as it last set it: steps done, of how many (none, or an
+    /// empty one: no telling how far along it is).
+    pub plan: Option<(u32, u32)>,
 }
 
 impl Agent {
     pub fn new(session: &str) -> Agent {
-        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, rev: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, exchanges: Vec::new(), why: None, subagents: 0, subs: BTreeMap::new(), decided: None, mode: None }
+        Agent { session: session.to_string(), kind: String::new(), cwd: String::new(), transcript: None, pid: None, apex: None, win: None, rev: None, started: 0, last: 0, state: State::Starting, prompt: None, running: Vec::new(), asked: None, asking: None, said: None, exchange: None, exchanges: Vec::new(), why: None, subagents: 0, subs: BTreeMap::new(), decided: None, mode: None, plan: None }
     }
 
     /// Enough of the id to tell it apart, and to B3.
@@ -157,6 +160,9 @@ impl Agent {
                 _ => {}
             }
             return;
+        }
+        if let Some(p) = e.plan {
+            self.plan = Some(p).filter(|p| p.1 > 0);
         }
         match e.event.as_str() {
             "SessionStart" => {

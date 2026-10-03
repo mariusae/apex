@@ -172,6 +172,9 @@ pub struct Pane {
     /// The notification raised for each agent that wants you, by the
     /// agent's session.
     flags: HashMap<String, Flag>,
+    /// The windows marked working for an agent at work in them, and how
+    /// far along its plan said it was when marked.
+    busy: HashMap<WindowId, Option<u8>>,
 }
 
 /// An agent's terminal in this session, and what is offered on it.
@@ -275,7 +278,7 @@ impl Pane {
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
         let (session, _) = t.session();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), busy: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -306,6 +309,7 @@ impl Pane {
                 self.render()?;
                 self.sync_targets()?;
                 self.sync_flags();
+                self.sync_busy();
             } else if self.last_render.elapsed() >= MINUTES {
                 self.render()?;
             }
@@ -499,6 +503,38 @@ impl Pane {
                     self.flags.insert(key, Flag { window: w, raised: false, dismissed: false });
                 }
             }
+        }
+    }
+
+    /// Each agent at work has the window it runs in marked working -- its
+    /// handle turning -- and, when its plan says how far along it is
+    /// (steps done of the plan's), the handle's circle filled that far;
+    /// back to idle, or asking, or gone, the mark goes. The mark is this
+    /// tool's, so it dying leaves none behind.
+    fn sync_busy(&mut self) {
+        if self.session.is_empty() {
+            return;
+        }
+        let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
+        let want: HashMap<WindowId, Option<u8>> = current_in_windows(&self.agents, &self.session, &windows, self.w)
+            .into_iter()
+            .filter(|(_, a)| a.state == State::Working)
+            .map(|(w, a)| (w, a.plan.map(|(done, of)| (done * 100 / of.max(1)).min(100) as u8)))
+            .collect();
+        let gone: Vec<WindowId> = self.busy.keys().copied().filter(|w| !want.contains_key(w)).collect();
+        for w in gone {
+            self.busy.remove(&w);
+            let _ = self.t.set_working(w, false);
+        }
+        for (w, at) in want {
+            if self.busy.get(&w) == Some(&at) {
+                continue;
+            }
+            let _ = match at {
+                Some(p) => self.t.set_progress(w, Some(p)),
+                None => self.t.set_working(w, true),
+            };
+            self.busy.insert(w, at);
         }
     }
 

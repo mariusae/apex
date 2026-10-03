@@ -29,7 +29,10 @@
 //! prompt yours, a question to answer, a turn that failed -- raises a
 //! notification on its terminal, so the session's square says someone
 //! is waiting and a click takes you to them, one agent a click;
-//! it goes as soon as the agent is back at work.
+//! it goes as soon as the agent is back at work. An agent at work has
+//! its terminal marked working, its handle turning -- or, when its plan
+//! (Claude's todos, Codex's plan) says how far along it is, its handle's
+//! circle filled as far as the steps done.
 //!
 //! `-a` adds the overview window, `DIR/-agents`, a block an agent in
 //! the order they want attention: `?` a permission or a question

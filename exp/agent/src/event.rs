@@ -61,6 +61,10 @@ pub struct Event {
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    /// A call that sets the agent's plan (Claude's `TodoWrite`, Codex's
+    /// `update_plan`): how many of its steps are done, of how many.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<(u32, u32)>,
 }
 
 /// Where the logs are: `$APEX_AGENT_DIR`, else `~/.apex/agents`, beside

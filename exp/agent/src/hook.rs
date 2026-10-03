@@ -91,6 +91,14 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
     let cwd = s("cwd").unwrap_or_default();
     let tool = s("tool_name");
     let title = tool.as_deref().map(|t| call_title(t, v.get("tool_input").unwrap_or(&Value::Null), &cwd));
+    // a plan set: its steps done, of how many -- how far along the agent
+    // says it is
+    let plan = match tool.as_deref() {
+        Some("TodoWrite") => v["tool_input"]["todos"].as_array(),
+        Some("update_plan") => v["tool_input"]["plan"].as_array(),
+        _ => None,
+    }
+    .map(|steps| (steps.iter().filter(|t| t["status"].as_str() == Some("completed")).count() as u32, steps.len() as u32));
     // a prompt and an answer are kept whole, within reason: the page
     // shows the whole of the last exchange. A notification is a line
     let text = match event.as_str() {
@@ -125,6 +133,7 @@ pub fn event_from(agent: &str, v: &Value) -> Event {
         text,
         kind,
         mode: s("permission_mode"),
+        plan,
     }
 }
 
@@ -192,6 +201,18 @@ fn ps(pid: u32) -> Option<(u32, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_plan_set_says_how_far_along_the_agent_is() {
+        let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "PostToolUse", "tool_name": "TodoWrite", "cwd": "/x",
+            "tool_input": {"todos": [{"content": "a", "status": "completed"}, {"content": "b", "status": "in_progress"}, {"content": "c", "status": "pending"}]}});
+        assert_eq!(event_from("claude", &v).plan, Some((1, 3)));
+        let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "update_plan", "cwd": "/x",
+            "tool_input": {"plan": [{"step": "a", "status": "completed"}, {"step": "b", "status": "completed"}]}});
+        assert_eq!(event_from("codex", &v).plan, Some((2, 2)));
+        let v: Value = serde_json::json!({"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Read", "cwd": "/x", "tool_input": {"file_path": "/x/y"}});
+        assert_eq!(event_from("claude", &v).plan, None);
+    }
 
     #[test]
     fn a_hooks_input_becomes_one_event_said_in_words() {

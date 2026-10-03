@@ -472,6 +472,9 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     }
     ui.send(&ClientMsg::Unnotify { window: tw });
     wait_flags(&mut c, |f| f.is_empty());
+    // (the UI goes, as one that has done its part: one left attached and
+    // never stepped would be the leader no proposal is answered by)
+    drop(ui);
     event::append(&logs, &Event { call: Some("t7".into()), kind: Some("deny".into()), ..ev("Decision") }).unwrap();
     std::thread::sleep(Duration::from_secs(1));
     let _ = c.step(Duration::from_millis(50));
