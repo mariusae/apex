@@ -1369,3 +1369,17 @@ fn a_rescan_finds_changes_no_watcher_reported() {
     assert!(server.pump(&mut log, &node, ServerEvent::Rescan).is_empty());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// B3 on a word in a window: found in it, and the word is the window's
+/// Look's argument now (in its tag), for ⌘G and the marks.
+#[test]
+fn b3_puts_the_word_looked_for_in_the_tags_look() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let w = node.new_window(&mut log, col, "/tmp/b3-look", "one two one\n").unwrap();
+    let tag = node.state.window(w).unwrap().tag;
+    node.select(&mut log, ViewId::Tag(w), 0, 0).unwrap();
+    node.insert(&mut log, ViewId::Tag(w), "Look ").unwrap();
+    perform(&mut node, &mut log, vec![Proposal::Look { ctx: ExecCtx::Window(w), text: "one".into(), reverse: false }]);
+    assert_eq!(node.selection(ViewId::Body(w)).unwrap(), (0, 3));
+    assert_eq!(node.look_arg(w).map(|a| a.2), Some("one".into()), "{:?}", node.state.buffer(tag).unwrap().text.to_string());
+}

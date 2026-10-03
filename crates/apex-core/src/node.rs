@@ -1477,6 +1477,46 @@ impl Node {
     /// Search the body forward from the selection, wrapping; select a hit.
     /// acme's `search`, in the text `view`: forward from its selection's
     /// end, wrapping around; the match becomes the selection.
+    /// The first `Look` in window `w`'s tag and its argument: where the
+    /// argument is (runes, `[start, end)` -- empty, at the end of `Look `,
+    /// when there is none yet) and what it is. The argument is the word
+    /// after it, up to white space; a tag's later `Look`s are its words.
+    pub fn look_arg(&self, w: WindowId) -> Option<(usize, usize, String)> {
+        let tag = self.state.window(w).ok()?.tag;
+        let text: Vec<char> = self.state.buffer(tag).ok()?.text.to_string().chars().collect();
+        let word = ['L', 'o', 'o', 'k'];
+        let gap = |c: char| c == ' ' || c == '\t';
+        let at = (0..text.len().saturating_sub(3)).find(|&i| text[i..i + 4] == word && (i == 0 || text[i - 1].is_whitespace()) && text.get(i + 4).is_none_or(|c| c.is_whitespace()))?;
+        let mut start = at + 4;
+        while start < text.len() && gap(text[start]) {
+            start += 1;
+        }
+        let mut end = start;
+        while end < text.len() && !text[end].is_whitespace() {
+            end += 1;
+        }
+        Some((start, end, text[start..end].iter().collect()))
+    }
+
+    /// The first `Look`'s argument in window `w`'s tag made `arg` (what B3
+    /// looked for there): a word, so not one with white space in it; and
+    /// a tag with no `Look` is left as it is.
+    pub fn set_look_arg(&mut self, log: &mut Log, w: WindowId, arg: &str) -> Result<()> {
+        if arg.is_empty() || arg.chars().any(char::is_whitespace) {
+            return Ok(());
+        }
+        let Some((start, end, was)) = self.look_arg(w) else { return Ok(()) };
+        if was == arg {
+            return Ok(());
+        }
+        let tag = self.state.window(w)?.tag;
+        // `Look` at the very end: a space before the word
+        let gapped = start == end && self.state.buffer(tag)?.text.len() == start && !self.state.buffer(tag)?.text.to_string().ends_with([' ', '\t']);
+        let text = if gapped { format!(" {arg}") } else { arg.to_string() };
+        let group = self.new_group();
+        self.edit_op(log, tag, start, end - start, &text, group)
+    }
+
     pub fn look(&mut self, log: &mut Log, view: ViewId, needle: &str) -> Result<bool> {
         self.look_dir(log, view, needle, false)
     }

@@ -209,3 +209,43 @@ mod trim_tests {
         assert_eq!(chars.into_iter().collect::<String>(), out);
     }
 }
+
+/// Where `needle` next occurs in `text` (rune offsets): the first match
+/// starting at or after `from`, wrapping round to the start; or, `reverse`,
+/// the last starting before `from`, wrapping round from the end. Literal,
+/// as acme's Look is.
+pub fn find_match(text: &str, needle: &str, from: usize, reverse: bool) -> Option<usize> {
+    let t: Vec<char> = text.chars().collect();
+    let n: Vec<char> = needle.chars().collect();
+    if n.is_empty() || n.len() > t.len() {
+        return None;
+    }
+    let last = t.len() - n.len();
+    let at = |i: usize| t[i..i + n.len()] == n[..];
+    let from = from.min(t.len());
+    if reverse {
+        (0..from.min(last + 1)).rev().find(|&i| at(i)).or_else(|| (from.min(last + 1)..=last).rev().find(|&i| at(i)))
+    } else {
+        (from..=last).find(|&i| at(i)).or_else(|| (0..from.min(last + 1)).find(|&i| at(i)))
+    }
+}
+
+/// Every place `needle` occurs in `text`, not overlapping (rune ranges).
+pub fn find_all(text: &str, needle: &str) -> Vec<(usize, usize)> {
+    let t: Vec<char> = text.chars().collect();
+    let n: Vec<char> = needle.chars().collect();
+    let mut out = Vec::new();
+    if n.is_empty() || n.len() > t.len() {
+        return out;
+    }
+    let mut i = 0;
+    while i + n.len() <= t.len() {
+        if t[i..i + n.len()] == n[..] {
+            out.push((i, i + n.len()));
+            i += n.len();
+        } else {
+            i += 1;
+        }
+    }
+    out
+}

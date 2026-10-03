@@ -371,6 +371,13 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                         node.reveal(log, w)?;
                     }
                     node.warp = Some(Warp::Sel(v)); // acme moves the mouse to what it found
+                    // what was looked for in a window is its Look's word
+                    // now: marked where else it is, ⌘G to the next
+                    if let (ExecCtx::Window(w), Some(vw)) = (ctx, v.window()) {
+                        if w == vw {
+                            node.set_look_arg(log, w, &text)?;
+                        }
+                    }
                 }
                 return Ok(v.window());
             }

@@ -904,3 +904,42 @@ fn a_window_covers_another_in_its_place_and_gives_it_back() {
     assert!(node.state.layout.place_of(e2).is_some());
     assert_eq!(f_hash(&log), node.state.hash());
 }
+#[test]
+fn the_first_look_in_a_tag_has_the_word_looked_for() {
+    use apex_core::text::{find_all, find_match};
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/look", "alpha beta alpha\n").unwrap();
+    let tag = node.state.window(w).unwrap().tag;
+    let set_tag = |node: &mut Node, log: &mut Log, t: &str| {
+        let len = node.state.buffer(tag).unwrap().text.len();
+        node.select(log, ViewId::Tag(w), 0, len).unwrap();
+        node.insert(log, ViewId::Tag(w), t).unwrap();
+    };
+    // the first Look's word; a later Look is a word of its own
+    set_tag(&mut node, &mut log, "Put Look foo Look bar");
+    assert_eq!(node.look_arg(w), Some((9, 12, "foo".into())));
+    // none yet: an empty one, right after it
+    set_tag(&mut node, &mut log, "Look ");
+    assert_eq!(node.look_arg(w), Some((5, 5, String::new())));
+    node.set_look_arg(&mut log, w, "beta").unwrap();
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look beta");
+    // `Look` at the very end: a space before the word
+    set_tag(&mut node, &mut log, "Look");
+    node.set_look_arg(&mut log, w, "alpha").unwrap();
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look alpha");
+    // a word replaced; words with spaces, and a tag with no Look, left be
+    node.set_look_arg(&mut log, w, "gamma").unwrap();
+    node.set_look_arg(&mut log, w, "two words").unwrap();
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look gamma");
+    set_tag(&mut node, &mut log, "Put Snarf");
+    node.set_look_arg(&mut log, w, "x").unwrap();
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Put Snarf");
+    // finding, wrapping round both ways
+    let t = "alpha beta alpha";
+    assert_eq!(find_match(t, "alpha", 1, false), Some(11));
+    assert_eq!(find_match(t, "alpha", 12, false), Some(0));
+    assert_eq!(find_match(t, "alpha", 11, true), Some(0));
+    assert_eq!(find_match(t, "alpha", 0, true), Some(11));
+    assert_eq!(find_match(t, "zeta", 0, false), None);
+    assert_eq!(find_all(t, "alpha"), vec![(0, 5), (11, 16)]);
+}
