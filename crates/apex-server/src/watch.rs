@@ -94,6 +94,12 @@ mod tests {
 }
 
 impl Watches {
+    /// The next `sync` checks again which directories asked for are
+    /// there to watch (one made since is watched then).
+    pub fn recheck(&mut self) {
+        self.asked.clear();
+    }
+
     /// The path of an event, as the buffers name it.
     pub fn as_named(&self, p: &Path) -> PathBuf {
         if let (Some(parent), Some(file)) = (p.parent(), p.file_name()) {

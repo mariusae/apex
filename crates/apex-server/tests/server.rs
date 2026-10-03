@@ -1342,3 +1342,30 @@ fn the_alternate_screen_is_the_terminals_state() {
     typed(&mut server, &mut log, "printf '\\033[?1049l'\r");
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| !n.state.terms[&t].alt), "back");
 }
+
+/// A file system that says nothing of its changes (EdenFS under Sapling):
+/// the rescan finds them anyway -- a directory window's new entry, a
+/// file's new text -- and finds nothing where nothing changed.
+#[test]
+fn a_rescan_finds_changes_no_watcher_reported() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    let dir = std::env::temp_dir().join(format!("apex-rescan-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+    let d = perform(&mut node, &mut log, vec![server.open_file(col, None, &dir, ".", None).unwrap()]).expect("the directory's window");
+    let f = perform(&mut node, &mut log, vec![server.open_file(col, None, &dir, "a.txt", None).unwrap()]).expect("the file's window");
+    let text = |node: &Node, w: WindowId| node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| node.state.buffer(b).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    // a first look notes what is there; nothing new yet
+    assert!(server.pump(&mut log, &node, ServerEvent::Rescan).is_empty());
+    // changed behind the watcher's back (its events never delivered here)
+    std::fs::write(dir.join("b.txt"), "").unwrap();
+    std::thread::sleep(Duration::from_millis(1100)); // a modification time apart
+    std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+    let props = server.pump(&mut log, &node, ServerEvent::Rescan);
+    perform(&mut node, &mut log, props);
+    assert!(text(&node, d).contains("b.txt"), "{:?}", text(&node, d));
+    assert_eq!(text(&node, f), "two\n");
+    // and again with nothing changed: nothing
+    assert!(server.pump(&mut log, &node, ServerEvent::Rescan).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}

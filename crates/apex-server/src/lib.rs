@@ -51,7 +51,16 @@ pub enum ServerEvent {
     ProcStarted { pid: u32, name: String, cmd: String, dir: String, ctx: ExecCtx, kind: ProcKind, out: ProcOut },
     /// A watched directory reported this path.
     File(PathBuf),
+    /// Time to look again without being told (`Server::rescan`).
+    Rescan,
 }
+
+/// How often the files and directories behind windows are looked at
+/// again, whatever the watcher says: a file system that tells nothing of
+/// its own changes (EdenFS, under Sapling: a checkout changes the files
+/// under the mount, and inotify hears none of it), a directory made or
+/// made anew after it was watched, an event lost.
+const RESCAN: std::time::Duration = std::time::Duration::from_secs(2);
 
 #[derive(Clone, Debug)]
 pub enum ShellMode {
@@ -134,6 +143,9 @@ pub struct Server {
     plumb_starts: Vec<PlumbReq>,
     /// Files clients subscribed to (`Watch`), beyond the buffers' own.
     subscribed: BTreeSet<PathBuf>,
+    /// Each file behind a window (or subscribed) as `rescan` last found
+    /// it: when it was changed, and how long it was.
+    stamps: HashMap<PathBuf, Option<(Option<std::time::SystemTime>, u64)>>,
     /// Subscribed files that changed, for the host to report.
     changed: BTreeSet<PathBuf>,
 }
@@ -167,6 +179,16 @@ impl Server {
                 let _ = tx.unbounded_send(ServerEvent::File(p));
             })
         };
+        // and a look every so often regardless, until no one is listening
+        {
+            let tx = tx.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(RESCAN);
+                if tx.unbounded_send(ServerEvent::Rescan).is_err() {
+                    break;
+                }
+            });
+        }
         let server = Server {
             node,
             terms: HashMap::new(),
@@ -190,6 +212,7 @@ impl Server {
             next_plumb: 1,
             plumb_starts: Vec::new(),
             subscribed: BTreeSet::new(),
+            stamps: HashMap::new(),
             changed: BTreeSet::new(),
         };
         (server, rx)
@@ -572,6 +595,7 @@ impl Server {
                 }
                 props.extend(self.file_changed(view, &path));
             }
+            ServerEvent::Rescan => props.extend(self.rescan(view)),
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
                 let was = h.window_place();
@@ -739,6 +763,39 @@ impl Server {
         // directory windows: the directory itself, for its entries
         let dirs: Vec<PathBuf> = view.state.buffers.values().filter(|b| b.kind == WinKind::Dir && b.name.starts_with('/')).map(|b| PathBuf::from(b.name.trim_end_matches('/'))).filter(|p| !p.as_os_str().is_empty()).collect();
         self.watches.sync(files.iter().map(|p| p.as_path()), dirs.iter().map(|p| p.as_path()));
+    }
+
+    /// Every so often (`RESCAN`), whatever the watcher has said: each
+    /// directory window listed again, each file behind a window (or
+    /// subscribed) looked at again when its time or length moved -- the
+    /// same as an event would have it, so nothing comes of what has not
+    /// changed (the content's hash says) -- and the directories asked for
+    /// that were not there to watch, asked again.
+    fn rescan(&mut self, view: &Node) -> Vec<Proposal> {
+        self.watches.recheck();
+        let mut props = Vec::new();
+        for buf in view.state.buffers.values().filter(|b| b.kind == WinKind::Dir && b.name.starts_with('/')) {
+            let dir = PathBuf::from(&buf.name);
+            if let Ok((_, listing)) = self.read_path(&dir) {
+                props.extend(self.content_changed(buf, listing));
+            }
+        }
+        let mut files: Vec<PathBuf> = view.state.buffers.values().filter(|b| b.kind == WinKind::File && !b.scratch && b.name.starts_with('/')).map(|b| PathBuf::from(&b.name)).collect();
+        files.extend(self.subscribed.iter().cloned());
+        self.stamps.retain(|p, _| files.contains(p));
+        for p in files {
+            let now = std::fs::metadata(&p).ok().map(|m| (m.modified().ok(), m.len()));
+            match self.stamps.insert(p.clone(), now) {
+                Some(was) if was != now => {
+                    if self.subscribed.contains(&p) {
+                        self.changed.insert(p.clone());
+                    }
+                    props.extend(self.path_changed(view, &p));
+                }
+                _ => {}
+            }
+        }
+        props
     }
 
     /// A watched path changed. A clean buffer follows the disk; a dirty one
