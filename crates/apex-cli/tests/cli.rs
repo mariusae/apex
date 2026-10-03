@@ -1407,3 +1407,14 @@ fn an_editor_interrupted_puts_the_label_back() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+
+#[test]
+fn md_gives_headings_the_ids_github_does() {
+    use std::io::Write;
+    let mut md = Command::new(env!("CARGO_BIN_EXE_apex")).args(["md"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
+    md.stdin.take().unwrap().write_all(b"# Intro\n\n[go](#binding-phase)\n\n## Binding phase\n\n## Binding phase\n\n### What's new? `v2` (beta)\n\n## Mine {#custom}\n").unwrap();
+    let out = String::from_utf8(md.wait_with_output().unwrap().stdout).unwrap();
+    for h in ["<h1 id=\"intro\">", "<h2 id=\"binding-phase\">", "<h2 id=\"binding-phase-1\">", "<h3 id=\"whats-new-v2-beta\">", "<h2 id=\"custom\">"] {
+        assert!(out.contains(h), "{h} in {out}");
+    }
+}

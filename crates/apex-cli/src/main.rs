@@ -476,7 +476,9 @@ the bridge)." },
     Cmd { name: "md", usage: "apex md <MARKDOWN", short: "Markdown on stdin to HTML on stdout", flags: &[], run: md, long: "\
 Md converts Markdown on stdin to an HTML page on stdout: CommonMark
 with tables, footnotes, strikethrough and task lists, styled as GitHub
-renders Markdown (its own stylesheet, fonts included). Every block is preceded by an empty span carrying the
+renders Markdown (its own stylesheet, fonts included), each heading
+with the id GitHub gives it (#binding-phase), for links within the page.
+Every block is preceded by an empty span carrying the
 source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
@@ -1124,9 +1126,53 @@ pub fn markdown_page(text: &str) -> String {
         }
         events.push(ev);
     }
+    heading_ids(&mut events);
     let mut body = String::new();
     html::push_html(&mut body, events.into_iter());
     format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>{MD_STYLE}\n{MD_PAGE}</style></head><body><article class=\"markdown-body\">\n{body}</article></body></html>\n")
+}
+
+/// Every heading an id as GitHub gives it, for a link to `#its-id` to go
+/// to: its text in lower case, letters, digits, `-` and `_` kept, spaces
+/// made `-`, the rest dropped; a second of the same name `-1`, a third
+/// `-2`. One the Markdown names itself (`{#id}`) is kept.
+fn heading_ids(events: &mut [pulldown_cmark::Event]) {
+    use pulldown_cmark::{CowStr, Event, Tag, TagEnd};
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut i = 0;
+    while i < events.len() {
+        if let Event::Start(Tag::Heading { id: None, .. }) = &events[i] {
+            let mut text = String::new();
+            let mut j = i + 1;
+            while j < events.len() && !matches!(events[j], Event::End(TagEnd::Heading(_))) {
+                if let Event::Text(t) | Event::Code(t) = &events[j] {
+                    text.push_str(t);
+                }
+                j += 1;
+            }
+            let base = slug(&text);
+            let n = seen.entry(base.clone()).or_insert(0);
+            let id = if *n == 0 { base.clone() } else { format!("{base}-{n}") };
+            *n += 1;
+            if let Event::Start(Tag::Heading { id: slot, .. }) = &mut events[i] {
+                *slot = Some(CowStr::from(id));
+            }
+        }
+        i += 1;
+    }
+}
+
+/// A heading's text as GitHub makes it an anchor.
+fn slug(text: &str) -> String {
+    text.trim()
+        .to_lowercase()
+        .chars()
+        .filter_map(|c| match c {
+            ' ' => Some('-'),
+            c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The editor's own look for Markdown: acme's papers and inks as

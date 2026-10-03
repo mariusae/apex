@@ -170,6 +170,27 @@ const LOOK_SCRIPT: &str = r#"(function () {
   CSS.highlights.set('apex-look-here', here);
 })();"#;
 
+/// A link to a place in the page (`#binding-phase`, a footnote's `#1`):
+/// the page scrolls there. The page's `<base>` is its file's directory,
+/// against which `#x` alone is that directory's -- a navigation away,
+/// which a page from a buffer opens as a window -- so the click is taken
+/// here, before it goes anywhere: to the element of that id (or that
+/// name). The page's address is left as it is: against the `<base>`, a
+/// new one would be the directory's.
+const ANCHOR_SCRIPT: &str = r#"(function () {
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target && e.target.closest && e.target.closest("a[href^='#']");
+    if (!a) return;
+    e.preventDefault();
+    let id = a.getAttribute('href').slice(1);
+    try { id = decodeURIComponent(id); } catch (_) {}
+    const el = id === '' ? document.body : (document.getElementById(id) || document.getElementsByName(id)[0]);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start' });
+  }, true);
+})();"#;
+
 /// The copy handle: every code block gets a button that sends the
 /// block's text over (`copy:`), those made later too (a re-render).
 const COPY_SCRIPT: &str = r#"(function () {
@@ -1092,7 +1113,7 @@ impl Webs {
                 }
                 b.with_url(&webkit_url(url))
             }
-            Page::Html { html, dir, .. } => b.with_initialization_script(FILE_SCRIPT).with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_initialization_script(TOC_SCRIPT).with_html(dress(html, dir)),
+            Page::Html { html, dir, .. } => b.with_initialization_script(FILE_SCRIPT).with_initialization_script(ANCHOR_SCRIPT).with_initialization_script(COPY_SCRIPT).with_initialization_script(MERMAID_SCRIPT).with_initialization_script(TOC_SCRIPT).with_html(dress(html, dir)),
         };
         b = b
             .with_navigation_handler(move |u| {
