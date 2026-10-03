@@ -129,7 +129,7 @@ lease never moves):
 | shard | one per | entries | default leader |
 |---|---|---|---|
 | `buffer` | buffer | `Create`, `Edit{version, q0, nd, text, group}`, `Undo/Redo{version}`, `Clean{version}`, `Stale{hash}`, `Rename`, `ViewAdd/Del{view}`, `Select{view, q0, q1}`, `Origin{view, off}` | server |
-| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done|Failed|Unknown}`, `Delete`; *as built also* `Tab`, `Indent`, `TagExpand`, `Live{by}`, `Working{by}` | server |
+| `window` | window | `Create{tag, body}`, `Font`, `Exec{text, handler, at}`, `Status{exec, Done\|Failed\|Unknown}`, `Delete`; *as built also* `Tab`, `Indent`, `TagExpand`, `Live{by}`, `Working{by}` | server |
 | `layout` | session | `Init{top}`, `ColNew/Del/Resize`, `WinPlace{window, col, at}`, `WinRemove`, `WinResize`, `Snarf`, `Exec` from column tags and the top row; *as built also* `Arrange{r, cols}`, `Status`, `Visit{from, to}`, `NavPop{back, at}` (the navigation stacks, `Layout{nav_back, nav_forward}` of `Loc{name, pos}`) | server |
 | `term` | terminal | `Rows{seq, rows: [cells]}`, `Cursor`, `Mode`, `Resize`, `Exit` | server, **pinned** |
 | `metalog` | session | `ShardNew/Del`, `Attach/Detach`, `LeaseRequest/Release/Grant/Reclaim{shard, attachment, epoch, seq}`, `PlumbRuleInstall/Remove{attachment, priority, predicate, action}`; *as built also* `Set/Unset{owner, key, value}` (settings, the session's or an attachment's) | server, **pinned** |
