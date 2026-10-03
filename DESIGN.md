@@ -60,19 +60,20 @@ server's state across restarts, Windows.
 
 ## 2. Overview
 
-```
-                 ┌──────────────────────────── server (one per host) ───────────────────────────┐
-                 │  logs + snapshots      state machine (core crate)      ptys / files / procs  │
-                 │  fencing / attachments plumber, Edit language          file watcher          │
-                 └───────────┬───────────────────────────┬────────────────────────┬─────────────┘
-       attach protocol       │                           │ control protocol       │
-   (unix socket / ssh stdio) │                           │ (same frames)          │
-                 ┌───────────┴──────────┐     ┌──────────┴──────────┐   ┌─────────┴─────────┐
-                 │  UI client (gpui)    │     │  apex CLI / scripts │   │ tools: lsp, agent │
-                 │  state machine       │     │  win, Watch, ...    │   │ formatter, ...    │
-                 │  (core crate, leader │     └─────────────────────┘   └───────────────────┘
-                 │   for its shards)    │
-                 └──────────────────────┘
+```mermaid
+flowchart TB
+    subgraph server["server (one per host)"]
+        direction LR
+        logs["logs + snapshots<br/>fencing / attachments"]
+        core["state machine (core crate)<br/>plumber, Edit language"]
+        io["ptys / files / procs<br/>file watcher"]
+    end
+    ui["UI client (gpui)<br/>state machine<br/>(core crate, leader for its shards)"]
+    cli["apex CLI / scripts<br/>win, Watch, ..."]
+    tools["tools: lsp, agent<br/>formatter, ..."]
+    server <-->|"attach protocol<br/>(unix socket / ssh stdio)"| ui
+    server <-->|"control protocol<br/>(same frames)"| cli
+    server <-->|"control protocol"| tools
 ```
 
 Three kinds of process:
