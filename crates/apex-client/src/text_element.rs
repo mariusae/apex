@@ -1010,6 +1010,39 @@ impl Head {
         }
     }
 
+    /// The path's folders as drawn, in order: those before its name (not
+    /// while its picker is down, whose folders are where the typing is).
+    pub fn path_dirs(&self) -> Vec<(usize, usize, Atom)> {
+        if self.atoms.iter().any(|a| a.2 == Atom::Typed) {
+            return Vec::new();
+        }
+        self.atoms.iter().take_while(|a| matches!(a.2, Atom::Dir(_))).copied().collect()
+    }
+
+    /// The path shortened to a suffix: its first `n` folders put away
+    /// behind `…/` -- a folder itself, the last of those put away, which
+    /// B1 lists and B3 plumbs as it would have -- the rest as they were,
+    /// the name always. Unchanged when there are not `n` to put away.
+    pub fn elided(&self, n: usize) -> Head {
+        let dirs = self.path_dirs();
+        if n == 0 || n > dirs.len() {
+            return self.clone();
+        }
+        let (start, end) = (dirs[0].0, dirs[n - 1].1);
+        let hidden = dirs[n - 1].2;
+        const ELLIPSIS: &str = "…/";
+        let at = |p: usize| if p >= end { p + start + ELLIPSIS.len() - end } else { p };
+        let mut h = Head { text: format!("{}{ELLIPSIS}{}", &self.text[..start], &self.text[end..]), ..Head::default() };
+        h.atoms.push((start, start + ELLIPSIS.len(), hidden));
+        h.atoms.extend(self.atoms.iter().filter(|a| a.1 <= start || a.0 >= end).map(|&(a, b, x)| (at(a), at(b), x)));
+        h.atoms.sort_by_key(|a| a.0);
+        h.glyphs = self.glyphs.iter().filter(|g| g.0 < start || g.0 >= end).map(|&(p, i)| (at(p), i)).collect();
+        h.gap = self.gap.map(at);
+        h.bar = self.bar.map(at);
+        h.caret = self.caret.map(at);
+        h
+    }
+
     /// The path: its folders each a part when `split`, then its name --
     /// from `base` on when it is inside it, `./` when it is `base`.
     fn path(&mut self, path: &str, split: bool, untitled: bool, base: &str) {
@@ -1246,6 +1279,32 @@ pub struct Tint {
     /// the primary, which reads on the selection where the secondary may
     /// not (a column tag's, on a dark ground).
     pub sel: (usize, usize),
+}
+
+/// A window tag's head with its path shortened to a suffix, when the
+/// path is long -- more than half the tag's width -- and is what makes the
+/// tag wrap: the fewest of its leading folders put away (`Head::elided`)
+/// for the tag to be one line, the name always kept. None when the tag
+/// fits whole, or would not fit however short the path.
+fn shortened(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, tint: Option<Tint>, head: &Head) -> Option<Head> {
+    let wrap = wrap?;
+    let dirs = head.path_dirs();
+    if dirs.is_empty() {
+        return None;
+    }
+    let (s, e) = text.line_range(0)?;
+    let line = |h: &Head| shape(window, &text.slice(s, e), s, e, false, fontspec, None, Some(wrap), px(0.), tint, Some(h));
+    let whole = line(head);
+    if whole.subs.len() <= 1 {
+        return None;
+    }
+    // the path: from its first folder to its name's end
+    let end = head.atoms.iter().find(|a| a.2 == Atom::Name).map_or(dirs.last().unwrap().1, |a| a.1);
+    let lay = &whole.layout.unwrapped_layout;
+    if lay.x_for_index(end) - lay.x_for_index(dirs[0].0) <= wrap / 2. {
+        return None;
+    }
+    (1..=dirs.len()).map(|n| head.elided(n)).find(|h| line(h).subs.len() <= 1)
 }
 
 fn shape(
@@ -1532,6 +1591,14 @@ impl Element for TextElement {
                 // the user's words in a window's tag: a step above apex's
                 let tint = Some(Tint { rest, text: if kind == Kind::WinTag { rgb(th.text_dim) } else { rest }, sel: src.sel });
                 let head = src.head.as_ref().filter(|_| matches!(kind, Kind::WinTag | Kind::Top));
+                // a window's path shortened when it is what makes the tag
+                // wrap (`shortened`); a tag of more lines than one is long
+                // anyway, and keeps it whole
+                let short = match (kind, head) {
+                    (Kind::WinTag, Some(h)) if total == 1 => shortened(window, text, &fontspec, wrap, tint, h),
+                    _ => None,
+                };
+                let head = short.as_ref().or(head);
                 while let Some((s, e)) = text.line_range(n) {
                     let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, head.filter(|_| n == 0));
                     wrapped += li.subs.len().max(1);
@@ -2169,6 +2236,21 @@ mod head_tests {
         assert!(p.text.starts_with(&format!("{here}s")), "{:?}", p.text);
         let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
         assert!(p.text.starts_with("src/"), "{:?}", p.text);
+        // shortened to a suffix: the first folders behind `…/`, itself the
+        // last of them put away (B1 lists it, B3 plumbs it); the rest, the
+        // label and the verbs as they were, further along by the difference
+        let h = Head::build("/a/bb/c/notes.md", Some("mine"), &["Del"], true, true);
+        // (its folders `/`, `a/`, `bb/`, `c/`: three put away)
+        let e = h.elided(3);
+        let parts: Vec<(&str, Atom)> = e.atoms.iter().map(|&(a, b, x)| (&e.text[a..b], x)).collect();
+        assert_eq!(&parts[..3], &[("…/", Atom::Dir(6)), ("c/", Atom::Dir(8)), ("notes.md", Atom::Name)]);
+        assert!(e.text.starts_with("…/c/notes.md"), "{:?}", e.text);
+        let (bar, ebar) = (h.bar.unwrap(), e.bar.unwrap());
+        assert_eq!(&h.text[bar..], &e.text[ebar..], "what follows the path, as it was");
+        assert_eq!(h.text.len() - bar, e.text.len() - ebar);
+        // the name always kept: no more folders put away than there are
+        assert_eq!(h.elided(5).text, h.text);
+        assert_eq!(h.path_dirs().len(), 4);
         // the session's processes: a pill each, its name and its ×
         let p = Head::procs(&[(7, "make".into())], true);
         assert_eq!(p.glyphs.len(), 2, "a chevron each side of the pills");

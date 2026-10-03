@@ -409,6 +409,14 @@ windows put away out of the tiling, which is the core's
   a hidden one -- gives them back first. Columns are not put away. A column an older apex put away at
   the row's right is still drawn as the edges of sheets on their sides,
   and B1 brings it back where it stood.
+- **Long paths shortened** (`text_element::shortened`, `Head::elided`):
+  a window's path that takes more than half its tag and is what makes the
+  tag wrap is drawn from a suffix instead -- the fewest of its leading
+  folders put away for the tag to fit one line, its name always kept --
+  behind `…/`, which says so. `…/` is a folder like the others: the last
+  one it puts away, which B1 lists and B3 plumbs. A tag of more lines
+  than one (a newline in it) is long anyway and keeps its path whole, as
+  does one that would not fit however short the path.
 - **Looking as you type** (`look.rs`): the query is the first `Look`'s
   argument in a window's tag (every tag begins with `Look `), the result
   the window's selection, as acme's Look has them. While the caret is in
