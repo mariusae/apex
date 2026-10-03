@@ -424,6 +424,10 @@ pub struct Acme {
     /// When each notification shown came, as this client first saw it
     /// (`sync_notes`): a raised one again is a new ping.
     pub noted: std::collections::HashMap<(WindowId, Seq), std::time::Instant>,
+    /// A look going on in a tag (`look.rs`), and each window's Look word's
+    /// places, found once a version.
+    pub looking: Option<crate::look::Live>,
+    pub look_cache: std::collections::HashMap<WindowId, (String, Version, std::rc::Rc<Vec<(usize, usize)>>)>,
     /// Each stashed window's card: out of the bunch (working or notified)
     /// or not, and since when -- what its sliding runs from (`sync_pulls`).
     pub pulled: std::collections::HashMap<WindowId, (bool, std::time::Instant)>,
@@ -1702,6 +1706,8 @@ impl Acme {
             native_bar_hidden: false,
             overlay_bounds: Default::default(),
             noted: Default::default(),
+            looking: None,
+            look_cache: Default::default(),
             pulled: Default::default(),
             web_cuts: Default::default(),
             switcher: None,
@@ -2827,6 +2833,8 @@ impl Acme {
                 origin: 0,
                 hl: None,
             hint: None,
+                marks: Default::default(),
+                strike: None,
                 want_visible: false,
                 show_at: None,
             });
@@ -2874,6 +2882,14 @@ impl Acme {
             origin: v.origin,
             hl,
             hint,
+            marks: match view {
+                ViewId::Body(w) => self.look_marks(w),
+                _ => Default::default(),
+            },
+            strike: match view {
+                ViewId::Tag(w) => self.look_strike(w),
+                _ => None,
+            },
             // a window on its way scrolls to what it must show once it lands
             want_visible: !view.window().is_some_and(|w| self.glide.gliding(w)) && self.want_visible.remove(&view),
             show_at: if view.window().is_some_and(|w| self.glide.gliding(w)) { None } else { self.show_at.remove(&view) },
@@ -3136,6 +3152,9 @@ impl Acme {
         // a click: the caret solid again, wherever it lands
         self.caret_since = std::time::Instant::now();
         self.caret_on = true;
+        // and any look as you type over (typing in the argument again
+        // begins another, from where the selection is then)
+        self.looking = None;
         // a click in acme's part of the window takes the keyboard back
         // from any page that had it, and from the window itself when a
         // view that had it went and left it there: not only while pages
@@ -4698,7 +4717,14 @@ impl Acme {
                 if !matches!(ks.key.as_str(), "up" | "down" | "left" | "right" | "pageup" | "pagedown") {
                     self.node.activecol = self.column_of_view(v);
                 }
-                self.text_key(v, ks, cx)
+                self.text_key(v, ks, cx);
+                // in a tag: its Look's argument, looked for as it is typed;
+                // in a body: any look there is over
+                match v {
+                    ViewId::Tag(w) => self.live_look(w),
+                    ViewId::Body(w) if self.looking.as_ref().is_some_and(|l| l.window == w) => self.looking = None,
+                    _ => {}
+                }
             }
             Target::Web(_) => {} // not reached: a page's scrollbar takes no keys
         }

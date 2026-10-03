@@ -1147,6 +1147,12 @@ pub struct Source {
     /// What a click would take here with the modifier held (⌘: B3's,
     /// ⌥: B2's), on a pill.
     pub hint: Option<(usize, usize, HlKind)>,
+    /// A body: where its window's Look word is, washed faintly while a
+    /// look goes on there (`Acme::look_marks`).
+    pub marks: std::rc::Rc<Vec<(usize, usize)>>,
+    /// A tag: its Look's argument struck through (a live look that found
+    /// nothing).
+    pub strike: Option<(usize, usize)>,
     pub want_visible: bool,
     /// Bring this position on screen when it is not: acme's `textshow`,
     /// the position `quarters` quarters of the window down (one for new
@@ -1175,6 +1181,8 @@ pub struct Prepaint {
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
     hint: Option<(usize, usize, HlKind)>,
+    marks: std::rc::Rc<Vec<(usize, usize)>>,
+    strike: Option<(usize, usize)>,
     dirty: bool,
     stale: bool,
     live: bool,
@@ -1652,6 +1660,8 @@ impl Element for TextElement {
                 sel: src.sel,
                 hl: src.hl,
                 hint: src.hint,
+                marks: src.marks.clone(),
+                strike: src.strike,
                 dirty: src.dirty,
                 stale: src.stale,
                 live: src.live,
@@ -1783,6 +1793,26 @@ impl Element for TextElement {
                 let x = |d: usize| line.layout.unwrapped_layout.x_for_index(d);
                 // the selection a ⌘- or ⌥-click would take (the pointer
                 // on it): shown as the pill, not under it as the selection
+                // the Look word's places, faintly, under the selection
+                if !pp.marks.is_empty() {
+                    let wash = rgb(crate::theme::theme().look_mark());
+                    let from = pp.marks.partition_point(|m| m.1 <= line.start);
+                    for &(a, b) in pp.marks[from..].iter().take_while(|m| m.0 <= line.end) {
+                        let (lo, hi) = (a.max(line.start), b.min(line.end));
+                        if lo >= hi {
+                            continue;
+                        }
+                        let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                            let (s, e) = (dlo.max(ds), dhi.min(de));
+                            if s < e {
+                                let sy = ly + lh * i as f32;
+                                let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(1.), sy + px(1.)), point(origin.x + x(e) - x(ds) + px(1.), sy + lh - px(1.)));
+                                window.paint_quad(fill(r, wash).corner_radii(px(3.)));
+                            }
+                        }
+                    }
+                }
                 let sel_is_pill = q0 < q1 && pp.hint.is_some_and(|(a, b, _)| (a, b) == (q0, q1));
                 let ranges: [(usize, usize, Hsla); 2] = [
                     if sel_is_pill { (0, 0, pal.sel) } else { (q0, q1, pal.sel) },
@@ -1903,6 +1933,21 @@ impl Element for TextElement {
                     }
                 }
                 paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
+                // a Look's argument that found nothing: struck through
+                if let Some((a, b)) = pp.strike {
+                    let (lo, hi) = (a.max(line.start), b.min(line.end));
+                    if lo < hi {
+                        let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                            let (s, e) = (dlo.max(ds), dhi.min(de));
+                            if s < e {
+                                let cy = ly + lh * i as f32 + lh / 2.;
+                                let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), cy - px(0.6)), point(origin.x + x(e) - x(ds), cy + px(0.6)));
+                                window.paint_quad(fill(r, rgb(crate::theme::theme().text)));
+                            }
+                        }
+                    }
+                }
                 // apex's verbs, drawn as their icons on their em spaces, in
                 // the ink the word would have (faint, swept, hinted)
                 for &(d, i) in &line.icons {

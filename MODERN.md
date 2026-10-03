@@ -409,6 +409,21 @@ windows put away out of the tiling, which is the core's
   a hidden one -- gives them back first. Columns are not put away. A column an older apex put away at
   the row's right is still drawn as the edges of sheets on their sides,
   and B1 brings it back where it stood.
+- **Looking as you type** (`look.rs`): the query is the first `Look`'s
+  argument in a window's tag (every tag begins with `Look `), the result
+  the window's selection, as acme's Look has them. While the caret is in
+  that argument, each change looks again from where the selection was
+  when the typing began: a letter more narrows there or further on, a
+  letter less goes back, empty puts the selection back; nothing found,
+  it stays and the argument is struck through. A click ends it. ⌘F takes
+  the caret and the pointer to the argument (typing `Look ` first where
+  a tag has none), selected to type over; ⌘G and ⌘⇧G look again forwards
+  and back (⌘J is the next notification now). B3 on a word, found in its
+  window, puts the word in the argument too. While a look goes on in a
+  window -- live, or its selection one of the places -- every place the
+  word is is washed faintly in B3's blue, under the selection; once the
+  selection is elsewhere, the marks are gone. A tag's later `Look`s are
+  words like any other.
 - **A window over another** (`state::Cover`): `apex editor` run in a
   window -- a terminal, win's, a command from a tag: `$winid` -- ($EDITOR
   for git, say) opens the file over that window, in its place, rather

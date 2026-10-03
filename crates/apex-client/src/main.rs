@@ -27,6 +27,7 @@ mod commands;
 mod completion;
 mod cwdbar;
 mod glide;
+mod look;
 mod miniature;
 mod restart;
 mod strips;
@@ -161,6 +162,9 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::OpenPath, _, cx| this.open_quick(cx)))
             .on_action(cx.listener(|this, _: &shell::GotoAll, _, cx| this.open_finder(true, cx)))
             .on_action(cx.listener(|this, _: &shell::NextNotification, window, cx| this.next_notification(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::Find, window, cx| this.find_start(window, cx)))
+            .on_action(cx.listener(|this, _: &shell::FindNext, window, cx| this.find_next(false, window, cx)))
+            .on_action(cx.listener(|this, _: &shell::FindPrevious, window, cx| this.find_next(true, window, cx)))
             .on_action(cx.listener(|this, _: &shell::StashWindow, window, cx| this.stash_key(window, cx)))
             .on_action(cx.listener(|this, _: &shell::RestartServer, window, cx| this.restart_server_asked(window, cx)))
             .on_action(cx.listener(|this, _: &shell::Commands, _, cx| this.open_commands(cx)))

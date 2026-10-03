@@ -450,6 +450,12 @@ impl Theme {
     /// colour on the paper, the text in that colour -- the action's for
     /// B2, the blue for B3 -- deepened (or, on dark, lightened) to read on
     /// it. (background, ink)
+    /// The faint wash on every place a window's Look word is while a look
+    /// goes on there: B3's blue, a good deal paler than its sweep.
+    pub fn look_mark(&self) -> u32 {
+        crate::text_element::mix(self.body_bg, self.look_hl, if is_dark() { 0.17 } else { 0.07 })
+    }
+
     pub fn sweep(&self, exec: bool) -> (u32, u32) {
         let c = if exec { self.exec_hl } else { self.look_hl };
         if is_dark() {
