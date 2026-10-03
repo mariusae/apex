@@ -7,7 +7,9 @@
 //! word starts and after `/` next, runs of consecutive matches, and pays
 //! for gaps and for the wrong case; open windows before closed files at
 //! equal scores. A path that matches nothing can still be opened as
-//! typed.
+//! typed. A window's label (its own, or Errors and Preview, as its tag
+//! has it) is beside its name in its row, a chip, and is matched too, on
+//! its own as a name; windows covered by another are listed after it.
 //!
 //! ⌘⇧P is the same across every tab of the window: the windows open in
 //! each session the tabs hold (this one's and the parked ones', from
@@ -45,11 +47,22 @@ pub struct Entry {
 }
 
 impl Entry {
-    /// What a query is matched against: the path, and the label after.
-    fn search(&self) -> String {
-        match &self.label {
-            Some(l) => format!("{} {l}", self.name),
-            None => self.name.clone(),
+    /// `query`'s score against the entry: the best of its path, its label
+    /// alone (a name of its own: `rust-analyzer`, `$EDITOR for git`), and
+    /// the two together (a query that is some of each).
+    fn score(&self, query: &str) -> Option<f64> {
+        let path = score(query, &self.name);
+        let Some(l) = self.label.as_deref().filter(|l| !l.is_empty()) else { return path };
+        [path, score(query, l), score(query, &format!("{} {l}", self.name))].into_iter().flatten().reduce(f64::max)
+    }
+
+    /// The path as a row shows it: its last part (a folder's with its
+    /// slash) and the folder it is in.
+    fn split(&self) -> (String, String) {
+        let trimmed = self.name.trim_end_matches('/');
+        match trimmed.rfind('/') {
+            Some(k) if k + 1 < trimmed.len() => (self.name[k + 1..].to_string(), self.name[..=k].to_string()),
+            _ => (self.name.clone(), String::new()),
         }
     }
 }
@@ -85,7 +98,7 @@ impl Finder {
         if q.is_empty() {
             self.entries.iter().filter(|e| e.window.is_some()).cloned().map(Pick::Entry).collect()
         } else {
-            let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| score(q, &e.search()).map(|s| (s, i, e))).collect();
+            let mut scored: Vec<(f64, usize, &Entry)> = self.entries.iter().enumerate().filter_map(|(i, e)| e.score(q).map(|s| (s, i, e))).collect();
             // best first; open before closed; this tab before others; then
             // the order we had
             let here = |e: &Entry| e.tab.as_ref().map(|(id, _)| Some(*id) == self.here).unwrap_or(true);
@@ -167,12 +180,20 @@ fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label:
     // after): going to one brings it back
     let order = (0..l.cols.len()).flat_map(|ci| apex_core::tiling::stash_order(l, ci)).map(|(w, _)| w);
     let orphans = l.stash.iter().filter(|s| l.column(s.col).is_none()).map(|s| s.slot.window);
-    for w in order.chain(orphans) {
-        let (name, label) = (node.window_path(w), node.window_label(w));
+    // each with the windows it covers after it (`Cover`): going to one
+    // brings it up
+    for w in order.chain(orphans).flat_map(|w| l.stack(w)) {
+        let (name, kind) = (node.window_path(w), node.window_kind(w));
+        // the label its tag shows: its own, or what its kind says
+        let label = node.window_label(w).or_else(|| match kind {
+            WinKind::Errors => Some("Errors".into()),
+            WinKind::Preview => Some("Preview".into()),
+            _ => None,
+        });
         if name.is_empty() && label.is_none() {
             continue;
         }
-        out.push(Entry { name, label, window: Some(w), kind: node.window_kind(w), tab: tab.clone() });
+        out.push(Entry { name, label, window: Some(w), kind, tab: tab.clone() });
     }
     for p in recently_closed(url) {
         if !out.iter().any(|e| e.name == p && e.kind == WinKind::File) {
@@ -338,11 +359,8 @@ impl Acme {
             let picked = i == f.cursor;
             let dim = crate::shell::palette_dim(picked);
             let Pick::Entry(e) = pick;
-            let (dir, name) = match (&e.label, e.name.rfind('/')) {
-                (Some(l), _) => (e.name.clone(), l.clone()),
-                (None, Some(k)) if k + 1 < e.name.len() => (e.name[..=k].to_string(), e.name[k + 1..].to_string()),
-                _ => (String::new(), e.name.clone()),
-            };
+            // the name, its label beside it as the tag has it, the folder
+            let (name, dir) = e.split();
             let open = e.window.is_some();
             let mark = match (open, e.kind) {
                 (true, WinKind::Term) => "▶",
@@ -357,6 +375,22 @@ impl Acme {
                 // one line, whatever the lengths: the name and the badges
                 // keep theirs, the directory gives way and is cut short
                 .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().when(!open && !picked, |d| d.text_color(dim)).child(name))
+                .when_some(e.label.clone().filter(|l| !l.is_empty()), |d, l| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .max_w(px(220.))
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .px(px(6.))
+                            .rounded(px(4.))
+                            .text_size(px(11.5))
+                            .bg(if picked { gpui::hsla(0., 0., 1., 0.18) } else { rgb(crate::theme::step(t.panel_bg, 1)).into() })
+                            .text_color(if picked { gpui::white() } else { rgb(t.panel_text).into() })
+                            .child(l),
+                    )
+                })
                 .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(dim).child(dir))
                 .when(!open, |d| d.child(div().flex_none().whitespace_nowrap().text_size(px(11.)).text_color(dim).child("closed")))
                 // the tab it is in: this one's marked so, the others named
@@ -427,6 +461,26 @@ mod tests {
         let picks = f.picks();
         assert!(matches!(&picks[0], Pick::Entry(e) if e.name == "/x/open.rs"), "{picks:?}");
         assert_eq!(picks.len(), 2);
+    }
+
+    #[test]
+    fn a_window_is_found_by_its_label_and_shows_its_name_and_folder() {
+        let e = |name: &str, label: Option<&str>, w: u64| Entry { name: name.into(), label: label.map(String::from), window: Some(WindowId(w)), kind: WinKind::File, tab: None };
+        let f = Finder {
+            filter: "analyzer".into(),
+            cursor: 0,
+            entries: vec![e("/src/apex/notes.md", None, 1), e("/src/apex/", Some("rust-analyzer"), 2), e("/src/apex/a/x.rs", None, 3)],
+            caret_since: std::time::Instant::now(),
+            all: false,
+            here: None,
+        };
+        let picks = f.picks();
+        assert_eq!(picks.len(), 1, "{picks:?}");
+        assert!(matches!(&picks[0], Pick::Entry(e) if e.window == Some(WindowId(2))));
+        // a folder's last part with its slash, and the folder it is in
+        assert_eq!(e("/src/apex/", None, 1).split(), ("apex/".to_string(), "/src/".to_string()));
+        assert_eq!(e("/src/apex/notes.md", None, 1).split(), ("notes.md".to_string(), "/src/apex/".to_string()));
+        assert_eq!(e("/", None, 1).split(), ("/".to_string(), String::new()));
     }
 
     #[test]
