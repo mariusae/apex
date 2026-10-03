@@ -2070,9 +2070,9 @@ impl Acme {
     }
 
     /// The view the keys go to, as `key_down` finds it: the text under
-    /// the pointer; over a page's scrollbar or no text at all, the last
-    /// text selected in; over a terminal, none of acme's (the terminal
-    /// has its own cursor). None while apex is not in front.
+    /// the pointer; over a page's scrollbar, the last text selected in;
+    /// over a terminal, none of acme's (the terminal has its own cursor);
+    /// over no window, none. None while apex is not in front.
     pub fn key_view(&self) -> Option<ViewId> {
         if !self.app_active {
             return None;
@@ -2085,7 +2085,9 @@ impl Acme {
         match self.locate(self.pointer.unwrap_or(self.last_mouse)) {
             Some((Target::View(v), _)) => Some(v),
             Some((Target::Term(..), _)) => None,
-            Some((Target::Web(_), _)) | None => self.node.seltext,
+            Some((Target::Web(_), _)) => self.node.seltext,
+            // on no window: no keys, and no ring
+            None => None,
         }
     }
 
@@ -4683,10 +4685,13 @@ impl Acme {
                 None => return,
             },
             // a page's scrollbar holds no text: the last selected does
-            Some((Target::Web(_), _)) | None => match self.node.seltext {
+            Some((Target::Web(_), _)) => match self.node.seltext {
                 Some(v) => Target::View(v),
                 None => return,
             },
+            // on no window (the ground between them, a gap): nowhere, as
+            // acme's rowtype has it -- and no ring says otherwise
+            None => return,
             Some((t, _)) => t,
         };
         // a key in a window attends to it: its notification goes
