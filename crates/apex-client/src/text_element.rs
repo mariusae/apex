@@ -1020,7 +1020,7 @@ impl Head {
     }
 
     /// The path shortened to a suffix: its first `n` folders put away
-    /// behind `…/` -- a folder itself, the last of those put away, which
+    /// behind `⋯/` -- a folder itself, the last of those put away, which
     /// B1 lists and B3 plumbs as it would have -- the rest as they were,
     /// the name always. Unchanged when there are not `n` to put away.
     pub fn elided(&self, n: usize) -> Head {
@@ -1030,7 +1030,8 @@ impl Head {
         }
         let (start, end) = (dirs[0].0, dirs[n - 1].1);
         let hidden = dirs[n - 1].2;
-        const ELLIPSIS: &str = "…/";
+        // the midline ellipsis: centred on the line, as the text's ink is
+        const ELLIPSIS: &str = "⋯/";
         let at = |p: usize| if p >= end { p + start + ELLIPSIS.len() - end } else { p };
         let mut h = Head { text: format!("{}{ELLIPSIS}{}", &self.text[..start], &self.text[end..]), ..Head::default() };
         h.atoms.push((start, start + ELLIPSIS.len(), hidden));
@@ -2236,15 +2237,15 @@ mod head_tests {
         assert!(p.text.starts_with(&format!("{here}s")), "{:?}", p.text);
         let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
         assert!(p.text.starts_with("src/"), "{:?}", p.text);
-        // shortened to a suffix: the first folders behind `…/`, itself the
+        // shortened to a suffix: the first folders behind `⋯/`, itself the
         // last of them put away (B1 lists it, B3 plumbs it); the rest, the
         // label and the verbs as they were, further along by the difference
         let h = Head::build("/a/bb/c/notes.md", Some("mine"), &["Del"], true, true);
         // (its folders `/`, `a/`, `bb/`, `c/`: three put away)
         let e = h.elided(3);
         let parts: Vec<(&str, Atom)> = e.atoms.iter().map(|&(a, b, x)| (&e.text[a..b], x)).collect();
-        assert_eq!(&parts[..3], &[("…/", Atom::Dir(6)), ("c/", Atom::Dir(8)), ("notes.md", Atom::Name)]);
-        assert!(e.text.starts_with("…/c/notes.md"), "{:?}", e.text);
+        assert_eq!(&parts[..3], &[("⋯/", Atom::Dir(6)), ("c/", Atom::Dir(8)), ("notes.md", Atom::Name)]);
+        assert!(e.text.starts_with("⋯/c/notes.md"), "{:?}", e.text);
         let (bar, ebar) = (h.bar.unwrap(), e.bar.unwrap());
         assert_eq!(&h.text[bar..], &e.text[ebar..], "what follows the path, as it was");
         assert_eq!(h.text.len() - bar, e.text.len() - ebar);

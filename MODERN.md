@@ -413,7 +413,7 @@ windows put away out of the tiling, which is the core's
   a window's path that takes more than half its tag and is what makes the
   tag wrap is drawn from a suffix instead -- the fewest of its leading
   folders put away for the tag to fit one line, its name always kept --
-  behind `…/`, which says so. `…/` is a folder like the others: the last
+  behind `⋯/`, which says so. `⋯/` is a folder like the others: the last
   one it puts away, which B1 lists and B3 plumbs. A tag of more lines
   than one (a newline in it) is long anyway and keeps its path whole, as
   does one that would not fit however short the path.
