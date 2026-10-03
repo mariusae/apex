@@ -394,7 +394,7 @@ impl Acme {
         // the oldest first, so the latest lies on top
         for (i, &w) in wins.iter().enumerate().rev() {
             let picked = self.shelf.pick == Some(w) && self.shelf.hovered;
-            stack = stack.child(self.shelf_card(w, i, right_of(i) + 4., card_w, picked, cx));
+            stack = stack.child(self.shelf_card(w, i, right_of(i) + 4., card_w, picked, k, cx));
         }
         // keep the fan moving until it settles, and close it once the
         // pointer has been off it a moment (not while a button is held:
@@ -437,7 +437,7 @@ impl Acme {
 
     /// Stashed window `w`'s card: its handle's dot and its name, `right`
     /// in from the stack's right end, `w_px` wide.
-    fn shelf_card(&self, w: WindowId, i: usize, right: f32, w_px: f32, picked: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn shelf_card(&self, w: WindowId, i: usize, right: f32, w_px: f32, picked: bool, fan: f32, cx: &mut Context<Self>) -> AnyElement {
         let t = crate::theme::theme();
         // (notified, its handle says so)
         let bg = if picked {
@@ -447,7 +447,13 @@ impl Acme {
         };
         let label = self.shelf_label(w);
         let d = self.window_dot(w);
-        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.14), offset: gpui::point(px(0.), px(1.)), blur_radius: px(3.), spread_radius: px(0.), inset: false };
+        // one shadow for the hand, not one a card: the top card's drops
+        // onto the bar; each under it shows only its edge, a hairline of
+        // shade where it peeks out from under the one over it -- a card's
+        // own drop shadow coming back as the fan opens and they part
+        let drop = |a: f32| gpui::BoxShadow { color: gpui::hsla(0., 0., 0., a), offset: gpui::point(px(0.), px(1.)), blur_radius: px(3.), spread_radius: px(0.), inset: false };
+        let edge = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.10 * (1. - fan)), offset: gpui::point(px(-1.), px(0.)), blur_radius: px(1.5), spread_radius: px(0.), inset: false };
+        let shadow = if i == 0 { vec![drop(0.14)] } else { vec![edge, drop(0.14 * fan)] };
         div()
             .id(("shelf-card", i))
             .absolute()
@@ -459,7 +465,7 @@ impl Acme {
             .bg(rgb(bg))
             .border_1()
             .border_color(rgb(if picked { t.accent } else { t.body_border }))
-            .shadow(vec![shadow])
+            .shadow(shadow)
             .flex()
             .flex_row()
             .items_center()
