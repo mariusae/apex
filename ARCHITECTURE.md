@@ -133,7 +133,7 @@ A few things in these diagrams are what the review below takes apart:
 - **The app carries a second server.** `Backend::Local` sits in the app
   as an alternative to the daemon (§3).
 - **Opening goes the long way round.** It runs Plumb, then Goto, then
-  OpenFile, then OpenWindow, and in step 13 a refused plumb ends as a
+  OpenFile, then OpenWindow, and in step 14 a refused plumb ends as a
   proposal to the leader (§1).
 
 ---
