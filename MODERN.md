@@ -415,8 +415,10 @@ windows put away out of the tiling, which is the core's
   folders put away for the tag to fit one line, its name always kept --
   behind `⋯/`, which says so. `⋯/` is a folder like the others: the last
   one it puts away, which B1 lists and B3 plumbs. A tag of more lines
-  than one (a newline in it) is long anyway and keeps its path whole, as
-  does one that would not fit however short the path.
+  than one (a newline in it) is long anyway and keeps its path whole.
+  One that would not fit on a line however short the path (a long name,
+  a verb's icon more) has it as short as it goes, the name alone after
+  `⋯/` -- never whole again for want of a few pixels.
 - **Looking as you type** (`look.rs`): the query is the first `Look`'s
   argument in a window's tag (every tag begins with `Look `), the result
   the window's selection, as acme's Look has them. While the caret is in

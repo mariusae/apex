@@ -1285,8 +1285,8 @@ pub struct Tint {
 /// A window tag's head with its path shortened to a suffix, when the
 /// path is long -- more than half the tag's width -- and is what makes the
 /// tag wrap: the fewest of its leading folders put away (`Head::elided`)
-/// for the tag to be one line, the name always kept. None when the tag
-/// fits whole, or would not fit however short the path.
+/// for the tag to be one line -- or, when no number will do, all of them
+/// -- the name always kept. None when the tag fits whole.
 fn shortened(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, tint: Option<Tint>, head: &Head) -> Option<Head> {
     let wrap = wrap?;
     let dirs = head.path_dirs();
@@ -1305,7 +1305,10 @@ fn shortened(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec,
     if lay.x_for_index(end) - lay.x_for_index(dirs[0].0) <= wrap / 2. {
         return None;
     }
-    (1..=dirs.len()).map(|n| head.elided(n)).find(|h| line(h).subs.len() <= 1)
+    // the fewest put away for one line; none enough (more icons, a long
+    // name), all but the name -- shortened the same however the tag's
+    // icons come and go, not whole again for want of a pixel
+    (1..=dirs.len()).map(|n| head.elided(n)).find(|h| line(h).subs.len() <= 1).or_else(|| Some(head.elided(dirs.len())))
 }
 
 fn shape(
