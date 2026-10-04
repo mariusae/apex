@@ -4,9 +4,12 @@
 //! where the selection was when the typing began (its anchor): a letter
 //! more narrows to the same place or one further on, a letter less goes
 //! back; empty, the selection is where it began; nothing found, it stays,
-//! and the argument is struck through. ⌘F takes the caret (and the
-//! pointer, as acme's moves) to the argument; ⌘G and ⌘⇧G look for it
-//! again forwards and back. Every place the word is in the window is
+//! and the argument is struck through. Escape ends it, the selection a
+//! caret at its end and the pointer there, to edit where it found (while
+//! typing, the pointer stays: the keys go where it is). ⌘F takes the
+//! caret (and the pointer, as acme's moves) to the argument; ⌘G and ⌘⇧G
+//! look for it again forwards and back, the pointer on what they find as
+//! B3's is. Every place the word is in the window is
 //! washed faintly while a look goes on there -- while the argument is
 //! live, or the selection is one of them (after ⌘G, or B3, which puts
 //! its word in the argument too); once the selection is elsewhere, the
@@ -53,6 +56,19 @@ impl Acme {
         };
         let failed = !self.look_from(w, &arg, anchor, false);
         self.looking = Some(Live { window: w, anchor, arg, failed });
+    }
+
+    /// Escape in the argument: the look over, the selection made a caret
+    /// at its end and the pointer taken there, as B3's is -- the keys
+    /// following it into the text, to edit where the look found.
+    pub fn look_done(&mut self, w: WindowId) {
+        self.looking = None;
+        let v = ViewId::Body(w);
+        let (_, q1) = self.node.selection(v).unwrap_or((0, 0));
+        let _ = self.node.select(&mut self.log, v, q1, q1);
+        self.node.warp = Some(apex_core::tiling::Warp::Sel(v));
+        self.show_at.insert(v, (q1, 1));
+        self.after();
     }
 
     /// `arg` looked for in window `w`'s body from `from` (forwards from its
@@ -115,6 +131,10 @@ impl Acme {
         if let Some(l) = self.looking.as_mut().filter(|l| l.window == w) {
             l.failed = !found;
             l.anchor = self.node.selection(v).unwrap_or(l.anchor);
+        }
+        // the pointer onto what was found, as B3 takes it
+        if found {
+            self.node.warp = Some(apex_core::tiling::Warp::Sel(v));
         }
         self.after();
         cx.notify();

@@ -425,10 +425,13 @@ windows put away out of the tiling, which is the core's
   that argument, each change looks again from where the selection was
   when the typing began: a letter more narrows there or further on, a
   letter less goes back, empty puts the selection back; nothing found,
-  it stays and the argument is struck through. A click ends it. ⌘F takes
+  it stays and the argument is struck through. A click ends it, and so
+  does escape, which leaves a caret at the end of what was found with
+  the pointer on it, to edit there. ⌘F takes
   the caret and the pointer to the argument (typing `Look ` first where
   a tag has none), selected to type over; ⌘G and ⌘⇧G look again forwards
-  and back (⌘J is the next notification now). B3 on a word, found in its
+  and back, the pointer onto what they find as B3's is (⌘J is the next
+  notification now). B3 on a word, found in its
   window, puts the word in the argument too. While a look goes on in a
   window -- live, or its selection one of the places -- every place the
   word is is washed faintly in B3's blue, under the selection; once the

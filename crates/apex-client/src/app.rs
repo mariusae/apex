@@ -4722,6 +4722,16 @@ impl Acme {
                 if !matches!(ks.key.as_str(), "up" | "down" | "left" | "right" | "pageup" | "pagedown") {
                     self.node.activecol = self.column_of_view(v);
                 }
+                // escape in a look as you type: done looking, and editing
+                // where it found
+                if let ViewId::Tag(w) = v {
+                    if ks.key == "escape" && self.looking.as_ref().is_some_and(|l| l.window == w) {
+                        self.look_done(w);
+                        self.completion_follow(cx);
+                        cx.notify();
+                        return;
+                    }
+                }
                 self.text_key(v, ks, cx);
                 // in a tag: its Look's argument, looked for as it is typed;
                 // in a body: any look there is over
