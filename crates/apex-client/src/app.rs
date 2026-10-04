@@ -4993,10 +4993,12 @@ impl Acme {
                     }
                 }
                 "enter" => {
-                    // acme -a, always: the new line starts with the whitespace
-                    // the one before it starts with, up to dot
+                    // acme -a, unless `Indent off` says otherwise: the new
+                    // line starts with the whitespace the one before it
+                    // starts with, up to dot
+                    let auto = v.window().and_then(|w| self.node.state.window(w).ok()).is_some_and(|w| w.autoindent);
                     let indent: String = match v {
-                        ViewId::Body(_) => {
+                        ViewId::Body(_) if auto => {
                             let start = t.line_start(t.line_of(q0.min(t.len())));
                             t.slice(start, q0).chars().take_while(|c| *c == ' ' || *c == '\t').collect()
                         }
