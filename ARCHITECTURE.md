@@ -550,6 +550,111 @@ With these, `Send`, `ID`, `PutTrimmed`, the preview rule sync and
 
 ---
 
+## 5. Pages: one view in the client, driven by tools
+
+Preview, Web, diffs and the agent's pages are, today, special cases
+spread over every layer:
+- two body kinds and two window kinds (`Body::Web`/`Html`,
+  `WinKind::Web`/`Preview`);
+- three proposals: `OpenWeb`, `OpenHtml`, `WebNavigate`;
+- Look in a page through `page_finds`;
+- the core's `Web` built-in, with the client's URL scheme in it;
+- page-verb parsing, Back/Fwd/Get interception and `ClientDo` in the
+  client;
+- hard-coded Preview rules in the server;
+- `apex md` in the CLI.
+
+The primitive that replaces them: **the client provides one page view and
+knows nothing about what is in it; every page window is owned by a tool.**
+
+**The client's whole job:**
+- Render a URL and its subresources.
+- Provide the generic affordances: scroll, select and copy, find, the
+  scrollbar.
+- Report what happens in the page to the window's owner.
+- Carry out commands sent to the page.
+
+### The parts
+
+1. **One body kind, `Page { url }`.** The URL can be:
+   - `http(s)://`: the open web, fetched through the session's host, as
+     a terminal there would see it;
+   - `apexfile://`: the host's files;
+   - `apex+tool://NAME/…`: served by that tool over the I/O plane.
+
+   This is the "a tool can serve requests" primitive that §3 found
+   missing.
+
+   A page that changes as its source is typed in (Preview) can instead
+   take its HTML from a buffer the tool writes, as `Html` does now. That
+   keeps the in-place update that preserves scroll position.
+2. **Page events go to the owner**, as plumbs go to a rule's tool:
+   - **Navigation requested** (a link, a form, a script). The tool
+     answers allow, redirect, or "handled" (it opened a file in apex,
+     handed the URL to the system browser).
+   - **Title changed.**
+   - **Loading started and ended.**
+   - **A page verb run.**
+3. **Commands from the owner to the page:**
+   - navigate, reload, back, forward;
+   - find;
+   - scroll to a place (Preview following the caret);
+   - run a page verb;
+   - patch the content in place.
+
+### What becomes a tool
+
+- **Web.** A small tool on the session's host.
+  - It answers the `Web` and `Newweb` commands and owns the windows they
+    make.
+  - It keeps their back/forward history. The page's history leaves the
+    session's back stack, so `WebNavigate` and the mixed history model in
+    the core go.
+  - It decides that a link to the session's host opens in apex, and that
+    a `mailto:` goes to the system.
+- **Preview.** Already a tool. It takes over everything still elsewhere:
+  - which converter runs for which file (`apex-core/src/preview.rs`);
+  - its own rules (none hard-coded in the server);
+  - Markdown conversion (`apex md`, out of the CLI);
+  - following the caret.
+- **Diff, the agent's pages, Changes.** Tools serving pages, with no
+  special API. `Tool::diff` becomes library code.
+
+### What goes elsewhere
+
+- **Kinds and proposals.** `Body::Web`/`Html` and `WinKind::Web`/`Preview`
+  collapse into one kind. `OpenWeb`, `OpenHtml` and `WebNavigate` go:
+  `Open` with a `Page` body covers them (§1).
+- **In the client:**
+  - page-verb parsing and the Back/Fwd/Get interception in
+    `Acme::execute`;
+  - `ClientDo` for preview and open;
+  - `page_finds` (find becomes a command to the page).
+
+  What remains in the client is renderer code.
+- **In the core:** the `Web` built-in, `web_url` (the client's
+  `apexfile://` scheme) and `web_navigate`.
+
+### Decisions
+
+- **The open web goes through the host.**
+  - For a remote session that adds latency; for a local one nothing
+    changes.
+  - It is also the more correct choice: the page sees the host's network,
+    as a terminal there does.
+- **Cookies and logins stay in the client's view.** They are per machine,
+  not per session, which is right: they are the user's, not the
+  session's.
+- **A page whose tool has gone is inert.** Its content stays and its links
+  do nothing. A built-in fallback (links open a new page) would bring
+  back the policy the client is giving up.
+- **Generic affordances stop at what needs no knowledge of the page.**
+  Find, copy and scroll are the client's. Anything that knows what the
+  page means (a table of contents, Mermaid, page verbs) comes from the
+  page itself, as a script or `<meta>` the tool supplies.
+
+---
+
 ## Plan
 
 In order. Each step stands on its own.
@@ -577,21 +682,27 @@ In order. Each step stands on its own.
    bridge and Go surfaces from one schema, with a test that they agree.
 4. **Delete `Backend::Local`.** Run the daemon in-process over a socket
    pair (§3).
-5. **Move editing rules into the core and UI policy out of it** (§2):
+5. **Pages** (§5):
+   - one `Page` body;
+   - tool-served URLs on the I/O plane;
+   - page events to the owner and commands from it;
+   - Web as a tool;
+   - Preview owning its converters and rules.
+6. **Move editing rules into the core and UI policy out of it** (§2):
    - `Node::key` for keyboard editing;
    - effects returned rather than queued;
    - focus as an explicit input;
    - intent-named layout operations;
    - UI built-ins to client or server handlers;
    - utilities to their crates.
-6. **Decide: replicate logical layout, not pixels.**
+7. **Decide: replicate logical layout, not pixels.**
    - Share only order, shares, and the full/stashed/cover flags.
    - Each client runs the tiling with its own metrics.
    - This removes warps, mouse vocabulary and font state from the core,
      and makes several clients consistent.
    - It reverses a deliberate choice in DESIGN.md, so it's the one
      decision here that needs a design discussion first.
-7. **Client cleanups:**
+8. **Client cleanups:**
    - one `ListPicker`;
    - one overlay state;
    - one blink clock;
