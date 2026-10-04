@@ -24,6 +24,120 @@ bypass them.
 
 ---
 
+## How it fits together today
+
+Who talks to whom, and over what. One daemon runs per host and holds
+many sessions. Each session is a set of logs (shards) and a replica of
+their state.
+- **The UI** that attaches takes the leases. It is the **leader**: it
+  sequences edits to buffers, windows and the layout, and applies
+  proposals.
+- **The daemon** leads the shards only it can write: terminals, the
+  metalog, the registry. It runs everything that needs the host.
+- **Tools and the CLI** attach the same way. They keep replicas, and
+  change things only by proposing.
+
+```mermaid
+flowchart LR
+    subgraph app["apex app (one per machine)"]
+        direction TB
+        ui["gpui UI<br/>input, drawing, overlays"]
+        lead["Node replica<br/>leader: buffers, windows, layout"]
+        pages["web views (WKWebView)<br/>Web and Html pages"]
+        local["Backend::Local<br/>in-process server (-local)"]
+        ui --- lead
+        ui --- pages
+    end
+
+    subgraph daemon["apexd (one per host)"]
+        direction TB
+        sess["session<br/>log + server Node replica"]
+        srv["Server<br/>commands, Get/Put, plumber,<br/>file watch + rescan, ⌘O finder"]
+        term["ptys + VT<br/>leads terminal shards"]
+        plane["I/O plane<br/>apexfile://, http proxy, CONNECT"]
+        sess --- srv
+        sess --- term
+    end
+
+    subgraph tools["tools (processes on the host)"]
+        direction TB
+        sdk["apex-tool SDK users<br/>exp/agent, exp/acp, apex diff"]
+        raw["Remote/Proposal users<br/>lsp, preview, win"]
+        bridge["apex tool bridge<br/>JSON over stdio"]
+        go["Go SDK and<br/>JSON tools"]
+        cli["apex CLI and scripts"]
+        go --> bridge
+    end
+
+    host[("host<br/>files, processes,<br/>network")]
+    servers["language servers,<br/>converters, agents"]
+
+    lead <-->|"Append / Entries, leases<br/>Propose ↔ Applied (as leader)<br/>Plumb, OpenFile, Term*, Find*, Cd"| sess
+    pages <-->|"Io frames<br/>(apexfile://, proxied http)"| plane
+    sdk <-->|"Hello(Tool), Entries<br/>Propose ↔ Applied, RuleAdd<br/>Plumb → PlumbAck"| sess
+    raw <-->|"same, without the SDK"| sess
+    bridge <-->|"SDK"| sess
+    cli <-->|"one-shot attach<br/>Propose, Plumb, Term*, Io"| sess
+    srv <--> host
+    term <--> host
+    plane <--> host
+    raw <-->|"LSP JSON-RPC,<br/>converter pipes"| servers
+    sdk <-->|"agent hooks, ACP"| servers
+```
+
+Four flows that show the roles:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as UI (leader)
+    participant D as apexd (session)
+    participant T as tool
+    participant H as host
+
+    Note over UI,D: typing: the leader sequences, the daemon fans out
+    UI->>UI: key → Node::insert (applied locally)
+    UI->>D: Append{shard, entries}
+    D->>D: apply to the server replica, keep in the log
+    D->>T: Entries{shard, entries}
+
+    Note over UI,T: a tool writes: a proposal, routed to the leader
+    T->>D: Propose{id, ReplaceRange{buffer, version, q0, q1, text}}
+    D->>UI: Propose{id, …}
+    UI->>UI: proposal::apply → entries
+    UI->>D: Append{…} and Applied{id, result}
+    D->>T: Entries{…} and Applied{id, result}
+
+    Note over UI,T: B3 on a word a tool's rule claims
+    UI->>D: Plumb{ctx, text, at, sel}
+    D->>D: walk the rule table
+    D->>T: Plumb{id, verb, text, …}
+    T->>D: PlumbAck{id, ok}
+    alt no rule took it
+        D->>UI: Propose{Look{ctx, text}} (or Goto, OpenWindow)
+    end
+
+    Note over UI,H: the host changes things
+    H-->>D: pty output
+    D->>D: VT → TermOp rows (the daemon leads terminals)
+    D->>UI: Entries{term shard}
+    H-->>D: file changed (watch event or 2 s rescan)
+    D->>UI: Propose{SetContent or Stale}
+```
+
+A few things in these diagrams are what the review below takes apart:
+- **Pages bypass the protocol.** The web views talk to the I/O plane
+  directly, beside it rather than through it (§5).
+- **Three tools skip their own SDK.** lsp, preview and win use
+  `Remote`/`Proposal` directly (§4).
+- **The app carries a second server.** `Backend::Local` sits in the app
+  as an alternative to the daemon (§3).
+- **Opening goes the long way round.** It runs Plumb, then Goto, then
+  OpenFile, then OpenWindow, and in step 13 a refused plumb ends as a
+  proposal to the leader (§1).
+
+---
+
 ## 0. Bugs found along the way
 
 These were each checked against the code. Each is small, and they should
