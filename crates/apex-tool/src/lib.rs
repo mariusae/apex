@@ -10,7 +10,13 @@
 //! let mut t = Tool::attach("shout")?;
 //! let w = t.new_window("/tmp/shout")?;
 //! let shout = t.offer(Rule::verb("Shout").window(w))?;
-//! while let Some(ev) = t.next_event(None)? {
+//! loop {
+//!     let ev = match t.next_event(None) {
+//!         Ok(Some(ev)) => ev,
+//!         Ok(None) => continue,
+//!         Err(e) if e.is_closed() => break,
+//!         Err(e) => return Err(e),
+//!     };
 //!     if let Event::Plumb(p) = ev {
 //!         let taken = p.rule == shout && t.append(w, &format!("{}\n", p.text.to_uppercase())).is_ok();
 //!         t.answer(&p, taken)?;
@@ -19,7 +25,8 @@
 //! # Ok::<(), apex_tool::Error>(())
 //! ```
 //!
-//! `next_event` returns `None` when the session is over. A plumb must be
+//! `next_event` returns `Ok(None)` when its wait ran out, and an error
+//! for which `is_closed` holds once the session is over. A plumb must be
 //! answered before its deadline, or the tool is taken to have failed and
 //! the next rule is tried: a second for B3 text, which is a search, and
 //! ten for a verb, which may be work the tool does before it answers.
@@ -97,6 +104,17 @@ impl From<&str> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// What `next_event` says when the session is over.
+const CLOSED: &str = "the session is over";
+
+impl Error {
+    /// The session is over (`next_event`'s end): no more events will
+    /// come, and nothing more can be done in it.
+    pub fn is_closed(&self) -> bool {
+        self.0 == CLOSED
+    }
+}
 
 /// As an offset to `replace`: the end of the text.
 pub const END: usize = usize::MAX;
@@ -322,7 +340,8 @@ impl Tool {
     // ---- events ----------------------------------------------------------
 
     /// The next thing that happened, waiting up to `timeout` (`None`:
-    /// as long as it takes). `Ok(None)` once the session is over.
+    /// as long as it takes): `Ok(None)` when the wait ran out with
+    /// nothing; an error with `is_closed` once the session is over.
     pub fn next_event(&mut self, timeout: Option<Duration>) -> Result<Option<Event>> {
         let deadline = timeout.map(|t| std::time::Instant::now() + t);
         loop {
@@ -332,7 +351,7 @@ impl Tool {
                 return Ok(Some(ev));
             }
             if !alive {
-                return Ok(None);
+                return Err(CLOSED.into());
             }
             let wait = match deadline {
                 Some(d) => {
@@ -609,7 +628,9 @@ impl Tool {
 
     /// Replace the characters `[q0, q1)` with `text`; `END` for either
     /// means the end of the text. Dot is left where the edit leaves it;
-    /// nothing is selected on the tool's behalf.
+    /// nothing is selected on the tool's behalf. An error, and nothing
+    /// written, when the text changed since this tool's replica last saw
+    /// it (the user typing meanwhile): read again and retry.
     pub fn replace(&mut self, w: WindowId, q0: usize, q1: usize, text: &str) -> Result<()> {
         let b = self.body_of(w)?;
         let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
@@ -626,7 +647,12 @@ impl Tool {
                 self.own.pop_front();
             }
         }
-        self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0, q1, text: text.to_string() })?;
+        let r = self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0, q1, text: text.to_string() });
+        if r.is_err() && self.watched.contains(&w) {
+            // it did not land: not ours to expect back
+            self.own.pop_back();
+        }
+        r?;
         Ok(())
     }
 

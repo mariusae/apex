@@ -631,7 +631,6 @@ impl Daemon {
                         if let Some(c) = self.conns.get_mut(&id) {
                             c.sent.insert(shard, 0);
                         }
-                        self.send(id, ServerMsg::ShardReady { shard });
                     }
                     Err(e) => self.send(id, ServerMsg::Error { text: format!("create {shard}: {e}") }),
                 }
@@ -758,11 +757,6 @@ impl Daemon {
                 let e = s.log.unnotify(window);
                 let _ = s.view.state.apply(Shard::Meta, &e);
             }
-            ClientMsg::Ps => {
-                let procs = s.server.processes();
-                self.send(id, ServerMsg::Ps { procs });
-                return;
-            }
             ClientMsg::Named { name: pname, group, pid, cmd } => {
                 if let Some(pid) = s.server.name_process(&pname, group, pid, &cmd) {
                     if let Some(c) = self.conns.get_mut(&id) {
@@ -799,22 +793,16 @@ impl Daemon {
                 }
             },
             ClientMsg::Kill { targets } => {
+                // signalled, and no more: their going is the record's
+                // to say (ProcExit), not a reply after a wait here
                 for t in &targets {
                     s.server.kill(t);
                 }
-                // a moment for the groups to go, then what is left
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                let procs = s.server.processes();
-                self.send(id, ServerMsg::Ps { procs });
                 return;
             }
             ClientMsg::Io { stream, frame } => {
                 self.io(id, name, stream, frame);
                 return;
-            }
-            ClientMsg::Complete { view, ctx, at, prefix } => {
-                let dir = s.server.dir_of(&s.view, ctx);
-                props.push(s.server.complete(view, at, &dir, &prefix));
             }
             ClientMsg::Candidates { view, ctx, at, prefix } => {
                 // to the asker alone: a list to choose from, not an edit

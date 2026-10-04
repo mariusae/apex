@@ -82,8 +82,6 @@ pub struct Link {
     ids: crate::plane::IoIds,
     /// Streams whose frames go to a thread rather than `io`.
     sinks: crate::plane::IoSinks,
-    /// The running commands, after a `Ps` or `Kill`.
-    pub ps: Option<Vec<crate::Running>>,
     /// Terminal text read with `TermRead`.
     pub term_lines: Vec<(TermId, String)>,
     /// Texts programs put on the clipboard (OSC 52), for the UI's.
@@ -247,7 +245,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, ps: None, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -392,7 +390,6 @@ impl Link {
             ServerMsg::Plumb { id, rule, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel }),
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),
-            ServerMsg::Ps { procs } => self.ps = Some(procs),
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
             ServerMsg::Clipboard { text } => self.clips.push(text),
             ServerMsg::Candidates(c) => self.candidates.push(c),
@@ -407,7 +404,6 @@ impl Link {
                     }
                 }
             }
-            ServerMsg::ShardReady { .. } => {}
             ServerMsg::Welcome { .. } => {}
             ServerMsg::Error { text } => {
                 eprintln!("remote: server: {text}");
@@ -846,13 +842,6 @@ impl Remote {
         }
     }
 
-    /// The commands the server runs now.
-    pub fn ps(&mut self, timeout: std::time::Duration) -> Result<Vec<crate::Running>, String> {
-        self.link.ps = None;
-        self.send(&ClientMsg::Ps);
-        self.wait_for(timeout, |l| l.ps.take())
-    }
-
     /// Say what this program is called: its entry in the top row, `ps`
     /// and `Kill` takes `name` (the command of our process group), or a
     /// new one is made for us if none was started by the server.
@@ -863,11 +852,10 @@ impl Remote {
         self.send(&ClientMsg::Named { name: name.to_string(), group, pid: std::process::id(), cmd });
     }
 
-    /// End running commands by name or pid; what is left.
-    pub fn kill(&mut self, targets: Vec<String>, timeout: std::time::Duration) -> Result<Vec<crate::Running>, String> {
-        self.link.ps = None;
+    /// End running commands by name or pid. Their going shows in the
+    /// replicated record (`Meta::procs`) as it happens.
+    pub fn kill(&mut self, targets: Vec<String>) {
         self.send(&ClientMsg::Kill { targets });
-        self.wait_for(timeout, |l| l.ps.take())
     }
 
     /// Subscribe to a file on the host: `GET file://path` with `Watch`.

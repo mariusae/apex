@@ -71,9 +71,6 @@ pub enum Proposal {
     ReplaceRange { select: bool, dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
     /// Text for `dir`'s errors window (acme's errorwin), or the session's.
     Errors { dir: Option<String>, text: String },
-    /// Filename completion (acme's ^F): insert `text` at `at` in `view`,
-    /// if the insertion point is still there.
-    Complete { view: ViewId, at: usize, text: String },
     /// The outcome of an exec.
     Status { ctx: ExecCtx, exec: Seq, status: ExecStatusOp },
     /// Put this text in the snarf buffer (a terminal selection's text).
@@ -229,7 +226,11 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         Proposal::ReplaceRange { select, dir, buffer, version, q0, q1, text } => {
             let ok = node.state.buffer(buffer).map(|b| b.version == version).unwrap_or(false);
             if ok {
-                let view = node.state.buffer(buffer)?.views.keys().next().copied();
+                // the view to select in: the one last selected in, when it
+                // is on this buffer (where the command ran, a Zerox's twin
+                // or not); else a body on it -- not whichever comes first
+                let views: Vec<ViewId> = node.state.buffer(buffer)?.views.keys().copied().collect();
+                let view = node.seltext.filter(|v| views.contains(v)).or_else(|| views.iter().copied().find(|v| matches!(v, ViewId::Body(_)))).or_else(|| views.first().copied());
                 match (select, view) {
                     (true, Some(v)) => {
                         node.select(log, v, q0, q1)?;
@@ -238,19 +239,19 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                     _ => node.replace_text(log, buffer, q0, q1.saturating_sub(q0), &text)?,
                 }
             } else {
-                node.errors(log, dir.as_deref(), &format!("pipe output not applied: buffer changed meanwhile\n{text}"))?;
+                // refused, and said to be: the caller's write did not land.
+                // One that names a directory (a command's pipe output) has
+                // its text kept in that directory's errors window as well
+                if dir.is_some() {
+                    node.errors(log, dir.as_deref(), &format!("pipe output not applied: buffer changed meanwhile\n{text}"))?;
+                }
+                return Err(CoreError::Missing(format!("buffer {buffer} changed meanwhile: at version {}, the write was for {version}", node.state.buffer(buffer).map(|b| b.version).unwrap_or(version))));
             }
             Ok(None)
         }
         Proposal::Errors { dir, text } => {
             node.errors(log, dir.as_deref(), &text)?;
             Ok(None)
-        }
-        Proposal::Complete { view, at, text } => {
-            if node.selection(view)? == (at, at) {
-                node.insert(log, view, &text)?;
-            }
-            Ok(view.window())
         }
         Proposal::Snarf { text } => {
             node.append(log, apex_core::Shard::Layout, apex_core::Op::Layout(apex_core::LayoutOp::Snarf { text }))?;
@@ -399,14 +400,13 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 }),
             }
         }
-        Proposal::Edit { window, program } => {
-            let run = node.run_edit(log, window, &program)?;
-            if !run.output.is_empty() {
-                let dir = node.error_dir(Some(window));
-                node.errors(log, dir.as_deref(), &run.output)?;
-            }
-            Ok(Some(window))
-        }
+        // the Edit command's, whatever asked: its output and its warnings
+        // to the errors window, a file or pipe command refused -- one
+        // meaning, however it arrives
+        Proposal::Edit { window, program } => match node.exec(log, ExecCtx::Window(window), &format!("Edit {program}"))? {
+            Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
+            _ => Ok(Some(window)),
+        },
         Proposal::Select { view, q0, q1 } => {
             // a program moving dot (win's, after its output) is not a
             // look into the window: no scrolling to it, no focus

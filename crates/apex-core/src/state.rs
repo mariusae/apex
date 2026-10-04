@@ -916,6 +916,9 @@ impl State {
             h.update(&[0]);
             h.update(w.label.as_deref().unwrap_or("").as_bytes());
             h.update(&[w.label.is_some() as u8]);
+            // who owns it, keeps it live, works behind it, and how far;
+            // whether it is diagnostic: replicated, so compared
+            h.update(&postcard::to_stdvec(&(w.owner, w.live, w.working, w.progress, w.diagnostic)).unwrap_or_default());
             for (seq, e) in &w.execs {
                 h.update(&seq.to_le_bytes());
                 h.update(e.text.as_bytes());
@@ -938,6 +941,10 @@ impl State {
         for s in &self.layout.stash {
             h.update(&postcard::to_stdvec(s).unwrap_or_default());
         }
+        h.update(b"covers");
+        h.update(&postcard::to_stdvec(&self.layout.covers).unwrap_or_default());
+        h.update(b"nav");
+        h.update(&postcard::to_stdvec(&(&self.layout.nav_back, &self.layout.nav_forward)).unwrap_or_default());
         h.update(self.layout.snarf.as_bytes());
         for (seq, (ctx, e)) in &self.layout.execs {
             h.update(&seq.to_le_bytes());
@@ -954,9 +961,11 @@ impl State {
                     h.update(&c.fg.to_le_bytes());
                     h.update(&c.bg.to_le_bytes());
                     h.update(&[c.flags]);
+                    h.update(&c.link.to_le_bytes());
                 }
             }
             h.update(&[t.cursor.0 as u8, t.cursor.1 as u8, t.cursor_visible as u8, t.alt as u8]);
+            h.update(&postcard::to_stdvec(&(&t.links, t.top, t.total, t.working, t.progress)).unwrap_or_default());
             h.update(&postcard::to_stdvec(&t.marks).unwrap_or_default());
             h.update(&t.exit.unwrap_or(-1).to_le_bytes());
         }

@@ -338,31 +338,6 @@ fn kill_ends_a_running_command() {
 }
 
 #[test]
-fn completion_extends_a_path_or_lists_candidates() {
-    let (mut log, mut node, col, server, _rx) = session();
-    let dir = std::env::temp_dir().join(format!("apex-complete-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("subdir")).unwrap();
-    std::fs::write(dir.join("alpha.txt"), "").unwrap();
-    std::fs::write(dir.join("alpine.txt"), "").unwrap();
-    let w = node.new_window(&mut log, col, "scratch", "al").unwrap();
-    let v = ViewId::Body(w);
-    node.select(&mut log, v, 2, 2).unwrap();
-    // "al" → "alp" (common extension), then nothing more: the candidates are listed
-    let p = server.complete(v, 2, &dir, "al");
-    assert!(matches!(p, apex_server::Proposal::Complete { text: ref t, .. } if t == "p"), "{p:?}");
-    perform(&mut node, &mut log, vec![p]);
-    assert_eq!(body_text(&node, w), "alp");
-    let p = server.complete(v, 3, &dir, "alp");
-    assert!(matches!(p, apex_server::Proposal::Errors { text: ref t, .. } if t.contains("alpha.txt") && t.contains("alpine.txt")), "{p:?}");
-    // a unique directory completes with a slash, a unique file with a space
-    assert!(matches!(server.complete(v, 3, &dir, "su"), apex_server::Proposal::Complete { text: ref t, .. } if t == "bdir/"));
-    assert!(matches!(server.complete(v, 3, &dir, "alph"), apex_server::Proposal::Complete { text: ref t, .. } if t == "a.txt "));
-    assert!(matches!(server.complete(v, 3, &dir, "zz"), apex_server::Proposal::Errors { text: ref t, .. } if t.contains("no matches")));
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn running_commands_are_the_sessions_processes() {
     let (mut log, mut node, col, mut server, mut rx) = session();
     let top = node.state.layout.top.unwrap();
@@ -1382,4 +1357,27 @@ fn b3_puts_the_word_looked_for_in_the_tags_look() {
     perform(&mut node, &mut log, vec![Proposal::Look { ctx: ExecCtx::Window(w), text: "one".into(), reverse: false }]);
     assert_eq!(node.selection(ViewId::Body(w)).unwrap(), (0, 3));
     assert_eq!(node.look_arg(w).map(|a| a.2), Some("one".into()), "{:?}", node.state.buffer(tag).unwrap().text.to_string());
+}
+
+/// A write at a version the buffer has moved past is refused, and says
+/// so (no silent success, no tool text in +Errors); a selecting write
+/// selects in the window last selected in, a Zerox's twin included.
+#[test]
+fn a_stale_write_is_an_error_and_a_selecting_one_selects_where_it_ran() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let w = node.new_window(&mut log, col, "/tmp/twins", "one two\n").unwrap();
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    let old = node.state.buffer(b).unwrap().version;
+    node.insert(&mut log, ViewId::Body(w), "x").unwrap();
+    let r = apex_server::proposal::apply(&mut node, &mut log, Proposal::ReplaceRange { select: false, dir: None, buffer: b, version: old, q0: 0, q1: 0, text: "lost".into() });
+    assert!(r.is_err(), "{r:?}");
+    assert!(!node.state.buffer(b).unwrap().text.to_string().contains("lost"));
+    let errs = node.state.buffers.values().find(|x| x.kind == WinKind::Errors).map(|x| x.text.to_string()).unwrap_or_default();
+    assert!(!errs.contains("lost"), "a tool's text kept in +Errors: {errs:?}");
+    // the twin last selected in has the selection
+    let twin = node.zerox(&mut log, w).unwrap();
+    node.select(&mut log, ViewId::Body(twin), 0, 0).unwrap();
+    let version = node.state.buffer(b).unwrap().version;
+    apex_server::proposal::apply(&mut node, &mut log, Proposal::ReplaceRange { select: true, dir: None, buffer: b, version, q0: 0, q1: 1, text: "Y".into() }).unwrap();
+    assert_eq!(node.selection(ViewId::Body(twin)).unwrap(), (0, 1));
 }

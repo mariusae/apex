@@ -398,3 +398,22 @@ fn a_tools_snarf_is_the_snarf_buffer_and_the_uis_clipboard() {
     assert_eq!(ui.node.state.layout.snarf, "src/a.rs:3:\nhello\n");
     assert_eq!(ui.link.clips, vec!["src/a.rs:3:\nhello\n".to_string()]);
 }
+
+#[test]
+fn next_event_tells_a_wait_run_out_from_the_session_ending() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "watcher").unwrap();
+    // nothing happened: the wait ran out
+    assert_eq!(t.next_event(Some(Duration::from_millis(50))).unwrap(), None);
+    // the session ends: an error that says so, not another None
+    apex_server::remote::end_session(&sock, "main", true).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let end = loop {
+        match t.next_event(Some(Duration::from_millis(50))) {
+            Err(e) => break e,
+            Ok(_) if Instant::now() < deadline => continue,
+            Ok(ev) => panic!("still going: {ev:?}"),
+        }
+    };
+    assert!(end.is_closed(), "{end}");
+}

@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 46;
+pub const PROTOCOL: u32 = 47;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -131,8 +131,6 @@ pub enum ClientMsg {
     /// `RuleAdded`.
     RuleAdd { rule: PlumbRule, priority: i32, mine: bool },
     RuleRm { id: RuleId },
-    /// acme's ^F: complete the path fragment `prefix` typed at `at`.
-    Complete { view: ViewId, ctx: ExecCtx, at: usize, prefix: String },
     /// A tool asks the leader to do something; `id` comes back in `Applied`.
     Propose { id: u64, proposal: Proposal },
     /// The leader's answer to a `Propose` it was handed (id 0: nobody waits).
@@ -159,9 +157,9 @@ pub enum ClientMsg {
     /// Lower a window's notification: from a tool, one it raised; from a
     /// UI, any -- the user taking it, or using the window.
     Unnotify { window: WindowId },
-    /// The commands the server is running (`Ps` answers), and ending them
-    /// by name or pid (acme's Kill; `Ps` answers with what is left).
-    Ps,
+    /// End commands by name or pid (acme's Kill). Nothing comes back:
+    /// what is running is in the replicated record (`Meta::procs`), which
+    /// says when they have gone.
     Kill { targets: Vec<String> },
     /// Change the session's current directory (`apex cd`, the title bar's
     /// crumbs): `dir` absolute, or relative to the session's. A directory
@@ -293,8 +291,6 @@ pub enum ServerMsg {
     Sessions { sessions: Vec<SessionInfo> },
     /// The server stored the client's entries of `shard` up to `seq`.
     Ack { shard: Shard, seq: Seq },
-    /// A client-created shard is recorded and leased.
-    ShardReady { shard: Shard },
     Error { text: String },
     Pong { t: u64 },
     /// The session's environment, after an `Env`.
@@ -308,7 +304,6 @@ pub enum ServerMsg {
     /// Answer with `PlumbAck{id}` within a second.
     Plumb { id: u64, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
     RuleAdded { id: RuleId },
-    Ps { procs: Vec<crate::Running> },
     TermLines { term: TermId, text: String },
     /// A program in a terminal set the clipboard (OSC 52): the snarf
     /// buffer has the text already; a UI puts it on its own clipboard.

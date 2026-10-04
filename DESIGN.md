@@ -554,9 +554,8 @@ client → server
   PlumbAck{id, ok}                        a tool's answer to a Plumb it was handed (the Plumb names
                                           the rule that matched, so a tool with several can tell)
   RuleAdd{rule, priority, mine} · RuleRm{id}
-  Complete{view, ctx, at, prefix}         ^F
   Propose{id, proposal} · Applied{id, result}
-  Env{set} · EnvImport{vars} · Set{key, value, attachment?} · Ps · Kill{targets}
+  Env{set} · EnvImport{vars} · Set{key, value, attachment?} · Kill{targets}
   EndSession{name, force}                 the session ended: killed, everyone cut off (Ended)
   Named{name, group, pid, cmd}            what a program is called: the entry of its process
                                           group (the shell the server started) takes the name in
@@ -567,7 +566,7 @@ client → server
 
 server → client
   Build{protocol, id}                     first frame, frozen: refuse another protocol version
-  Welcome{attachment, snapshot} · Entries{shard, entries} · Ack{shard, seq} · ShardReady{shard}
+  Welcome{attachment, snapshot} · Entries{shard, entries} · Ack{shard, seq}
   Propose{id, proposal} · Applied{id, result}
   Sessions{names} · Error{text} · Pong{t} · Env{vars} · RuleAdded{id}
   PlumbTrace{lines}                       a dry run's report
@@ -576,7 +575,7 @@ server → client
                                           a rule named this tool; answer PlumbAck within a second
   Io{stream, frame}                       Response{status, headers}, Body, End, Reset
   Ended{session}                          the session this connection was on is gone
-  Ps{procs} · TermLines{term, text}
+  TermLines{term, text}
 
 proposals (tools and the server → the leader; applied by whoever leads)
   OpenWindow{col, from?, name, text, hash, select_line?} · NewWindow{col, name} · TermWindow{col, name, term}
@@ -589,7 +588,7 @@ proposals (tools and the server → the leader; applied by whoever leads)
                                                        write to acme's data file leaves it
   Insert{buffer, version, at, text, follow}            at a point, the selection left alone (win);
                                                        follow: a dot at the point moves past the text
-  Errors{dir?, text} · Complete{view, at, text} · Snarf{text} · TermName{window, name}
+  Errors{dir?, text} · Snarf{text} · TermName{window, name}
   CommandStart{name} · CommandExit{name} · Status{ctx, exec, status}
                                           (the top row edited without moving seltext: a command
                                           ending never steals where keys and looks go)

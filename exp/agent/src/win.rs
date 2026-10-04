@@ -313,7 +313,11 @@ impl Pane {
             } else if self.last_render.elapsed() >= MINUTES {
                 self.render()?;
             }
-            match self.t.next_event(Some(Duration::from_millis(20)))? {
+            let ev = match self.t.next_event(Some(Duration::from_millis(20))) {
+                Err(e) if e.is_closed() => return Ok(()),
+                r => r?,
+            };
+            match ev {
                 None if self.w.is_some_and(|w| !self.t.windows().iter().any(|x| x.id == w)) => return Ok(()),
                 None if self.w.is_none() && !self.t.alive() => return Ok(()),
                 None => {}

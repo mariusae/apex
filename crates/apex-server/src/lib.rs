@@ -1234,44 +1234,6 @@ impl Server {
         Ok(names)
     }
 
-    pub fn complete(&self, view: ViewId, at: usize, dir: &Path, prefix: &str) -> Proposal {
-        let (dirpart, base) = match prefix.rsplit_once('/') {
-            Some((d, b)) => (if d.is_empty() { "/".to_string() } else { d.to_string() }, b.to_string()),
-            None => (String::new(), prefix.to_string()),
-        };
-        let where_ = if dirpart.is_empty() { dir.to_path_buf() } else { resolve(dir, &dirpart) };
-        let errdir = Some(dir.to_string_lossy().to_string());
-        let mut names: Vec<(String, bool)> = match std::fs::read_dir(&where_) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .map(|e| (e.file_name().to_string_lossy().to_string(), e.file_type().map(|t| t.is_dir()).unwrap_or(false)))
-                .filter(|(n, _)| n.starts_with(&base))
-                .collect(),
-            Err(e) => return Proposal::Errors { dir: errdir, text: format!("{}: {e}\n", where_.display()) },
-        };
-        names.sort();
-        if names.is_empty() {
-            return Proposal::Errors { dir: errdir, text: format!("{}{}*: no matches\n", if dirpart.is_empty() { String::new() } else { format!("{dirpart}/") }, base) };
-        }
-        // the longest common extension of the candidates past what is typed
-        let first: Vec<char> = names[0].0.chars().collect();
-        let mut common = first.len();
-        for (n, _) in &names[1..] {
-            let c: Vec<char> = n.chars().collect();
-            common = common.min(first.iter().zip(c.iter()).take_while(|(a, b)| a == b).count());
-        }
-        let typed = base.chars().count();
-        let mut extension: String = first[typed..common.max(typed)].iter().collect();
-        if names.len() == 1 {
-            extension.push(if names[0].1 { '/' } else { ' ' });
-        }
-        if extension.is_empty() {
-            let list: String = names.iter().map(|(n, d)| format!("{n}{}\n", if *d { "/" } else { "" })).collect();
-            return Proposal::Errors { dir: errdir, text: list };
-        }
-        Proposal::Complete { view, at, text: extension }
-    }
-
     /// The plumbing rules a session starts with, owned by the session at
     /// a low priority so that anything installed later wins: what B3 did
     /// before there were rules. `.,;:)` after a name are forgiven.

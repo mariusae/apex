@@ -143,6 +143,9 @@ A few things in these diagrams are what the review below takes apart:
 These were each checked against the code. Each is small, and they should
 come before any restructuring.
 
+All are fixed except the `Look` half of 4, which goes with the `Look`
+proposal in the protocol collapse (Plan, step 2).
+
 1. **A tool's write fails silently.**
    - The problem: `Proposal::ReplaceRange` on a version mismatch writes
      "pipe output not applied: buffer changed meanwhile" and the text to
@@ -783,8 +786,8 @@ In order. Each step stands on its own.
    - requests and replies matched by id;
    - the dead variants deleted.
 
-   This roughly halves the proposal and message variants, and fixes bugs
-   4 and 5 as a side effect.
+   This roughly halves the proposal and message variants, and ends the
+   `Look` drift (bug 4) as a side effect.
 3. **Make the tool API complete and honest** (§4):
    - every edit delivered with its origin, and server-side marks;
    - address and Edit-program calls;

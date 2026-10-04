@@ -928,12 +928,6 @@ fn print_proc(pid: u32, name: &str, ctx: ExecCtx, started: u64, dir: &str, cmd: 
     }
 }
 
-fn print_procs(procs: &[apex_server::Running]) {
-    for r in procs {
-        print_proc(r.pid, &r.name, r.ctx, r.started, &r.dir, &r.cmd, None);
-    }
-}
-
 /// `apex ps [-a]`: the session's processes as its record has them
 /// (`Meta::procs`), oldest first; with -a the last few that ended too,
 /// and how each is.
@@ -962,8 +956,18 @@ fn kill(ctx: &Ctx, p: &Parsed) -> R {
     if let Some(t) = p.args.iter().find(|t| !known(t)) {
         return Err(format!("{t}: no such command; apex ps lists them"));
     }
-    let left = c.kill(p.args.clone(), TIMEOUT)?;
-    print_procs(&left);
+    let targets: Vec<&apex_core::state::Proc> = before.iter().filter(|r| p.args.iter().any(|t| r.name == *t || r.pid.to_string() == *t)).collect();
+    let ids: Vec<Seq> = targets.iter().map(|r| r.id).collect();
+    c.kill(p.args.clone());
+    // their going is in the record: a moment for it, then what is left
+    let gone = |r: &Remote| ids.iter().all(|id| r.node.state.meta.procs.iter().find(|x| x.id == *id).is_none_or(|x| !x.running()));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !gone(&c) && Instant::now() < deadline {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    for r in c.node.state.meta.procs.iter().filter(|r| r.running()) {
+        print_proc(r.pid, &r.name, r.origin, r.started, &r.dir, &r.cmd, None);
+    }
     Ok(())
 }
 

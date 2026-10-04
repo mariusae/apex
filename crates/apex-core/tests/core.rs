@@ -943,3 +943,24 @@ fn the_first_look_in_a_tag_has_the_word_looked_for() {
     assert_eq!(find_match(t, "zeta", 0, false), None);
     assert_eq!(find_all(t, "alpha"), vec![(0, 5), (11, 16)]);
 }
+#[test]
+fn the_hash_sees_every_replicated_window_flag_and_the_stacks() {
+    let (mut log, mut node, col) = session();
+    let w = node.new_window(&mut log, col, "/tmp/hashed", "x\n").unwrap();
+    let mut last = node.state.hash();
+    let mut changed = |node: &Node, what: &str| {
+        let h = node.state.hash();
+        assert_ne!(h, last, "{what} left the hash as it was");
+        last = h;
+    };
+    for op in [WindowOp::Own { by: Some(SERVER) }, WindowOp::Live { by: Some(SERVER) }, WindowOp::Working { by: Some(SERVER), at: Some(10) }, WindowOp::Diagnostic { on: true }] {
+        let what = format!("{op:?}");
+        node.append(&mut log, Shard::Window(w), Op::Window(op)).unwrap();
+        changed(&node, &what);
+    }
+    let b = node.create_buffer_as(&mut log, "/tmp/over", "", None, WinKind::File, false).unwrap();
+    node.cover_window(&mut log, w, b, None).unwrap();
+    changed(&node, "a cover");
+    node.append(&mut log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: None, to: Loc { session: None, name: "/tmp/x".into(), pos: Pos::Keep } })).unwrap();
+    changed(&node, "a visit");
+}

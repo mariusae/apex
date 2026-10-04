@@ -941,7 +941,10 @@ impl Win {
             // of us, and what is going on
             win.pulse();
             win.say_waiting()?;
-            let ev = win.t.next_event(Some(Duration::from_millis(20)))?;
+            let ev = match win.t.next_event(Some(Duration::from_millis(20))) {
+                Err(e) if e.is_closed() => return Ok(()),
+                r => r?,
+            };
             if ev.is_some() && std::env::var_os("APEX_ACP_DEBUG").is_some() {
                 eprintln!("acp: {ev:?} len={} mark={} busy={}", win.len, win.mark, win.busy());
             }
