@@ -298,8 +298,15 @@ impl Render for Acme {
         // page's own
         use gpui::CursorStyle;
         let dragging = self.dragging_box();
-        // the line between columns held: the pointer says left and right
-        let held = if self.dragging_edge() { CursorStyle::ResizeLeftRight } else { CursorStyle::ClosedHand };
+        // the line between columns held: the pointer says left and right;
+        // between windows, up and down
+        let held = if self.dragging_edge() {
+            CursorStyle::ResizeLeftRight
+        } else if self.dragging_win_edge() {
+            CursorStyle::ResizeUpDown
+        } else {
+            CursorStyle::ClosedHand
+        };
         // over what a ⌘- or ⌥-click would take: the link's hand
         let hinting = self.hint.is_some();
         let hold = |c: CursorStyle| if dragging { held } else if hinting { CursorStyle::PointingHand } else { c };
@@ -475,6 +482,22 @@ impl Render for Acme {
             area = area.child(r);
         }
         self.bunnies = bunnies;
+        // the lines between the windows in a column, as between columns:
+        // a drag of one makes the windows above and below taller and
+        // shorter (a window's box moves it too, and more)
+        for (ci, col) in l.cols.iter().enumerate() {
+            if !l.shows(ci) || l.full.is_some() || col.full.is_some() || apex_core::tiling::is_strip(col.r) {
+                continue;
+            }
+            for s in col.wins.iter().skip(1) {
+                let w = s.window;
+                let edge = div().size_full().cursor(hold(CursorStyle::ResizeUpDown)).on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| this.press_win_edge(w, e.position, cx)),
+                );
+                area = area.child(at(s.r.x0, s.r.y0 - 6, s.r.dx(), 7, edge.into_any_element()));
+            }
+        }
         // the lines between the columns: a drag of one makes the columns
         // on either side wider and narrower (the column's box moves it
         // too, and more)

@@ -69,6 +69,9 @@ enum BoxTarget {
     /// The line on a column's left, dragged to make the columns wider
     /// or narrower.
     Edge(ColumnId),
+    /// The line above a window, dragged to make it and the window above
+    /// taller or shorter.
+    WinEdge(WindowId),
 }
 
 #[derive(Default)]
@@ -2185,6 +2188,11 @@ impl Acme {
         matches!(self.mouse.box_drag, Some((BoxTarget::Edge(_), _, _)))
     }
 
+    /// The line between two windows is held.
+    pub fn dragging_win_edge(&self) -> bool {
+        matches!(self.mouse.box_drag, Some((BoxTarget::WinEdge(_), _, _)))
+    }
+
     /// A strip pressed: its column's box, as the column tag's box is.
     pub fn press_col_box(&mut self, c: ColumnId, button: MouseButton, pos: Point<Pixels>, shift: bool, cx: &mut Context<Self>) {
         cx.stop_propagation();
@@ -2221,6 +2229,15 @@ impl Acme {
         cx.notify();
     }
 
+    /// The line above window `w` pressed.
+    pub fn press_win_edge(&mut self, w: WindowId, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        if self.mouse.b1.is_none() {
+            self.mouse.box_drag = Some((BoxTarget::WinEdge(w), MouseButton::Left, pos));
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
     /// Where what is being dragged would land were it let go now, in the
     /// area's coordinates: a window, a column, or the column right of a
     /// line (Manifold's placement preview).
@@ -2237,6 +2254,7 @@ impl Acme {
             BoxTarget::Win(w) => self.node.drag_window_preview(w, but, op, p),
             BoxTarget::Col(c) => self.node.drag_column_preview(c, but, op, p),
             BoxTarget::Edge(c) => self.node.column_edge_preview(c, p.0),
+            BoxTarget::WinEdge(w) => self.node.window_edge_preview(w, p.1),
         }
     }
 
@@ -3623,7 +3641,8 @@ impl Acme {
                     BoxTarget::Col(c) => self.node.drag_column(&mut self.log, c, but, op, p),
                     // the line goes where it is let go; a click moves nothing
                     BoxTarget::Edge(c) if (p.0 - op.0).abs() >= 2 => self.node.move_column_edge(&mut self.log, c, p.0),
-                    BoxTarget::Edge(_) => Ok(()),
+                    BoxTarget::WinEdge(w) if (p.1 - op.1).abs() >= 2 => self.node.move_window_edge(&mut self.log, w, p.1),
+                    BoxTarget::Edge(_) | BoxTarget::WinEdge(_) => Ok(()),
                 };
                 if let Err(err) = r {
                     eprintln!("layout: {err}");
@@ -4183,7 +4202,7 @@ impl Acme {
         let r = match bt {
             BoxTarget::Win(w) => self.node.minimize_window(&mut self.log, w),
             BoxTarget::Col(c) => self.node.minimize_column(&mut self.log, c),
-            BoxTarget::Edge(_) => return false,
+            BoxTarget::Edge(_) | BoxTarget::WinEdge(_) => return false,
         };
         if let Err(err) = r {
             eprintln!("layout: {err}");

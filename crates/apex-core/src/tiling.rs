@@ -1042,8 +1042,24 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
     if wi == 0 {
         return None;
     }
+    colmovewin(l, ci, wi, py, info);
+    Some(Warp::WinButton(w))
+}
+
+/// The line above window `wi` moved to `y` (the line itself dragged, or
+/// the window's box within its column): the window above ends there and
+/// this one starts below it, and no other moves. The window above keeps
+/// at least its tag's first line, this one its tag.
+pub fn colmovewin(l: &mut Layout, ci: usize, wi: usize, y: i32, info: &dyn Info) {
+    let n = l.cols[ci].wins.len();
+    if wi == 0 || wi >= n {
+        return;
+    }
+    unfull(l, ci, info);
+    let font = info.font_height().max(1);
+    let wr = l.cols[ci].wins[wi].r;
     let v = l.cols[ci].wins[wi - 1].clone();
-    let mut py = py;
+    let mut py = y;
     if py < v.tagtop_y1(font) {
         py = v.tagtop_y1(font);
     }
@@ -1064,7 +1080,6 @@ pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32)
     r.y0 = r.y1;
     r.y1 = if wi == n - 1 { l.cols[ci].r.y1 } else { l.cols[ci].wins[wi + 1].r.y0 - BORDER };
     winresize(l, ci, wi, r, true, info);
-    Some(Warp::WinButton(w))
 }
 
 /// acme's `makenewwindow`, the placement half: where in column `ci` a

@@ -945,6 +945,26 @@ impl Node {
         l.column(col).map(|c| c.r)
     }
 
+    /// The line above window `w` moved to `y` (the line itself dragged):
+    /// only it and the window above change height.
+    pub fn move_window_edge(&mut self, log: &mut Log, w: WindowId, y: i32) -> Result<()> {
+        let (ci, wi) = self.place_of(w)?;
+        let mut l = self.state.layout.clone();
+        tiling::colmovewin(&mut l, ci, wi, y, &*self.tiling);
+        if l != self.state.layout {
+            self.arrange(log, &l)?;
+        }
+        Ok(())
+    }
+
+    /// Where window `w` would stand with the line above it at `y`.
+    pub fn window_edge_preview(&self, w: WindowId, y: i32) -> Option<Rect> {
+        let (ci, wi) = self.state.layout.place_of(w)?;
+        let mut l = self.state.layout.clone();
+        tiling::colmovewin(&mut l, ci, wi, y, &*self.tiling);
+        l.slot(w).map(|s| s.r)
+    }
+
     /// acme's `rowdragcol`: a column's layout box dragged from `op` to `p`.
     pub fn drag_column(&mut self, log: &mut Log, col: ColumnId, but: i32, op: (i32, i32), p: (i32, i32)) -> Result<()> {
         let ci = self.column_index(col)?;

@@ -891,6 +891,37 @@ fn the_line_between_columns_moves_only_the_widths() {
 }
 
 #[test]
+fn the_line_between_windows_moves_only_the_two_heights() {
+    let mut l = row();
+    add(&mut l, 0, 1, None);
+    add(&mut l, 0, 2, None);
+    add(&mut l, 0, 3, None);
+    let before = wins(&l, 0);
+    let font = info().font_height();
+    // the line above 2 up a few lines: 1 shorter, 2 taller, 3 as it was
+    colmovewin(&mut l, 0, 1, before[1].1 - 5 * font, &info());
+    let after = wins(&l, 0);
+    assert_eq!(after[0].1, before[0].1);
+    assert!(after[0].2 < before[0].2, "{before:?} -> {after:?}");
+    assert_eq!(after[1].1, after[0].2 + BORDER);
+    assert_eq!(after[1].2, before[1].2);
+    assert_eq!(after[2], before[2]);
+    // taken past the window above, it keeps its tag's first line; past
+    // the window's own bottom, this one keeps its tag
+    colmovewin(&mut l, 0, 1, 0, &info());
+    let a = wins(&l, 0);
+    assert!(a[0].2 >= a[0].1 + font && a[0].2 <= a[0].1 + font + 1, "{a:?}");
+    colmovewin(&mut l, 0, 1, 100_000, &info());
+    let a = wins(&l, 0);
+    assert!(a[1].2 - a[1].1 >= font, "{a:?}");
+    assert_eq!(a[2], before[2]);
+    // the top window has no line above it in its column
+    let now = wins(&l, 0);
+    colmovewin(&mut l, 0, 0, 0, &info());
+    assert_eq!(wins(&l, 0), now);
+}
+
+#[test]
 fn a_drags_preview_is_where_the_drop_puts_it() {
     let mut log = Log::new();
     let (a, _) = log.attach(AttachmentKind::Ui, "t");
