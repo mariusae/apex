@@ -1,13 +1,16 @@
 //! Looking as you type, acme's way: the query is the first `Look`'s
-//! argument in a window's tag, the result the window's selection. While
-//! the caret is in that argument, every change to it looks again from
+//! argument in a window's tag, the result the window's selection. Only
+//! an argument written `Look/word` is looked for as typed; the slash says
+//! so in the text (a word typed after a bare `Look ` may be a command).
+//! While the caret is in that argument, every change to it looks again from
 //! where the selection was when the typing began (its anchor): a letter
 //! more narrows to the same place or one further on, a letter less goes
 //! back; empty, the selection is where it began; nothing found, it stays,
 //! and the argument is struck through. Escape ends it, the selection a
 //! caret at its end and the pointer there, to edit where it found (while
 //! typing, the pointer stays: the keys go where it is). ⌘F takes the
-//! caret (and the pointer, as acme's moves) to the argument; ⌘G and ⌘⇧G
+//! caret (and the pointer, as acme's moves) to the argument, making it
+//! `Look/`; ⌘G and ⌘⇧G
 //! look for it again forwards and back, the pointer on what they find as
 //! B3's is. Every place the word is in the window is
 //! washed faintly while a look goes on there -- while the argument is
@@ -38,8 +41,10 @@ impl Acme {
     /// argument changed, looked for again from the anchor; out of it, the
     /// look over.
     pub fn live_look(&mut self, w: WindowId) {
-        let Some((start, end, arg)) = self.node.look_arg(w) else {
-            self.looking = None;
+        let Some(LookArg { start, end, arg, .. }) = self.node.look_arg(w).filter(|a| a.live) else {
+            if self.looking.as_ref().is_some_and(|l| l.window == w) {
+                self.looking = None;
+            }
             return;
         };
         let caret = self.node.selection(ViewId::Tag(w)).unwrap_or((usize::MAX, 0));
@@ -94,15 +99,16 @@ impl Acme {
     }
 
     /// ⌘F: the caret in the Look's argument of the window acme would act
-    /// on (`Look ` typed first when its tag has none), the argument
-    /// selected to type over, and the pointer on it.
+    /// on, made `Look/` (`Look/ ` typed first when its tag has none), the
+    /// argument selected to type over, and the pointer on it.
     pub fn find_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(w) = self.window_at_pointer(window) else { return };
         if self.node.look_arg(w).is_none() {
             let _ = self.node.select(&mut self.log, ViewId::Tag(w), 0, 0);
-            let _ = self.node.insert(&mut self.log, ViewId::Tag(w), "Look ");
+            let _ = self.node.insert(&mut self.log, ViewId::Tag(w), "Look/ ");
         }
-        let Some((start, end, arg)) = self.node.look_arg(w) else { return };
+        let _ = self.node.make_look_live(&mut self.log, w);
+        let Some(LookArg { start, end, arg, .. }) = self.node.look_arg(w) else { return };
         let _ = self.node.select(&mut self.log, ViewId::Tag(w), start, end);
         self.node.warp = Some(apex_core::tiling::Warp::Sel(ViewId::Tag(w)));
         let anchor = self.node.selection(ViewId::Body(w)).unwrap_or((0, 0));
@@ -117,7 +123,7 @@ impl Acme {
     pub fn find_next(&mut self, reverse: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(w) = self.window_at_pointer(window) else { return };
         let v = ViewId::Body(w);
-        let mut arg = self.node.look_arg(w).map(|a| a.2).unwrap_or_default();
+        let mut arg = self.node.look_arg(w).map(|a| a.arg).unwrap_or_default();
         if arg.is_empty() {
             arg = self.node.selected_text(v).unwrap_or_default();
             let _ = self.node.set_look_arg(&mut self.log, w, &arg);
@@ -145,7 +151,7 @@ impl Acme {
     /// them); else none. Found once a version and word.
     pub fn look_marks(&mut self, w: WindowId) -> Rc<Vec<(usize, usize)>> {
         let none = Rc::new(Vec::new());
-        let Some(arg) = self.node.look_arg(w).map(|a| a.2).filter(|a| !a.is_empty()) else { return none };
+        let Some(arg) = self.node.look_arg(w).map(|a| a.arg).filter(|a| !a.is_empty()) else { return none };
         let Some(buf) = self.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| self.node.state.buffer(b).ok()) else { return none };
         let marks = match self.look_cache.get(&w) {
             Some((a, v, m)) if *a == arg && *v == buf.version => m.clone(),
@@ -168,6 +174,6 @@ impl Acme {
     /// found nothing.
     pub fn look_strike(&self, w: WindowId) -> Option<(usize, usize)> {
         self.looking.as_ref().filter(|l| l.window == w && l.failed && !l.arg.is_empty())?;
-        self.node.look_arg(w).map(|(a, b, _)| (a, b))
+        self.node.look_arg(w).map(|a| (a.start, a.end))
     }
 }
