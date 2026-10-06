@@ -3813,16 +3813,28 @@ impl Acme {
         None
     }
 
+    /// What B2 clicked at `at` in `view` runs: in a tag, the whole of a
+    /// `Look/two words/` it is in, spaces and all; else the word there.
+    fn exec_word(&self, view: ViewId, t: &Text, at: usize) -> (usize, usize) {
+        if let ViewId::Tag(w) = view {
+            if let Some((a, z)) = self.node.look_arg(w).filter(|l| l.closed).map(|l| l.span()) {
+                if (a..z).contains(&at) {
+                    return (a, z);
+                }
+            }
+        }
+        expand(t, at, is_exec_char)
+    }
+
     fn take_range_at(&mut self, d: Drag, kind: HlKind) -> Option<(String, (usize, usize))> {
         if let Some(r) = self.explicit_range_at(d) {
             return Some(r);
         }
         let t = self.text_of(d.view)?;
-        let pred: fn(char) -> bool = match kind {
-            HlKind::Exec => is_exec_char,
-            HlKind::Look => is_file_char,
+        let (a, z) = match kind {
+            HlKind::Exec => self.exec_word(d.view, &t, d.anchor),
+            HlKind::Look => expand(&t, d.anchor, is_file_char),
         };
-        let (a, z) = expand(&t, d.anchor, pred);
         if a == z {
             return None;
         }
@@ -4318,7 +4330,7 @@ impl Acme {
                     Some((_, r)) => r,
                     None => {
                         let t = self.text_of(v)?;
-                        expand(&t, off, if k == HlKind::Exec { is_exec_char } else { is_file_char })
+                        if k == HlKind::Exec { self.exec_word(v, &t, off) } else { expand(&t, off, is_file_char) }
                     }
                 };
                 (a < z).then_some((v, a, z, k))

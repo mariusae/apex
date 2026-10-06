@@ -423,20 +423,23 @@ windows put away out of the tiling, which is the core's
   argument in a window's tag (every tag begins with `Look `), the result
   the window's selection, as acme's Look has them. Written `Look/word`
   it is looked for as it is typed; `Look word` is acme's, and a word
-  typed after an empty `Look ` is only a word (a command, say). The
-  slash is in the text, so whatever a client does it shows; `Look/word`
-  run is `Look word`. While the caret is in a `Look/` argument, each
+  typed after an empty `Look ` is only a word (a command, say). A
+  closing slash lets it have spaces, `Look/two words/`: the first slash
+  followed by white space or the tag's end, so a path later in the tag
+  is not taken for it. The slashes are in the text, so whatever a
+  client does it shows; run (B2 takes a closed one whole), `Look/word`
+  is `Look word`. While the caret is in a `Look/` argument, each
   change looks again from where the selection was
   when the typing began: a letter more narrows there or further on, a
   letter less goes back, empty puts the selection back; nothing found,
   it stays and the argument is struck through. A click ends it, and so
   does escape, which leaves a caret at the end of what was found with
   the pointer on it, to edit there. ⌘F takes
-  the caret and the pointer to the argument, making it `Look/` (typing
-  `Look/ ` first where a tag has none), selected to type over; ⌘G and ⌘⇧G look again forwards
+  the caret and the pointer to the argument, making it `Look/…/` (typing
+  `Look// ` first where a tag has none), selected to type over; ⌘G and ⌘⇧G look again forwards
   and back, the pointer onto what they find as B3's is (⌘J is the next
   notification now). B3 on a word, found in its
-  window, puts the word in the argument too, as `Look/word`. While a look goes on in a
+  window, puts the word in the argument too, as `Look/word/`. While a look goes on in a
   window -- live, or its selection one of the places -- every place the
   word is is washed faintly in B3's blue, under the selection; once the
   selection is elsewhere, the marks are gone. A tag's later `Look`s are

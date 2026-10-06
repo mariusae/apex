@@ -10,7 +10,7 @@
 //! caret at its end and the pointer there, to edit where it found (while
 //! typing, the pointer stays: the keys go where it is). ⌘F takes the
 //! caret (and the pointer, as acme's moves) to the argument, making it
-//! `Look/`; ⌘G and ⌘⇧G
+//! `Look/…/` (the closing slash lets it have spaces); ⌘G and ⌘⇧G
 //! look for it again forwards and back, the pointer on what they find as
 //! B3's is. Every place the word is in the window is
 //! washed faintly while a look goes on there -- while the argument is
@@ -99,13 +99,13 @@ impl Acme {
     }
 
     /// ⌘F: the caret in the Look's argument of the window acme would act
-    /// on, made `Look/` (`Look/ ` typed first when its tag has none), the
-    /// argument selected to type over, and the pointer on it.
+    /// on, made `Look/…/` (`Look// ` typed first when its tag has none),
+    /// the argument selected to type over, and the pointer on it.
     pub fn find_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(w) = self.window_at_pointer(window) else { return };
         if self.node.look_arg(w).is_none() {
             let _ = self.node.select(&mut self.log, ViewId::Tag(w), 0, 0);
-            let _ = self.node.insert(&mut self.log, ViewId::Tag(w), "Look/ ");
+            let _ = self.node.insert(&mut self.log, ViewId::Tag(w), "Look// ");
         }
         let _ = self.node.make_look_live(&mut self.log, w);
         let Some(LookArg { start, end, arg, .. }) = self.node.look_arg(w) else { return };
