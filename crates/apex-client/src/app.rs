@@ -4442,8 +4442,8 @@ impl Acme {
         if items.is_empty() {
             return;
         }
-        // the items measured in the face the menu sets them in, a tag's
-        let fs = crate::text_element::font_for(false);
+        // the items measured in the face the menu sets them in, a tag's bold
+        let fs = menu::face();
         let run = |len: usize| gpui::TextRun { len, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
         let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), fs.size, &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
         let checked = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l));

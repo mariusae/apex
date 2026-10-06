@@ -1096,7 +1096,7 @@ const PILL_PAD: f32 = 3.;
 fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
     let t = theme::theme();
-    let fs = text_element::font_for(false);
+    let fs = menu::face();
     let (sweep_bg, sweep_ink) = t.sweep(true);
     let r = m.menur;
     // children are placed from the menu's corner, inside its hairline
@@ -1140,7 +1140,7 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
             .h(px(ir.dy() as f32))
             .flex()
             .items_center()
-            .pl(px((menu::LEAD - menu::INSET) as f32 - PILL_PAD))
+            .justify_center()
             .text_size(fs.size)
             .text_color(rgb(ink))
             .child(pill);

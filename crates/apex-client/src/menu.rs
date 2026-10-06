@@ -6,9 +6,11 @@
 //! so that it sits under the pointer, which is landed on it, so a click
 //! alone repeats it; past 25 items, a part of them and a lane to scroll
 //! them by. What it looks like is a tag's: a card as a tag is, its rows
-//! a tag's lines in a tag's face, the item under the pointer on B2's
-//! pill, as B2 on it in a tag would have it (choosing one is running
-//! it); the remembered one is where the menu opens, unmarked.
+//! a tag's lines in a tag's face made bold, each centred, the item under
+//! the pointer on B2's pill, as B2 on it in a tag would have it (choosing
+//! one is running it); the remembered one is where the menu opens,
+//! unmarked. The card is only a little wider than its widest item: a
+//! border round the words.
 
 use apex_core::tiling::Rect;
 use apex_core::WindowId;
@@ -19,14 +21,11 @@ use apex_core::WindowId;
 pub const IH: i32 = 22;
 /// Above the first row and below the last.
 pub const PAD_Y: i32 = 4;
-/// The highlight, in from the menu's sides.
-pub const INSET: i32 = 4;
-/// From the menu's edge to an item's text (its pill's wash before it).
-pub const LEAD: i32 = 12;
-/// From an item's text to the menu's far edge.
-pub const TRAIL: i32 = 14;
-/// No narrower than this.
-pub const MIN_W: i32 = 110;
+/// The rows, in from the menu's sides (its hairline).
+pub const INSET: i32 = 1;
+/// From the menu's edge to the widest item's text: its pill's wash, and
+/// a few pixels of card round it.
+pub const MARGIN: i32 = 7;
 pub const MAXUNSCROLL: i32 = 25; // maximum #entries before scrolling turns on
 pub const NSCROLL: i32 = 20; // number entries in scrolling part
 /// The scrolling lane, down the right while there is one.
@@ -49,6 +48,13 @@ pub struct Menu {
     pub ih: i32,
 }
 
+/// The face the items are set (and measured) in: a tag's, bold.
+pub fn face() -> crate::text_element::FontSpec {
+    let mut fs = crate::text_element::font_for(false);
+    fs.font.weight = crate::fonts::weight(gpui::FontWeight::BOLD);
+    fs
+}
+
 impl Menu {
     /// The menu for `items` (the widest `maxwid` across), its rows `ih`
     /// high, `checked` the one chosen last, opened at `(mx, my)` in
@@ -66,12 +72,13 @@ impl Menu {
             (false, nitem, 0)
         };
         let lasti = lasthit - off;
-        let w = (LEAD + maxwid + TRAIL).max(MIN_W) + if scrolling { SCROLLWID } else { 0 };
+        let w = MARGIN + maxwid + MARGIN + if scrolling { SCROLLWID } else { 0 };
         let h = 2 * PAD_Y + nitemdrawn * ih;
         let x0 = (mx - w / 2).min(screen.x1 - w).max(screen.x0);
         let y0 = (my - (PAD_Y + lasti * ih + ih / 2)).min(screen.y1 - h).max(screen.y0);
         let menur = Rect::new(x0, y0, x0 + w, y0 + h);
-        let lane = if scrolling { SCROLLWID } else { 0 };
+        // the lane and the gap right of it
+        let lane = if scrolling { SCROLLWID + 2 } else { 0 };
         let textr = Rect::new(menur.x0 + INSET, menur.y0 + PAD_Y, menur.x1 - INSET - lane, menur.y0 + PAD_Y + nitemdrawn * ih);
         let scrollr = if scrolling { Rect::new(menur.x1 - SCROLLWID - 2, menur.y0 + PAD_Y, menur.x1 - 2, menur.y1 - PAD_Y) } else { Rect::new(0, 0, 0, 0) };
         Menu { window, items, menur, textr, scrollr, scrolling, nitemdrawn, off, lasti, ih }
@@ -133,10 +140,10 @@ mod tests {
     #[test]
     fn a_menu_is_as_wide_as_its_widest_item_and_stays_on_the_screen() {
         let m = Menu::place(WindowId(1), items(3), None, 400, IH, (10, 790), SCREEN);
-        assert_eq!(m.menur.dx(), LEAD + 400 + TRAIL);
+        assert_eq!(m.menur.dx(), MARGIN + 400 + MARGIN);
         assert!(m.menur.x0 >= 0 && m.menur.y1 <= 800, "{:?}", m.menur);
-        // a narrow one is the least width
-        assert_eq!(Menu::place(WindowId(1), items(3), None, 10, IH, (500, 400), SCREEN).menur.dx(), MIN_W);
+        // a narrow one too: a border round its words, no more
+        assert_eq!(Menu::place(WindowId(1), items(3), None, 10, IH, (500, 400), SCREEN).menur.dx(), MARGIN + 10 + MARGIN);
     }
 
     #[test]
