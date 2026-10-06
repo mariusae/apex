@@ -31,18 +31,14 @@ version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 sed "s/VERSION/$version/g" mac/Info.plist > "$app/Contents/Info.plist"
 echo -n "APPL????" > "$app/Contents/PkgInfo"
 
-# the icon: rasterize the SVG once (needs Chrome), then every size macOS wants
-if [ ! -f mac/glenda-1024.png ]; then
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
-    --default-background-color=00000000 --window-size=1024,1024 \
-    --screenshot="$PWD/mac/glenda-1024.png" "file://$PWD/mac/glenda.svg" >/dev/null 2>&1
-fi
+# the icon: the space bunny (mac/space-bunny.svg, drawn at 1024), at
+# every size macOS wants
 iconset=target/apex.iconset
 rm -rf "$iconset"; mkdir -p "$iconset"
 for s in 16 32 128 256 512; do
-  sips -z $s $s mac/glenda-1024.png --out "$iconset/icon_${s}x${s}.png" >/dev/null
+  sips -z $s $s mac/space-bunny-1024.png --out "$iconset/icon_${s}x${s}.png" >/dev/null
   d=$((s*2))
-  sips -z $d $d mac/glenda-1024.png --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null
+  sips -z $d $d mac/space-bunny-1024.png --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/apex.icns"
 

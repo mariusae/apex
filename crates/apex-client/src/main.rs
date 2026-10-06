@@ -364,10 +364,10 @@ impl Render for Acme {
             // where there is room for it (it takes no clicks: the ground's
             // buttons are acme's as ever)
             if col.wins.is_empty() && col.r.dx() >= EMPTY_W && col.r.dy() - font >= EMPTY_H {
-                // Glenda above the hints, where there is room for her too
-                let glenda = col.r.dy() - font >= EMPTY_H + bunny::HEIGHT as i32 + 40;
-                bunnies |= glenda;
-                area = area.child(at(col.r.x0, col.r.y0 + font, col.r.dx(), col.r.dy() - font, empty_column(&t, glenda)));
+                // the space bunny above the hints, where there is room for it too
+                let bunny = col.r.dy() - font >= EMPTY_H + bunny::HEIGHT as i32 + 40;
+                bunnies |= bunny;
+                area = area.child(at(col.r.x0, col.r.y0 + font, col.r.dx(), col.r.dy() - font, empty_column(&t, bunny)));
             }
             for s in &col.wins {
                 if col.hides(s.window) {
@@ -1045,7 +1045,7 @@ const EMPTY_H: i32 = 120;
 /// An empty column's hint, in the middle of it: the ways to put something
 /// there, each key (or command) and what it does, faint -- in the
 /// interface's face, as the sidebar's, not the text's.
-fn empty_column(t: &theme::Theme, glenda: bool) -> gpui::AnyElement {
+fn empty_column(t: &theme::Theme, bunny: bool) -> gpui::AnyElement {
     use gpui::{div, prelude::*, px};
     let ink = gpui::Hsla::from(gpui::rgb(t.text_dim)).opacity(0.75);
     let faint = gpui::Hsla::from(gpui::rgb(t.text_dim)).opacity(0.55);
@@ -1064,7 +1064,7 @@ fn empty_column(t: &theme::Theme, glenda: bool) -> gpui::AnyElement {
         .justify_center()
         .flex_col()
         .gap(px(22.))
-        .when(glenda, |d| d.child(crate::bunny::bunny(text_element::ground(t), t.text)))
+        .when(bunny, |d| d.child(crate::bunny::bunny(text_element::ground(t), t.text)))
         .child(
             div()
                 .flex()

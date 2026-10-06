@@ -2101,8 +2101,8 @@ cut first and then the width is erased, as acme does.
 
 *As built (`apex-client/src/shell.rs`, `mac/`).* `mac/build-app.sh`
 makes `Apex.app`: `apex-ui` as the executable, the `apex` command beside
-it, and an icon of Glenda with big eyes (`mac/glenda.svg`, rasterised by
-headless Chrome). Launched with no arguments the app makes sure a daemon
+it, and an icon of a space bunny (`mac/space-bunny.svg`, and drawn at
+1024 in `mac/space-bunny-1024.png`, which `sips` scales to each size). Launched with no arguments the app makes sure a daemon
 answers on the default socket — starting one through the bundled `apex`
 with the home directory as its working directory — and opens its window
 on the session it had last time (`~/Library/Application
