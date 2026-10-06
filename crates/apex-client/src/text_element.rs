@@ -299,9 +299,6 @@ pub fn paint_dot(window: &mut Window, d: &Dot, c: Point<Pixels>) {
     }
 }
 
-/// The system's spinner, as an arc: a quarter and a bit of a circle of
-/// radius `r` round `c`, once round in 0.9 s (the window is drawn again
-/// each tick while anything spins).
 /// Work round a handle: the arc turning (`paint_spinner`) while it does
 /// not say how far along it is; when it does, the circle filled that far,
 /// clockwise from the top, over a faint whole one -- as a download's ring.
@@ -337,17 +334,64 @@ pub fn paint_work(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink
     }
 }
 
+/// Material's spinner (Google's): an arc of radius `r` round `c` whose
+/// head races round ahead and whose tail then catches it up, the whole
+/// turning the while (the window is drawn again each tick while anything
+/// spins).
 pub fn paint_spinner(window: &mut Window, c: Point<Pixels>, r: f32, width: f32, ink: Hsla) {
-    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis() % 900).unwrap_or(0);
-    let a0 = ms as f32 / 900. * std::f32::consts::TAU;
-    let a1 = a0 + 1.8;
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_millis()).unwrap_or(0);
+    let (tail, head) = hare(ms);
+    // the whole of it turning once in two seconds, under the chase
+    let turn = (ms % 2000) as f32 / 2000.;
+    let angle = |f: f32| (turn + f) * std::f32::consts::TAU;
+    let (a0, a1) = (angle(tail), angle(head));
     let at = |a: f32| point(c.x + px(r * a.cos()), c.y + px(r * a.sin()));
     let mut p = gpui::PathBuilder::stroke(px(width));
     p.move_to(at(a0));
-    p.arc_to(point(px(r), px(r)), px(0.), false, true, at(a1));
+    p.arc_to(point(px(r), px(r)), px(0.), a1 - a0 > std::f32::consts::PI, true, at(a1));
     if let Ok(path) = p.build() {
         window.paint_path(path, ink);
     }
+    // round ends, as the spinner's are
+    let w = width / 2.;
+    for a in [a0, a1] {
+        let e = at(a);
+        window.paint_quad(fill(Bounds::new(point(e.x - px(w), e.y - px(w)), size(px(width), px(width))), ink).corner_radii(px(w)));
+    }
+}
+
+/// Material's spinner's chase, `ms` into it: where its tail and head are,
+/// as parts of the way round. Every 1.5 s the head runs ahead to three
+/// quarters of the circle (the hare), then the tail catches up with it
+/// (the tortoise), each eased in and out -- the dash of a circle 20 round
+/// going `1,150` → `90,150` offset −35 → offset −124, as CSS draws it.
+fn hare(ms: u128) -> (f32, f32) {
+    const C: f32 = 125.66; // 2π·20
+    let t = (ms % 1500) as f32 / 1500.;
+    let (tail, len) = if t < 0.5 {
+        let u = ease_in_out(t / 0.5);
+        (35. * u, 1. + 89. * u)
+    } else {
+        let u = ease_in_out((t - 0.5) / 0.5);
+        (35. + 89. * u, 90.)
+    };
+    (tail / C, (tail + len).min(C) / C)
+}
+
+/// CSS's `ease-in-out`, `cubic-bezier(.42, 0, .58, 1)`, at `x`.
+fn ease_in_out(x: f32) -> f32 {
+    let bez = |t: f32, p1: f32, p2: f32| 3. * (1. - t) * (1. - t) * t * p1 + 3. * (1. - t) * t * t * p2 + t * t * t;
+    // the curve's t for x, by bisection: x rises with t
+    let (mut lo, mut hi) = (0f32, 1f32);
+    for _ in 0..20 {
+        let mid = (lo + hi) / 2.;
+        if bez(mid, 0.42, 0.58) < x {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    bez((lo + hi) / 2., 0., 1.)
 }
 
 /// A Mac scroller's thumb in acme's scrollbar lane: slim and rounded,
@@ -2263,5 +2307,34 @@ mod head_tests {
         assert_eq!(p.atoms.iter().map(|x| x.2).collect::<Vec<_>>(), vec![Atom::Proc(7), Atom::ProcKill(7)]);
         let e = Head::build("", Some("Errors"), &["Del"], true, false);
         assert_eq!(e.atoms[0], (0, 8, Atom::Label));
+    }
+}
+
+#[cfg(test)]
+mod spinner_tests {
+    use super::*;
+
+    #[test]
+    fn the_hare_runs_ahead_and_the_tortoise_catches_up() {
+        let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+        // a dot to begin with
+        let (t, h) = hare(0);
+        assert!(near(t, 0.) && h - t < 0.01, "{t} {h}");
+        // halfway, the head nearly round and the tail barely gone: the
+        // longest it gets, short of the whole circle
+        let (t, h) = hare(750);
+        assert!(near(t, 35. / 125.66) && near(h, 125. / 125.66), "{t} {h}");
+        // at the end the tail has caught the head up
+        let (t, h) = hare(1499);
+        assert!(h - t < 0.02, "{t} {h}");
+        // the head never runs backwards, nor past the tail's lap
+        let mut last = 0.;
+        for ms in 0..1500 {
+            let (t, h) = hare(ms);
+            assert!(h >= t && h - t < 1.);
+            assert!(t >= last - 1e-4, "{ms}");
+            last = t;
+        }
+        assert!(near(ease_in_out(0.5), 0.5) && near(ease_in_out(0.), 0.) && near(ease_in_out(1.), 1.));
     }
 }
