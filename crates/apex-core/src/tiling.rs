@@ -985,7 +985,6 @@ fn close_if_left_empty(l: &mut Layout, ci: usize, info: &dyn Info) {
 }
 
 pub fn coldragwin(l: &mut Layout, ci: usize, wi: usize, but: i32, op: (i32, i32), p: (i32, i32), info: &dyn Info) -> Option<Warp> {
-    let font = info.font_height().max(1);
     let n = l.cols[ci].wins.len();
     let w = l.cols[ci].wins[wi].window;
     let (mut px, py) = p;
