@@ -21,7 +21,8 @@ pub const WIN_TAG: &str = "Look ";
 
 /// Where a window's `Look` and its argument are in its tag (runes): the
 /// `Look` at `at`, the argument in `[start, end)` (empty where it would
-/// go when there is none), and whether it is written `Look/`.
+/// go when there is none), whether it is written `Look/`, and whether a
+/// closing slash ends it (`Look/two words/`, the slash at `end`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LookArg {
     pub at: usize,
@@ -29,12 +30,35 @@ pub struct LookArg {
     pub end: usize,
     pub arg: String,
     pub live: bool,
+    pub closed: bool,
 }
 
-/// `Look/word` read as `Look word`.
+impl LookArg {
+    /// Where the whole `Look…` is: from `Look` to past its closing slash.
+    pub fn span(&self) -> (usize, usize) {
+        (self.at, self.end + self.closed as usize)
+    }
+}
+
+/// The closing slash of a `Look/` argument starting at `start`: the first
+/// slash followed by white space or the end, so the slashes of a path
+/// later in the tag are not taken for it. None on that line: the
+/// argument ends at white space.
+fn look_closer(text: &[char], start: usize) -> Option<usize> {
+    (start..text.len()).take_while(|&i| text[i] != '\n').find(|&i| text[i] == '/' && text.get(i + 1).is_none_or(|c| c.is_whitespace()))
+}
+
+/// `Look/word` and `Look/two words/` read as `Look word`, `Look two words`.
 fn look_spaced(text: &str) -> std::borrow::Cow<'_, str> {
     match text.strip_prefix("Look/") {
-        Some(rest) => format!("Look {rest}").into(),
+        Some(rest) => {
+            let chars: Vec<char> = rest.chars().collect();
+            let rest: String = match look_closer(&chars, 0) {
+                Some(i) => chars[..i].iter().chain(&chars[i + 1..]).collect(),
+                None => rest.to_string(),
+            };
+            format!("Look {rest}").into()
+        }
         None => text.into(),
     }
 }
@@ -1520,7 +1544,8 @@ impl Node {
     /// The first `Look` in window `w`'s tag and its argument: the word
     /// after it, up to white space (a tag's later `Look`s are its words).
     /// `Look/word` is `Look word` written to be looked for as it is typed:
-    /// the slash is what says so, in the text, for a client to see.
+    /// the slash is what says so, in the text, for a client to see. A
+    /// closing slash lets it have spaces: `Look/two words/`.
     pub fn look_arg(&self, w: WindowId) -> Option<LookArg> {
         let tag = self.state.window(w).ok()?.tag;
         let text: Vec<char> = self.state.buffer(tag).ok()?.text.to_string().chars().collect();
@@ -1536,39 +1561,45 @@ impl Node {
                 start += 1;
             }
         }
-        let mut end = start;
-        while end < text.len() && !text[end].is_whitespace() {
-            end += 1;
-        }
-        Some(LookArg { at, start, end, arg: text[start..end].iter().collect(), live })
+        let closer = if live { look_closer(&text, start) } else { None };
+        let end = closer.unwrap_or_else(|| (start..text.len()).find(|&i| text[i].is_whitespace()).unwrap_or(text.len()));
+        Some(LookArg { at, start, end, arg: text[start..end].iter().collect(), live, closed: closer.is_some() })
     }
 
     /// The first `Look`'s argument in window `w`'s tag made `arg` (what B3
-    /// looked for there), written `Look/arg`: a word, so not one with
-    /// white space in it; and a tag with no `Look` is left as it is.
+    /// looked for there), written `Look/arg/`: on one line, and with no
+    /// slash before white space in it, which would end it; and a tag
+    /// with no `Look` is left as it is.
     pub fn set_look_arg(&mut self, log: &mut Log, w: WindowId, arg: &str) -> Result<()> {
-        if arg.is_empty() || arg.chars().any(char::is_whitespace) {
+        let chars: Vec<char> = arg.chars().collect();
+        if arg.is_empty() || arg.contains('\n') || look_closer(&chars, 0).is_some() {
             return Ok(());
         }
         let Some(a) = self.look_arg(w) else { return Ok(()) };
-        if a.live && a.arg == arg {
+        if a.closed && a.arg == arg {
             return Ok(());
         }
         let tag = self.state.window(w)?.tag;
+        let (from, to) = (a.at + 4, a.span().1);
         let group = self.new_group();
-        self.edit_op(log, tag, a.at + 4, a.end - (a.at + 4), &format!("/{arg}"), group)
+        self.edit_op(log, tag, from, to - from, &format!("/{arg}/"), group)
     }
 
-    /// The first `Look` in window `w`'s tag made `Look/`, its argument
-    /// kept: looked for as it is typed from now on.
+    /// The first `Look` in window `w`'s tag made `Look/arg/`, its argument
+    /// kept: looked for as it is typed from now on, spaces and all.
     pub fn make_look_live(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
         let Some(a) = self.look_arg(w) else { return Ok(()) };
-        if a.live {
+        if a.closed {
             return Ok(());
         }
         let tag = self.state.window(w)?.tag;
         let group = self.new_group();
-        self.edit_op(log, tag, a.at + 4, a.start - (a.at + 4), "/", group)
+        // the closer first, so the opening's edit leaves where it goes be
+        self.edit_op(log, tag, a.end, 0, "/", group)?;
+        if !a.live {
+            self.edit_op(log, tag, a.at + 4, a.start - (a.at + 4), "/", group)?;
+        }
+        Ok(())
     }
 
     pub fn look(&mut self, log: &mut Log, view: ViewId, needle: &str) -> Result<bool> {

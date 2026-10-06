@@ -916,38 +916,52 @@ fn the_first_look_in_a_tag_has_the_word_looked_for() {
         node.insert(log, ViewId::Tag(w), t).unwrap();
     };
     // the first Look's word; a later Look is a word of its own
-    let la = |at, start, end, arg: &str, live| Some(LookArg { at, start, end, arg: arg.into(), live });
+    let la = |at, start, end, arg: &str, live, closed| Some(LookArg { at, start, end, arg: arg.into(), live, closed });
+    let tag_text = |node: &Node| node.state.buffer(tag).unwrap().text.to_string();
     set_tag(&mut node, &mut log, "Put Look foo Look bar");
-    assert_eq!(node.look_arg(w), la(4, 9, 12, "foo", false));
+    assert_eq!(node.look_arg(w), la(4, 9, 12, "foo", false, false));
     // none yet: an empty one, right after it
     set_tag(&mut node, &mut log, "Look ");
-    assert_eq!(node.look_arg(w), la(0, 5, 5, "", false));
-    // what B3 looked for is written Look/, to be looked for as typed
+    assert_eq!(node.look_arg(w), la(0, 5, 5, "", false, false));
+    // what B3 looked for is written Look/…/, to be looked for as typed
     node.set_look_arg(&mut log, w, "beta").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look/beta");
-    assert_eq!(node.look_arg(w), la(0, 5, 9, "beta", true));
+    assert_eq!(tag_text(&node), "Look/beta/");
+    assert_eq!(node.look_arg(w), la(0, 5, 9, "beta", true, true));
     set_tag(&mut node, &mut log, "Look");
     node.set_look_arg(&mut log, w, "alpha").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look/alpha");
-    // a word replaced; words with spaces, and a tag with no Look, left be
-    node.set_look_arg(&mut log, w, "gamma").unwrap();
+    assert_eq!(tag_text(&node), "Look/alpha/");
+    // replaced, spaces and all; a slash before a space would end it, and
+    // a tag with no Look is left be
     node.set_look_arg(&mut log, w, "two words").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look/gamma");
-    // Look/ with nothing after it, then a word of the tag's own: empty
-    set_tag(&mut node, &mut log, "Look/ Put");
-    assert_eq!(node.look_arg(w), la(0, 5, 5, "", true));
-    // made live, the word kept
+    assert_eq!(tag_text(&node), "Look/two words/");
+    assert_eq!(node.look_arg(w), la(0, 5, 14, "two words", true, true));
+    node.set_look_arg(&mut log, w, "src/main").unwrap();
+    assert_eq!(tag_text(&node), "Look/src/main/");
+    assert_eq!(node.look_arg(w).unwrap().arg, "src/main");
+    node.set_look_arg(&mut log, w, "a/ b").unwrap();
+    assert_eq!(tag_text(&node), "Look/src/main/");
+    // unclosed, it ends at white space: a path later is not its end
+    set_tag(&mut node, &mut log, "Look/foo /tmp/x Del");
+    assert_eq!(node.look_arg(w), la(0, 5, 8, "foo", true, false));
+    set_tag(&mut node, &mut log, "Look// Put");
+    assert_eq!(node.look_arg(w), la(0, 5, 5, "", true, true));
+    // made live, the word kept, closed
     set_tag(&mut node, &mut log, "Put Look  foo Del");
     node.make_look_live(&mut log, w).unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Put Look/foo Del");
-    // Look/word is run as Look word
+    assert_eq!(tag_text(&node), "Put Look/foo/ Del");
+    set_tag(&mut node, &mut log, "Look/foo Del");
+    node.make_look_live(&mut log, w).unwrap();
+    assert_eq!(tag_text(&node), "Look/foo/ Del");
+    // run, Look/word and Look/two words/ are Look word, Look two words
+    set_tag(&mut node, &mut log, "Put Snarf");
     assert_eq!(Node::resolve("Look/beta"), Handler::Leader);
     node.select(&mut log, ViewId::Body(w), 0, 0).unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "Look/beta").unwrap();
     assert_eq!(node.selection(ViewId::Body(w)).unwrap(), (6, 10));
-    set_tag(&mut node, &mut log, "Put Snarf");
+    node.exec(&mut log, ExecCtx::Window(w), "Look/beta alpha/").unwrap();
+    assert_eq!(node.selection(ViewId::Body(w)).unwrap(), (6, 16));
     node.set_look_arg(&mut log, w, "x").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Put Snarf");
+    assert_eq!(tag_text(&node), "Put Snarf");
     // finding, wrapping round both ways
     let t = "alpha beta alpha";
     assert_eq!(find_match(t, "alpha", 1, false), Some(11));

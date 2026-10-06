@@ -1357,7 +1357,7 @@ fn b3_puts_the_word_looked_for_in_the_tags_look() {
     perform(&mut node, &mut log, vec![Proposal::Look { ctx: ExecCtx::Window(w), text: "one".into(), reverse: false }]);
     assert_eq!(node.selection(ViewId::Body(w)).unwrap(), (0, 3));
     assert_eq!(node.look_arg(w).map(|a| a.arg), Some("one".into()), "{:?}", node.state.buffer(tag).unwrap().text.to_string());
-    assert!(node.state.buffer(tag).unwrap().text.to_string().starts_with("Look/one"));
+    assert!(node.state.buffer(tag).unwrap().text.to_string().starts_with("Look/one/"));
 }
 
 /// A write at a version the buffer has moved past is refused, and says
