@@ -1244,6 +1244,8 @@ pub struct TextElement {
 }
 
 pub struct Prepaint {
+    /// How far a line that does not wrap is scrolled across.
+    hscroll: Pixels,
     kind: Kind,
     fontspec: FontSpec,
     lines: Vec<LineInfo>,
@@ -1275,6 +1277,29 @@ pub struct Prepaint {
     hiding: bool,
     key_caret: Option<bool>,
     bare: bool,
+}
+
+/// How far a tag that does not wrap (`view`, its `lines`) is scrolled
+/// across, `room` wide: as it was, unless its caret at `q` would be out of
+/// view, or nearer an edge than a little; then just far enough that it
+/// is not. Never past the text's end more than that little.
+fn tag_scroll(acme: &mut Acme, view: ViewId, lines: &[LineInfo], q: usize, room: Pixels) -> Pixels {
+    const AIR: f32 = 24.;
+    let air = px(AIR).min(room / 3.);
+    let mut s = px(acme.tag_scroll.get(&view).copied().unwrap_or(0.));
+    if let Some(l) = lines.iter().find(|l| l.start <= q && q <= l.end) {
+        let x = l.layout.unwrapped_layout.x_for_index(l.to_disp(q));
+        if x - s > room - air {
+            s = x - room + air;
+        }
+        if x - s < air {
+            s = x - air;
+        }
+    }
+    let widest = lines.iter().map(|l| l.layout.unwrapped_layout.width).fold(px(0.), |a, b| a.max(b));
+    s = s.min(widest - room + air).max(px(0.));
+    acme.tag_scroll.insert(view, f32::from(s));
+    s
 }
 
 /// The row to have at the top so that the row `q` is on starts `room`
@@ -1558,9 +1583,9 @@ impl Element for TextElement {
             (window.request_layout(style, [], cx), ())
         } else {
             // the top row: its processes' pills, then its text
-            let (text, bare): (SharedString, bool) = {
+            let text: SharedString = {
                 let acme = self.acme.read(cx);
-                (format!("{}{}", acme.top_head().text, acme.view_text(self.view)).into(), acme.top_bare())
+                format!("{}{}", acme.top_head().text, acme.view_text(self.view)).into()
             };
             let mut fontspec = font_for(false);
             fontspec.line_height = tag_row_height();
@@ -1572,7 +1597,8 @@ impl Element for TextElement {
                         AvailableSpace::Definite(w) => Some(w),
                         _ => None,
                     });
-                    let wrap = width.map(|w| (w - if bare { px(0.) } else { px(MARGIN) } - px(4.)).max(px(10.)));
+                    // the top row does not wrap: it scrolls across (`tag_scroll`)
+                    let wrap: Option<Pixels> = None;
                     let run = TextRun {
                         len: text.len(),
                         font: fontspec.font.clone(),
@@ -1614,7 +1640,11 @@ impl Element for TextElement {
             }
             let lh = fontspec.line_height;
             let margin = if kind == Kind::Body { px(BODY_MARGIN) } else if src.bare { px(0.) } else { px(MARGIN) };
-            let wrap = Some((bounds.size.width - margin - px(4.)).max(px(10.)));
+            let room = (bounds.size.width - margin - px(4.)).max(px(10.));
+            // the top row and the column tags are a line each, scrolled
+            // across to their caret rather than wrapped
+            let across = matches!(kind, Kind::Top | Kind::ColTag);
+            let wrap = (!across).then_some(room);
             let height = bounds.size.height;
             let text = &src.text;
             let text_len = text.len();
@@ -1762,7 +1792,9 @@ impl Element for TextElement {
             } else {
                 unreachable!()
             }
+            let hscroll = if across { tag_scroll(acme, view, &lines, src.sel.1, room) } else { px(0.) };
             Some(Prepaint {
+                hscroll,
                 kind,
                 fontspec,
                 lines,
@@ -1903,238 +1935,245 @@ impl Element for TextElement {
 
             let (q0, q1) = pp.sel;
             let right = bounds.right();
-            for line in &pp.lines {
-                let ly = origin.y + line.y;
-                let x = |d: usize| line.layout.unwrapped_layout.x_for_index(d);
-                // the selection a ⌘- or ⌥-click would take (the pointer
-                // on it): shown as the pill, not under it as the selection
-                // the Look word's places, faintly, under the selection
-                if !pp.marks.is_empty() {
-                    let wash = rgb(crate::theme::theme().look_mark());
-                    let from = pp.marks.partition_point(|m| m.1 <= line.start);
-                    for &(a, b) in pp.marks[from..].iter().take_while(|m| m.0 <= line.end) {
-                        let (lo, hi) = (a.max(line.start), b.min(line.end));
-                        if lo >= hi {
-                            continue;
-                        }
-                        let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
-                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                            let (s, e) = (dlo.max(ds), dhi.min(de));
-                            if s < e {
-                                let sy = ly + lh * i as f32;
-                                let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(1.), sy + px(1.)), point(origin.x + x(e) - x(ds) + px(1.), sy + lh - px(1.)));
-                                window.paint_quad(fill(r, wash).corner_radii(px(3.)));
+            // a line that does not wrap, scrolled across: drawn and hit
+            // that far left, and kept off the margin before it (a pill's
+            // wash still reaching its three pixels into it)
+            let origin = point(origin.x - pp.hscroll, origin.y);
+            let clip = if pp.hscroll > px(0.) { Bounds::from_corners(point(bounds.left() + margin - px(3.), bounds.top()), bounds.bottom_right()) } else { bounds };
+            window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                for line in &pp.lines {
+                    let ly = origin.y + line.y;
+                    let x = |d: usize| line.layout.unwrapped_layout.x_for_index(d);
+                    // the selection a ⌘- or ⌥-click would take (the pointer
+                    // on it): shown as the pill, not under it as the selection
+                    // the Look word's places, faintly, under the selection
+                    if !pp.marks.is_empty() {
+                        let wash = rgb(crate::theme::theme().look_mark());
+                        let from = pp.marks.partition_point(|m| m.1 <= line.start);
+                        for &(a, b) in pp.marks[from..].iter().take_while(|m| m.0 <= line.end) {
+                            let (lo, hi) = (a.max(line.start), b.min(line.end));
+                            if lo >= hi {
+                                continue;
+                            }
+                            let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                            for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                                let (s, e) = (dlo.max(ds), dhi.min(de));
+                                if s < e {
+                                    let sy = ly + lh * i as f32;
+                                    let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(1.), sy + px(1.)), point(origin.x + x(e) - x(ds) + px(1.), sy + lh - px(1.)));
+                                    window.paint_quad(fill(r, wash).corner_radii(px(3.)));
+                                }
                             }
                         }
                     }
-                }
-                let sel_is_pill = q0 < q1 && pp.hint.is_some_and(|(a, b, _)| (a, b) == (q0, q1));
-                let ranges: [(usize, usize, Hsla); 2] = [
-                    if sel_is_pill { (0, 0, pal.sel) } else { (q0, q1, pal.sel) },
-                    match pp.hl {
-                        Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().sweep(true).0)),
-                        Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().sweep(false).0)),
-                        None => (0, 0, pal.sel),
-                    },
-                ];
-                // a pill under what a click with ⌘ (B3) or ⌥ (B2) held
-                // would take, in that sweep's own colour, its text in the
-                // sweep's ink: what the click would drag, before it does
-                {
-                    let th = crate::theme::theme();
-                    let pill = match pp.hint {
-                        Some((a, b, HlKind::Look)) => Some((a, b, th.sweep(false).0)),
-                        Some((a, b, HlKind::Exec)) => Some((a, b, th.sweep(true).0)),
-                        None => None,
+                    let sel_is_pill = q0 < q1 && pp.hint.is_some_and(|(a, b, _)| (a, b) == (q0, q1));
+                    let ranges: [(usize, usize, Hsla); 2] = [
+                        if sel_is_pill { (0, 0, pal.sel) } else { (q0, q1, pal.sel) },
+                        match pp.hl {
+                            Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().sweep(true).0)),
+                            Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().sweep(false).0)),
+                            None => (0, 0, pal.sel),
+                        },
+                    ];
+                    // a pill under what a click with ⌘ (B3) or ⌥ (B2) held
+                    // would take, in that sweep's own colour, its text in the
+                    // sweep's ink: what the click would drag, before it does
+                    {
+                        let th = crate::theme::theme();
+                        let pill = match pp.hint {
+                            Some((a, b, HlKind::Look)) => Some((a, b, th.sweep(false).0)),
+                            Some((a, b, HlKind::Exec)) => Some((a, b, th.sweep(true).0)),
+                            None => None,
+                        };
+                        if let Some((a, b, color)) = pill {
+                            let (lo, hi) = (a.max(line.start), b.min(line.end));
+                            if lo < hi {
+                                let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                                for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                                    let (s, e) = (dlo.max(ds), dhi.min(de));
+                                    if s < e {
+                                        let sy = ly + lh * i as f32;
+                                        let (up, down) = reach(sy);
+                                        let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(3.), sy - up + px(1.)), point(origin.x + x(e) - x(ds) + px(3.), sy + lh + down - px(1.)));
+                                        window.paint_quad(fill(r, rgb(color)).corner_radii(px(SWEEP_RADIUS)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for (k, (a, b, color)) in ranges.into_iter().enumerate() {
+                        if a >= b {
+                            continue;
+                        }
+                        let lo = a.max(line.start);
+                        let hi = b.min(line.end + usize::from(line.has_newline));
+                        if lo > line.end || hi < line.start || (lo >= hi && !(line.has_newline && a <= line.end && b > line.end)) {
+                            continue;
+                        }
+                        let incl_nl = line.has_newline && b > line.end && a <= line.end;
+                        let dlo = line.to_disp(lo.min(line.end));
+                        let dhi = line.to_disp(hi.min(line.end));
+                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                            let last = i + 1 == line.subs.len();
+                            let s = dlo.max(ds);
+                            let e = dhi.min(de);
+                            let mut x0 = None;
+                            let mut x1 = None;
+                            if s < e {
+                                x0 = Some(x(s) - x(ds));
+                                x1 = Some(x(e) - x(ds));
+                            }
+                            if last && incl_nl && dlo <= de {
+                                x0 = Some(x0.unwrap_or(x(dlo.max(ds)) - x(ds)));
+                                x1 = Some(right - origin.x);
+                            }
+                            if let (Some(x0), Some(x1)) = (x0, x1) {
+                                let sy = ly + lh * i as f32;
+                                // softly rounded, as a modern editor's selection
+                                // is: the whole of it one shape, its rows joined
+                                // square -- only the top row's top corners and
+                                // the bottom row's bottom ones rounded, or each
+                                // row's corners would notch its edges
+                                let top = a >= line.start && dlo >= ds && (dlo < de || last);
+                                let bottom = if incl_nl { last && b == line.end + 1 } else { dhi > ds && dhi <= de };
+                                let r = px(if k == 1 { SWEEP_RADIUS } else { 3. });
+                                let radii = gpui::Corners {
+                                    top_left: if top { r } else { px(0.) },
+                                    top_right: if top { r } else { px(0.) },
+                                    bottom_left: if bottom { r } else { px(0.) },
+                                    bottom_right: if bottom { r } else { px(0.) },
+                                };
+                                let (up, down) = reach(sy);
+                                window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy - up), point(origin.x + x1, sy + lh + down)), color).corner_radii(radii));
+                            }
+                        }
+                    }
+
+                    // a chip under display bytes `a..b`, a piece on each row it
+                    // is on where the line wraps -- its ends rounded only where
+                    // it starts and ends; as tall as the ink and a little, and
+                    // never more than the card less a margin (a folded
+                    // window's is shorter)
+                    // (capped by the card's line, as ever -- and, the tag
+                    // wrapped, by its rows' pitch, a gap between each row's)
+                    let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(lh + ext * 2.) - px(3.));
+                    let tall = if rows > 1 { tall.min(lh - px(1.)) } else { tall };
+                    let chip = |window: &mut Window, a: usize, b: usize, past: Pixels, color: Hsla| {
+                        for (i, &(ds, de)) in line.subs.iter().enumerate() {
+                            let (s, e) = (a.max(ds), b.min(de));
+                            if s >= e {
+                                continue;
+                            }
+                            let sy = ly + lh * i as f32 + (lh - tall) / 2.;
+                            let x1 = origin.x + x(e) - x(ds) + if e == b { past } else { px(0.) };
+                            let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), sy), point(x1, sy + tall));
+                            let (open, shut) = (if s == a { tall / 2. } else { px(0.) }, if e == b { tall / 2. } else { px(0.) });
+                            window.paint_quad(fill(r, color).corner_radii(gpui::Corners { top_left: open, bottom_left: open, top_right: shut, bottom_right: shut }));
+                        }
                     };
-                    if let Some((a, b, color)) = pill {
+                    let th = crate::theme::theme();
+                    // a process on a pill: its name and its ×
+                    for &(a, _, atom) in &line.atoms {
+                        let Atom::Proc(id) = atom else { continue };
+                        let Some(&(_, b, _)) = line.atoms.iter().find(|x| x.2 == Atom::ProcKill(id)) else { continue };
+                        let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
+                        chip(window, a, b, px(3.), rgb(mix(th.text_dim, under, 0.9)));
+                    }
+                    // the label on a chip of its own
+                    for &(a, b, atom) in &line.atoms {
+                        if atom == Atom::Label {
+                            chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
+                        }
+                    }
+                    paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
+                    // a Look's argument that found nothing: struck through
+                    if let Some((a, b)) = pp.strike {
                         let (lo, hi) = (a.max(line.start), b.min(line.end));
                         if lo < hi {
                             let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
                             for (i, &(ds, de)) in line.subs.iter().enumerate() {
                                 let (s, e) = (dlo.max(ds), dhi.min(de));
                                 if s < e {
-                                    let sy = ly + lh * i as f32;
-                                    let (up, down) = reach(sy);
-                                    let r = Bounds::from_corners(point(origin.x + x(s) - x(ds) - px(3.), sy - up + px(1.)), point(origin.x + x(e) - x(ds) + px(3.), sy + lh + down - px(1.)));
-                                    window.paint_quad(fill(r, rgb(color)).corner_radii(px(SWEEP_RADIUS)));
+                                    let cy = ly + lh * i as f32 + lh / 2.;
+                                    let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), cy - px(0.6)), point(origin.x + x(e) - x(ds), cy + px(0.6)));
+                                    window.paint_quad(fill(r, rgb(crate::theme::theme().text)));
                                 }
                             }
                         }
                     }
-                }
-                for (k, (a, b, color)) in ranges.into_iter().enumerate() {
-                    if a >= b {
-                        continue;
+                    // apex's verbs, drawn as their icons on their em spaces, in
+                    // the ink the word would have (faint, swept, hinted)
+                    for &(d, i) in &line.icons {
+                        let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
+                        let (ds, _) = line.subs[sub];
+                        let (x0, x1) = (origin.x + x(d) - x(ds), origin.x + x(d + ICON_CELL.len_utf8()) - x(ds));
+                        let side = pp.fontspec.size.min(lh + ext * 2. - px(4.));
+                        let c = point((x0 + x1) / 2., ly + lh * sub as f32 + lh / 2.);
+                        let ink = line.colors.iter().find(|&&(a, b, _)| d >= a && d < b).map(|c| c.2).unwrap_or_else(|| rgb(crate::theme::theme().text_dim));
+                        let name: SharedString = format!("apex-verb-{i}.svg").into();
+                        let _ = window.paint_svg(Bounds::new(point(c.x - side / 2., c.y - side / 2.), size(side, side)), name, Some(verb_svg(i)), gpui::TransformationMatrix::unit(), ink, cx);
                     }
-                    let lo = a.max(line.start);
-                    let hi = b.min(line.end + usize::from(line.has_newline));
-                    if lo > line.end || hi < line.start || (lo >= hi && !(line.has_newline && a <= line.end && b > line.end)) {
-                        continue;
+                    // the path's picker's caret, in what is typed in the head
+                    if let Some(d) = line.caret {
+                        let sub = line.subs.iter().rposition(|&(ds, _)| ds <= d).unwrap_or(0);
+                        let (ds, _) = line.subs[sub];
+                        let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh + ext * 2. - px(2.));
+                        let at = point(origin.x + x(d) - x(ds) - px(0.5), ly + lh * sub as f32 + (lh - tall) / 2.);
+                        window.paint_quad(fill(Bounds::new(at, size(px(2.), tall)), rgb(crate::theme::theme().accent)).corner_radii(px(1.)));
                     }
-                    let incl_nl = line.has_newline && b > line.end && a <= line.end;
-                    let dlo = line.to_disp(lo.min(line.end));
-                    let dhi = line.to_disp(hi.min(line.end));
-                    for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                        let last = i + 1 == line.subs.len();
-                        let s = dlo.max(ds);
-                        let e = dhi.min(de);
-                        let mut x0 = None;
-                        let mut x1 = None;
-                        if s < e {
-                            x0 = Some(x(s) - x(ds));
-                            x1 = Some(x(e) - x(ds));
-                        }
-                        if last && incl_nl && dlo <= de {
-                            x0 = Some(x0.unwrap_or(x(dlo.max(ds)) - x(ds)));
-                            x1 = Some(right - origin.x);
-                        }
-                        if let (Some(x0), Some(x1)) = (x0, x1) {
-                            let sy = ly + lh * i as f32;
-                            // softly rounded, as a modern editor's selection
-                            // is: the whole of it one shape, its rows joined
-                            // square -- only the top row's top corners and
-                            // the bottom row's bottom ones rounded, or each
-                            // row's corners would notch its edges
-                            let top = a >= line.start && dlo >= ds && (dlo < de || last);
-                            let bottom = if incl_nl { last && b == line.end + 1 } else { dhi > ds && dhi <= de };
-                            let r = px(if k == 1 { SWEEP_RADIUS } else { 3. });
-                            let radii = gpui::Corners {
-                                top_left: if top { r } else { px(0.) },
-                                top_right: if top { r } else { px(0.) },
-                                bottom_left: if bottom { r } else { px(0.) },
-                                bottom_right: if bottom { r } else { px(0.) },
-                            };
-                            let (up, down) = reach(sy);
-                            window.paint_quad(fill(Bounds::from_corners(point(origin.x + x0, sy - up), point(origin.x + x1, sy + lh + down)), color).corner_radii(radii));
-                        }
+                    // the divider before the user's words, a hairline as tall
+                    // as the ink
+                    if let Some(d) = line.bar {
+                        let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
+                        let (ds, _) = line.subs[sub];
+                        let mid = origin.x + (x(d) + x(d + 1)) / 2. - x(ds);
+                        let tall = ink(window, &pp.fontspec).1;
+                        let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
+                        let th = crate::theme::theme();
+                        window.paint_quad(fill(Bounds::new(point(mid - px(0.5), sy), size(px(1.), tall)), rgb(th.body_border)));
                     }
-                }
 
-                // a chip under display bytes `a..b`, a piece on each row it
-                // is on where the line wraps -- its ends rounded only where
-                // it starts and ends; as tall as the ink and a little, and
-                // never more than the card less a margin (a folded
-                // window's is shorter)
-                // (capped by the card's line, as ever -- and, the tag
-                // wrapped, by its rows' pitch, a gap between each row's)
-                let tall = (ink(window, &pp.fontspec).1 + px(4.)).min(bounds.size.height.min(lh + ext * 2.) - px(3.));
-                let tall = if rows > 1 { tall.min(lh - px(1.)) } else { tall };
-                let chip = |window: &mut Window, a: usize, b: usize, past: Pixels, color: Hsla| {
-                    for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                        let (s, e) = (a.max(ds), b.min(de));
-                        if s >= e {
-                            continue;
-                        }
-                        let sy = ly + lh * i as f32 + (lh - tall) / 2.;
-                        let x1 = origin.x + x(e) - x(ds) + if e == b { past } else { px(0.) };
-                        let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), sy), point(x1, sy + tall));
-                        let (open, shut) = (if s == a { tall / 2. } else { px(0.) }, if e == b { tall / 2. } else { px(0.) });
-                        window.paint_quad(fill(r, color).corner_radii(gpui::Corners { top_left: open, bottom_left: open, top_right: shut, bottom_right: shut }));
-                    }
-                };
-                let th = crate::theme::theme();
-                // a process on a pill: its name and its ×
-                for &(a, _, atom) in &line.atoms {
-                    let Atom::Proc(id) = atom else { continue };
-                    let Some(&(_, b, _)) = line.atoms.iter().find(|x| x.2 == Atom::ProcKill(id)) else { continue };
-                    let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
-                    chip(window, a, b, px(3.), rgb(mix(th.text_dim, under, 0.9)));
-                }
-                // the label on a chip of its own
-                for &(a, b, atom) in &line.atoms {
-                    if atom == Atom::Label {
-                        chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
-                    }
-                }
-                paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
-                // a Look's argument that found nothing: struck through
-                if let Some((a, b)) = pp.strike {
-                    let (lo, hi) = (a.max(line.start), b.min(line.end));
-                    if lo < hi {
-                        let (dlo, dhi) = (line.to_disp(lo), line.to_disp(hi));
+                    // the tick, as a Mac text view's caret: a plain line, a
+                    // little in from the row's top and bottom. A header's is
+                    // left out where it only sits at its start, as every
+                    // one's does until it is typed in or clicked in
+                    // The keys' view has the blue one, a little wider, which
+                    // blinks as iOS's does -- and which, being the one, says
+                    // where typing goes; a header's shows even at its start
+                    // then, since that is where a key would land
+                    let header = pp.kind != Kind::Body;
+                    let keys = pp.key_caret.is_some();
+                    let shows = pp.key_caret.unwrap_or(true);
+                    if q0 == q1 && q0 >= line.start && q0 <= line.end && !(header && q0 == 0 && !keys) && shows {
+                        let d = line.to_disp(q0);
+                        let mut sub = line.subs.len() - 1;
                         for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                            let (s, e) = (dlo.max(ds), dhi.min(de));
-                            if s < e {
-                                let cy = ly + lh * i as f32 + lh / 2.;
-                                let r = Bounds::from_corners(point(origin.x + x(s) - x(ds), cy - px(0.6)), point(origin.x + x(e) - x(ds), cy + px(0.6)));
-                                window.paint_quad(fill(r, rgb(crate::theme::theme().text)));
+                            if d >= ds && d < de {
+                                sub = i;
+                                break;
                             }
                         }
-                    }
-                }
-                // apex's verbs, drawn as their icons on their em spaces, in
-                // the ink the word would have (faint, swept, hinted)
-                for &(d, i) in &line.icons {
-                    let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
-                    let (ds, _) = line.subs[sub];
-                    let (x0, x1) = (origin.x + x(d) - x(ds), origin.x + x(d + ICON_CELL.len_utf8()) - x(ds));
-                    let side = pp.fontspec.size.min(lh + ext * 2. - px(4.));
-                    let c = point((x0 + x1) / 2., ly + lh * sub as f32 + lh / 2.);
-                    let ink = line.colors.iter().find(|&&(a, b, _)| d >= a && d < b).map(|c| c.2).unwrap_or_else(|| rgb(crate::theme::theme().text_dim));
-                    let name: SharedString = format!("apex-verb-{i}.svg").into();
-                    let _ = window.paint_svg(Bounds::new(point(c.x - side / 2., c.y - side / 2.), size(side, side)), name, Some(verb_svg(i)), gpui::TransformationMatrix::unit(), ink, cx);
-                }
-                // the path's picker's caret, in what is typed in the head
-                if let Some(d) = line.caret {
-                    let sub = line.subs.iter().rposition(|&(ds, _)| ds <= d).unwrap_or(0);
-                    let (ds, _) = line.subs[sub];
-                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh + ext * 2. - px(2.));
-                    let at = point(origin.x + x(d) - x(ds) - px(0.5), ly + lh * sub as f32 + (lh - tall) / 2.);
-                    window.paint_quad(fill(Bounds::new(at, size(px(2.), tall)), rgb(crate::theme::theme().accent)).corner_radii(px(1.)));
-                }
-                // the divider before the user's words, a hairline as tall
-                // as the ink
-                if let Some(d) = line.bar {
-                    let sub = line.subs.iter().position(|&(ds, de)| d >= ds && d < de).unwrap_or(0);
-                    let (ds, _) = line.subs[sub];
-                    let mid = origin.x + (x(d) + x(d + 1)) / 2. - x(ds);
-                    let tall = ink(window, &pp.fontspec).1;
-                    let sy = ly + lh * sub as f32 + (lh - tall) / 2.;
-                    let th = crate::theme::theme();
-                    window.paint_quad(fill(Bounds::new(point(mid - px(0.5), sy), size(px(1.), tall)), rgb(th.body_border)));
-                }
-
-                // the tick, as a Mac text view's caret: a plain line, a
-                // little in from the row's top and bottom. A header's is
-                // left out where it only sits at its start, as every
-                // one's does until it is typed in or clicked in
-                // The keys' view has the blue one, a little wider, which
-                // blinks as iOS's does -- and which, being the one, says
-                // where typing goes; a header's shows even at its start
-                // then, since that is where a key would land
-                let header = pp.kind != Kind::Body;
-                let keys = pp.key_caret.is_some();
-                let shows = pp.key_caret.unwrap_or(true);
-                if q0 == q1 && q0 >= line.start && q0 <= line.end && !(header && q0 == 0 && !keys) && shows {
-                    let d = line.to_disp(q0);
-                    let mut sub = line.subs.len() - 1;
-                    for (i, &(ds, de)) in line.subs.iter().enumerate() {
-                        if d >= ds && d < de {
-                            sub = i;
-                            break;
+                        let (ds, _) = line.subs[sub];
+                        let cx_ = origin.x + x(d) - x(ds);
+                        let ty = ly + lh * sub as f32;
+                        let th = crate::theme::theme();
+                        // as tall as the ink (ascender to descender) and a pixel
+                        // over each way, centred on the line as the ink is --
+                        // not the line's height, which a tag's air makes taller
+                        let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh + ext * 2. - px(2.));
+                        let cy = ty + (lh - tall) / 2.;
+                        if keys {
+                            // gliding there, with Smooth Cursor on
+                            let frame = caret_frame(bounds, pp.shown.0 as u64, origin.y - bounds.top());
+                            let at = glide_caret(&self.acme, CaretKey::View(self.view), frame, point(cx_, cy), window, cx);
+                            let (cx_, cy) = (at.x, at.y);
+                            window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), cy), size(px(2.), tall)), rgb(th.accent)).corner_radii(px(1.)));
+                        } else {
+                            window.paint_quad(fill(Bounds::new(point(cx_, cy + px(0.5)), size(px(1.5), tall - px(1.))), rgb(th.text)).corner_radii(px(0.75)));
                         }
                     }
-                    let (ds, _) = line.subs[sub];
-                    let cx_ = origin.x + x(d) - x(ds);
-                    let ty = ly + lh * sub as f32;
-                    let th = crate::theme::theme();
-                    // as tall as the ink (ascender to descender) and a pixel
-                    // over each way, centred on the line as the ink is --
-                    // not the line's height, which a tag's air makes taller
-                    let tall = (ink(window, &pp.fontspec).1 + px(2.)).min(lh + ext * 2. - px(2.));
-                    let cy = ty + (lh - tall) / 2.;
-                    if keys {
-                        // gliding there, with Smooth Cursor on
-                        let frame = caret_frame(bounds, pp.shown.0 as u64, origin.y - bounds.top());
-                        let at = glide_caret(&self.acme, CaretKey::View(self.view), frame, point(cx_, cy), window, cx);
-                        let (cx_, cy) = (at.x, at.y);
-                        window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), cy), size(px(2.), tall)), rgb(th.accent)).corner_radii(px(1.)));
-                    } else {
-                        window.paint_quad(fill(Bounds::new(point(cx_, cy + px(0.5)), size(px(1.5), tall - px(1.))), rgb(th.text)).corner_radii(px(0.75)));
-                    }
                 }
-            }
+            });
 
             // a body's scroller, over its text
             if let Some((s0, s1, shows)) = overlay {

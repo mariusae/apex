@@ -504,6 +504,9 @@ pub struct Acme {
     pub url_asked: std::collections::HashSet<WindowId>,
     /// Measured by the tag elements each frame: wrapped lines, trailing newline.
     pub tag_need: HashMap<ViewId, (usize, bool)>,
+    /// How far the top row and the column tags, which do not wrap, are
+    /// scrolled across: kept so that their caret shows.
+    pub tag_scroll: HashMap<ViewId, f32>,
     /// The tab shown has nothing of its own yet -- its link is being
     /// made, or could not be -- and the window is a blank page saying
     /// this instead of acme. Tabs are the app's own state: the link
@@ -1743,6 +1746,7 @@ impl Acme {
             sidebar_rows: Default::default(),
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),
+            tag_scroll: HashMap::new(),
             waiting: None,
             close_requested: false,
             term_under_pointer: None,
