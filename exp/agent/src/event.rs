@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 pub struct Event {
     /// When, in milliseconds since the epoch.
     pub ms: i64,
-    /// Which program: `claude`, `codex`.
+    /// Which program: `claude`, `codex`, `muse`.
     pub agent: String,
     /// The hook's name: `PreToolUse`, `Stop`, ...
     pub event: String,

@@ -1,15 +1,16 @@
 //! apex-agent: an experiment. What every agent in the session is
-//! doing -- every Claude Code and Codex started in one of its terminals
-//! -- fed by the hooks those agents offer, and for any of them its
-//! transcript, its last answer as a page, its changes as a diff.
+//! doing -- every Claude Code, Codex and Muse started in one of its
+//! terminals -- fed by the hooks those agents offer, and for any of
+//! them its transcript, its last answer as a page, its changes as a
+//! diff.
 //!
 //!     apex-agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]
-//!     apex-agent install [claude|codex]...  put the hooks in (both, by default)
-//!     apex-agent uninstall [claude|codex]...
+//!     apex-agent install [claude|codex|muse]...  put the hooks in (all, by default)
+//!     apex-agent uninstall [claude|codex|muse]...
 //!     apex-agent ls                         every agent, as text
 //!     apex-agent wait ID                    until the agent's turn ends; the exit status is its state
 //!     apex-agent events [-all]              the events as they come, a line each
-//!     apex-agent hook claude|codex          what the agents run; not for typing
+//!     apex-agent hook claude|codex|muse     what the agents run; not for typing
 //!
 //! The hook is this same program: each event the agent has is one line
 //! appended to `~/.apex/agents/SESSION.jsonl`, and apex-agent reads
@@ -31,8 +32,8 @@
 //! is waiting and a click takes you to them, one agent a click;
 //! it goes as soon as the agent is back at work. An agent at work has
 //! its terminal marked working, its handle turning -- or, when its plan
-//! (Claude's todos, Codex's plan) says how far along it is, its handle's
-//! circle filled as far as the steps done.
+//! (Claude's and Muse's todos, Codex's plan) says how far along it is,
+//! its handle's circle filled as far as the steps done.
 //!
 //! `-a` adds the overview window, `DIR/-agents`, a block an agent in
 //! the order they want attention: `?` a permission or a question
@@ -60,9 +61,9 @@ use apex_agent::{hook, install, win};
 
 fn usage() -> ! {
     eprintln!("usage: apex-agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]");
-    eprintln!("       apex-agent install|uninstall [claude|codex]...");
+    eprintln!("       apex-agent install|uninstall [claude|codex|muse]...");
     eprintln!("       apex-agent ls | wait ID | events [-all]");
-    eprintln!("       apex-agent hook claude|codex");
+    eprintln!("       apex-agent hook claude|codex|muse");
     std::process::exit(2);
 }
 
@@ -77,7 +78,7 @@ fn main() {
             let which: Vec<&str> = if args.len() > 1 { args[1..].iter().map(String::as_str).collect() } else { install::AGENTS.to_vec() };
             for a in &which {
                 if !install::AGENTS.contains(a) {
-                    eprintln!("apex-agent: {a}: not an agent I know; claude or codex");
+                    eprintln!("apex-agent: {a}: not an agent I know; claude, codex or muse");
                     std::process::exit(2);
                 }
             }

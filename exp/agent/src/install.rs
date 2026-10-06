@@ -1,6 +1,7 @@
 //! `apex-agent install`: the hooks put where the agents read them.
 //! Claude Code reads `~/.claude/settings.json`; Codex reads
-//! `~/.codex/hooks.json`, in the same shape. Ours are the handlers whose
+//! `~/.codex/hooks.json`; Muse reads `~/.config/muse/settings.json`;
+//! all in the same shape. Ours are the handlers whose
 //! command is `apex-agent hook AGENT`, and they are known by that, so an
 //! install over an install changes nothing, an install of a moved
 //! binary replaces the old path, and `uninstall` takes ours away and
@@ -45,12 +46,42 @@ pub const CODEX_EVENTS: [&str; 12] = [
     "PostCompact",
 ];
 
-pub const AGENTS: [&str; 2] = ["claude", "codex"];
+/// Muse's: the same shape as the others', but `PermissionDenied` is
+/// not an event it has, and `Interrupt` wants a handler that runs
+/// without waiting, which ours is not, so neither is installed.
+pub const MUSE_EVENTS: [&str; 14] = [
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PermissionRequest",
+    "Notification",
+    "Stop",
+    "StopFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
+];
+
+pub const AGENTS: [&str; 3] = ["claude", "codex", "muse"];
+
+/// Where Muse reads its configuration: `$XDG_CONFIG_HOME`, else
+/// `~/.config`, as Muse itself has it.
+pub fn config_dir(home: &Path) -> PathBuf {
+    match std::env::var("XDG_CONFIG_HOME").ok().filter(|d| !d.trim().is_empty()) {
+        Some(d) => PathBuf::from(d),
+        None => home.join(".config"),
+    }
+}
 
 /// Where an agent keeps its hooks, under `home`.
 pub fn hooks_file(home: &Path, agent: &str) -> PathBuf {
     match agent {
         "claude" => home.join(".claude").join("settings.json"),
+        "muse" => config_dir(home).join("muse").join("settings.json"),
         _ => home.join(".codex").join("hooks.json"),
     }
 }
@@ -58,6 +89,7 @@ pub fn hooks_file(home: &Path, agent: &str) -> PathBuf {
 fn events_of(agent: &str) -> &'static [&'static str] {
     match agent {
         "claude" => &CLAUDE_EVENTS,
+        "muse" => &MUSE_EVENTS,
         _ => &CODEX_EVENTS,
     }
 }
@@ -240,6 +272,36 @@ mod tests {
         uninstall(&home, &["codex"]).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(v, json!({}));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn muse_hooks_go_in_its_settings_wherever_it_reads_them() {
+        let home = home();
+        let prev = std::env::var_os("XDG_CONFIG_HOME");
+        std::env::set_var("XDG_CONFIG_HOME", home.join("xdg"));
+        // under $XDG_CONFIG_HOME when it says
+        assert_eq!(hooks_file(&home, "muse"), home.join("xdg").join("muse").join("settings.json"));
+        install(&home, Path::new("/bin/apex-agent"), &["muse"]).unwrap();
+        let file = home.join("xdg").join("muse").join("settings.json");
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(keys(&v["hooks"]).len(), MUSE_EVENTS.len());
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "/bin/apex-agent hook muse");
+        // the question may wait on the pane; the rest are a line and done
+        assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 120);
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"], 5);
+        assert!(v["hooks"].get("PermissionDenied").is_none());
+        assert!(v["hooks"].get("Interrupt").is_none());
+        uninstall(&home, &["muse"]).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v, json!({}));
+        // under ~/.config when it says nothing
+        std::env::remove_var("XDG_CONFIG_HOME");
+        assert_eq!(hooks_file(&home, "muse"), home.join(".config").join("muse").join("settings.json"));
+        match prev {
+            Some(p) => std::env::set_var("XDG_CONFIG_HOME", p),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
         let _ = std::fs::remove_dir_all(&home);
     }
 

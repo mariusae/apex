@@ -1,6 +1,7 @@
 //! The sessions a directory has had, as the agents keep them on disk:
 //! Claude Code's under `~/.claude/projects/DIR-AS-A-NAME/`, Codex's
-//! rollouts under `~/.codex/sessions/`, each saying which directory it
+//! rollouts under `~/.codex/sessions/`, Muse's logs under
+//! `~/.local/share/muse/sessions/`, each saying which directory it
 //! was in. Listed as apex-acp's `Resume` lists them -- the id, when it
 //! was last worked in, what it is about -- so B3 on an id opens the
 //! transcript and `Resume ID` takes the session up again.
@@ -8,6 +9,20 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+
+/// Where Muse keeps its data: `$XDG_DATA_HOME`, else `~/.local/share`,
+/// as Muse itself has it.
+pub fn data_home() -> PathBuf {
+    match std::env::var("XDG_DATA_HOME").ok().filter(|d| !d.trim().is_empty()) {
+        Some(d) => PathBuf::from(d),
+        None => PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into())).join(".local/share"),
+    }
+}
+
+/// Muse's own directory under it: its sessions, and their subagents'.
+pub fn muse_home() -> PathBuf {
+    data_home().join("muse")
+}
 
 /// A session an agent has had here before.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,9 +45,9 @@ pub fn claude_project(cwd: &str) -> String {
 }
 
 /// The sessions had in `cwd`, newest first: Claude Code's from
-/// `claude_home` (`~/.claude`) and Codex's from `codex_home`
-/// (`~/.codex`).
-pub fn sessions(claude_home: &Path, codex_home: &Path, cwd: &str) -> Vec<Past> {
+/// `claude_home` (`~/.claude`), Codex's from `codex_home` (`~/.codex`)
+/// and Muse's from `muse_home` (`~/.local/share/muse`).
+pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, cwd: &str) -> Vec<Past> {
     let mut out = Vec::new();
     let dir = claude_home.join("projects").join(claude_project(cwd));
     if let Ok(rd) = std::fs::read_dir(&dir) {
@@ -53,8 +68,78 @@ pub fn sessions(claude_home: &Path, codex_home: &Path, cwd: &str) -> Vec<Past> {
             out.push(p);
         }
     }
+    for path in muse_logs(muse_home) {
+        if let Some(p) = muse_meta(&path, cwd) {
+            out.push(p);
+        }
+    }
     out.sort_by(|a, b| b.when.cmp(&a.when).then(a.id.cmp(&b.id)));
     out
+}
+
+/// Every Muse session's log: `sessions/YYYY/MM/DD/ID/session.jsonl`
+/// under `muse_home`. The subagents' logs, under each session, are
+/// their parent's affair and not sessions of their own.
+fn muse_logs(muse_home: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let sessions = muse_home.join("sessions");
+    let years = std::fs::read_dir(&sessions).into_iter().flatten().flatten();
+    for y in years {
+        for m in std::fs::read_dir(y.path()).into_iter().flatten().flatten() {
+            for d in std::fs::read_dir(m.path()).into_iter().flatten().flatten() {
+                for s in std::fs::read_dir(d.path()).into_iter().flatten().flatten() {
+                    let log = s.path().join("session.jsonl");
+                    if log.is_file() {
+                        out.push(log);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A Muse session's log, by its id: the date it was had on is the
+/// directories' between, so every date is looked under.
+pub fn muse_transcript(muse_home: &Path, session: &str) -> Option<PathBuf> {
+    if !session.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return None;
+    }
+    let sessions = muse_home.join("sessions");
+    let years = std::fs::read_dir(&sessions).into_iter().flatten().flatten();
+    for y in years {
+        for m in std::fs::read_dir(y.path()).into_iter().flatten().flatten() {
+            for d in std::fs::read_dir(m.path()).into_iter().flatten().flatten() {
+                let log = d.path().join(session).join("session.jsonl");
+                if log.is_file() {
+                    return Some(log);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The session a Muse subagent belongs to: the one with
+/// `subagent/CHILD` under it. What the hooks were never told.
+pub fn resolve_parent(muse_home: &Path, child: &str) -> Option<String> {
+    if !child.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return None;
+    }
+    let sessions = muse_home.join("sessions");
+    let years = std::fs::read_dir(&sessions).into_iter().flatten().flatten();
+    for y in years {
+        for m in std::fs::read_dir(y.path()).into_iter().flatten().flatten() {
+            for d in std::fs::read_dir(m.path()).into_iter().flatten().flatten() {
+                for s in std::fs::read_dir(d.path()).into_iter().flatten().flatten() {
+                    if s.path().join("subagent").join(child).exists() {
+                        return s.file_name().to_str().map(String::from);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Every `rollout-*.jsonl` under `dir`, a few levels down.
@@ -140,6 +225,35 @@ fn codex_meta(path: &Path, cwd: &str) -> Option<Past> {
     Some(Past { id, kind: "codex".into(), path: path.to_path_buf(), cwd: cwd.to_string(), when: mtime(path), title })
 }
 
+/// A Muse log's session, when it was had in `cwd`: its directory's
+/// name for an id, its workspace for the directory, and the first
+/// thing asked for a title. A log that says neither is no session.
+fn muse_meta(path: &Path, cwd: &str) -> Option<Past> {
+    use std::io::BufRead;
+    let id = path.parent()?.file_name()?.to_str()?.to_string();
+    let f = std::fs::File::open(path).ok()?;
+    let (mut root, mut title) = (None, None);
+    for line in std::io::BufReader::new(f).lines().map_while(Result::ok) {
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        if root.is_none() && v.get("payload_type").and_then(Value::as_str) == Some("runtime.session.metadata") {
+            root = v.get("payload").and_then(|p| p.get("record")).and_then(|r| r.get("workspace_root")).and_then(Value::as_str).map(String::from);
+        }
+        if title.is_none() {
+            let ev = v.get("payload").and_then(|p| p.get("event"));
+            if ev.and_then(|e| e.get("kind")).and_then(Value::as_str) == Some("started") {
+                title = ev.and_then(|e| e.get("prompt")).and_then(Value::as_str).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+            }
+        }
+        if root.is_some() && title.is_some() {
+            break;
+        }
+    }
+    if root.as_deref() != Some(cwd) || title.is_none() {
+        return None;
+    }
+    Some(Past { id, kind: "muse".into(), path: path.to_path_buf(), cwd: cwd.to_string(), when: mtime(path), title })
+}
+
 /// The sessions as a listing, apex-acp's way: the id, when, and what
 /// it is about, a line each, with a first line of apex's own.
 pub fn listing(dir: &str, past: &[Past], now: i64) -> String {
@@ -192,6 +306,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         let claude = home.join(".claude");
         let codex = home.join(".codex");
+        let muse = home.join("share").join("muse");
         let proj = claude.join("projects").join(claude_project("/work/proj"));
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("aaaa-1.jsonl"), "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"fix the build\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"ai-title\",\"aiTitle\":\"Build fix\"}\n").unwrap();
@@ -202,18 +317,33 @@ mod tests {
         std::fs::create_dir_all(&day).unwrap();
         std::fs::write(day.join("rollout-2026-09-14T10-00-00-dddd-4.jsonl"), "{\"type\":\"session_meta\",\"payload\":{\"id\":\"dddd-4\",\"cwd\":\"/work/proj\"}}\n{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"<environment_context>x</environment_context>\"}]}}\n{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"run the tests\"}]}}\n").unwrap();
         std::fs::write(day.join("rollout-2026-09-14T11-00-00-eeee-5.jsonl"), "{\"type\":\"session_meta\",\"payload\":{\"id\":\"eeee-5\",\"cwd\":\"/elsewhere\"}}\n").unwrap();
-        let got = sessions(&claude, &codex, "/work/proj");
+        let mday = muse.join("sessions/2026/09/14");
+        std::fs::create_dir_all(mday.join("ffff-6/subagent/child-1")).unwrap();
+        std::fs::create_dir_all(mday.join("gggg-7")).unwrap();
+        std::fs::write(mday.join("ffff-6/session.jsonl"), "{\"payload_type\":\"runtime.session.metadata\",\"payload\":{\"record\":{\"workspace_root\":\"/work/proj\"}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"started\",\"prompt\":\"wire the widget\"}}}\n").unwrap();
+        std::fs::write(mday.join("gggg-7/session.jsonl"), "{\"payload_type\":\"runtime.session.metadata\",\"payload\":{\"record\":{\"workspace_root\":\"/elsewhere\"}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"started\",\"prompt\":\"another thing\"}}}\n").unwrap();
+        let got = sessions(&claude, &codex, &muse, "/work/proj");
         let ids: Vec<&str> = got.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(got.len(), 3, "{ids:?}");
-        assert!(ids.contains(&"aaaa-1") && ids.contains(&"bbbb-2") && ids.contains(&"dddd-4"), "{ids:?}");
+        assert_eq!(got.len(), 4, "{ids:?}");
+        assert!(ids.contains(&"aaaa-1") && ids.contains(&"bbbb-2") && ids.contains(&"dddd-4") && ids.contains(&"ffff-6"), "{ids:?}");
         let by = |id: &str| got.iter().find(|p| p.id == id).unwrap();
         assert_eq!(by("aaaa-1").title.as_deref(), Some("Build fix"));
         assert_eq!(by("bbbb-2").title.as_deref(), Some("port the shell"));
         assert_eq!((by("dddd-4").kind.as_str(), by("dddd-4").title.as_deref()), ("codex", Some("run the tests")));
+        assert_eq!((by("ffff-6").kind.as_str(), by("ffff-6").title.as_deref()), ("muse", Some("wire the widget")));
+        // a log is found by its session, whatever date it was had on,
+        // and a subagent's parent by the child
+        assert_eq!(muse_transcript(&muse, "ffff-6"), Some(mday.join("ffff-6/session.jsonl")));
+        assert_eq!(muse_transcript(&muse, "hhhh-8"), None);
+        assert_eq!(muse_transcript(&muse, "../x"), None);
+        assert_eq!(resolve_parent(&muse, "child-1").as_deref(), Some("ffff-6"));
+        assert_eq!(resolve_parent(&muse, "child-9"), None);
+        assert_eq!(resolve_parent(&muse, "../x"), None);
         let text = listing("/work/proj", &got, now());
         assert!(text.starts_with("– sessions in /work/proj"), "{text}");
         assert!(text.contains("  aaaa-1  "), "{text}");
         assert!(text.contains("  codex  run the tests\n"), "{text}");
+        assert!(text.contains("  muse  wire the widget\n"), "{text}");
         assert_eq!(listing("/x", &[], 0), "– no session has been had in /x\n");
         let _ = std::fs::remove_dir_all(&home);
     }

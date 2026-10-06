@@ -44,7 +44,7 @@ pub struct Sub {
 #[derive(Clone, Debug)]
 pub struct Agent {
     pub session: String,
-    /// `claude`, `codex`.
+    /// `claude`, `codex`, `muse`.
     pub kind: String,
     pub cwd: String,
     pub transcript: Option<String>,
@@ -397,15 +397,15 @@ pub fn shown_dir(dir: &str, home: Option<&str>) -> String {
 /// with `under` given, only agents in that directory are blocks, and
 /// the last line counts the rest; with `session` given (`-s`), only
 /// agents started in that apex session are. With no agents the first
-/// line is a guide: `Start claude` and `Start codex` are verbs, to be
-/// B2'd there.
+/// line is a guide: `Start claude`, `Start codex` and `Start muse`
+/// are verbs, to be B2'd there.
 pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>, under_dir: Option<&str>, session: Option<&str>) -> (String, Vec<(String, String)>, String) {
     let (here, elsewhere): (Vec<&Agent>, Vec<&Agent>) = agents.iter().partition(|a| match session {
         Some(s) => a.apex.as_deref() == Some(s),
         None => under_dir.is_none_or(|d| under(&a.cwd, d)),
     });
     let header = match (here.len(), elsewhere.len()) {
-        (0, 0) => "– no agents yet: Start claude, Start codex, or `apex-agent install` first\n".to_string(),
+        (0, 0) => "– no agents yet: Start claude, Start codex, Start muse, or `apex-agent install` first\n".to_string(),
         (0, _) if session.is_some() => "– no agents in this session\n".to_string(),
         (0, _) => "– no agents here\n".to_string(),
         (1, _) => "– 1 agent\n".to_string(),

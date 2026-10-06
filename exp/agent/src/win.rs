@@ -59,15 +59,17 @@ pub struct Opts {
     pub all: bool,
     /// No notes in +Errors when an agent asks or fails.
     pub quiet: bool,
-    /// Where the agents keep their sessions: `~/.claude`, `~/.codex`.
+    /// Where the agents keep their sessions: `~/.claude`, `~/.codex`,
+    /// `~/.local/share/muse`.
     pub claude_home: PathBuf,
     pub codex_home: PathBuf,
+    pub muse_home: PathBuf,
 }
 
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex") }
+        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home() }
     }
 }
 
@@ -926,7 +928,7 @@ impl Pane {
 
     // ---- starting and sending ----
 
-    /// `Start [claude|codex] [DIR]`: the agent in a new terminal
+    /// `Start [claude|codex|muse] [DIR]`: the agent in a new terminal
     /// beside the pane, in the pane's directory or the one named, which
     /// the hooks then pick up. `Newterm` is what apex starts terminals
     /// with, so that is what this is.
@@ -939,7 +941,7 @@ impl Pane {
             [a, d] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
             [d, a] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
             _ => {
-                self.t.errors(None, "Start: usage: Start [claude|codex] [DIR]\n")?;
+                self.t.errors(None, "Start: usage: Start [claude|codex|muse] [DIR]\n")?;
                 return Ok(true);
             }
         };
@@ -961,7 +963,7 @@ impl Pane {
         };
         let (kind, cwd, id) = (p.kind.clone(), p.cwd.clone(), p.id.clone());
         let extra = match kind.as_str() {
-            "codex" => format!("resume {id}"),
+            "codex" | "muse" => format!("resume {id}"),
             _ => format!("--resume {id}"),
         };
         self.start_agent(&kind, Some(&cwd), &extra)
@@ -1183,7 +1185,7 @@ impl Pane {
             return Ok(true);
         }
         let dir = self.opts.cwd.display().to_string();
-        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &dir);
+        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &self.opts.muse_home, &dir);
         let text = history::listing(&dir, &past, history::now());
         self.past = past.into_iter().map(|p| (p.id.clone(), p)).collect();
         let w = self.t.new_scratch(&format!("{}/", dir.trim_end_matches('/')), Some("agents history"))?;
@@ -1265,7 +1267,10 @@ impl Pane {
             (State::Asking, Some(id)) => Some(id),
             _ => None,
         };
-        self.detail_window(session, &a.kind, &a.cwd, &a.short(), transcript::transcript_path(a.transcript.as_deref()), None, &a.running, asking)
+        // Muse says nothing of where its log is, so it is looked up by
+        // the session when its transcript is wanted
+        let transcript = transcript::transcript_path(a.transcript.as_deref()).map(Path::to_path_buf).or_else(|| (a.kind == "muse").then(|| history::muse_transcript(&self.opts.muse_home, &a.session)).flatten());
+        self.detail_window(session, &a.kind, &a.cwd, &a.short(), transcript.as_deref(), None, &a.running, asking)
     }
 
     /// A past session's transcript: the same window, read from the

@@ -4,8 +4,8 @@
 //! the agent speaks, a line a tool call with its status ticked off in
 //! place, the files it touched as `path:line` for B3, an edit as its
 //! diff, a result cut to a dozen lines. Claude Code keeps a JSONL of
-//! its own shape and Codex another; each is read into the same items,
-//! and one writer renders them.
+//! its own shape, Codex another, and Muse a third; each is read into
+//! the same items, and one writer renders them.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -53,21 +53,25 @@ pub fn call_title(tool: &str, input: &Value, cwd: &str) -> String {
     let s = |k: &str| input.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty());
     let path = |k: &str| s(k).map(|p| shown(p, cwd));
     let words = match tool {
-        "Bash" => s("description").map(String::from).or_else(|| s("command").map(String::from)),
-        "Edit" | "Write" | "Read" | "NotebookEdit" | "MultiEdit" => path("file_path").or_else(|| path("notebook_path")),
+        "Bash" | "bash" => s("description").map(String::from).or_else(|| s("command").map(String::from)),
+        "Edit" | "Write" | "Read" | "NotebookEdit" | "MultiEdit" | "edit_file" | "write_file" | "read_file" => {
+            path("file_path").or_else(|| path("notebook_path")).or_else(|| path("path"))
+        }
         "Glob" => s("pattern").map(|p| match path("path") {
             Some(d) => format!("{p} in {d}"),
             None => p.to_string(),
         }),
-        "Grep" => s("pattern").map(|p| match path("path") {
+        "Grep" | "search" => s("pattern").map(|p| match path("path").or_else(|| paths_of(input)) {
             Some(d) => format!("{p} in {d}"),
             None => p.to_string(),
         }),
         "Agent" | "Task" => s("description").map(String::from).or_else(|| s("subagent_type").map(String::from)),
+        "subagent_spawn" => s("task_name").map(String::from).or_else(|| s("role").map(String::from)).or_else(|| s("objective").map(String::from)),
+        "submit_result" => s("text").map(String::from),
         "WebFetch" => s("url").map(String::from),
         "WebSearch" => s("query").map(String::from),
         "Skill" => s("skill").map(String::from),
-        "TodoWrite" | "update_plan" => Some("plan".to_string()),
+        "TodoWrite" | "update_plan" | "write_todos" => Some("plan".to_string()),
         "shell" | "shell_command" | "exec_command" | "local_shell" | "container.exec" => command_of(input),
         "apply_patch" => s("patch").or_else(|| s("input")).map(patched_files),
         _ => ["description", "command", "cmd", "file_path", "path", "pattern", "query", "prompt", "url", "name"].iter().find_map(|k| s(k)).map(String::from).or_else(|| command_of(input)),
@@ -78,6 +82,16 @@ pub fn call_title(tool: &str, input: &Value, cwd: &str) -> String {
         tool.to_string()
     } else {
         format!("{tool}: {line}")
+    }
+}
+
+/// The directories a search is over, as Muse gives them: a list.
+fn paths_of(input: &Value) -> Option<String> {
+    let paths: Vec<&str> = input.get("paths")?.as_array()?.iter().filter_map(Value::as_str).collect();
+    if paths.is_empty() {
+        None
+    } else {
+        Some(paths.join(", "))
     }
 }
 
@@ -107,15 +121,15 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
     let s = |k: &str| input.get(k).and_then(Value::as_str);
     let mut out = Vec::new();
     match tool {
-        "Bash" => {
+        "Bash" | "bash" => {
             if let (Some(_), Some(cmd)) = (s("description"), s("command")) {
                 out.extend(cmd.lines().map(String::from));
             } else if let Some(cmd) = s("command") {
                 out.extend(cmd.lines().skip(1).map(String::from));
             }
         }
-        "Edit" => {
-            let (lines, cut) = hunk(s("old_string").unwrap_or(""), s("new_string").unwrap_or(""));
+        "Edit" | "edit_file" => {
+            let (lines, cut) = hunk(s("old_string").or_else(|| s("find")).unwrap_or(""), s("new_string").or_else(|| s("replace")).unwrap_or(""));
             let (minus, plus) = (lines.iter().filter(|l| l.starts_with('-')).count(), lines.iter().filter(|l| l.starts_with('+')).count());
             out.push(format!("+{plus} -{minus}"));
             out.extend(lines);
@@ -123,11 +137,11 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                 out.push(format!("… {cut} more lines"));
             }
         }
-        "Write" => {
+        "Write" | "write_file" => {
             let n = s("content").map(|c| c.lines().count()).unwrap_or(0);
             out.push(format!("+{n} lines"));
         }
-        "TodoWrite" => {
+        "TodoWrite" | "write_todos" => {
             if let Some(todos) = input.get("todos").and_then(Value::as_array) {
                 for t in todos {
                     let box_ = match t.get("status").and_then(Value::as_str) {
@@ -135,7 +149,8 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                         Some("in_progress") => "[~]",
                         _ => "[ ]",
                     };
-                    out.push(format!("{box_} {}", t.get("content").and_then(Value::as_str).unwrap_or("")));
+                    let what = t.get("content").or_else(|| t.get("text")).and_then(Value::as_str).unwrap_or("");
+                    out.push(format!("{box_} {what}"));
                 }
             }
         }
@@ -161,8 +176,8 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                 out.push(format!("… {} more lines", lines.len() - shown));
             }
         }
-        "Agent" | "Task" => {
-            if let Some(p) = s("prompt") {
+        "Agent" | "Task" | "subagent_spawn" => {
+            if let Some(p) = s("prompt").or_else(|| s("objective")) {
                 out.extend(p.lines().take(6).map(String::from));
             }
         }
@@ -403,6 +418,7 @@ pub trait Parser: Send {
 pub fn parser(kind: &str, cwd: &str, thoughts: bool) -> Box<dyn Parser> {
     match kind {
         "codex" => Box::new(Codex { cwd: cwd.to_string(), thoughts }),
+        "muse" => Box::new(Muse { cwd: cwd.to_string(), thoughts }),
         _ => Box::new(Claude { cwd: cwd.to_string(), thoughts }),
     }
 }
@@ -619,6 +635,109 @@ fn codex_user_text(s: &str) -> Option<String> {
     }
 }
 
+/// Muse's `sessions/YYYY/MM/DD/ID/session.jsonl`: a line an
+/// event-log envelope, `payload_type` saying what of, and for
+/// `runtime.session` an `event.kind` saying which of those. The
+/// conversation is the run's: a prompt `started`, messages and tool
+/// calls committed, and their results in batches. The rest is the
+/// runtime's own bookkeeping -- tasks beginning and ending, hooks
+/// running, reminders proposed -- and the transcript wants none of it.
+pub struct Muse {
+    cwd: String,
+    thoughts: bool,
+}
+
+impl Parser for Muse {
+    fn line(&mut self, line: &str) -> Vec<Item> {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { return Vec::new() };
+        if v.get("payload_type").and_then(Value::as_str) != Some("runtime.session") {
+            return Vec::new();
+        }
+        let payload = v.get("payload");
+        let ev = payload.and_then(|p| p.get("event"));
+        let kind = ev.and_then(|e| e.get("kind")).and_then(Value::as_str);
+        let mut out = Vec::new();
+        match kind {
+            Some("started") => {
+                // a run's start is a prompt; a task's has none to give
+                if payload.and_then(|p| p.get("kind")).and_then(Value::as_str) == Some("run") {
+                    if let Some(t) = ev.and_then(|e| e.get("prompt")).and_then(Value::as_str).filter(|t| !t.trim().is_empty()) {
+                        out.push(Item::User(t.to_string()));
+                    }
+                }
+            }
+            Some("inbox_item_queued") => {
+                // a prompt typed while a run was going; only the user's
+                // own steering is the user's words
+                let steer = ev.and_then(|e| e.get("source")).and_then(|s| s.get("source")).and_then(Value::as_str) == Some("user_steer");
+                if steer {
+                    let t = ev
+                        .and_then(|e| e.get("payload")).and_then(|p| p.get("prompt")).and_then(Value::as_str)
+                        .or_else(|| ev.and_then(|e| e.get("body")).and_then(Value::as_str));
+                    if let Some(t) = t.filter(|t| !t.trim().is_empty()) {
+                        out.push(Item::User(t.to_string()));
+                    }
+                }
+            }
+            Some("assistant_message_committed") => {
+                if let Some(t) = ev.and_then(|e| e.get("text")).and_then(Value::as_str).filter(|t| !t.trim().is_empty()) {
+                    out.push(Item::Agent(t.to_string()));
+                }
+            }
+            Some("reasoning_committed") if self.thoughts => {
+                if let Some(t) = ev.and_then(|e| e.get("text")).and_then(Value::as_str).filter(|t| !t.trim().is_empty()) {
+                    out.push(Item::Thought(t.to_string()));
+                }
+            }
+            Some("assistant_tool_calls_committed") => {
+                for tc in ev.and_then(|e| e.get("tool_calls")).and_then(Value::as_array).into_iter().flatten() {
+                    let name = tc.get("name").and_then(Value::as_str).unwrap_or("tool");
+                    let args = match tc.get("args") {
+                        Some(Value::String(a)) => serde_json::from_str(a).unwrap_or(Value::Null),
+                        Some(a) => a.clone(),
+                        None => Value::Null,
+                    };
+                    out.push(Item::Call { id: tc.get("call_id").and_then(Value::as_str).unwrap_or("").to_string(), title: call_title(name, &args, &self.cwd), detail: call_detail(name, &args, &self.cwd) });
+                }
+            }
+            Some("tool_result_batch_committed") => {
+                for r in ev.and_then(|e| e.get("results")).and_then(Value::as_array).into_iter().flatten() {
+                    let text = match r.get("text") {
+                        Some(Value::String(s)) => s.clone(),
+                        Some(t) => t.to_string(),
+                        None => String::new(),
+                    };
+                    out.push(Item::Result { id: r.get("tool_call_id").and_then(Value::as_str).unwrap_or("").to_string(), ok: result_ok(&text), text: result_text(&text) });
+                }
+            }
+            _ => {}
+        }
+        out
+    }
+}
+
+/// A result as shown: a tool's envelope -- a shell's, with the output
+/// in it -- is unwrapped to what it said.
+fn result_text(text: &str) -> String {
+    if let Ok(Value::Object(o)) = serde_json::from_str::<Value>(text) {
+        if let Some(Value::String(out)) = o.get("output") {
+            return out.clone();
+        }
+    }
+    text.to_string()
+}
+
+/// Whether a result went well: a shell says its exit code, and the
+/// rest are taken as they come.
+fn result_ok(text: &str) -> bool {
+    if let Ok(Value::Object(o)) = serde_json::from_str::<Value>(text) {
+        if let Some(code) = o.get("exit_code").and_then(Value::as_i64) {
+            return code == 0;
+        }
+    }
+    true
+}
+
 /// Where the transcript of an agent's session is: what its hooks said,
 /// as a path.
 pub fn transcript_path(p: Option<&str>) -> Option<&Path> {
@@ -646,6 +765,30 @@ mod tests {
         let d = call_detail("Bash", &serde_json::json!({"command": "ls\npwd", "description": "List"}), cwd);
         assert_eq!(d, vec!["ls", "pwd"]);
         assert_eq!(call_detail("Bash", &serde_json::json!({"command": "ls"}), cwd), Vec::<String>::new());
+        // and Muse's, in its own words
+        assert_eq!(call_title("bash", &serde_json::json!({"command": "cargo test", "description": "Test"}), cwd), "bash: Test");
+        assert_eq!(call_title("bash", &serde_json::json!({"command": "ls"}), cwd), "bash: ls");
+        assert_eq!(call_title("read_file", &serde_json::json!({"path": "/home/me/proj/src/a.rs"}), cwd), "read_file: src/a.rs");
+        assert_eq!(call_title("write_file", &serde_json::json!({"path": "notes.txt", "content": "hi\n"}), cwd), "write_file: notes.txt");
+        assert_eq!(call_title("search", &serde_json::json!({"pattern": "fn main", "paths": ["src", "tests"]}), cwd), "search: fn main in src, tests");
+        assert_eq!(call_title("search", &serde_json::json!({"pattern": "fn main"}), cwd), "search: fn main");
+        assert_eq!(call_title("subagent_spawn", &serde_json::json!({"task_name": "shell-probe", "objective": "run it"}), cwd), "subagent_spawn: shell-probe");
+        assert_eq!(call_title("submit_result", &serde_json::json!({"text": "sub-agent-works"}), cwd), "submit_result: sub-agent-works");
+        assert_eq!(call_title("write_todos", &serde_json::json!({"todos": []}), cwd), "write_todos: plan");
+        let d = call_detail("edit_file", &serde_json::json!({"path": "a.rs", "find": "a\nb", "replace": "a\nB"}), cwd);
+        assert_eq!(d, vec!["+1 -1", "-b", "+B"]);
+        let d = call_detail("write_file", &serde_json::json!({"path": "n", "content": "a\nb\n"}), cwd);
+        assert_eq!(d, vec!["+2 lines"]);
+        let d = call_detail("write_todos", &serde_json::json!({"todos": [{"text": "a", "status": "completed"}, {"text": "b", "status": "in_progress"}]}), cwd);
+        assert_eq!(d, vec!["[x] a", "[~] b"]);
+        let d = call_detail("subagent_spawn", &serde_json::json!({"objective": "one\ntwo"}), cwd);
+        assert_eq!(d, vec!["one", "two"]);
+        // a result in an envelope is unwrapped, and a shell says how it ended
+        assert_eq!(result_text("{\"output\":\"hi\\n\",\"exit_code\":0}"), "hi\n");
+        assert_eq!(result_text("wrote 22 bytes"), "wrote 22 bytes");
+        assert!(result_ok("{\"output\":\"hi\",\"exit_code\":0}"));
+        assert!(!result_ok("{\"output\":\"000\",\"exit_code\":6}"));
+        assert!(result_ok("wrote 22 bytes"));
     }
 
     #[test]
@@ -730,6 +873,42 @@ mod tests {
             }
         }
         assert_eq!(w.text, "~\n\nrun the tests\n\n  · Running cargo test\n✓ shell: bash -lc cargo test\n    test result: ok\n• All green.\n");
+    }
+
+    #[test]
+    fn a_muse_log_reads_as_the_conversation() {
+        let mut p = Muse { cwd: "/home/me/proj".into(), thoughts: true };
+        let mut w = Writer::new();
+        let lines = [
+            r#"{"payload_type":"runtime.session.metadata","payload":{"record":{"workspace_root":"/home/me/proj"}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"task","event":{"kind":"started","task_id":"t0"}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"started","prompt":"run the tests"}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"hook_run_started"}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"reasoning_committed","text":"Running cargo test"}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"assistant_tool_calls_committed","tool_calls":[{"name":"bash","args":"{\"command\":\"cargo test\",\"description\":\"Test\"}","call_id":"c1"}]}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"task","event":{"kind":"output","chunk":"x"}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"tool_result_batch_committed","results":[{"tool_call_id":"c1","text":"{\"output\":\"test result: ok\",\"exit_code\":0}"}]}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"assistant_tool_calls_committed","tool_calls":[{"name":"read_file","args":{"path":"src/a.rs"},"call_id":"c2"}]}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"tool_result_batch_committed","results":[{"tool_call_id":"c2","text":"fn main() {}"}]}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"assistant_message_committed","text":"All green."}}}"#,
+            r#"{"payload_type":"runtime.session","payload":{"kind":"run","run_id":"r1","event":{"kind":"terminal","terminal":"completed"}}}"#,
+            r#"{"payload_type":"session.end","payload":{"record":{"exit_reason":"clean"}}}"#,
+        ];
+        for l in lines {
+            for it in p.line(l) {
+                w.item(&it);
+            }
+        }
+        assert_eq!(w.text, "~\n\nrun the tests\n\n  · Running cargo test\n✓ bash: Test\n    cargo test\n    test result: ok\n✓ read_file: src/a.rs\n    fn main() {}\n• All green.\n");
+        // a steered prompt is the user's; anything else queued is not
+        let mut p = Muse { cwd: "/x".into(), thoughts: false };
+        let items = p.line(r#"{"payload_type":"runtime.session","payload":{"event":{"kind":"inbox_item_queued","source":{"source":"user_steer"},"payload":{"prompt":"wait, first this"}}}}"#);
+        assert_eq!(items, vec![Item::User("wait, first this".into())]);
+        let items = p.line(r#"{"payload_type":"runtime.session","payload":{"event":{"kind":"inbox_item_queued","source":{"source":"cron"},"body":"scheduled"}}}"#);
+        assert!(items.is_empty());
+        // without thoughts the thinking is not shown
+        let items = p.line(r#"{"payload_type":"runtime.session","payload":{"event":{"kind":"reasoning_committed","text":"hmm"}}}"#);
+        assert!(items.is_empty());
     }
 
     #[test]

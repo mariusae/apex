@@ -1,17 +1,17 @@
 # apex-agent (experimental)
 
 Serves the terminals of an apex session that are running agents --
-Claude Code and Codex -- so that each of them has its transcript, its
-last answer as a page and its changes as a diff on its own window, and
-says with a notification when one wants you. It is fed by the hooks
+Claude Code, Codex and Muse -- so that each of them has its transcript,
+its last answer as a page and its changes as a diff on its own window,
+and says with a notification when one wants you. It is fed by the hooks
 those agents offer and written against the public tool API
 (`apex-tool`) only, as `apex-acp` is; it is not part of the supported
 surface.
 
 ## Running it
 
-    cargo build -p apex-agent
-    apex-agent install          # the hooks, for claude and codex both
+    with-proxy exp/agent/build.sh # release build; installs Zig 0.16 if needed
+    apex-agent install          # the hooks, for every agent
     apex-agent install claude   # or one of them
     apex-agent                  # this session's agents; no window of its own
     apex-agent -a               # and the overview window, DIR/-agents
@@ -24,16 +24,17 @@ surface.
     apex-agent wait ID          # until the agent's turn ends; exits with its state
     apex-agent events [-all]    # the events as they come, a line each
 
-`install` writes the hooks into `~/.claude/settings.json` and
-`~/.codex/hooks.json`, naming this binary by its full path as it was
-invoked -- a bare `apex-agent` as PATH finds it, symlinks and launchers
-(dotslash) not followed, so the hooks stay right as what they lead to
-moves; everything else in those files stays as it was, an install over an install
-changes nothing, and `uninstall` takes ours out and no others. Agents
-started after that are seen; one already running is not, until it is
-started again. Codex has its hooks on by default in current versions;
-an older one wants `codex_hooks = true` under `[features]` in
-`~/.codex/config.toml`.
+`install` writes the hooks into `~/.claude/settings.json`,
+`~/.codex/hooks.json` and `~/.config/muse/settings.json` (wherever
+`$XDG_CONFIG_HOME` says, for Muse), naming this binary by its full path
+as it was invoked -- a bare `apex-agent` as PATH finds it, symlinks and
+launchers (dotslash) not followed, so the hooks stay right as what they
+lead to moves; everything else in those files stays as it was, an
+install over an install changes nothing, and `uninstall` takes ours out
+and no others. Agents started after that are seen; one already running
+is not, until it is started again. Codex has its hooks on by default in
+current versions; an older one wants `codex_hooks = true` under
+`[features]` in `~/.codex/config.toml`.
 
 Run `apex-agent` from an apex terminal or B2 it in a window: it attaches
 to the session it was started in, and from then on the agents in that
@@ -50,7 +51,12 @@ or the last message when the event carries one (those two kept whole,
 within reason, since the page shows them), and, once, the agent's
 process, the apex session and window it was started in, and where its
 repository stood. The agent's input is not kept -- a `Write`'s input is
-the file -- so a log stays small.
+the file -- so a log stays small. Muse keeps its subagents in sessions
+of their own and says nothing of the parent, so those events are folded
+into the parent's log, found on disk; its own observers (the
+`*-reminder` kind) are dropped. Muse hands its hooks neither the apex
+session nor the window, so those are read from the agent's own
+environment instead.
 
 apex-agent reads those logs, and nothing else: no socket, no daemon.
 Nothing need be running when an agent starts, nothing is lost when it
@@ -128,7 +134,7 @@ doing. A block that changes is written in place. The window's handle
 pulses while any agent works, and the window is clean while none does:
 what it says is whole and nothing is going on behind it. The first line
 is apex's own, `–`, and says how many; with no agents it is a guide,
-and `Start claude` there is a verb to B2.
+and `Start claude`, `Start codex` and `Start muse` there are verbs to B2.
 
 The pane shows the agents started in the apex session it was launched
 from, wherever their directories are, and a last line counts the rest
@@ -191,10 +197,11 @@ to the snarf buffer and the clipboard:
 to paste into a prompt however it fits, so the agent reads the place as
 well as the text; B3 on the first line goes there.
 
-`Start [claude|codex] [DIR]` makes a terminal beside the pane running
-the agent, in the pane's directory or the one named, by `Newterm`; the
-hooks pick it up from there. `Resume ID` does the same with a past
-session, in the directory it was had in, so the agent replays it there.
+`Start [claude|codex|muse] [DIR]` makes a terminal beside the pane
+running the agent, in the pane's directory or the one named, by
+`Newterm`; the hooks pick it up from there. `Resume ID` does the same
+with a past session, in the directory it was had in, so the agent
+replays it there.
 
 ## In the agent's own window
 
@@ -218,8 +225,9 @@ block opens it, as does `Open`; so does B3 on a session's id wherever
 it is written -- a terminal, a commit message, `+Errors` -- a hex word
 that names no session of ours being handed back to what B3 always
 does. It is read from the agent's own record (Claude Code's
-`~/.claude/projects/.../SESSION.jsonl`, Codex's rollout) as that grows,
-and reads as apex-acp's transcript window does:
+`~/.claude/projects/.../SESSION.jsonl`, Codex's rollout, Muse's
+`session.jsonl`, found by the session since Muse says nothing of where
+it is) as that grows, and reads as apex-acp's transcript window does:
 
     ~
 
@@ -306,4 +314,8 @@ Codex is read from its documented formats and not against a running
 one, its permission decision included. Sapling and Mercurial are asked
 in the words their documentation gives and not against a running one
 either. Sessions the hooks were installed after are not seen until they
-are started again.
+are started again. A Muse subagent's permission question is not put
+to the pane -- the question the pane answers is the agent's own, and
+waiting on one it will never answer would hold the agent up for
+nothing. Where a Muse agent was started is read from the agent's own
+environment, which on Linux is exact and elsewhere best-effort.

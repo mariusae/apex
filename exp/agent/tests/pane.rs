@@ -111,6 +111,17 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let past_dir = claude_home.join("projects").join(apex_agent::history::claude_project(&tmp.display().to_string()));
     std::fs::create_dir_all(&past_dir).unwrap();
     std::fs::write(past_dir.join("deadbeef-1111.jsonl"), "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"an old prompt\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"an old answer\"}]}}\n").unwrap();
+    let muse_home = tmp.join("muse-home");
+    let mday = muse_home.join("sessions/2026/09/14");
+    std::fs::create_dir_all(mday.join("feedface-2222")).unwrap();
+    std::fs::write(
+        mday.join("feedface-2222/session.jsonl"),
+        format!(
+            "{{\"payload_type\":\"runtime.session.metadata\",\"payload\":{{\"record\":{{\"workspace_root\":\"{}\"}}}}}}\n{{\"payload_type\":\"runtime.session\",\"payload\":{{\"kind\":\"run\",\"event\":{{\"kind\":\"started\",\"prompt\":\"an old muse prompt\"}}}}}}\n{{\"payload_type\":\"runtime.session\",\"payload\":{{\"kind\":\"run\",\"event\":{{\"kind\":\"assistant_message_committed\",\"text\":\"an old muse answer\"}}}}}}\n",
+            tmp.display()
+        ),
+    )
+    .unwrap();
     let transcript = tmp.join("0b1c1425-aaaa.jsonl");
     std::fs::write(
         &transcript,
@@ -128,7 +139,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
     // the page's converter: the markdown itself, so the test can read it
     t.set("Preview.md", "cat");
-    let pane = Pane::start(t, Opts { pane: true, all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    let pane = Pane::start(t, Opts { pane: true, all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), muse_home: muse_home.clone(), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
         let r = pane.serve();
@@ -262,6 +273,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let text = wait_text(&mut c, &hist_name, |t| t.contains("deadbeef-1111"));
     assert!(text.contains("  deadbeef-1111  "), "{text}");
     assert!(text.contains("  claude  an old prompt\n"), "{text}");
+    assert!(text.contains("  muse  an old muse prompt\n"), "{text}");
     let hw = window_named(&c, &hist_name).unwrap();
     let hb = c.node.state.window(hw).unwrap().body_buffer().unwrap();
     let at = text.chars().collect::<Vec<char>>().windows(8).position(|x| x.iter().collect::<String>() == "deadbeef").unwrap();
@@ -271,6 +283,15 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let text = wait_text(&mut c, &past_name, |t| t.contains("old answer"));
     assert!(text.starts_with("– a past session, last worked in "), "{text}");
     assert!(text.ends_with("~\n\nan old prompt\n\n• an old answer\n"), "{text}");
+    // and a muse session's, read from its log in its own shape
+    let text = text_of(&c, hw);
+    let at = text.chars().collect::<Vec<char>>().windows(8).position(|x| x.iter().collect::<String>() == "feedface").unwrap();
+    let span = Span { buffer: hb, q0: at, q1: at + 8 };
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(hw), text: "feedface".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
+    let mpast_name = format!("{}/ (muse feedface)", tmp.display());
+    let text = wait_text(&mut c, &mpast_name, |t| t.contains("old muse answer"));
+    assert!(text.starts_with("– a past session, last worked in "), "{text}");
+    assert!(text.ends_with("~\n\nan old muse prompt\n\n• an old muse answer\n"), "{text}");
 
     // told where it was started, Goto has somewhere to go, and says nothing
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Goto 0b1c".into() }, Duration::from_secs(5)).unwrap();
@@ -367,6 +388,95 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!event::log_path(&logs, "0b1c1425-aaaa").exists());
+
+    // Del on the pane ends the tool
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
+    wait_gone(&mut c, &pane_name);
+    served.join().unwrap().unwrap();
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// A muse agent's log is a block too, and B3 on it opens the
+/// transcript -- found by the session, since Muse says nothing of
+/// where its log is -- which follows the log as it grows.
+#[test]
+fn a_muse_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
+    let sock = daemon();
+    let tmp = std::env::temp_dir().join(format!("apex-agent-pane-muse-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let logs = tmp.join("agents");
+    let proj = tmp.join("proj");
+    let muse_home = tmp.join("muse-home");
+    let transcript = muse_home.join("sessions/2026/10/05/01a10deb-2222/session.jsonl");
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(
+        &transcript,
+        format!(
+            "{{\"payload_type\":\"runtime.session.metadata\",\"payload\":{{\"record\":{{\"workspace_root\":\"{}\"}}}}}}\n{{\"payload_type\":\"runtime.session\",\"payload\":{{\"kind\":\"run\",\"event\":{{\"kind\":\"started\",\"prompt\":\"what is in hosts?\"}}}}}}\n{{\"payload_type\":\"runtime.session\",\"payload\":{{\"kind\":\"run\",\"event\":{{\"kind\":\"assistant_tool_calls_committed\",\"tool_calls\":[{{\"name\":\"bash\",\"args\":\"{{\\\"command\\\":\\\"cat /etc/hosts\\\",\\\"description\\\":\\\"Read hosts\\\"}}\",\"call_id\":\"c1\"}}]}}}}}}\n",
+            proj.display()
+        ),
+    )
+    .unwrap();
+    // no transcript path, as Muse has it: the pane looks the log up
+    let ev = |event: &str| Event { ms: event::now_ms(), agent: "muse".into(), event: event.into(), session: "01a10deb-2222".into(), cwd: proj.display().to_string(), ..Event::default() };
+    event::append(&logs, &Event { kind: Some("startup".into()), ..ev("SessionStart") }).unwrap();
+    event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
+    event::append(&logs, &Event { call: Some("c1".into()), tool: Some("bash".into()), title: Some("bash: Read hosts".into()), ..ev("PreToolUse") }).unwrap();
+
+    let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    t.set("Preview.md", "cat");
+    let pane = Pane::start(t, Opts { pane: true, all: true, muse_home: muse_home.clone(), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    let served = std::thread::spawn(move || {
+        let mut pane = pane;
+        pane.serve()
+    });
+    let pane_name = format!("{}/ (agents)", tmp.display());
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let text = wait_text(&mut c, &pane_name, |t| t.contains("bash: Read hosts"));
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dir = match proj.display().to_string().strip_prefix(&home) {
+        Some(rest) if !home.is_empty() => format!("~{rest}"),
+        _ => proj.display().to_string(),
+    };
+    assert_eq!(text, format!("– 1 agent\n\n▶ muse  {dir}  01a10deb\n  what is in hosts?\n  ▶ bash: Read hosts\n"));
+
+    let w = window_named(&c, &pane_name).unwrap();
+    let b = c.node.state.window(w).unwrap().body_buffer().unwrap();
+    let chars: Vec<char> = text.chars().collect();
+    let at = chars.windows(4).position(|w| w.iter().collect::<String>() == "muse").unwrap();
+    let span = Span { buffer: b, q0: at, q1: at + 4 };
+    c.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(w), text: "muse".into(), dir: None, edit_only: false, dry: false, at: Some(span), sel: Some(span), alt: None, reverse: false, verb: None });
+    let detail_name = format!("{}/ (muse 01a10deb)", proj.display());
+    let text = wait_text(&mut c, &detail_name, |t| t.contains("bash"));
+    assert_eq!(text, "~\n\nwhat is in hosts?\n\n▶ bash: Read hosts\n    cat /etc/hosts\n");
+
+    // the result lands and the turn ends: the transcript and the block
+    // say so, and the page has the answer
+    let mut f = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
+    std::io::Write::write_all(&mut f, b"{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"tool_result_batch_committed\",\"results\":[{\"tool_call_id\":\"c1\",\"text\":\"{\\\"output\\\":\\\"127.0.0.1 localhost\\\",\\\"exit_code\\\":0}\"}]}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"assistant_message_committed\",\"text\":\"It names localhost.\"}}}\n").unwrap();
+    event::append(&logs, &Event { call: Some("c1".into()), ..ev("PostToolUse") }).unwrap();
+    event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
+    let text = wait_text(&mut c, &detail_name, |t| t.contains("localhost."));
+    assert_eq!(text, "~\n\nwhat is in hosts?\n\n✓ bash: Read hosts\n    cat /etc/hosts\n    127.0.0.1 localhost\n• It names localhost.\n");
+    let text = wait_text(&mut c, &pane_name, |t| t.contains("\n~ muse"));
+    assert_eq!(text, format!("– 1 agent\n\n~ muse  {dir}  01a10deb\n  what is in hosts?\n  • It names localhost.\n"));
+
+    // Preview with dot in the block: the last exchange as a page
+    c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
+    let page_name = format!("preview {detail_name}");
+    let text = wait_text(&mut c, &page_name, |t| t.contains("localhost"));
+    assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
+
+    // the session ends: the block goes, the log with it, and the
+    // transcript window says so and stays
+    event::append(&logs, &ev("SessionEnd")).unwrap();
+    let text = wait_text(&mut c, &pane_name, |t| t.starts_with("– no agents"));
+    assert!(text.contains("Start muse"), "{text}");
+    assert!(!text.contains("01a10deb"), "{text}");
+    let text = wait_text(&mut c, &detail_name, |t| t.contains("gone"));
+    assert!(text.ends_with("• It names localhost.\n– the agent is gone\n"), "{text:?}");
 
     // Del on the pane ends the tool
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Del".into() }, Duration::from_secs(5)).unwrap();
