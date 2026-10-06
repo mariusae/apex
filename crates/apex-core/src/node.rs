@@ -18,6 +18,26 @@ use crate::tiling::{self, Rect, Warp};
 /// label and apex's own words (Del, Snarf, Put...) are no text in it but
 /// the window's state, drawn before it (`Node::window_verbs`).
 pub const WIN_TAG: &str = "Look ";
+
+/// Where a window's `Look` and its argument are in its tag (runes): the
+/// `Look` at `at`, the argument in `[start, end)` (empty where it would
+/// go when there is none), and whether it is written `Look/`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LookArg {
+    pub at: usize,
+    pub start: usize,
+    pub end: usize,
+    pub arg: String,
+    pub live: bool,
+}
+
+/// `Look/word` read as `Look word`.
+fn look_spaced(text: &str) -> std::borrow::Cow<'_, str> {
+    match text.strip_prefix("Look/") {
+        Some(rest) => format!("Look {rest}").into(),
+        None => text.into(),
+    }
+}
 pub const COL_TAG: &str = "New Cut Paste Snarf Sort Zerox Delcol ";
 pub const TOP_TAG: &str = "Newcol Newterm Win Web Kill Putall Exit End ";
 
@@ -1497,44 +1517,58 @@ impl Node {
     /// Search the body forward from the selection, wrapping; select a hit.
     /// acme's `search`, in the text `view`: forward from its selection's
     /// end, wrapping around; the match becomes the selection.
-    /// The first `Look` in window `w`'s tag and its argument: where the
-    /// argument is (runes, `[start, end)` -- empty, at the end of `Look `,
-    /// when there is none yet) and what it is. The argument is the word
-    /// after it, up to white space; a tag's later `Look`s are its words.
-    pub fn look_arg(&self, w: WindowId) -> Option<(usize, usize, String)> {
+    /// The first `Look` in window `w`'s tag and its argument: the word
+    /// after it, up to white space (a tag's later `Look`s are its words).
+    /// `Look/word` is `Look word` written to be looked for as it is typed:
+    /// the slash is what says so, in the text, for a client to see.
+    pub fn look_arg(&self, w: WindowId) -> Option<LookArg> {
         let tag = self.state.window(w).ok()?.tag;
         let text: Vec<char> = self.state.buffer(tag).ok()?.text.to_string().chars().collect();
         let word = ['L', 'o', 'o', 'k'];
         let gap = |c: char| c == ' ' || c == '\t';
-        let at = (0..text.len().saturating_sub(3)).find(|&i| text[i..i + 4] == word && (i == 0 || text[i - 1].is_whitespace()) && text.get(i + 4).is_none_or(|c| c.is_whitespace()))?;
+        let at = (0..text.len().saturating_sub(3)).find(|&i| text[i..i + 4] == word && (i == 0 || text[i - 1].is_whitespace()) && text.get(i + 4).is_none_or(|&c| c.is_whitespace() || c == '/'))?;
+        let live = text.get(at + 4) == Some(&'/');
         let mut start = at + 4;
-        while start < text.len() && gap(text[start]) {
+        if live {
             start += 1;
+        } else {
+            while start < text.len() && gap(text[start]) {
+                start += 1;
+            }
         }
         let mut end = start;
         while end < text.len() && !text[end].is_whitespace() {
             end += 1;
         }
-        Some((start, end, text[start..end].iter().collect()))
+        Some(LookArg { at, start, end, arg: text[start..end].iter().collect(), live })
     }
 
     /// The first `Look`'s argument in window `w`'s tag made `arg` (what B3
-    /// looked for there): a word, so not one with white space in it; and
-    /// a tag with no `Look` is left as it is.
+    /// looked for there), written `Look/arg`: a word, so not one with
+    /// white space in it; and a tag with no `Look` is left as it is.
     pub fn set_look_arg(&mut self, log: &mut Log, w: WindowId, arg: &str) -> Result<()> {
         if arg.is_empty() || arg.chars().any(char::is_whitespace) {
             return Ok(());
         }
-        let Some((start, end, was)) = self.look_arg(w) else { return Ok(()) };
-        if was == arg {
+        let Some(a) = self.look_arg(w) else { return Ok(()) };
+        if a.live && a.arg == arg {
             return Ok(());
         }
         let tag = self.state.window(w)?.tag;
-        // `Look` at the very end: a space before the word
-        let gapped = start == end && self.state.buffer(tag)?.text.len() == start && !self.state.buffer(tag)?.text.to_string().ends_with([' ', '\t']);
-        let text = if gapped { format!(" {arg}") } else { arg.to_string() };
         let group = self.new_group();
-        self.edit_op(log, tag, start, end - start, &text, group)
+        self.edit_op(log, tag, a.at + 4, a.end - (a.at + 4), &format!("/{arg}"), group)
+    }
+
+    /// The first `Look` in window `w`'s tag made `Look/`, its argument
+    /// kept: looked for as it is typed from now on.
+    pub fn make_look_live(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        let Some(a) = self.look_arg(w) else { return Ok(()) };
+        if a.live {
+            return Ok(());
+        }
+        let tag = self.state.window(w)?.tag;
+        let group = self.new_group();
+        self.edit_op(log, tag, a.at + 4, a.start - (a.at + 4), "/", group)
     }
 
     pub fn look(&mut self, log: &mut Log, view: ViewId, needle: &str) -> Result<bool> {
@@ -1896,7 +1930,7 @@ impl Node {
 
     /// Which handler a command resolves to.
     pub fn resolve(text: &str) -> Handler {
-        let t = text.trim_start();
+        let t = &*look_spaced(text.trim_start());
         if t.starts_with('|') || t.starts_with('<') || t.starts_with('>') {
             return Handler::Server;
         }
@@ -1915,6 +1949,7 @@ impl Node {
     /// question costs nothing when nobody has claimed anything.
     pub fn claimed(&self, ctx: ExecCtx, text: &str) -> bool {
         let ExecCtx::Window(w) = ctx else { return false };
+        let text = look_spaced(text.trim_start());
         let Some(verb) = text.split_whitespace().next() else { return false };
         crate::plumb::claims_verb(&self.state.meta.rules, verb, &self.window_path(w), self.window_kind(w), w, self.window_owner(w))
     }
@@ -1998,6 +2033,7 @@ impl Node {
 
     /// Returns `Ok(true)` for Exit.
     fn builtin(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<bool> {
+        let text = &*look_spaced(text);
         let mut words = text.split_whitespace();
         let cmd = words.next().unwrap_or("");
         let rest = text[cmd.len()..].trim();

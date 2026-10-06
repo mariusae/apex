@@ -916,21 +916,35 @@ fn the_first_look_in_a_tag_has_the_word_looked_for() {
         node.insert(log, ViewId::Tag(w), t).unwrap();
     };
     // the first Look's word; a later Look is a word of its own
+    let la = |at, start, end, arg: &str, live| Some(LookArg { at, start, end, arg: arg.into(), live });
     set_tag(&mut node, &mut log, "Put Look foo Look bar");
-    assert_eq!(node.look_arg(w), Some((9, 12, "foo".into())));
+    assert_eq!(node.look_arg(w), la(4, 9, 12, "foo", false));
     // none yet: an empty one, right after it
     set_tag(&mut node, &mut log, "Look ");
-    assert_eq!(node.look_arg(w), Some((5, 5, String::new())));
+    assert_eq!(node.look_arg(w), la(0, 5, 5, "", false));
+    // what B3 looked for is written Look/, to be looked for as typed
     node.set_look_arg(&mut log, w, "beta").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look beta");
-    // `Look` at the very end: a space before the word
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look/beta");
+    assert_eq!(node.look_arg(w), la(0, 5, 9, "beta", true));
     set_tag(&mut node, &mut log, "Look");
     node.set_look_arg(&mut log, w, "alpha").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look alpha");
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look/alpha");
     // a word replaced; words with spaces, and a tag with no Look, left be
     node.set_look_arg(&mut log, w, "gamma").unwrap();
     node.set_look_arg(&mut log, w, "two words").unwrap();
-    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look gamma");
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Look/gamma");
+    // Look/ with nothing after it, then a word of the tag's own: empty
+    set_tag(&mut node, &mut log, "Look/ Put");
+    assert_eq!(node.look_arg(w), la(0, 5, 5, "", true));
+    // made live, the word kept
+    set_tag(&mut node, &mut log, "Put Look  foo Del");
+    node.make_look_live(&mut log, w).unwrap();
+    assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Put Look/foo Del");
+    // Look/word is run as Look word
+    assert_eq!(Node::resolve("Look/beta"), Handler::Leader);
+    node.select(&mut log, ViewId::Body(w), 0, 0).unwrap();
+    node.exec(&mut log, ExecCtx::Window(w), "Look/beta").unwrap();
+    assert_eq!(node.selection(ViewId::Body(w)).unwrap(), (6, 10));
     set_tag(&mut node, &mut log, "Put Snarf");
     node.set_look_arg(&mut log, w, "x").unwrap();
     assert_eq!(node.state.buffer(tag).unwrap().text.to_string(), "Put Snarf");
