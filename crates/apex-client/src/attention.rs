@@ -91,9 +91,9 @@ pub fn queue(cx: &App) -> Vec<Note> {
 const ICON: &[u8] = include_bytes!("../../../mac/space-bunny-1024.png");
 
 /// The Dock's icon, set as the app runs: the sticker's own outline, with
-/// no square round it. (The bundle's icon, which the Finder shows, is
-/// the same picture; a system that sets icons from the bundle into a
-/// square of its own does that there, not here.)
+/// no square round it. (The bundle's icon, shown while it does not run,
+/// is the sticker on a navy square, `mac/apex.icon`: since macOS 26 a
+/// bundle's icon is a rounded square whatever it is drawn as.)
 pub fn dock_icon() {
     // SAFETY: AppKit on the main thread, at launch; the data is copied.
     unsafe {

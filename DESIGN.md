@@ -2103,9 +2103,12 @@ cut first and then the width is erased, as acme does.
 makes `Apex.app`: `apex-ui` as the executable, the `apex` command beside
 it, and an icon of a space bunny (`mac/space-bunny.svg`, and drawn at
 1024 in `mac/space-bunny-1024.png` -- the sticker's own outline filling
-the height, on nothing -- which `sips` scales to each size). The app
-sets the same picture as its Dock icon when it starts, so the Dock shows
-the outline with no square round it. Launched with no arguments the app makes sure a daemon
+the height, on nothing). Since macOS 26 a bundle's icon is set in a
+rounded square, so the bundle's is an Icon Composer icon,
+`mac/apex.icon` -- the sticker on navy -- compiled by Xcode's `actool`
+into `Assets.car` and `apex.icns` (without Xcode, the sticker alone,
+scaled by `sips`). While the app runs it sets the sticker alone as its
+Dock icon: the outline, with no square round it. Launched with no arguments the app makes sure a daemon
 answers on the default socket — starting one through the bundled `apex`
 with the home directory as its working directory — and opens its window
 on the session it had last time (`~/Library/Application
