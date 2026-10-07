@@ -201,11 +201,15 @@ impl Acme {
             let name = if current { self.session_label() } else { tab.url.session.clone() };
             let host = (!tab.url.is_local()).then(|| tab.url.arg.clone());
             let notified = !current && self.tab_notified(id, cx);
+            // where it stands, when it does not lead: the same word the
+            // tabs and the sidebar say
+            let word = self.tab_word(&tab, cx);
             panel = panel.child(
                 row(("session-menu-row", i))
                     .child(div().flex_none().w(px(12.)).child(if current { "✓" } else { "" }))
                     .child(div().flex_1().min_w_0().truncate().when(current, |d| d.font_weight(crate::fonts::weight(FontWeight::SEMIBOLD))).child(name))
                     .when_some(host, |d, host| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(t.panel_dim)).child(host)))
+                    .when_some(word, |d, word| d.child(div().flex_none().text_size(px(12.)).italic().text_color(rgb(t.panel_dim)).child(word)))
                     .when(notified, |d| d.child(div().flex_none().child(crate::shell::pjw(12., t.accent))))
                     .on_mouse_down(
                         MouseButton::Left,

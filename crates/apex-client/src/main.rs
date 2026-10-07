@@ -35,6 +35,7 @@ mod switcher;
 mod tagedit;
 mod titlebar;
 mod titlefit;
+mod standing;
 mod toasts;
 mod webbar;
 mod term_element;
@@ -176,7 +177,7 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::NavBack, window, cx| this.menu_command("Back", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NavFwd, window, cx| this.menu_command("Fwd", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Reconnect, window, cx| {
-                this.reconnect(window, cx);
+                this.ask_reconnect(window, cx);
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &shell::CloseWindow, window, cx| {
@@ -247,9 +248,13 @@ impl Render for Acme {
         // still takes the keys that reach the other tabs, and the picker
         // still opens over it; the link goes on being made in the pool
         if let Some(what) = self.waiting.clone() {
-            // a spinner over the words, as a Mac app waits
+            // a spinner over the words, as a Mac app waits -- while a link
+            // is coming; when one has failed, what to do instead: the next
+            // try's countdown, Reconnect now, Restart daemon for another
+            // build's (`standing`)
             let accent = text_element::rgb(t.accent);
-            let spinner = canvas(|_, _, _| {}, move |b, _, window, _| text_element::paint_spinner(window, gpui::point(b.left() + b.size.width / 2., b.top() + b.size.height / 2.), 9., 2., accent)).w(px(24.)).h(px(24.));
+            let actions = self.waiting_actions(cx);
+            let spinner = actions.is_none().then(|| canvas(|_, _, _| {}, move |b, _, window, _| text_element::paint_spinner(window, gpui::point(b.left() + b.size.width / 2., b.top() + b.size.height / 2.), 9., 2., accent)).w(px(24.)).h(px(24.)));
             let blank = rest(div())
                 .flex()
                 .flex_col()
@@ -257,8 +262,9 @@ impl Render for Acme {
                 .items_center()
                 .justify_center()
                 .bg(gpui::rgb(t.body_bg))
-                .child(spinner)
-                .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
+                .children(spinner)
+                .child(div().px(px(24.)).max_w(px(640.)).text_center().text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what))
+                .children(actions);
             let root = root.child(blank.relative().left(px(slide_off)));
             let root = root.child(self.title_bar(&me, window, cx));
             let root = match outgoing {
@@ -555,6 +561,9 @@ impl Render for Acme {
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
         let root = root.child(area);
         let root = root.child(self.title_bar(&me, window, cx));
+        // where this window stands, when it does not lead: what it means
+        // and what to do (`standing`)
+        let root = root.children(self.standing_banner(cx));
         let root = match outgoing {
             Some(o) => root.child(o),
             None => root,
@@ -1222,10 +1231,14 @@ impl app::Acme {
             .border_b(px(0.5))
             .border_color(gpui::rgb(t.body_border))
             .when(!side, |d| d.child(bare("title-lights").w(px(lights))).child(toggle).child(bare("title-gap0").w(px(6.))))
+            // the sidebar out, the session's name is in it: the chip
+            // leads the bar
+            .when(side, |d| d.child(div().relative().flex_none().ml(px(8.)).mr(px(6.)).children(self.standing_chip(cx)).children(self.standing_card_panel(cx))))
             // the sidebar out: the top row flush with it, as the columns
             // under it are, its square over their grips
             .when(!side, |d| {
                 d.child(self.session_title(h, cx))
+                    .child(div().relative().flex_none().ml(px(4.)).children(self.standing_chip(cx)).children(self.standing_card_panel(cx)))
                     .child(bare("title-gap").w(px(10.)))
                     .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
                     .child(bare("title-gap2").w(px(8.)))

@@ -56,7 +56,7 @@ windows put away out of the tiling, which is the core's
   title bar's chevron, by its row in the sidebar and the chevron's list,
   on its card in the overview -- never for this one. Column boxes are
   drag grips; the
-  session's square, having nothing to drag, is bare (red when fenced).
+  session's square, having nothing to drag, is bare.
   B1 on the top row past its text drags the Mac window, as a title bar
   does.
   All still acme's layout boxes: B1, B2 and B3 on them as ever. A
@@ -374,6 +374,23 @@ windows put away out of the tiling, which is the core's
   top row rather than pushing it along: the whole path, or every
   process on a pill of its own with its ×. It folds when the pointer
   leaves.
+- **Where a window stands with its session** (`standing.rs`). It leads
+  (what is typed takes), watches (another client leads), or has lost
+  its link: stalled (the daemon has stopped answering) or offline (the
+  link closed). Anything but leading is a chip after the session's name
+  -- an eye in blue for watching, a broken link in gold for a lost one,
+  and the word -- and a banner under the title bar saying what it means.
+  Watching names the client that leads (UIs attach as `apex on HOST`)
+  and offers Take over, never taken for the user; typing meanwhile
+  flashes the banner, and the carets are hollow. A lost link is
+  attached again by itself, after 1, 2, 5, 10, 20, then every 30
+  seconds, and at once after the Mac wakes; a stalled one with edits
+  the daemon has not yet acknowledged is waited for instead, the
+  banner naming their windows, and Reconnect asks before dropping them.
+  The chip's card says how the daemon answers and offers Take over,
+  Reconnect, and Restart daemon for one of another build; the page of a
+  tab with no link counts down to its next try. The tabs, the sidebar
+  and the session menu say the same words.
 - **apex's verbs as icons** (`VERB_ICONS`, `Node::window_verbs`): `Del`
   (×), `Snarf` (copy), `Undo` and `Redo` (curved arrows), `Put` (into
   a tray), `Get` (reload), `Send` (a paper plane), `Back` and `Fwd`

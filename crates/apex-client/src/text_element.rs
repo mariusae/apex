@@ -1921,14 +1921,9 @@ impl Element for TextElement {
                 Kind::Top if pp.bare => {}
                 Kind::Top => {
                     // the session's own square: nothing to drag, so no grip;
-                    // red when this client has lost its leases and only
-                    // watches, and a click takes the oldest notification
+                    // a click takes the oldest notification (watching is
+                    // the title bar's chip and banner to say: `standing`)
                     let b = Bounds::new(point(bounds.left(), origin.y - ext), size(px(SCROLLWID), lh + ext * 2.));
-                    if pp.fenced {
-                        let th = crate::theme::theme();
-                        let r = Bounds::new(point(b.left() + px(1.), b.top() + (b.size.height - px(10.)) / 2.), size(px(10.), px(10.)));
-                        window.paint_quad(fill(r, rgb(th.fenced)).corner_radii(px(3.)));
-                    }
                     layout_box = Some(b);
                 }
             }
@@ -2167,7 +2162,15 @@ impl Element for TextElement {
                             let frame = caret_frame(bounds, pp.shown.0 as u64, origin.y - bounds.top());
                             let at = glide_caret(&self.acme, CaretKey::View(self.view), frame, point(cx_, cy), window, cx);
                             let (cx_, cy) = (at.x, at.y);
-                            window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), cy), size(px(2.), tall)), rgb(th.accent)).corner_radii(px(1.)));
+                            if pp.fenced {
+                                // another client leads: nothing typed takes, and the
+                                // caret is hollow (`standing`)
+                                window.paint_quad(gpui::quad(Bounds::new(point(cx_ - px(1.), cy), size(px(3.), tall)), px(1.), gpui::transparent_black(), px(1.), rgb(th.accent), gpui::BorderStyle::Solid));
+                            } else {
+                                window.paint_quad(fill(Bounds::new(point(cx_ - px(0.5), cy), size(px(2.), tall)), rgb(th.accent)).corner_radii(px(1.)));
+                            }
+                        } else if pp.fenced {
+                            window.paint_quad(gpui::quad(Bounds::new(point(cx_ - px(0.5), cy + px(0.5)), size(px(2.5), tall - px(1.))), px(1.), gpui::transparent_black(), px(1.), rgb(th.text), gpui::BorderStyle::Solid));
                         } else {
                             window.paint_quad(fill(Bounds::new(point(cx_, cy + px(0.5)), size(px(1.5), tall - px(1.))), rgb(th.text)).corner_radii(px(0.75)));
                         }

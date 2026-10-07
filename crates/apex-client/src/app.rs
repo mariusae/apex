@@ -607,8 +607,25 @@ pub struct Acme {
     live: std::collections::HashMap<String, Live>,
     /// The heartbeat: when the last ping went out, and how long the last
     /// one took to come back.
-    last_ping: Option<std::time::Instant>,
-    ping_ms: Option<u64>,
+    pub last_ping: Option<std::time::Instant>,
+    pub ping_ms: Option<u64>,
+    /// The link said it is gone (not just quiet): offline, not stalled.
+    pub link_closed: bool,
+    /// When a lost link is next attached again by itself (`standing`).
+    pub retry: Option<crate::standing::Retry>,
+    /// When the tick last ran (a long gap is the Mac asleep), and when a
+    /// wake's probe went out.
+    pub last_tick: Option<std::time::Instant>,
+    pub woke: Option<std::time::Instant>,
+    /// Reconnect asked while edits are still on their way: the banner
+    /// asks whether to drop them.
+    pub confirm_drop: bool,
+    /// What a reconnect dropped, said for a while.
+    pub lost_note: Option<(String, std::time::Instant)>,
+    /// Typing while watching, when: the banner flashes.
+    pub fence_flash: Option<std::time::Instant>,
+    /// The standing chip's card is open.
+    pub standing_card: bool,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -1034,6 +1051,8 @@ impl Acme {
         }
         self.backend = Backend::Remote(p.link);
         self.connected = true;
+        self.link_closed = false;
+        self.woke = None;
         self.waiting = None;
         self.last_ping = None;
         self.log = p.log;
@@ -1403,13 +1422,13 @@ impl Acme {
             None => {
                 let socket = apex_server::daemon::default_socket();
                 crate::shell::ensure_daemon(&socket)?;
-                Link::connect(&socket, url.session_ref(), "apex", AttachmentKind::Ui, Some(wake))?
+                Link::connect(&socket, url.session_ref(), &ui_name(), AttachmentKind::Ui, Some(wake))?
             }
             Some(dest) => {
                 apex_server::providers::deploy(&dest)?;
                 let cmd = apex_server::providers::attach_command(&dest, url.session_ref())?;
                 let (stdin, stdout, closer) = apex_server::remote::bridge_child(&cmd)?;
-                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), url.session_ref(), "apex", AttachmentKind::Ui, Some(wake))?
+                Link::over_streams(Box::new(stdout), Box::new(stdin), Some(closer), url.session_ref(), &ui_name(), AttachmentKind::Ui, Some(wake))?
             }
         };
         Self::arm(&mut link);
@@ -1466,6 +1485,8 @@ impl Acme {
         };
         self.backend = Backend::Remote(link);
         self.connected = true;
+        self.link_closed = false;
+        self.woke = None;
         self.waiting = None;
         self.last_ping = None;
         self.log = log;
@@ -1565,7 +1586,7 @@ impl Acme {
         } else if !self.connected {
             format!("{} — disconnected — apex", self.url)
         } else if self.fenced() {
-            format!("{} — fenced (another client leads) — apex", self.url)
+            format!("{} — watching (another client leads) — apex", self.url)
         } else {
             Self::title(&self.url)
         }
@@ -1660,6 +1681,10 @@ impl Acme {
                                     }
                                 }
                                 if acme.tabs_tick(cx) {
+                                    cx.notify();
+                                }
+                                // a lost link attached again, a wake noticed
+                                if acme.link_tick(window, cx) {
                                     cx.notify();
                                 }
                                 // toasts go by themselves after a while
@@ -1764,6 +1789,14 @@ impl Acme {
             connected: true,
             last_ping: None,
             ping_ms: None,
+            link_closed: false,
+            retry: None,
+            last_tick: None,
+            woke: None,
+            confirm_drop: false,
+            lost_note: None,
+            fence_flash: None,
+            standing_card: false,
             term_sel: None,
             snarf_wanted: None,
             clips: Vec::new(),
@@ -1913,20 +1946,18 @@ impl Acme {
 
     /// The word after a tab's name: what it is doing, when that is
     /// anything but simply being up -- "connecting…", "restoring…",
-    /// "fenced", "offline".
+    /// "watching", "stalled", "offline" (`standing`).
     pub fn tab_word(&self, tab: &crate::pool::Tab, cx: &gpui::App) -> Option<String> {
         use crate::pool::State;
         if tab.id == self.tab {
             // this window knows its own session better than the pool does
             return match &tab.state {
                 State::Coming(why) if self.waiting.is_some() => Some(why.word().to_string()),
-                _ if self.waiting.is_some() => Some("offline".into()),
-                _ if self.fenced() => Some("fenced".into()),
-                _ => None,
+                _ => self.standing(cx).word().map(str::to_string),
             };
         }
         match &tab.state {
-            State::Up => Pool::fenced(cx, tab.id).then(|| "fenced".to_string()),
+            State::Up => Pool::fenced(cx, tab.id).then(|| "watching".to_string()),
             s => s.word().map(str::to_string),
         }
     }
@@ -2607,6 +2638,9 @@ impl Acme {
         if self.connected && !alive {
             crate::shell::log_line(&format!("link to {} ended", self.url));
         }
+        if !alive {
+            self.link_closed = true;
+        }
         self.connected = alive;
         // a place in another session (a Goto or Switch just applied):
         // the tick switches, whether or not the window is being drawn
@@ -3179,6 +3213,8 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.flash_watching(cx);
+        self.standing_card = false;
         // a click: the caret solid again, wherever it lands
         self.caret_since = std::time::Instant::now();
         self.caret_on = true;
@@ -4926,6 +4962,8 @@ impl Acme {
     }
 
     fn text_key(&mut self, v: ViewId, ks: &Keystroke, cx: &mut Context<Self>) {
+        // nothing typed takes while another client leads: said again
+        self.flash_watching(cx);
         let m = ks.modifiers;
         if m.platform {
             match ks.key.as_str() {
@@ -5700,4 +5738,10 @@ mod smooth_scroll_tests {
         assert!(!held.settle(0.1));
         assert_eq!(held.over, s.over);
     }
+}
+
+/// What a UI attaches as: apex, and the machine it is on -- how the
+/// banner of a window that only watches names the one that leads.
+pub fn ui_name() -> String {
+    format!("apex on {}", apex_server::term::sysname())
 }
