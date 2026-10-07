@@ -178,13 +178,20 @@ and where it ends and how it exited, and says its directory (OSC 7). The
 terminal jumps from prompt to prompt (cmd-up, cmd-down), marks a command
 that failed beside its prompt, and copies the last command's output
 (cmd-shift-C). Anywhere else the lines do nothing." },
-    Cmd { name: "new-session", usage: "apex new-session NAME", short: "make a session", flags: &[], run: new_session, long: "\
+    Cmd { name: "new-session", usage: "apex new-session NAME [DIR]", short: "make a session", flags: &[], run: new_session, long: "\
 New-session makes a session labelled NAME on the daemon, starting a
-daemon if none answers. A label starts with a letter, then lowercase
-letters, digits and -. Making a session that exists is fine: it is there.
+daemon if none answers, and prints its id. A label starts with a
+letter, then lowercase letters, digits and -. The session starts in
+DIR (relative to the current directory), or where the daemon runs.
+Making a session that exists is fine: it is there, its directory as it
+was, and its id is printed all the same.
 
 A new session runs its profile, ~/.apex/profile on the daemon's host
-(see apex help scripts)." },
+(see apex help scripts), in its directory. So a workspace is a script:
+
+    s=$(apex new-session work ~/src/apex)
+    apex -session $s open README.md
+    apex -session $s term new make watch" },
     Cmd { name: "end-session", usage: "apex end-session [-f] [NAME]", short: "end a session", flags: &[switch("f", "end it even with unsaved windows")], run: end_session, long: "\
 End-session ends the session NAME (the current one when omitted): its
 commands and terminals are killed, everything attached to it is told
@@ -1205,10 +1212,27 @@ fn end_session(ctx: &Ctx, p: &Parsed) -> R {
 }
 
 fn new_session(ctx: &Ctx, p: &Parsed) -> R {
-    let [name] = p.args.as_slice() else { return Err("usage".into()) };
+    let (name, dir) = match p.args.as_slice() {
+        [name] => (name, None),
+        [name, dir] => (name, Some(dir)),
+        _ => return Err("usage".into()),
+    };
     apex_server::providers::valid_label(name)?;
+    // the daemon is on this host: the directory as this process sees it
+    let dir = match dir {
+        Some(d) => {
+            let path = absolute(d)?;
+            if !Path::new(&path).is_dir() {
+                return Err(format!("{d}: not a directory"));
+            }
+            Some(path)
+        }
+        None => None,
+    };
     ensure_server(&ctx.socket, &ctx.session)?;
-    apex_server::remote::new_session(&ctx.socket, name, None).map(|_| ()).map_err(|e| e.to_string())
+    let id = apex_server::remote::new_session(&ctx.socket, name, dir.as_deref()).map_err(|e| e.to_string())?;
+    println!("{id}");
+    Ok(())
 }
 
 // ---- attach -----------------------------------------------------------------------

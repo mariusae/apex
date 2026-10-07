@@ -45,6 +45,31 @@ fn ok(sock: &PathBuf, args: &[&str]) -> String {
     out
 }
 
+/// A workspace as a script: a session made in a directory, then worked
+/// on by the id new-session prints.
+#[test]
+fn a_session_is_made_in_a_directory_and_scripted_by_its_id() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-cli-ws-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    let d = dir.display().to_string();
+    let id = ok(&sock, &["new-session", "work", &d]).trim().to_string();
+    assert!(ok(&sock, &["ls"]).lines().any(|l| l == format!("work\t{id}")), "{id}");
+    let session = format!("-session={id}");
+    assert_eq!(ok(&sock, &[&session, "cd"]).trim_end().trim_end_matches('/'), d.trim_end_matches('/'));
+    // made again: the same session, its directory as it was
+    assert_eq!(ok(&sock, &["new-session", "work", &dir.join("sub").display().to_string()]).trim(), id);
+    assert_eq!(ok(&sock, &[&session, "cd"]).trim_end().trim_end_matches('/'), d.trim_end_matches('/'));
+    // no such directory: nothing made
+    let (success, _, err) = apex(&sock, &["new-session", "nowhere", &dir.join("missing").display().to_string()]);
+    assert!(!success && err.contains("not a directory"), "{err}");
+    assert!(!labels(&ok(&sock, &["ls"])).contains(&"nowhere".to_string()));
+    // and the daemon refuses one too, asked directly
+    assert!(apex_server::remote::new_session(&sock, "nowhere", Some("/no/such/dir")).is_err());
+    assert!(!labels(&ok(&sock, &["ls"])).contains(&"nowhere".to_string()));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn scripts_drive_a_headless_session() {
     let sock = daemon();
