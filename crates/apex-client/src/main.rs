@@ -923,10 +923,12 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                 }
                                 if acme.connected {
                                     pool::Pool::note_open(cx, acme.tab, &acme.url.clone());
-                                    // settled here, unless ctrl-tab is passing through
-                                    if acme.switcher.is_none() {
-                                        pool::Pool::note_settled(cx, acme.tab);
-                                    }
+                                }
+                                // settled here, unless ctrl-tab is passing
+                                // through -- a tab still connecting too: it is
+                                // where the user went, and ctrl-tab comes back
+                                if acme.switcher.is_none() {
+                                    pool::Pool::note_settled(cx, acme.tab);
                                 }
                                 acme.settle_snarf(cx);
                                 if acme.leave_requested {

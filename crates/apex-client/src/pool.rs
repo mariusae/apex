@@ -538,7 +538,8 @@ impl Pool {
         crate::shell::log_line(&format!("{id} ({url}) parked"));
     }
 
-    /// The tab parked most recently: the one to switch back to.
+    /// The tab settled on (or parked) most recently: the one to switch
+    /// back to.
     pub fn most_recent(cx: &App) -> Option<TabId> {
         Pool::by_recency(cx).into_iter().next()
     }
@@ -555,13 +556,19 @@ impl Pool {
         pool.settled.insert(0, id);
     }
 
-    /// The parked tabs, the most recently settled on first; ones never
-    /// settled on (attached again at launch, say) after those, the most
-    /// recently parked first.
+    /// The tabs to go back to, the most recently settled on first: every
+    /// one settled on, whether its link is up, still coming or down (a
+    /// tab is where the user went, not only a link); and those parked or
+    /// coming that were never settled on (attached again at launch, say)
+    /// after them, the most recently parked first.
     pub fn by_recency(cx: &App) -> Vec<TabId> {
         let Some(pool) = cx.try_global::<Pool>() else { return Vec::new() };
-        let mut v: Vec<(usize, std::cmp::Reverse<Instant>, TabId)> =
-            pool.parked.iter().map(|(id, p)| (pool.settled.iter().position(|s| s == id).unwrap_or(usize::MAX), std::cmp::Reverse(p.parked_at), *id)).collect();
+        let mut v: Vec<(usize, std::cmp::Reverse<Option<Instant>>, TabId)> = pool
+            .tabs
+            .iter()
+            .filter(|t| pool.parked.contains_key(&t.id) || matches!(t.state, State::Coming(_)) || pool.settled.contains(&t.id))
+            .map(|t| (pool.settled.iter().position(|s| *s == t.id).unwrap_or(usize::MAX), std::cmp::Reverse(pool.parked.get(&t.id).map(|p| p.parked_at)), t.id))
+            .collect();
         v.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
         v.into_iter().map(|(_, _, id)| id).collect()
     }

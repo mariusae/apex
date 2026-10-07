@@ -451,7 +451,7 @@ impl Acme {
             }
             Action::Wait => self.confirm_drop = false,
             Action::Dismiss => self.lost_note = None,
-            Action::RestartDaemon => self.restart_server(window, cx),
+            Action::RestartDaemon => self.restart_daemon_asked(window, cx),
         }
         self.standing_card = false;
         cx.notify();
@@ -547,6 +547,9 @@ impl Acme {
     /// the next try is and the buttons -- Reconnect now, and Restart
     /// daemon for one of another build.
     pub fn waiting_actions(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if self.restarting {
+            return None;
+        }
         let Standing::Offline { why } = self.standing(cx) else { return None };
         let t = crate::theme::theme();
         let wrong_build = why.as_deref().is_some_and(|w| w.contains("speaks apex protocol"));

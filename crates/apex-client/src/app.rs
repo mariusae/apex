@@ -626,6 +626,9 @@ pub struct Acme {
     pub fence_flash: Option<std::time::Instant>,
     /// The standing chip's card is open.
     pub standing_card: bool,
+    /// A remote daemon is being restarted for this window: the page
+    /// says so, with nothing to press meanwhile.
+    pub restarting: bool,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -1011,6 +1014,11 @@ impl Acme {
             Pool::park(cx, self.tab, p);
         }
         self.tab = id;
+        // where the user went, connecting or not: ctrl-tab comes back to
+        // it (a ctrl-tab walk settles where it ends)
+        if self.switcher.is_none() {
+            Pool::note_settled(cx, id);
+        }
         if let Some(p) = Pool::take(cx, id) {
             self.adopt_parked(p, window);
             Pool::note_open(cx, id, &self.url.clone());
@@ -1797,6 +1805,7 @@ impl Acme {
             lost_note: None,
             fence_flash: None,
             standing_card: false,
+            restarting: false,
             term_sel: None,
             snarf_wanted: None,
             clips: Vec::new(),
