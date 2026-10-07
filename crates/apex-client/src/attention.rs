@@ -87,6 +87,27 @@ pub fn queue(cx: &App) -> Vec<Note> {
     cx.try_global::<Queue>().map(|q| q.0.clone()).unwrap_or_default()
 }
 
+/// The space bunny, the sticker's own shape on nothing (`mac/space-bunny-1024.png`).
+const ICON: &[u8] = include_bytes!("../../../mac/space-bunny-1024.png");
+
+/// The Dock's icon, set as the app runs: the sticker's own outline, with
+/// no square round it. (The bundle's icon, which the Finder shows, is
+/// the same picture; a system that sets icons from the bundle into a
+/// square of its own does that there, not here.)
+pub fn dock_icon() {
+    // SAFETY: AppKit on the main thread, at launch; the data is copied.
+    unsafe {
+        let data: *mut Object = msg_send![class!(NSData), dataWithBytes: ICON.as_ptr() length: ICON.len()];
+        let image: *mut Object = msg_send![class!(NSImage), alloc];
+        let image: *mut Object = msg_send![image, initWithData: data];
+        if image.is_null() {
+            return;
+        }
+        let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![app, setApplicationIconImage: image];
+    }
+}
+
 /// `-[NSApplication requestUserAttention:]`, informational: one bounce.
 fn bounce() {
     const NS_INFORMATIONAL_REQUEST: isize = 10;

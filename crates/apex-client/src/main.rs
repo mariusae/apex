@@ -676,6 +676,7 @@ fn main() {
         eprintln!("apex-ui: adopted from the login shell: {adopted:?}; PATH={}", std::env::var("PATH").unwrap_or_default());
     }
     gpui_platform::application().run(move |cx: &mut App| {
+        attention::dock_icon();
         cursor::install();
         text_element::install_symbols();
         fonts::load();
