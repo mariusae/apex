@@ -143,8 +143,12 @@ windows put away out of the tiling, which is the core's
   palette: a card 560 wide centred across the window, its top 30% of
   the way down, rounded 12 with a hairline and a soft shadow, over a
   light scrim; a 48-point search row with a magnifying glass, rows 34
-  high with the title at 13.5 and what follows in the secondary ink, the
-  chosen row in the accent with white words.
+  high with the title at 13.5 and what follows in the secondary ink. The
+  chosen row, in every list, wears the colours of what choosing it does,
+  as the B4 menu's does (`shell::chosen`): B2's faint wash, ink and a bar
+  at its left where it runs a command (⌘⇧P), B3's where it goes to a
+  place or opens a thing (⌘P, ⌘O, the picker, the folder and path
+  pickers, ^F's list, the session menu).
 - **Maximizing** (`tiling::colfull`, `colmaximize` and their kin, the
   core's). B3 on a window's box is acme's again: the window grown to
   the whole column, keeping its place in it, the others hidden behind

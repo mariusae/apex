@@ -192,10 +192,10 @@ impl Acme {
         let matches = c.matches();
         for (i, (text, from)) in matches.iter().enumerate() {
             let picked = i == c.cursor;
-            let dim = crate::shell::palette_dim(picked);
+            let dim = crate::shell::palette_dim(picked, crate::shell::Act::Exec);
             let t = text.clone();
             list = list.child(
-                crate::shell::palette_row(picked)
+                crate::shell::palette_row(picked, crate::shell::Act::Exec)
                     .id(("command", i))
                     .cursor_default()
                     .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(12.)).text_color(dim).child(from.glyph()))

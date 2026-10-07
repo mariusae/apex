@@ -264,34 +264,32 @@ impl Acme {
         for (i, (name, dir)) in matching.iter().enumerate().skip(first).take(ROWS) {
             let picked = i == cursor;
             let (view, start, name2, dir2) = (c.view, c.start, name.clone(), *dir);
-            panel = panel.child(
-                div()
-                    .id(("completion", i))
-                    .px(px(8.))
-                    .py(px(2.))
-                    .rounded(px(4.))
-                    .flex()
-                    .flex_row()
-                    .gap(px(1.))
-                    .cursor_default()
-                    .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
-                    .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
-                    .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
-                    // what is typed already, then the rest
-                    .child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child(typed.clone()))
-                    .child(div().flex_none().child(name.chars().skip(typed.chars().count()).collect::<String>()))
-                    .when(*dir, |d| d.child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child("/")))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _, _, cx| {
-                            if let Some((_, at)) = this.completion_typed() {
-                                this.complete_with(view, start, at, &name2, dir2);
-                                cx.notify();
-                            }
-                            cx.stop_propagation();
-                        }),
-                    ),
-            );
+            let row = div()
+                .id(("completion", i))
+                .px(px(8.))
+                .py(px(2.))
+                .rounded(px(4.))
+                .flex()
+                .flex_row()
+                .gap(px(1.))
+                .cursor_default()
+                .relative()
+                .pl(px(10.))
+                // what is typed already, then the rest
+                .child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child(typed.clone()))
+                .child(div().flex_none().child(name.chars().skip(typed.chars().count()).collect::<String>()))
+                .when(*dir, |d| d.child(div().flex_none().when(!picked, |d| d.text_color(rgb(t.panel_dim))).child("/")))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        if let Some((_, at)) = this.completion_typed() {
+                            this.complete_with(view, start, at, &name2, dir2);
+                            cx.notify();
+                        }
+                        cx.stop_propagation();
+                    }),
+                );
+            panel = panel.child(crate::shell::chosen(row, picked, crate::shell::Act::Look, 3.));
         }
         if matching.len() > ROWS {
             panel = panel.child(div().px(px(8.)).text_size(px(11.)).text_color(rgb(t.panel_dim)).child(format!("{} more", matching.len() - ROWS)));

@@ -299,7 +299,7 @@ impl Acme {
         for (i, pick) in picks.iter().enumerate().skip(first).take(rows) {
             let picked = i == cursor;
             let dim = move |d: gpui::Stateful<gpui::Div>| d.when(!picked, |d| d.text_color(rgb(t.panel_dim)));
-            let mut row = div()
+            let row = div()
                 .id(("cwd-pick", i))
                 .flex_none()
                 .h(px(ROW_H))
@@ -309,9 +309,9 @@ impl Acme {
                 .flex_row()
                 .items_center()
                 .cursor_default()
-                .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
-                .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
-                .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))));
+                .relative()
+                .pl(px(10.));
+            let mut row = crate::shell::chosen(row, picked, crate::shell::Act::Look, 5.);
             match pick {
                 None => {
                     row = row.child(div().flex_none().child("./")).child(dim(div().id(("cwd-here", i)).flex_none().pl(px(8.)).text_size(px(11.))).child("this folder"));

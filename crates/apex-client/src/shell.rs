@@ -699,33 +699,45 @@ pub fn palette_field(field: impl IntoElement) -> gpui::Div {
         .child(div().flex_1().min_w_0().child(field))
 }
 
-/// A palette row: 34 high and rounded 7, the icon's column, the title
-/// at 13.5 and what follows it at 12 in the secondary ink -- white on
-/// the accent when it is the one chosen.
-pub fn palette_row(picked: bool) -> gpui::Div {
+/// What choosing a list's row does, said as the mouse's buttons say it:
+/// B2's, running a command (the command palette, the B4 menu); or B3's,
+/// going to a place or opening a thing (the finder, quick open, the
+/// pickers). The row chosen wears that button's colours.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Act {
+    Exec,
+    Look,
+}
+
+/// A list's row as chosen or not. Chosen: `act`'s wash and ink, as its
+/// button's sweep (`Theme::sweep`), and its bar at the row's left, in
+/// from top and bottom by `inset` -- as the B4 menu has it. Not: the
+/// panel's ink, washed while the pointer is on it.
+pub fn chosen<E: gpui::Styled + gpui::ParentElement + gpui::InteractiveElement + gpui::prelude::FluentBuilder>(row: E, picked: bool, act: Act, inset: f32) -> E {
     let t = crate::theme::theme();
-    div()
-        .flex_none()
-        .h(px(34.))
-        .px(px(12.))
-        .rounded(px(7.))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(10.))
-        .text_size(px(13.5))
-        .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
-        .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
+    let (wash, ink) = t.sweep(act == Act::Exec);
+    let bar = if act == Act::Exec { t.exec_hl } else { t.look_hl };
+    row.text_color(rgb(if picked { ink } else { t.panel_text }))
+        .when(picked, |d| d.bg(rgb(wash)).child(div().absolute().left(px(3.)).top(px(inset)).bottom(px(inset)).w(px(2.5)).rounded(px(1.25)).bg(rgb(bar))))
         .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))))
 }
 
-/// A palette row's secondary words' ink: the secondary, or white a
-/// little faded on the chosen row.
-pub fn palette_dim(picked: bool) -> gpui::Hsla {
+/// A palette row: 34 high and rounded 7, the icon's column, the title
+/// at 13.5 and what follows it at 12 in the secondary ink; the one
+/// chosen in `act`'s colours with its bar (`chosen`).
+pub fn palette_row(picked: bool, act: Act) -> gpui::Div {
+    let row = div().relative().flex_none().h(px(34.)).px(px(12.)).rounded(px(7.)).flex().flex_row().items_center().gap(px(10.)).text_size(px(13.5));
+    chosen(row, picked, act, 9.)
+}
+
+/// A palette row's secondary words' ink: the secondary, or on the
+/// chosen row `act`'s ink, a little faded.
+pub fn palette_dim(picked: bool, act: Act) -> gpui::Hsla {
+    let t = crate::theme::theme();
     if picked {
-        gpui::hsla(0., 0., 1., 0.8)
+        crate::text_element::rgb(crate::text_element::mix(t.sweep(act == Act::Exec).1, t.panel_bg, 0.3))
     } else {
-        crate::text_element::rgb(crate::theme::theme().panel_dim)
+        crate::text_element::rgb(t.panel_dim)
     }
 }
 
@@ -1703,9 +1715,9 @@ impl Acme {
         let mut list = div().id("picker-rows").flex().flex_col().px(px(6.)).pb(px(6.)).max_h(px(10. * 34.)).overflow_y_scroll();
         for (i, row) in rows.iter().enumerate() {
             let picked = i == sel.cursor && row.pickable();
-            let dim = palette_dim(picked);
+            let dim = palette_dim(picked, Act::Look);
             let r = row.clone();
-            let mut el = palette_row(picked)
+            let mut el = palette_row(picked, Act::Look)
                 .id(("picker-row", i))
                 .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(13.)).text_color(dim).child(row.glyph()))
                 .child(div().flex_none().overflow_hidden().text_ellipsis().whitespace_nowrap().child(row.title()))

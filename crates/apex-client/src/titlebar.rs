@@ -181,6 +181,7 @@ impl Acme {
             .text_size(px(13.))
             .child(self.overlay_mark())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+        let look = t.sweep(false);
         let row = |id: (&'static str, usize)| {
             div()
                 .id(id)
@@ -193,7 +194,8 @@ impl Acme {
                 .gap(px(8.))
                 .cursor_default()
                 .text_color(rgb(t.panel_text))
-                .hover(|s| s.bg(rgb(t.panel_chosen_bg)).text_color(rgb(t.panel_chosen_text)))
+                // going to a session is B3's: its wash and ink under the pointer
+                .hover(move |s| s.bg(rgb(look.0)).text_color(rgb(look.1)))
         };
         for (i, tab) in Pool::tabs(cx).into_iter().enumerate() {
             let id = tab.id;

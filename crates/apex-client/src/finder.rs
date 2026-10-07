@@ -357,7 +357,7 @@ impl Acme {
         let mut list = div().id("finder-list").flex().flex_col().px(px(6.)).pb(px(6.)).max_h(px(10. * 34.)).overflow_y_scroll();
         for (i, pick) in picks.iter().enumerate().take(24) {
             let picked = i == f.cursor;
-            let dim = crate::shell::palette_dim(picked);
+            let dim = crate::shell::palette_dim(picked, crate::shell::Act::Look);
             let Pick::Entry(e) = pick;
             // the name, its label beside it as the tag has it, the folder
             let (name, dir) = e.split();
@@ -368,7 +368,7 @@ impl Acme {
                 (false, _) => "○",
             };
             let p = pick.clone();
-            let row = crate::shell::palette_row(picked)
+            let row = crate::shell::palette_row(picked, crate::shell::Act::Look)
                 .id(("goto", i))
                 .cursor_default()
                 .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(11.)).text_color(dim).child(mark))
@@ -386,8 +386,8 @@ impl Acme {
                             .px(px(6.))
                             .rounded(px(4.))
                             .text_size(px(11.5))
-                            .bg(if picked { gpui::hsla(0., 0., 1., 0.18) } else { rgb(crate::theme::step(t.panel_bg, 1)).into() })
-                            .text_color(if picked { gpui::white() } else { rgb(t.panel_text).into() })
+                            .bg(rgb(crate::theme::step(t.panel_bg, 1)))
+                            .text_color(rgb(t.panel_text))
                             .child(l),
                     )
                 })
@@ -406,8 +406,8 @@ impl Acme {
                         .border_1()
                         .text_size(px(11.))
                         .whitespace_nowrap()
-                        .border_color(if picked { gpui::hsla(0., 0., 1., 0.6) } else if here { rgb(t.panel_accent).into() } else { rgb(t.panel_border).into() })
-                        .text_color(if here && !picked { rgb(t.panel_accent).into() } else { dim })
+                        .border_color(if here { rgb(t.panel_accent) } else { rgb(t.panel_border) })
+                        .text_color(if here { rgb(t.panel_accent).into() } else { dim })
                         .child(if here { format!("{label} · here") } else { label });
                     d.child(badge)
                 })

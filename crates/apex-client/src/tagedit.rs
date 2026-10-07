@@ -580,7 +580,7 @@ impl Acme {
                     list = list.child(div().flex_none().mx(px(8.)).my(px(2.)).h(px(1.)).bg(rgb(t.panel_border)));
                 }
                 let dim = |d: gpui::Stateful<gpui::Div>| d.when(!picked, |d| d.text_color(rgb(t.panel_dim)));
-                let mut row = div()
+                let row = div()
                     .id(("pick", i))
                     .flex_none()
                     .h(px(row_h()))
@@ -591,9 +591,9 @@ impl Acme {
                     .flex_row()
                     .gap(px(1.))
                     .cursor_default()
-                    .text_color(rgb(if picked { t.panel_chosen_text } else { t.panel_text }))
-                    .when(picked, |d| d.bg(rgb(t.panel_chosen_bg)))
-                    .when(!picked, |d| d.hover(|s| s.bg(rgb(t.panel_hover))));
+                    .relative()
+                    .pl(px(10.));
+                let mut row = crate::shell::chosen(row, picked, crate::shell::Act::Look, 5.);
                 match choice {
                     Choice::Window(_, title, kind) => {
                         row = row.child(div().flex_1().min_w_0().truncate().child(title.clone())).child(dim(div().id(("kind", i)).flex_none().pl(px(8.)).text_size(px(11.))).child(*kind));

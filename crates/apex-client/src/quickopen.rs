@@ -249,13 +249,13 @@ impl Acme {
         let first = q.cursor.saturating_sub(ROWS - 1).min(q.items.len().saturating_sub(ROWS));
         for (i, (rel, is_dir)) in q.items.iter().enumerate().skip(first).take(ROWS) {
             let picked = i == q.cursor;
-            let dim = crate::shell::palette_dim(picked);
+            let dim = crate::shell::palette_dim(picked, crate::shell::Act::Look);
             let (dir, name) = match rel.rfind('/') {
                 Some(k) => (rel[..=k].to_string(), rel[k + 1..].to_string()),
                 None => (String::new(), rel.clone()),
             };
             let name = if *is_dir { format!("{name}/") } else { name };
-            let row = crate::shell::palette_row(picked)
+            let row = crate::shell::palette_row(picked, crate::shell::Act::Look)
                 .id(("quick", i))
                 .cursor_default()
                 .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(11.)).text_color(dim).child(if *is_dir { "▸" } else { "·" }))
