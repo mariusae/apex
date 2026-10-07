@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apex</title>
+<meta name="description" content="apex: a modernised acme. Text first, mouse oriented, plumbing everywhere.">
+<link rel="icon" type="image/png" href="space-bunny.png">
+<style>
+  html { background: #fff; color: #000; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    max-width: 34em;
+    margin: 0 auto;
+    padding: 2em 1em 4em;
+  }
+  .bunny { display: block; margin: 1em auto 0.5em; width: 320px; max-width: 80%; height: auto; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  p, ul, pre { margin: 0 0 0.8em; }
+  ul { padding-left: 1.4em; }
+  pre, code { font-family: "Courier New", Courier, monospace; font-size: 0.88em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  footer { margin-top: 3em; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<img class="bunny" src="space-bunny.png" alt="The apex space bunny: a rabbit in an astronaut's helmet, an alien face looking out of it." width="320" height="320">
+<h1>apex</h1>
+
+<p>apex is a modernised <a href="https://9fans.github.io/plan9port/man/man1/acme.html">acme</a>:
+text first, mouse oriented, plumbing everywhere, fast and simple. It keeps
+acme's way of working, and adds what acme lacks for today's work: a client and
+a server, so the window can go and come back, here or over ssh; terminals in
+its windows, for running programs and coding agents; and an interface for
+programs that does not need a mounted file system.</p>
+
+<h2>The acme experience</h2>
+<ul>
+<li>Three buttons and their chords. B1 selects, B2 runs what it touches, B3 looks for it or opens it.</li>
+<li>Columns and windows tiled as acme tiles them, each with a tag: text you type commands into and run.</li>
+<li>Everything is text. A command's output is text in a window, to be edited, run or plumbed in its turn.</li>
+<li>Plumbing: rules that say what a word means where it is clicked, and which program takes it.</li>
+</ul>
+
+<h2>Sessions</h2>
+<p>Everything a workspace holds (its columns, windows, terminals and what runs
+in them) lives in a session on a daemon. The app is a view of it. Close the
+window and the session goes on; attach again and it is all there. A daemon
+holds many sessions, and the app shows them as tabs.</p>
+<pre>apex attach                  # the app, on this machine's session
+apex attach devbox/work      # a session on another machine, over ssh</pre>
+<p>On another machine nothing is copied: the files stay where they are, and
+apex puts its own small daemon there to edit them.</p>
+
+<h2>Terminals and agents</h2>
+<p>A terminal is a window like any other. A program running in one (a shell,
+a build, a coding agent) drives the editor with the <code>apex</code> command,
+as a script would: opening files, writing to windows, asking for the user's
+attention.</p>
+
+<h2>Scripting</h2>
+<p>The <code>apex</code> command does everything the mouse does. A workspace is a
+script:</p>
+<pre>s=$(apex new-session work ~/src/apex)
+apex -session $s open README.md
+apex -session $s term new make watch</pre>
+<p>Programs can also attach to a session themselves, through libraries for Rust
+and Go or a bridge that speaks JSON, and offer rules, own windows and answer
+what is clicked in them.</p>
+
+<h2>Building</h2>
+<p>apex is written in Rust. The app is for the Mac; the daemon and the
+<code>apex</code> command also run on Linux, where the app attaches to them over
+ssh.</p>
+<pre>git clone https://github.com/mariusae/apex
+cd apex
+mac/build-app.sh             # target/Apex.app</pre>
+
+<h2>More</h2>
+<ul>
+<li><a href="https://github.com/mariusae/apex">The source</a>, on GitHub.</li>
+<li><a href="https://github.com/mariusae/apex/blob/main/DESIGN.md">DESIGN.md</a>: how apex is built, and why.</li>
+<li><a href="https://github.com/mariusae/apex/blob/main/MODERN.md">MODERN.md</a>: apex as a Mac app.</li>
+</ul>
+
+<footer>apex is a work in progress.</footer>
+
+</body>
+</html>
