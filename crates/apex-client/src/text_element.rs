@@ -1244,8 +1244,10 @@ pub struct TextElement {
 }
 
 pub struct Prepaint {
-    /// How far a line that does not wrap is scrolled across.
+    /// How far a line that does not wrap is scrolled across, and whether
+    /// text is hidden past its start and past its end: faded out there.
     hscroll: Pixels,
+    overflow: (bool, bool),
     kind: Kind,
     fontspec: FontSpec,
     lines: Vec<LineInfo>,
@@ -1278,6 +1280,11 @@ pub struct Prepaint {
     key_caret: Option<bool>,
     bare: bool,
 }
+
+/// How wide the fade is where a line that does not wrap goes on out of
+/// sight: less than the room `tag_scroll` keeps past the caret, so the
+/// caret is never in it.
+const FADE: f32 = 20.;
 
 /// How far a tag that does not wrap (`view`, its `lines`) is scrolled
 /// across, `room` wide: as it was, unless its caret at `q` would be out of
@@ -1793,8 +1800,11 @@ impl Element for TextElement {
                 unreachable!()
             }
             let hscroll = if across { tag_scroll(acme, view, &lines, src.sel.1, room) } else { px(0.) };
+            let widest = lines.iter().map(|l| l.layout.unwrapped_layout.width).fold(px(0.), |a, b| a.max(b));
+            let overflow = if across { (hscroll > px(0.5), widest - hscroll > room + px(0.5)) } else { (false, false) };
             Some(Prepaint {
                 hscroll,
+                overflow,
                 kind,
                 fontspec,
                 lines,
@@ -2177,6 +2187,22 @@ impl Element for TextElement {
                     }
                 }
             });
+
+            // a line that does not wrap, more of it than shows: faded out
+            // where it goes on, into the ground it is drawn on
+            if pp.overflow.0 || pp.overflow.1 {
+                let under: gpui::Hsla = rgb(ground(&crate::theme::theme())).into();
+                let clear = under.opacity(0.);
+                let w = px(FADE);
+                if pp.overflow.0 {
+                    let r = Bounds::new(point(bounds.left() + margin, bounds.top()), size(w, bounds.size.height));
+                    window.paint_quad(fill(r, gpui::linear_gradient(90., gpui::linear_color_stop(under, 0.), gpui::linear_color_stop(clear, 1.))));
+                }
+                if pp.overflow.1 {
+                    let r = Bounds::new(point(bounds.right() - w, bounds.top()), size(w, bounds.size.height));
+                    window.paint_quad(fill(r, gpui::linear_gradient(90., gpui::linear_color_stop(clear, 0.), gpui::linear_color_stop(under, 1.))));
+                }
+            }
 
             // a body's scroller, over its text
             if let Some((s0, s1, shows)) = overlay {
