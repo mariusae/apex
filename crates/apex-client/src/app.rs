@@ -576,6 +576,11 @@ pub struct Acme {
     /// closes if the picker is dismissed, and is not remembered.
     /// The tools menu while B4 is held.
     pub menu: Option<menu::Menu>,
+    /// When the menu opened: it fades in from then.
+    pub menu_opened: Option<std::time::Instant>,
+    /// The menu just let go, as it goes: when, and whether an item was
+    /// chosen (it blinks, then the menu fades out).
+    pub menu_closing: Option<(menu::Menu, std::time::Instant, bool)>,
     /// What the menu ran last: it opens on that item.
     menu_last: Option<String>,
     /// The tabs as the strip last drew them -- which they are, which
@@ -1821,6 +1826,8 @@ impl Acme {
             last_windows_of: None,
             menu: None,
             menu_last: None,
+            menu_opened: None,
+            menu_closing: None,
             tabs_shown: Vec::new(),
             smooth: HashMap::new(),
             wheel_at: HashMap::new(),
@@ -4503,14 +4510,13 @@ impl Acme {
         if items.is_empty() {
             return;
         }
-        // the items measured in the face the menu sets them in, a tag's bold
+        // the items measured in the face the menu sets them in
         let fs = menu::face();
         let run = |len: usize| gpui::TextRun { len, font: fs.font.clone(), color: gpui::black(), background_color: None, underline: None, strikethrough: None };
         let maxwid = items.iter().map(|i| f32::from(window.text_system().shape_line(i.clone().into(), fs.size, &[run(i.len())], None).width).ceil() as i32).max().unwrap_or(0);
         let checked = self.menu_last.as_ref().and_then(|l| items.iter().position(|i| i == l));
-        // its rows a tag's lines; the screen, for menuhit, acme's area
-        let ih = f32::from(crate::text_element::tag_line_height()) as i32;
-        let m = menu::Menu::place(w, items, checked, maxwid, ih, self.row_pt(at), self.node.state.layout.r);
+        // the screen, for menuhit, acme's area
+        let m = menu::Menu::place(w, items, checked, maxwid, menu::ROW_H, self.row_pt(at), self.node.state.layout.r);
         // moveto: the pointer onto the item, so a click alone repeats it
         let ir = m.item_rect(m.lasti);
         let center = point(px(((ir.x0 + ir.x1) / 2) as f32 + self.left()), px(((ir.y0 + ir.y1) / 2) as f32 + self.top()));
@@ -4518,6 +4524,8 @@ impl Acme {
         self.pointer = Some(center);
         self.last_mouse = center;
         self.menu = Some(m);
+        self.menu_opened = Some(std::time::Instant::now());
+        self.menu_closing = None;
     }
 
     /// The pointer moved with the menu's button held: highlight what is
@@ -4542,6 +4550,9 @@ impl Acme {
     /// The menu's button came up: the highlighted item runs.
     fn menu_up(&mut self, cx: &mut Context<Self>) {
         let Some(m) = self.menu.take() else { return };
+        // drawn a moment more as it goes: the choice blinking, then fading
+        let chosen = m.lasti >= 0 && m.items.get((m.lasti + m.off) as usize).is_some();
+        self.menu_closing = Some((m.clone(), std::time::Instant::now(), chosen));
         if m.lasti >= 0 {
             if let Some(item) = m.items.get((m.lasti + m.off) as usize).cloned() {
                 self.menu_last = Some(item.clone());

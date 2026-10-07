@@ -554,8 +554,26 @@ impl Render for Acme {
             self.url_asked.insert(w);
             self.url_edit_start(w, cx);
         }
+        // the B4 menu: fading in as it opens; let go, the choice blinking
+        // and then the whole fading out (`menu.rs`)
+        const MENU_IN: f32 = 90.;
+        const BLINK: (f32, f32) = (30., 60.);
+        const MENU_OUT: (f32, f32) = (90., 210.);
         if let Some(m) = &self.menu {
-            area = area.child(menu_element(m, font, self.overlay_mark()));
+            let ms = self.menu_opened.map_or(MENU_IN, |t| t.elapsed().as_secs_f32() * 1000.);
+            if ms < MENU_IN {
+                window.request_animation_frame();
+            }
+            area = area.child(menu_element(m, self.overlay_mark(), (ms / MENU_IN).clamp(0., 1.), false));
+        } else if let Some((m, at, chosen)) = &self.menu_closing {
+            let ms = at.elapsed().as_secs_f32() * 1000.;
+            let start = if *chosen { MENU_OUT.0 } else { 0. };
+            if ms < MENU_OUT.1 {
+                window.request_animation_frame();
+                let blink_off = *chosen && ms >= BLINK.0 && ms < BLINK.1;
+                let opacity = 1. - ((ms - start) / (MENU_OUT.1 - start)).clamp(0., 1.);
+                area = area.child(menu_element(m, gpui::div().into_any_element(), opacity, blink_off));
+            }
         }
         let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
@@ -1098,19 +1116,19 @@ fn empty_column(t: &theme::Theme, bunny: bool) -> gpui::AnyElement {
 /// the sidebar's button after them.
 const LIGHTS_W: f32 = 86.;
 
-/// The tools menu painted as a tag is: a card of a tag's ground, its
-/// hairline and corners, lifted as a stash card is; each row a tag's line
-/// in a tag's face and ink, the word under the pointer on B2's pill
-/// (`Theme::sweep`), as B2 on it in a tag would have it; and the
+/// The tools menu painted as the app's other menus are: a panel, its
+/// hairline, corners and shadow; each row centred in the interface's
+/// face, the one under the pointer in B2's colours (`Theme::sweep`, and
+/// a bar of `exec_hl` at its left), as choosing it runs it; and the
 /// scrolling lane's thumb a slim scroller's. (The one chosen last is
-/// where the menu opens, under the pointer: no mark says it.)
-/// The wash each side of a word on a B2 pill (the tag's, `text_element`).
-const PILL_PAD: f32 = 3.;
+/// where the menu opens, under the pointer: no mark says it.) Drawn at
+/// `opacity`, and with no row highlighted while `blink_off`.
 
-fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::AnyElement {
+fn menu_element(m: &menu::Menu, mark: gpui::AnyElement, opacity: f32, blink_off: bool) -> gpui::AnyElement {
     use gpui::{div, px, rgb};
     let t = theme::theme();
     let fs = menu::face();
+    // the item under the pointer in B2's colours: running is what choosing does
     let (sweep_bg, sweep_ink) = t.sweep(true);
     let r = m.menur;
     // children are placed from the menu's corner, inside its hairline
@@ -1121,43 +1139,37 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
         .top(px(r.y0 as f32))
         .w(px(r.dx() as f32))
         .h(px(r.dy() as f32))
-        .bg(rgb(t.tag_bg))
+        .opacity(opacity)
+        .bg(rgb(t.panel_bg))
         .border(px(EDGE as f32))
-        .border_color(rgb(t.body_border))
-        .rounded(px(text_element::CARD_RADIUS))
-        .shadow(vec![gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(2.)), blur_radius: px(8.), spread_radius: px(0.), inset: false }])
+        .border_color(rgb(t.panel_border))
+        .rounded(px(9.))
+        .shadow(vec![gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false }])
         .font(fs.font.clone())
+        .text_size(fs.size)
         .child(mark);
     for i in 0..m.nitemdrawn {
         let ir = m.item_rect(i);
         let at = (i + m.off) as usize;
         let text = m.items.get(at).cloned().unwrap_or_default();
-        let hl = i == m.lasti;
-        let ink = if hl { sweep_ink } else { t.text };
-        // the word under the pointer on B2's pill, as in a tag: it is B2
-        // on it -- three pixels of wash each side of it, a tag's line less
-        // a pixel over and under, its corners the sweep's
-        let pill = div()
-            .flex_none()
-            .h(px((ir.dy() - 2) as f32))
-            .px(px(PILL_PAD))
-            .flex()
-            .items_center()
-            .rounded(px(4.))
-            .when(hl, |d| d.bg(rgb(sweep_bg)))
-            .child(text);
+        let hl = i == m.lasti && !blink_off;
         let row = div()
             .absolute()
             .left(px((ir.x0 - r.x0 - EDGE) as f32))
             .top(px((ir.y0 - r.y0 - EDGE) as f32))
             .w(px(ir.dx() as f32))
             .h(px(ir.dy() as f32))
+            .rounded(px(6.))
             .flex()
             .items_center()
             .justify_center()
-            .text_size(fs.size)
-            .text_color(rgb(ink))
-            .child(pill);
+            .text_color(rgb(if hl { sweep_ink } else { t.panel_text }))
+            .when(hl, |d| {
+                d.bg(rgb(sweep_bg))
+                    // and a bar at its left, B2's
+                    .child(div().absolute().left(px(3.)).top(px(5.)).bottom(px(5.)).w(px(2.5)).rounded(px(1.25)).bg(rgb(t.exec_hl)))
+            })
+            .child(text);
         el = el.child(row);
     }
     if m.scrolling {
@@ -1171,7 +1183,7 @@ fn menu_element(m: &menu::Menu, _font: i32, mark: gpui::AnyElement) -> gpui::Any
                 .w(px(5.))
                 .h(px(th.dy() as f32))
                 .rounded(px(2.5))
-                .bg(rgb(t.body_border)),
+                .bg(rgb(t.panel_border)),
         );
     }
     el.into_any_element()

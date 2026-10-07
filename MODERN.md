@@ -499,13 +499,13 @@ windows put away out of the tiling, which is the core's
 - **Menus.** The B4 tools menu (`menu.rs`, `Menu::place`) has
   menuhit's ways: up while the button is held, run on release over an
   item, the last choice remembered and opened under the pointer (which
-  lands on it), a part and a lane past 25 items. It looks like a tag: a
-  card of a tag's ground with its hairline and corners, lifted a little
-  as a stash card is; rows a tag's lines in a tag's face and ink; the
-  item under the pointer on B2's pill, as B2 on it in a tag would have
-  it (the action's wash round the word, its ink), since choosing one is
-  running it; no mark on the remembered one, which is where the menu
-  opens; the lane down its right with a slim thumb.
+  lands on it), a part and a lane past 25 items. It looks like the
+  app's other menus: a panel, its rows centred in the interface's face;
+  the item under the pointer in B2's colours -- a faint wash, its text,
+  a bar at the row's left -- since choosing one is running it; no mark
+  on the remembered one, which is where the menu opens; the lane down
+  its right with a slim thumb. It fades in over 90 ms; let go on an
+  item, the item blinks and the menu fades out (the command has run).
 - **Columns on paper.** A column is the body's paper where its windows
   leave it (a body's part line at its foot, the gaps), with a hairline
   where each window meets the one above, as acme's column is white with
