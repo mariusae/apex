@@ -494,6 +494,10 @@ pub struct Acme {
     /// The process pill the pointer is on, and where it is drawn: its
     /// card goes under it (`procs.rs`).
     pub proc_hover: Option<(apex_core::Seq, gpui::Bounds<Pixels>)>,
+    /// Where the title bar's parts were drawn (`titlefit`), and what of
+    /// it is fanned out under the pointer.
+    pub title_marks: std::rc::Rc<std::cell::RefCell<crate::titlefit::Marks>>,
+    pub title_fan: Option<crate::titlefit::Fan>,
     pub session_menu: bool,
     /// Every known host and its sessions, for the sidebar: as last seen,
     /// then as each host answers (`sidebar_refresh`), and when it was
@@ -1731,6 +1735,8 @@ impl Acme {
             picker_opened: None,
             atom_down: None,
             proc_hover: None,
+            title_marks: crate::titlefit::new_marks(),
+            title_fan: None,
             session_menu: false,
             sidebar_hosts: Vec::new(),
             sidebar_asked: None,
@@ -3507,7 +3513,13 @@ impl Acme {
             cx.notify();
         }
         // a process's pill under the pointer: its card
-        let pill = if self.over_overlay(pos) { None } else { self.pill_at(pos) };
+        // the title bar's short parts fanned out under the pointer
+        let fan = self.title_fan_at(pos);
+        if fan != self.title_fan {
+            self.title_fan = fan;
+            cx.notify();
+        }
+        let pill = self.pill_at(pos);
         if pill.map(|p| p.0) != self.proc_hover.map(|p| p.0) {
             self.proc_hover = pill;
             cx.notify();

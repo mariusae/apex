@@ -34,6 +34,7 @@ mod strips;
 mod switcher;
 mod tagedit;
 mod titlebar;
+mod titlefit;
 mod toasts;
 mod webbar;
 mod term_element;
@@ -118,6 +119,7 @@ impl Render for Acme {
         // the overlays record where they land this frame; the last thing
         // laid out cuts the web views' holes to match (`Webs::set_holes`)
         self.overlay_bounds.borrow_mut().clear();
+        titlefit::clear(&self.title_marks);
         self.sync_notes();
         self.sync_pulls();
         self.web_cuts.borrow_mut().clear();
@@ -258,7 +260,7 @@ impl Render for Acme {
                 .child(spinner)
                 .child(div().px(px(24.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(gpui::rgb(t.text_dim)).child(what));
             let root = root.child(blank.relative().left(px(slide_off)));
-            let root = root.child(self.title_bar(&me, cx));
+            let root = root.child(self.title_bar(&me, window, cx));
             let root = match outgoing {
                 Some(o) => root.child(o),
                 None => root,
@@ -552,7 +554,7 @@ impl Render for Acme {
         let alive: std::collections::HashSet<apex_core::WindowId> = self.node.state.windows.keys().copied().collect();
         self.webs.settle(&webs_shown, |w| alive.contains(&w));
         let root = root.child(area);
-        let root = root.child(self.title_bar(&me, cx));
+        let root = root.child(self.title_bar(&me, window, cx));
         let root = match outgoing {
             Some(o) => root.child(o),
             None => root,
@@ -1169,7 +1171,7 @@ impl app::Acme {
     /// top tag, as editable as ever. Its bare parts move the window, and
     /// a double click there zooms it, as a title bar's do; past the top
     /// tag's text the tag's own click does (`mouse_down`).
-    fn title_bar(&self, me: &gpui::Entity<app::Acme>, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
+    fn title_bar(&self, me: &gpui::Entity<app::Acme>, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
         use gpui::{div, prelude::*, px, MouseButton};
         let t = theme::theme();
         let h = title_h();
@@ -1228,9 +1230,24 @@ impl app::Acme {
                     .child(div().flex_none().w(px(1.)).h(px(16.)).bg(gpui::rgb(t.body_border)))
                     .child(bare("title-gap2").w(px(8.)))
             })
-            // the session's host and directory, the crumbs to change it by
-            .children(self.cwd_bar(cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).max_w(gpui::relative(0.45)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(3.)))))
-            .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
+            // the session's host and directory, the crumbs to change it by;
+            // its processes; the top row -- each as much as the room
+            // allows (`titlefit`), fanning out under the pointer when short
+            .child({
+                let (path_fit, proc_fit) = self.title_fit(window);
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .relative()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(self.title_room_mark(me))
+                    .children(self.path_strip(path_fit, cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(3.)))))
+                    .children(self.procs_strip(proc_fit, cx))
+                    .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
+            })
             .child(bare("title-shelf").w(px(self.shelf_room(cx))));
         // the sidebar shown: its card goes up round the window's buttons
         // and its own, one with them as a Mac app's sidebar is; the bar

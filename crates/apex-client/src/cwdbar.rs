@@ -99,7 +99,9 @@ impl Acme {
 
     /// The host, dim, and the session's directory as crumbs -- or, while
     /// its picker is down, the folder listed and what is typed after it.
-    pub fn cwd_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    /// Cut short as `fit` says: from a later crumb on, after `…/`, and
+    /// the host gone at the least.
+    pub fn cwd_bar(&self, fit: crate::titlefit::PathFit, cx: &mut Context<Self>) -> Option<AnyElement> {
         let meta = &self.node.state.meta;
         if meta.cwd.is_empty() {
             return None;
@@ -110,8 +112,12 @@ impl Acme {
         let dir = picking.map(|p| p.dir.clone()).unwrap_or_else(|| meta.cwd.clone());
         let parts = crumbs(&dir);
         let last = parts.len().saturating_sub(1);
+        let from = crate::titlefit::first_crumb(parts.len(), fit);
         let mut row = div().flex().flex_row().items_center().flex_none();
-        for (i, (part, upto)) in parts.into_iter().enumerate() {
+        if from > 0 {
+            row = row.child(div().flex_none().text_color(rgb(t.text_dim)).child("…/"));
+        }
+        for (i, (part, upto)) in parts.into_iter().enumerate().skip(from) {
             // the directory's own name the strongest, when it is the
             // session's and not a folder being listed
             let own = i == last && picking.is_none();
@@ -169,7 +175,7 @@ impl Acme {
                 .gap(px(5.))
                 .text_size(px(13.))
                 .font_family(crate::fonts::ui())
-                .child(div().flex_none().text_size(px(12.)).text_color(rgb(crate::text_element::mix(t.text_dim, crate::text_element::ground(&t), 0.35))).child(meta.host.clone()))
+                .when(fit != crate::titlefit::PathFit::Last, |d| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(crate::text_element::mix(t.text_dim, crate::text_element::ground(&t), 0.35))).child(meta.host.clone())))
                 // a long one cut at its start, its end beside the top row
                 .child(div().flex_shrink(1.).min_w_0().overflow_hidden().flex().flex_row().justify_end().child(row))
                 .into_any_element(),

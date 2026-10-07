@@ -360,9 +360,20 @@ windows put away out of the tiling, which is the core's
   matches; scrolling near the end asks for the next page; closing it
   stops both on the host. The list fills in from the first moment.
 - **Processes as pills.** What runs for the session is shown before
-  the top row's text, a pill each: its name and a ×. The × ends it; B1
-  on it goes to its output, B3 to the window it was run from. The
-  sidebar lists them too, under the session's windows.
+  the top row's text, a pill each name: its name, how many when there
+  are several (`Win 5`), and a × on a single one. The × ends it; B1 on
+  it goes to its output, B3 to the window it was run from. The sidebar
+  lists them too, under the session's windows.
+- **The title bar fits its room** (`titlefit.rs`). The directory and the
+  processes each have a few ways to show, and the bar takes the richest
+  that leaves the top row its room -- all its text while the caret is
+  in it. The directory gives way first: the host and the last two
+  crumbs after `…/`, then the last crumb alone. Then the processes: the
+  pills stacked as cards, the newest on top with the count of all; then
+  the count alone. What is short fans out under the pointer, over the
+  top row rather than pushing it along: the whole path, or every
+  process on a pill of its own with its ×. It folds when the pointer
+  leaves.
 - **apex's verbs as icons** (`VERB_ICONS`, `Node::window_verbs`): `Del`
   (×), `Snarf` (copy), `Undo` and `Redo` (curved arrows), `Put` (into
   a tray), `Get` (reload), `Send` (a paper plane), `Back` and `Fwd`

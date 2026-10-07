@@ -8,7 +8,7 @@
 //! not among them (`apex ps` lists it).
 
 use gpui::prelude::*;
-use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Bounds, Context, MouseButton, Pixels};
+use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Context, MouseButton};
 
 use apex_core::entry::{ProcKind, ProcOut};
 use apex_core::Seq;
@@ -24,18 +24,6 @@ impl Acme {
     /// (seen in their windows).
     pub fn running_procs(&self) -> Vec<Proc> {
         self.node.state.meta.procs.iter().filter(|p| p.running() && p.kind != ProcKind::Term).cloned().collect()
-    }
-
-    /// The pill under the pointer at `pos`, and where it is drawn: taken
-    /// as the pointer moves, from the layouts as they are then.
-    pub fn pill_at(&self, pos: gpui::Point<Pixels>) -> Option<(Seq, Bounds<Pixels>)> {
-        let l = self.layouts.get(&apex_core::ViewId::Top)?;
-        let id = match l.atom_at(pos)? {
-            Atom::Proc(id) | Atom::ProcKill(id) => id,
-            _ => return None,
-        };
-        let (a, b) = (l.atom_bounds(Atom::Proc(id))?, l.atom_bounds(Atom::ProcKill(id))?);
-        Some((id, Bounds::from_corners(a.origin, b.bottom_right())))
     }
 
     /// The card under the pill the pointer is on: the process's whole
@@ -77,11 +65,10 @@ impl Acme {
         Some(deferred(anchored().position(point(at.left(), at.bottom() + px(4.))).child(card)).with_priority(3).into_any_element())
     }
 
-    /// The session's tag's head: a pill for each process running, after
-    /// a chevron from the directory when the title bar shows it.
+    /// The session's tag's head: a chevron from what is before it in the
+    /// title bar (the directory, the processes' pills: `titlefit`).
     pub fn top_head(&self) -> Head {
-        let procs: Vec<(Seq, String)> = self.running_procs().into_iter().map(|p| (p.id, p.name)).collect();
-        Head::procs(&procs, !self.node.state.meta.cwd.is_empty())
+        Head::procs(&[], !self.node.state.meta.cwd.is_empty() || !self.running_procs().is_empty())
     }
 
     /// The top row after the directory, with nothing for its square to
