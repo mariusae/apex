@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 47;
+pub const PROTOCOL: u32 = 48;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -59,9 +59,10 @@ pub enum ClientMsg {
     /// leases; a tool follows and proposes.
     /// `session`: its id, a unique prefix of it, or its label.
     Hello { session: String, name: String, kind: AttachmentKind, attach: Option<Script> },
-    /// Make a session (fine if it exists), with what its creator brings
-    /// for its init.
-    NewSession { name: String },
+    /// Make a session labelled `name` (fine if it exists: it is left as
+    /// it is, its directory too), starting in `dir` (absolute, on the
+    /// daemon's host) or else where the daemon is.
+    NewSession { name: String, dir: Option<String> },
     ListSessions,
     /// Rename a session; attachments to it stay attached.
     RenameSession { from: String, to: String },

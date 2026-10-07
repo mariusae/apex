@@ -301,13 +301,23 @@ impl Daemon {
     /// Make a session labelled `label`; false when one of that label
     /// (or id) is there already.
     fn new_session(&mut self, label: &str) -> bool {
+        self.new_session_in(label, None).unwrap_or(false)
+    }
+
+    /// `new_session`, the session starting in `dir` when it is given:
+    /// there before its place is recorded and its profile runs. Not a
+    /// directory, and nothing is made.
+    fn new_session_in(&mut self, label: &str, dir: Option<&str>) -> Result<bool, String> {
         if self.resolve(label).is_some() {
-            return false;
+            return Ok(false);
         }
         let mut log = Log::new();
         let key = log.id().expect("a fresh log has its identity");
         log.set_label(label);
         let (mut server, mut srx) = Server::new(&log);
+        if let Some(dir) = dir {
+            server.cd(dir)?;
+        }
         // shells and commands in this session know it by its identity,
         // and by its label, and know the daemon
         server.env = vec![("apexsession".into(), key.clone()), ("apexsessionlabel".into(), label.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
@@ -351,7 +361,7 @@ impl Daemon {
         let s = self.sessions.get_mut(&key).unwrap();
         s.server.run_profile(&s.view, self.host_profile.as_deref());
         self.after(&key, Vec::new());
-        true
+        Ok(true)
     }
 
     /// The key (identity) of the session with this internal number.
@@ -509,13 +519,11 @@ impl Daemon {
     fn handle(&mut self, id: u64, m: ClientMsg) {
         match m {
             ClientMsg::Hello { session, name, kind, attach } => self.hello(id, session, name, kind, attach),
-            ClientMsg::NewSession { name } => {
+            ClientMsg::NewSession { name, dir } => {
                 // making a session that exists is fine: it is there
-                if let Err(text) = crate::providers::valid_label(&name) {
-                    self.send(id, ServerMsg::Error { text });
-                } else {
-                    self.new_session(&name);
-                    self.send(id, ServerMsg::Sessions { sessions: self.infos() });
+                match crate::providers::valid_label(&name).and_then(|()| self.new_session_in(&name, dir.as_deref()).map(|_| ())) {
+                    Ok(()) => self.send(id, ServerMsg::Sessions { sessions: self.infos() }),
+                    Err(text) => self.send(id, ServerMsg::Error { text }),
                 }
             }
             ClientMsg::ListSessions => {

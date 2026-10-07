@@ -184,7 +184,7 @@ fn a_new_session_runs_the_hosts_profile_then_its_creators() {
     assert!(ok(&sock, &["win", "list"]).contains("host.txt"), "{}\n{}", ok(&sock, &["win", "list"]), errors(&sock, "main"));
     assert!(ok(&sock, &["env"]).contains("FROM=host\n"), "{}", ok(&sock, &["env"]));
     // a session made from elsewhere runs the host's file too
-    apex_server::remote::new_session(&sock, "s2").unwrap();
+    apex_server::remote::new_session(&sock, "s2", None).unwrap();
     let list = |sock: &PathBuf| ok(sock, &["-session=s2", "win", "list"]);
     let deadline = Instant::now() + Duration::from_secs(10);
     while !list(&sock).contains("host.txt") && Instant::now() < deadline {

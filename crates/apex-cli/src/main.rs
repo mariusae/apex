@@ -1208,7 +1208,7 @@ fn new_session(ctx: &Ctx, p: &Parsed) -> R {
     let [name] = p.args.as_slice() else { return Err("usage".into()) };
     apex_server::providers::valid_label(name)?;
     ensure_server(&ctx.socket, &ctx.session)?;
-    apex_server::remote::new_session(&ctx.socket, name).map_err(|e| e.to_string())
+    apex_server::remote::new_session(&ctx.socket, name, None).map(|_| ()).map_err(|e| e.to_string())
 }
 
 // ---- attach -----------------------------------------------------------------------

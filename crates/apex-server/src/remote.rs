@@ -210,7 +210,7 @@ impl Link {
         let mut create = create;
         if let Some(label) = create.as_deref() {
             if label == session {
-                out.send(&ClientMsg::NewSession { name: label.to_string() })?;
+                out.send(&ClientMsg::NewSession { name: label.to_string(), dir: None })?;
                 create = None;
             }
         }
@@ -229,7 +229,7 @@ impl Link {
                 ServerMsg::Welcome { attachment, snapshot } => break (attachment, snapshot),
                 ServerMsg::Error { text } if text.starts_with("no session") && create.is_some() => {
                     let label = create.take().unwrap();
-                    out.send(&ClientMsg::NewSession { name: label.clone() })?;
+                    out.send(&ClientMsg::NewSession { name: label.clone(), dir: None })?;
                     out.send(&ClientMsg::Hello { session: label, name: name.to_string(), kind, attach: attach.clone() })?;
                 }
                 ServerMsg::Error { text } => return Err(io::Error::other(text)),
@@ -624,14 +624,13 @@ pub fn local_attach() -> Option<Script> {
 }
 
 /// Create a session on a daemon; fine if it already exists.
-pub fn new_session(path: &Path, name: &str) -> io::Result<()> {
+pub fn new_session(path: &Path, name: &str, dir: Option<&str>) -> io::Result<String> {
     let mut s = UnixStream::connect(path)?;
-    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string() })?;
+    write_frame(&mut s, &ClientMsg::NewSession { name: name.to_string(), dir: dir.map(str::to_string) })?;
     let mut r = BufReader::new(s);
     loop {
         match read_frame::<_, ServerMsg>(&mut r)? {
-            Some(ServerMsg::Sessions { .. }) => return Ok(()),
-            Some(ServerMsg::Error { text }) if text.contains("exists") => return Ok(()),
+            Some(ServerMsg::Sessions { sessions }) => return sessions.into_iter().find(|s| s.label == name).map(|s| s.id).ok_or_else(|| io::Error::other(format!("no session {name} after making it"))),
             Some(ServerMsg::Error { text }) => return Err(io::Error::other(text)),
             Some(ServerMsg::Build { protocol, id }) => check_build(protocol, &id)?,
             Some(_) => {}

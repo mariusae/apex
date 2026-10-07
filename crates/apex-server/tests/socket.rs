@@ -182,7 +182,7 @@ fn sessions_are_listed_and_made() {
     let mut c = Remote::connect_as(&sock, "main", "t", AttachmentKind::Tool).unwrap();
     c.send(&ClientMsg::ListSessions);
     assert!(wait(&mut c, |r| r.link.sessions.as_ref().is_some_and(|v| v.iter().map(|s| s.label.as_str()).collect::<Vec<_>>() == ["main"])));
-    c.send(&ClientMsg::NewSession { name: "two".into() });
+    c.send(&ClientMsg::NewSession { name: "two".into(), dir: None });
     assert!(wait(&mut c, |r| r.link.sessions.as_ref().map(|s| s.len()) == Some(2)));
     let mut two = Remote::connect(&sock, "two", "ui").unwrap();
     let col = two.node.state.layout.cols[0].id;
@@ -406,7 +406,7 @@ fn places_in_other_sessions_become_switches_for_the_ui() {
     let here = ui.node.state.meta.id.clone();
     assert_eq!(here.len(), 36);
     // a second session, by its identity
-    ui.send(&ClientMsg::NewSession { name: "side".into() });
+    ui.send(&ClientMsg::NewSession { name: "side".into(), dir: None });
     assert!(wait(&mut ui, |r| r.link.sessions.is_some()), "no session list came");
     let side = ui.link.sessions.take().unwrap().into_iter().find(|s| s.label == "side").expect("side listed").id;
     assert_ne!(side, here);

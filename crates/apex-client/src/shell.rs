@@ -473,7 +473,7 @@ pub fn plan(socket: &Path) -> std::io::Result<(SessionUrl, Option<WindowBounds>)
     if let Some(first) = existing.first() {
         return Ok((SessionUrl::local(&first.label).with_id(&first.id), None));
     }
-    new_session(socket, apex_server::providers::DEFAULT_SESSION)?;
+    new_session(socket, apex_server::providers::DEFAULT_SESSION, None)?;
     Ok((SessionUrl::local(apex_server::providers::DEFAULT_SESSION), None))
 }
 
