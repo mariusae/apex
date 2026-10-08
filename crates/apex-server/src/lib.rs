@@ -1260,7 +1260,7 @@ impl Server {
     /// a low priority so that anything installed later wins: what B3 did
     /// before there were rules. `.,;:)` after a name are forgiven.
     pub fn install_default_rules(&mut self, log: &mut Log) {
-        let r = |text: &str, isfile: Option<&str>, isdir: Option<&str>, edit: &str| PlumbRule {
+        let r = |text: &str, isfile: Option<&str>, isdir: Option<&str>, edit: &str| PlumbRule { start: None,
             verb: "plumb".into(),
             owner: None,
             unlisted: false,
@@ -1284,7 +1284,7 @@ impl Server {
         // Clear in a terminal's tools menu (or typed in its tag): the
         // scrollback dropped, through the CLI
         let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
-        let clear = PlumbRule {
+        let clear = PlumbRule { start: None,
             verb: "Clear".into(),
             owner: None,
             unlisted: false,

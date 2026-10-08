@@ -144,6 +144,9 @@ impl PlumbRule {
         if is_builtin(&self.verb) && self.win.is_none() && self.file.is_none() && self.kind.is_none() {
             return Err(format!("{}: a rule for a word apex knows must say where it applies (-win, -file or -kind)", self.verb));
         }
+        if self.start.is_some() && !matches!(self.action, crate::entry::RuleAction::Tool(_)) {
+            return Err("-start is for a -tool rule: how to start that tool".into());
+        }
         Ok(())
     }
 }
@@ -193,6 +196,9 @@ impl PlumbRule {
             crate::entry::RuleAction::Run(t) => out.push(format!("-run={}", word(t))),
             crate::entry::RuleAction::Client { verb, args } => out.push(format!("-client={} -args={}", word(verb), word(args))),
             crate::entry::RuleAction::Tool(t) => out.push(format!("-tool={}", word(t))),
+        }
+        if let Some(s) = &self.start {
+            out.push(format!("-start={}", word(s)));
         }
         if let Some(to) = self.to {
             out.push(format!("-to={}", match to {
@@ -279,7 +285,7 @@ mod tests {
     use crate::entry::RuleAction;
 
     fn rule(text: Option<&str>, file: Option<&str>) -> PlumbRule {
-        PlumbRule { verb: "plumb".into(), owner: None, unlisted: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
+        PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
     }
 
     #[test]

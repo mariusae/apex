@@ -1067,7 +1067,7 @@ impl Tool {
     /// Install a rule answered by this tool: its `Plumb` events say
     /// which rule matched.
     pub fn offer(&mut self, r: Rule) -> Result<RuleId> {
-        let rule = PlumbRule {
+        let rule = PlumbRule { start: None,
             verb: r.verb.unwrap_or_else(|| "plumb".to_string()),
             owner: r.owner,
             unlisted: r.unlisted,

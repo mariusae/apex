@@ -195,7 +195,7 @@ struct Win {
 fn win_rules(window: WindowId, name: &str) -> Vec<PlumbRule> {
     ["Interrupt", "EOF", apex_core::plumb::EXEC]
         .into_iter()
-        .map(|verb| PlumbRule {
+        .map(|verb| PlumbRule { start: None,
             verb: verb.into(),
             owner: None,
             unlisted: false,

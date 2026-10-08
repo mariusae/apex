@@ -400,6 +400,11 @@ pub struct PlumbRule {
     pub action: RuleAction,
     /// Where a `Run` command's output goes.
     pub to: Option<RunTo>,
+    /// For a `Tool(name)` action: the command that starts that tool when
+    /// none of that name is attached (Plan 9's `plumb client`); what the
+    /// rule matched waits for it (ARCHITECTURE.md §5).
+    #[serde(default)]
+    pub start: Option<String>,
 }
 
 /// Is this name a URL (a web window's), not a path? `scheme://...`.

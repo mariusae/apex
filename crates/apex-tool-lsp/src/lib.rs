@@ -407,7 +407,7 @@ impl Tool {
         let file = format!(r"\.({})$", l.exts.join("|"));
         let mut ids = Vec::new();
         for v in VERBS {
-            let rule = PlumbRule { verb: v.to_string(), owner: None, unlisted: false, text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
+            let rule = PlumbRule { start: None, verb: v.to_string(), owner: None, unlisted: false, text: None, file: Some(file.clone()), kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
             ids.push(self.remote.rule_add(rule, 0, true, TIMEOUT)?);
         }
         self.rules.insert(lang.to_string(), ids);
@@ -469,7 +469,7 @@ impl Tool {
             // in a file window and one no tool owns: the stack is for
             // going about the source, not for a terminal, an agent's
             // window or a win's, whose menus have their own words
-            let r = PlumbRule { verb: v.into(), owner: Some(String::new()), unlisted: false, text: None, file: None, kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
+            let r = PlumbRule { start: None, verb: v.into(), owner: Some(String::new()), unlisted: false, text: None, file: None, kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("lsp".into()), win: None, to: None };
             // a priority below the verbs', so the menu lists them after
             self.remote.rule_add(r, -1, true, TIMEOUT)?;
         }

@@ -1805,7 +1805,7 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
         Some(v) => v.parse().map_err(|_| format!("-priority={v}: not a number"))?,
         None => 0,
     };
-    let r = PlumbRule {
+    let r = PlumbRule { start: None,
         verb: f.get("verb").unwrap_or("plumb").to_string(),
         owner: f.get("owner").map(String::from),
         unlisted: f.is("unlisted"),

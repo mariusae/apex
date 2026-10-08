@@ -134,7 +134,7 @@ fn get_rule_overrides_filesystem_get_and_stays_scoped() {
     let w_file = open(&server, &mut log, &mut node, col, &dir, "f.txt");
     let smartlog = format!("{}/+smartlog", dir.display());
     let w_live = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
-    let rule = PlumbRule {
+    let rule = PlumbRule { start: None,
         verb: "Get".into(),
         owner: None,
         unlisted: false,
@@ -182,7 +182,7 @@ fn dirty_get_rule_reaches_the_tool_on_first_invocation() {
     std::fs::create_dir_all(&dir).unwrap();
     let smartlog = format!("{}/+smartlog", dir.display());
     let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
-    let rule = PlumbRule {
+    let rule = PlumbRule { start: None,
         verb: "Get".into(),
         owner: None,
         unlisted: false,
@@ -219,7 +219,7 @@ fn timed_out_get_rule_fails_without_reloading_generated_content() {
     std::fs::create_dir_all(&dir).unwrap();
     let smartlog = format!("{}/+smartlog", dir.display());
     let w = node.new_window(&mut log, col, &smartlog, "generated\n").unwrap();
-    let rule = PlumbRule {
+    let rule = PlumbRule { start: None,
         verb: "Get".into(),
         owner: None,
         unlisted: false,
@@ -514,7 +514,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     let md = dir.join("notes.md");
     std::fs::write(&md, "# hi\n").unwrap();
     // a rule offering Preview on .md files, run as a command
-    let rule = PlumbRule {
+    let rule = PlumbRule { start: None,
         verb: "Preview".into(),
         owner: None,
         unlisted: false,
@@ -1010,7 +1010,7 @@ fn b2_in_a_terminal_types_the_text_to_the_program_there() {
     // and nothing was run beside it: no shell of its own, no +Errors
     assert!(errors_text(&node).is_empty(), "{}", errors_text(&node));
     // a verb offered here is still the rules': it is not typed
-    let rule = PlumbRule {
+    let rule = PlumbRule { start: None,
         verb: "Zap".into(),
         owner: None,
         unlisted: false,

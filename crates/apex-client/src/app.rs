@@ -1185,7 +1185,7 @@ impl Acme {
     /// The rules are its own, gone when it detaches.
     fn arm(link: &mut Link) {
         link.send(&ClientMsg::ClientConfig { term: crate::theme::term_colors() });
-        let urls = PlumbRule {
+        let urls = PlumbRule { start: None,
             verb: "plumb".into(),
             owner: None,
             unlisted: false,
@@ -1202,7 +1202,7 @@ impl Acme {
         // output. A win window says it is win's (`Own`); it is not
         // guessed at by the shape of its name
         for (kind, owner) in [(WinKind::Term, None), (WinKind::File, Some("win-.*".to_string()))] {
-            let rule = PlumbRule {
+            let rule = PlumbRule { start: None,
                 verb: "Snarfout".into(),
                 owner,
                 unlisted: false,
