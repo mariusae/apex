@@ -204,7 +204,7 @@ proposal in the protocol collapse (Plan, step 2).
 covers them:
 
 ```
-Open { body: Text{name, kind, scratch, text} | Term(id) | Web(url) | Html{path, text},
+Open { body: Text{name, kind, scratch, text} | Term(id) | Page{content, via, base},
        place: Col(c) | Near(from) | Over(w) | Stash,
        label, reuse: bool, pos: Pos }
 ```
@@ -518,7 +518,7 @@ These are conveniences a tool on the host could provide:
 Most of these are blocked by one missing primitive: **a tool can't serve
 requests to the app.** Tools can only propose to the leader and answer
 plumbs.
-- Route I/O-plane requests to tools, e.g. `apex+tool://NAME/…`.
+- Route I/O-plane requests to tools (a page `via: Tool(name)`, §5).
 - `ClientDo` (a call to the UI posing as a proposal, routed to the leader
   rather than the asker) moves onto the same mechanism.
 
@@ -667,108 +667,159 @@ With these, `Send`, `ID`, `PutTrimmed`, the preview rule sync and
 
 ---
 
-## 5. Pages: one view in the client, driven by tools
+## 5. Pages: a window kind, driven by tools
 
 Preview, Web, diffs and the agent's pages are, today, special cases
 spread over every layer:
 - two body kinds and two window kinds (`Body::Web`/`Html`,
   `WinKind::Web`/`Preview`);
-- three proposals: `OpenWeb`, `OpenHtml`, `WebNavigate`;
+- three proposals, `OpenWeb`, `OpenHtml` and `WebNavigate`, and
+  `ClientDo` to ask the UI for what they cannot say;
 - Look in a page through `page_finds`;
 - the core's `Web` built-in, with the client's URL scheme in it;
-- page-verb parsing, Back/Fwd/Get interception and `ClientDo` in the
-  client;
+- page verbs parsed from the page's HTML, and Back/Fwd/Get intercepted,
+  in the client;
 - hard-coded Preview rules in the server;
 - `apex md` in the CLI.
 
-The primitive that replaces them: **the client provides one page view and
-knows nothing about what is in it; every page window is owned by a tool.**
+The design: **a window has a kind -- Text, Term or Page -- which says
+what its content is, and nothing else.** What every window has (status,
+owner, busy, notification, close) stays common to all. A page is
+session state like any other, in the log, drawn by whichever client
+shows it. Every page window is owned by a tool, and the client knows
+nothing about what a page means.
 
-**The client's whole job:**
-- Render a URL and its subresources.
-- Provide the generic affordances: scroll, select and copy, find, the
-  scrollbar.
-- Report what happens in the page to the window's owner.
-- Carry out commands sent to the page.
+### What a page is
 
-### The parts
+Two sources of content, and one rule for fetching:
 
-1. **One body kind, `Page { url }`.** The URL can be:
-   - `http(s)://`: the open web, fetched through the session's host, as
-     a terminal there would see it;
-   - `apexfile://`: the host's files;
-   - `apex+tool://NAME/…`: served by that tool over the I/O plane.
+```
+Page { content: Buffer(id) | Url(url), via: Host | Client | Tool(name), base }
+```
 
-   This is the "a tool can serve requests" primitive that §3 found
-   missing.
+- **`Buffer`:** the page is a buffer's text, written by its tool with the
+  ordinary edits and drawn as HTML. It is in the log, so it survives the
+  tool, replays when a client attaches, and is patched in place, keeping
+  its scroll. Preview, diffs and the agent's pages are these.
+- **`Url`:** the page is at a URL, fetched `via` as below.
+- **`via`** says how the document (for a `Url` page) and every resource
+  it loads (images, scripts, styles) are fetched:
+  - `Host`: through the session's host, its network and its files
+    (`file:///…`). This is today's I/O plane.
+  - `Client`: by the machine showing the window, with its own network
+    and cookies. Only the user makes these, with a command typed or
+    clicked; never a tool, which on another host must not make the
+    user's machine fetch what is on its `localhost`.
+  - `Tool(name)`: served by that tool over the I/O plane: the "a tool
+    can serve requests" primitive that §3 found missing.
+- **`base`:** where relative URLs resolve: for a preview, the folder of
+  the file it shows.
 
-   A page that changes as its source is typed in (Preview) can instead
-   take its HTML from a buffer the tool writes, as `Html` does now. That
-   keeps the in-place update that preserves scroll position.
-2. **Page events go to the owner**, as plumbs go to a rule's tool:
-   - **Navigation requested** (a link, a form, a script). The tool
-     answers allow, redirect, or "handled" (it opened a file in apex,
-     handed the URL to the system browser).
-   - **Title changed.**
-   - **Loading started and ended.**
-   - **A page verb run.**
-3. **Commands from the owner to the page:**
-   - navigate, reload, back, forward;
-   - find;
-   - scroll to a place (Preview following the caret);
-   - run a page verb;
-   - patch the content in place.
+### State in the log
+
+A page's state is kept as a text window's is: what decides what the
+window shows is in the log; what is only passing is the client's.
+
+| | Text | Page |
+|---|---|---|
+| Content | the buffer's text | the buffer, or the URL |
+| Navigation | -- | the URL now, and a reload counter |
+| Position | the view's origin | the scroll position, for buffer pages only |
+| Not logged | sweeps, the hover hint | find's marks, messages to the page's script |
+
+- **One navigation state a window.** A client attaching loads it and
+  fetches what it needs anew. Reload bumps the counter, and every client
+  showing the page fetches again.
+- **Scroll is logged for buffer pages only:** cheap there, and how Preview
+  follows the caret, by proposing it. A URL page scrolls on the client.
+- **Commands are proposals that change this state**, not calls to a
+  client: nothing is routed to "the client showing the window". Every
+  client draws from the state. Only the leading client reports what
+  happens in a page; a watching one shows it and is quiet.
+
+### Events
+
+One framework for every kind of window, with two shapes: a
+**notification**, and a **request** that is answered.
+
+| Kind | Events |
+|---|---|
+| Any window | focus, close, status |
+| Text | edits, each with its origin; the selection |
+| Term | output, exit |
+| Page | navigation requested (a request: allow, redirect, or handled -- opened in apex, given to the system; unanswered in time, a link of the same origin is allowed); navigated, loaded, title (notifications); a message from the page's script |
+
+Plumbing becomes one kind of request in this framework (a word a rule
+claims, clicked), not a mechanism beside it.
+
+### The script bridge
+
+A buffer page or a tool's page gets `window.apex.send(json)` and
+`apex.onmessage`: messages to and from its owner, as page events and
+commands (a message posted is not logged). A page fetched from the web
+(`Url` via `Host` or `Client`) never gets the bridge.
 
 ### What becomes a tool
 
 - **Web.** A small tool on the session's host.
-  - It answers the `Web` and `Newweb` commands and owns the windows they
-    make.
-  - It keeps their back/forward history. The page's history leaves the
-    session's back stack, so `WebNavigate` and the mixed history model in
-    the core go.
-  - It decides that a link to the session's host opens in apex, and that
-    a `mailto:` goes to the system.
+  - It answers `Web` and `Newweb` through rules and owns the windows
+    they make.
+  - It keeps each window's history. The log holds only where the page
+    is now; Back and Fwd are words in the window's tag that the tool
+    answers by proposing a navigation, so history survives a client
+    attaching again.
+  - It decides where links go: a file on the host opens in apex, a
+    `mailto:` goes to the system.
 - **Preview.** Already a tool. It takes over everything still elsewhere:
   - which converter runs for which file (`apex-core/src/preview.rs`);
-  - its own rules (none hard-coded in the server);
+  - its own rules, none hard-coded in the server;
   - Markdown conversion (`apex md`, out of the CLI);
-  - following the caret.
-- **Diff, the agent's pages, Changes.** Tools serving pages, with no
-  special API. `Tool::diff` becomes library code.
+  - writing the HTML into its buffer page, and following the caret by
+    proposing the page's scroll.
+- **Diff, the agent's pages, Changes.** Tools writing buffer pages and
+  talking to them over the bridge. `Tool::diff` becomes library code.
 
-### What goes elsewhere
+**A tool that restarts** takes its windows back by name, as a terminal's
+window outlives the shell in it. The window, its content and its
+navigation state are the session's meanwhile. A buffer page shows what
+it has, and answers nothing; a `Tool(name)` page shows a placeholder
+saying its tool is gone, not what the client last fetched.
+
+### What goes
 
 - **Kinds and proposals.** `Body::Web`/`Html` and `WinKind::Web`/`Preview`
-  collapse into one kind. `OpenWeb`, `OpenHtml` and `WebNavigate` go:
-  `Open` with a `Page` body covers them (§1).
-- **In the client:**
-  - page-verb parsing and the Back/Fwd/Get interception in
-    `Acme::execute`;
-  - `ClientDo` for preview and open;
-  - `page_finds` (find becomes a command to the page).
-
-  What remains in the client is renderer code.
+  become the Page kind. `OpenWeb`, `OpenHtml`, `WebNavigate` and
+  `ClientDo` go: `Open` with a Page body, and the page's state proposals,
+  cover them (§1).
+- **In the client:** page-verb parsing; the Back/Fwd/Get interception in
+  `Acme::execute`; `page_finds` (find is the client's own, as for text).
+  What remains is the renderer, and the generic affordances (scroll,
+  select and copy, find, zoom).
 - **In the core:** the `Web` built-in, `web_url` (the client's
   `apexfile://` scheme) and `web_navigate`.
+- **In the server:** the Preview, Clear and Win rules.
 
 ### Decisions
 
-- **The open web goes through the host.**
-  - For a remote session that adds latency; for a local one nothing
-    changes.
-  - It is also the more correct choice: the page sees the host's network,
-    as a terminal there does.
+- **Two content sources.** A buffer for documents a tool writes; a URL,
+  fetched from the web or served by a tool, for the rest. Both fetch
+  their resources `via` the same rule.
+- **Page state is logged** as text state is: navigation, reload, and a
+  buffer page's scroll. Only what passes is the client's.
+- **A tool's page without its tool** is a placeholder, not the client's
+  cached copy.
+- **History is the tool's.**
+- **Only the user makes a `Client` page.**
+- **The open web goes through the host** (`via: Host`) unless the user
+  says otherwise. For a remote session that adds latency, and is the
+  more correct choice: the page sees the host's network, as a terminal
+  there does.
 - **Cookies and logins stay in the client's view.** They are per machine,
-  not per session, which is right: they are the user's, not the
-  session's.
-- **A page whose tool has gone is inert.** Its content stays and its links
-  do nothing. A built-in fallback (links open a new page) would bring
-  back the policy the client is giving up.
+  not per session: they are the user's.
 - **Generic affordances stop at what needs no knowledge of the page.**
   Find, copy and scroll are the client's. Anything that knows what the
   page means (a table of contents, Mermaid, page verbs) comes from the
-  page itself, as a script or `<meta>` the tool supplies.
+  page and its tool.
 
 ---
 
@@ -791,7 +842,9 @@ In order. Each step stands on its own.
 3. **Make the tool API complete and honest** (§4):
    - every edit delivered with its origin, and server-side marks;
    - address and Edit-program calls;
-   - lifecycle events;
+   - one event framework: window kinds (Text, Term, Page), whose
+     content alone differs; notifications and answered requests, with
+     plumbing one kind of request (§5);
    - terminal and I/O plane calls;
    - one window constructor with placement, and one busy flag.
 
@@ -800,11 +853,15 @@ In order. Each step stands on its own.
 4. **Delete `Backend::Local`.** Run the daemon in-process over a socket
    pair (§3).
 5. **Pages** (§5):
-   - one `Page` body;
-   - tool-served URLs on the I/O plane;
-   - page events to the owner and commands from it;
-   - Web as a tool;
-   - Preview owning its converters and rules.
+   - the Page kind: content a buffer or a URL, fetched `via` the host,
+     the client or a tool;
+   - its state in the log: navigation, a reload counter, a buffer
+     page's scroll;
+   - tool-served requests on the I/O plane, and the script bridge;
+   - tools taking their windows back by name when they restart;
+   - Web as a tool, history and all;
+   - Preview owning its converters, rules and Markdown, and following
+     the caret.
 6. **Move editing rules into the core and UI policy out of it** (§2):
    - `Node::key` for keyboard editing;
    - effects returned rather than queued;
