@@ -456,3 +456,32 @@ fn a_tool_answers_where_links_in_its_pages_go() {
     }
     assert_eq!(client.link.answered.pop(), Some((id, Some(Answer::Navigate(NavAnswer::Handled)))));
 }
+
+/// A tool serves what its pages load: a request for `tool://NAME/...`
+/// on the I/O plane reaches it, and its answer comes back; with no tool
+/// of that name attached, the request is refused.
+#[test]
+fn a_tool_serves_its_pages_over_the_plane() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "pages").unwrap();
+    let client = Remote::connect_as(&sock, "main", "client", AttachmentKind::Tool).unwrap();
+    let plane = client.io_plane();
+    let fetch = std::thread::spawn(move || plane.fetch("GET", "tool://pages/hello?x=1", &[], None, Duration::from_secs(5)));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut served = false;
+    while Instant::now() < deadline && !served {
+        if let Ok(Some(apex_tool::Event::Request(r))) = t.next_event(Some(Duration::from_millis(50))) {
+            assert_eq!((r.method.as_str(), r.path.as_str()), ("GET", "/hello?x=1"));
+            t.respond(&r, 200, &[("Content-Type", "text/html")], b"<h1>hello</h1>").unwrap();
+            served = true;
+        }
+    }
+    assert!(served, "the tool was asked");
+    let (status, headers, body) = fetch.join().unwrap().unwrap();
+    assert_eq!(status, 200);
+    assert!(headers.iter().any(|(k, v)| k == "Content-Type" && v == "text/html"));
+    assert_eq!(body, b"<h1>hello</h1>");
+    let plane = client.io_plane();
+    let (status, _, _) = plane.fetch("GET", "tool://nobody/x", &[], None, Duration::from_secs(5)).unwrap();
+    assert_eq!(status, 503);
+}

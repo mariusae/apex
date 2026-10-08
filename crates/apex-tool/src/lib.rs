@@ -211,6 +211,22 @@ pub enum Event {
     /// loaded, took a title, or its script said something. Only once the
     /// tool said it handles its pages.
     Page { window: WindowId, event: PageEvent },
+    /// A request for a page the tool serves (`tool://NAME/...`, a page
+    /// `via` the tool): answer it with `respond`.
+    Request(Served),
+}
+
+/// A request for something the tool serves (`Event::Request`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Served {
+    pub stream: u32,
+    pub method: String,
+    /// The whole address, `tool://NAME/path?query`.
+    pub url: String,
+    /// The part after the tool's name: `/path?query`.
+    pub path: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
 }
 
 /// What happened in a page (`Event::Page`).
@@ -320,6 +336,8 @@ pub struct Tool {
     /// leader applies proposals as itself, so an edit's entries do not
     /// say who asked for it, and ours are known by their shape.
     own: VecDeque<(BufferId, usize, usize, String)>,
+    /// Requests for pages the tool serves, still arriving: by stream.
+    incoming: BTreeMap<u32, Served>,
 }
 
 impl Tool {
@@ -336,7 +354,7 @@ impl Tool {
         let remote = Remote::connect_as(socket, session, name, AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
         // called by our name, not apex, in the top row and ps
         remote.announce(name);
-        Ok(Tool { remote, watched: BTreeSet::new(), ours: BTreeMap::new(), events: VecDeque::new(), own: VecDeque::new() })
+        Ok(Tool { remote, watched: BTreeSet::new(), ours: BTreeMap::new(), events: VecDeque::new(), own: VecDeque::new(), incoming: BTreeMap::new() })
     }
 
     /// The session's id, and its label: what `apexsession` and
@@ -446,6 +464,35 @@ impl Tool {
     /// After messages: plumbs for our rules, and our windows renamed or
     /// gone.
     fn after(&mut self) {
+        // requests for what it serves: gathered until their end, then one
+        // event each; other streams' frames left where they were
+        let frames = std::mem::take(&mut self.remote.link.io);
+        for (stream, frame) in frames {
+            if stream < 0x8000_0000 {
+                self.remote.link.io.push((stream, frame));
+                continue;
+            }
+            match frame {
+                apex_server::proto::IoFrame::Request { method, url, headers } => {
+                    let path = url.strip_prefix("tool://").and_then(|r| r.find('/').map(|i| r[i..].to_string())).unwrap_or_else(|| "/".into());
+                    self.incoming.insert(stream, Served { stream, method, url, path, headers, body: Vec::new() });
+                }
+                apex_server::proto::IoFrame::Body(b) => {
+                    if let Some(s) = self.incoming.get_mut(&stream) {
+                        s.body.extend_from_slice(&b);
+                    }
+                }
+                apex_server::proto::IoFrame::End => {
+                    if let Some(s) = self.incoming.remove(&stream) {
+                        self.events.push_back(Event::Request(s));
+                    }
+                }
+                apex_server::proto::IoFrame::Reset { .. } => {
+                    self.incoming.remove(&stream);
+                }
+                apex_server::proto::IoFrame::Response { .. } => {}
+            }
+        }
         // its pages': links followed, and what happened in them
         for (id, request) in std::mem::take(&mut self.remote.link.asks) {
             if let apex_server::proto::Request::Navigate { window, url } = request {
@@ -487,6 +534,20 @@ impl Tool {
             self.watched.remove(&w);
             self.events.push_back(Event::Deleted { window: w });
         }
+    }
+
+    /// Answer a request for something the tool serves: its status, its
+    /// headers (`Content-Type` above all) and its body.
+    pub fn respond(&mut self, req: &Served, status: u16, headers: &[(&str, &str)], body: &[u8]) -> Result<()> {
+        use apex_server::proto::{ClientMsg, IoFrame};
+        let stream = req.stream;
+        let headers: Vec<(String, String)> = headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        self.remote.send(&ClientMsg::Io { stream, frame: IoFrame::Response { status, headers } });
+        for chunk in body.chunks(256 * 1024) {
+            self.remote.send(&ClientMsg::Io { stream, frame: IoFrame::Body(chunk.to_vec()) });
+        }
+        self.remote.send(&ClientMsg::Io { stream, frame: IoFrame::End });
+        Ok(())
     }
 
     /// The tool handles the pages it owns: links followed in them come to

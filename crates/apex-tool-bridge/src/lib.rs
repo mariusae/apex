@@ -88,7 +88,7 @@ use apex_tool::{Event, Plumb, Rule, RuleId, Tool, WinKind, WindowId, END};
 /// until stdin closes or the link ends.
 pub fn run(socket: &Path, session: &str, name: &str) -> Result<(), String> {
     let tool = Tool::attach_to(socket, session, name).map_err(|e| e.to_string())?;
-    let mut b = Bridge { tool, out: std::io::stdout() };
+    let mut b = Bridge { tool, out: std::io::stdout(), requests: std::collections::HashMap::new() };
     b.emit(json!({ "event": "hello", "session": session, "tool": name }));
     // stdin on a thread: a line at a time, ended by EOF
     let (tx, rx) = channel::<Option<String>>();
@@ -114,6 +114,8 @@ pub fn run(socket: &Path, session: &str, name: &str) -> Result<(), String> {
 struct Bridge {
     tool: Tool,
     out: std::io::Stdout,
+    /// Requests for what the tool serves, awaiting its `respond`.
+    requests: std::collections::HashMap<u32, apex_tool::Served>,
 }
 
 impl Bridge {
@@ -160,6 +162,17 @@ impl Bridge {
             Event::Relabeled { window, label } => json!({ "event": "relabeled", "window": window.0, "label": label }),
             Event::Deleted { window } => json!({ "event": "deleted", "window": window.0 }),
             Event::Navigate(n) => json!({ "event": "navigate", "navigation": n.id, "window": n.window.0, "url": n.url }),
+            // a request for what the tool serves: its body as text when it
+            // is UTF-8, else as base64 ("body64")
+            Event::Request(r) => {
+                let mut v = json!({ "event": "request", "stream": r.stream, "method": r.method, "url": r.url, "path": r.path, "headers": r.headers });
+                match String::from_utf8(r.body.clone()) {
+                    Ok(text) => v["body"] = json!(text),
+                    Err(_) => v["body64"] = json!(base64_encode(&r.body)),
+                }
+                self.requests.insert(r.stream, r);
+                v
+            }
             Event::Page { window, event } => {
                 let mut v = match event {
                     apex_tool::PageEvent::Navigated { url } => json!({ "what": "navigated", "url": url }),
@@ -380,6 +393,21 @@ impl Bridge {
                 Ok(json!({}))
             }
             "setting" => Ok(json!({ "value": self.tool.setting(v["key"].as_str().ok_or("key")?) })),
+            // a request's answer: its status, headers ([[name, value]...])
+            // and body, as text ("body") or base64 ("body64")
+            "respond" => {
+                let stream = v["stream"].as_u64().ok_or("stream: the request's")? as u32;
+                let r = self.requests.remove(&stream).ok_or("no such request")?;
+                let headers: Vec<(String, String)> = v["headers"].as_array().map(|a| a.iter().filter_map(|h| Some((h[0].as_str()?.to_string(), h[1].as_str()?.to_string()))).collect()).unwrap_or_default();
+                let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                let body = match (v["body"].as_str(), v["body64"].as_str()) {
+                    (Some(text), _) => text.as_bytes().to_vec(),
+                    (None, Some(b64)) => base64_decode(b64).ok_or("body64: not base64")?,
+                    (None, None) => Vec::new(),
+                };
+                self.tool.respond(&r, v["status"].as_u64().unwrap_or(200) as u16, &headers, &body).map_err(e)?;
+                Ok(json!({}))
+            }
             // the pages the tool owns: their links and events come to it
             "pages" => {
                 self.tool.handle_pages();
@@ -416,4 +444,47 @@ fn plumb_json(p: &Plumb) -> Value {
 /// whether it is scratch and live.
 fn window_json(w: &apex_tool::WindowInfo) -> Value {
     json!({ "id": w.id.0, "path": w.path, "label": w.label, "kind": w.kind.name(), "scratch": w.scratch, "live": w.live })
+}
+
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Bytes as base64 (standard, padded).
+fn base64_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            out.push(if i <= c.len() { B64[(n >> (18 - 6 * i)) as usize & 63] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// Base64 (standard, padded or not; white space ignored) as bytes.
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+        acc = acc << 6 | B64.iter().position(|b| *b == c)? as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod base64_tests {
+    use super::*;
+
+    #[test]
+    fn base64_goes_there_and_back() {
+        for b in [&b""[..], b"f", b"fo", b"foo", b"foob", b"\x00\xff\x10 binary"] {
+            assert_eq!(base64_decode(&base64_encode(b)).unwrap(), b);
+        }
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+    }
 }

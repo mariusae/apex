@@ -150,7 +150,15 @@ enum IoStream {
     /// `http(s)://`: the request, its body gathered until `End`, then
     /// fetched on a thread; `headed` once the response head went out.
     Fetch { method: String, url: String, headers: Vec<(String, String)>, body: Vec<u8>, started: bool, headed: bool },
+    /// `tool://NAME/...`: served by that tool; this stream's frames go to
+    /// the other half, on the tool's connection (or the asker's).
+    Relay { conn: u64, stream: u32 },
 }
+
+/// The first stream number of streams the daemon opens on a tool's
+/// connection (a request for a page it serves): above any the tool
+/// opens itself.
+const RELAYED: u32 = 0x8000_0000;
 
 struct Session {
     /// Stable across renames; what connections and events refer to.
@@ -202,6 +210,8 @@ pub struct Daemon {
     /// Questions a client put to a window's owner, by the id the owner
     /// was given: the client's connection, and its own id for it.
     asks: HashMap<u64, (u64, u64)>,
+    /// The next stream number opened on a tool's connection (`RELAYED`).
+    next_relay: u32,
     /// ⌘O's listings under way, by connection and request.
     finds: HashMap<(u64, u64), crate::find::Job>,
     rx: Receiver<Event>,
@@ -238,7 +248,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), finds: HashMap::new(), rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, finds: HashMap::new(), rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -921,6 +931,21 @@ impl Daemon {
 
     /// A frame from a client on one of its streams.
     fn io(&mut self, id: u64, name: &str, stream: u32, frame: IoFrame) {
+        // half of a relay (a page a tool serves): to the other half; the
+        // tool's end or either side's reset ends both
+        if let Some(&IoStream::Relay { conn, stream: other }) = self.conns.get(&id).and_then(|c| c.streams.get(&stream)) {
+            let over = matches!(frame, IoFrame::Reset { .. }) || (matches!(frame, IoFrame::End) && other < RELAYED);
+            self.send(conn, ServerMsg::Io { stream: other, frame });
+            if over {
+                if let Some(c) = self.conns.get_mut(&id) {
+                    c.streams.remove(&stream);
+                }
+                if let Some(c) = self.conns.get_mut(&conn) {
+                    c.streams.remove(&other);
+                }
+            }
+            return;
+        }
         match frame {
             IoFrame::Request { method, url, headers } => self.io_request(id, name, stream, &method, &url, &headers),
             IoFrame::Body(bytes) => match self.conns.get_mut(&id).and_then(|c| c.streams.get_mut(&stream)) {
@@ -962,7 +987,7 @@ impl Daemon {
                         self.io_finish(id, stream, status, text.into_bytes());
                     }
                     IoStream::Watch { path, .. } => self.unwatch_unused(name, &path),
-                    IoStream::Tunnel { .. } | IoStream::Fetch { .. } => {}
+                    IoStream::Tunnel { .. } | IoStream::Fetch { .. } | IoStream::Relay { .. } => {}
                 }
             }
             IoFrame::Reset { .. } => {
@@ -978,6 +1003,9 @@ impl Daemon {
     fn io_request(&mut self, id: u64, name: &str, stream: u32, method: &str, url: &str, headers: &[(String, String)]) {
         if method == "CONNECT" {
             return self.io_connect(id, stream, url);
+        }
+        if let Some(rest) = url.strip_prefix("tool://") {
+            return self.io_relay(id, name, stream, method, url, rest.split('/').next().unwrap_or(""), headers);
         }
         if url.starts_with("http://") || url.starts_with("https://") {
             let bodyless = matches!(method, "GET" | "HEAD" | "DELETE" | "OPTIONS");
@@ -1169,8 +1197,35 @@ impl Daemon {
     }
 
     /// A stream is over from our side: what it held goes.
+    /// A request for a page tool `tool` serves: a stream opened on its
+    /// connection with the request, the two halves relayed to each other.
+    #[allow(clippy::too_many_arguments)]
+    fn io_relay(&mut self, id: u64, name: &str, stream: u32, method: &str, url: &str, tool: &str, headers: &[(String, String)]) {
+        let Some(s) = self.sessions.get(name) else { return };
+        let sid = s.id;
+        let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(cid, _)| *cid);
+        let Some(to) = found else {
+            return self.io_finish(id, stream, 503, format!("{url}: no tool {tool} attached").into_bytes());
+        };
+        let theirs = self.next_relay;
+        self.next_relay = self.next_relay.wrapping_add(1).max(RELAYED);
+        if let Some(c) = self.conns.get_mut(&id) {
+            c.streams.insert(stream, IoStream::Relay { conn: to, stream: theirs });
+        }
+        if let Some(c) = self.conns.get_mut(&to) {
+            c.streams.insert(theirs, IoStream::Relay { conn: id, stream });
+        }
+        self.send(to, ServerMsg::Io { stream: theirs, frame: IoFrame::Request { method: method.to_string(), url: url.to_string(), headers: headers.to_vec() } });
+    }
+
     fn io_drop(&mut self, name: &str, st: IoStream) {
         match st {
+            // the other half hears the stream is gone
+            IoStream::Relay { conn, stream } => {
+                if self.conns.get_mut(&conn).and_then(|c| c.streams.remove(&stream)).is_some() {
+                    self.send(conn, ServerMsg::Io { stream, frame: IoFrame::Reset { reason: "the other end went".into() } });
+                }
+            }
             IoStream::Watch { path, .. } => self.unwatch_unused(name, &path),
             IoStream::Tunnel { sock: Some(s), .. } => {
                 let _ = s.shutdown(std::net::Shutdown::Both);

@@ -105,7 +105,7 @@ impl IoPlane {
         if let Some(b) = body {
             self.send_body(stream, b);
             self.end(stream);
-        } else if url.starts_with("http") {
+        } else if url.starts_with("http") || url.starts_with("tool://") {
             self.end(stream);
         }
         let r = Self::collect(&rx, timeout);

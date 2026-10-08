@@ -28,6 +28,7 @@ package apex
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,6 +69,7 @@ type Tool struct {
 	onDelete   func(*Window)
 	onNavigate func(Navigation) NavAnswer
 	onPage     func(*Window, PageEvent)
+	onRequest  func(Request) Response
 	session    string
 	attachment int
 	done       chan struct{}
@@ -687,6 +689,29 @@ type PageEvent struct {
 	Message json.RawMessage `json:"message"`
 }
 
+// A Request asks for something the tool serves: what a page at
+// tool://NAME/... loads (a page via the tool).
+type Request struct {
+	Method string
+	// URL is the whole address; Path the part after the tool's name,
+	// with its query.
+	URL, Path string
+	Headers   [][2]string
+	Body      []byte
+}
+
+// A Response answers a Request.
+type Response struct {
+	Status  int
+	Headers [][2]string
+	Body    []byte
+}
+
+// HandleRequests has the tool serve what its pages load, from Serve:
+// each request for tool://NAME/... (NAME the tool's own) is answered
+// by fn. With no fn a request is answered 404.
+func (t *Tool) HandleRequests(fn func(Request) Response) { t.onRequest = fn }
+
 // HandlePages has the tool handle the pages it owns, from Serve: nav
 // answers where each followed link goes (nil: Default), and page is
 // told what happens in them (nil: nothing). Before this, a link does
@@ -933,6 +958,31 @@ func (t *Tool) Serve(ctx context.Context) error {
 				args["url"] = answer.url
 			}
 			_ = t.call("navigation", args, nil)
+		case "request":
+			var r struct {
+				Stream  int         `json:"stream"`
+				Method  string      `json:"method"`
+				URL     string      `json:"url"`
+				Path    string      `json:"path"`
+				Headers [][2]string `json:"headers"`
+				Body    *string     `json:"body"`
+				Body64  *string     `json:"body64"`
+			}
+			_ = unmarshalAll(ev, &r)
+			req := Request{Method: r.Method, URL: r.URL, Path: r.Path, Headers: r.Headers}
+			if r.Body != nil {
+				req.Body = []byte(*r.Body)
+			} else if r.Body64 != nil {
+				req.Body, _ = base64.StdEncoding.DecodeString(*r.Body64)
+			}
+			resp := Response{Status: 404, Body: []byte("not served")}
+			if t.onRequest != nil {
+				resp = t.onRequest(req)
+			}
+			if resp.Status == 0 {
+				resp.Status = 200
+			}
+			_ = t.call("respond", map[string]any{"stream": r.Stream, "status": resp.Status, "headers": resp.Headers, "body64": base64.StdEncoding.EncodeToString(resp.Body)}, nil)
 		case "page":
 			var p struct {
 				Window int `json:"window"`
