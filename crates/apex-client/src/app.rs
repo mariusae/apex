@@ -4359,6 +4359,10 @@ impl Acme {
                 WebEvent::Title(title) => self.tell_owner(w, PageEvent::Title { title }),
                 // a link in a page a tool owns: the owner says where it goes
                 WebEvent::Ask(url) => self.ask_owner(w, url),
+                // the page's script to its owner, from a page the bridge is
+                // for: a buffer page, or one a tool serves
+                WebEvent::Message(json) if self.bridged(w) => self.tell_owner(w, PageEvent::Message { json }),
+                WebEvent::Message(_) => {}
                 WebEvent::Link(url) if self.page_owned(w) => self.ask_owner(w, url),
                 WebEvent::Reload => self.webs.reload(w),
                 // a link followed in a page of ours that leaves the host:
@@ -4420,6 +4424,17 @@ impl Acme {
         matches!(self.backend, Backend::Remote(_)) && !self.fenced() && self.node.state.window(w).is_ok_and(|x| x.is_page() && x.owner.is_some_and(|o| o != self.node.attachment))
     }
 
+    /// Page `w` has the script bridge: its document a buffer, or served by
+    /// its tool -- never a page fetched from the web.
+    fn bridged(&self, w: WindowId) -> bool {
+        let Ok(win) = self.node.state.window(w) else { return false };
+        match win.body {
+            Body::Page(apex_core::Source::Buffer(_)) => true,
+            Body::Page(apex_core::Source::Url) => matches!(win.via, apex_core::Via::Tool(_)) && win.path.starts_with("tool://"),
+            _ => false,
+        }
+    }
+
     /// Tell page `w`'s owner what happened in it.
     fn tell_owner(&mut self, w: WindowId, event: PageEvent) {
         if self.page_owned(w) {
@@ -4443,6 +4458,11 @@ impl Acme {
     /// no owner. A buffer page does not navigate: its link is followed.
     pub fn page_answers(&mut self) {
         use apex_server::proto::{Answer, NavAnswer};
+        let Backend::Remote(link) = &mut self.backend else { return };
+        // owners' messages for their pages' scripts: handed over
+        for (w, json) in std::mem::take(&mut link.page_posts) {
+            self.webs.post(w, &json);
+        }
         let Backend::Remote(link) = &mut self.backend else { return };
         let answered = std::mem::take(&mut link.answered);
         for (id, answer) in answered {

@@ -40,6 +40,8 @@ pub enum WebEvent {
     /// A link clicked in a page at an address that a tool owns
     /// (`NAV_SCRIPT`): where it goes is the owner's to say.
     Ask(String),
+    /// The page's script said this to its owner (`apex.send`): JSON.
+    Message(String),
     /// A page went for the host's loopback by its bare name, which the
     /// view would take for the client's: load it under the alias instead.
     Reroute(String),
@@ -618,6 +620,18 @@ const NAV_SCRIPT: &str = r#"(function () {
   }, true);
 })();"#;
 
+/// The script bridge (ARCHITECTURE.md §5): `apex.send(msg)` says msg to
+/// the page's owner, and `apex.onmessage` is handed what the owner posts.
+/// Not in a page fetched from the web; and what such a page might say
+/// anyway is dropped by the client, which knows what the window is.
+const BRIDGE_SCRIPT: &str = r#"(function () {
+  if (window.top !== window || location.protocol === 'http:' || location.protocol === 'https:') return;
+  window.apex = {
+    send: function (msg) { window.ipc.postMessage('msg:' + JSON.stringify(msg)); },
+    onmessage: null,
+  };
+})();"#;
+
 const SCROLL_SCRIPT: &str = r#"(function () {
   if (window.__apexScroll) return;
   window.__apexScroll = true;
@@ -1105,6 +1119,7 @@ impl Webs {
             .with_initialization_script(KEEP_SCRIPT)
             .with_initialization_script(SCROLL_SCRIPT)
             .with_initialization_script(NAV_SCRIPT)
+            .with_initialization_script(BRIDGE_SCRIPT)
             .with_ipc_handler(move |req| {
                 if req.body() == "down:" {
                     let _ = tx4.send((w, WebEvent::Down));
@@ -1131,6 +1146,11 @@ impl Webs {
                     }
                 } else if let Some(text) = req.body().strip_prefix("copy:") {
                     let _ = tx4.send((w, WebEvent::Copy(text.to_string())));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
+                } else if let Some(json) = req.body().strip_prefix("msg:") {
+                    let _ = tx4.send((w, WebEvent::Message(json.to_string())));
                     if let Some(k) = &wake4 {
                         k();
                     }
@@ -1212,9 +1232,16 @@ impl Webs {
             b = b.with_proxy_config(wry::ProxyConfig::Http(wry::ProxyEndpoint { host: "127.0.0.1".into(), port: port.to_string() }));
         }
         let fetcher = Fetcher { plane: self.plane.clone(), watches: watches.clone(), events: self.tx.clone(), wake: self.wake.clone(), window: w };
+        let tools = fetcher.clone();
         b = b.with_asynchronous_custom_protocol("apexfile".into(), move |_, request, responder| {
             let f = fetcher.clone();
             std::thread::spawn(move || f.serve(request, responder));
+        });
+        // what a tool serves (a page via it, and what it loads): asked of
+        // the tool on the plane, `tool://NAME/...`
+        b = b.with_asynchronous_custom_protocol("apextool".into(), move |_, request, responder| {
+            let f = tools.clone();
+            std::thread::spawn(move || f.serve_tool(request, responder));
         });
         let (url, html) = match page {
             Page::Url { url, .. } => (url.to_string(), None),
@@ -1381,6 +1408,14 @@ impl Webs {
         }
     }
 
+    /// A message from the page's owner, handed to its script's
+    /// `apex.onmessage` (when it has one).
+    pub fn post(&self, w: WindowId, json: &str) {
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("(function(){{var a=window.apex;if(a&&typeof a.onmessage==='function'){{a.onmessage({json});}}}})();"));
+        }
+    }
+
     /// Whether a tool owns window `w`'s page, said to the page (its links
     /// are asked of the owner, `NAV_SCRIPT`): when it changes, and again
     /// for each new document.
@@ -1536,6 +1571,30 @@ impl Fetcher {
             eprintln!("web: apexfile {path}: {status}, {} bytes, {mime}", body.len());
         }
         respond(responder, status, mime, body);
+    }
+
+    /// A request on `apextool://NAME/...`: asked of tool NAME on the
+    /// plane, its answer the page's. With no plane (an in-process
+    /// server) there are no tools to ask.
+    fn serve_tool(&self, request: wry::http::Request<Vec<u8>>, responder: wry::RequestAsyncResponder) {
+        let url = request.uri().to_string();
+        let Some(rest) = url.strip_prefix("apextool://") else {
+            return respond(responder, 400, "text/plain", format!("{url}: not a tool's").into_bytes());
+        };
+        let Some(plane) = &self.plane else {
+            return respond(responder, 503, "text/plain", b"no tools here: the session is in process".to_vec());
+        };
+        let method = request.method().as_str().to_string();
+        let body = request.body();
+        let body = (!body.is_empty()).then_some(body.as_slice());
+        match plane.fetch(&method, &format!("tool://{rest}"), &[], body, Duration::from_secs(30)) {
+            Ok((status, headers, bytes)) => {
+                let path = rest.split(['?', '#']).next().unwrap_or(rest);
+                let mime = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("content-type")).map(|(_, v)| v.clone()).unwrap_or_else(|| mime_for(path).to_string());
+                respond(responder, status, &mime, bytes);
+            }
+            Err(e) => respond(responder, 502, "text/plain", e.into_bytes()),
+        }
     }
 
     /// Watch `path` on the host (once per page): a change after the
@@ -1899,6 +1958,10 @@ fn js_string(s: &str) -> String {
 /// `apexfile://localhost/path`; and the host's loopback goes under the
 /// alias the proxy undoes, since a view never proxies a loopback name.
 fn webkit_url(url: &str) -> String {
+    // a tool's page: on the view's own scheme for it, served on the plane
+    if let Some(rest) = url.strip_prefix("tool://") {
+        return format!("apextool://{rest}");
+    }
     if let Some(rest) = url.strip_prefix("apexfile:///") {
         return format!("apexfile://localhost/{rest}");
     }
@@ -1911,6 +1974,9 @@ fn webkit_url(url: &str) -> String {
 /// The form the session names a page by, back from the view's; a
 /// `file://` link is the host's file.
 fn apex_url(url: &str) -> String {
+    if let Some(rest) = url.strip_prefix("apextool://") {
+        return format!("tool://{rest}");
+    }
     if let Some(rest) = url.strip_prefix("file://") {
         let path = rest.strip_prefix("localhost").unwrap_or(rest);
         return format!("apexfile://{path}");
@@ -2041,6 +2107,13 @@ fn respond(responder: wry::RequestAsyncResponder, status: u16, mime: &str, body:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tools_page_is_on_the_views_own_scheme_and_back() {
+        assert_eq!(webkit_url("tool://agent/run/3?x=1"), "apextool://agent/run/3?x=1");
+        assert_eq!(apex_url("apextool://agent/run/3?x=1"), "tool://agent/run/3?x=1");
+        assert_eq!(apex_url(&webkit_url("tool://web/")), "tool://web/");
+    }
 
     #[test]
     fn the_bundled_mermaid_unpacks_to_the_browser_build() {
