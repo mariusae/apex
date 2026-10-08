@@ -960,6 +960,13 @@ fn preview_is_a_live_pipe_through_a_converter() {
     assert_eq!(text_of(&c, page), "<p>ONE</p>\n");
     assert!(matches!(c.node.state.window(page).unwrap().body, Body::Page(apex_core::Source::Buffer(_))));
     assert!(c.node.window_live(page), "the page is live while the tool runs");
+    // the page follows the file's caret, by its scroll in the log (the
+    // tool proposes it): the caret is on line 1
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && c.node.state.window(page).unwrap().scroll.is_none() {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert_eq!(c.node.state.window(page).unwrap().scroll, Some(apex_core::Scroll::Line(1)));
     // an edit to the source: the page follows, unsaved
     let b = c.node.state.window(src).unwrap().body_buffer().unwrap();
     let version = c.node.state.buffer(b).unwrap().version;

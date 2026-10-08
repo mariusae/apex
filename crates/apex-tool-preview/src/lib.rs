@@ -2,7 +2,9 @@
 //! the converter its extension names in the settings (`Preview.md`),
 //! shown as a page in a preview window at FILE beside it, and kept
 //! so as the buffer changes: live from the text, not the file, so
-//! unsaved edits show. The tool ends with either window.
+//! unsaved edits show; and scrolled to follow the file's caret, by the
+//! page's scroll in the log (the converter marks its blocks with their
+//! source lines, `data-line`). The tool ends with either window.
 //!
 //! Unprivileged: it attaches like anything else, reads the buffer from
 //! the entry stream, and writes the page through proposals.
@@ -35,7 +37,7 @@ pub fn run(socket: &Path, session: &str, file: &str) -> Result<(), String> {
     let Some(converter) = apex_core::preview::converter(&remote.node.state.meta, &ext) else {
         return Err(format!("Preview: no converter for .{ext} files: apex set Preview.{ext} CMD (a command reading the file on stdin, writing HTML)"));
     };
-    let mut t = Tool { remote, file, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new() };
+    let mut t = Tool { remote, file, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None };
     t.start()?;
     t.main_loop()
 }
@@ -52,6 +54,8 @@ struct Tool {
     last_edit: Instant,
     /// The HTML last written, to diff the next against.
     rendered: String,
+    /// The source line the page was last scrolled to.
+    followed: Option<u32>,
 }
 
 impl Tool {
@@ -182,7 +186,22 @@ impl Tool {
             if self.dirty && self.last_edit.elapsed() >= SETTLE {
                 self.render_or_say();
             }
+            self.follow();
         }
+    }
+
+    /// The page scrolled to the line the file's caret is on, when it has
+    /// moved to another: a proposal, so every client showing the page
+    /// scrolls it there.
+    fn follow(&mut self) {
+        let (Some((src, src_buf)), Some((page, _))) = (self.source, self.page) else { return };
+        let node = &self.remote.node;
+        let Some(line) = node.selection(ViewId::Body(src)).ok().and_then(|(q0, _)| node.state.buffer(src_buf).ok().map(|b| b.text.line_of(q0.min(b.text.len())) as u32 + 1)) else { return };
+        if self.followed == Some(line) {
+            return;
+        }
+        self.followed = Some(line);
+        let _ = self.propose(Proposal::PageScroll { window: page, scroll: Some(Scroll::Line(line)) }, TIMEOUT);
     }
 
     /// The source's entries: any change means a render once it settles.
