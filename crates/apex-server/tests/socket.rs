@@ -525,3 +525,25 @@ fn a_pages_owner_is_asked_where_its_links_go_and_told_what_happened() {
     assert!(wait(&mut client, |c| !c.link.answered.is_empty()));
     assert_eq!(client.link.answered.pop(), Some((id, None)));
 }
+
+/// A page's owner posts to its script: the client that leads is handed
+/// the message to deliver; anyone else's post goes nowhere.
+#[test]
+fn a_pages_owner_posts_to_its_script_through_the_leading_client() {
+    use apex_server::proto::ClientMsg;
+    use apex_server::Proposal;
+    let sock = daemon();
+    // the page made and owned while the daemon leads; then a UI comes
+    let mut owner = Remote::connect_as(&sock, "main", "agent", AttachmentKind::Tool).unwrap();
+    let other = Remote::connect_as(&sock, "main", "other", AttachmentKind::Tool).unwrap();
+    let col = owner.node.state.layout.cols[0].id;
+    let w = owner.propose(Proposal::open_html(col, "/tmp/agent", "<p>hi</p>", None), Duration::from_secs(5)).unwrap().unwrap();
+    let me = owner.link.attachment;
+    owner.propose(Proposal::Own { window: w, by: Some(me) }, Duration::from_secs(5)).unwrap();
+    let mut ui = Remote::connect_as(&sock, "main", "ui", AttachmentKind::Ui).unwrap();
+    assert!(wait(&mut ui, |u| u.node.state.window(w).is_ok_and(|x| x.owner == Some(me))));
+    other.send(&ClientMsg::PostToPage { window: w, json: "\"not yours\"".into() });
+    owner.send(&ClientMsg::PostToPage { window: w, json: "{\"hello\":1}".into() });
+    assert!(wait(&mut ui, |u| !u.link.page_posts.is_empty()));
+    assert_eq!(ui.link.page_posts, vec![(w, "{\"hello\":1}".to_string())]);
+}

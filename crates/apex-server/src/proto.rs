@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 50;
+pub const PROTOCOL: u32 = 51;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -134,6 +134,9 @@ pub enum ClientMsg {
     /// What happened in a window, for its owner (a page navigated, loaded,
     /// titled, or its script said something): from the client that leads.
     WindowEvent { window: WindowId, event: WindowEvent },
+    /// A message for the script of a page this owner's (`apex.onmessage`):
+    /// to the client that leads, which shows it. JSON; not logged.
+    PostToPage { window: WindowId, json: String },
     /// Install a plumbing rule: owned by this attachment when `mine`
     /// (gone when it detaches), else by the session. Answered by
     /// `RuleAdded`.
@@ -317,6 +320,8 @@ pub enum ServerMsg {
     Answered { id: u64, answer: Option<Answer> },
     /// What happened in a window of ours (`ClientMsg::WindowEvent`).
     WindowEvent { window: WindowId, event: WindowEvent },
+    /// A message from a page's owner for its script (`PostToPage`).
+    PostToPage { window: WindowId, json: String },
     RuleAdded { id: RuleId },
     TermLines { term: TermId, text: String },
     /// A program in a terminal set the clipboard (OSC 52): the snarf

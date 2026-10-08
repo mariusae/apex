@@ -80,6 +80,9 @@ pub struct Link {
     /// `wants_window_events`.
     pub window_events: Vec<(WindowId, WindowEvent)>,
     pub wants_window_events: bool,
+    /// Messages owners posted to their pages' scripts, for us to deliver
+    /// (we lead).
+    pub page_posts: Vec<(WindowId, String)>,
     /// The id of the rule last added.
     pub rule_added: Option<RuleId>,
     /// What rules asked this client to do (`ClientDo`): (id, verb, args),
@@ -256,7 +259,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -423,6 +426,7 @@ impl Link {
                 }
             }
             ServerMsg::Answered { id, answer } => self.answered.push((id, answer)),
+            ServerMsg::PostToPage { window, json } => self.page_posts.push((window, json)),
             ServerMsg::WindowEvent { window, event } => {
                 if self.wants_window_events {
                     self.window_events.push((window, event));

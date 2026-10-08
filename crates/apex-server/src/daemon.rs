@@ -759,6 +759,15 @@ impl Daemon {
                 }
                 return;
             }
+            ClientMsg::PostToPage { window, json } => {
+                // from the page's owner only, to the client that leads
+                let owner = s.view.state.window(window).ok().and_then(|w| w.owner);
+                let mine = owner.is_some() && self.conns.get(&id).and_then(|c| c.attachment) == owner;
+                if let (true, Some(leader)) = (mine, s.leader) {
+                    self.send(leader, ServerMsg::PostToPage { window, json });
+                }
+                return;
+            }
             ClientMsg::WindowEvent { window, event } => {
                 // to the window's owner, if it is here
                 let (sid, owner) = (s.id, s.view.state.window(window).ok().and_then(|w| w.owner));
