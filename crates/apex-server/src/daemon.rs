@@ -19,7 +19,7 @@ use std::thread;
 
 use apex_core::*;
 
-use crate::proto::{SessionInfo, file_url_path, FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script};
+use crate::proto::{SessionInfo, file_url_path, Answer, FileFrame, IoFrame, read_frame, write_frame, ClientMsg, Request, ServerMsg, Script};
 use crate::{PlumbReq, PlumbStep, proposal, Proposal, Server, ServerEvent};
 
 /// Start a daemon on `socket` from the `apex` binary at `exe`, detached
@@ -106,6 +106,8 @@ enum Event {
     Server(u64, ServerEvent),
     /// A tool asked to plumb has not answered in time.
     PlumbTimeout(u64),
+    /// An `Ask` a client sent a window's owner went unanswered.
+    AskTimeout(u64),
     /// From a stream's thread on the I/O plane (a tunnel, a fetch).
     Io(u64, u32, IoUp),
 }
@@ -181,6 +183,9 @@ const B3_ANSWER: std::time::Duration = std::time::Duration::from_secs(1);
 /// apex knows falls through to apex's own meaning rather than to
 /// nothing.
 const VERB_ANSWER: std::time::Duration = std::time::Duration::from_secs(10);
+/// How long a client waits for a window's owner to say where a link in
+/// its page goes, before doing what it would with no owner.
+const ASK_ANSWER: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub struct Daemon {
     socket: PathBuf,
@@ -194,6 +199,9 @@ pub struct Daemon {
     /// Plumbs handed to tools: our id → (session id, plumb id, asker).
     tool_plumbs: HashMap<u64, (u64, u64, u64)>,
     next_tool_plumb: u64,
+    /// Questions a client put to a window's owner, by the id the owner
+    /// was given: the client's connection, and its own id for it.
+    asks: HashMap<u64, (u64, u64)>,
     /// ⌘O's listings under way, by connection and request.
     finds: HashMap<(u64, u64), crate::find::Job>,
     rx: Receiver<Event>,
@@ -230,7 +238,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, finds: HashMap::new(), rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), finds: HashMap::new(), rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -268,6 +276,7 @@ impl Daemon {
                     }
                 }
                 Event::PlumbTimeout(tid) => d.tool_failed(tid, "no answer in time".into()),
+                Event::AskTimeout(aid) => d.ask_over(aid, None),
             }
         }
         let _ = std::fs::remove_file(path);
@@ -705,8 +714,48 @@ impl Daemon {
                 self.drive(name, pid, step, id);
                 return;
             }
-            ClientMsg::PlumbAck { id: tid, ok } => {
-                self.tool_answered(tid, if ok { Ok(()) } else { Err("refused".into()) });
+            ClientMsg::Answer { id: tid, answer } => {
+                // a plumb a rule of the answerer's claimed, or a client's
+                // question to it about a window of its
+                if self.tool_plumbs.contains_key(&tid) {
+                    let ok = matches!(answer, Answer::Plumb { ok: true });
+                    self.tool_answered(tid, if ok { Ok(()) } else { Err("refused".into()) });
+                } else {
+                    self.ask_over(tid, Some(answer));
+                }
+                return;
+            }
+            ClientMsg::Ask { id: asked, request } => {
+                // to the owner of the window it is about, if it is here
+                let window = match &request {
+                    Request::Navigate { window, .. } => Some(*window),
+                    Request::Plumb { .. } => None,
+                };
+                let (sid, owner) = (s.id, window.and_then(|w| s.view.state.window(w).ok()).and_then(|w| w.owner));
+                let to = owner.and_then(|a| self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment == Some(a)).map(|(cid, _)| *cid));
+                match to {
+                    Some(cid) => {
+                        let aid = self.next_tool_plumb;
+                        self.next_tool_plumb += 1;
+                        self.asks.insert(aid, (id, asked));
+                        self.send(cid, ServerMsg::Ask { id: aid, request });
+                        let tx = self.tx.clone();
+                        thread::spawn(move || {
+                            thread::sleep(ASK_ANSWER);
+                            let _ = tx.send(Event::AskTimeout(aid));
+                        });
+                    }
+                    None => self.send(id, ServerMsg::Answered { id: asked, answer: None }),
+                }
+                return;
+            }
+            ClientMsg::WindowEvent { window, event } => {
+                // to the window's owner, if it is here
+                let (sid, owner) = (s.id, s.view.state.window(window).ok().and_then(|w| w.owner));
+                let to: Vec<u64> = self.conns.iter().filter(|(_, c)| c.session == Some(sid) && owner.is_some() && c.attachment == owner).map(|(cid, _)| *cid).collect();
+                for cid in to {
+                    self.send(cid, ServerMsg::WindowEvent { window, event: event.clone() });
+                }
                 return;
             }
             ClientMsg::ClientConfig { term } => {
@@ -1208,6 +1257,16 @@ impl Daemon {
         self.drive(&name, plumb, step, asker);
     }
 
+    /// A client's question to a window's owner is over: answered, or not
+    /// in time; the client hears which.
+    fn ask_over(&mut self, aid: u64, answer: Option<Answer>) {
+        if let Some((cid, asked)) = self.asks.remove(&aid) {
+            if self.conns.contains_key(&cid) {
+                self.send(cid, ServerMsg::Answered { id: asked, answer });
+            }
+        }
+    }
+
     /// A tool that never answered: the walk goes on, but a word apex
     /// knows will not fall through to its own meaning after this.
     fn tool_failed(&mut self, tid: u64, why: String) {
@@ -1250,7 +1309,7 @@ impl Daemon {
                         // work the user asked for by name, and a tool may
                         // do it (an agent, a formatter) before it answers
                         let wait = if verb == apex_core::plumb::PLUMB { B3_ANSWER } else { VERB_ANSWER };
-                        self.send(cid, ServerMsg::Plumb { id: tid, rule, ctx, verb, text, dir, groups, at, sel });
+                        self.send(cid, ServerMsg::Ask { id: tid, request: Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel } });
                         let tx = self.tx.clone();
                         thread::spawn(move || {
                             thread::sleep(wait);

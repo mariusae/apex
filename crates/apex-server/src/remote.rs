@@ -15,7 +15,7 @@ use std::thread;
 use apex_core::log::MirrorHook;
 use apex_core::*;
 
-use crate::proto::{FileFrame, IoFrame, read_frame, write_frame, ClientMsg, ServerMsg, Script, SessionInfo};
+use crate::proto::{Answer, FileFrame, IoFrame, NavAnswer, read_frame, write_frame, ClientMsg, Request, ServerMsg, Script, SessionInfo, WindowEvent};
 use crate::{proposal, Proposal};
 
 /// A shared, buffered writer: the mirror hook and the owner both send.
@@ -67,8 +67,19 @@ pub struct Link {
     /// How the last plumb asked here ended (`Plumbed`).
     pub plumbed: Option<(bool, String)>,
     /// Plumbs handed to this tool by rules naming it, to answer with
-    /// `PlumbAck`.
+    /// `Answer` (`Remote::plumb_ack`).
     pub plumbs: Vec<ToolPlumb>,
+    /// Other questions for us (where a link in a page of ours goes), to
+    /// answer with `Remote::answer` -- asked only while
+    /// `answers_navigation`; else answered `Default` here at once.
+    pub asks: Vec<(u64, Request)>,
+    pub answers_navigation: bool,
+    /// Answers to questions we asked (`ask`): none when nobody answered.
+    pub answered: Vec<(u64, Option<Answer>)>,
+    /// What happened in windows of ours (`WindowEvent`), kept while
+    /// `wants_window_events`.
+    pub window_events: Vec<(WindowId, WindowEvent)>,
+    pub wants_window_events: bool,
     /// The id of the rule last added.
     pub rule_added: Option<RuleId>,
     /// What rules asked this client to do (`ClientDo`): (id, verb, args),
@@ -245,11 +256,25 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
         let _ = self.out.send(m);
+    }
+
+    /// Ask a window's owner (where a link in its page goes): the id the
+    /// answer comes back under, in `answered`.
+    pub fn ask(&mut self, request: Request) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(&ClientMsg::Ask { id, request });
+        id
+    }
+
+    /// Tell a window's owner what happened in it.
+    pub fn window_event(&self, window: WindowId, event: WindowEvent) {
+        self.send(&ClientMsg::WindowEvent { window, event });
     }
 
     /// The outbound side, for a thread of the owner's that sends too.
@@ -387,7 +412,22 @@ impl Link {
             }
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
             ServerMsg::Plumbed { ok, why } => self.plumbed = Some((ok, why)),
-            ServerMsg::Plumb { id, rule, ctx, verb, text, dir, groups, at, sel } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel }),
+            ServerMsg::Ask { id, request: Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel } } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel }),
+            // a link in a page of ours: ours to say where it goes when we
+            // said we answer; else what the client would do, at once
+            ServerMsg::Ask { id, request: request @ Request::Navigate { .. } } => {
+                if self.answers_navigation {
+                    self.asks.push((id, request));
+                } else {
+                    self.send(&ClientMsg::Answer { id, answer: Answer::Navigate(NavAnswer::Default) });
+                }
+            }
+            ServerMsg::Answered { id, answer } => self.answered.push((id, answer)),
+            ServerMsg::WindowEvent { window, event } => {
+                if self.wants_window_events {
+                    self.window_events.push((window, event));
+                }
+            }
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
@@ -944,7 +984,12 @@ impl Remote {
 
     /// Answer a plumb a rule handed to this tool.
     pub fn plumb_ack(&self, id: u64, ok: bool) {
-        self.send(&ClientMsg::PlumbAck { id, ok });
+        self.send(&ClientMsg::Answer { id, answer: Answer::Plumb { ok } });
+    }
+
+    /// Answer a question we were asked (`Link::asks`).
+    pub fn answer(&self, id: u64, answer: Answer) {
+        self.send(&ClientMsg::Answer { id, answer });
     }
 
     /// Set session variables (none: just ask) and block for the

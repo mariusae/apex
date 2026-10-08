@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 49;
+pub const PROTOCOL: u32 = 50;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -125,8 +125,15 @@ pub enum ClientMsg {
     /// B3 (`verb` None: plumb), or a rule's verb at the pointer (cmd-B3
     /// is `Def`), walked with `at` and `sel` as B3's would be.
     Plumb { ctx: ExecCtx, text: String, dir: Option<String>, edit_only: bool, dry: bool, at: Option<Span>, sel: Option<Span>, alt: Option<(String, Span)>, reverse: bool, verb: Option<String> },
-    /// A tool's answer to a `Plumb` it was handed: did it take it?
-    PlumbAck { id: u64, ok: bool },
+    /// The answer to an `Ask` (a plumb a rule of ours claimed, where a
+    /// link in a page of ours goes).
+    Answer { id: u64, answer: Answer },
+    /// A question for a window's owner, from the client that leads (where
+    /// a link in the page goes): `Answered{id}` comes back.
+    Ask { id: u64, request: Request },
+    /// What happened in a window, for its owner (a page navigated, loaded,
+    /// titled, or its script said something): from the client that leads.
+    WindowEvent { window: WindowId, event: WindowEvent },
     /// Install a plumbing rule: owned by this attachment when `mine`
     /// (gone when it detaches), else by the session. Answered by
     /// `RuleAdded`.
@@ -301,9 +308,15 @@ pub enum ServerMsg {
     /// A plumb this connection asked for is over: a rule took it, or
     /// none did (`why` says; what was done instead, a Look, is done).
     Plumbed { ok: bool, why: String },
-    /// A rule this tool installed names it: does it take this plumb?
-    /// Answer with `PlumbAck{id}` within a second.
-    Plumb { id: u64, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    /// A question for us: a rule of ours claimed a plumb (does it take
+    /// it?), a link in a page of ours was followed (where does it go?).
+    /// Answer with `Answer{id}`.
+    Ask { id: u64, request: Request },
+    /// The answer to an `Ask` of ours; none when nobody answered in time
+    /// (or no one owns the window).
+    Answered { id: u64, answer: Option<Answer> },
+    /// What happened in a window of ours (`ClientMsg::WindowEvent`).
+    WindowEvent { window: WindowId, event: WindowEvent },
     RuleAdded { id: RuleId },
     TermLines { term: TermId, text: String },
     /// A program in a terminal set the clipboard (OSC 52): the snarf
@@ -369,6 +382,53 @@ mod io_tests {
 
 /// A session as the daemon lists it: its identity, and its label for
 /// people. Ids are what sessions are known by; labels can change.
+/// What an attachment is asked, and answers (ARCHITECTURE.md §5): one
+/// framework of requests for every kind of window, plumbing among them.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub enum Request {
+    /// A rule of ours claimed what was plumbed: the walk waits for the
+    /// answer (within a second for B3, longer for a verb).
+    Plumb { rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    /// A link in a page of ours was followed: where does it go?
+    Navigate { window: WindowId, url: String },
+}
+
+/// An answer to a `Request`.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub enum Answer {
+    /// The plumb was taken, or not.
+    Plumb { ok: bool },
+    Navigate(NavAnswer),
+}
+
+/// Where a followed link goes, as the page's owner says.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub enum NavAnswer {
+    /// There: the page navigates to it.
+    Allow,
+    /// Somewhere else instead.
+    Redirect(String),
+    /// Nowhere: the owner has done what it means (opened a file in
+    /// apex, given an address to the system).
+    Handled,
+    /// What the client would do with no owner to ask.
+    Default,
+}
+
+/// What happened in a window, for its owner: the notifications of the
+/// event framework (requests are `Request`).
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub enum WindowEvent {
+    /// A page went to this address (followed, or the state moved it).
+    Navigated { url: String },
+    /// A page started or finished loading.
+    Loading { started: bool },
+    /// A page's title changed.
+    Title { title: String },
+    /// A page's script said this (`apex.send`): JSON.
+    Message { json: String },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: String,

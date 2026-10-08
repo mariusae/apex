@@ -480,3 +480,48 @@ fn a_click_on_a_dot_slash_file_line_with_text_run_on_opens_it_there() {
     assert!(wait(&mut ui, |r| r.node.selection(ViewId::Body(f)).ok().map(|s| s.0) == Some(4)), "line 2: {:?}", ui.node.selection(ViewId::Body(f)));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A page's owner is asked where a link in it goes, and says; one that
+/// has not said it answers is answered for, at once; with no owner, no
+/// one answers. What happens in the page reaches the owner too.
+#[test]
+fn a_pages_owner_is_asked_where_its_links_go_and_told_what_happened() {
+    use apex_server::proto::{Answer, NavAnswer, Request, WindowEvent};
+    use apex_server::Proposal;
+    let sock = daemon();
+    let mut owner = Remote::connect_as(&sock, "main", "web", AttachmentKind::Tool).unwrap();
+    let mut client = Remote::connect_as(&sock, "main", "asker", AttachmentKind::Tool).unwrap();
+    let col = owner.node.state.layout.cols[0].id;
+    let w = owner.propose(Proposal::open_url(col, "https://example.com/"), Duration::from_secs(5)).unwrap().unwrap();
+    let me = owner.link.attachment;
+    owner.propose(Proposal::Own { window: w, by: Some(me) }, Duration::from_secs(5)).unwrap();
+    assert!(wait(&mut client, |c| c.node.state.window(w).is_ok_and(|x| x.owner == Some(me))));
+    // not said it answers: the owner's link answers Default at once
+    let id = client.link.ask(Request::Navigate { window: w, url: "https://example.com/a".into() });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && client.link.answered.is_empty() {
+        let _ = owner.step(Duration::from_millis(10));
+        let _ = client.step(Duration::from_millis(10));
+    }
+    assert_eq!(client.link.answered.pop(), Some((id, Some(Answer::Navigate(NavAnswer::Default)))));
+    // said it answers: it is asked, and its answer comes back
+    owner.link.answers_navigation = true;
+    owner.link.wants_window_events = true;
+    let id = client.link.ask(Request::Navigate { window: w, url: "https://example.com/b".into() });
+    assert!(wait(&mut owner, |o| !o.link.asks.is_empty()));
+    let (aid, request) = owner.link.asks.remove(0);
+    assert_eq!(request, Request::Navigate { window: w, url: "https://example.com/b".into() });
+    owner.answer(aid, Answer::Navigate(NavAnswer::Redirect("https://example.com/c".into())));
+    assert!(wait(&mut client, |c| !c.link.answered.is_empty()));
+    assert_eq!(client.link.answered.pop(), Some((id, Some(Answer::Navigate(NavAnswer::Redirect("https://example.com/c".into()))))));
+    // an event in the page: to its owner
+    client.link.window_event(w, WindowEvent::Title { title: "Example".into() });
+    assert!(wait(&mut owner, |o| !o.link.window_events.is_empty()));
+    assert_eq!(owner.link.window_events.pop(), Some((w, WindowEvent::Title { title: "Example".into() })));
+    // a window nobody owns: nobody to ask
+    let other = owner.propose(Proposal::open_url(col, "https://example.org/"), Duration::from_secs(5)).unwrap().unwrap();
+    assert!(wait(&mut client, |c| c.node.state.window(other).is_ok()));
+    let id = client.link.ask(Request::Navigate { window: other, url: "https://example.org/x".into() });
+    assert!(wait(&mut client, |c| !c.link.answered.is_empty()));
+    assert_eq!(client.link.answered.pop(), Some((id, None)));
+}
