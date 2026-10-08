@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>apex</title>
-<meta name="description" content="apex: a modernised acme. Text first, mouse oriented, plumbing everywhere.">
+<title>Apex</title>
+<meta name="description" content="Apex is a modernized acme: text first, mouse oriented, with plumbing everywhere.">
 <link rel="icon" type="image/png" href="space-bunny.png">
 <style>
   html { background: #fff; color: #000; }
@@ -21,7 +21,7 @@
   h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
   p, ul, pre { margin: 0 0 0.8em; }
   ul { padding-left: 1.4em; }
-  pre, code { font-family: "Courier New", Courier, monospace; font-size: 0.88em; }
+  pre, code { font-family: "Menlo", "Courier New", Courier, monospace; font-size: 0.88em; }
   pre { padding-left: 1.4em; white-space: pre-wrap; }
   a { color: #00e; }
   a:visited { color: #551a8b; }
@@ -30,66 +30,81 @@
 </head>
 <body>
 
-<img class="bunny" src="space-bunny.png" alt="The apex space bunny: a rabbit in an astronaut's helmet, an alien face looking out of it." width="320" height="320">
-<h1>apex</h1>
+<img class="bunny" src="space-bunny.png" alt="The Apex space bunny: a rabbit in an astronaut's helmet, an alien face looking out of it." width="320" height="320">
+<h1>Apex</h1>
 
-<p>apex is a modernised <a href="https://9fans.github.io/plan9port/man/man1/acme.html">acme</a>:
-text first, mouse oriented, plumbing everywhere, fast and simple. It keeps
-acme's way of working, and adds what acme lacks for today's work: a client and
-a server, so the window can go and come back, here or over ssh; terminals in
-its windows, for running programs and coding agents; and an interface for
-programs that does not need a mounted file system.</p>
+<p>Apex is a modernized <a href="https://en.wikipedia.org/wiki/Acme_(text_editor)">acme</a>.
+Like acme, Apex is text first, mouse oriented, and has plumbing
+everywhere; it aims to be fast, simple, and restrained. Apex adopts
+acme's way of working, and then adds what modern software engineering
+workflows increasingly require: remoting, terminals, and web views.
+Apex ships as a single Mac app, implementing acme's user interface
+paradigm with modern touches and affordances. While Apex
+<em>feels</em> best with a three-button mouse, it is equally usable on
+a laptop with a trackpad.</p>
+
+<p>Apex differs from acme in a few important ways:</p>
+<ul>
+<li>a workspace lives in a session managed by a daemon, not in the app; sessions thus outlive the app, and may reside on a remote machine;</li>
+<li>terminals and web views are windows like any other, and programs running in them can drive the editor;</li>
+<li>where acme provides programmability through ordinary files, Apex admits defeat, and provides APIs and command-line tools for the same purpose.</li>
+</ul>
 
 <h2>The acme experience</h2>
+<p>Apex retains the essentials of acme's user interface:</p>
 <ul>
-<li>Three buttons and their chords. B1 selects, B2 runs what it touches, B3 looks for it or opens it.</li>
-<li>Columns and windows tiled as acme tiles them, each with a tag: text you type commands into and run.</li>
-<li>Everything is text. A command's output is text in a window, to be edited, run or plumbed in its turn.</li>
-<li>Plumbing: rules that say what a word means where it is clicked, and which program takes it.</li>
+<li>three buttons and their chords: B1 selects, B2 executes, and B3 looks;</li>
+<li>columns and windows, tiled as acme tiles them, each with a tag (text into which commands are typed and then run);</li>
+<li>text everywhere: a command's output is text in a window, which can in turn be edited, run, or plumbed;</li>
+<li>plumbing: rules that determine what a word means where it is clicked, and which program handles it.</li>
 </ul>
 
 <h2>Sessions</h2>
-<p>Everything a workspace holds (its columns, windows, terminals and what runs
-in them) lives in a session on a daemon. The app is a view of it. Close the
-window and the session goes on; attach again and it is all there. A daemon
-holds many sessions, and the app shows them as tabs.</p>
-<pre>apex attach                  # the app, on this machine's session
-apex attach devbox/work      # a session on another machine, over ssh</pre>
-<p>On another machine nothing is copied: the files stay where they are, and
-apex puts its own small daemon there to edit them.</p>
+<p>Everything in a workspace (its columns, windows, terminals, and the
+programs running in them) is kept in a session, which is managed by a
+daemon. The app is merely a view of a session: closing the app's window
+leaves the session running, and attaching again restores it as it was.
+A daemon may hold many sessions; the app displays these as tabs.</p>
+<pre>% apex attach                # attach to this machine's session
+% apex attach devbox/work    # attach to session "work" on devbox, over ssh</pre>
+<p>When attaching to a remote session, nothing is copied: files stay
+where they are, and Apex runs its own small daemon on the remote
+machine to edit them.</p>
 
 <h2>Terminals and agents</h2>
-<p>A terminal is a window like any other. A program running in one (a shell,
-a build, a coding agent) drives the editor with the <code>apex</code> command,
-as a script would: opening files, writing to windows, asking for the user's
-attention.</p>
+<p>A terminal in Apex is an ordinary window. Programs running in a
+terminal (a shell, a build, a coding agent) can drive the editor
+through the <code>apex</code> command, just as a script would: they can
+open files, write to windows, and ask for the user's attention.</p>
 
 <h2>Scripting</h2>
-<p>The <code>apex</code> command does everything the mouse does. A workspace is a
-script:</p>
+<p>The <code>apex</code> command can do everything the mouse can. A
+workspace can thus be set up by a script:</p>
 <pre>s=$(apex new-session work ~/src/apex)
 apex -session $s open README.md
 apex -session $s term new make watch</pre>
-<p>Programs can also attach to a session themselves, through libraries for Rust
-and Go or a bridge that speaks JSON, and offer rules, own windows and answer
-what is clicked in them.</p>
+<p>Programs can also attach to a session directly, using the libraries
+for Rust and Go, or through a bridge that speaks JSON. Such programs
+can provide plumbing rules, own windows, and respond to what is clicked
+in them.</p>
 
-<h2>Building</h2>
-<p>apex is written in Rust. The app is for the Mac; the daemon and the
-<code>apex</code> command also run on Linux, where the app attaches to them over
-ssh.</p>
-<pre>git clone https://github.com/mariusae/apex
-cd apex
-mac/build-app.sh             # target/Apex.app</pre>
+<h2>Developing and building Apex</h2>
+<p>Apex is implemented in Rust. The app runs on macOS; the daemon and
+the <code>apex</code> command also run on Linux, where the app attaches
+to them over ssh. To build the app:</p>
+<pre>% git clone https://github.com/mariusae/apex
+% cd apex
+% mac/build-app.sh</pre>
+<p>This produces <code>target/Apex.app</code>.</p>
 
-<h2>More</h2>
+<h2>Documentation</h2>
 <ul>
-<li><a href="https://github.com/mariusae/apex">The source</a>, on GitHub.</li>
-<li><a href="https://github.com/mariusae/apex/blob/main/DESIGN.md">DESIGN.md</a>: how apex is built, and why.</li>
-<li><a href="https://github.com/mariusae/apex/blob/main/MODERN.md">MODERN.md</a>: apex as a Mac app.</li>
+<li>The <a href="https://github.com/mariusae/apex">source</a> is available on GitHub.</li>
+<li><a href="https://github.com/mariusae/apex/blob/main/DESIGN.md">DESIGN.md</a> describes how Apex is built, and why.</li>
+<li><a href="https://github.com/mariusae/apex/blob/main/MODERN.md">MODERN.md</a> describes Apex as a Mac app.</li>
 </ul>
 
-<footer><i>apex is a work in progress.</i><br>
+<footer><i>Apex is a work in progress.</i><br>
 Alien Space Bunny is by Wilhelm Bierbaum, based on artwork by Renée French.</footer>
 
 </body>
