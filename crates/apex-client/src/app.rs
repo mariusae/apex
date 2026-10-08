@@ -4223,38 +4223,60 @@ impl Acme {
         if std::env::var_os("APEX_WEB_DEBUG").is_some() {
             eprintln!("web: place {w} {name} at {bounds:?} body {:?}", self.node.state.window(w).map(|x| x.body));
         }
-        match self.node.state.window(w).map(|x| x.body) {
-            Ok(Body::Page(apex_core::Source::Buffer(b))) => {
+        let Ok(win) = self.node.state.window(w).cloned() else { return };
+        match win.body {
+            Body::Page(apex_core::Source::Buffer(b)) => {
                 // the buffer's HTML as a page, following its every version
                 let Ok(buf) = self.node.state.buffer(b) else { return };
                 let (text, version) = (buf.text.to_string(), buf.version);
-                // a page is at a directory (its links are relative to it)
-                // or a file (its preview's links, to the file's)
-                let dir = match name.strip_suffix('/') {
-                    Some(d) => d.to_string(),
-                    None => std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default(),
+                // its relative links from the window's base (a preview's
+                // file's folder); else its name's
+                let dir = if !win.base.is_empty() {
+                    win.base.trim_end_matches('/').to_string()
+                } else {
+                    match name.strip_suffix('/') {
+                        Some(d) => d.to_string(),
+                        None => std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default(),
+                    }
                 };
                 self.webs.place_html(w, &text, version, &dir, bounds, window, visible);
-                // a preview follows dot in its source (WEB.md §3.3)
-                if let Some(line) = self.preview_source_line(w) {
-                    self.webs.follow_line(w, line);
+                // scrolled where the log says (a preview following its
+                // file's caret: the preview tool proposes it)
+                if let Some(s) = win.scroll {
+                    self.webs.follow(w, s);
                 }
             }
-            _ => self.webs.place(w, &name, bounds, window, visible),
+            _ => {
+                // a tool's page with its tool gone: the placeholder, not a page
+                if self.page_orphaned(w).is_some() {
+                    return;
+                }
+                self.webs.place(w, &name, win.via == apex_core::Via::Client, bounds, window, visible);
+            }
+        }
+        // loaded again when the log's count moves (Get, on any client)
+        self.webs.reloads(w, win.reload);
+    }
+
+    /// A page's Back, Fwd or Get: the first two the view's own history
+    /// (until the Web tool keeps it, ARCHITECTURE.md §5); Get a reload in
+    /// the log, so every client showing the page loads it again.
+    pub fn page_nav(&mut self, w: WindowId, nav: crate::web::Nav) {
+        match nav {
+            crate::web::Nav::Reload => {
+                perform(&mut self.node, &mut self.log, vec![Proposal::Reload { window: w }]);
+                self.after();
+            }
+            nav => self.webs.go(w, nav),
         }
     }
 
-    /// For a preview of FILE: the line (from 1) dot is on in FILE's
-    /// window, when it is open.
-    fn preview_source_line(&self, page: WindowId) -> Option<usize> {
-        if !self.node.is_buffer_page(page) {
-            return None;
-        }
-        let w = self.node.window_of(&self.node.window_path(page), WinKind::File)?;
-        let b = self.node.state.window(w).ok()?.body_buffer()?;
-        let buf = self.node.state.buffer(b).ok()?;
-        let (q0, _) = self.node.selection(ViewId::Body(w)).ok()?;
-        Some(buf.text.line_of(q0.min(buf.text.len())) + 1)
+    /// A page served by a tool that is not attached: it shows a
+    /// placeholder saying so (ARCHITECTURE.md §5), and the tool's name.
+    pub fn page_orphaned(&self, w: WindowId) -> Option<String> {
+        let win = self.node.state.window(w).ok()?;
+        let apex_core::Via::Tool(name) = &win.via else { return None };
+        (!self.node.state.meta.attachments.values().any(|a| a.name == *name)).then(|| name.clone())
     }
 
     /// The session's I/O plane for the web views' threads, when a link
@@ -5298,7 +5320,7 @@ impl Acme {
                     _ => None,
                 };
                 if let Some(nav) = nav {
-                    self.webs.go(w, nav);
+                    self.page_nav(w, nav);
                     return;
                 }
             }

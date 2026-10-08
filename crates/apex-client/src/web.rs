@@ -525,8 +525,12 @@ pub struct WebHost {
     /// A page from a buffer: the buffer version shown, and the directory
     /// its relative links resolve in.
     html: Option<(u64, String)>,
-    /// The source line the page was last scrolled to follow.
-    followed: Option<usize>,
+    /// Where the page was last scrolled to, as the log said
+    /// (`Window::scroll`).
+    followed: Option<apex_core::Scroll>,
+    /// The window's reload count when the page was last loaded: a count
+    /// that moves is a reload asked for (`Window::reload`).
+    reloads: Option<u64>,
     /// Loading since: the handle pulses. Set the moment a load is asked
     /// for (WebKit says "started" only once content arrives), cleared
     /// when the page finishes, or after a while when it never says so.
@@ -1018,9 +1022,9 @@ impl Webs {
 
     /// Put window `w`'s view at `bounds`, building it on `url` the first
     /// time; shown or not.
-    pub fn place(&mut self, w: WindowId, url: &str, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
+    pub fn place(&mut self, w: WindowId, url: &str, client: bool, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
         if !self.hosts.contains_key(&w) {
-            self.build(w, Page::Url(url), bounds, window, visible);
+            self.build(w, Page::Url { url, client }, bounds, window, visible);
             return;
         }
         let rect = Self::rect(bounds);
@@ -1057,6 +1061,8 @@ impl Webs {
         let (tx1, tx2, tx3, tx4) = (self.tx.clone(), self.tx.clone(), self.tx.clone(), self.tx.clone());
         let (wake1, wake2, wake3, wake4) = (self.wake.clone(), self.wake.clone(), self.wake.clone(), self.wake.clone());
         let from_buffer = matches!(page, Page::Html { .. });
+        // fetched by this machine: not through the host's proxy
+        let own_network = matches!(page, Page::Url { client: true, .. });
         let mut b = wry::WebViewBuilder::new()
             .with_bounds(rect)
             .with_on_page_load_handler(move |ev, url| {
@@ -1107,7 +1113,7 @@ impl Webs {
                 }
             });
         b = match page {
-            Page::Url(url) => {
+            Page::Url { url, .. } => {
                 if std::env::var_os("APEX_WEB_DEBUG").is_some() {
                     eprintln!("web: {w} loads {}", webkit_url(url));
                 }
@@ -1170,7 +1176,7 @@ impl Webs {
                     k();
                 }
             });
-        if let Some(port) = self.proxy {
+        if let Some(port) = self.proxy.filter(|_| !own_network) {
             if std::env::var_os("APEX_WEB_DEBUG").is_some() {
                 eprintln!("web: {w} through the proxy on {port}");
             }
@@ -1182,7 +1188,7 @@ impl Webs {
             std::thread::spawn(move || f.serve(request, responder));
         });
         let (url, html) = match page {
-            Page::Url(url) => (url.to_string(), None),
+            Page::Url { url, .. } => (url.to_string(), None),
             Page::Html { version, dir, .. } => (String::new(), Some((version, dir.to_string()))),
         };
         match b.build_as_child(window) {
@@ -1190,7 +1196,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1357,12 +1363,7 @@ impl Webs {
     /// as `apex md` writes them) is the last at or before `line`: the
     /// preview follows dot in its source (WEB.md §3.3). Nothing happens
     /// when the page carries no markers.
-    pub fn follow_line(&mut self, w: WindowId, line: usize) {
-        let Some(h) = self.hosts.get_mut(&w) else { return };
-        if h.followed == Some(line) {
-            return;
-        }
-        h.followed = Some(line);
+    fn follow_line(h: &WebHost, line: u32) {
         let js = format!(
             r#"(function(){{
 const want = {line};
@@ -1378,6 +1379,37 @@ if (best) {{
 }})();"#
         );
         let _ = h.view.evaluate_script(&js);
+    }
+
+    /// Window `w`'s page scrolled as the log says (`Window::scroll`): to
+    /// a source line's marker, or a fraction of the way down; once each
+    /// time it says somewhere new.
+    pub fn follow(&mut self, w: WindowId, scroll: apex_core::Scroll) {
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        if h.followed == Some(scroll) {
+            return;
+        }
+        h.followed = Some(scroll);
+        match scroll {
+            apex_core::Scroll::Line(line) => Self::follow_line(h, line),
+            apex_core::Scroll::Fraction(f) => {
+                let _ = h.view.evaluate_script(&format!("(function(){{const e = document.scrollingElement || document.documentElement; e.scrollTo(0, {f} * e.scrollHeight);}})();"));
+            }
+        }
+    }
+
+    /// Window `w`'s reload count as the log has it: moved since the page
+    /// was loaded, it is loaded again (on every client showing it).
+    pub fn reloads(&mut self, w: WindowId, count: u64) {
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        match h.reloads {
+            Some(c) if c == count => {}
+            None => h.reloads = Some(count),
+            Some(_) => {
+                h.reloads = Some(count);
+                self.reload(w);
+            }
+        }
     }
 
     /// Load the page again (a host file it uses changed). A page from a
@@ -1671,7 +1703,9 @@ pub fn set_traffic_lights(_window: &Window, _visible: bool) {}
 
 /// What a view shows: a URL, or a buffer's HTML.
 enum Page<'a> {
-    Url(&'a str),
+    /// At an address; fetched by this machine itself (`Via::Client`), or
+    /// through the session's host, the proxy (`Via::Host`).
+    Url { url: &'a str, client: bool },
     Html { html: &'a str, version: u64, dir: &'a str },
 }
 

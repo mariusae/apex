@@ -119,7 +119,7 @@ impl Acme {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| {
-                        this.webs.go(w, nav);
+                        this.page_nav(w, nav);
                         cx.stop_propagation();
                         cx.notify();
                     }),

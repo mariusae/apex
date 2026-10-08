@@ -410,6 +410,23 @@ impl Render for Acme {
                     let body = match win.body {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
+                        // a tool's page with its tool gone: a placeholder
+                        // saying so (no view; the page comes back with it)
+                        Body::Page(_) if self.page_orphaned(w).is_some() => {
+                            let tool = self.page_orphaned(w).unwrap_or_default();
+                            div()
+                                .size_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .px(px(24.))
+                                .bg(gpui::rgb(t.column))
+                                .font_family(crate::fonts::ui())
+                                .text_size(px(13.))
+                                .text_color(gpui::rgb(t.text_dim))
+                                .child(format!("This page is served by {tool}, which is not running. It comes back when {tool} starts again."))
+                                .into_any_element()
+                        }
                         Body::Page(apex_core::Source::Url) | Body::Page(apex_core::Source::Buffer(_)) => {
                             // the native view goes where this canvas lands;
                             // over it the pointer is the page's own (a style
