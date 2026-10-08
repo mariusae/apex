@@ -490,7 +490,7 @@ source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
 names another." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview FILE | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -542,7 +542,14 @@ where it left from, and Back returns there, Fwd undoes a Back; cmd-[ and
 shift-cmd-B3 are Back, cmd-] is Fwd.
 
 Start it from the host's profile: apex tool lsp & (see apex help scripts).
-APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr." },
+APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr.
+
+apex tool preview is the resident tool behind Preview, which a session
+starts (its Tools setting): it offers the Preview verb on every file a
+converter exists for (the Preview.EXT settings, Markdown, HTML and SVG
+by default), kept in step with them, and shows each file it is used on
+as a page beside it, live. apex tool preview FILE does that once, for
+FILE (apex preview FILE)." },
     Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\
 Label gives the window of the terminal it runs in the title TEXT,
 through the escape sequence acme's win reads (plan9port's label). A
@@ -1027,7 +1034,8 @@ fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
                 Err(e) if e == "shown" => Ok(()), // another preview of it is up: shown
                 r => r,
             },
-            None => Err("usage".into()),
+            // the resident tool: the verb, and a preview for each use
+            None => apex_tool_preview::run_resident(&ctx.socket, &ctx.session),
         },
         _ => Err("usage".into()),
     }
@@ -1069,128 +1077,9 @@ fn diff_cmd(ctx: &Ctx, p: &Parsed) -> R {
 fn md(_: &Ctx, _: &Parsed) -> R {
     let mut text = String::new();
     std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
-    let html = markdown_page(&text);
+    let html = apex_tool_preview::markdown::markdown_page(&text);
     std::io::stdout().write_all(html.as_bytes()).map_err(|e| e.to_string())
 }
-
-/// The length of a front matter block at the top of `text`: a line of
-/// `---` (YAML) or `+++` (TOML), the block, and the same line closing
-/// it, newline included; 0 when there is none (an unclosed one is text).
-pub fn front_matter_len(text: &str) -> usize {
-    let fence = if text.starts_with("---") { "---" } else if text.starts_with("+++") { "+++" } else { return 0 };
-    let Some(first_nl) = text.find('\n') else { return 0 };
-    if text[fence.len()..first_nl].trim().is_empty() == false {
-        return 0;
-    }
-    let mut at = first_nl + 1;
-    while at <= text.len() {
-        let end = text[at..].find('\n').map(|i| at + i).unwrap_or(text.len());
-        let line = text[at..end].trim_end_matches('\r');
-        if line.trim_end() == fence {
-            return (end + 1).min(text.len());
-        }
-        if end >= text.len() {
-            break;
-        }
-        at = end + 1;
-    }
-    0
-}
-
-/// Markdown as a whole page, with the stylesheet Preview pages get.
-pub fn markdown_page(text: &str) -> String {
-    use pulldown_cmark::{html, Options, Parser};
-    let mut opts = Options::empty();
-    opts.insert(Options::ENABLE_TABLES);
-    opts.insert(Options::ENABLE_FOOTNOTES);
-    opts.insert(Options::ENABLE_STRIKETHROUGH);
-    opts.insert(Options::ENABLE_TASKLISTS);
-    opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-    // a marker before every block with the source line it starts on, so
-    // a preview can follow dot (WEB.md §3.3)
-    let line_starts: Vec<usize> = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
-    let line_at = |offset: usize| line_starts.partition_point(|&s| s <= offset);
-    // front matter (a --- or +++ block at the top) is for the tools that
-    // read it, not the reader; the line numbers still count it
-    let skip = front_matter_len(text);
-    let mut events: Vec<pulldown_cmark::Event> = Vec::new();
-    // inside a ```mermaid block: its text is a diagram's source, which the
-    // client draws (WEB.md §3), not code to show
-    let mut mermaid = false;
-    for (ev, range) in Parser::new_ext(&text[skip..], opts).into_offset_iter() {
-        use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
-        if let Event::Start(Tag::Paragraph | Tag::Heading { .. } | Tag::BlockQuote(_) | Tag::CodeBlock(_) | Tag::Item | Tag::Table(_) | Tag::HtmlBlock) = &ev {
-            events.push(Event::Html(CowStr::from(format!("<span class=\"apex-line\" data-line=\"{}\"></span>", line_at(range.start + skip)))));
-        }
-        match &ev {
-            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) if info.split_whitespace().next() == Some("mermaid") => {
-                mermaid = true;
-                events.push(Event::Html(CowStr::from("<pre class=\"mermaid\">")));
-                continue;
-            }
-            Event::End(TagEnd::CodeBlock) if mermaid => {
-                mermaid = false;
-                events.push(Event::Html(CowStr::from("</pre>\n")));
-                continue;
-            }
-            _ => {}
-        }
-        events.push(ev);
-    }
-    heading_ids(&mut events);
-    let mut body = String::new();
-    html::push_html(&mut body, events.into_iter());
-    format!("<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>{MD_STYLE}\n{MD_PAGE}</style></head><body><article class=\"markdown-body\">\n{body}</article></body></html>\n")
-}
-
-/// Every heading an id as GitHub gives it, for a link to `#its-id` to go
-/// to: its text in lower case, letters, digits, `-` and `_` kept, spaces
-/// made `-`, the rest dropped; a second of the same name `-1`, a third
-/// `-2`. One the Markdown names itself (`{#id}`) is kept.
-fn heading_ids(events: &mut [pulldown_cmark::Event]) {
-    use pulldown_cmark::{CowStr, Event, Tag, TagEnd};
-    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut i = 0;
-    while i < events.len() {
-        if let Event::Start(Tag::Heading { id: None, .. }) = &events[i] {
-            let mut text = String::new();
-            let mut j = i + 1;
-            while j < events.len() && !matches!(events[j], Event::End(TagEnd::Heading(_))) {
-                if let Event::Text(t) | Event::Code(t) = &events[j] {
-                    text.push_str(t);
-                }
-                j += 1;
-            }
-            let base = slug(&text);
-            let n = seen.entry(base.clone()).or_insert(0);
-            let id = if *n == 0 { base.clone() } else { format!("{base}-{n}") };
-            *n += 1;
-            if let Event::Start(Tag::Heading { id: slot, .. }) = &mut events[i] {
-                *slot = Some(CowStr::from(id));
-            }
-        }
-        i += 1;
-    }
-}
-
-/// A heading's text as GitHub makes it an anchor.
-fn slug(text: &str) -> String {
-    text.trim()
-        .to_lowercase()
-        .chars()
-        .filter_map(|c| match c {
-            ' ' => Some('-'),
-            c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The editor's own look for Markdown: acme's papers and inks as
-/// `--apex-*` variables the client sets to its theme's (light acme's
-/// when nothing does), Lucida Grande for text and Menlo for code.
-const MD_STYLE: &str = include_str!("apex-markdown.css");
-const MD_PAGE: &str = "";
 
 fn rename_session(ctx: &Ctx, p: &Parsed) -> R {
     let (from, to) = match p.args.as_slice() {
@@ -2143,39 +2032,6 @@ fn cat(ctx: &Ctx, p: &Parsed) -> R {
     Ok(())
 }
 
-#[cfg(test)]
-mod front_matter_tests {
-    use super::{front_matter_len, markdown_page};
-
-    #[test]
-    fn a_mermaid_fence_is_a_diagram_to_draw_and_other_fences_stay_code() {
-        let page = markdown_page("```mermaid\ngraph TD\n  A-->B & C<D\n```\n\n```mermaid title=x\nsequenceDiagram\n```\n\n```rust\nfn main() {}\n```\n");
-        // the source, escaped, in a block the client draws
-        assert!(page.contains("<pre class=\"mermaid\">graph TD\n  A--&gt;B &amp; C&lt;D\n</pre>"), "{page}");
-        assert!(page.contains("<pre class=\"mermaid\">sequenceDiagram\n</pre>"), "{page}");
-        assert_eq!(page.matches("<pre class=\"mermaid\">").count(), 2);
-        // code stays code, and a mermaid block is no code block
-        assert!(page.contains("<pre><code class=\"language-rust\">fn main() {}"), "{page}");
-        assert!(!page.contains("language-mermaid"), "{page}");
-        // the line marker still comes before it, for following dot
-        assert!(page.contains("data-line=\"1\"></span><pre class=\"mermaid\">"), "{page}");
-    }
-
-    #[test]
-    fn front_matter_is_left_out_and_lines_still_count() {
-        let text = "---\ntitle: x\ntags: [a]\n---\n# Head\n\nbody\n";
-        assert_eq!(front_matter_len(text), "---\ntitle: x\ntags: [a]\n---\n".len());
-        let page = markdown_page(text);
-        assert!(!page.contains("title: x"), "{page}");
-        assert!(page.contains("<h1>"));
-        // the heading is on line 5 of the file: the markers count from 1
-        assert!(page.contains("data-line=\"5\""), "{page}");
-        assert_eq!(front_matter_len("+++\na = 1\n+++\nrest"), 14);
-        assert_eq!(front_matter_len("--- not front matter\n---\n"), 0);
-        assert_eq!(front_matter_len("---\nunclosed\n"), 0);
-        assert_eq!(front_matter_len("# plain\n"), 0);
-    }
-}
 
 #[cfg(test)]
 mod flag_tests {

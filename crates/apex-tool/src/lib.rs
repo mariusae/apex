@@ -1060,6 +1060,12 @@ impl Tool {
         self.remote.send(&ClientMsg::Set { key: key.to_string(), value: value.to_string(), attachment: None });
     }
 
+    /// The session's record as the tool's replica has it: its settings
+    /// (every owner's), rules and attachments.
+    pub fn meta(&self) -> &apex_core::state::Meta {
+        &self.remote.node.state.meta
+    }
+
     /// A setting: the tool's own, else the session's.
     pub fn setting(&self, key: &str) -> Option<String> {
         self.remote.node.state.meta.setting(self.remote.attachment(), key).map(String::from)

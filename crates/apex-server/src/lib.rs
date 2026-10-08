@@ -98,6 +98,9 @@ pub struct Running {
 /// the pinned terminal shards and nothing else. Reads of the rest of the
 /// session go through a `view` the caller supplies (in-process, the
 /// client's own node; in the daemon, a follower kept up to date).
+/// The tools a session starts when its `Tools` setting says nothing.
+pub const DEFAULT_TOOLS: &str = "apex tool preview";
+
 pub struct Server {
     pub node: Node,
     terms: HashMap<TermId, TermHost>,
@@ -113,7 +116,9 @@ pub struct Server {
     pub term_colors: crate::proto::TermColors,
     /// The environment the profile was given, in full: what its own has
     /// changed by its end is applied to the session's (`import_env`).
-    profile_base: Option<Vec<(String, String)>>,
+    pub profile_base: Option<Vec<(String, String)>>,
+    /// The session's tools wait for its profile to end (`start_tools`).
+    pub tools_pending: bool,
     /// Execs already performed, so a scan does not repeat them.
     performed: BTreeSet<(ExecCtx, Seq)>,
     /// Execs to perform without asking the rules: a word a tool had
@@ -197,6 +202,7 @@ impl Server {
             env: Vec::new(),
             term_colors: crate::proto::TermColors::LIGHT,
             profile_base: None,
+            tools_pending: false,
             performed: BTreeSet::new(),
             plain: BTreeSet::new(),
             cwd,
@@ -1171,6 +1177,30 @@ impl Server {
         self.spawn_shell_as("profile".into(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
     }
 
+    /// The tools a session starts with (`Tools`): commands, one a line or
+    /// `;` apart, `apex` this daemon's own; the setting, else these. Run
+    /// once the profile is over (it may change or clear the setting), or
+    /// at once with none; each named after the tool it starts (`apex tool
+    /// NAME`), as `apex ps` and the title bar show it.
+    pub fn start_tools(&mut self, view: &Node) {
+        let list = view.state.meta.setting(SERVER, "Tools").map(String::from).unwrap_or_else(|| DEFAULT_TOOLS.to_string());
+        let dir = self.cwd.clone();
+        let env = self.command_env(view, ExecCtx::Top);
+        for cmd in list.split(['\n', ';']).map(str::trim).filter(|c| !c.is_empty()) {
+            let script = match cmd.strip_prefix("apex ") {
+                Some(rest) => format!("{} {rest}", shell_quote(&apex_command())),
+                None => cmd.to_string(),
+            };
+            let words: Vec<&str> = cmd.split_whitespace().collect();
+            let name = match words.as_slice() {
+                ["apex", "tool", name, ..] => name.to_string(),
+                [first, ..] => first.rsplit('/').next().unwrap_or(first).to_string(),
+                [] => continue,
+            };
+            self.spawn_shell_as(name, ExecCtx::Top, None, script, dir.clone(), None, ShellMode::Errors { dir: None }, env.clone());
+        }
+    }
+
     /// A script's environment at its end (`EnvImport`): what differs from
     /// the environment the profile was given is set in the session's, and
     /// what it dropped is unset; the shell's own bookkeeping is ignored.
@@ -1276,51 +1306,6 @@ impl Server {
         };
         let (_, e) = log.install_rule(SERVER, -10, clear);
         let _ = self.node.state.apply(Shard::Meta, &e);
-    }
-
-    /// The Preview rules (WEB.md §3): one of the server's per extension a
-    /// converter exists for, running `apex tool preview` on the file;
-    /// kept in step with the settings (the session's and every
-    /// attachment's), so the verb is offered exactly where it works.
-    pub fn sync_preview_rules(&mut self, log: &mut Log, view: &Node) {
-        let wanted = apex_core::preview::exts(&view.state.meta);
-        let installed: Vec<(RuleId, String)> = view
-            .state
-            .meta
-            .rules
-            .iter()
-            .filter(|(_, r)| r.attachment == SERVER && r.rule.verb == "Preview")
-            .filter_map(|(id, r)| r.rule.file.as_deref().and_then(apex_core::preview::ext_of_pattern).map(|e| (*id, e)))
-            .collect();
-        if installed.iter().map(|(_, e)| e.clone()).collect::<BTreeSet<_>>() == wanted {
-            return;
-        }
-        let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
-        for ext in &wanted {
-            if installed.iter().any(|(_, e)| e == ext) {
-                continue;
-            }
-            let rule = PlumbRule {
-                verb: "Preview".into(),
-                owner: None,
-                unlisted: false,
-                text: None,
-                file: Some(apex_core::preview::pattern_of_ext(ext)),
-                kind: Some(WinKind::File),
-                isfile: None,
-                isdir: None,
-                action: RuleAction::Run(format!("{apex} tool preview $file")),
-                win: None, to: None,
-            };
-            let (_, e) = log.install_rule(SERVER, -10, rule);
-            let _ = self.node.state.apply(Shard::Meta, &e);
-        }
-        for (id, ext) in installed {
-            if !wanted.contains(&ext) {
-                let e = log.remove_rule(id);
-                let _ = self.node.state.apply(Shard::Meta, &e);
-            }
-        }
     }
 
     /// Start a plumb: the first step of walking the rules. The id names

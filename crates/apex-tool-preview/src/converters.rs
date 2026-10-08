@@ -6,8 +6,8 @@
 
 use std::collections::BTreeSet;
 
-use crate::state::Meta;
-use crate::SERVER;
+use apex_core::state::Meta;
+use apex_core::SERVER;
 
 /// What converts an extension when no setting names one.
 pub const DEFAULTS: &[(&str, &str)] = &[("md", "apex md"), ("markdown", "apex md"), ("html", "cat"), ("htm", "cat"), ("svg", "cat")];

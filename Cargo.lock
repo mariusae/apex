@@ -254,7 +254,6 @@ dependencies = [
  "apex-tool-lsp",
  "apex-tool-preview",
  "apex-tool-win",
- "pulldown-cmark",
  "serde_json",
 ]
 
@@ -356,6 +355,8 @@ version = "0.1.0"
 dependencies = [
  "apex-core",
  "apex-server",
+ "apex-tool",
+ "pulldown-cmark",
 ]
 
 [[package]]

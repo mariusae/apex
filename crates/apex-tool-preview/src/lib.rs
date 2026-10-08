@@ -8,6 +8,14 @@
 //!
 //! Unprivileged: it attaches like anything else, reads the buffer from
 //! the entry stream, and writes the page through proposals.
+//!
+//! `apex tool preview`, with no file, is the resident tool a session
+//! starts (its `Tools` setting): it offers the Preview verb on every
+//! file a converter exists for, kept in step with the settings, and
+//! runs a preview, as above, for each file the verb is used on.
+
+pub mod converters;
+pub mod markdown;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -32,9 +40,11 @@ pub fn run(socket: &Path, session: &str, file: &str) -> Result<(), String> {
         eprintln!("preview: {file}");
     }
     let ext = Path::new(&file).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    let remote = Remote::connect_as(socket, session, "preview", AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
+    // its own attachment, not the resident tool's name: the Preview verb's
+    // rules name that one, and a plumb must go to it alone
+    let remote = Remote::connect_as(socket, session, "preview-file", AttachmentKind::Tool).map_err(|e| format!("{}: {e}", socket.display()))?;
     remote.announce("preview");
-    let Some(converter) = apex_core::preview::converter(&remote.node.state.meta, &ext) else {
+    let Some(converter) = converters::converter(&remote.node.state.meta, &ext) else {
         return Err(format!("Preview: no converter for .{ext} files: apex set Preview.{ext} CMD (a command reading the file on stdin, writing HTML)"));
     };
     let mut t = Tool { remote, file, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None };
@@ -284,4 +294,49 @@ fn convert(converter: &str, dir: &Path, text: &str) -> Result<String, String> {
         return Err(format!("{converter}: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// The resident tool (`apex tool preview`): the Preview verb offered on
+/// each extension a converter exists for, kept in step with the
+/// settings, and a preview run for each file it is used on -- each its
+/// own attachment (`preview-file`), on a thread of this process.
+pub fn run_resident(socket: &Path, session: &str) -> Result<(), String> {
+    use apex_tool::{Event, Rule};
+    let mut t = apex_tool::Tool::attach_to(socket, session, "preview").map_err(|e| e.to_string())?;
+    let mut offered: std::collections::BTreeMap<String, RuleId> = std::collections::BTreeMap::new();
+    loop {
+        // the verb where a converter is, and nowhere else
+        let wanted = converters::exts(t.meta());
+        for gone in offered.keys().filter(|e| !wanted.contains(*e)).cloned().collect::<Vec<_>>() {
+            if let Some(id) = offered.remove(&gone) {
+                t.withdraw(id);
+            }
+        }
+        for ext in wanted.iter().filter(|e| !offered.contains_key(*e)).cloned().collect::<Vec<_>>() {
+            let rule = Rule::verb("Preview").file(&converters::pattern_of_ext(&ext)).kind(WinKind::File).priority(-10);
+            if let Ok(id) = t.offer(rule) {
+                offered.insert(ext, id);
+            }
+        }
+        match t.next_event(Some(Duration::from_millis(500))) {
+            Ok(Some(Event::Plumb(p))) => {
+                let file = p.window.and_then(|w| t.window(w)).map(|w| w.path).unwrap_or_default();
+                if file.is_empty() {
+                    let _ = t.answer(&p, false);
+                    continue;
+                }
+                let _ = t.answer(&p, true);
+                let (socket, session) = (socket.to_path_buf(), session.to_string());
+                std::thread::spawn(move || {
+                    if let Err(e) = run(&socket, &session, &file) {
+                        if e != "shown" {
+                            eprintln!("preview: {file}: {e}");
+                        }
+                    }
+                });
+            }
+            Err(e) if e.is_closed() => return Ok(()),
+            _ => {}
+        }
+    }
 }

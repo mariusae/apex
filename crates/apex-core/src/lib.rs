@@ -15,7 +15,6 @@ pub mod ids;
 pub mod log;
 pub mod node;
 pub mod plumb;
-pub mod preview;
 pub mod state;
 pub mod text;
 pub mod tiling;

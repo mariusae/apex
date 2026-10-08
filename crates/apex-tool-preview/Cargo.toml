@@ -5,5 +5,7 @@ edition.workspace = true
 description = "apex tool preview: a file shown as a page, live from its buffer through a converter (WEB.md §3)"
 
 [dependencies]
+apex-tool = { path = "../apex-tool" }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 apex-core = { path = "../apex-core" }
 apex-server = { path = "../apex-server" }

@@ -927,9 +927,15 @@ fn a_web_views_proxy_and_files_ride_the_plane() {
 #[test]
 fn preview_is_a_live_pipe_through_a_converter() {
     let sock = daemon();
-    // the rules the settings derive: the defaults, then a converter of our own
+    // the resident tool, as a session starts it: the rules the settings
+    // derive are its, the defaults, then a converter of our own
+    let mut resident = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "tool", "preview"]).spawn().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.md$") && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let rules = ok(&sock, &["plumb", "rule", "ls"]);
-    assert!(rules.contains("-verb=Preview") && rules.contains(r"\.md$") && rules.contains("tool preview $file"), "{rules}");
+    assert!(rules.contains("-verb=Preview") && rules.contains(r"\.md$") && rules.contains("preview"), "{rules}");
     assert!(!rules.contains(r"\.txt$"), "{rules}");
     ok(&sock, &["set", "Preview.txt", "sed 's/one/ONE/; s/^/<p>/; s/$/<\\/p>/'"]);
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -937,6 +943,8 @@ fn preview_is_a_live_pipe_through_a_converter() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.txt$"));
+    let _ = resident.kill();
+    let _ = resident.wait();
     // a file, not open: the tool opens it, makes a preview of it beside it
     // with the converter's output, live
     let dir = std::env::temp_dir().join(format!("apex-cli-preview-{}", std::process::id()));
@@ -998,11 +1006,11 @@ fn preview_is_a_live_pipe_through_a_converter() {
         md.stdin.as_ref().unwrap().write_all(b"# Title\n\n- [x] done\n\n| a | b |\n|---|---|\n| 1 | 2 |\n").unwrap();
     }
     let out = String::from_utf8_lossy(&md.wait_with_output().unwrap().stdout).to_string();
-    assert!(out.starts_with("<!doctype html>") && out.contains("<h1>Title</h1>") && out.contains("<table>") && out.contains("checked"), "{out}");
+    assert!(out.starts_with("<!doctype html>") && out.contains("<h1 id=\"title\">Title</h1>") && out.contains("<table>") && out.contains("checked"), "{out}");
     // a marker with the source line before every block: the title on 1,
     // the list item on 3, the table on 5
     let flat = out.replace('\n', "");
-    assert!(flat.contains(r#"<span class="apex-line" data-line="1"></span><h1>Title</h1>"#), "{out}");
+    assert!(flat.contains(r#"<span class="apex-line" data-line="1"></span><h1 id="title">Title</h1>"#), "{out}");
     assert!(flat.contains(r#"data-line="3"></span><li>"#), "{out}");
     assert!(flat.contains(r#"data-line="5"></span><table>"#), "{out}");
     let _ = std::fs::remove_dir_all(&dir);

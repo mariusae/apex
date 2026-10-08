@@ -199,6 +199,9 @@ pub struct Daemon {
     socket: PathBuf,
     /// The host's init file for new sessions (`~/.apex/init`).
     host_profile: Option<PathBuf>,
+    /// Whether a new session starts its tools (`Server::start_tools`):
+    /// the daemon a host runs does; one a test makes does not.
+    tools: bool,
     sessions: BTreeMap<String, Session>,
     next_session: u64,
     conns: HashMap<u64, Conn>,
@@ -224,11 +227,17 @@ impl Daemon {
     /// listener error.
     pub fn run(path: &Path, session: &str) -> io::Result<()> {
         let host_profile = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".apex/profile"));
-        Self::run_with(path, session, host_profile)
+        Self::serve(path, session, host_profile, true)
     }
 
-    /// `run`, with the host's init file given (tests keep it out of `$HOME`).
+    /// `run`, with the host's init file given (tests keep it out of
+    /// `$HOME`), and no tools started with a session: a test starts what
+    /// it tests.
     pub fn run_with(path: &Path, session: &str, host_profile: Option<PathBuf>) -> io::Result<()> {
+        Self::serve(path, session, host_profile, false)
+    }
+
+    fn serve(path: &Path, session: &str, host_profile: Option<PathBuf>, tools: bool) -> io::Result<()> {
         put_apex_on_path();
         // whoever started us may go (an ssh session, a terminal): we stay
         // SAFETY: setting a signal disposition.
@@ -248,7 +257,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, finds: HashMap::new(), rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, tools, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, finds: HashMap::new(), rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -379,6 +388,13 @@ impl Daemon {
         // its init runs now, as a command of the session
         let s = self.sessions.get_mut(&key).unwrap();
         s.server.run_profile(&s.view, self.host_profile.as_deref());
+        // its tools: after the profile (which may say which), or now
+        if !self.tools {
+        } else if s.server.profile_base.is_some() {
+            s.server.tools_pending = true;
+        } else {
+            s.server.start_tools(&s.view);
+        }
         self.after(&key, Vec::new());
         Ok(true)
     }
@@ -691,7 +707,12 @@ impl Daemon {
                 self.send(id, ServerMsg::Env { vars });
             }
             ClientMsg::EnvImport { vars } => {
+                // the profile over: the session's tools start now
+                let profiled = s.server.profile_base.is_some();
                 s.server.import_env(vars);
+                if profiled && std::mem::take(&mut s.server.tools_pending) {
+                    s.server.start_tools(&s.view);
+                }
                 let vars = s.server.env.clone();
                 self.send(id, ServerMsg::Env { vars });
             }
@@ -1419,7 +1440,6 @@ impl Daemon {
         s.server.flush_procs(&mut s.log);
         let mut props = props;
         s.server.close_orphan_terms(&mut s.log, &s.view);
-        s.server.sync_preview_rules(&mut s.log, &s.view);
         s.server.sync_watches(&s.view);
         let _ = s.view.catch_up(&s.log);
         // the daemon leads: its own proposals apply here and now
