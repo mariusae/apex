@@ -402,7 +402,7 @@ pub enum Answer {
 }
 
 /// Where a followed link goes, as the page's owner says.
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum NavAnswer {
     /// There: the page navigates to it.
     Allow,
@@ -417,7 +417,7 @@ pub enum NavAnswer {
 
 /// What happened in a window, for its owner: the notifications of the
 /// event framework (requests are `Request`).
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum WindowEvent {
     /// A page went to this address (followed, or the state moved it).
     Navigated { url: String },

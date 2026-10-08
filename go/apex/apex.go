@@ -66,6 +66,8 @@ type Tool struct {
 	onRename   func(*Window, string)
 	onRelabel  func(*Window, *string)
 	onDelete   func(*Window)
+	onNavigate func(Navigation) NavAnswer
+	onPage     func(*Window, PageEvent)
 	session    string
 	attachment int
 	done       chan struct{}
@@ -650,6 +652,50 @@ func (t *Tool) OnRelabel(fn func(w *Window, label *string)) { t.onRelabel = fn }
 // OnDelete is told, from Serve, when such a window is deleted.
 func (t *Tool) OnDelete(fn func(w *Window)) { t.onDelete = fn }
 
+// A Navigation is a link followed in a page the tool owns.
+type Navigation struct {
+	Window *Window
+	URL    string
+}
+
+// A NavAnswer says where a followed link goes.
+type NavAnswer struct {
+	kind, url string
+}
+
+var (
+	// Allow: there, as followed.
+	Allow = NavAnswer{kind: "allow"}
+	// Handled: nowhere; the tool has done what it means (opened a
+	// file in apex, given the address to the system).
+	Handled = NavAnswer{kind: "handled"}
+	// Default: what the link would do with no owner to ask.
+	Default = NavAnswer{kind: "default"}
+)
+
+// Redirect: somewhere else instead.
+func Redirect(url string) NavAnswer { return NavAnswer{kind: "redirect", url: url} }
+
+// A PageEvent is something that happened in a page the tool owns. What
+// is "navigated" (URL), "loading" (Started), "title" (Title) or
+// "message" (Message: what the page's script sent, as JSON).
+type PageEvent struct {
+	What    string          `json:"what"`
+	URL     string          `json:"url"`
+	Started bool            `json:"started"`
+	Title   string          `json:"title"`
+	Message json.RawMessage `json:"message"`
+}
+
+// HandlePages has the tool handle the pages it owns, from Serve: nav
+// answers where each followed link goes (nil: Default), and page is
+// told what happens in them (nil: nothing). Before this, a link does
+// what it would with no owner.
+func (t *Tool) HandlePages(nav func(Navigation) NavAnswer, page func(w *Window, e PageEvent)) error {
+	t.onNavigate, t.onPage = nav, page
+	return t.call("pages", nil, nil)
+}
+
 // ---- rules and verbs -------------------------------------------------------
 
 // A Rule says where a verb of the tool's is offered. The zero value
@@ -870,6 +916,31 @@ func (t *Tool) Serve(ctx context.Context) error {
 			_ = unmarshalAll(ev, &r)
 			if t.onRelabel != nil {
 				t.onRelabel(t.Window(r.Window), r.Label)
+			}
+		case "navigate":
+			var n struct {
+				Navigation int    `json:"navigation"`
+				Window     int    `json:"window"`
+				URL        string `json:"url"`
+			}
+			_ = unmarshalAll(ev, &n)
+			answer := Default
+			if t.onNavigate != nil {
+				answer = t.onNavigate(Navigation{Window: t.Window(n.Window), URL: n.URL})
+			}
+			args := map[string]any{"navigation": n.Navigation, "answer": answer.kind}
+			if answer.url != "" {
+				args["url"] = answer.url
+			}
+			_ = t.call("navigation", args, nil)
+		case "page":
+			var p struct {
+				Window int `json:"window"`
+				PageEvent
+			}
+			_ = unmarshalAll(ev, &p)
+			if t.onPage != nil {
+				t.onPage(t.Window(p.Window), p.PageEvent)
 			}
 		case "deleted":
 			var d struct {

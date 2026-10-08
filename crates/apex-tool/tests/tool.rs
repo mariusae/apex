@@ -417,3 +417,42 @@ fn next_event_tells_a_wait_run_out_from_the_session_ending() {
     };
     assert!(end.is_closed(), "{end}");
 }
+
+/// A tool that handles its pages hears of links followed in them, and
+/// says where they go; and hears what happens in them.
+#[test]
+fn a_tool_answers_where_links_in_its_pages_go() {
+    use apex_server::proto::{Answer, NavAnswer, Request, WindowEvent};
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "pages").unwrap();
+    let w = t.new_page("/tmp/pages", None, "<a href=x>x</a>").unwrap();
+    t.set_owner(w, true).unwrap();
+    t.handle_pages();
+    let mut client = Remote::connect_as(&sock, "main", "client", AttachmentKind::Tool).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && client.node.state.window(w).map(|x| x.owner.is_none()).unwrap_or(true) {
+        let _ = client.step(Duration::from_millis(20));
+    }
+    let id = client.link.ask(Request::Navigate { window: w, url: "file:///tmp/x".into() });
+    client.link.window_event(w, WindowEvent::Title { title: "Pages".into() });
+    let mut asked = None;
+    let mut titled = false;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && (asked.is_none() || !titled) {
+        match t.next_event(Some(Duration::from_millis(50))) {
+            Ok(Some(Event::Navigate(n))) => asked = Some(n),
+            Ok(Some(Event::Page { window, event: WindowEvent::Title { title } })) => titled = window == w && title == "Pages",
+            _ => {}
+        }
+        let _ = client.step(Duration::from_millis(10));
+    }
+    let n = asked.expect("asked where the link goes");
+    assert_eq!((n.window, n.url.as_str()), (w, "file:///tmp/x"));
+    assert!(titled, "told the page's title");
+    t.answer_navigation(&n, NavAnswer::Handled).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && client.link.answered.is_empty() {
+        let _ = client.step(Duration::from_millis(20));
+    }
+    assert_eq!(client.link.answered.pop(), Some((id, Some(Answer::Navigate(NavAnswer::Handled)))));
+}

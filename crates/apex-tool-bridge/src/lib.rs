@@ -159,6 +159,18 @@ impl Bridge {
             Event::Renamed { window, path } => json!({ "event": "renamed", "window": window.0, "path": path }),
             Event::Relabeled { window, label } => json!({ "event": "relabeled", "window": window.0, "label": label }),
             Event::Deleted { window } => json!({ "event": "deleted", "window": window.0 }),
+            Event::Navigate(n) => json!({ "event": "navigate", "navigation": n.id, "window": n.window.0, "url": n.url }),
+            Event::Page { window, event } => {
+                let mut v = match event {
+                    apex_tool::PageEvent::Navigated { url } => json!({ "what": "navigated", "url": url }),
+                    apex_tool::PageEvent::Loading { started } => json!({ "what": "loading", "started": started }),
+                    apex_tool::PageEvent::Title { title } => json!({ "what": "title", "title": title }),
+                    apex_tool::PageEvent::Message { json } => json!({ "what": "message", "message": serde_json::from_str::<Value>(&json).unwrap_or(Value::String(json)) }),
+                };
+                v["event"] = json!("page");
+                v["window"] = json!(window.0);
+                v
+            }
         };
         self.emit(v);
     }
@@ -368,6 +380,24 @@ impl Bridge {
                 Ok(json!({}))
             }
             "setting" => Ok(json!({ "value": self.tool.setting(v["key"].as_str().ok_or("key")?) })),
+            // the pages the tool owns: their links and events come to it
+            "pages" => {
+                self.tool.handle_pages();
+                Ok(json!({}))
+            }
+            // a followed link's answer: "allow", "redirect" (with "url"),
+            // "handled", or "default"
+            "navigation" => {
+                let n = apex_tool::Navigation { id: v["navigation"].as_u64().ok_or("navigation: its id")?, window: v["window"].as_u64().map(WindowId).unwrap_or(WindowId(0)), url: String::new() };
+                let answer = match v["answer"].as_str().unwrap_or("default") {
+                    "allow" => apex_tool::NavAnswer::Allow,
+                    "redirect" => apex_tool::NavAnswer::Redirect(v["url"].as_str().ok_or("url")?.to_string()),
+                    "handled" => apex_tool::NavAnswer::Handled,
+                    _ => apex_tool::NavAnswer::Default,
+                };
+                self.tool.answer_navigation(&n, answer).map_err(e)?;
+                Ok(json!({}))
+            }
             "" => Err("cmd: which command".into()),
             other => Err(format!("{other}: no such command")),
         }

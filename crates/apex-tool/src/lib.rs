@@ -203,6 +203,27 @@ pub enum Event {
     Relabeled { window: WindowId, label: Option<String> },
     /// Such a window was deleted.
     Deleted { window: WindowId },
+    /// A link was followed in a page the tool owns: answer where it goes
+    /// (`answer_navigation`). Only once the tool said it handles its
+    /// pages (`handle_pages`); before that the link does what it would.
+    Navigate(Navigation),
+    /// Something happened in a page the tool owns: it went somewhere,
+    /// loaded, took a title, or its script said something. Only once the
+    /// tool said it handles its pages.
+    Page { window: WindowId, event: PageEvent },
+}
+
+/// What happened in a page (`Event::Page`).
+pub use apex_server::proto::WindowEvent as PageEvent;
+/// Where a followed link goes (`answer_navigation`).
+pub use apex_server::proto::NavAnswer;
+
+/// A link followed in a page of the tool's (`Event::Navigate`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Navigation {
+    pub id: u64,
+    pub window: WindowId,
+    pub url: String,
 }
 
 /// Where a verb of the tool's is offered. `Rule::verb(..)` or
@@ -425,6 +446,15 @@ impl Tool {
     /// After messages: plumbs for our rules, and our windows renamed or
     /// gone.
     fn after(&mut self) {
+        // its pages': links followed, and what happened in them
+        for (id, request) in std::mem::take(&mut self.remote.link.asks) {
+            if let apex_server::proto::Request::Navigate { window, url } = request {
+                self.events.push_back(Event::Navigate(Navigation { id, window, url }));
+            }
+        }
+        for (window, event) in std::mem::take(&mut self.remote.link.window_events) {
+            self.events.push_back(Event::Page { window, event });
+        }
         let plumbs: Vec<ToolPlumb> = std::mem::take(&mut self.remote.link.plumbs);
         for p in plumbs {
             let window = match p.ctx {
@@ -457,6 +487,22 @@ impl Tool {
             self.watched.remove(&w);
             self.events.push_back(Event::Deleted { window: w });
         }
+    }
+
+    /// The tool handles the pages it owns: links followed in them come to
+    /// it to answer (`Event::Navigate`), and what happens in them
+    /// (`Event::Page`). Before this, a link does what it would with no
+    /// owner, and nothing is said.
+    pub fn handle_pages(&mut self) {
+        self.remote.link.answers_navigation = true;
+        self.remote.link.wants_window_events = true;
+    }
+
+    /// Answer a followed link: there, somewhere else, or nowhere (the
+    /// tool has done what it means).
+    pub fn answer_navigation(&mut self, n: &Navigation, answer: NavAnswer) -> Result<()> {
+        self.remote.answer(n.id, apex_server::proto::Answer::Navigate(answer));
+        Ok(())
     }
 
     /// Answer a plumb: taken, or refused (the next rule is tried).
