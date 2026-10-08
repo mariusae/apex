@@ -60,36 +60,44 @@ a laptop with a trackpad.</p>
 </ul>
 
 <h2>Sessions</h2>
-<p>Everything in a workspace (its columns, windows, terminals, and the
-programs running in them) is kept in a session, which is managed by a
-daemon. The app is merely a view of a session: closing the app's window
-leaves the session running, and attaching again restores it as it was.
-A daemon may hold many sessions; the app displays these as tabs.</p>
-<pre>% apex attach                # attach to this machine's session
-% apex attach devbox/work    # attach to session "work" on devbox, over ssh</pre>
-<p>When attaching to a remote session, nothing is copied: files stay
-where they are, and Apex runs its own small daemon on the remote
-machine to edit them.</p>
+<p>Apex is a client-server architecture: Everything in a workspace (its columns, windows, terminals, and the
+programs running in them) is kept in a session, managed by a daemon. The client UI is stateless. You can quit
+it at any time, and starting it again picks up where you left off. You can attach to your session from another
+machine.</p>
+
+<p>The client can attach to multiple sessions (these are "tabs"); and each daemon in turn can run multiple sessions.
+I run one for each project I'm working on concurrently, across multiple Linux servers, all from my Mac.</p>
+
+<p>When Apex is attached to a remote session, you really <em>are</em> you're using Apex on that computer.
+Apex is designed with latency in mind: the client and server manage shared state using a replicated state machine;
+when a client is attached it becomes the leader, so that most actions can be performend entirely locally, while the
+server persists the state.</p>
 
 <h2>Terminals and agents</h2>
-<p>A terminal in Apex is an ordinary window. Programs running in a
-terminal (a shell, a build, a coding agent) can drive the editor
-through the <code>apex</code> command, just as a script would: they can
-open files, write to windows, and ask for the user's attention.</p>
+<p>In acme, we usually use `win` to host interactive shells.
+Win is great, and I prefer it over terminal emulators.
+However, coding agents like Claude Code or Codex have made
+terminal emulators an essential part of software engineering.</p>
 
-<h2>Scripting</h2>
-<p>The <code>apex</code> command can do everything the mouse can. A
+<p>So Apex provides them. Apex's `Newterm` command opens a new terminal emulator window.
+Just like every other aspect of Apex, this is programmable: a tool can inspect its state, generate input, etc.
+The bundled `apex-agent` tool does just this: it uses agent hooks to watch for terminal windows running
+agents, updates window states, and generates notifications when the agent needs user input.</p>
+
+<h2>Scripting and tools</h2>
+<p>The <code>apex</code> command can do everything the UI can. A
 workspace can thus be set up by a script:</p>
 <pre>s=$(apex new-session work ~/src/apex)
 apex -session $s open README.md
 apex -session $s term new make watch</pre>
 <p>Programs can also attach to a session directly, using the libraries
-for Rust and Go, or through a bridge that speaks JSON. Such programs
+for Rust and Go, or through a bridge that speaks JSON-RPC. Such programs
 can provide plumbing rules, own windows, and respond to what is clicked
-in them.</p>
+in them. They can also implement fully stateful tools, just like in acme.</p>
 
 <h2>Developing and building Apex</h2>
-<p>Apex is implemented in Rust. The app runs on macOS; the daemon and
+<p>Apex is implemented in Rust using <a href="https://gpui.rs">GPUI</a>.
+The app runs on macOS; the daemon and
 the <code>apex</code> command also run on Linux, where the app attaches
 to them over ssh. To build the app:</p>
 <pre>% git clone https://github.com/mariusae/apex
