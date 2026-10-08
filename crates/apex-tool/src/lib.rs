@@ -559,6 +559,14 @@ impl Tool {
         self.remote.link.wants_window_events = true;
     }
 
+    /// Say `json` to the script of a page the tool owns: its
+    /// `apex.onmessage` is handed it, on the client showing it. Not kept:
+    /// a page that wants it again asks (`apex.send`).
+    pub fn post_to_page(&mut self, w: WindowId, json: &str) -> Result<()> {
+        self.remote.send(&apex_server::proto::ClientMsg::PostToPage { window: w, json: json.to_string() });
+        Ok(())
+    }
+
     /// Answer a followed link: there, somewhere else, or nowhere (the
     /// tool has done what it means).
     pub fn answer_navigation(&mut self, n: &Navigation, answer: NavAnswer) -> Result<()> {

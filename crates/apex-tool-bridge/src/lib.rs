@@ -408,6 +408,13 @@ impl Bridge {
                 self.tool.respond(&r, v["status"].as_u64().unwrap_or(200) as u16, &headers, &body).map_err(e)?;
                 Ok(json!({}))
             }
+            // a message for the script of a page the tool owns ("message":
+            // any JSON), handed to its apex.onmessage
+            "post" => {
+                let json = serde_json::to_string(&v["message"]).map_err(|e| e.to_string())?;
+                self.tool.post_to_page(window(v)?, &json).map_err(e)?;
+                Ok(json!({}))
+            }
             // the pages the tool owns: their links and events come to it
             "pages" => {
                 self.tool.handle_pages();

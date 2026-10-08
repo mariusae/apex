@@ -707,6 +707,12 @@ type Response struct {
 	Body    []byte
 }
 
+// Post says msg (anything that marshals to JSON) to the script of this
+// page, which the tool owns: its apex.onmessage is handed it.
+func (w *Window) Post(msg any) error {
+	return w.t.call("post", map[string]any{"window": w.ID, "message": msg}, nil)
+}
+
 // HandleRequests has the tool serve what its pages load, from Serve:
 // each request for tool://NAME/... (NAME the tool's own) is answered
 // by fn. With no fn a request is answered 404.
