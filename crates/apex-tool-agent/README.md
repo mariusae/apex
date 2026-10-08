@@ -1,33 +1,31 @@
-# apex-agent (experimental)
+# apex tool agent
 
 Serves the terminals of an apex session that are running agents --
 Claude Code, Codex and Muse -- so that each of them has its transcript,
 its last answer as a page and its changes as a diff on its own window,
 and says with a notification when one wants you. It is fed by the hooks
 those agents offer and written against the public tool API
-(`apex-tool`) only, as `apex-acp` is; it is not part of the supported
-surface.
+(`apex-tool`) only, as every tool that comes with apex is.
 
 ## Running it
 
-    with-proxy exp/agent/build.sh # release build; installs Zig 0.16 if needed
-    apex-agent install          # the hooks, for every agent
-    apex-agent install claude   # or one of them
-    apex-agent                  # this session's agents; no window of its own
-    apex-agent -a               # and the overview window, DIR/-agents
-    apex-agent -all             # every agent on the machine, not only this session's
-    apex-agent -quiet           # no notes in +Errors
-    apex-agent -thoughts        # transcripts show the agents' thinking
-    apex-agent uninstall
+    apex tool agent install           # the hooks, for every agent
+    apex tool agent install claude    # or one of them
+    apex tool agent                   # this session's agents; no window of its own
+    apex tool agent -a                # and the overview window, DIR/-agent
+    apex tool agent -all              # every agent on the machine, not only this session's
+    apex tool agent -quiet            # no notes in +Errors
+    apex tool agent -thoughts         # transcripts show the agents' thinking
+    apex tool agent uninstall
 
-    apex-agent ls               # every agent, as text
-    apex-agent wait ID          # until the agent's turn ends; exits with its state
-    apex-agent events [-all]    # the events as they come, a line each
+    apex tool agent ls                # every agent, as text
+    apex tool agent wait ID           # until the agent's turn ends; exits with its state
+    apex tool agent events [-all]     # the events as they come, a line each
 
 `install` writes the hooks into `~/.claude/settings.json`,
 `~/.codex/hooks.json` and `~/.config/muse/settings.json` (wherever
-`$XDG_CONFIG_HOME` says, for Muse), naming this binary by its full path
-as it was invoked -- a bare `apex-agent` as PATH finds it, symlinks and
+`$XDG_CONFIG_HOME` says, for Muse), naming apex by its full path
+as it was invoked -- a bare `apex` as PATH finds it, symlinks and
 launchers (dotslash) not followed, so the hooks stay right as what they
 lead to moves; everything else in those files stays as it was, an
 install over an install changes nothing, and `uninstall` takes ours out
@@ -36,16 +34,16 @@ is not, until it is started again. Codex has its hooks on by default in
 current versions; an older one wants `codex_hooks = true` under
 `[features]` in `~/.codex/config.toml`.
 
-Run `apex-agent` from an apex terminal or B2 it in a window: it attaches
+Run `apex tool agent` from an apex terminal or B2 it in a window: it attaches
 to the session it was started in, and from then on the agents in that
 session's terminals have its verbs on their own windows. It has no
-window of its own unless `-a` asks for the overview one, `DIR/-agents`.
+window of its own unless `-a` asks for the overview one, `DIR/-agent`.
 
 ## How it works
 
-The hook is this same program, `apex-agent hook claude`, run by the
+The hook is this same program, `apex tool agent hook claude`, run by the
 agent at every event with the event's JSON on its standard input. It
-appends one line to `~/.apex/agents/SESSION.jsonl` and exits: what
+appends one line to `~/.apex/agent/SESSION.jsonl` and exits: what
 happened, when, which tool and what the call was in words, the prompt
 or the last message when the event carries one (those two kept whole,
 within reason, since the page shows them), and, once, the agent's
@@ -58,7 +56,7 @@ into the parent's log, found on disk; its own observers (the
 session nor the window, so those are read from the agent's own
 environment instead.
 
-apex-agent reads those logs, and nothing else: no socket, no daemon.
+The tool reads those logs, and nothing else: no socket, no daemon.
 Nothing need be running when an agent starts, nothing is lost when it
 is not, one started late sees what came before it, and two see the
 same. The logs' directory is watched (FSEvents on a Mac,
@@ -73,7 +71,7 @@ the agent's process, found once when the session starts, is asked
 after on that same pass and a session whose process is gone goes the
 same way.
 
-What apex-agent says back to an agent goes the way apex already has. A
+What the tool says back to an agent goes the way apex already has. A
 decision on a permission is an event in the agent's log, which the hook
 that asked is waiting to read. A prompt is typed into the agent's
 terminal by `apex term send`. An agent is started by `Newterm`. Nothing
@@ -95,7 +93,7 @@ terminal, with apex in front, is dismissed at once.
 A notification is lowered as soon as the agent leaves that state --
 back at work, or gone -- and one you have dismissed is not raised again
 until the agent has been back to work and come to want something
-afresh. The notifications are apex-agent's, so it dying leaves none
+afresh. The notifications are the tool's, so it dying leaves none
 waiting. An agent with no terminal in this session -- one of those
 `-all` adds -- has none.
 
@@ -140,7 +138,7 @@ The pane shows the agents started in the apex session it was launched
 from, wherever their directories are, and a last line counts the rest
 (`– 2 in other sessions: -all shows all`); `-all` shows every agent on
 the machine. Outside an apex session there is none to narrow to, and
-the pane's name is its filter instead: `DIR/-agents` shows the agents
+the pane's name is its filter instead: `DIR/-agent` shows the agents
 under `DIR`.
 
 Every verb below takes the agent dot is in, or the only one there is,
@@ -154,9 +152,9 @@ several to choose from, `+Errors` says so.
 asks and, in the pane, written into its block to be B2'd where they
 stand. The answer is written into the agent's log as a `Decision`, the
 record of it, and the hook that asked -- which has been waiting, up to a
-minute and a half, since it saw apex-agent was there -- reads it and
+minute and a half, since it saw the tool was there -- reads it and
 tells the agent. `Ask` hands the question to the agent's own prompt, as
-does saying nothing in time. With no apex-agent running a hook does not
+does saying nothing in time. With no agent tool running a hook does not
 wait at all, so an agent is never held up by one that is not there.
 Until the answer is in, the agent's terminal shows the hook running and
 no prompt: the notification is what says where the question is.
@@ -205,7 +203,7 @@ replays it there.
 
 ## In the agent's own window
 
-An agent running in a terminal of apex-agent's own session is known by
+An agent running in a terminal of the tool's own session is known by
 the session and window its hooks recorded, and its verbs are offered on
 that window: `Transcript`, `Preview` and `Changes` in the terminal's
 tools menu for as long as the agent runs, and `Allow`, `Deny` and `Ask`
@@ -213,7 +211,7 @@ for as long as it asks -- so the agent's window is the place to answer
 it from, as apex-acp's is, with nothing added to the agent. The verbs go
 when the agent does. A rule may name a window
 (`Rule::verb("Preview").window(w)`), which is all this is. Without `-a`
-this and the notifications are the whole of apex-agent's face.
+this and the notifications are the whole of the tool's face.
 
 ## The transcript
 
@@ -284,7 +282,7 @@ own words (`git diff --no-prefix`, `sl diff --noprefix`, `hg diff
 ## The history
 
 `History` is a verb of the pane's (`-a`). It opens
-`DIR/-agents+history` with the sessions that directory has had, newest first, as apex-acp's `Resume` lists them:
+`DIR/-agent+history` with the sessions that directory has had, newest first, as apex-acp's `Resume` lists them:
 
     – sessions in /Users/me/src/apex, newest first; B3 an id for its transcript, Resume ID to take it up
 
@@ -298,13 +296,13 @@ it is a past session; `Resume ID` takes it up again in a new terminal.
 
 ## As text
 
-The same logs are there for scripts. `apex-agent ls` prints every agent
+The same logs are there for scripts. `apex tool agent ls` prints every agent
 as the pane would.
-`apex-agent wait ID` (an id, a prefix, or a kind when there is one)
+`apex tool agent wait ID` (an id, a prefix, or a kind when there is one)
 returns when the agent is no longer working, with its state as the exit
 status: 0 its turn is over, 1 it is asking something, 2 the turn
-failed, 3 it is gone, 4 no such agent -- so `apex-agent wait 0b1c &&
-apex-agent events` chains. `apex-agent events` prints each event as it
+failed, 3 it is gone, 4 no such agent -- so `apex tool agent wait 0b1c &&
+apex tool agent events` chains. `apex tool agent events` prints each event as it
 lands, tab-separated: when, the session, the agent, what happened, and
 the words for it; `-all` starts from the beginning of every log.
 

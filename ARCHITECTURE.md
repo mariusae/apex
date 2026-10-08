@@ -61,7 +61,7 @@ flowchart LR
 
     subgraph tools["tools (processes on the host)"]
         direction TB
-        sdk["apex-tool SDK users<br/>exp/agent, exp/acp, apex diff"]
+        sdk["apex-tool SDK users<br/>agent, exp/acp, apex diff"]
         raw["Remote/Proposal users<br/>lsp, preview, win"]
         bridge["apex tool bridge<br/>JSON over stdio"]
         go["Go SDK and<br/>JSON tools"]

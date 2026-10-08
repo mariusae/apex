@@ -492,7 +492,7 @@ source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
 names another." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool web | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool web | apex tool agent [ARGS] | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -563,7 +563,18 @@ Newweb URL anywhere, owns the pages they make and any other at an
 address nobody owns, keeps each page's history, answers Back, Fwd and
 Get in their tags, and exits when it has had no page for a minute. Run
 by hand, it offers Web and Newweb itself where no rule of the
-session's does." },
+session's does.
+
+apex tool agent attaches as the tool named agent and serves the
+session's terminals that run coding agents (Claude Code, Codex, Muse),
+fed by the hooks those agents offer: apex tool agent install puts them
+in (uninstall takes them out), each one apex tool agent hook AGENT,
+which appends the event to ~/.apex/agent/SESSION.jsonl. While an agent
+runs, its terminal's tools menu has Transcript, Preview and Changes;
+while it asks something, Allow Deny Ask; when it wants you, its
+terminal raises a notification. -a adds the overview window, DIR/-agent;
+-all widens it to every agent on the machine. apex tool agent ls, wait
+ID and events [-all] are the logs as text, for scripts." },
     Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\
 Label gives the window of the terminal it runs in the title TEXT,
 through the escape sequence acme's win reads (plan9port's label). A
@@ -1059,6 +1070,7 @@ fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
             None => apex_tool_preview::run_resident(&ctx.socket, &ctx.session),
         },
         Some("web") => apex_tool_web::run(&ctx.socket, &ctx.session),
+        Some("agent") => apex_tool_agent::cmd::run(&ctx.socket, &ctx.session, &p.args[1..]),
         _ => Err("usage".into()),
     }
 }

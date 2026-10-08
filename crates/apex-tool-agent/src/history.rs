@@ -302,7 +302,7 @@ mod tests {
     fn the_directorys_sessions_are_found_and_listed_newest_first() {
         assert_eq!(claude_project("/Users/me/src/apex"), "-Users-me-src-apex");
         assert_eq!(claude_project("/Users/me/src/cmd/.claude/worktrees/x-1"), "-Users-me-src-cmd--claude-worktrees-x-1");
-        let home = std::env::temp_dir().join(format!("apex-agent-history-{}", std::process::id()));
+        let home = std::env::temp_dir().join(format!("apex-tool-agent-history-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&home);
         let claude = home.join(".claude");
         let codex = home.join(".codex");

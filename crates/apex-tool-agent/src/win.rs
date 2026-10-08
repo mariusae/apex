@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use apex_tool::{Event, Range, Rule, RuleId, Tool, WinKind, WindowId, END};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use crate::agents::{self, Agents, State};
+use crate::agent::{self, Agents, State};
 use crate::event::{self, Tail};
 use crate::history::{self, Past};
 use crate::page;
@@ -52,7 +52,7 @@ pub struct Opts {
     /// Where the logs are.
     pub dir: PathBuf,
     pub thoughts: bool,
-    /// The overview window, `DIR/-agents` (`-a`). Without it apex-agent
+    /// The overview window, `DIR/-agent` (`-a`). Without it the tool
     /// has no window of its own.
     pub pane: bool,
     /// Every agent, wherever it is, rather than this session's (`-all`).
@@ -201,14 +201,14 @@ struct Flag {
 /// The most recently active agent in each window of this apex session.
 /// A terminal can be reused for another provider session; its verbs and
 /// notification belong to the new session, not the first one seen there.
-fn current_in_windows<'a>(agents: &'a Agents, session: &str, windows: &[WindowId], pane: Option<WindowId>) -> Vec<(WindowId, &'a agents::Agent)> {
+fn current_in_windows<'a>(agents: &'a Agents, session: &str, windows: &[WindowId], pane: Option<WindowId>) -> Vec<(WindowId, &'a agent::Agent)> {
     let mut current = BTreeMap::new();
     for a in agents.ordered() {
         if session.is_empty() || a.apex.as_deref() != Some(session) {
             continue;
         }
         let Some(w) = a.win.map(WindowId).filter(|w| windows.contains(w) && Some(*w) != pane) else { continue };
-        let newer = current.get(&w).is_none_or(|old: &&agents::Agent| (a.last, a.started, a.session.as_str()) > (old.last, old.started, old.session.as_str()));
+        let newer = current.get(&w).is_none_or(|old: &&agent::Agent| (a.last, a.started, a.session.as_str()) > (old.last, old.started, old.session.as_str()));
         if newer {
             current.insert(w, a);
         }
@@ -222,9 +222,9 @@ const TARGET_VERBS: [&str; 3] = ["Transcript", "Preview", "Changes"];
 const ASKING_VERBS: [&str; 3] = ["Allow", "Deny", "Ask"];
 
 impl Pane {
-    /// The tool in the session this program was started in.
-    pub fn run(opts: Opts) -> apex_tool::Result<()> {
-        let t = Tool::attach("agents")?;
+    /// The tool, attached to session `session` of the daemon at `socket`.
+    pub fn run(socket: &std::path::Path, session: &str, opts: Opts) -> apex_tool::Result<()> {
+        let t = Tool::attach_to(socket, session, "agent")?;
         Pane::start(t, opts)?.serve()
     }
 
@@ -238,7 +238,7 @@ impl Pane {
         // on the agents' own windows instead
         let (w, look) = if opts.pane {
             let dir = format!("{}/", opts.cwd.display().to_string().trim_end_matches('/'));
-            let w = t.new_scratch(&dir, Some("agents"))?;
+            let w = t.new_scratch(&dir, Some("agent"))?;
             let _ = t.set_owner(w, true);
             let _ = t.set_tag(w, &format!("Look {}", VERBS.join(" ")));
             for v in VERBS {
@@ -605,7 +605,7 @@ impl Pane {
             }
             for ev in event::events(&lines) {
                 if std::env::var_os("APEX_AGENT_DEBUG").is_some() {
-                    eprintln!("agents: {} {} {:?}", ev.session, ev.event, ev.title);
+                    eprintln!("agent: {} {} {:?}", ev.session, ev.event, ev.title);
                 }
                 let was = self.agents.get(&ev.session).map(|a| a.state);
                 self.agents.apply(&ev);
@@ -748,7 +748,7 @@ impl Pane {
         // this session's agents, unless `-all`; and, outside a session
         // of apex's, those under the directory the pane is named for
         let session = (!self.opts.all && !self.session.is_empty()).then_some(self.session.as_str());
-        let (header, blocks, footer) = agents::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref(), session);
+        let (header, blocks, footer) = agent::pane(&self.agents.ordered(), now, self.home.as_deref(), under.as_deref(), session);
         let same_keys = header == self.header && footer == self.footer && blocks.len() == self.blocks.len() && blocks.iter().zip(&self.blocks).all(|(a, b)| a.0 == b.0);
         if same_keys {
             // last first, so that what comes before keeps its offsets
@@ -760,11 +760,11 @@ impl Pane {
                 }
             }
         } else {
-            let (text, _) = agents::pane_text(&header, &blocks, &footer);
+            let (text, _) = agent::pane_text(&header, &blocks, &footer);
             self.t.replace(w, 0, END, &text)?;
             self.dirty = true;
         }
-        let (_, starts) = agents::pane_text(&header, &blocks, &footer);
+        let (_, starts) = agent::pane_text(&header, &blocks, &footer);
         self.header = header;
         self.blocks = blocks;
         self.starts = starts;
@@ -1176,7 +1176,7 @@ impl Pane {
     // ---- the history ----
 
     /// `History`: the sessions the pane's directory has had, newest
-    /// first, in `DIR/-agents+history`; again, to close it. B3 on an id
+    /// first, in `DIR/-agent+history`; again, to close it. B3 on an id
     /// there (or anywhere) opens the transcript; `Resume ID` takes the
     /// session up.
     fn toggle_history(&mut self) -> apex_tool::Result<bool> {
@@ -1188,7 +1188,7 @@ impl Pane {
         let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &self.opts.muse_home, &dir);
         let text = history::listing(&dir, &past, history::now());
         self.past = past.into_iter().map(|p| (p.id.clone(), p)).collect();
-        let w = self.t.new_scratch(&format!("{}/", dir.trim_end_matches('/')), Some("agents history"))?;
+        let w = self.t.new_scratch(&format!("{}/", dir.trim_end_matches('/')), Some("agent history"))?;
         let _ = self.t.set_owner(w, true);
         let _ = self.t.set_tag(w, "Look Resume");
         let resume = self.t.offer(Rule::verb("Resume").window(w).unlisted())?;
@@ -1392,7 +1392,7 @@ pub fn quoted(name: &str, line: usize, sel: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{context_range, current_in_windows, quoted};
-    use crate::agents::Agents;
+    use crate::agent::Agents;
     use crate::event::Event;
     use apex_tool::WindowId;
 

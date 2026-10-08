@@ -1,5 +1,5 @@
 //! What a hook leaves behind. Each run of one is a line of JSON appended
-//! to the session's log, `~/.apex/agents/SESSION.jsonl`, and the viewer
+//! to the session's log, `~/.apex/agent/SESSION.jsonl`, and the viewer
 //! reads the logs and nothing else: no socket, no daemon. A hook writes
 //! its line and exits, so the agent is held up for as long as that
 //! takes and no longer; the viewer watches the directory and reads what
@@ -67,14 +67,19 @@ pub struct Event {
     pub plan: Option<(u32, u32)>,
 }
 
-/// Where the logs are: `$APEX_AGENT_DIR`, else `~/.apex/agents`, beside
-/// the rest of what apex keeps under `~/.apex`.
+/// Where the logs are: `$APEX_AGENT_DIR`, else `~/.apex/agent`, beside
+/// the rest of what apex keeps under `~/.apex`. The logs of before, in
+/// `~/.apex/agent`, are moved there the first time.
 pub fn dir() -> PathBuf {
     if let Some(d) = std::env::var_os("APEX_AGENT_DIR") {
         return PathBuf::from(d);
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    Path::new(&home).join(".apex").join("agents")
+    let (dir, old) = (Path::new(&home).join(".apex").join("agent"), Path::new(&home).join(".apex").join("agents"));
+    if !dir.exists() && old.is_dir() {
+        let _ = std::fs::rename(&old, &dir);
+    }
+    dir
 }
 
 /// The session's log. Its id is the file's name, so only what is safe
@@ -200,7 +205,7 @@ mod tests {
 
     #[test]
     fn a_log_is_read_as_it_grows_and_a_half_line_waits() {
-        let dir = std::env::temp_dir().join(format!("apex-agent-tail-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("apex-tool-agent-tail-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let ev = Event { ms: 1, agent: "claude".into(), event: "SessionStart".into(), session: "s1".into(), cwd: "/x".into(), ..Event::default() };
         append(&dir, &ev).unwrap();

@@ -230,19 +230,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "apex-agent"
-version = "0.1.0"
-dependencies = [
- "apex-core",
- "apex-server",
- "apex-tool",
- "libc",
- "notify",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "apex-cli"
 version = "0.1.0"
 dependencies = [
@@ -250,6 +237,7 @@ dependencies = [
  "apex-edit",
  "apex-server",
  "apex-tool",
+ "apex-tool-agent",
  "apex-tool-bridge",
  "apex-tool-lsp",
  "apex-tool-preview",
@@ -331,6 +319,19 @@ dependencies = [
  "apex-core",
  "apex-diff",
  "apex-server",
+]
+
+[[package]]
+name = "apex-tool-agent"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "apex-tool",
+ "libc",
+ "notify",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -166,7 +166,7 @@ mod tests {
         if Command::new("git").arg("--version").output().is_err() {
             return;
         }
-        let dir = std::env::temp_dir().join(format!("apex-agent-vcs-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("apex-tool-agent-vcs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
         let git = |args: &[&str]| {

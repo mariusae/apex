@@ -1,8 +1,8 @@
-//! `apex-agent install`: the hooks put where the agents read them.
+//! `apex tool agent install`: the hooks put where the agents read them.
 //! Claude Code reads `~/.claude/settings.json`; Codex reads
 //! `~/.codex/hooks.json`; Muse reads `~/.config/muse/settings.json`;
 //! all in the same shape. Ours are the handlers whose
-//! command is `apex-agent hook AGENT`, and they are known by that, so an
+//! command is `apex tool agent hook AGENT`, and they are known by that, so an
 //! install over an install changes nothing, an install of a moved
 //! binary replaces the old path, and `uninstall` takes ours away and
 //! leaves everything else as it was.
@@ -94,7 +94,7 @@ fn events_of(agent: &str) -> &'static [&'static str] {
     }
 }
 
-/// This binary as it was invoked, not as it resolves: a path as given
+/// apex as it was invoked, not as it resolves: a path as given
 /// (made absolute), a bare name as PATH finds it -- the first match,
 /// symlinks and all left in place. A launcher that runs a binary from a
 /// cache (dotslash, a version manager) keeps the launcher's path, so
@@ -110,10 +110,10 @@ pub fn invoked_as(argv0: Option<std::ffi::OsString>, cwd: Option<PathBuf>, path:
     std::env::split_paths(&path?).map(|d| d.join(&a)).find(|p| p.is_file())
 }
 
-/// The hook command: this binary, by its full path as invoked, so it is
-/// found whatever the agent's PATH is.
+/// The hook command: `apex tool agent hook`, apex by its full path as
+/// invoked, so it is found whatever the agent's PATH is.
 pub fn command(exe: &Path, agent: &str) -> String {
-    format!("{} hook {agent}", word(&exe.display().to_string()))
+    format!("{} tool agent hook {agent}", word(&exe.display().to_string()))
 }
 
 /// A shell word: quoted when it needs to be.
@@ -125,9 +125,10 @@ fn word(s: &str) -> String {
     }
 }
 
-/// Whether a handler is one of ours, whatever path it was installed from.
+/// Whether a handler is one of ours, whatever path it was installed
+/// from: `apex tool agent hook`, or the `apex tool agent hook` of before.
 fn ours(h: &Value) -> bool {
-    h.get("command").and_then(Value::as_str).is_some_and(|c| c.contains("apex-agent") && c.contains(" hook "))
+    h.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(" tool agent hook ") || (c.contains("apex-agent") && c.contains(" hook ")))
 }
 
 /// Put our hooks into the agent's file (or take them out, with no
@@ -180,7 +181,7 @@ fn settle(file: &Path, events: &[&str], cmd: Option<&str>) -> Result<bool, Strin
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let tmp = file.with_extension("json.apex-agent");
+    let tmp = file.with_extension("json.apex-tool-agent");
     std::fs::write(&tmp, after).map_err(|e| format!("{}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, file).map_err(|e| format!("{}: {e}", file.display()))?;
     Ok(true)
@@ -222,7 +223,7 @@ mod tests {
     fn home() -> PathBuf {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("apex-agent-home-{}-{n}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("apex-tool-agent-home-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -234,29 +235,42 @@ mod tests {
         let file = hooks_file(&home, "claude");
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, r#"{"theme":"auto","hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}"#).unwrap();
-        let exe = Path::new("/opt/apex agent/apex-agent");
+        let exe = Path::new("/opt/apex app/apex");
         install(&home, exe, &["claude"]).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(v["theme"], "auto");
         let stop = v["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[0]["hooks"][0]["command"], "say done");
-        assert_eq!(stop[1]["hooks"][0]["command"], "'/opt/apex agent/apex-agent' hook claude");
+        assert_eq!(stop[1]["hooks"][0]["command"], "'/opt/apex app/apex' tool agent hook claude");
         assert_eq!(keys(&v["hooks"]).len(), CLAUDE_EVENTS.len());
         // again: nothing more
         let said = install(&home, exe, &["claude"]).unwrap();
         assert!(said[0].contains("already"), "{said:?}");
         let again = std::fs::read_to_string(&file).unwrap();
         // from elsewhere: the path is replaced, not added to
-        install(&home, Path::new("/usr/local/bin/apex-agent"), &["claude"]).unwrap();
+        install(&home, Path::new("/usr/local/bin/apex"), &["claude"]).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 2);
-        assert_eq!(v["hooks"]["Stop"][1]["hooks"][0]["command"], "/usr/local/bin/apex-agent hook claude");
+        assert_eq!(v["hooks"]["Stop"][1]["hooks"][0]["command"], "/usr/local/bin/apex tool agent hook claude");
         assert_ne!(again, std::fs::read_to_string(&file).unwrap());
         // out: theirs stays, ours goes, and the events we alone used go with us
         uninstall(&home, &["claude"]).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(keys(&v["hooks"]), vec!["Stop"]);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_hooks_of_apex_agent_before_it_was_apex_tool_agent_are_replaced() {
+        let home = home();
+        let file = hooks_file(&home, "claude");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/bin/apex-agent hook claude"}]}]}}"#).unwrap();
+        install(&home, Path::new("/bin/apex"), &["claude"]).unwrap();
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 1);
+        assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["command"], "/bin/apex tool agent hook claude");
         assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -264,11 +278,11 @@ mod tests {
     #[test]
     fn a_missing_file_is_made_and_an_empty_hooks_key_is_not_left() {
         let home = home();
-        install(&home, Path::new("/bin/apex-agent"), &["codex"]).unwrap();
+        install(&home, Path::new("/bin/apex"), &["codex"]).unwrap();
         let file = hooks_file(&home, "codex");
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(keys(&v["hooks"]).len(), CODEX_EVENTS.len());
-        assert_eq!(v["hooks"]["Interrupt"][0]["hooks"][0]["command"], "/bin/apex-agent hook codex");
+        assert_eq!(v["hooks"]["Interrupt"][0]["hooks"][0]["command"], "/bin/apex tool agent hook codex");
         uninstall(&home, &["codex"]).unwrap();
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(v, json!({}));
@@ -282,11 +296,11 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", home.join("xdg"));
         // under $XDG_CONFIG_HOME when it says
         assert_eq!(hooks_file(&home, "muse"), home.join("xdg").join("muse").join("settings.json"));
-        install(&home, Path::new("/bin/apex-agent"), &["muse"]).unwrap();
+        install(&home, Path::new("/bin/apex"), &["muse"]).unwrap();
         let file = home.join("xdg").join("muse").join("settings.json");
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
         assert_eq!(keys(&v["hooks"]).len(), MUSE_EVENTS.len());
-        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "/bin/apex-agent hook muse");
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "/bin/apex tool agent hook muse");
         // the question may wait on the pane; the rest are a line and done
         assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 120);
         assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"], 5);
@@ -306,19 +320,19 @@ mod tests {
     }
 
     #[test]
-    fn the_binary_is_named_as_invoked_not_as_it_resolves() {
+    fn apex_is_named_as_invoked_not_as_it_resolves() {
         use std::ffi::OsString;
-        let tmp = std::env::temp_dir().join(format!("apex-agent-invoked-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("apex-tool-agent-invoked-{}", std::process::id()));
         let bin = tmp.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
-        std::fs::write(bin.join("apex-agent"), "#!/bin/sh\n").unwrap();
+        std::fs::write(bin.join("apex"), "#!/bin/sh\n").unwrap();
         // a bare name: where PATH finds it, not where that leads
         let path = std::env::join_paths([tmp.join("none"), bin.clone()]).unwrap();
-        assert_eq!(invoked_as(Some(OsString::from("apex-agent")), None, Some(path.clone())), Some(bin.join("apex-agent")));
+        assert_eq!(invoked_as(Some(OsString::from("apex")), None, Some(path.clone())), Some(bin.join("apex")));
         assert_eq!(invoked_as(Some(OsString::from("nowhere")), None, Some(path)), None);
         // a path: as given, made absolute against where it was run
-        assert_eq!(invoked_as(Some(OsString::from("/opt/x/apex-agent")), None, None), Some(PathBuf::from("/opt/x/apex-agent")));
-        assert_eq!(invoked_as(Some(OsString::from("bin/apex-agent")), Some(tmp.clone()), None), Some(tmp.join("bin/apex-agent")));
+        assert_eq!(invoked_as(Some(OsString::from("/opt/x/apex")), None, None), Some(PathBuf::from("/opt/x/apex")));
+        assert_eq!(invoked_as(Some(OsString::from("bin/apex")), Some(tmp.clone()), None), Some(tmp.join("bin/apex")));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

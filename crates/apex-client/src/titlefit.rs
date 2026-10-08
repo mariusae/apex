@@ -491,8 +491,8 @@ mod tests {
     #[test]
     fn processes_are_grouped_by_name_in_the_order_they_first_ran() {
         let p = |i: Seq, n: &str| (i, n.to_string());
-        let g = groups(&[p(1, "lsp"), p(2, "Win"), p(3, "agents"), p(4, "Win"), p(5, "Win")]);
-        assert_eq!(g, vec![("lsp".into(), vec![1]), ("Win".into(), vec![2, 4, 5]), ("agents".into(), vec![3])]);
+        let g = groups(&[p(1, "lsp"), p(2, "Win"), p(3, "agent"), p(4, "Win"), p(5, "Win")]);
+        assert_eq!(g, vec![("lsp".into(), vec![1]), ("Win".into(), vec![2, 4, 5]), ("agent".into(), vec![3])]);
     }
 
     #[test]

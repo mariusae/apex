@@ -1,4 +1,4 @@
-//! The hook itself: `apex-agent hook claude` (or `codex`, or
+//! The hook itself: `apex tool agent hook claude` (or `codex`, or
 //! `muse`), which the agent runs at every event with the event's JSON
 //! on its standard input. It says what happened in one line of the
 //! session's log and exits 0 whatever else: a hook that fails or
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn a_muse_subagents_events_are_its_parents_and_its_machinery_is_dropped() {
-        let tmp = std::env::temp_dir().join(format!("apex-agent-muse-sub-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("apex-tool-agent-muse-sub-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         // the sessions as muse keeps them: the child's under its parent's
         let home = tmp.join("data").join("muse");
@@ -530,7 +530,7 @@ mod tests {
         std::fs::create_dir_all(home.join("sessions/2026/10/05/parent-1/subagent/child-3")).unwrap();
         let prev = std::env::var_os("XDG_DATA_HOME");
         std::env::set_var("XDG_DATA_HOME", tmp.join("data"));
-        let dir = tmp.join("agents");
+        let dir = tmp.join("agent");
         let ev = |event: &str, session: &str| Event { ms: 1, agent: "muse".into(), event: event.into(), session: session.into(), cwd: "/x".into(), ..Event::default() };
         // the parent's own start is its own
         let e = route_subsession(&dir, ev("SessionStart", "parent-1")).unwrap();
@@ -587,7 +587,7 @@ mod tests {
 
     #[test]
     fn markers_outlive_no_subagent_by_a_week() {
-        let dir = std::env::temp_dir().join(format!("apex-agent-sweep-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("apex-tool-agent-sweep-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let subs = subs_dir(&dir);
         std::fs::create_dir_all(&subs).unwrap();
@@ -604,7 +604,7 @@ mod tests {
 
     #[test]
     fn a_decision_in_the_log_answers_the_question() {
-        let dir = std::env::temp_dir().join(format!("apex-agent-decide-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("apex-tool-agent-decide-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let ev = |event: &str, call: &str, kind: Option<&str>| Event { ms: 1, agent: "claude".into(), event: event.into(), session: "s".into(), call: Some(call.into()), kind: kind.map(String::from), ..Event::default() };
         event::append(&dir, &ev("PermissionRequest", "t1", None)).unwrap();

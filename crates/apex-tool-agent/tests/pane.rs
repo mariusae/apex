@@ -7,9 +7,9 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use apex_agent::event::{self, Event};
-use apex_agent::hook;
-use apex_agent::win::{Opts, Pane};
+use apex_tool_agent::event::{self, Event};
+use apex_tool_agent::hook;
+use apex_tool_agent::win::{Opts, Pane};
 use apex_core::*;
 use apex_server::daemon::Daemon;
 use apex_server::proto::ClientMsg;
@@ -19,7 +19,7 @@ use apex_tool::Tool;
 fn daemon() -> PathBuf {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("apex-agent-test-{}-{n}.sock", std::process::id()));
+    let path = std::env::temp_dir().join(format!("apex-tool-agent-test-{}-{n}.sock", std::process::id()));
     let p = path.clone();
     std::thread::spawn(move || Daemon::run_with(&p, "main", None).unwrap());
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -31,7 +31,7 @@ fn daemon() -> PathBuf {
 
 /// What the tests call a window: its path, its label in parentheses,
 /// and its kind before them when it is not a file's (`errors `, the
-/// session's errors window; `preview DIR/ (claude 0b1c1425)`, a page).
+/// session's errors window; `page DIR/ (claude 0b1c1425)`, a page).
 fn name_of(c: &Remote, w: WindowId) -> String {
     let n = &c.node;
     let kind = match n.window_kind(w) {
@@ -90,9 +90,9 @@ fn wait_gone(c: &mut Remote, name: &str) {
 #[test]
 fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let sock = daemon();
-    let tmp = std::env::temp_dir().join(format!("apex-agent-pane-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-pane-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
-    let logs = tmp.join("agents");
+    let logs = tmp.join("agent");
     let proj = tmp.join("proj");
     std::fs::create_dir_all(proj.join("src")).unwrap();
     // the agent's directory is a git repository, for Changes
@@ -108,7 +108,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let rev = git(&["rev-parse", "HEAD"]);
     // and the directory has had a session before, for History
     let claude_home = tmp.join("claude-home");
-    let past_dir = claude_home.join("projects").join(apex_agent::history::claude_project(&tmp.display().to_string()));
+    let past_dir = claude_home.join("projects").join(apex_tool_agent::history::claude_project(&tmp.display().to_string()));
     std::fs::create_dir_all(&past_dir).unwrap();
     std::fs::write(past_dir.join("deadbeef-1111.jsonl"), "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"an old prompt\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"an old answer\"}]}}\n").unwrap();
     let muse_home = tmp.join("muse-home");
@@ -136,7 +136,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
     event::append(&logs, &Event { call: Some("t1".into()), tool: Some("Read".into()), title: Some("Read: /etc/hosts".into()), ..ev("PreToolUse") }).unwrap();
 
-    let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    let mut t = Tool::attach_to(&sock, "main", "agent").unwrap();
     // the page's converter: the markdown itself, so the test can read it
     t.set("Preview.md", "cat");
     let pane = Pane::start(t, Opts { pane: true, all: true, claude_home: claude_home.clone(), codex_home: tmp.join("codex-home"), muse_home: muse_home.clone(), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
@@ -148,7 +148,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
         }
         r
     });
-    let pane_name = format!("{}/ (agents)", tmp.display());
+    let pane_name = format!("{}/ (agent)", tmp.display());
     let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
     let text = wait_text(&mut c, &pane_name, |t| t.contains("Read: /etc/hosts"));
     let home = std::env::var("HOME").unwrap_or_default();
@@ -199,7 +199,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     // turn ends
     c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
-    let page_name = format!("preview {detail_name}");
+    let page_name = format!("page {detail_name}");
     let text = wait_text(&mut c, &page_name, |t| t.contains("localhost"));
     assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
     event::append(&logs, &Event { text: Some("and /etc/passwd?".into()), ..ev("UserPromptSubmit") }).unwrap();
@@ -269,7 +269,7 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
 
     // History: the directory's past sessions; B3 on an id opens its transcript
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "History".into() }, Duration::from_secs(5)).unwrap();
-    let hist_name = format!("{}/ (agents history)", tmp.display());
+    let hist_name = format!("{}/ (agent history)", tmp.display());
     let text = wait_text(&mut c, &hist_name, |t| t.contains("deadbeef-1111"));
     assert!(text.contains("  deadbeef-1111  "), "{text}");
     assert!(text.contains("  claude  an old prompt\n"), "{text}");
@@ -402,9 +402,9 @@ fn an_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
 #[test]
 fn a_muse_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     let sock = daemon();
-    let tmp = std::env::temp_dir().join(format!("apex-agent-pane-muse-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-pane-muse-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
-    let logs = tmp.join("agents");
+    let logs = tmp.join("agent");
     let proj = tmp.join("proj");
     let muse_home = tmp.join("muse-home");
     let transcript = muse_home.join("sessions/2026/10/05/01a10deb-2222/session.jsonl");
@@ -424,14 +424,14 @@ fn a_muse_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
     event::append(&logs, &Event { call: Some("c1".into()), tool: Some("bash".into()), title: Some("bash: Read hosts".into()), ..ev("PreToolUse") }).unwrap();
 
-    let mut t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    let mut t = Tool::attach_to(&sock, "main", "agent").unwrap();
     t.set("Preview.md", "cat");
     let pane = Pane::start(t, Opts { pane: true, all: true, muse_home: muse_home.clone(), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     let served = std::thread::spawn(move || {
         let mut pane = pane;
         pane.serve()
     });
-    let pane_name = format!("{}/ (agents)", tmp.display());
+    let pane_name = format!("{}/ (agent)", tmp.display());
     let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
     let text = wait_text(&mut c, &pane_name, |t| t.contains("bash: Read hosts"));
     let home = std::env::var("HOME").unwrap_or_default();
@@ -465,7 +465,7 @@ fn a_muse_agents_log_is_a_block_and_b3_on_it_opens_the_transcript() {
     // Preview with dot in the block: the last exchange as a page
     c.propose(apex_server::Proposal::Select { view: ViewId::Body(w), q0: at, q1: at }, Duration::from_secs(5)).unwrap();
     c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
-    let page_name = format!("preview {detail_name}");
+    let page_name = format!("page {detail_name}");
     let text = wait_text(&mut c, &page_name, |t| t.contains("localhost"));
     assert_eq!(text, "> what is in hosts?\n\nIt names localhost.\n");
 
@@ -504,16 +504,16 @@ fn wait_flags(c: &mut Remote, ok: impl Fn(&[(String, WindowId)]) -> bool) -> Vec
     panic!("the notifications waited in vain; last saw {last:?}");
 }
 
-/// Without `-a` there is no window of apex-agent's own: it serves the
+/// Without `-a` there is no window of the tool's own: it serves the
 /// session's terminals, and says an agent wants you with a
 /// notification on the terminal it runs in, one an agent, raised as
 /// the turn ends and lowered as the next one begins.
 #[test]
 fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     let sock = daemon();
-    let tmp = std::env::temp_dir().join(format!("apex-agent-flags-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-flags-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
-    let logs = tmp.join("agents");
+    let logs = tmp.join("agent");
     let proj = tmp.join("proj");
     std::fs::create_dir_all(&proj).unwrap();
 
@@ -537,7 +537,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     event::append(&logs, &Event { kind: Some("startup".into()), ..ev("SessionStart") }).unwrap();
     event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
 
-    let t = Tool::attach_to(&sock, "main", "agents").unwrap();
+    let t = Tool::attach_to(&sock, "main", "agent").unwrap();
     let pane = Pane::start(t, Opts { claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
     // it is served until the session is over, which the test does not
     // wait for: nothing to Del, and nothing to join
@@ -549,7 +549,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     });
 
     // the agent's verbs are on its own window, and there is no window
-    // of apex-agent's own
+    // of the tool's own
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut menu = Vec::new();
     while Instant::now() < deadline && !["Transcript", "Preview", "Changes"].iter().all(|x| menu.iter().any(|y| y == x)) {
@@ -557,13 +557,13 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
         menu = apex_core::plumb::verbs_for(&c.node.state.meta.rules, &c.node.window_path(tw), c.node.window_kind(tw), Some(tw), c.node.window_owner(tw));
     }
     assert!(["Transcript", "Preview", "Changes"].iter().all(|x| menu.iter().any(|y| y == x)), "{menu:?}");
-    assert!(window_named(&c, &format!("{}/ (agents)", tmp.display())).is_none(), "no pane was asked for");
+    assert!(window_named(&c, &format!("{}/ (agent)", tmp.display())).is_none(), "no pane was asked for");
     // at work, it wants nothing
     assert_eq!(flags(&c), Vec::new());
 
     // the turn ends: it wants you, and its terminal is notified
     event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
-    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agents".to_string(), tw)]);
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agent".to_string(), tw)]);
 
     // the next turn begins: the flag goes
     event::append(&logs, &Event { text: Some("and /etc/passwd?".into()), ..ev("UserPromptSubmit") }).unwrap();
@@ -571,7 +571,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
 
     // a question is wanting you too, and so is a turn that failed
     event::append(&logs, &Event { call: Some("t7".into()), title: Some("Bash: rm -rf target".into()), ..ev("PermissionRequest") }).unwrap();
-    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agents".to_string(), tw)]);
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agent".to_string(), tw)]);
 
     // the user takes it: it is not raised again while the agent goes on
     // wanting the same thing
@@ -593,7 +593,7 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     // back to work, and wanting you afresh: raised again
     event::append(&logs, &Event { call: Some("t7".into()), ..ev("PostToolUse") }).unwrap();
     event::append(&logs, &Event { text: Some("Left it.".into()), ..ev("Stop") }).unwrap();
-    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agents".to_string(), tw)]);
+    assert_eq!(wait_flags(&mut c, |f| !f.is_empty()), vec![("agent".to_string(), tw)]);
 
     // the agent goes, and so does its flag
     event::append(&logs, &ev("SessionEnd")).unwrap();

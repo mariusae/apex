@@ -2453,11 +2453,12 @@ short of what the experiment needed.
 
 ### Exploration: a pane of agents
 
-`exp/agent` is a second spike on the same API: `apex-agent`, which says
+`apex tool agent` began as a second spike on the same API (`exp/agent`,
+`apex tool agent`) and now comes with apex. It says
 what every agent in the session is doing, fed by the
 hooks Claude Code and Codex offer rather than by a protocol of our own.
-`apex-agent install` puts the hooks in; each one is `apex-agent hook
-AGENT`, which appends a line to `~/.apex/agents/SESSION.jsonl` and
+`apex tool agent install` puts the hooks in; each one is `apex tool
+agent hook AGENT`, which appends a line to `~/.apex/agent/SESSION.jsonl` and
 exits. It reads the logs and nothing else -- no socket, no
 daemon -- so nothing need be running when an agent starts, one
 started late sees what came before it, and two see the same; the logs'
@@ -2474,14 +2475,14 @@ next prompt theirs, a permission to answer, a turn that failed -- has
 the terminal it runs in notified, so the window's handle and the
 session's square (§4.1) say so and a click on the square goes to that
 agent, one agent a click; it is lowered as the agent goes back to work.
-The notifications are apex-agent's, so it dying leaves none waiting.
+The notifications are the tool's, so it dying leaves none waiting.
 One the user has attended to is not raised again until the agent has
 been back to work and come to want something afresh. An agent with no
 terminal in this session has no notification.  A tool
 with no window of its own cannot tell it is over by its window going,
 so `Tool::alive` says whether the session is.
 
-`-a` adds the overview window, `DIR/-agents`, a block an agent, the
+`-a` adds the overview window, `DIR/-agent`, a block an agent, the
 margin its state in the order they want attention -- `?` asking, `✗`
 failed, `~` your turn, `▶` at work -- with what it was asked and what
 it is doing about it under, the tool call in the agent's own words as
@@ -2509,7 +2510,7 @@ session began are its repository's own diff (git, sapling, mercurial),
 in a window at the repository's root with each hunk located as
 `path:line`; the directory's past sessions are listed as apex-acp's
 `Resume` lists them, and an id B3'd anywhere opens a transcript by a
-plumbing rule the tool offers. An agent in a terminal of apex-agent's own
+plumbing rule the tool offers. An agent in a terminal of the tool's own
 session (the recorded `apexsession` is this one's, which
 `Tool::session` says) has the verbs offered on its window, by
 rules naming it -- `Transcript`, `Preview`, `Changes` while it runs,

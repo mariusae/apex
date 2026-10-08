@@ -1,0 +1,16 @@
+[package]
+name = "apex-tool-agent"
+version.workspace = true
+edition.workspace = true
+description = "apex tool agent: what every agent in the session is doing, fed by their hooks"
+
+[dependencies]
+apex-tool = { path = "../apex-tool" }
+libc = "0.2"
+notify = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }

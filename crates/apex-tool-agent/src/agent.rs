@@ -405,7 +405,7 @@ pub fn pane(agents: &[&Agent], now: i64, home: Option<&str>, under_dir: Option<&
         None => under_dir.is_none_or(|d| under(&a.cwd, d)),
     });
     let header = match (here.len(), elsewhere.len()) {
-        (0, 0) => "– no agents yet: Start claude, Start codex, Start muse, or `apex-agent install` first\n".to_string(),
+        (0, 0) => "– no agents yet: Start claude, Start codex, Start muse, or `apex tool agent install` first\n".to_string(),
         (0, _) if session.is_some() => "– no agents in this session\n".to_string(),
         (0, _) => "– no agents here\n".to_string(),
         (1, _) => "– 1 agent\n".to_string(),
