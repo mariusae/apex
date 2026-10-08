@@ -108,6 +108,8 @@ enum Event {
     PlumbTimeout(u64),
     /// An `Ask` a client sent a window's owner went unanswered.
     AskTimeout(u64),
+    /// A tool started for what waits on it has not attached in time.
+    StartTimeout(u64, String),
     /// From a stream's thread on the I/O plane (a tunnel, a fetch).
     Io(u64, u32, IoUp),
 }
@@ -155,6 +157,17 @@ enum IoStream {
     Relay { conn: u64, stream: u32 },
 }
 
+/// What waits for a tool being started (`PlumbRule::start`).
+enum Held {
+    /// A plumb a rule of its claimed, its answer to be awaited `wait`.
+    Plumb { plumb: u64, asker: u64, request: Request, wait: std::time::Duration },
+    /// A request for a page it serves, on connection `conn`'s stream.
+    Stream { conn: u64, stream: u32, method: String, url: String, headers: Vec<(String, String)> },
+}
+
+/// How long a tool started for a request has to attach.
+const START_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// The first stream number of streams the daemon opens on a tool's
 /// connection (a request for a page it serves): above any the tool
 /// opens itself.
@@ -199,9 +212,6 @@ pub struct Daemon {
     socket: PathBuf,
     /// The host's init file for new sessions (`~/.apex/init`).
     host_profile: Option<PathBuf>,
-    /// Whether a new session starts its tools (`Server::start_tools`):
-    /// the daemon a host runs does; one a test makes does not.
-    tools: bool,
     sessions: BTreeMap<String, Session>,
     next_session: u64,
     conns: HashMap<u64, Conn>,
@@ -215,6 +225,9 @@ pub struct Daemon {
     asks: HashMap<u64, (u64, u64)>,
     /// The next stream number opened on a tool's connection (`RELAYED`).
     next_relay: u32,
+    /// What waits for a tool being started (`PlumbRule::start`), by the
+    /// session and the tool's name, in the order it came.
+    held: HashMap<(u64, String), Vec<Held>>,
     /// ⌘O's listings under way, by connection and request.
     finds: HashMap<(u64, u64), crate::find::Job>,
     rx: Receiver<Event>,
@@ -227,17 +240,11 @@ impl Daemon {
     /// listener error.
     pub fn run(path: &Path, session: &str) -> io::Result<()> {
         let host_profile = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".apex/profile"));
-        Self::serve(path, session, host_profile, true)
+        Self::run_with(path, session, host_profile)
     }
 
-    /// `run`, with the host's init file given (tests keep it out of
-    /// `$HOME`), and no tools started with a session: a test starts what
-    /// it tests.
+    /// `run`, with the host's init file given (tests keep it out of `$HOME`).
     pub fn run_with(path: &Path, session: &str, host_profile: Option<PathBuf>) -> io::Result<()> {
-        Self::serve(path, session, host_profile, false)
-    }
-
-    fn serve(path: &Path, session: &str, host_profile: Option<PathBuf>, tools: bool) -> io::Result<()> {
         put_apex_on_path();
         // whoever started us may go (an ssh session, a terminal): we stay
         // SAFETY: setting a signal disposition.
@@ -257,7 +264,7 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, tools, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, finds: HashMap::new(), rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, held: HashMap::new(), finds: HashMap::new(), rx, tx };
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -296,6 +303,7 @@ impl Daemon {
                 }
                 Event::PlumbTimeout(tid) => d.tool_failed(tid, "no answer in time".into()),
                 Event::AskTimeout(aid) => d.ask_over(aid, None),
+                Event::StartTimeout(sid, tool) => d.start_failed(sid, &tool),
             }
         }
         let _ = std::fs::remove_file(path);
@@ -388,13 +396,6 @@ impl Daemon {
         // its init runs now, as a command of the session
         let s = self.sessions.get_mut(&key).unwrap();
         s.server.run_profile(&s.view, self.host_profile.as_deref());
-        // its tools: after the profile (which may say which), or now
-        if !self.tools {
-        } else if s.server.profile_base.is_some() {
-            s.server.tools_pending = true;
-        } else {
-            s.server.start_tools(&s.view);
-        }
         self.after(&key, Vec::new());
         Ok(true)
     }
@@ -622,6 +623,15 @@ impl Daemon {
             c.sent = marks;
         }
         self.send(id, ServerMsg::Welcome { attachment: a, snapshot });
+        // a tool started for what waits on it: that, now, in order
+        if let Some(waiting) = self.held.remove(&(sid, name.clone())) {
+            for h in waiting {
+                match h {
+                    Held::Plumb { plumb, asker, request, wait } => self.ask_tool(id, sid, plumb, asker, request, wait),
+                    Held::Stream { conn, stream, method, url, headers } => self.relay_to(conn, stream, id, &method, &url, &headers),
+                }
+            }
+        }
         // the client's attach script runs now, as the attachment's own
         if let Some(script) = attach {
             let s = self.sessions.get_mut(&key).unwrap();
@@ -707,12 +717,7 @@ impl Daemon {
                 self.send(id, ServerMsg::Env { vars });
             }
             ClientMsg::EnvImport { vars } => {
-                // the profile over: the session's tools start now
-                let profiled = s.server.profile_base.is_some();
                 s.server.import_env(vars);
-                if profiled && std::mem::take(&mut s.server.tools_pending) {
-                    s.server.start_tools(&s.view);
-                }
                 let vars = s.server.env.clone();
                 self.send(id, ServerMsg::Env { vars });
             }
@@ -1235,8 +1240,19 @@ impl Daemon {
         let sid = s.id;
         let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(cid, _)| *cid);
         let Some(to) = found else {
-            return self.io_finish(id, stream, 503, format!("{url}: no tool {tool} attached").into_bytes());
+            // not there: started, if a rule says how, the request waiting
+            let start = s.view.state.meta.rules.values().find(|r| matches!(&r.rule.action, apex_core::RuleAction::Tool(t) if t == tool) && r.rule.start.is_some()).and_then(|r| r.rule.start.clone());
+            return match start {
+                Some(cmd) => self.hold(name, tool, &cmd, Held::Stream { conn: id, stream, method: method.to_string(), url: url.to_string(), headers: headers.to_vec() }),
+                None => self.io_finish(id, stream, 503, format!("{url}: no tool {tool} attached").into_bytes()),
+            };
         };
+        self.relay_to(id, stream, to, method, url, headers);
+    }
+
+    /// Relay stream `stream` of connection `id` (a request for a page a
+    /// tool serves) to tool connection `to`, on a stream opened there.
+    fn relay_to(&mut self, id: u64, stream: u32, to: u64, method: &str, url: &str, headers: &[(String, String)]) {
         let theirs = self.next_relay;
         self.next_relay = self.next_relay.wrapping_add(1).max(RELAYED);
         if let Some(c) = self.conns.get_mut(&id) {
@@ -1342,6 +1358,56 @@ impl Daemon {
         self.drive(&name, plumb, step, asker);
     }
 
+    /// Hand a plumb to tool connection `cid`, its answer awaited `wait`.
+    fn ask_tool(&mut self, cid: u64, sid: u64, plumb: u64, asker: u64, request: Request, wait: std::time::Duration) {
+        let tid = self.next_tool_plumb;
+        self.next_tool_plumb += 1;
+        self.tool_plumbs.insert(tid, (sid, plumb, asker));
+        self.send(cid, ServerMsg::Ask { id: tid, request });
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            thread::sleep(wait);
+            let _ = tx.send(Event::PlumbTimeout(tid));
+        });
+    }
+
+    /// `h` waits for tool `tool` of session `name`, which is started with
+    /// `cmd` unless it is being started already; it has `START_WAIT` to
+    /// attach.
+    fn hold(&mut self, name: &str, tool: &str, cmd: &str, h: Held) {
+        let Some(s) = self.sessions.get_mut(name) else { return };
+        let sid = s.id;
+        let waiting = self.held.entry((sid, tool.to_string())).or_default();
+        let first = waiting.is_empty();
+        waiting.push(h);
+        if !first {
+            return;
+        }
+        s.server.start_tool(&s.view, tool, cmd);
+        let (tx, tool) = (self.tx.clone(), tool.to_string());
+        thread::spawn(move || {
+            thread::sleep(START_WAIT);
+            let _ = tx.send(Event::StartTimeout(sid, tool));
+        });
+    }
+
+    /// A tool started for what waited on it never attached: the plumbs
+    /// walk on, the page's requests fail.
+    fn start_failed(&mut self, sid: u64, tool: &str) {
+        let Some(waiting) = self.held.remove(&(sid, tool.to_string())) else { return };
+        let Some(name) = self.name_of(sid) else { return };
+        for h in waiting {
+            match h {
+                Held::Plumb { plumb, asker, .. } => {
+                    let s = self.sessions.get_mut(&name).unwrap();
+                    let step = s.server.plumb_failed(&s.view, plumb, format!("tool {tool} did not start"));
+                    self.drive(&name, plumb, step, asker);
+                }
+                Held::Stream { conn, stream, url, .. } => self.io_finish(conn, stream, 503, format!("{url}: tool {tool} did not start").into_bytes()),
+            }
+        }
+    }
+
     /// A client's question to a window's owner is over: answered, or not
     /// in time; the client hears which.
     fn ask_over(&mut self, aid: u64, answer: Option<Answer>) {
@@ -1385,23 +1451,18 @@ impl Daemon {
             PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel } => {
                 // the tool attached under that name, in this session
                 let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
-                match found {
-                    Some(cid) => {
-                        let tid = self.next_tool_plumb;
-                        self.next_tool_plumb += 1;
-                        self.tool_plumbs.insert(tid, (sid, plumb, asker));
-                        // B3 is a search and wants to be quick; a verb is
-                        // work the user asked for by name, and a tool may
-                        // do it (an agent, a formatter) before it answers
-                        let wait = if verb == apex_core::plumb::PLUMB { B3_ANSWER } else { VERB_ANSWER };
-                        self.send(cid, ServerMsg::Ask { id: tid, request: Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel } });
-                        let tx = self.tx.clone();
-                        thread::spawn(move || {
-                            thread::sleep(wait);
-                            let _ = tx.send(Event::PlumbTimeout(tid));
-                        });
-                    }
-                    None => {
+                // B3 is a search and wants to be quick; a verb is work the
+                // user asked for by name, and a tool may do it (an agent, a
+                // formatter) before it answers
+                let wait = if verb == apex_core::plumb::PLUMB { B3_ANSWER } else { VERB_ANSWER };
+                let start = s.view.state.meta.rules.get(&rule).and_then(|r| r.rule.start.clone());
+                let request = Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel };
+                match (found, start) {
+                    (Some(cid), _) => self.ask_tool(cid, sid, plumb, asker, request, wait),
+                    // not there, and the rule says how to start it: started,
+                    // the plumb waiting for it (Plan 9's `plumb client`)
+                    (None, Some(cmd)) => self.hold(name, &tool, &cmd, Held::Plumb { plumb, asker, request, wait }),
+                    (None, None) => {
                         let step = s.server.plumb_failed(&s.view, plumb, format!("no tool {tool} attached"));
                         self.drive(name, plumb, step, asker);
                     }

@@ -63,6 +63,7 @@ type Tool struct {
 	events     *queue
 	handlersMu sync.Mutex
 	handlers   map[RuleID]func(Plumb) bool
+	verbs      map[string]func(Plumb) bool
 	watchers   map[int]func(Edit)
 	onRename   func(*Window, string)
 	onRelabel  func(*Window, *string)
@@ -114,6 +115,7 @@ func Attach(name string, opts *Options) (*Tool, error) {
 		pending:  map[int64]chan map[string]json.RawMessage{},
 		events:   newQueue(),
 		handlers: map[RuleID]func(Plumb) bool{},
+		verbs:    map[string]func(Plumb) bool{},
 		watchers: map[int]func(Edit){},
 		done:     make(chan struct{}),
 	}
@@ -754,7 +756,7 @@ type Rule struct {
 	// files and not a tool's windows. Empty means the rule does not
 	// care either way.
 	Owner string
-	// file, dir, term, errors or web.
+	// file, dir, term, errors or page.
 	Kind string
 	// This one window only, whatever its name.
 	Window *Window
@@ -766,6 +768,10 @@ type Rule struct {
 	// the tool wrote into its window, to be clicked where it stands)
 	// or an argument (`Mode plan`), and would only crowd the menu.
 	Unlisted bool
+	// The command that starts this tool when none of its name is
+	// attached (Plan 9's plumb client): what the rule matched waits for
+	// it. Such a rule is for OfferLasting, which outlives the tool.
+	Start string
 }
 
 // NoOwner is the Owner of a window no tool owns: a real file, and not
@@ -820,6 +826,37 @@ type Span struct {
 // returning nothing at all is a failure rather than a refusal, and a
 // word apex knows does not fall through after one.
 func (t *Tool) Offer(r Rule, handle func(Plumb) bool) (RuleID, error) {
+	id, err := t.offer(r, false)
+	if err != nil {
+		return 0, err
+	}
+	t.handlersMu.Lock()
+	t.handlers[id] = handle
+	t.handlersMu.Unlock()
+	return id, nil
+}
+
+// OfferLasting installs a rule as the session's own: it stays when the
+// tool goes, and with Start it starts the tool again when next it
+// matches. What it brings goes to HandleVerb's handler for its verb.
+func (t *Tool) OfferLasting(r Rule) (RuleID, error) {
+	return t.offer(r, true)
+}
+
+// HandleVerb answers a verb, or plumbed text when verb is empty, for
+// any rule that sends it to this tool and was not offered with a
+// handler of its own: the session's rules that start the tool, and
+// those it offered lasting.
+func (t *Tool) HandleVerb(verb string, handle func(Plumb) bool) {
+	if verb == "" {
+		verb = "plumb"
+	}
+	t.handlersMu.Lock()
+	t.verbs[verb] = handle
+	t.handlersMu.Unlock()
+}
+
+func (t *Tool) offer(r Rule, lasting bool) (RuleID, error) {
 	args := map[string]any{}
 	if r.Verb != "" {
 		args["verb"] = r.Verb
@@ -845,17 +882,19 @@ func (t *Tool) Offer(r Rule, handle func(Plumb) bool) (RuleID, error) {
 	if r.Unlisted {
 		args["unlisted"] = true
 	}
+	if r.Start != "" {
+		args["start"] = r.Start
+	}
+	if lasting {
+		args["lasting"] = true
+	}
 	var res struct {
 		Rule int `json:"rule"`
 	}
 	if err := t.call("rule", args, &res); err != nil {
 		return 0, err
 	}
-	id := RuleID(res.Rule)
-	t.handlersMu.Lock()
-	t.handlers[id] = handle
-	t.handlersMu.Unlock()
-	return id, nil
+	return RuleID(res.Rule), nil
 }
 
 // Withdraw removes a rule.
@@ -906,6 +945,9 @@ func (t *Tool) Serve(ctx context.Context) error {
 			_ = unmarshalAll(ev, &p)
 			t.handlersMu.Lock()
 			h := t.handlers[RuleID(p.Rule)]
+			if h == nil {
+				h = t.verbs[p.Verb]
+			}
 			t.handlersMu.Unlock()
 			taken := false
 			if h != nil {

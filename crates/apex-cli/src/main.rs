@@ -139,6 +139,7 @@ const RULE_FLAGS: &[Flag] = &[
     flag("client", "ask the UI to do this verb (open, preview); it may refuse"),
     flag("args", "the argument for -client"),
     flag("tool", "ask the tool attached under this name; it may refuse"),
+    flag("start", "with -tool: the command that starts that tool when none is attached; what the rule matched waits for it"),
     flag("to", "where a -run command's output goes: errors (default) or window"),
     flag("priority", "higher rules are tried first (default 0)"),
     switch("mine", "owned by this attachment, gone when it detaches, rather than by the session"),
@@ -359,6 +360,7 @@ this attachment with -mine, gone when it detaches):
 	apex plumb rule add -text='https?://\\S+' -client=open -args='$0'
 	apex plumb rule add -verb=Preview -file='\\.md$' -run='open -a Marked $file' -priority=10
 	apex plumb rule add -file='\\.go$' -text='\\w+' -tool=lsp -priority=10
+	apex plumb rule add -verb=Preview -file='\\.rst$' -tool=preview -start='apex tool preview'
 
 See apex help rules for the predicates, the actions, and the templates." },
     Cmd { name: "switch", usage: "apex switch SESSION [WIN]", short: "show another session in the window on this one", flags: &[], run: switch_cmd, long: "\
@@ -544,19 +546,24 @@ shift-cmd-B3 are Back, cmd-] is Fwd.
 Start it from the host's profile: apex tool lsp & (see apex help scripts).
 APEX_LSP_DEBUG=1 traces the JSON-RPC on stderr.
 
-apex tool preview is the resident tool behind Preview, which a session
-starts (its Tools setting): it offers the Preview verb on every file a
-converter exists for (the Preview.EXT settings, Markdown, HTML and SVG
-by default), kept in step with them, and shows each file it is used on
-as a page beside it, live. apex tool preview FILE does that once, for
-FILE (apex preview FILE).
+apex tool preview is the resident tool behind Preview, started when
+first wanted: a session's rules send Preview on Markdown, HTML and SVG
+files to it, with -start='apex tool preview' (see apex help plumb), and
+it adds the session one for every other extension a converter is set
+for (Preview.EXT) while it runs. It shows each file Preview is used on
+as a page beside it, live, and exits when no preview has been open for
+a minute. apex tool preview FILE does that once, for FILE (apex preview
+FILE).
 
-apex tool web is the resident tool behind pages on the web, which a
-session starts too: it answers Web (the address given, else the
-selection: a URL, or a path that is the host's file; with neither, a
-blank page whose address is typed) and Newweb URL anywhere, owns the
-pages they make and any other at an address nobody owns, keeps each
-page's history, and answers Back, Fwd and Get in their tags." },
+apex tool web is the resident tool behind pages on the web, started
+the same way, by the session's Web and Newweb rules: it answers Web
+(the address given, else the selection: a URL, or a path that is the
+host's file; with neither, a blank page whose address is typed) and
+Newweb URL anywhere, owns the pages they make and any other at an
+address nobody owns, keeps each page's history, answers Back, Fwd and
+Get in their tags, and exits when it has had no page for a minute. Run
+by hand, it offers Web and Newweb itself where no rule of the
+session's does." },
     Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\
 Label gives the window of the terminal it runs in the title TEXT,
 through the escape sequence acme's win reads (plan9port's label). A
@@ -654,14 +661,21 @@ Actions (exactly one):
 	              say); a UI that cannot refuses, and the walk goes on
 	-tool=NAME    ask the tool attached as NAME; it answers within a second
 	              or is taken to refuse (NACK), and the walk goes on
+	  -start=CMD  when no tool NAME is attached, run CMD on the host (Plan
+	              9's plumb client) and hold what matched until NAME
+	              attaches; ten seconds without is a failure, and the walk
+	              goes on
 Templates expand $0..$9, $file, $dir, $win, $line and $sel.
 
 Rules from the command line are the session's. A UI installs its own on
 attach (URLs go to the platform's open; Preview where a Preview.EXT
 setting names an app), a tool those naming it; both go when their owner
 does. The session starts with three rules at priority -100 that open name
-and name:line when they exist, as B3 always did. apex plumb -dry-run TEXT
-prints what each rule would do."),
+and name:line when they exist, as B3 always did, and with rules at -10
+that start the tools apex comes with when first wanted: Preview on
+Markdown, HTML and SVG files (apex tool preview), Web and Newweb
+anywhere (apex tool web). apex plumb -dry-run TEXT prints what each rule
+would do."),
     ("windows", "naming windows", "\
 A window has a path, a kind and perhaps a label, and these are its
 state, not words in its tag. A file's window has the file's path; a
@@ -1821,6 +1835,7 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
         action,
         to,
     };
+    let r = PlumbRule { start: f.get("start").map(String::from), ..r };
     r.check()?;
     Ok((r, priority, f.is("mine")))
 }

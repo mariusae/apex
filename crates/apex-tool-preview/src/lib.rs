@@ -9,10 +9,11 @@
 //! Unprivileged: it attaches like anything else, reads the buffer from
 //! the entry stream, and writes the page through proposals.
 //!
-//! `apex tool preview`, with no file, is the resident tool a session
-//! starts (its `Tools` setting): it offers the Preview verb on every
-//! file a converter exists for, kept in step with the settings, and
-//! runs a preview, as above, for each file the verb is used on.
+//! `apex tool preview`, with no file, is the resident tool a session's
+//! rules start when Preview is first used (ARCHITECTURE.md §5): it runs
+//! a preview, as above, for each file the verb is used on, adds the
+//! session a rule for each extension a setting gives a converter beyond
+//! the default rule's, and goes when no preview has been open a while.
 
 pub mod converters;
 pub mod markdown;
@@ -301,42 +302,89 @@ fn convert(converter: &str, dir: &Path, text: &str) -> Result<String, String> {
 /// settings, and a preview run for each file it is used on -- each its
 /// own attachment (`preview-file`), on a thread of this process.
 pub fn run_resident(socket: &Path, session: &str) -> Result<(), String> {
-    use apex_tool::{Event, Rule};
+    use apex_tool::Event;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     let mut t = apex_tool::Tool::attach_to(socket, session, "preview").map_err(|e| e.to_string())?;
-    let mut offered: std::collections::BTreeMap<String, RuleId> = std::collections::BTreeMap::new();
+    let open = std::sync::Arc::new(AtomicUsize::new(0));
+    let mut idle_since = Some(Instant::now());
+    let mut offered = std::collections::BTreeSet::new();
     loop {
-        // the verb where a converter is, and nowhere else
-        let wanted = converters::exts(t.meta());
-        for gone in offered.keys().filter(|e| !wanted.contains(*e)).cloned().collect::<Vec<_>>() {
-            if let Some(id) = offered.remove(&gone) {
-                t.withdraw(id);
-            }
-        }
-        for ext in wanted.iter().filter(|e| !offered.contains_key(*e)).cloned().collect::<Vec<_>>() {
-            let rule = Rule::verb("Preview").file(&converters::pattern_of_ext(&ext)).kind(WinKind::File).priority(-10);
-            if let Ok(id) = t.offer(rule) {
-                offered.insert(ext, id);
-            }
-        }
+        lasting_rules(&mut t, &mut offered);
         match t.next_event(Some(Duration::from_millis(500))) {
             Ok(Some(Event::Plumb(p))) => {
                 let file = p.window.and_then(|w| t.window(w)).map(|w| w.path).unwrap_or_default();
-                if file.is_empty() {
+                let ext = Path::new(&file).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                if file.is_empty() || converters::converter(t.meta(), &ext).is_none() {
                     let _ = t.answer(&p, false);
                     continue;
                 }
                 let _ = t.answer(&p, true);
-                let (socket, session) = (socket.to_path_buf(), session.to_string());
+                let (socket, session, open) = (socket.to_path_buf(), session.to_string(), open.clone());
+                open.fetch_add(1, Ordering::SeqCst);
                 std::thread::spawn(move || {
                     if let Err(e) = run(&socket, &session, &file) {
                         if e != "shown" {
                             eprintln!("preview: {file}: {e}");
                         }
                     }
+                    open.fetch_sub(1, Ordering::SeqCst);
                 });
             }
             Err(e) if e.is_closed() => return Ok(()),
             _ => {}
+        }
+        // gone when no preview is open for a while: the session's rule
+        // starts it again (ARCHITECTURE.md §5)
+        match (open.load(Ordering::SeqCst), idle_since) {
+            (0, None) => idle_since = Some(Instant::now()),
+            (0, Some(at)) if at.elapsed() >= IDLE => return Ok(()),
+            (0, Some(_)) => {}
+            _ => idle_since = None,
+        }
+    }
+}
+
+/// How long the resident Preview stays with no preview open.
+const IDLE: Duration = Duration::from_secs(60);
+
+/// The session's Preview rules for what a setting adds (`Preview.EXT`)
+/// beyond the default rule's formats: installed as the session's, with
+/// the default's `start`, so the verb is there whether or not Preview
+/// runs; and taken out with the setting. `offered` are those asked for
+/// here, not to be asked for twice before the log has them.
+fn lasting_rules(t: &mut apex_tool::Tool, offered: &mut std::collections::BTreeSet<String>) {
+    use apex_core::entry::RuleAction;
+    let wanted: Vec<String> = converters::exts(t.meta())
+        .into_iter()
+        .filter(|e| !converters::DEFAULTS.iter().any(|(d, _)| d == e))
+        .collect();
+    offered.retain(|e| wanted.contains(e));
+    let mut have = offered.clone();
+    let mut gone = vec![];
+    for (id, r) in &t.meta().rules {
+        let r = &r.rule;
+        if r.verb != "Preview" || r.action != RuleAction::Tool("preview".into()) || r.start.is_none() {
+            continue;
+        }
+        match r.file.as_deref().and_then(converters::ext_of_pattern) {
+            Some(e) if wanted.contains(&e) => {
+                have.insert(e);
+            }
+            Some(e) if !converters::DEFAULTS.iter().any(|(d, _)| *d == e) => gone.push(*id),
+            _ => {}
+        }
+    }
+    for id in gone {
+        t.withdraw(id);
+    }
+    for ext in wanted.into_iter().filter(|e| !have.contains(e)) {
+        let rule = apex_tool::Rule::verb("Preview")
+            .file(&converters::pattern_of_ext(&ext))
+            .kind(WinKind::File)
+            .priority(-10)
+            .start("apex tool preview");
+        if t.offer_lasting(rule).is_ok() {
+            offered.insert(ext);
         }
     }
 }

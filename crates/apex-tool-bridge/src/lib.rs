@@ -348,7 +348,7 @@ impl Bridge {
                     r = r.owner(o);
                 }
                 if let Some(k) = v["kind"].as_str() {
-                    r = r.kind(WinKind::parse(k).ok_or_else(|| format!("kind {k}: file, dir, term, errors or web"))?);
+                    r = r.kind(WinKind::parse(k).ok_or_else(|| format!("kind {k}: file, dir, term, errors or page"))?);
                 }
                 if let Some(w) = v["window"].as_u64() {
                     r = r.window(WindowId(w));
@@ -359,7 +359,11 @@ impl Bridge {
                 if v["unlisted"].as_bool().unwrap_or(false) {
                     r = r.unlisted();
                 }
-                Ok(json!({ "rule": self.tool.offer(r).map_err(e)?.0 }))
+                if let Some(s) = v["start"].as_str() {
+                    r = r.start(s);
+                }
+                let id = if v["lasting"].as_bool().unwrap_or(false) { self.tool.offer_lasting(r) } else { self.tool.offer(r) };
+                Ok(json!({ "rule": id.map_err(e)?.0 }))
             }
             "unrule" => {
                 self.tool.withdraw(RuleId(v["rule"].as_u64().ok_or("rule")?));

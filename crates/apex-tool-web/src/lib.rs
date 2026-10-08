@@ -13,8 +13,9 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use apex_core::entry::RuleAction;
 use apex_core::{Body, Source, WinKind, WindowId};
 use apex_tool::{Event, NavAnswer, PageEvent, Plumb, Rule, Tool};
 
@@ -93,20 +94,35 @@ pub fn where_to(url: &str) -> NavAnswer {
 pub fn run(socket: &Path, session: &str) -> Result<(), String> {
     let mut t = Tool::attach_to(socket, session, "web").map_err(|e| e.to_string())?;
     t.handle_pages();
-    // the verbs: anywhere (unlisted: every menu would have them), and its
-    // pages' own words
-    for rule in [
-        Rule::verb("Web").unlisted(),
-        Rule::verb("Newweb").unlisted(),
-        Rule::verb("Back").owner("^web$").kind(WinKind::Page),
-        Rule::verb("Fwd").owner("^web$").kind(WinKind::Page),
-        Rule::verb("Get").owner("^web$").kind(WinKind::Page),
-    ] {
+    // the verbs: anywhere (unlisted: every menu would have them), unless
+    // the session's rules already send them here; and its pages' own words
+    let session_has = |t: &Tool, verb: &str| {
+        t.meta().rules.values().any(|r| r.rule.verb == verb && r.rule.action == RuleAction::Tool("web".into()))
+    };
+    let mut rules = vec![];
+    for verb in ["Web", "Newweb"] {
+        if !session_has(&t, verb) {
+            rules.push(Rule::verb(verb).unlisted());
+        }
+    }
+    for verb in ["Back", "Fwd", "Get"] {
+        rules.push(Rule::verb(verb).owner("^web$").kind(WinKind::Page));
+    }
+    for rule in rules {
         t.offer(rule).map_err(|e| e.to_string())?;
     }
     let mut pages: BTreeMap<WindowId, History> = BTreeMap::new();
+    let mut idle_since = Some(Instant::now());
     loop {
         adopt(&mut t, &mut pages);
+        // gone when it has had no page for a while: the session's rule
+        // starts it again (ARCHITECTURE.md §5)
+        match (pages.is_empty(), idle_since) {
+            (true, None) => idle_since = Some(Instant::now()),
+            (true, Some(at)) if at.elapsed() >= IDLE => return Ok(()),
+            (true, Some(_)) => {}
+            (false, _) => idle_since = None,
+        }
         match t.next_event(Some(Duration::from_millis(500))) {
             Ok(Some(Event::Plumb(p))) => {
                 let taken = verb(&mut t, &mut pages, &p);
@@ -125,6 +141,9 @@ pub fn run(socket: &Path, session: &str) -> Result<(), String> {
         }
     }
 }
+
+/// How long the tool stays with no page of its.
+const IDLE: Duration = Duration::from_secs(60);
 
 /// Every page at an address that nobody owns is ours (a restart's pages,
 /// a link's): its history begins where it is.

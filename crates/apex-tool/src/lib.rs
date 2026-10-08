@@ -254,6 +254,7 @@ pub struct Rule {
     kind: Option<WinKind>,
     window: Option<WindowId>,
     priority: i32,
+    start: Option<String>,
 }
 
 impl Rule {
@@ -306,6 +307,13 @@ impl Rule {
     }
 
     /// Higher goes first among rules that match; 0 is usual.
+    /// How to start the tool when the rule matches and it is not
+    /// attached (`offer_lasting`): a command, `apex tool NAME` say.
+    pub fn start(mut self, cmd: &str) -> Rule {
+        self.start = Some(cmd.to_string());
+        self
+    }
+
     pub fn priority(mut self, p: i32) -> Rule {
         self.priority = p;
         self
@@ -1067,7 +1075,19 @@ impl Tool {
     /// Install a rule answered by this tool: its `Plumb` events say
     /// which rule matched.
     pub fn offer(&mut self, r: Rule) -> Result<RuleId> {
-        let rule = PlumbRule { start: None,
+        self.offer_as(r, true)
+    }
+
+    /// A rule that is the session's, not the tool's: it stays when the
+    /// tool goes, and with `Rule::start` it starts the tool again when it
+    /// matches (ARCHITECTURE.md §5).
+    pub fn offer_lasting(&mut self, r: Rule) -> Result<RuleId> {
+        self.offer_as(r, false)
+    }
+
+    fn offer_as(&mut self, r: Rule, mine: bool) -> Result<RuleId> {
+        let rule = PlumbRule {
+            start: r.start,
             verb: r.verb.unwrap_or_else(|| "plumb".to_string()),
             owner: r.owner,
             unlisted: r.unlisted,
@@ -1081,7 +1101,7 @@ impl Tool {
             to: None,
         };
         rule.check()?;
-        self.remote.rule_add(rule, r.priority, true, TIMEOUT).map_err(Error)
+        self.remote.rule_add(rule, r.priority, mine, TIMEOUT).map_err(Error)
     }
 
     /// Remove a rule.

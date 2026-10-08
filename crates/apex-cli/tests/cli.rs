@@ -924,31 +924,72 @@ fn a_web_views_proxy_and_files_ride_the_plane() {
     drop(c);
 }
 
+/// A rule with -start and no tool of its name attached: the command
+/// starts it once, and what matched meanwhile waits for it (Plan 9's
+/// plumb client); a start that never attaches fails, and the walk goes on.
+#[test]
+fn a_rule_starts_its_tool_when_none_is_attached() {
+    let sock = daemon();
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    assert!(!ok(&sock, &["ps"]).contains("\tweb\t"), "nothing started before it is wanted");
+    // two pages asked for at once: one tool, both pages
+    for url in ["https://example.org/a", "https://example.org/b"] {
+        c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Top, text: format!("Newweb {url}") }, Duration::from_secs(5)).unwrap();
+    }
+    let pages = |c: &Remote| c.node.state.windows.values().filter(|w| matches!(w.body, Body::Page(apex_core::Source::Url))).count();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && pages(&c) < 2 {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert_eq!(pages(&c), 2);
+    let ps = ok(&sock, &["ps"]);
+    assert_eq!(ps.matches("\tweb\t").count(), 1, "{ps}");
+    // a start that never attaches: the plumb fails after the wait
+    ok(&sock, &["plumb", "rule", "add", "-text=zzz.*", "-tool=nobody", "-start=true", "-priority=50"]);
+    let at = Instant::now();
+    let (success, _, _) = apex(&sock, &["plumb", "zzzq"]);
+    assert!(!success, "no tool took it, and nothing else did");
+    assert!(at.elapsed() >= Duration::from_secs(9), "it waited for the start: {:?}", at.elapsed());
+}
+
 #[test]
 fn preview_is_a_live_pipe_through_a_converter() {
     let sock = daemon();
-    // the resident tool, as a session starts it: the rules the settings
-    // derive are its, the defaults, then a converter of our own
-    let mut resident = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "tool", "preview"]).spawn().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.md$") && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    // the session's rule for Preview: the default formats, and how to
+    // start the tool that answers it; nothing for .txt until a setting
+    // names a converter and the tool has run
     let rules = ok(&sock, &["plumb", "rule", "ls"]);
-    assert!(rules.contains("-verb=Preview") && rules.contains(r"\.md$") && rules.contains("preview"), "{rules}");
+    assert!(rules.contains("-verb=Preview") && rules.contains(r"html?|svg)$") && rules.contains("-tool=preview") && rules.contains("-start='apex tool preview'"), "{rules}");
     assert!(!rules.contains(r"\.txt$"), "{rules}");
     ok(&sock, &["set", "Preview.txt", "sed 's/one/ONE/; s/^/<p>/; s/$/<\\/p>/'"]);
+    let dir = std::env::temp_dir().join(format!("apex-cli-preview-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // Preview on a Markdown file with no tool attached: the rule starts
+    // it, and the verb waits for it
+    let readme = dir.join("readme.md");
+    std::fs::write(&readme, "# Hi\n").unwrap();
+    let readme = readme.display().to_string();
+    ok(&sock, &["open", &readme]);
+    let mut c = Remote::connect_as(&sock, "main", "watcher", AttachmentKind::Tool).unwrap();
+    let w = c.node.window_of(&readme, WinKind::File).expect("readme open");
+    c.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(w), text: "Preview".into() }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && c.node.window_of(&readme, WinKind::Page).is_none() {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert!(c.node.window_of(&readme, WinKind::Page).is_some(), "Preview started the tool and it previewed");
+    // running, it gives the session a rule for the setting's extension
     let deadline = Instant::now() + Duration::from_secs(5);
     while !ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.txt$") && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert!(ok(&sock, &["plumb", "rule", "ls"]).contains(r"\.txt$"));
-    let _ = resident.kill();
-    let _ = resident.wait();
+    let rules = ok(&sock, &["plumb", "rule", "ls"]);
+    let txt = rules.lines().find(|l| l.contains(r"\.txt$")).unwrap_or_else(|| panic!("{rules}"));
+    assert!(txt.contains("-start='apex tool preview'") && txt.contains("\tsession\t"), "{rules}");
+    assert_eq!(rules.matches(r"\.txt$").count(), 1, "{rules}");
+    drop(c);
     // a file, not open: the tool opens it, makes a preview of it beside it
     // with the converter's output, live
-    let dir = std::env::temp_dir().join(format!("apex-cli-preview-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("notes.txt");
     std::fs::write(&file, "one\n").unwrap();
     let path = file.display().to_string();

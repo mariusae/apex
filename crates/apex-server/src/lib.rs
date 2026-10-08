@@ -98,8 +98,10 @@ pub struct Running {
 /// the pinned terminal shards and nothing else. Reads of the rest of the
 /// session go through a `view` the caller supplies (in-process, the
 /// client's own node; in the daemon, a follower kept up to date).
-/// The tools a session starts when its `Tools` setting says nothing.
-pub const DEFAULT_TOOLS: &str = "apex tool preview; apex tool web";
+/// The files Preview converts with no setting saying more: the default
+/// Preview rule's (`install_default_rules`). One for another a setting
+/// names (`Preview.EXT`) is Preview's to add.
+pub const PREVIEWED: &str = r"(?i)\.(md|markdown|html?|svg)$";
 
 pub struct Server {
     pub node: Node,
@@ -116,9 +118,7 @@ pub struct Server {
     pub term_colors: crate::proto::TermColors,
     /// The environment the profile was given, in full: what its own has
     /// changed by its end is applied to the session's (`import_env`).
-    pub profile_base: Option<Vec<(String, String)>>,
-    /// The session's tools wait for its profile to end (`start_tools`).
-    pub tools_pending: bool,
+    profile_base: Option<Vec<(String, String)>>,
     /// Execs already performed, so a scan does not repeat them.
     performed: BTreeSet<(ExecCtx, Seq)>,
     /// Execs to perform without asking the rules: a word a tool had
@@ -202,7 +202,6 @@ impl Server {
             env: Vec::new(),
             term_colors: crate::proto::TermColors::LIGHT,
             profile_base: None,
-            tools_pending: false,
             performed: BTreeSet::new(),
             plain: BTreeSet::new(),
             cwd,
@@ -1169,28 +1168,16 @@ impl Server {
         self.spawn_shell_as("profile".into(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
     }
 
-    /// The tools a session starts with (`Tools`): commands, one a line or
-    /// `;` apart, `apex` this daemon's own; the setting, else these. Run
-    /// once the profile is over (it may change or clear the setting), or
-    /// at once with none; each named after the tool it starts (`apex tool
-    /// NAME`), as `apex ps` and the title bar show it.
-    pub fn start_tools(&mut self, view: &Node) {
-        let list = view.state.meta.setting(SERVER, "Tools").map(String::from).unwrap_or_else(|| DEFAULT_TOOLS.to_string());
-        let dir = self.cwd.clone();
-        let env = self.command_env(view, ExecCtx::Top);
-        for cmd in list.split(['\n', ';']).map(str::trim).filter(|c| !c.is_empty()) {
-            let script = match cmd.strip_prefix("apex ") {
-                Some(rest) => format!("{} {rest}", shell_quote(&apex_command())),
-                None => cmd.to_string(),
-            };
-            let words: Vec<&str> = cmd.split_whitespace().collect();
-            let name = match words.as_slice() {
-                ["apex", "tool", name, ..] => name.to_string(),
-                [first, ..] => first.rsplit('/').next().unwrap_or(first).to_string(),
-                [] => continue,
-            };
-            self.spawn_shell_as(name, ExecCtx::Top, None, script, dir.clone(), None, ShellMode::Errors { dir: None }, env.clone());
-        }
+    /// Start tool `name` with `cmd` (a rule's `start`, ARCHITECTURE.md
+    /// §5): a process of the session's, named after the tool, `apex` in
+    /// it this daemon's own, run where the session is.
+    pub fn start_tool(&mut self, view: &Node, name: &str, cmd: &str) {
+        let script = match cmd.strip_prefix("apex ") {
+            Some(rest) => format!("{} {rest}", shell_quote(&apex_command())),
+            None => cmd.to_string(),
+        };
+        let (dir, env) = (self.cwd.clone(), self.command_env(view, ExecCtx::Top));
+        self.spawn_shell_as(name.to_string(), ExecCtx::Top, None, script, dir, None, ShellMode::Errors { dir: None }, env);
     }
 
     /// A script's environment at its end (`EnvImport`): what differs from
@@ -1298,6 +1285,31 @@ impl Server {
         };
         let (_, e) = log.install_rule(SERVER, -10, clear);
         let _ = self.node.state.apply(Shard::Meta, &e);
+        // the tools that come with apex, started when first wanted
+        // (ARCHITECTURE.md §5): Preview on the formats it converts as
+        // things are, Web and Newweb anywhere
+        let tool = |verb: &str, file: Option<&str>, kind: Option<WinKind>, unlisted: bool, name: &str| PlumbRule {
+            verb: verb.into(),
+            owner: None,
+            unlisted,
+            text: None,
+            file: file.map(String::from),
+            kind,
+            isfile: None,
+            isdir: None,
+            action: RuleAction::Tool(name.into()),
+            win: None,
+            to: None,
+            start: Some(format!("apex tool {name}")),
+        };
+        for rule in [
+            tool("Preview", Some(PREVIEWED), Some(WinKind::File), false, "preview"),
+            tool("Web", None, None, true, "web"),
+            tool("Newweb", None, None, true, "web"),
+        ] {
+            let (_, e) = log.install_rule(SERVER, -10, rule);
+            let _ = self.node.state.apply(Shard::Meta, &e);
+        }
     }
 
     /// Start a plumb: the first step of walking the rules. The id names

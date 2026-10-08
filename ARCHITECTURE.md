@@ -687,8 +687,10 @@ spread over every layer:
 events (protocol 50: `Ask`/`Answer`, plumbing among them; `WindowEvent`;
 `PostToPage`, 51), tool-served pages on the plane (`tool://NAME/...`,
 the client's `apextool://`), the script bridge, Preview and Web as
-tools, started when first wanted (below), a tool's page without its
-tool a placeholder. Still as they were: page verbs parsed
+tools, started when first wanted (below; protocol 52, a rule's
+`start`), a tool's page without its tool a placeholder. A page at an
+address from before a daemon restart has Back, Fwd and Get again once
+something starts Web. Still as they were: page verbs parsed
 from a page's HTML (`apex diff`'s Prev and Next, which have no tool to
 answer them), Look in a page through `page_finds`, and `ClientDo`, whose
 uses left are not pages' (open, the system's previewer, snarfout).
