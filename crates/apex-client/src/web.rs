@@ -31,13 +31,15 @@ pub enum WebEvent {
     /// `text`, `default`...): the page's script says, since WebKit's own
     /// cursor never reaches the screen inside this window.
     Cursor(String),
-    /// The document's title changed (not kept yet: WEB.md §2.1).
-    #[allow(dead_code)]
+    /// The document's title changed: told to the page's owner.
     Title(String),
     /// A host file the page uses changed: load it again.
     Reload,
     /// A link followed in a page rendered from a buffer: open it.
     Link(String),
+    /// A link clicked in a page at an address that a tool owns
+    /// (`NAV_SCRIPT`): where it goes is the owner's to say.
+    Ask(String),
     /// A page went for the host's loopback by its bare name, which the
     /// view would take for the client's: load it under the alias instead.
     Reroute(String),
@@ -531,6 +533,8 @@ pub struct WebHost {
     /// The window's reload count when the page was last loaded: a count
     /// that moves is a reload asked for (`Window::reload`).
     reloads: Option<u64>,
+    /// Whether the page was told a tool owns it (`set_owned`).
+    owned: Option<bool>,
     /// Loading since: the handle pulses. Set the moment a load is asked
     /// for (WebKit says "started" only once content arrives), cleared
     /// when the page finishes, or after a while when it never says so.
@@ -595,6 +599,25 @@ fn thumb_of(scroll: Option<(f64, f64, f64)>) -> (f32, f32) {
 /// in a constructed stylesheet a page's morph cannot take out, and where
 /// the page is scrolled is said whenever that or its length changes, once
 /// a frame, for the scrollbar drawn beside the view.
+/// A page at an address that a tool owns (`__apexOwned`, set by the
+/// client): a link clicked in its main document is not followed, but
+/// asked of the owner (`nav:`), who says where it goes. A click with a
+/// modifier, to another frame or within the page is left alone; so is
+/// every page no tool owns.
+const NAV_SCRIPT: &str = r#"(function () {
+  if (window.top !== window) return;
+  document.addEventListener('click', function (e) {
+    if (!window.__apexOwned || e.defaultPrevented || e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target && e.target.closest && e.target.closest('a[href]');
+    if (!a || (a.target && a.target !== '_self')) return;
+    const raw = a.getAttribute('href') || '';
+    if (raw.startsWith('#') || raw.startsWith('javascript:')) return;
+    e.preventDefault();
+    window.ipc.postMessage('nav:' + a.href);
+  }, true);
+})();"#;
+
 const SCROLL_SCRIPT: &str = r#"(function () {
   if (window.__apexScroll) return;
   window.__apexScroll = true;
@@ -1081,6 +1104,7 @@ impl Webs {
             .with_initialization_script(CURSOR_SCRIPT)
             .with_initialization_script(KEEP_SCRIPT)
             .with_initialization_script(SCROLL_SCRIPT)
+            .with_initialization_script(NAV_SCRIPT)
             .with_ipc_handler(move |req| {
                 if req.body() == "down:" {
                     let _ = tx4.send((w, WebEvent::Down));
@@ -1107,6 +1131,11 @@ impl Webs {
                     }
                 } else if let Some(text) = req.body().strip_prefix("copy:") {
                     let _ = tx4.send((w, WebEvent::Copy(text.to_string())));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
+                } else if let Some(url) = req.body().strip_prefix("nav:") {
+                    let _ = tx4.send((w, WebEvent::Ask(url.to_string())));
                     if let Some(k) = &wake4 {
                         k();
                     }
@@ -1196,7 +1225,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1347,6 +1376,19 @@ impl Webs {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.url = url.to_string();
             h.loading = Some(std::time::Instant::now());
+            // a new document: whether a tool owns it is to be said again
+            h.owned = None;
+        }
+    }
+
+    /// Whether a tool owns window `w`'s page, said to the page (its links
+    /// are asked of the owner, `NAV_SCRIPT`): when it changes, and again
+    /// for each new document.
+    pub fn set_owned(&mut self, w: WindowId, owned: bool) {
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        if h.owned != Some(owned) {
+            h.owned = Some(owned);
+            let _ = h.view.evaluate_script(&format!("window.__apexOwned = {owned};"));
         }
     }
 

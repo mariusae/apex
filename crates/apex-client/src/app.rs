@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use apex_core::node::Erase;
 use apex_core::tiling::{self, Info, SCROLLWID};
 use apex_core::*;
-use apex_server::proto::{ClientMsg, FileFrame, IoFrame};
+use apex_server::proto::{ClientMsg, FileFrame, IoFrame, WindowEvent as PageEvent};
 use apex_server::providers::SessionUrl;
 use apex_server::remote::{Link, Wake};
 use apex_server::{PlumbReq, PlumbStep, Proposal, perform, Server, ServerEvent, TermKey};
@@ -631,6 +631,9 @@ pub struct Acme {
     pub fence_flash: Option<std::time::Instant>,
     /// The standing chip's card is open.
     pub standing_card: bool,
+    /// Links asked of their pages' owners, by the question's id: the
+    /// page, and where the link was going.
+    pub page_asks: HashMap<u64, (WindowId, String)>,
     /// A remote daemon is being restarted for this window: the page
     /// says so, with nothing to press meanwhile.
     pub restarting: bool,
@@ -1814,6 +1817,7 @@ impl Acme {
             lost_note: None,
             fence_flash: None,
             standing_card: false,
+            page_asks: HashMap::new(),
             restarting: false,
             choosing: false,
             term_sel: None,
@@ -2718,6 +2722,8 @@ impl Acme {
             self.leave_requested = true;
         }
         self.answer_asks();
+        // where links in pages tools own go, as the owners said
+        self.page_answers();
         // what the proposals just applied left to do: places to go (a
         // tool's Goto opens a file), tags to refit, the warp
         self.sync();
@@ -4252,6 +4258,9 @@ impl Acme {
                     return;
                 }
                 self.webs.place(w, &name, win.via == apex_core::Via::Client, bounds, window, visible);
+                // its links asked of its owner, when a tool owns it
+                let owned = self.page_owned(w);
+                self.webs.set_owned(w, owned);
             }
         }
         // loaded again when the log's count moves (Get, on any client)
@@ -4342,25 +4351,27 @@ impl Acme {
             match ev {
                 WebEvent::Navigated(url) => {
                     self.webs.navigated(w, &url);
+                    self.tell_owner(w, PageEvent::Navigated { url: url.clone() });
                     if self.node.window_path(w) != url {
                         perform(&mut self.node, &mut self.log, vec![Proposal::Navigate { window: w, url }]);
                     }
                 }
-                WebEvent::Title(_) => {}
+                WebEvent::Title(title) => self.tell_owner(w, PageEvent::Title { title }),
+                // a link in a page a tool owns: the owner says where it goes
+                WebEvent::Ask(url) => self.ask_owner(w, url),
+                WebEvent::Link(url) if self.page_owned(w) => self.ask_owner(w, url),
                 WebEvent::Reload => self.webs.reload(w),
                 // a link followed in a page of ours that leaves the host:
                 // the system's browser, as a link in a document is; one
                 // to the host's files, or its loopback (which only the
                 // host reaches, through Web's proxy), a window on it
-                WebEvent::Link(url) if (url.starts_with("http://") || url.starts_with("https://")) && apex_server::plane::alias_loopback_url(&url) == url => {
-                    if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&url).spawn() {
-                        eprintln!("web: open {url}: {e}");
-                    }
-                }
-                WebEvent::Link(url) => self.goto(Loc { session: None, name: url, pos: Pos::Keep }),
+                WebEvent::Link(url) => self.follow_link(url),
                 // a file link with a line: the file, at that line
                 WebEvent::Open(path, line) => self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) }),
-                WebEvent::Loading(on) => self.webs.set_loading(w, on),
+                WebEvent::Loading(on) => {
+                    self.webs.set_loading(w, on);
+                    self.tell_owner(w, PageEvent::Loading { started: on });
+                }
                 WebEvent::Down => self.toasts.clear(),
                 // a code block's copy handle: into the snarf buffer, and
                 // the clipboard with it
@@ -4385,6 +4396,67 @@ impl Acme {
                         perform(&mut self.node, &mut self.log, vec![Proposal::Navigate { window: w, url }]);
                     }
                 }
+            }
+        }
+    }
+
+    /// A link followed in a page of ours that no owner speaks for: one
+    /// that leaves the host, the system's browser, as a link in a
+    /// document is; one to the host's files, or its loopback (which only
+    /// the host reaches, through Web's proxy), a window on it.
+    fn follow_link(&mut self, url: String) {
+        if (url.starts_with("http://") || url.starts_with("https://")) && apex_server::plane::alias_loopback_url(&url) == url {
+            if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&url).spawn() {
+                eprintln!("web: open {url}: {e}");
+            }
+        } else {
+            self.goto(Loc { session: None, name: url, pos: Pos::Keep });
+        }
+    }
+
+    /// Window `w` is a page some tool owns, and we lead: what happens in
+    /// it is the owner's to hear, and where its links go its to say.
+    fn page_owned(&self, w: WindowId) -> bool {
+        matches!(self.backend, Backend::Remote(_)) && !self.fenced() && self.node.state.window(w).is_ok_and(|x| x.is_page() && x.owner.is_some_and(|o| o != self.node.attachment))
+    }
+
+    /// Tell page `w`'s owner what happened in it.
+    fn tell_owner(&mut self, w: WindowId, event: PageEvent) {
+        if self.page_owned(w) {
+            if let Backend::Remote(link) = &self.backend {
+                link.window_event(w, event);
+            }
+        }
+    }
+
+    /// Ask page `w`'s owner where the link to `url` goes; the answer is
+    /// carried out when it comes (`page_answers`).
+    fn ask_owner(&mut self, w: WindowId, url: String) {
+        let Backend::Remote(link) = &mut self.backend else { return };
+        let id = link.ask(apex_server::proto::Request::Navigate { window: w, url: url.clone() });
+        self.page_asks.insert(id, (w, url));
+    }
+
+    /// The owners' answers to where links go, carried out: there (the
+    /// page navigates, in the log), somewhere else, nowhere (the owner
+    /// did what it means); or, unanswered, what the link would do with
+    /// no owner. A buffer page does not navigate: its link is followed.
+    pub fn page_answers(&mut self) {
+        use apex_server::proto::{Answer, NavAnswer};
+        let Backend::Remote(link) = &mut self.backend else { return };
+        let answered = std::mem::take(&mut link.answered);
+        for (id, answer) in answered {
+            let Some((w, url)) = self.page_asks.remove(&id) else { continue };
+            let to = match answer {
+                Some(Answer::Navigate(NavAnswer::Handled)) => continue,
+                Some(Answer::Navigate(NavAnswer::Redirect(u))) => u,
+                _ => url,
+            };
+            if self.node.is_url_page(w) {
+                perform(&mut self.node, &mut self.log, vec![Proposal::Navigate { window: w, url: to }]);
+                self.after();
+            } else {
+                self.follow_link(to);
             }
         }
     }
