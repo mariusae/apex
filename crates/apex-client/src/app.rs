@@ -4271,6 +4271,17 @@ impl Acme {
     /// (until the Web tool keeps it, ARCHITECTURE.md §5); Get a reload in
     /// the log, so every client showing the page loads it again.
     pub fn page_nav(&mut self, w: WindowId, nav: crate::web::Nav) {
+        // a page a tool owns: the word, run in it, for the tool to answer
+        if self.node.state.window(w).is_ok_and(|x| x.owner.is_some()) {
+            let word = match nav {
+                crate::web::Nav::Back => "Back",
+                crate::web::Nav::Fwd => "Fwd",
+                crate::web::Nav::Reload => "Get",
+            };
+            perform(&mut self.node, &mut self.log, vec![Proposal::Exec { ctx: ExecCtx::Window(w), text: word.into() }]);
+            self.after();
+            return;
+        }
         match nav {
             crate::web::Nav::Reload => {
                 perform(&mut self.node, &mut self.log, vec![Proposal::Reload { window: w }]);
@@ -4472,9 +4483,16 @@ impl Acme {
                 Some(Answer::Navigate(NavAnswer::Redirect(u))) => u,
                 _ => url,
             };
-            if self.node.is_url_page(w) {
+            // a page navigates on the web and the host's files; a link of
+            // another kind (mailto:) is the system's, as anywhere
+            let web = ["http://", "https://", "apexfile://", "file://", "tool://"].iter().any(|s| to.starts_with(s));
+            if self.node.is_url_page(w) && web {
                 perform(&mut self.node, &mut self.log, vec![Proposal::Navigate { window: w, url: to }]);
                 self.after();
+            } else if self.node.is_url_page(w) {
+                if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&to).spawn() {
+                    eprintln!("web: open {to}: {e}");
+                }
             } else {
                 self.follow_link(to);
             }
@@ -5404,7 +5422,9 @@ impl Acme {
         }
         // a page's own history and reload: Back, Fwd, Get in a web window
         if let ExecCtx::Window(w) = ctx {
-            if self.node.state.window(w).map(|x| x.body) == Ok(Body::Page(apex_core::Source::Url)) {
+            // a page nobody owns keeps its history in the view; one a tool
+            // owns (Web) has its words answered by that tool
+            if self.node.state.window(w).is_ok_and(|x| x.body == Body::Page(apex_core::Source::Url) && x.owner.is_none()) {
                 let nav = match word.as_str() {
                     "Back" => Some(Nav::Back),
                     "Fwd" => Some(Nav::Fwd),
