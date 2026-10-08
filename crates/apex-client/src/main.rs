@@ -254,7 +254,7 @@ impl Render for Acme {
             // build's (`standing`)
             let accent = text_element::rgb(t.accent);
             let actions = self.waiting_actions(cx);
-            let spinner = actions.is_none().then(|| canvas(|_, _, _| {}, move |b, _, window, _| text_element::paint_spinner(window, gpui::point(b.left() + b.size.width / 2., b.top() + b.size.height / 2.), 9., 2., accent)).w(px(24.)).h(px(24.)));
+            let spinner = (actions.is_none() && !self.choosing).then(|| canvas(|_, _, _| {}, move |b, _, window, _| text_element::paint_spinner(window, gpui::point(b.left() + b.size.width / 2., b.top() + b.size.height / 2.), 9., 2., accent)).w(px(24.)).h(px(24.)));
             let blank = rest(div())
                 .flex()
                 .flex_col()
@@ -654,6 +654,9 @@ enum Target {
     Url { url: SessionUrl, files: Vec<String> },
     /// Through an arbitrary command's stdin/stdout.
     Via { cmd: String, session: String, files: Vec<String> },
+    /// Nothing reopened (`shell::reopen_refused`): a window on no
+    /// session, saying why, the picker up to choose one.
+    Choose(String),
 }
 
 fn main() {
@@ -738,6 +741,7 @@ fn main() {
                 // the windows as they are now come back next time
                 shell::save_open(cx);
                 shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
+                shell::settled();
                 // every link ends before we do: the bridges go with us, and
                 // the daemons see the attachments leave
                 for w in cx.windows() {
@@ -765,6 +769,18 @@ fn main() {
             }
         });
         let default = || session.clone().unwrap_or_else(|| apex_server::providers::DEFAULT_SESSION.to_string());
+        // reopening nothing, when macOS says so or the last launch died
+        // before it settled; then this launch is marked until it has
+        let refused = shell::reopen_refused();
+        if let Some(why) = &refused {
+            shell::log_line(why);
+        }
+        shell::launching();
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(std::time::Duration::from_secs(15)).await;
+            shell::settled();
+        })
+        .detach();
         // apex has one window; everything else it has open is a tab in it
         let mut stale: Option<String> = None;
         let (target, frame): (Target, Option<WindowBounds>) = if local {
@@ -798,6 +814,7 @@ fn main() {
             }
             match &session {
                 Some(s) => (Target::Url { url: SessionUrl::local(s), files: files.clone() }, None),
+                None if refused.is_some() => (Target::Choose(refused.clone().unwrap_or_default()), None),
                 None => {
                     let (url, frame) = shell::plan(&socket).unwrap_or_else(|e| {
                         eprintln!("apex-ui: {e}");
@@ -813,7 +830,11 @@ fn main() {
             Target::Url { url, files } if !url.is_local() => Some(files.clone()),
             _ => None,
         };
+        let choosing = matches!(target, Target::Choose(_));
         let opened = open_window(cx, target, frame);
+        if let (true, Some(h)) = (choosing, opened) {
+            let _ = h.update(cx, |acme, _, cx| acme.open_selector(cx));
+        }
         if let (Some(why), Some(h)) = (stale.take(), opened) {
             let _ = h.update(cx, |acme, window, cx| acme.offer_restart(&why, window, cx));
         }
@@ -823,8 +844,11 @@ fn main() {
             }
         }
         shell::save_open(cx);
-        // the tabs of last time, attached again in the background and parked
-        pool::Pool::restore(cx);
+        // the tabs of last time, attached again in the background and
+        // parked -- unless nothing is to be reopened: they wait in the bar
+        if !choosing {
+            pool::Pool::restore(cx);
+        }
         // the pointer goes while text is typed, and only then: not for a
         // key that does something (gpui's default), which a tab switch is
         cx.set_cursor_hide_mode(gpui::CursorHideMode::OnTyping);
@@ -834,6 +858,7 @@ fn main() {
         cx.on_app_quit(|cx| {
             shell::save_open(cx);
             shell::QUITTING.store(true, std::sync::atomic::Ordering::Relaxed);
+                shell::settled();
             gpui::Task::ready(())
         })
         .detach();
@@ -852,7 +877,7 @@ fn main() {
 fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Option<gpui::WindowHandle<Acme>> {
     let bounds = frame.unwrap_or_else(|| WindowBounds::Windowed(Bounds::centered(None, size(px(1100.), px(760.)), cx)));
     let title = match &target {
-        Target::Local(_) => "apex".to_string(),
+        Target::Local(_) | Target::Choose(_) => "apex".to_string(),
         Target::Url { url, .. } => Acme::title(url),
         Target::Via { cmd, session, .. } => format!("{session} via {} — apex", cmd.split_whitespace().nth(1).unwrap_or(cmd)),
     };
@@ -896,7 +921,7 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                     .detach();
                     acme
                 }
-                Target::Url { .. } | Target::Via { .. } => {
+                Target::Url { .. } | Target::Via { .. } | Target::Choose(_) => {
                     // the reader thread pokes this channel; the task polls
                     // the link on the UI thread
                     let (wake_tx, mut wake_rx) = futures::channel::mpsc::unbounded::<()>();
@@ -911,6 +936,14 @@ fn open_window(cx: &mut App, target: Target, frame: Option<WindowBounds>) -> Opt
                                 std::process::exit(1);
                             }
                         },
+                        Target::Choose(why) => {
+                            // on no session: the default's tab, not attached
+                            let url = SessionUrl::local(apex_server::providers::DEFAULT_SESSION);
+                            let mut a = offline_window(cx, &url, Vec::new(), wake.clone());
+                            a.choosing = true;
+                            a.wait(&why);
+                            a
+                        }
                         Target::Url { url, .. } if !url.is_local() => {
                             // a session elsewhere: the window opens now on a
                             // blank page and says so, and the pool makes the

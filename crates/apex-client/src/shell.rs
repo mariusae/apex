@@ -449,6 +449,49 @@ pub fn log_line(what: &str) {
     }
 }
 
+/// Whether this launch reopens nothing it had open, and why: macOS
+/// said not to (the user chose not to reopen windows after a crash, which
+/// AppKit says as `ApplePersistenceIgnoreState`, from the arguments or the
+/// defaults), or the launch before this one ended before it settled
+/// (`launching` was left behind: a window being reopened crashed it).
+/// Then the window opens on nothing, with the picker up, and the tabs of
+/// last time wait in the bar to be chosen.
+pub fn reopen_refused() -> Option<String> {
+    if persistence_ignored() {
+        return Some("Not reopening what was open, as macOS asked. Choose a session to open.".into());
+    }
+    let marker = state_file().with_file_name("launching");
+    let left = std::fs::metadata(&marker).is_ok();
+    left.then(|| "Apex quit while reopening what was open last time, so nothing was reopened. Choose a session to open.".into())
+}
+
+/// `ApplePersistenceIgnoreState`, as AppKit reads it.
+fn persistence_ignored() -> bool {
+    use objc::runtime::{Object, BOOL, YES};
+    use objc::{class, msg_send, sel, sel_impl};
+    // SAFETY: plain Foundation calls on the main thread at launch.
+    unsafe {
+        let defaults: *mut Object = msg_send![class!(NSUserDefaults), standardUserDefaults];
+        if defaults.is_null() {
+            return false;
+        }
+        let key = std::ffi::CString::new("ApplePersistenceIgnoreState").unwrap();
+        let key: *mut Object = msg_send![class!(NSString), stringWithUTF8String: key.as_ptr()];
+        let on: BOOL = msg_send![defaults, boolForKey: key];
+        on == YES
+    }
+}
+
+/// A launch begun: the marker says so until it has settled.
+pub fn launching() {
+    let _ = std::fs::write(state_file().with_file_name("launching"), std::process::id().to_string());
+}
+
+/// The launch settled (up a while, or quitting): the marker goes.
+pub fn settled() {
+    let _ = std::fs::remove_file(state_file().with_file_name("launching"));
+}
+
 /// The window to open at launch: the one remembered, on the session it
 /// showed and at the frame it had (a session that is gone, after `apex
 /// stop` say, is made again, empty: attaching creates it); else the

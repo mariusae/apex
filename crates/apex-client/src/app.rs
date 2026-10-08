@@ -634,6 +634,9 @@ pub struct Acme {
     /// A remote daemon is being restarted for this window: the page
     /// says so, with nothing to press meanwhile.
     pub restarting: bool,
+    /// Opened on no session, nothing reopened (`shell::reopen_refused`):
+    /// the page says why while the picker chooses one.
+    pub choosing: bool,
     /// The frame after a layout change has the geometry the warp needs.
     warp_wait: bool,
     /// acme's savemouse/restoremouse: the window whose creation moved the
@@ -1019,6 +1022,7 @@ impl Acme {
             Pool::park(cx, self.tab, p);
         }
         self.tab = id;
+        self.choosing = false;
         // where the user went, connecting or not: ctrl-tab comes back to
         // it (a ctrl-tab walk settles where it ends)
         if self.switcher.is_none() {
@@ -1811,6 +1815,7 @@ impl Acme {
             fence_flash: None,
             standing_card: false,
             restarting: false,
+            choosing: false,
             term_sel: None,
             snarf_wanted: None,
             clips: Vec::new(),

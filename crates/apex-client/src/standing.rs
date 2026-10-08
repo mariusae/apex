@@ -83,7 +83,9 @@ pub fn backoff(step: usize) -> Duration {
 /// An attach that failed for a reason trying again will not mend: a
 /// daemon of another build, or a tab let go.
 pub fn hopeless(why: &str) -> bool {
-    why.contains("speaks apex protocol") || why.starts_with("let go")
+    // (and a tab never attached at all -- one of last time, nothing
+    // reopened -- is attached when it is chosen, not by itself)
+    why.contains("speaks apex protocol") || why.starts_with("let go") || why == "not attached"
 }
 
 impl Acme {
@@ -547,7 +549,7 @@ impl Acme {
     /// the next try is and the buttons -- Reconnect now, and Restart
     /// daemon for one of another build.
     pub fn waiting_actions(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if self.restarting {
+        if self.restarting || self.choosing {
             return None;
         }
         let Standing::Offline { why } = self.standing(cx) else { return None };
