@@ -1827,16 +1827,36 @@ impl WebHost {
 /// relative links and resources resolve there, unless it brings its own.
 /// A page from a buffer dressed for the editor: its base, and the
 /// theme's colours as `--apex-*` (a page whose stylesheet uses them,
-/// `apex md`'s, takes the editor's look; another is not touched).
+/// `apex md`'s, takes the editor's look). The theme comes first in the
+/// head, so that the page's own rules come after it and win: a page that
+/// says nothing of its background has the editor's, one that does keeps
+/// its own.
 fn dress(html: &str, dir: &str) -> String {
     let html = file_to_apexfile(html);
     let html = with_base(&html, dir);
     let style = format!("<style id=\"apex-theme\">{}</style>", theme_css());
+    let at = head_start(&html);
+    format!("{}{}{}", &html[..at], style, &html[at..])
+}
+
+/// Where a page's head begins: after its `<head>` tag, else after its
+/// `<html>` tag or its doctype (where a head is implied), else at the
+/// start. Never before the doctype, which would put the page in quirks
+/// mode.
+fn head_start(html: &str) -> usize {
     let lower = html.to_ascii_lowercase();
-    match lower.find("</head>") {
-        Some(i) => format!("{}{}{}", &html[..i], style, &html[i..]),
-        None => format!("{style}{html}"),
-    }
+    let after_tag = |name: &str| -> Option<usize> {
+        let mut from = 0;
+        while let Some(i) = lower[from..].find(name).map(|i| i + from) {
+            let next = lower[i + name.len()..].chars().next();
+            if matches!(next, Some('>' | ' ' | '\t' | '\n' | '\r')) {
+                return lower[i..].find('>').map(|j| i + j + 1);
+            }
+            from = i + name.len();
+        }
+        None
+    };
+    after_tag("<head").or_else(|| after_tag("<html")).or_else(|| after_tag("<!doctype")).unwrap_or(0)
 }
 
 /// A host file's `file://` URL in a page's links and sources (`href`,
@@ -2144,6 +2164,21 @@ mod tests {
         assert_eq!(file_to_apexfile(html), html);
         assert_eq!(file_to_apexfile("<img src=\"file:///é/ü.png\">"), "<img src=\"apexfile://localhost/é/ü.png\">");
         assert!(dress("<html><head></head><body><a href=\"file://aéééééé\">é</a></body></html>", "/tmp").contains("aéééééé"));
+    }
+
+    #[test]
+    fn the_theme_comes_before_a_pages_own_styles() {
+        // the page's rules after the theme's, so its own background wins
+        let page = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><style>html { background: #fff; }</style></head><body><header>x</header></body></html>";
+        let out = dress(page, "");
+        let (theme, own) = (out.find("id=\"apex-theme\"").unwrap(), out.find("background: #fff").unwrap());
+        assert!(theme < own, "{out}");
+        assert!(out.starts_with("<!doctype html><html lang=\"en\"><head><style id=\"apex-theme\">"), "{out}");
+        // no head: after the html tag, or the doctype; a header is no head
+        assert_eq!(head_start("<!DOCTYPE html><p>x"), 15);
+        assert_eq!(head_start("<html><body><header>"), 6);
+        assert_eq!(head_start("<p>bare</p>"), 0);
+        assert_eq!(head_start("<header>x</header><head >"), 25);
     }
 
     #[test]
