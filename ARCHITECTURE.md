@@ -687,8 +687,8 @@ spread over every layer:
 events (protocol 50: `Ask`/`Answer`, plumbing among them; `WindowEvent`;
 `PostToPage`, 51), tool-served pages on the plane (`tool://NAME/...`,
 the client's `apextool://`), the script bridge, Preview and Web as
-resident tools a session starts (its `Tools` setting), a tool's page
-without its tool a placeholder. Still as they were: page verbs parsed
+tools, started when first wanted (below), a tool's page without its
+tool a placeholder. Still as they were: page verbs parsed
 from a page's HTML (`apex diff`'s Prev and Next, which have no tool to
 answer them), Look in a page through `page_finds`, and `ClientDo`, whose
 uses left are not pages' (open, the system's previewer, snarfout).
@@ -796,6 +796,40 @@ navigation state are the session's meanwhile. A buffer page shows what
 it has, and answers nothing; a `Tool(name)` page shows a placeholder
 saying its tool is gone, not what the client last fetched.
 
+### Tools started when first wanted
+
+Plan 9's plumber does not need its programs running: its rules are
+static, a rule's `plumb to PORT` names where a message goes, and
+`plumb client CMD` runs CMD when no program has that port open, holding
+the message until one opens it (`plumb start CMD` runs it and drops the
+message). apex does the same, with tools for ports.
+
+- **A rule may say how to start its tool.** A rule whose action is
+  `Tool(name)` may carry `start`, a command
+  (`apex plumb rule add -tool=NAME -start=CMD`). When the rule matches
+  and no attachment of that name is there, the daemon runs the command
+  once -- a process of the session's, as `Run` is -- and holds the
+  request: the plumb, and a request for a page the tool serves
+  (`tool://NAME/...`). When an attachment of that name says hello, what
+  was held is delivered, in order. One that does not come in time
+  (10 s) is a failure: the plumb walks on, the page's request fails.
+- **The rules that start tools are the session's**, there whether or
+  not the tool runs. A new session's defaults (`install_default_rules`)
+  include them: Preview on the formats it converts, Web and Newweb
+  anywhere. Everything else is `apex plumb rule add`, from a profile or
+  anywhere: apex is programmed through `apex`.
+- **A tool adds to them while it runs.** Preview, for a converter a
+  setting names (`Preview.EXT`), installs the rule for that extension
+  as the session's own, with the same `start`, so the verb is offered
+  there from then on.
+- **A tool started so goes when it is idle**, and the next use starts it
+  again: Preview with no preview open for a while, Web with no page of
+  its for a while. Nothing is started before it is wanted: no list of
+  tools a session runs. (A tool wanted from the start -- a language
+  server -- is the profile's: `apex tool lsp &`.)
+- **The SDKs hand a tool what its rules' verbs bring, whoever installed
+  the rule**: a tool started by a session's rule handles that verb.
+
 ### What goes
 
 - **Kinds and proposals.** `Body::Web`/`Html` and `WinKind::Web`/`Preview`
@@ -870,6 +904,8 @@ In order. Each step stands on its own.
      page's scroll;
    - tool-served requests on the I/O plane, and the script bridge;
    - tools taking their windows back by name when they restart;
+   - tools started when first wanted, by rules that say how, and gone
+     when idle;
    - Web as a tool, history and all;
    - Preview owning its converters, rules and Markdown, and following
      the caret.
