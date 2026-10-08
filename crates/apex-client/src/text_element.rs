@@ -47,6 +47,13 @@ pub const TABSTOP: usize = 4;
 // acme's colours live in theme.rs (the light theme), with the dark
 // theme beside them.
 /// `a` towards `b` by `t` (0..1), per channel.
+/// `a` taken `t` of the way to `b`.
+pub fn blend(a: Hsla, b: Hsla, t: f32) -> Hsla {
+    let (a, b) = (gpui::Rgba::from(a), gpui::Rgba::from(b));
+    let l = |x: f32, y: f32| x + (y - x) * t;
+    gpui::Rgba { r: l(a.r, b.r), g: l(a.g, b.g), b: l(a.b, b.b), a: l(a.a, b.a) }.into()
+}
+
 pub fn mix(a: u32, b: u32, t: f32) -> u32 {
     let ch = |shift: u32| {
         let x = ((a >> shift) & 0xff) as f32;
@@ -1222,6 +1229,9 @@ pub struct Source {
     pub sel: (usize, usize),
     pub origin: usize,
     pub hl: Option<(usize, usize, HlKind)>,
+    /// What B2 just ran here, drawn as its sweep at this strength (0
+    /// blinked off) while it goes (`app::ran_fade`).
+    pub ran: Option<(usize, usize, f32)>,
     /// What a click would take here with the modifier held (⌘: B3's,
     /// ⌥: B2's), on a pill.
     pub hint: Option<(usize, usize, HlKind)>,
@@ -1262,6 +1272,7 @@ pub struct Prepaint {
     first_line: usize,
     sel: (usize, usize),
     hl: Option<(usize, usize, HlKind)>,
+    ran: Option<(usize, usize, f32)>,
     hint: Option<(usize, usize, HlKind)>,
     marks: std::rc::Rc<Vec<(usize, usize)>>,
     strike: Option<(usize, usize)>,
@@ -1318,7 +1329,7 @@ fn tag_scroll(acme: &mut Acme, view: ViewId, lines: &[LineInfo], q: usize, room:
 fn top_for(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec, wrap: Option<Pixels>, q: usize, room: Pixels, height: Pixels) -> usize {
     let lh = fontspec.line_height;
     let text_len = text.len();
-    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, wrap, px(0.), None, None));
+    let line = |n: usize| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, fontspec, None, 1., wrap, px(0.), None, None));
     let cl = text.line_of(q.min(text_len));
     let Some(li) = line(cl) else { return 0 };
     let r = li.row_of(q);
@@ -1370,7 +1381,7 @@ fn shortened(window: &Window, text: &apex_core::text::Text, fontspec: &FontSpec,
         return None;
     }
     let (s, e) = text.line_range(0)?;
-    let line = |h: &Head| shape(window, &text.slice(s, e), s, e, false, fontspec, None, Some(wrap), px(0.), tint, Some(h));
+    let line = |h: &Head| shape(window, &text.slice(s, e), s, e, false, fontspec, None, 1., Some(wrap), px(0.), tint, Some(h));
     let whole = line(head);
     if whole.subs.len() <= 1 {
         return None;
@@ -1395,6 +1406,7 @@ fn shape(
     has_newline: bool,
     fontspec: &FontSpec,
     hl: Option<(usize, usize, HlKind)>,
+    fade: f32,
     wrap_width: Option<Pixels>,
     y: Pixels,
     tint: Option<Tint>,
@@ -1463,6 +1475,8 @@ fn shape(
         _ => None,
     };
     let sweep_ink = rgb(crate::theme::theme().sweep(matches!(hl, Some((_, _, HlKind::Exec)))).1);
+    // (what B2 ran, fading: its ink on the way back to the text's own)
+    let fade = fade.clamp(0., 1.);
     let chosen = match tint.map(|t| t.sel) {
         Some((lo, hi)) if lo < end && hi > start && lo < hi => Some((info.to_disp(lo.max(start)), info.to_disp(hi.min(end)))),
         _ => None,
@@ -1501,7 +1515,7 @@ fn shape(
         let atom = atom_of(a);
         let color = if is_bar {
             gpui::transparent_black()
-        } else if swept {
+        } else if swept && fade >= 1. {
             sweep_ink
         } else if selected {
             black
@@ -1516,6 +1530,7 @@ fn shape(
         } else {
             tint.map(|t| t.text).unwrap_or(black)
         };
+        let color = if swept && fade < 1. && !is_bar { blend(color, sweep_ink, fade) } else { color };
         let face = if matches!(atom, Some(Atom::Verb(_) | Atom::ProcKill(_))) || glyph_cell(a) {
             cell_face.clone()
         } else if gap.is_some_and(|(p, q)| a >= p && b <= q) {
@@ -1656,6 +1671,14 @@ impl Element for TextElement {
             let text = &src.text;
             let text_len = text.len();
             let total = text.line_count();
+            // the sweep the text is set for: one under way, else what a
+            // modifier-click would take, else what B2 just ran (`ran`),
+            // its ink as strong as its wash
+            let (swept, fade) = match (src.hl.or(src.hint), src.ran) {
+                (Some(h), _) => (Some(h), 1.),
+                (None, Some((lo, hi, f))) if f > 0. => (Some((lo, hi, HlKind::Exec)), f),
+                _ => (None, 1.),
+            };
 
             let mut lines = Vec::new();
             let mut rows = Vec::new();
@@ -1685,7 +1708,7 @@ impl Element for TextElement {
                 };
                 let head = short.as_ref().or(head);
                 while let Some((s, e)) = text.line_range(n) {
-                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, src.hl.or(src.hint), wrap, y, tint, head.filter(|_| n == 0));
+                    let li = shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, swept, fade, wrap, y, tint, head.filter(|_| n == 0));
                     wrapped += li.subs.len().max(1);
                     y += li.height(lh);
                     lines.push(li);
@@ -1701,7 +1724,7 @@ impl Element for TextElement {
                 // line -- the view starts at the row it is on, the line
                 // wrapped from its own start whatever row is at the top --
                 // and down the rows to the bottom
-                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, wrap, y, None, None));
+                let line = |n: usize, y: Pixels, hl| text.line_range(n).map(|(s, e)| shape(window, &text.slice(s, e), s, e, e < text_len, &fontspec, hl, fade, wrap, y, None, None));
                 let mut top = src.origin.min(text_len);
                 // a view being brought somewhere is at its row, not between;
                 // one whose selection is in view already (typing) stays
@@ -1713,7 +1736,7 @@ impl Element for TextElement {
                     let mut y = -shift;
                     let mut n = first;
                     while y < height {
-                        let Some(mut li) = line(n, y, src.hl.or(src.hint)) else { break };
+                        let Some(mut li) = line(n, y, swept) else { break };
                         if n == first {
                             // the rows of the first line above the top one
                             // are above the view
@@ -1816,6 +1839,7 @@ impl Element for TextElement {
                 first_line: first,
                 sel: src.sel,
                 hl: src.hl,
+                ran: src.ran,
                 hint: src.hint,
                 marks: src.marks.clone(),
                 strike: src.strike,
@@ -1847,6 +1871,11 @@ impl Element for TextElement {
         cx: &mut App,
     ) {
         let Some(pp) = prepaint.take() else { return };
+        // what B2 ran, going: drawn again until it has gone, blinked off
+        // or not
+        if pp.ran.is_some() {
+            window.request_animation_frame();
+        }
         let pal = palette(pp.kind);
         let lh = pp.fontspec.line_height;
         let lift = ink_lift(window, &pp.fontspec);
@@ -1974,10 +2003,12 @@ impl Element for TextElement {
                     let sel_is_pill = q0 < q1 && pp.hint.is_some_and(|(a, b, _)| (a, b) == (q0, q1));
                     let ranges: [(usize, usize, Hsla); 2] = [
                         if sel_is_pill { (0, 0, pal.sel) } else { (q0, q1, pal.sel) },
-                        match pp.hl {
-                            Some((lo, hi, HlKind::Exec)) => (lo, hi, rgb(crate::theme::theme().sweep(true).0)),
-                            Some((lo, hi, HlKind::Look)) => (lo, hi, rgb(crate::theme::theme().sweep(false).0)),
-                            None => (0, 0, pal.sel),
+                        match (pp.hl, pp.ran) {
+                            (Some((lo, hi, HlKind::Exec)), _) => (lo, hi, rgb(crate::theme::theme().sweep(true).0)),
+                            (Some((lo, hi, HlKind::Look)), _) => (lo, hi, rgb(crate::theme::theme().sweep(false).0)),
+                            // what B2 ran: its sweep, as strong as it still is
+                            (None, Some((lo, hi, f))) if f > 0. => (lo, hi, rgb(crate::theme::theme().sweep(true).0).opacity(f)),
+                            _ => (0, 0, pal.sel),
                         },
                     ];
                     // a pill under what a click with ⌘ (B3) or ⌥ (B2) held

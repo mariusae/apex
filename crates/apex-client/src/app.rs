@@ -544,6 +544,8 @@ pub struct Acme {
     clips: Vec<String>,
     /// A B2/B3 sweep in a terminal, shown in the button's colour.
     pub term_hl: Option<(WindowId, MouseButton, (usize, u64), (usize, u64))>,
+    /// What B2 ran in a terminal, just let go (`ran`'s, for its cells).
+    pub term_ran: Option<(WindowId, (usize, u64), (usize, u64), std::time::Instant)>,
     /// The window is full screen: no title bar, acme's area from the top.
     pub fullscreen: bool,
     /// The strip (a column put away) whose slice is out, by the pointer on
@@ -656,6 +658,10 @@ pub struct Acme {
     /// The native views of web windows (WEB.md §2).
     pub webs: Webs,
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
+    /// What B2 ran, just let go: drawn a moment more as B2's sweep, as
+    /// the B4 menu's choice is -- on, a blink, then fading (`RAN`) -- so
+    /// that it is seen that it ran, and what.
+    pub ran: Option<(ViewId, usize, usize, std::time::Instant)>,
     /// The tag, column tag or top row the pointer is on.
     pub hover_view: Option<ViewId>,
     /// The scroller lane the pointer is in: a text's, or a terminal's or
@@ -688,6 +694,22 @@ pub(crate) fn is_file_char(c: char) -> bool {
 }
 pub(crate) fn is_exec_char(c: char) -> bool {
     is_file_char(c) || "<|>".contains(c)
+}
+
+/// What B2 ran, on the B4 menu's clock (`main.rs`): shown, off for a
+/// blink, shown again, then fading out; how strongly it is drawn so long
+/// after, 0 while blinked off, and None once it is gone.
+pub const RAN: (f32, f32, f32, f32) = (30., 60., 90., 210.);
+
+pub(crate) fn ran_fade(since: std::time::Duration) -> Option<f32> {
+    let ms = since.as_secs_f32() * 1000.;
+    let (off, on, fade, gone) = RAN;
+    match ms {
+        ms if ms >= gone => None,
+        ms if ms >= fade => Some(1. - (ms - fade) / (gone - fade)),
+        ms if ms >= off && ms < on => Some(0.),
+        _ => Some(1.),
+    }
 }
 
 /// Expand outward from `i` over runes satisfying `pred`.
@@ -1825,6 +1847,7 @@ impl Acme {
             snarf_wanted: None,
             clips: Vec::new(),
             term_hl: None,
+            term_ran: None,
             fullscreen: false,
             show_at: HashMap::new(),
             pending_goto: None,
@@ -1858,6 +1881,7 @@ impl Acme {
             web_bars: HashMap::new(),
             webs: Webs::new(None, None),
             hl: None,
+            ran: None,
             hint: None,
             hover_view: None,
             lane_hover: None,
@@ -2879,6 +2903,12 @@ impl Acme {
             _ => None,
         };
         let hl = self.hl.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
+        // what B2 just ran, drawn as its sweep a moment more (none over
+        // a sweep under way)
+        let ran = match (hl, self.ran) {
+            (None, Some((rv, lo, hi, at))) if rv == view => ran_fade(at.elapsed()).map(|f| (lo, hi, f)),
+            _ => None,
+        };
         let hint = self.hint.and_then(|(hv, lo, hi, k)| if hv == view { Some((lo, hi, k)) } else { None });
         // a body scrolled by the pixel: moved up by its scroll into the top
         // row, and down by any pull past the start; forgotten once the
@@ -2924,6 +2954,7 @@ impl Acme {
                 sel: (0, 0),
                 origin: 0,
                 hl: None,
+                ran: None,
             hint: None,
                 marks: Default::default(),
                 strike: None,
@@ -2973,6 +3004,7 @@ impl Acme {
             sel: (v.q0, v.q1),
             origin: v.origin,
             hl,
+            ran,
             hint,
             marks: match view {
                 ViewId::Body(w) => self.look_marks(w),
@@ -3743,6 +3775,17 @@ impl Acme {
                     (MouseButton::Middle, Some((sw, a, b))) if sw == w && in_selection(a, b, press) => self.term_grid_text(w, a, b),
                     _ => None,
                 };
+                // what B2 runs, and where, to be drawn a moment more
+                // (`term_ran`): the sweep, the selection, or the word
+                if button == MouseButton::Middle {
+                    let line = self.term_of(w).and_then(|t| self.node.state.terms.get(&t)).map_or(0, |t| t.top) + cell.1 as u64;
+                    let span = match (hl.filter(|(_, _, p0, p1)| p0 != p1), self.term_sel) {
+                        (Some((_, _, p0, p1)), _) => Some((p0, p1)),
+                        (None, Some((sw, a, b))) if sw == w && in_selection(a, b, press) => Some((a, b)),
+                        _ => self.term_word_at(w, cell.0, cell.1, is_exec_char).map(|(_, (a, b))| ((a, line), (b, line))),
+                    };
+                    self.term_ran = span.map(|(p0, p1)| (w, p0, p1, std::time::Instant::now()));
+                }
                 let text = match (swept.or(selected), button) {
                     (Some(t), _) => Some(t),
                     (None, MouseButton::Middle) => self.term_word(w, cell.0, cell.1, is_exec_char),
@@ -3768,11 +3811,12 @@ impl Acme {
             }
             MouseButton::Middle => {
                 if let Some(d) = self.mouse.b2.take() {
-                    let text = self.take_range(d, HlKind::Exec);
+                    let taken = self.take_range_at(d, HlKind::Exec);
                     self.hl = None;
                     let arg = if self.mouse.chord_arg { self.node.seltext.and_then(|v| self.node.selected_text(v).ok()) } else { None };
                     self.mouse.chord_arg = false;
-                    if let Some(mut text) = text {
+                    if let Some((mut text, (lo, hi))) = taken {
+                        self.ran = Some((d.view, lo, hi, std::time::Instant::now()));
                         if let Some(a) = arg.filter(|a| !a.is_empty()) {
                             text.push(' ');
                             text.push_str(&a);
@@ -3872,11 +3916,6 @@ impl Acme {
         self.after();
     }
 
-    fn take_range(&mut self, d: Drag, kind: HlKind) -> Option<String> {
-        self.take_range_at(d, kind).map(|(t, _)| t)
-    }
-
-    /// `take_range`, with where the text came from.
     /// What a button took on purpose: the sweep, or the selection the
     /// pointer is in. None for a plain click.
     fn explicit_range_at(&self, d: Drag) -> Option<(String, (usize, usize))> {
@@ -3906,6 +3945,8 @@ impl Acme {
         expand(t, at, is_exec_char)
     }
 
+    /// What a button let go takes, and where it is: what it took on
+    /// purpose, else what its click expands to.
     fn take_range_at(&mut self, d: Drag, kind: HlKind) -> Option<(String, (usize, usize))> {
         if let Some(r) = self.explicit_range_at(d) {
             return Some(r);
@@ -3979,6 +4020,11 @@ impl Acme {
     }
 
     fn term_word(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<String> {
+        self.term_word_at(w, c, r, pred).map(|(t, _)| t)
+    }
+
+    /// `term_word`, and the columns it spans on its row.
+    fn term_word_at(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<(String, (usize, usize))> {
         let row = self.term_layouts.get(&w)?.rows.get(r)?;
         let chars: Vec<char> = row.chars().collect();
         if c >= chars.len() || !pred(chars[c]) {
@@ -3992,7 +4038,7 @@ impl Acme {
         while b < chars.len() && pred(chars[b]) {
             b += 1;
         }
-        Some(chars[a..b].iter().collect())
+        Some((chars[a..b].iter().collect(), (a, b)))
     }
 
     /// acme's `textscroll`: a button on the scrollbar keeps scrolling while
@@ -5654,6 +5700,22 @@ pub(crate) fn identified(url: &SessionUrl, node: &Node) -> SessionUrl {
         u.session = label.clone();
     }
     u
+}
+
+#[cfg(test)]
+mod ran_tests {
+    use super::ran_fade;
+    use std::time::Duration;
+
+    #[test]
+    fn what_b2_ran_shows_blinks_shows_and_fades_as_the_menus_choice() {
+        let at = |ms: u64| ran_fade(Duration::from_millis(ms));
+        assert_eq!(at(0), Some(1.), "shown when let go");
+        assert_eq!(at(45), Some(0.), "off for the blink");
+        assert_eq!(at(75), Some(1.), "back");
+        assert_eq!(at(150), Some(0.5), "half gone");
+        assert_eq!(at(210), None, "gone");
+    }
 }
 
 #[cfg(test)]

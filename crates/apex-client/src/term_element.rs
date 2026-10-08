@@ -79,6 +79,8 @@ pub struct Prepaint {
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
+    /// What B2 just ran is going: drawn again until it has gone.
+    ran: bool,
 }
 
 pub struct TermElement {
@@ -149,6 +151,9 @@ impl Element for TermElement {
             let sel = acme.term_sel.filter(|(sw, _, _)| *sw == self.window).map(|(_, a, b)| order(a, b));
             // a B2/B3 sweep shows in the button's colour, over the selection
             let hl = acme.term_hl.filter(|(sw, ..)| *sw == self.window).map(|(_, b, p0, p1)| (b, order(p0, p1)));
+            // what B2 just ran here, going as the B4 menu's choice goes
+            // (`app::ran_fade`): its cells taken that far to the sweep's
+            let ran = acme.term_ran.filter(|(sw, ..)| *sw == self.window).and_then(|(_, p0, p1, at)| crate::app::ran_fade(at.elapsed()).map(|f| (order(p0, p1), f)));
             let top = t.top;
             let total = t.total.max(t.rows as u64).max(1);
             let within = |x: usize, y: usize, (p0, p1): ((usize, u64), (usize, u64))| {
@@ -188,6 +193,10 @@ impl Element for TermElement {
                     if let Some((b, f)) = highlight(x, y) {
                         bgc = Some(b);
                         fgc = f;
+                    } else if let Some((_, f)) = ran.filter(|&(r, f)| hl.is_none() && f > 0. && within(x, y, r)) {
+                        let (sb, si) = th.sweep(true);
+                        bgc = Some(crate::text_element::blend(bgc.unwrap_or(rgb(th.body_bg)), rgb(sb), f));
+                        fgc = crate::text_element::blend(fgc, rgb(si), f);
                     }
                     if let Some(b) = bgc {
                         match bgs.last_mut() {
@@ -224,7 +233,7 @@ impl Element for TermElement {
                 rows.push(RowDraw { text: line.into(), runs, bgs, cols, inks, uls });
             }
             let failed = t.marks.iter().filter(|m| m.exit.is_some_and(|e| e != 0) && m.prompt >= top && m.prompt < top + t.rows as u64).map(|m| (m.prompt - top) as usize).collect();
-            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane })
+            Some(Prepaint { fontspec, cell_w, rows, row_text, cols: t.cols, cursor, keys, exited: t.exit.is_some(), view: (top, t.rows as u64, total), progress: t.working.then_some(t.progress), failed, scroller, lane, ran: ran.is_some() })
         })
     }
 
@@ -257,6 +266,9 @@ impl Element for TermElement {
             // is in the lane, fading after
             let (shows, fading) = pp.scroller;
             if fading {
+                window.request_animation_frame();
+            }
+            if pp.ran {
                 window.request_animation_frame();
             }
             // a command that failed: a mark in the gutter by its prompt,

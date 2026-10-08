@@ -573,9 +573,10 @@ impl Render for Acme {
         }
         // the B4 menu: fading in as it opens; let go, the choice blinking
         // and then the whole fading out (`menu.rs`)
+        // (the clock B2's ran text goes by too, `app::RAN`)
         const MENU_IN: f32 = 90.;
-        const BLINK: (f32, f32) = (30., 60.);
-        const MENU_OUT: (f32, f32) = (90., 210.);
+        const BLINK: (f32, f32) = (app::RAN.0, app::RAN.1);
+        const MENU_OUT: (f32, f32) = (app::RAN.2, app::RAN.3);
         if let Some(m) = &self.menu {
             let ms = self.menu_opened.map_or(MENU_IN, |t| t.elapsed().as_secs_f32() * 1000.);
             if ms < MENU_IN {
