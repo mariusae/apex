@@ -1725,7 +1725,9 @@ fn file_to_apexfile(html: &str) -> String {
         // file:///x and file://localhost/x: the host's; another host's is not
         let path_at = if rest.starts_with('/') {
             Some(0)
-        } else if rest.len() >= 10 && rest[..10].eq_ignore_ascii_case("localhost/") {
+        // (`get`: ten bytes on may be inside a character -- a link to a
+        // path with an accent in it -- and is then not `localhost/`)
+        } else if rest.get(..10).is_some_and(|r| r.eq_ignore_ascii_case("localhost/")) {
             Some(9)
         } else {
             None
@@ -1983,6 +1985,16 @@ mod tests {
         // overscrolled (a bounce past either end) stays in the bar
         assert_eq!(thumb_of(Some((-50., 4000., 1000.))), (0., 0.2375));
         assert_eq!(thumb_of(Some((3100., 4000., 1000.))), (0.775, 1.));
+    }
+
+    #[test]
+    fn a_file_url_to_a_path_with_accents_is_left_whole() {
+        // ten bytes after file:// fall inside the sixth é: no panic, and
+        // the URL is another host's (not /, not localhost/), so it stays
+        let html = "<a href=\"file://aéééééé/x\">x</a>";
+        assert_eq!(file_to_apexfile(html), html);
+        assert_eq!(file_to_apexfile("<img src=\"file:///é/ü.png\">"), "<img src=\"apexfile://localhost/é/ü.png\">");
+        assert!(dress("<html><head></head><body><a href=\"file://aéééééé\">é</a></body></html>", "/tmp").contains("aéééééé"));
     }
 
     #[test]
