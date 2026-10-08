@@ -682,7 +682,8 @@ Rules from the command line are the session's. A UI installs its own on
 attach (URLs go to the platform's open; Preview where a Preview.EXT
 setting names an app), a tool those naming it; both go when their owner
 does. The session starts with three rules at priority -100 that open name
-and name:line when they exist, as B3 always did, and with rules at -10
+and name:line when they exist (~/name in the home directory), as B3
+always did, and with rules at -10
 that start the tools apex comes with when first wanted: Preview on
 Markdown, HTML and SVG files (apex tool preview), Web and Newweb
 anywhere (apex tool web). apex plumb -dry-run TEXT prints what each rule

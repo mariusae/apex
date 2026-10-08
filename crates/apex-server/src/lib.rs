@@ -1333,10 +1333,12 @@ impl Server {
         let mut file = None;
         let mut trace = Vec::new();
         let mut nothing = false;
+        // a name is a file when a window is called it, or there is one
+        // on disk from here; `~/` is the home directory (`resolve`)
+        let is_file = |n: &str| n.is_empty() || view.state.windows.keys().any(|w| view.window_path(*w) == n) || resolve(&dir, n).exists();
         if let Some(at) = req.at.filter(|_| req.verb == "plumb") {
             if let Ok(buf) = view.state.buffer(at.buffer) {
                 let (q0, q1) = req.sel.map(|s| (s.q0, s.q1)).unwrap_or((at.q0, at.q0));
-                let is_file = |n: &str| n.is_empty() || view.state.windows.keys().any(|w| view.window_path(*w) == n) || resolve(&dir, n).exists();
                 match apex_core::expand::expand(&buf.text, q0, q1, &is_file) {
                     Some(e) => {
                         req.text = buf.text.slice(e.q0, e.q1);
@@ -1355,6 +1357,17 @@ impl Server {
                         nothing = true;
                     }
                 }
+            }
+        } else if req.verb == "plumb" && !req.text.is_empty() {
+            // text without a place (a terminal's, `apex plumb`'s): read as
+            // acme reads a selection, for a file's name and its address
+            let t = apex_core::text::Text::new(&req.text);
+            // (a name, though: an address alone has no window of its own
+            // here to be in)
+            if let Some((fname, addr)) = apex_core::expand::expand(&t, 0, t.len(), &is_file).and_then(|e| e.file).filter(|(f, _)| !f.is_empty()) {
+                let target = resolve(&dir, &fname).display().to_string();
+                trace.push(format!("the file {target} at {addr:?}"));
+                file = Some((target, addr));
             }
         }
         let sel = view.seltext.and_then(|v| view.selected_text(v).ok()).unwrap_or_default();

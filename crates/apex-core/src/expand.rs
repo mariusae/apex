@@ -6,9 +6,11 @@
 use crate::node::acme_isalnum;
 use crate::text::Text;
 
-/// acme's `isfilec`: alnum and `.-+/:@`.
+/// acme's `isfilec`: alnum and `.-+/:@`; and `~`, so that `~/x` (and a
+/// backup's `x~`) is a name. Whether it is a file, and where, is
+/// plumbing's to say (`is_file`): nothing here expands it.
 pub fn isfilec(c: char) -> bool {
-    acme_isalnum(c) || ".-+/:@".contains(c)
+    acme_isalnum(c) || ".-+/:@~".contains(c)
 }
 
 /// acme's `isaddrc` (addr.c).
@@ -201,6 +203,15 @@ mod tests {
         // stops after the 3, as acme's does)
         let e = expand(&t, 0, 8, &f).unwrap();
         assert_eq!((e.q0, e.q1, e.file), (0, 8, Some(("x.go".into(), "3 y".into()))));
+        // a name from ~ is one, whatever the plumbing then makes of it;
+        // a line range is address text, as acme's address characters have it
+        let f = files(&["~/src/x/main.rs"]);
+        let t = Text::new("Read ~/src/x/main.rs:1-130 now\n");
+        for q in [5, 12, 22] {
+            let e = expand(&t, q, q, &f).unwrap();
+            assert_eq!((t.slice(e.q0, e.q1), e.file), ("~/src/x/main.rs:1-130".into(), Some(("~/src/x/main.rs".into(), "1-130".into()))), "at {q}");
+        }
+        let f = files(&["x.go", "/tmp/a b"]);
         // a colon followed by anything but an address character is no file
         let t = Text::new("x.go:y\n");
         assert_eq!(expand(&t, 0, 6, &f).unwrap().file, None);

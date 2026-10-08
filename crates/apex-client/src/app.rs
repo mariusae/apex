@@ -681,9 +681,10 @@ fn is_alnum(c: char) -> bool {
     let u = c as u32;
     u > 0x20 && !(0x7F..=0xA0).contains(&u) && !".!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".contains(c)
 }
-/// acme's `isfilec` (look.c): alnum, and `.-+/:@`.
+/// acme's `isfilec` (look.c): alnum, and `.-+/:@`; and `~`, as apex-core's
+/// (`expand::isfilec`): `~/x` is a name, which plumbing expands.
 pub(crate) fn is_file_char(c: char) -> bool {
-    is_alnum(c) || ".-+/:@".contains(c)
+    is_alnum(c) || ".-+/:@~".contains(c)
 }
 pub(crate) fn is_exec_char(c: char) -> bool {
     is_file_char(c) || "<|>".contains(c)
