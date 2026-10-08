@@ -395,7 +395,7 @@ it replays as data:
 | command | handler | outcome |
 |---|---|---|
 | `Cut Paste Snarf Undo Redo Look Edit Font Zerox`, layout commands | leader | concrete entries, no round trip |
-| `Put Get`, `New` on a path, `Newterm Newweb`, `\|cmd <cmd >cmd`, unknown words (shell) | server | proposals the leader applies; terminal rows |
+| `Put Get`, `New` on a path, `Newterm`, `\|cmd <cmd >cmd`, unknown words (shell) | server | proposals the leader applies; terminal rows |
 | words a tool registered for (`Definition`, `Format`, ...) | tool(name) | proposals |
 | B3 text | server (plumber) | a further exec, or a window |
 
@@ -599,7 +599,8 @@ proposals (tools and the server → the leader; applied by whoever leads)
   Builtin{ctx, text}                                   a word's own meaning, the rules already asked
   PutTrimmed{buffer, version, runs, hash}              Put's trim: blanks deleted as one undo step, then clean
   Goto{loc} · Nav{back}                                a jump; Back and Fwd along the stack
-  OpenWeb{col, url} · WebNavigate{window, url}         a web window; its page moved (WEB.md §2)
+  OpenPage{col, page} · Navigate{window, url}          a page (ARCHITECTURE.md §5); one at an address moved
+  Reload{window} · PageScroll{window, scroll}          a page loaded again everywhere; a buffer page scrolled
 ```
 
 *As built, versions:* the daemon's first frame on every connection is
@@ -1379,19 +1380,22 @@ over ssh, and the alternative (URL as server state, client-side rendering)
 breaks "all state on the server" for page state. *Decided:* the URL is
 the state, rendering is the client's, and network and file I/O go
 through the server on an I/O plane beside the log; see WEB.md, which
-also makes Preview a live pipe through a converter. *As built:*
-`Body::Web`, the URL as the window's name (its tag's first word, as a
-terminal's directory is), `Newweb URL` and `apex web open URL`
-(`Proposal::OpenWeb`), the client's `wry` view over the body, its
-navigations `WebNavigate` proposals that rename the window and push
-the place left onto the navigation stack; a `Goto` to a URL nobody
-shows opens a web window on it. The view's traffic goes through the
+also makes Preview a live pipe through a converter. *As built*
+(ARCHITECTURE.md §5): a page is one window kind, `Body::Page(Source)`:
+its document a buffer of HTML or at an address (the window's name, as a
+terminal's directory is), fetched `via` the host, the client or a tool;
+its navigation, a reload counter and a buffer page's scroll in the log
+(`OpenPage`, `Navigate`, `Reload`, `PageScroll`); the client's `wry`
+view over the body draws it from that state. Pages are tools': `apex
+tool web` answers `Web` and `Newweb URL`, owns their pages, keeps their
+history and answers Back, Fwd and Get; `apex tool preview` offers
+Preview. A `Goto` to a URL nobody shows opens a page on it, which the
+Web tool takes over. The view's traffic goes through the
 host: a localhost `CONNECT` proxy per link whose tunnels are streams
 on the I/O plane; `apexfile:///path` is a host file fetched on the
 plane and watched, the page reloading when it changes (WEB.md §2.3,
-§2.4). `Body::Html(buffer)` is a text buffer shown as a page
-(`cmd | apex web`, `Proposal::OpenHtml`), patched in place as it
-changes (WEB.md §2.5).
+§2.4). A buffer page (`cmd | apex web`, a preview) is patched in place
+as it changes (WEB.md §2.5).
 
 ---
 

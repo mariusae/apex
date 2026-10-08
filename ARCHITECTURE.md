@@ -682,6 +682,17 @@ spread over every layer:
 - hard-coded Preview rules in the server;
 - `apex md` in the CLI.
 
+*As built* (October 2026): the Page kind (`Body::Page`, `Source`,
+`Via`), its state in the log, the one framework of requests and window
+events (protocol 50: `Ask`/`Answer`, plumbing among them; `WindowEvent`;
+`PostToPage`, 51), tool-served pages on the plane (`tool://NAME/...`,
+the client's `apextool://`), the script bridge, Preview and Web as
+resident tools a session starts (its `Tools` setting), a tool's page
+without its tool a placeholder. Still as they were: page verbs parsed
+from a page's HTML (`apex diff`'s Prev and Next, which have no tool to
+answer them), Look in a page through `page_finds`, and `ClientDo`, whose
+uses left are not pages' (open, the system's previewer, snarfout).
+
 The design: **a window has a kind -- Text, Term or Page -- which says
 what its content is, and nothing else.** What every window has (status,
 owner, busy, notification, close) stays common to all. A page is
@@ -852,7 +863,7 @@ In order. Each step stands on its own.
    bridge and Go surfaces from one schema, with a test that they agree.
 4. **Delete `Backend::Local`.** Run the daemon in-process over a socket
    pair (§3).
-5. **Pages** (§5):
+5. **Pages** (§5) -- built, but for what §5's note leaves:
    - the Page kind: content a buffer or a URL, fetched `via` the host,
      the client or a tool;
    - its state in the log: navigation, a reload counter, a buffer

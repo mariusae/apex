@@ -8,6 +8,14 @@ built* note with what runs and where it deviates. Where this document
 and DESIGN.md disagree, this one is the intent for web windows and file
 I/O, and DESIGN.md's *as built* notes describe what runs today.
 
+*Since:* pages are ARCHITECTURE.md §5's. `Body::Web` and `Body::Html`
+are one kind, `Body::Page`, and its state (navigation, reloads, a buffer
+page's scroll) is in the log; `OpenWeb`, `OpenHtml` and `WebNavigate`
+are `OpenPage` and `Navigate`; Web and Preview are tools (`apex tool
+web`, `apex tool preview`), which own their pages, their rules and, for
+Web, each page's history. Where this document says otherwise of those,
+§5 is what runs.
+
 Decisions taken in discussion, restated so they are not relitigated:
 
 - A web window always renders on the client. Only the URL (and a title)
