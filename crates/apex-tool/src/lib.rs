@@ -662,6 +662,42 @@ impl Tool {
         Ok(w)
     }
 
+    /// What window `w`'s body is: text, a terminal, a page (and whose
+    /// document: a buffer's, or at an address).
+    pub fn window_body(&self, w: WindowId) -> Option<apex_core::Body> {
+        self.remote.node.state.window(w).ok().map(|x| x.body)
+    }
+
+    /// The attachment that owns window `w`, if a tool does.
+    pub fn window_owner(&self, w: WindowId) -> Option<AttachmentId> {
+        self.remote.node.state.window(w).ok().and_then(|x| x.owner)
+    }
+
+    /// A page at an address (ARCHITECTURE.md §5), fetched through the
+    /// session's host: in window `near`'s column, else the last. The tool
+    /// owns it: its links come to it (`handle_pages`), and its tag's
+    /// words are the tool's to answer.
+    pub fn new_web_page(&mut self, url: &str, near: Option<WindowId>) -> Result<WindowId> {
+        let node = &self.remote.node;
+        let col = near.and_then(|w| node.column_of(w).ok()).or_else(|| node.state.layout.cols.last().map(|c| c.id)).ok_or("no column")?;
+        let w = self.propose(Proposal::open_url(col, url))?.ok_or("no window made")?;
+        self.set_owner(w, true)?;
+        self.remember(w);
+        Ok(w)
+    }
+
+    /// Page `w` goes to `url` (every client showing it follows).
+    pub fn navigate(&mut self, w: WindowId, url: &str) -> Result<()> {
+        self.propose(Proposal::Navigate { window: w, url: url.to_string() })?;
+        Ok(())
+    }
+
+    /// Page `w` loaded again, on every client showing it.
+    pub fn reload(&mut self, w: WindowId) -> Result<()> {
+        self.propose(Proposal::Reload { window: w })?;
+        Ok(())
+    }
+
     /// A diff (what `diff -u` or `git diff` writes) as a page: side by
     /// side, in acme's colours, every file name, line number and line a
     /// link that opens the file there -- the paths in the diff taken

@@ -724,31 +724,19 @@ fn the_wheel_reaches_programs_that_read_the_mouse() {
 }
 
 #[test]
-fn newweb_opens_a_web_window_whose_name_follows_the_page() {
-    let (mut log, mut node, _col, mut server, _rx) = session();
-    node.exec(&mut log, ExecCtx::Top, "Newweb https://example.com/").unwrap();
-    poll(&mut server, &mut log, &mut node);
-    let w = node.state.windows.values().find(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| w.id).expect("a web window");
+fn a_page_at_an_address_is_named_by_where_it_is() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let w = apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::open_url(col, "https://example.com/")]).expect("a page");
     assert_eq!(node.window_path(w), "https://example.com/");
     assert_eq!(node.window_kind(w), WinKind::Page);
     assert!(node.state.window(w).unwrap().body_buffer().is_none());
-    // the page goes somewhere: the name follows, the place left is behind us
+    assert_eq!(node.window_verbs(w), vec!["Del", "Snarf", "Back", "Fwd", "Get"]);
+    // it goes somewhere: the name follows; its history is its tool's, so
+    // the session's back stack has nothing of it
     apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Navigate { window: w, url: "https://example.com/two".into() }]);
     assert_eq!(node.window_path(w), "https://example.com/two");
-    let back = node.state.layout.nav_back.last().cloned().expect("a place to go back to");
-    assert_eq!(back.name, "https://example.com/");
-    // the same URL again is no move
-    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Navigate { window: w, url: "https://example.com/two".into() }]);
-    assert_eq!(node.state.layout.nav_back.len(), 1);
-    // Back: no window shows that page now, so it is a place to open
-    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Nav { back: true }]);
-    let gotos = node.take_gotos();
-    assert_eq!(gotos.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), vec!["https://example.com/"]);
+    assert!(node.state.layout.nav_back.is_empty());
     assert!(apex_core::is_url("https://example.com/") && apex_core::is_url("apexfile:///a") && !apex_core::is_url("/a/b") && !apex_core::is_url("a://"));
-    // Newweb alone is an error
-    node.exec(&mut log, ExecCtx::Top, "Newweb").unwrap();
-    poll(&mut server, &mut log, &mut node);
-    assert!(errors_text(&node).contains("Newweb needs a URL"), "{}", errors_text(&node));
 }
 
 #[test]
@@ -771,42 +759,6 @@ fn html_windows_are_text_shown_as_a_page() {
     // and it is placed in the column like any window, with body room
     let slot = node.state.layout.cols.iter().flat_map(|c| c.wins.iter()).find(|s| s.window == w).cloned().expect("placed");
     assert!(slot.body.dy() > 0, "{slot:?}");
-}
-
-#[test]
-fn web_opens_a_page_on_the_url_given_or_selected() {
-    let (mut log, mut node, col, _server, _rx) = session();
-    // typed after the word: a URL as it is
-    node.exec(&mut log, ExecCtx::Top, "Web https://example.com/").unwrap();
-    let w = node.state.windows.values().find(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| w.id).expect("a web window");
-    assert_eq!(node.window_path(w), "https://example.com/");
-    assert_eq!(node.window_verbs(w), vec!["Del", "Snarf", "Back", "Fwd", "Get"]);
-    // selected in a text window: a file:// URL and a bare path are the host's files
-    let t = node.new_window(&mut log, col, "/tmp/here/notes.txt", "see file:///tmp/a.html and also doc.html\n").unwrap();
-    node.select(&mut log, ViewId::Body(t), 4, 22).unwrap();
-    node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| node.window_path(w.id)).collect();
-    assert!(names.contains(&"apexfile:///tmp/a.html".to_string()), "{names:?}");
-    node.select(&mut log, ViewId::Body(t), 32, 40).unwrap();
-    node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| node.window_path(w.id)).collect();
-    assert!(names.contains(&"apexfile:///tmp/here/doc.html".to_string()), "{names:?}");
-    assert_eq!(apex_core::node::web_url("file://localhost/x/y", "/d"), "apexfile:///x/y");
-    assert_eq!(apex_core::node::web_url("/abs/p", "/d"), "apexfile:///abs/p");
-    assert_eq!(apex_core::node::web_url("rel/p", "/d/"), "apexfile:///d/rel/p");
-    // nothing given or selected: a blank page, its address to be typed
-    node.select(&mut log, ViewId::Body(t), 0, 0).unwrap();
-    let before = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).count();
-    node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let blank: Vec<WindowId> = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| w.id).filter(|&w| node.window_path(w).is_empty()).collect();
-    assert_eq!(node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).count(), before + 1);
-    assert_eq!(blank.len(), 1);
-    // going somewhere from it leaves nothing to come back to
-    let back = node.state.layout.nav_back.len();
-    node.web_navigate(&mut log, blank[0], "https://example.org/").unwrap();
-    assert_eq!(node.window_path(blank[0]), "https://example.org/");
-    assert_eq!(node.state.layout.nav_back.len(), back);
-    assert!(apex_core::node::TOP_TAG.contains(" Web "));
 }
 
 #[test]

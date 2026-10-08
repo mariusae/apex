@@ -253,6 +253,7 @@ dependencies = [
  "apex-tool-bridge",
  "apex-tool-lsp",
  "apex-tool-preview",
+ "apex-tool-web",
  "apex-tool-win",
  "serde_json",
 ]
@@ -357,6 +358,15 @@ dependencies = [
  "apex-server",
  "apex-tool",
  "pulldown-cmark",
+]
+
+[[package]]
+name = "apex-tool-web"
+version = "0.1.0"
+dependencies = [
+ "apex-core",
+ "apex-server",
+ "apex-tool",
 ]
 
 [[package]]

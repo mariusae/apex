@@ -490,7 +490,7 @@ source line it starts on (data-line, counted from 1), which is how a
 preview follows dot; a converter of your own may do the same. It is the
 converter Preview uses for .md and .markdown files unless a setting
 names another." },
-    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
+    Cmd { name: "tool", usage: "apex tool win [CMD...] | apex tool lsp [-v] | apex tool preview [FILE] | apex tool web | apex tool bridge NAME", short: "the tools that come with apex", flags: &[], run: tool_cmd, long: "\
 Tool runs one of the tools that come with apex. None is privileged: each
 attaches to the session like anything else on this command line and works
 through the same protocol.
@@ -549,7 +549,14 @@ starts (its Tools setting): it offers the Preview verb on every file a
 converter exists for (the Preview.EXT settings, Markdown, HTML and SVG
 by default), kept in step with them, and shows each file it is used on
 as a page beside it, live. apex tool preview FILE does that once, for
-FILE (apex preview FILE)." },
+FILE (apex preview FILE).
+
+apex tool web is the resident tool behind pages on the web, which a
+session starts too: it answers Web (the address given, else the
+selection: a URL, or a path that is the host's file; with neither, a
+blank page whose address is typed) and Newweb URL anywhere, owns the
+pages they make and any other at an address nobody owns, keeps each
+page's history, and answers Back, Fwd and Get in their tags." },
     Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\
 Label gives the window of the terminal it runs in the title TEXT,
 through the escape sequence acme's win reads (plan9port's label). A
@@ -1037,6 +1044,7 @@ fn tool_cmd(ctx: &Ctx, p: &Parsed) -> R {
             // the resident tool: the verb, and a preview for each use
             None => apex_tool_preview::run_resident(&ctx.socket, &ctx.session),
         },
+        Some("web") => apex_tool_web::run(&ctx.socket, &ctx.session),
         _ => Err("usage".into()),
     }
 }

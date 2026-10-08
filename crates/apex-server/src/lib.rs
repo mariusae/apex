@@ -99,7 +99,7 @@ pub struct Running {
 /// session go through a `view` the caller supplies (in-process, the
 /// client's own node; in the daemon, a follower kept up to date).
 /// The tools a session starts when its `Tools` setting says nothing.
-pub const DEFAULT_TOOLS: &str = "apex tool preview";
+pub const DEFAULT_TOOLS: &str = "apex tool preview; apex tool web";
 
 pub struct Server {
     pub node: Node,
@@ -1089,14 +1089,6 @@ impl Server {
                     text.push('\n');
                 }
                 self.term_type(log, t, &text);
-            }
-            "Newweb" => {
-                // acme's word for a web window: on the URL given
-                let url = text[cmd.len()..].trim();
-                if url.is_empty() {
-                    return Err("Newweb needs a URL".into());
-                }
-                props.push(Proposal::open_url(col, url));
             }
             _ => {
                 // a rule's verb offered in this window: the rules take it

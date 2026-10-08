@@ -1,0 +1,10 @@
+[package]
+name = "apex-tool-web"
+version.workspace = true
+edition.workspace = true
+description = "apex tool web: pages on the web, a tool's (ARCHITECTURE.md §5)"
+
+[dependencies]
+apex-tool = { path = "../apex-tool" }
+apex-core = { path = "../apex-core" }
+apex-server = { path = "../apex-server" }

@@ -706,8 +706,7 @@ impl Node {
         Ok(())
     }
 
-    /// A page at an address went somewhere: its path follows it, and
-    /// the place it left goes onto the navigation stack, so Back returns.
+    /// A page at an address went somewhere: its path follows it.
     pub fn web_navigate(&mut self, log: &mut Log, w: WindowId, url: &str) -> Result<()> {
         let win = self.state.window(w)?;
         if win.body != Body::Page(Source::Url) {
@@ -717,10 +716,9 @@ impl Node {
         if from == url {
             return Ok(());
         }
+        // (its history is its tool's: the session's back stack is for
+        // places in its files, not a page's every link)
         self.append(log, Shard::Window(w), Op::Window(WindowOp::Path { path: url.to_string() }))?;
-        // a blank page was nowhere to come back to
-        let from = (!from.is_empty()).then(|| Loc { session: None, name: from, pos: Pos::Keep });
-        self.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: Loc { session: None, name: url.to_string(), pos: Pos::Keep } }))?;
         Ok(())
     }
 
@@ -2019,7 +2017,7 @@ impl Node {
         }
         match t.split_whitespace().next().unwrap_or("") {
             "Cut" | "Paste" | "Snarf" | "Undo" | "Redo" | "Look" | "Edit" | "Newcol" | "Delcol" | "Del" | "Delete" | "Zerox"
-            | "Stash" | "Swap" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" | "Web" => Handler::Leader,
+            | "Stash" | "Swap" | "Font" | "Sort" | "Exit" | "Tab" | "Indent" | "ID" | "Send" => Handler::Leader,
             "New" if t.split_whitespace().nth(1).is_none() => Handler::Leader,
             _ => Handler::Server,
         }
@@ -2246,18 +2244,6 @@ impl Node {
                     self.zerox(log, w)?;
                 }
             }
-            "Web" => {
-                // a web window on the URL given, else the selected text: a
-                // file:// URL or a path is the host's file (apexfile://);
-                // with neither, a blank page, its address to be typed
-                let arg = text.trim().strip_prefix("Web").map(str::trim).unwrap_or("").to_string();
-                let target = if !arg.is_empty() { arg } else { self.seltext.and_then(|v| self.selected_text(v).ok()).unwrap_or_default().trim().to_string() };
-                let dir = self.error_dir(win).unwrap_or_default();
-                let url = if target.is_empty() { String::new() } else { web_url(&target, &dir) };
-                let col = win.and_then(|w| self.column_of(w).ok()).or_else(|| self.state.layout.cols.first().map(|c| c.id)).ok_or_else(|| CoreError::Missing("no column".into()))?;
-                let w = self.open_web_window(log, col, &url)?;
-                self.seltext = Some(ViewId::Body(w));
-            }
             "Send" => {
                 // acme's sendx on a text window: the selection, else the
                 // snarf buffer, appended to the body with a newline
@@ -2329,24 +2315,6 @@ pub fn errors_path(dir: Option<&str>) -> String {
         Some(d) if !d.is_empty() => format!("{}/", d.trim_end_matches('/')),
         _ => String::new(),
     }
-}
-
-/// What `Web` opens for `target`, typed or selected in a window whose
-/// directory is `dir`: a URL as it is, a `file://` URL as the host's
-/// file (`apexfile://`), a path likewise, relative ones from `dir`.
-pub fn web_url(target: &str, dir: &str) -> String {
-    if let Some(rest) = target.strip_prefix("file://") {
-        let path = rest.strip_prefix("localhost").unwrap_or(rest);
-        return format!("apexfile://{path}");
-    }
-    if crate::is_url(target) {
-        return target.to_string();
-    }
-    if target.starts_with('/') {
-        return format!("apexfile://{target}");
-    }
-    let dir = dir.trim_end_matches('/');
-    format!("apexfile://{dir}/{target}")
 }
 
 #[cfg(test)]
