@@ -182,7 +182,7 @@ fn a_page_window_is_made_and_written_again() {
     let mut t = Tool::attach_to(&sock, "main", "shower").unwrap();
     let w = t.new_page("/tmp/shower", Some("shown"), "<h1>one</h1>").unwrap();
     assert_eq!(t.read(w).unwrap(), "<h1>one</h1>");
-    assert!(t.windows().iter().any(|x| x.id == w && x.path == "/tmp/shower" && x.label.as_deref() == Some("shown") && x.kind == WinKind::Preview && x.scratch));
+    assert!(t.windows().iter().any(|x| x.id == w && x.path == "/tmp/shower" && x.label.as_deref() == Some("shown") && x.kind == WinKind::Page && x.scratch));
     // a label changed is an event for no one but those who watch; it is state
     t.set_label(w, Some("shown again")).unwrap();
     assert_eq!(t.window(w).and_then(|x| x.label), Some("shown again".into()));

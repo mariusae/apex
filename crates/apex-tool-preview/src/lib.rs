@@ -57,12 +57,12 @@ struct Tool {
 impl Tool {
     /// The file's own window at `path` (not its preview).
     fn window_named(&self, path: &str) -> Option<WindowId> {
-        self.remote.node.window_named(path).filter(|w| self.remote.node.window_kind(*w) != WinKind::Preview)
+        self.remote.node.window_named(path).filter(|w| self.remote.node.window_kind(*w) != WinKind::Page)
     }
 
     /// The file's preview, if it has one.
     fn preview_window(&self) -> Option<WindowId> {
-        self.remote.node.window_of(&self.file, WinKind::Preview)
+        self.remote.node.window_of(&self.file, WinKind::Page)
     }
 
     /// One message, through `before` first; false when the link ended.
@@ -146,7 +146,7 @@ impl Tool {
         let col = cols.get(ci + 1).or(cols.get(ci)).map(|c| c.id).ok_or("no column")?;
         let page = match self.preview_window() {
             Some(w) => w,
-            None => self.propose(Proposal::OpenHtml { col, path: self.file.clone(), text: String::new(), label: None }, TIMEOUT)?.ok_or("no preview window")?,
+            None => self.propose(Proposal::open_html(col, &self.file, "", None), TIMEOUT)?.ok_or("no preview window")?,
         };
         let page_buf = self.remote.node.state.window(page).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
         if debug() {

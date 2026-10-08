@@ -40,17 +40,19 @@ pub enum Proposal {
     /// A window on a terminal the server created, in directory `dir`,
     /// labelled (its command, else the host).
     TermWindow { col: ColumnId, dir: String, label: Option<String>, term: TermId },
-    /// A web window on `url` in `col` (`Newweb URL`, `apex web open`).
-    OpenWeb { col: ColumnId, url: String },
-    /// A window whose buffer `text` is HTML shown as a page (`apex web`,
-    /// a preview): at `path` (the file it shows), labelled.
-    OpenHtml { col: ColumnId, path: String, text: String, label: Option<String> },
+    /// A page in `col` (ARCHITECTURE.md §5): its document a buffer of
+    /// HTML or an address, fetched via the host, the client or a tool.
+    OpenPage { col: ColumnId, page: apex_core::NewPage },
     /// Show another session (by id, a prefix, or label), at `window`
     /// there when given: a UI leading this one switches to it.
     Switch { session: String, window: Option<WindowId> },
-    /// The client rendering a web window says where its page went: the
-    /// window's path follows, the place left goes on the navigation stack.
-    WebNavigate { window: WindowId, url: String },
+    /// A page at an address went somewhere (its client says, or its tool
+    /// sends it): the window's path follows.
+    Navigate { window: WindowId, url: String },
+    /// A page loaded again: every client showing it fetches anew.
+    Reload { window: WindowId },
+    /// A buffer page scrolled (a preview following its file's caret).
+    PageScroll { window: WindowId, scroll: Option<apex_core::Scroll> },
     /// Replace a buffer's content: unconditionally (`Get`), or only if the
     /// buffer is still at `version` (a watched file changed) — a buffer
     /// edited meanwhile is flagged stale instead.
@@ -138,6 +140,19 @@ pub enum Proposal {
     Notice { window: WindowId },
 }
 
+impl Proposal {
+    /// A page at `url` in `col`, fetched through the host.
+    pub fn open_url(col: ColumnId, url: &str) -> Proposal {
+        Proposal::OpenPage { col, page: apex_core::NewPage { content: apex_core::NewContent::Url(url.to_string()), via: apex_core::Via::Host, base: String::new(), label: None } }
+    }
+
+    /// A page whose document is a buffer of HTML named `name` (the file
+    /// it shows), labelled, in `col`.
+    pub fn open_html(col: ColumnId, name: &str, text: &str, label: Option<String>) -> Proposal {
+        Proposal::OpenPage { col, page: apex_core::NewPage { content: apex_core::NewContent::Html { name: name.to_string(), text: text.to_string() }, via: apex_core::Via::Host, base: String::new(), label } }
+    }
+}
+
 /// Apply a proposal through the leader. Returns the window it opened or
 /// searched in, if any.
 pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<WindowId>, CoreError> {
@@ -184,18 +199,21 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             let w = node.open_term_window(log, col, &dir, label, term)?;
             Ok(Some(w))
         }
-        Proposal::OpenWeb { col, url } => {
+        Proposal::OpenPage { col, page } => {
             node.catch_up(log)?;
-            let w = node.open_web_window(log, col, &url)?;
+            let w = node.open_page(log, col, page)?;
             Ok(Some(w))
         }
-        Proposal::OpenHtml { col, path, text, label } => {
-            node.catch_up(log)?;
-            let w = node.open_html_window(log, col, &path, &text, label)?;
-            Ok(Some(w))
-        }
-        Proposal::WebNavigate { window, url } => {
+        Proposal::Navigate { window, url } => {
             node.web_navigate(log, window, &url)?;
+            Ok(None)
+        }
+        Proposal::Reload { window } => {
+            node.reload_page(log, window)?;
+            Ok(None)
+        }
+        Proposal::PageScroll { window, scroll } => {
+            node.scroll_page(log, window, scroll)?;
             Ok(None)
         }
         Proposal::SetContent { buffer, version, text, hash } => {

@@ -454,7 +454,7 @@ pub(crate) fn names(node: &apex_core::Node, w: apex_core::WindowId) -> (String, 
     let cwd = &node.state.meta.cwd;
     let label = node.window_label(w).or_else(|| match kind {
         WinKind::Errors => Some("Errors".into()),
-        WinKind::Preview => Some(format!("{} preview", split_name(&path).0)),
+        WinKind::Page if node.is_buffer_page(w) => Some(format!("{} preview", split_name(&path).0)),
         _ => None,
     });
     match label {
@@ -462,7 +462,7 @@ pub(crate) fn names(node: &apex_core::Node, w: apex_core::WindowId) -> (String, 
         None if path.is_empty() => (
             match kind {
                 WinKind::Term => "Terminal",
-                WinKind::Web => "New page",
+                WinKind::Page => "New page",
                 _ => "Untitled",
             }
             .into(),

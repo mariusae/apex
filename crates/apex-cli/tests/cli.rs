@@ -951,14 +951,14 @@ fn preview_is_a_live_pipe_through_a_converter() {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         let _ = c.step(Duration::from_millis(50));
-        if find(&c, WinKind::Preview).is_some_and(|w| text_of(&c, w).contains("<p>ONE</p>")) {
+        if find(&c, WinKind::Page).is_some_and(|w| text_of(&c, w).contains("<p>ONE</p>")) {
             break;
         }
     }
     let src = find(&c, WinKind::File).expect("the file opened");
-    let page = find(&c, WinKind::Preview).expect("a preview window");
+    let page = find(&c, WinKind::Page).expect("a preview window");
     assert_eq!(text_of(&c, page), "<p>ONE</p>\n");
-    assert!(matches!(c.node.state.window(page).unwrap().body, Body::Html(_)));
+    assert!(matches!(c.node.state.window(page).unwrap().body, Body::Page(apex_core::Source::Buffer(_))));
     assert!(c.node.window_live(page), "the page is live while the tool runs");
     // an edit to the source: the page follows, unsaved
     let b = c.node.state.window(src).unwrap().body_buffer().unwrap();

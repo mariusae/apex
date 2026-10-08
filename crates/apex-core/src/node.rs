@@ -503,23 +503,30 @@ impl Node {
     /// window). `path` and `label` for a window with no text of its own.
     /// A `diagnostic` one is made in the stash instead (`place`).
     fn open_window_as(&mut self, log: &mut Log, col: ColumnId, body: Body, path: String, label: Option<String>, y: Option<i32>, diagnostic: bool) -> Result<WindowId> {
-        let id = self.make_window_shards(log, body, path, label, diagnostic)?;
+        self.open_window_via(log, col, body, path, label, y, diagnostic, Via::Host, String::new())
+    }
+
+    /// `open_window_as`, a page's how and base given.
+    #[allow(clippy::too_many_arguments)]
+    fn open_window_via(&mut self, log: &mut Log, col: ColumnId, body: Body, path: String, label: Option<String>, y: Option<i32>, diagnostic: bool, via: Via, base: String) -> Result<WindowId> {
+        let id = self.make_window_shards(log, body, path, label, diagnostic, via, base)?;
         self.place(log, col, id, y)?;
         Ok(id)
     }
 
     /// A window's log, its tag and its views -- not yet anywhere in the
     /// tiling.
-    fn make_window_shards(&mut self, log: &mut Log, body: Body, path: String, label: Option<String>, diagnostic: bool) -> Result<WindowId> {
+    #[allow(clippy::too_many_arguments)]
+    fn make_window_shards(&mut self, log: &mut Log, body: Body, path: String, label: Option<String>, diagnostic: bool, via: Via, base: String) -> Result<WindowId> {
         let id = WindowId(self.alloc());
         let tag = self.create_buffer(log, "", WIN_TAG, None)?;
         self.create_shard(log, Shard::Window(id))?;
-        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body, path, label }))?;
+        self.append(log, Shard::Window(id), Op::Window(WindowOp::Create { tag, body, path, label, via, base }))?;
         if diagnostic {
             self.append(log, Shard::Window(id), Op::Window(WindowOp::Diagnostic { on: true }))?;
         }
         self.append(log, Shard::Buffer(tag), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Tag(id) }))?;
-        if let Body::Text(b) | Body::Html(b) = body {
+        if let Body::Text(b) | Body::Page(Source::Buffer(b)) = body {
             self.append(log, Shard::Buffer(b), Op::Buffer(BufferOp::ViewAdd { view: ViewId::Body(id) }))?;
         }
         Ok(id)
@@ -533,7 +540,7 @@ impl Node {
         if self.state.layout.place_of(top).is_none() && !self.state.layout.is_stashed(top) {
             return Err(CoreError::Missing(format!("window {under} is not placed")));
         }
-        let id = self.make_window_shards(log, Body::Text(body), String::new(), label, false)?;
+        let id = self.make_window_shards(log, Body::Text(body), String::new(), label, false, Via::Host, String::new())?;
         let mut stack = self.state.layout.stack(top);
         stack.insert(0, id);
         let mut l = self.state.layout.clone();
@@ -609,20 +616,65 @@ impl Node {
         self.open_window_as(log, col, Body::Term(term), dir.to_string(), label, None, false)
     }
 
-    /// A web window on `url` in `col` (WEB.md §2): its path is the URL, as
-    /// a terminal's is its directory; the client renders the page, and
-    /// Back, Fwd and Get are the page's history and reload.
-    pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
-        self.open_window_as(log, col, Body::Web, url.to_string(), None, None, false)
+    /// A page in `col` (ARCHITECTURE.md §5): its document a buffer of
+    /// HTML (named as the file it shows: a preview's, a diff's; scratch)
+    /// or at an address (the window's path, as a terminal's is its
+    /// directory); fetching `via` the host, the client or a tool, its
+    /// relative addresses from `base` (for a buffer, its name's folder
+    /// when none is given); `label` beside its name.
+    pub fn open_page(&mut self, log: &mut Log, col: ColumnId, page: NewPage) -> Result<WindowId> {
+        let NewPage { content, via, base, label } = page;
+        match content {
+            NewContent::Html { name, text } => {
+                let base = if base.is_empty() { base_of(&name) } else { base };
+                let body = self.create_buffer_as(log, &name, &text, None, WinKind::Page, true)?;
+                self.open_window_via(log, col, Body::Page(Source::Buffer(body)), String::new(), label, None, false, via, base)
+            }
+            NewContent::Url(url) => self.open_window_via(log, col, Body::Page(Source::Url), url, label, None, false, via, base),
+        }
     }
 
-    /// A window whose text is HTML shown as a page (WEB.md §2.5): a
-    /// preview of the file at `path` (a Markdown file's, a diff's), its
-    /// buffer scratch, with a body the client renders; `label` beside the
-    /// path (what shows it: a diff's range).
+    /// A page at `url` in `col`, fetched through the host.
+    pub fn open_web_window(&mut self, log: &mut Log, col: ColumnId, url: &str) -> Result<WindowId> {
+        self.open_page(log, col, NewPage { content: NewContent::Url(url.to_string()), via: Via::Host, base: String::new(), label: None })
+    }
+
+    /// A page whose document is a buffer of HTML named `path` (a
+    /// preview of that file, a diff), fetching through the host.
     pub fn open_html_window(&mut self, log: &mut Log, col: ColumnId, path: &str, text: &str, label: Option<String>) -> Result<WindowId> {
-        let body = self.create_buffer_as(log, path, text, None, WinKind::Preview, true)?;
-        self.open_window_as(log, col, Body::Html(body), String::new(), label, None, false)
+        self.open_page(log, col, NewPage { content: NewContent::Html { name: path.to_string(), text: text.to_string() }, via: Via::Host, base: String::new(), label })
+    }
+
+    /// Window `w` is a page at an address (a web page).
+    pub fn is_url_page(&self, w: WindowId) -> bool {
+        self.state.window(w).is_ok_and(|x| x.body == Body::Page(Source::Url))
+    }
+
+    /// Window `w` is a page whose document is a buffer (a preview, a diff).
+    pub fn is_buffer_page(&self, w: WindowId) -> bool {
+        self.state.window(w).is_ok_and(|x| matches!(x.body, Body::Page(Source::Buffer(_))))
+    }
+
+    /// Page `w` loaded again: every client showing it fetches anew.
+    pub fn reload_page(&mut self, log: &mut Log, w: WindowId) -> Result<()> {
+        if !self.state.window(w)?.is_page() {
+            return Err(CoreError::Missing(format!("window {w}: not a page")));
+        }
+        self.append(log, Shard::Window(w), Op::Window(WindowOp::Reload))?;
+        Ok(())
+    }
+
+    /// Buffer page `w` scrolled to `scroll` (a preview following its
+    /// file's caret); an address's page scrolls on the client.
+    pub fn scroll_page(&mut self, log: &mut Log, w: WindowId, scroll: Option<Scroll>) -> Result<()> {
+        let win = self.state.window(w)?;
+        if !matches!(win.body, Body::Page(Source::Buffer(_))) {
+            return Err(CoreError::Missing(format!("window {w}: not a buffer page")));
+        }
+        if win.scroll != scroll {
+            self.append(log, Shard::Window(w), Op::Window(WindowOp::PageScroll { scroll }))?;
+        }
+        Ok(())
     }
 
     /// Where window `w` is, set: a text window's buffer renamed (acme's
@@ -654,12 +706,12 @@ impl Node {
         Ok(())
     }
 
-    /// A web window went somewhere: its path follows the page, and the
-    /// place it left goes onto the navigation stack, so Back returns.
+    /// A page at an address went somewhere: its path follows it, and
+    /// the place it left goes onto the navigation stack, so Back returns.
     pub fn web_navigate(&mut self, log: &mut Log, w: WindowId, url: &str) -> Result<()> {
         let win = self.state.window(w)?;
-        if win.body != Body::Web {
-            return Err(CoreError::Missing(format!("window {w}: not a web window")));
+        if win.body != Body::Page(Source::Url) {
+            return Err(CoreError::Missing(format!("window {w}: not a page at an address")));
         }
         let from = self.window_path(w);
         if from == url {
@@ -1142,9 +1194,9 @@ impl Node {
     pub fn window_kind(&self, window: WindowId) -> WinKind {
         let Ok(w) = self.state.window(window) else { return WinKind::File };
         match w.body {
-            Body::Text(b) | Body::Html(b) => self.state.buffer(b).map(|b| b.kind).unwrap_or_default(),
+            Body::Text(b) | Body::Page(Source::Buffer(b)) => self.state.buffer(b).map(|b| b.kind).unwrap_or_default(),
             Body::Term(_) => WinKind::Term,
-            Body::Web => WinKind::Web,
+            Body::Page(Source::Url) => WinKind::Page,
         }
     }
 
@@ -1214,7 +1266,7 @@ impl Node {
         }
         match win.body {
             // a page's history and reload (the client does them)
-            Body::Web => out.extend(["Back", "Fwd", "Get"]),
+            Body::Page(Source::Url) => out.extend(["Back", "Fwd", "Get"]),
             // win's Send: the selection, else the snarf buffer, to the shell
             Body::Term(_) => out.push("Send"),
             _ => {}
@@ -1753,7 +1805,7 @@ impl Node {
                 "" => "/".to_string(),
                 d => d.to_string(),
             }),
-            WinKind::Web => None,
+            WinKind::Page if matches!(self.state.window(w).map(|x| x.body), Ok(Body::Page(Source::Url))) => None,
             _ => path.rsplit_once('/').map(|(d, _)| if d.is_empty() { "/".to_string() } else { d.to_string() }),
         }
     }
@@ -1823,7 +1875,7 @@ impl Node {
             }
         }
         let at: Vec<WindowId> = self.state.windows.keys().copied().filter(|w| self.window_path(*w) == name).collect();
-        at.iter().copied().find(|w| !matches!(self.window_kind(*w), WinKind::Errors | WinKind::Preview)).or(at.first().copied())
+        at.iter().copied().find(|w| !matches!(self.window_kind(*w), WinKind::Errors | WinKind::Page)).or(at.first().copied())
     }
 
     pub fn take_gotos(&mut self) -> Vec<Loc> {
@@ -1834,7 +1886,7 @@ impl Node {
     /// or a preview, whose text the user sees is the page, not a buffer.
     pub fn page_of(&self, ctx: ExecCtx) -> Option<WindowId> {
         let ExecCtx::Window(w) = ctx else { return None };
-        matches!(self.state.window(w).ok()?.body, Body::Web | Body::Html(_)).then_some(w)
+        self.state.window(w).ok()?.is_page().then_some(w)
     }
 
     /// A Look in a page: for the client, which has the view. An empty text
@@ -2316,5 +2368,17 @@ mod click_tests {
         // name for the blanks of an xterm title): a word character, so
         // the name is still one word under a double-click
         assert!(acme_isalnum('␣'));
+    }
+}
+
+/// The folder a buffer page's relative addresses resolve from: its
+/// name's, or the name itself when it is a folder.
+pub fn base_of(name: &str) -> String {
+    if name.ends_with('/') {
+        return name.to_string();
+    }
+    match name.rfind('/') {
+        Some(i) => name[..=i].to_string(),
+        None => String::new(),
     }
 }

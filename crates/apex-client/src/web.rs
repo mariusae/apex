@@ -1,9 +1,9 @@
 //! Web windows on the client (WEB.md §2): a native web view (`wry`,
 //! WebKit) as a child view of the gpui window, placed over the body
-//! rectangle the layout gives a `Body::Web` window, hidden while a gpui
+//! rectangle the layout gives a `Body::Page(apex_core::Source::Url)` window, hidden while a gpui
 //! overlay (the tools menu, the finder, the picker) would be painted
 //! under it. The page's navigations come back as events the app turns
-//! into `WebNavigate` proposals, so the window's name follows the page.
+//! into `Navigate` proposals, so the window's name follows the page.
 //!
 //! The page's traffic goes through the session's host (§2.3): a
 //! localhost `CONNECT` proxy whose tunnels are streams on the I/O

@@ -604,7 +604,7 @@ impl Pool {
             for loc in p.node.take_gotos() {
                 let Some(col) = p.node.state.layout.cols.first().map(|c| c.id) else { continue };
                 if apex_core::is_url(&loc.name) {
-                    perform(&mut p.node, &mut p.log, vec![Proposal::OpenWeb { col, url: loc.name.clone() }]);
+                    perform(&mut p.node, &mut p.log, vec![Proposal::open_url(col, &loc.name)]);
                 } else {
                     p.link.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: loc.name.clone() });
                 }

@@ -542,7 +542,7 @@ impl Tool {
     /// writes it again. It is scratch, so nothing for Del to ask about.
     pub fn new_page(&mut self, path: &str, label: Option<&str>, html: &str) -> Result<WindowId> {
         let col = self.remote.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
-        let w = self.propose(Proposal::OpenHtml { col, path: path.to_string(), text: html.to_string(), label: label.map(str::to_string) })?.ok_or("no window made")?;
+        let w = self.propose(Proposal::open_html(col, path, html, label.map(str::to_string)))?.ok_or("no window made")?;
         self.remember(w);
         Ok(w)
     }
@@ -559,7 +559,7 @@ impl Tool {
         let dir = if dir.is_empty() { std::env::current_dir().map_err(|e| e.to_string())? } else { std::path::absolute(dir).map_err(|e| format!("{dir}: {e}"))? };
         let html = apex_diff::render(text, &dir);
         let path = format!("{}/", dir.display().to_string().trim_end_matches('/'));
-        let w = match self.windows().into_iter().find(|w| w.kind == WinKind::Preview && w.path == path && w.label.as_deref() == Some("Diff")) {
+        let w = match self.windows().into_iter().find(|w| w.kind == WinKind::Page && w.path == path && w.label.as_deref() == Some("Diff")) {
             Some(w) => {
                 self.replace(w.id, 0, END, &html)?;
                 self.propose(Proposal::Show { view: ViewId::Body(w.id), at: 0 })?;

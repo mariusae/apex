@@ -75,14 +75,27 @@ pub struct Window {
     pub path: String,
     /// A name beside the path: a terminal's title, a tool's window's.
     pub label: Option<String>,
+    /// A page's: how it fetches what it loads, and where its relative
+    /// addresses resolve (ARCHITECTURE.md §5).
+    pub via: Via,
+    pub base: String,
+    /// A page's: loaded again this many times (each client showing it
+    /// fetches anew when the count moves), and a buffer page's scroll.
+    pub reload: u64,
+    pub scroll: Option<Scroll>,
 }
 
 impl Window {
     pub fn body_buffer(&self) -> Option<BufferId> {
         match self.body {
-            Body::Text(b) | Body::Html(b) => Some(b),
-            Body::Term(_) | Body::Web => None,
+            Body::Text(b) | Body::Page(Source::Buffer(b)) => Some(b),
+            Body::Term(_) | Body::Page(Source::Url) => None,
         }
+    }
+
+    /// A page, of either source.
+    pub fn is_page(&self) -> bool {
+        matches!(self.body, Body::Page(_))
     }
 }
 
@@ -619,13 +632,18 @@ impl State {
 
     fn apply_window(&mut self, id: WindowId, op: &WindowOp, seq: Seq) -> Result<Applied, ApplyError> {
         match op {
-            WindowOp::Create { tag, body, path, label } => {
+            WindowOp::Create { tag, body, path, label, via, base } => {
                 if self.windows.contains_key(&id) {
                     return Err(ApplyError::Exists(format!("window {id}")));
                 }
-                self.windows.insert(id, Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None, progress: None, diagnostic: false, path: path.clone(), label: label.clone() });
+                self.windows.insert(
+                    id,
+                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None, progress: None, diagnostic: false, path: path.clone(), label: label.clone(), via: via.clone(), base: base.clone(), reload: 0, scroll: None },
+                );
             }
             WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
+            WindowOp::Reload => self.window_mut(id)?.reload += 1,
+            WindowOp::PageScroll { scroll } => self.window_mut(id)?.scroll = *scroll,
             WindowOp::Label { label } => self.window_mut(id)?.label = label.clone(),
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),
@@ -902,14 +920,16 @@ impl State {
                     h.update(&[2]);
                     h.update(&t.0.to_le_bytes());
                 }
-                Body::Web => {
+                Body::Page(Source::Url) => {
                     h.update(&[3]);
                 }
-                Body::Html(b) => {
+                Body::Page(Source::Buffer(b)) => {
                     h.update(&[4]);
                     h.update(&b.0.to_le_bytes());
                 }
             }
+            // a page's: how it fetches, its base, its reloads and scroll
+            h.update(&postcard::to_stdvec(&(&w.via, &w.base, w.reload, w.scroll)).unwrap_or_default());
             h.update(&[w.mono as u8, w.autoindent as u8, w.tagexpand as u8]);
             h.update(&w.tabstop.to_le_bytes());
             h.update(w.path.as_bytes());

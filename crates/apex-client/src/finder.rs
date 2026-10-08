@@ -187,7 +187,7 @@ fn session_entries(node: &Node, url: &SessionUrl, id: crate::pool::TabId, label:
         // the label its tag shows: its own, or what its kind says
         let label = node.window_label(w).or_else(|| match kind {
             WinKind::Errors => Some("Errors".into()),
-            WinKind::Preview => Some("Preview".into()),
+            WinKind::Page if node.is_buffer_page(w) => Some("Preview".into()),
             _ => None,
         });
         if name.is_empty() && label.is_none() {

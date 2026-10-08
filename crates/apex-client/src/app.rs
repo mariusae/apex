@@ -2533,7 +2533,7 @@ impl Acme {
         let mut tags = HashMap::new();
         let mut bodies = HashMap::new();
         for (w, win) in &self.node.state.windows {
-            if win.body == Body::Web {
+            if win.body == Body::Page(apex_core::Source::Url) {
                 tags.insert(*w, (1, false)); // a page's header is one line
             } else if !win.tagexpand {
                 tags.insert(*w, (1, false)); // acme: Up in the tag shrank it to one line
@@ -2855,7 +2855,7 @@ impl Acme {
                 // a page is live as a terminal is; while it loads, and
                 // while a tool works behind a window, the handle
                 // breathes between its colour and pale
-                let web = win.body == Body::Web;
+                let web = win.body == Body::Page(apex_core::Source::Url);
                 let pulse = ((web && self.webs.loading(w)) || self.node.window_working(w)).then(breath);
                 (win.mono, dirty, stale, web || self.node.window_live(w), pulse)
             }
@@ -2991,7 +2991,7 @@ impl Acme {
         let verbs: Vec<&str> = n.window_verbs(w).into_iter().map(|v| if v == "Del" && n.state.layout.under(w).is_some() { crate::text_element::DEL_STACKED } else { v }).collect();
         let label = n.window_label(w).or_else(|| match kind {
             WinKind::Errors => Some("Errors".into()),
-            WinKind::Preview => Some("Preview".into()),
+            WinKind::Page if n.is_buffer_page(w) => Some("Preview".into()),
             _ => None,
         });
         // the path's picker down: the path being chosen, typed in place
@@ -2999,7 +2999,7 @@ impl Acme {
             return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &verbs, &n.state.meta.cwd);
         }
         // a path in the session's directory from there on (only drawn so)
-        Head::build_in(&n.window_path(w), label.as_deref(), &verbs, kind != WinKind::Web, kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
+        Head::build_in(&n.window_path(w), label.as_deref(), &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
     }
 
     pub fn view_text(&self, view: ViewId) -> String {
@@ -4185,7 +4185,7 @@ impl Acme {
                 let Some(col) = self.node.state.layout.cols.first().map(|c| c.id) else { return };
                 if apex_core::is_url(&loc.name) {
                     // a page: a web window, here and now (we lead)
-                    perform(&mut self.node, &mut self.log, vec![Proposal::OpenWeb { col, url: loc.name.clone() }]);
+                    perform(&mut self.node, &mut self.log, vec![Proposal::open_url(col, &loc.name)]);
                     if let Ok(Some(w)) = self.node.land(&mut self.log, &loc) {
                         self.want_visible.insert(ViewId::Body(w));
                     }
@@ -4224,7 +4224,7 @@ impl Acme {
             eprintln!("web: place {w} {name} at {bounds:?} body {:?}", self.node.state.window(w).map(|x| x.body));
         }
         match self.node.state.window(w).map(|x| x.body) {
-            Ok(Body::Html(b)) => {
+            Ok(Body::Page(apex_core::Source::Buffer(b))) => {
                 // the buffer's HTML as a page, following its every version
                 let Ok(buf) = self.node.state.buffer(b) else { return };
                 let (text, version) = (buf.text.to_string(), buf.version);
@@ -4247,7 +4247,7 @@ impl Acme {
     /// For a preview of FILE: the line (from 1) dot is on in FILE's
     /// window, when it is open.
     fn preview_source_line(&self, page: WindowId) -> Option<usize> {
-        if self.node.window_kind(page) != WinKind::Preview {
+        if !self.node.is_buffer_page(page) {
             return None;
         }
         let w = self.node.window_of(&self.node.window_path(page), WinKind::File)?;
@@ -4311,7 +4311,7 @@ impl Acme {
     }
 
     /// What the pages did: a navigation moves the window's path and the
-    /// navigation stack (`WebNavigate`); titles are not kept yet.
+    /// navigation stack (`Navigate`); titles are not kept yet.
     fn web_events(&mut self) {
         if self.webs.is_empty() {
             return;
@@ -4321,7 +4321,7 @@ impl Acme {
                 WebEvent::Navigated(url) => {
                     self.webs.navigated(w, &url);
                     if self.node.window_path(w) != url {
-                        perform(&mut self.node, &mut self.log, vec![Proposal::WebNavigate { window: w, url }]);
+                        perform(&mut self.node, &mut self.log, vec![Proposal::Navigate { window: w, url }]);
                     }
                 }
                 WebEvent::Title(_) => {}
@@ -4360,7 +4360,7 @@ impl Acme {
                 WebEvent::Reroute(url) => {
                     self.webs.load(w, &url);
                     if self.node.window_path(w) != url {
-                        perform(&mut self.node, &mut self.log, vec![Proposal::WebNavigate { window: w, url }]);
+                        perform(&mut self.node, &mut self.log, vec![Proposal::Navigate { window: w, url }]);
                     }
                 }
             }
@@ -5279,7 +5279,7 @@ impl Acme {
         // a word a page from a buffer says it answers (apex diff's Prev and
         // Next): run in the page, not as a command
         if let ExecCtx::Window(w) = ctx {
-            if let Ok(Body::Html(b)) = self.node.state.window(w).map(|x| x.body) {
+            if let Ok(Body::Page(apex_core::Source::Buffer(b))) = self.node.state.window(w).map(|x| x.body) {
                 // the head is at the top: no need of the rest of the page
                 let html = self.node.state.buffer(b).map(|b| b.text.slice(0, b.text.len().min(8192))).unwrap_or_default();
                 if crate::web::page_verbs(&html).iter().any(|v| *v == word) {
@@ -5290,7 +5290,7 @@ impl Acme {
         }
         // a page's own history and reload: Back, Fwd, Get in a web window
         if let ExecCtx::Window(w) = ctx {
-            if self.node.state.window(w).map(|x| x.body) == Ok(Body::Web) {
+            if self.node.state.window(w).map(|x| x.body) == Ok(Body::Page(apex_core::Source::Url)) {
                 let nav = match word.as_str() {
                     "Back" => Some(Nav::Back),
                     "Fwd" => Some(Nav::Fwd),

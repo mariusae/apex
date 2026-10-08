@@ -178,7 +178,7 @@ impl Acme {
     fn shelf_kind_label(&self, w: WindowId) -> String {
         match self.node.window_kind(w) {
             apex_core::WinKind::Term => "Terminal".into(),
-            apex_core::WinKind::Web => "New page".into(),
+            apex_core::WinKind::Page => "New page".into(),
             _ => "Untitled".into(),
         }
     }

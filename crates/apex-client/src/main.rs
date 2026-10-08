@@ -391,7 +391,7 @@ impl Render for Acme {
                 let (tx, ty, tw) = (s.r.x0 + CARD_X, s.r.y0 + CARD_Y, s.r.dx() - 2 * CARD_X);
                 let th = if folded { tag_h - 2 * CARD_Y } else { tag_h - CARD_Y };
                 let (bx, bw, bh) = (s.body.x0 + CARD_X, s.body.dx() - 2 * CARD_X, s.body.dy() - CARD_Y);
-                if win.body == Body::Web && !strip {
+                if win.body == Body::Page(apex_core::Source::Url) && !strip {
                     // a page's header: its handle, back and forward, and
                     // its address, in the tag's place
                     area = area.child(at(tx, ty, tw, th, self.web_header(w, th as f32, cx)));
@@ -410,7 +410,7 @@ impl Render for Acme {
                     let body = match win.body {
                         Body::Text(_) => TextElement { acme: me.clone(), view: ViewId::Body(w) }.into_any_element(),
                         Body::Term(t) => TermElement { acme: me.clone(), window: w, term: t }.into_any_element(),
-                        Body::Web | Body::Html(_) => {
+                        Body::Page(apex_core::Source::Url) | Body::Page(apex_core::Source::Buffer(_)) => {
                             // the native view goes where this canvas lands;
                             // over it the pointer is the page's own (a style
                             // whose cursor sets nothing, the innermost hitbox's
@@ -421,7 +421,7 @@ impl Render for Acme {
                             // overlay (the picker, the finder, the tools
                             // menu) has the native view hidden, else the
                             // root's black would
-                            let paper = if matches!(win.body, Body::Html(_)) { t.body_bg } else { t.column };
+                            let paper = if matches!(win.body, Body::Page(apex_core::Source::Buffer(_))) { t.body_bg } else { t.column };
                             // acme's scrollbar, where a text window has it and
                             // as wide, drawn as it draws one: the page's own is
                             // hidden, and this one moves the page (WEB.md §2.2)
@@ -474,7 +474,7 @@ impl Render for Acme {
                     };
                     // the arrow over text and terminals, and down the
                     // scrollbar; a page keeps its own pointer
-                    let body = if matches!(win.body, Body::Web | Body::Html(_)) {
+                    let body = if matches!(win.body, Body::Page(apex_core::Source::Url) | Body::Page(apex_core::Source::Buffer(_))) {
                         let bar = div().absolute().right(px(0.)).top(px(0.)).w(px(crate::text_element::SCROLLWID)).h_full().cursor(hold(CursorStyle::Arrow));
                         at(bx, s.body.y0, bw, bh, body).child(bar)
                     } else if matches!(win.body, Body::Term(_)) {
@@ -549,7 +549,7 @@ impl Render for Acme {
             area = area.child(toast);
         }
         // a blank page just made: its address to be typed, at once
-        let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Web && !self.url_asked.contains(*w) && self.node.window_path(**w).is_empty()).map(|(w, _)| *w);
+        let blank = self.node.state.windows.iter().find(|(w, win)| win.body == Body::Page(apex_core::Source::Url) && !self.url_asked.contains(*w) && self.node.window_path(**w).is_empty()).map(|(w, _)| *w);
         if let Some(w) = blank {
             self.url_asked.insert(w);
             self.url_edit_start(w, cx);

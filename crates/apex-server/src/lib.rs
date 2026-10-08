@@ -239,7 +239,7 @@ impl Server {
                         return h.dir.clone();
                     }
                 }
-                if win.body == Body::Web {
+                if win.body == Body::Page(apex_core::Source::Url) {
                     return self.cwd.clone(); // a page has no directory here
                 }
             }
@@ -1090,7 +1090,7 @@ impl Server {
                 if url.is_empty() {
                     return Err("Newweb needs a URL".into());
                 }
-                props.push(Proposal::OpenWeb { col, url: url.to_string() });
+                props.push(Proposal::open_url(col, url));
             }
             _ => {
                 // a rule's verb offered in this window: the rules take it

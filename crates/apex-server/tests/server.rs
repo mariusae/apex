@@ -728,17 +728,17 @@ fn newweb_opens_a_web_window_whose_name_follows_the_page() {
     let (mut log, mut node, _col, mut server, _rx) = session();
     node.exec(&mut log, ExecCtx::Top, "Newweb https://example.com/").unwrap();
     poll(&mut server, &mut log, &mut node);
-    let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
+    let w = node.state.windows.values().find(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| w.id).expect("a web window");
     assert_eq!(node.window_path(w), "https://example.com/");
-    assert_eq!(node.window_kind(w), WinKind::Web);
+    assert_eq!(node.window_kind(w), WinKind::Page);
     assert!(node.state.window(w).unwrap().body_buffer().is_none());
     // the page goes somewhere: the name follows, the place left is behind us
-    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::WebNavigate { window: w, url: "https://example.com/two".into() }]);
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Navigate { window: w, url: "https://example.com/two".into() }]);
     assert_eq!(node.window_path(w), "https://example.com/two");
     let back = node.state.layout.nav_back.last().cloned().expect("a place to go back to");
     assert_eq!(back.name, "https://example.com/");
     // the same URL again is no move
-    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::WebNavigate { window: w, url: "https://example.com/two".into() }]);
+    apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Navigate { window: w, url: "https://example.com/two".into() }]);
     assert_eq!(node.state.layout.nav_back.len(), 1);
     // Back: no window shows that page now, so it is a place to open
     apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::Nav { back: true }]);
@@ -754,13 +754,13 @@ fn newweb_opens_a_web_window_whose_name_follows_the_page() {
 #[test]
 fn html_windows_are_text_shown_as_a_page() {
     let (mut log, mut node, col, _server, _rx) = session();
-    let w = apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::OpenHtml { col, path: "/tmp/x/".into(), text: "<h1>hi</h1>".into(), label: Some("web".into()) }]).expect("a window");
+    let w = apex_server::perform(&mut node, &mut log, vec![apex_server::Proposal::open_html(col, "/tmp/x/", "<h1>hi</h1>", Some("web".into()))]).expect("a window");
     let win = node.state.window(w).unwrap();
-    let Body::Html(b) = win.body else { panic!("{:?}", win.body) };
+    let Body::Page(apex_core::Source::Buffer(b)) = win.body else { panic!("{:?}", win.body) };
     assert_eq!(win.body_buffer(), Some(b));
     assert_eq!(node.window_path(w), "/tmp/x/");
     assert_eq!(node.window_label(w).as_deref(), Some("web"));
-    assert_eq!(node.window_kind(w), WinKind::Preview);
+    assert_eq!(node.window_kind(w), WinKind::Page);
     assert!(node.window_scratch(w));
     assert_eq!(node.state.buffer(b).unwrap().text.to_string(), "<h1>hi</h1>");
     // its text is edited as any buffer's: the page follows the version
@@ -778,28 +778,28 @@ fn web_opens_a_page_on_the_url_given_or_selected() {
     let (mut log, mut node, col, _server, _rx) = session();
     // typed after the word: a URL as it is
     node.exec(&mut log, ExecCtx::Top, "Web https://example.com/").unwrap();
-    let w = node.state.windows.values().find(|w| w.body == Body::Web).map(|w| w.id).expect("a web window");
+    let w = node.state.windows.values().find(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| w.id).expect("a web window");
     assert_eq!(node.window_path(w), "https://example.com/");
     assert_eq!(node.window_verbs(w), vec!["Del", "Snarf", "Back", "Fwd", "Get"]);
     // selected in a text window: a file:// URL and a bare path are the host's files
     let t = node.new_window(&mut log, col, "/tmp/here/notes.txt", "see file:///tmp/a.html and also doc.html\n").unwrap();
     node.select(&mut log, ViewId::Body(t), 4, 22).unwrap();
     node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_path(w.id)).collect();
+    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| node.window_path(w.id)).collect();
     assert!(names.contains(&"apexfile:///tmp/a.html".to_string()), "{names:?}");
     node.select(&mut log, ViewId::Body(t), 32, 40).unwrap();
     node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| node.window_path(w.id)).collect();
+    let names: Vec<String> = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| node.window_path(w.id)).collect();
     assert!(names.contains(&"apexfile:///tmp/here/doc.html".to_string()), "{names:?}");
     assert_eq!(apex_core::node::web_url("file://localhost/x/y", "/d"), "apexfile:///x/y");
     assert_eq!(apex_core::node::web_url("/abs/p", "/d"), "apexfile:///abs/p");
     assert_eq!(apex_core::node::web_url("rel/p", "/d/"), "apexfile:///d/rel/p");
     // nothing given or selected: a blank page, its address to be typed
     node.select(&mut log, ViewId::Body(t), 0, 0).unwrap();
-    let before = node.state.windows.values().filter(|w| w.body == Body::Web).count();
+    let before = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).count();
     node.exec(&mut log, ExecCtx::Window(t), "Web").unwrap();
-    let blank: Vec<WindowId> = node.state.windows.values().filter(|w| w.body == Body::Web).map(|w| w.id).filter(|&w| node.window_path(w).is_empty()).collect();
-    assert_eq!(node.state.windows.values().filter(|w| w.body == Body::Web).count(), before + 1);
+    let blank: Vec<WindowId> = node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).map(|w| w.id).filter(|&w| node.window_path(w).is_empty()).collect();
+    assert_eq!(node.state.windows.values().filter(|w| w.body == Body::Page(apex_core::Source::Url)).count(), before + 1);
     assert_eq!(blank.len(), 1);
     // going somewhere from it leaves nothing to come back to
     let back = node.state.layout.nav_back.len();
@@ -1138,7 +1138,7 @@ fn put_in_an_autoindent_window_trims_blanks_and_one_undo_brings_them_back() {
 #[test]
 fn look_in_a_pages_tag_is_found_in_the_page() {
     let (mut log, mut node, col, _server, _rx) = session();
-    let page = perform(&mut node, &mut log, vec![Proposal::OpenHtml { col, path: "/tmp/page".into(), text: "<p>foo bar foo</p>".into(), label: None }]).expect("a page");
+    let page = perform(&mut node, &mut log, vec![Proposal::open_html(col, "/tmp/page", "<p>foo bar foo</p>", None)]).expect("a page");
     // Look foo in its tag: for the client to find in the page's view, not
     // searched for in the HTML the window holds
     node.exec(&mut log, ExecCtx::Window(page), "Look foo").unwrap();

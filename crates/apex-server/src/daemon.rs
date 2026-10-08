@@ -1313,7 +1313,7 @@ impl Daemon {
                     let dir = PathBuf::from(&loc.name).parent().map(|d| d.to_path_buf()).unwrap_or_default();
                     if let Some(col) = col {
                         // a URL is a web window; anything else a file
-                        let p = if apex_core::is_url(&loc.name) { Ok(Proposal::OpenWeb { col, url: loc.name.clone() }) } else { s.server.open_file(col, None, &dir, &loc.name, None) };
+                        let p = if apex_core::is_url(&loc.name) { Ok(Proposal::open_url(col, &loc.name)) } else { s.server.open_file(col, None, &dir, &loc.name, None) };
                         if let Ok(p) = p {
                             let _ = proposal::apply(&mut s.view, &mut s.log, p);
                             let _ = s.view.land(&mut s.log, &loc);

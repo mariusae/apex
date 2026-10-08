@@ -131,9 +131,9 @@ fn window_into(m: &mut Mini, node: &Node, w: WindowId, tag_r: (f32, f32, f32, f3
                 });
             }
         }
-        Body::Web | Body::Html(_) => {
+        Body::Page(apex_core::Source::Url) | Body::Page(apex_core::Source::Buffer(_)) => {
             // the page's paper, and its name in the middle
-            let paper = if matches!(win.body, Body::Html(_)) { t.body_bg } else { 0xffffff };
+            let paper = if matches!(win.body, Body::Page(apex_core::Source::Buffer(_))) { t.body_bg } else { 0xffffff };
             m.fills.push((clip.0, clip.1, clip.2, clip.3, paper));
             let name = node.window_path(w);
             m.lines.push(Line {

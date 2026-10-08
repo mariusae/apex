@@ -2028,7 +2028,7 @@ fn web(ctx: &Ctx, p: &Parsed) -> R {
     let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
     match p.args.as_slice() {
         [open, url] if open == "open" => {
-            c.propose(Proposal::OpenWeb { col, url: url.clone() }, TIMEOUT)?;
+            c.propose(Proposal::open_url(col, &url), TIMEOUT)?;
         }
         [] => {
             let mut text = String::new();
@@ -2041,7 +2041,7 @@ fn web(ctx: &Ctx, p: &Parsed) -> R {
                 path.push('/');
             }
             let label = Some(p.get("label").unwrap_or("web").to_string());
-            c.propose(Proposal::OpenHtml { col, path, text, label }, TIMEOUT)?;
+            c.propose(Proposal::open_html(col, &path, &text, label), TIMEOUT)?;
         }
         _ => return Err("usage".into()),
     }

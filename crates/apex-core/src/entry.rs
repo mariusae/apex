@@ -42,18 +42,74 @@ impl Op {
 
 // ---- buffer ---------------------------------------------------------------
 
-/// The body of a window.
+/// The body of a window: what its content is (ARCHITECTURE.md §5). A
+/// window's kind is this and nothing else; its status, owner and the
+/// rest are every window's.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Body {
     Text(BufferId),
     Term(TermId),
-    /// A web page, rendered by the client; the URL is the window's path
-    /// (`Window::path`), nothing else is session state (WEB.md §2).
-    Web,
-    /// A text buffer holding HTML, rendered by the client as a page
-    /// (`cmd | apex web`, a Preview): edited, put and got as text, shown
-    /// as its page (WEB.md §2.5).
-    Html(BufferId),
+    /// A page, drawn by the client from what the window's state says:
+    /// where its document is (`Source`), and how it and what it loads
+    /// are fetched (`Window::via`, from `Window::base`).
+    Page(Source),
+}
+
+/// Where a page's document is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Source {
+    /// A buffer's text, drawn as HTML: written with the ordinary edits,
+    /// in the log, patched in place as it changes.
+    Buffer(BufferId),
+    /// At the window's address (`Window::path`), fetched `via`.
+    Url,
+}
+
+/// How a page fetches its document and what it loads.
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Via {
+    /// Through the session's host: its network, and its files as
+    /// `file:///...` (the I/O plane).
+    #[default]
+    Host,
+    /// By the machine showing it, on its own network. Only the user
+    /// makes these: never a tool.
+    Client,
+    /// Served by the tool of this name.
+    Tool(String),
+}
+
+/// A page to open (`Node::open_page`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NewPage {
+    pub content: NewContent,
+    #[serde(default)]
+    pub via: Via,
+    /// Where its relative addresses resolve; empty: a buffer's name's
+    /// folder.
+    #[serde(default)]
+    pub base: String,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// A new page's document.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum NewContent {
+    /// A buffer of HTML, named as the file it shows.
+    Html { name: String, text: String },
+    /// At an address.
+    Url(String),
+}
+
+/// Where a buffer page is scrolled to, as the log keeps it.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub enum Scroll {
+    /// The last mark at or before this source line (a converter's
+    /// `data-line`): where a preview follows its file's caret.
+    Line(u32),
+    /// This fraction of the way down.
+    Fraction(f32),
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -131,9 +187,25 @@ pub enum WindowOp {
     /// window with no text of its own, where it is (a terminal's
     /// directory, a page's address); and a label beside that (a
     /// terminal's title, a tool's window's name).
-    Create { tag: BufferId, body: Body, path: String, label: Option<String> },
-    /// A terminal's directory, a page's address, changed.
+    /// A page's too: how it fetches, and where its relative addresses
+    /// resolve (a preview's file's folder).
+    Create {
+        tag: BufferId,
+        body: Body,
+        path: String,
+        label: Option<String>,
+        #[serde(default)]
+        via: Via,
+        #[serde(default)]
+        base: String,
+    },
+    /// A terminal's directory, a page's address, changed: a page
+    /// navigated.
     Path { path: String },
+    /// A page loaded again: every client showing it fetches anew.
+    Reload,
+    /// A buffer page scrolled (a preview following its file's caret).
+    PageScroll { scroll: Option<Scroll> },
     /// The window's label (a terminal's title, a tool's window's name).
     Label { label: Option<String> },
     /// Toggle the alternate (monospace) font.
@@ -378,9 +450,9 @@ pub enum WinKind {
     Term,
     /// A directory's errors (acme's `dir/+Errors`).
     Errors,
-    Web,
-    /// A file shown as a page (a Markdown preview, a diff).
-    Preview,
+    /// A page (`Body::Page`): a web page, a file shown as one (a
+    /// Markdown preview, a diff).
+    Page,
 }
 
 impl WinKind {
@@ -390,8 +462,8 @@ impl WinKind {
             "dir" => Some(WinKind::Dir),
             "term" => Some(WinKind::Term),
             "errors" => Some(WinKind::Errors),
-            "web" => Some(WinKind::Web),
-            "preview" => Some(WinKind::Preview),
+            // (the two kinds pages were before they were one)
+            "page" | "web" | "preview" => Some(WinKind::Page),
             _ => None,
         }
     }
@@ -401,8 +473,7 @@ impl WinKind {
             WinKind::Dir => "dir",
             WinKind::Term => "term",
             WinKind::Errors => "errors",
-            WinKind::Web => "web",
-            WinKind::Preview => "preview",
+            WinKind::Page => "page",
         }
     }
 }

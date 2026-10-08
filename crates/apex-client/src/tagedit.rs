@@ -306,7 +306,7 @@ impl Acme {
 
     pub fn open_path_picker(&mut self, w: WindowId, atom: Atom, cx: &mut Context<Self>) {
         let path = self.node.window_path(w);
-        if self.node.window_kind(w) == WinKind::Web {
+        if self.node.is_url_page(w) {
             return;
         }
         let Some((dir, current)) = folder_of(&path, atom) else { return };
@@ -456,7 +456,7 @@ impl Acme {
         let mut out = Vec::new();
         for w in n.state.windows.keys().copied().filter(|w| *w != except) {
             let kind = n.window_kind(w);
-            if kind == WinKind::Web || (matches!(kind, WinKind::File | WinKind::Dir) && !n.window_scratch(w)) {
+            if n.is_url_page(w) || (matches!(kind, WinKind::File | WinKind::Dir) && !n.window_scratch(w)) {
                 continue;
             }
             let path = n.window_path(w);
@@ -464,7 +464,7 @@ impl Acme {
             let what = n.window_label(w).unwrap_or_else(|| {
                 match kind {
                     WinKind::Errors => "Errors",
-                    WinKind::Preview => "Preview",
+                    WinKind::Page => "Preview",
                     WinKind::Term => "Terminal",
                     _ => "Window",
                 }

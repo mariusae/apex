@@ -992,3 +992,38 @@ fn the_hash_sees_every_replicated_window_flag_and_the_stacks() {
     node.append(&mut log, Shard::Layout, Op::Layout(LayoutOp::Visit { from: None, to: Loc { session: None, name: "/tmp/x".into(), pos: Pos::Keep } })).unwrap();
     changed(&node, "a visit");
 }
+
+/// A page: its document a buffer of HTML or an address, how it fetches
+/// and its base kept; reloads counted and a buffer page's scroll in the
+/// log, both seen by the divergence check.
+#[test]
+fn a_pages_state_is_in_the_log() {
+    let (mut log, mut node, col) = session();
+    let doc = NewPage { content: NewContent::Html { name: "/src/notes.md".into(), text: "<p>hi</p>".into() }, via: Via::Host, base: String::new(), label: None };
+    let w = node.open_page(&mut log, col, doc).unwrap();
+    let win = node.state.window(w).unwrap().clone();
+    assert!(matches!(win.body, Body::Page(Source::Buffer(_))));
+    assert_eq!(win.base, "/src/", "a buffer page's base is its name's folder");
+    assert_eq!(node.window_kind(w), WinKind::Page);
+    assert_eq!(node.window_path(w), "/src/notes.md");
+    let h0 = node.state.hash();
+    node.scroll_page(&mut log, w, Some(Scroll::Line(12))).unwrap();
+    assert_eq!(node.state.window(w).unwrap().scroll, Some(Scroll::Line(12)));
+    let h1 = node.state.hash();
+    assert_ne!(h0, h1);
+    node.reload_page(&mut log, w).unwrap();
+    assert_eq!(node.state.window(w).unwrap().reload, 1);
+    assert_ne!(node.state.hash(), h1);
+    // an address's page: its path the address, fetched as said; it has
+    // no buffer, so no scroll of the log's
+    let at = NewPage { content: NewContent::Url("https://example.com/".into()), via: Via::Tool("web".into()), base: String::new(), label: Some("ex".into()) };
+    let u = node.open_page(&mut log, col, at).unwrap();
+    let win = node.state.window(u).unwrap();
+    assert_eq!((win.body, win.via.clone(), win.path.as_str()), (Body::Page(Source::Url), Via::Tool("web".into()), "https://example.com/"));
+    assert!(node.scroll_page(&mut log, u, Some(Scroll::Fraction(0.5))).is_err());
+    node.web_navigate(&mut log, u, "https://example.com/b").unwrap();
+    assert_eq!(node.window_path(u), "https://example.com/b");
+    // the kinds pages were are read as a page's
+    assert_eq!(WinKind::parse("preview"), Some(WinKind::Page));
+    assert_eq!(WinKind::parse("web"), Some(WinKind::Page));
+}

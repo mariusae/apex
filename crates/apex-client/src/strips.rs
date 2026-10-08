@@ -112,7 +112,7 @@ impl Acme {
     /// Window `w`'s handle as its tag shows it.
     pub(crate) fn window_dot(&self, w: apex_core::WindowId) -> crate::text_element::Dot {
         let t = crate::theme::theme();
-        let live = self.node.window_live(w) || self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Web);
+        let live = self.node.window_live(w) || self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Page(apex_core::Source::Url));
         crate::text_element::dot(&t, false, self.node.window_unsaved(w), live, self.node.window_working(w), self.note_age(w)).at(self.node.window_progress(w))
     }
 
