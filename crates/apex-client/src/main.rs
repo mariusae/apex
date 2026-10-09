@@ -1324,7 +1324,7 @@ impl app::Acme {
                     .items_center()
                     .child(self.title_room_mark(me))
                     .children(self.path_strip(path_fit, cx).map(|b| div().flex_shrink(1.).min_w(px(0.)).flex().flex_row().items_center().child(b).child(bare("title-gap3").w(px(3.)))))
-                    .children(self.procs_strip(proc_fit, cx))
+                    .children(self.procs_strip(proc_fit, window.viewport_size().width, cx))
                     .child(div().flex_1().min_w_0().h(px(font)).relative().child(text_element::TextElement { acme: me.clone(), view: apex_core::ViewId::Top }).cursor(gpui::CursorStyle::Arrow))
             })
             .child(bare("title-shelf").w(px(self.shelf_room(cx))));

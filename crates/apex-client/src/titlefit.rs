@@ -95,6 +95,8 @@ const KILL_W: f32 = 14.;
 const GAP: f32 = 4.;
 /// The chevron before the processes, and its room.
 const CHEVRON_W: f32 = 16.;
+/// The process fan's least distance from the window's edges.
+const FAN_MARGIN: f32 = 8.;
 /// The top row when its caret is elsewhere: as much of its text as this.
 const TEXT_MIN: f32 = 200.;
 
@@ -268,7 +270,7 @@ impl Acme {
     /// The processes, as `fit` has them, after a chevron; and, while the
     /// pointer is on them and something of them is folded away, every
     /// one on a pill of its own, fanned out over the top row.
-    pub fn procs_strip(&self, fit: ProcFit, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub fn procs_strip(&self, fit: ProcFit, width: Pixels, cx: &mut Context<Self>) -> Option<AnyElement> {
         let procs = self.title_procs();
         if procs.is_empty() {
             return None;
@@ -319,22 +321,25 @@ impl Acme {
             .child(body)
             .child(div().flex_none().w(px(GAP)))
             .when(folded, |d| d.child(mark(move |b| marks.borrow_mut().procs = Some(b))));
-        let fan = (folded && self.title_fan == Some(Fan::Procs)).then(|| self.procs_fan(&procs, cx));
+        let fan = (folded && self.title_fan == Some(Fan::Procs)).then(|| self.procs_fan(&procs, width, cx));
         Some(div().flex_none().child(strip).children(fan).into_any_element())
     }
 
     /// Every process on a pill of its own, in a card over the bar from
-    /// where the processes begin.
-    fn procs_fan(&self, procs: &[(Seq, String)], cx: &mut Context<Self>) -> AnyElement {
+    /// where the processes begin, rightwards: as wide as the window has
+    /// room for there (the pills wrapping to more rows), and moved left
+    /// only as far as it must to stay in the window (`width` across).
+    fn procs_fan(&self, procs: &[(Seq, String)], width: Pixels, cx: &mut Context<Self>) -> AnyElement {
         let t = crate::theme::theme();
         let at = self.title_marks.borrow().procs.map(|b| b.origin).unwrap_or_default();
+        let room = (width - at.x - px(FAN_MARGIN)).clamp(px(240.), px(720.));
         let marks = self.title_marks.clone();
         let card = div()
             .relative()
             .flex()
             .flex_row()
             .flex_wrap()
-            .max_w(px(720.))
+            .max_w(room)
             .items_center()
             .gap(px(GAP))
             .p(px(4.))
@@ -349,7 +354,10 @@ impl Acme {
             .child(self.overlay_mark_by(px(0.)))
             .child(mark(move |b| marks.borrow_mut().procs_fan = Some(b)))
             .children(procs.iter().map(|(id, name)| self.pill(name, *id, 1, true, cx)));
-        deferred(anchored().position(point(at.x, at.y - px(5.))).child(card)).with_priority(2).into_any_element()
+        // (anchored's own way, past the window's edge, is to hang the card
+        // the other way from the point -- leftwards over the path and the
+        // window's buttons; snapped, it moves only as far as it must)
+        deferred(anchored().snap_to_window_with_margin(px(FAN_MARGIN)).position(point(at.x, at.y - px(5.))).child(card)).with_priority(2).into_any_element()
     }
 
     /// A pill: the name, how many when there are `n` (`id` the newest),
