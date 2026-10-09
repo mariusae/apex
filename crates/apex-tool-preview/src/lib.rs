@@ -350,32 +350,25 @@ const IDLE: Duration = Duration::from_secs(60);
 /// The session's Preview rules for what a setting adds (`Preview.EXT`)
 /// beyond the default rule's formats: installed as the session's, with
 /// the default's `start`, so the verb is there whether or not Preview
-/// runs; and taken out with the setting. `offered` are those asked for
-/// here, not to be asked for twice before the log has them.
+/// runs. Being the session's, they stay when the setting goes (Preview
+/// then declines the file), for `apex plumb rule rm` to take out: no
+/// tool removes a rule not its own. `offered` are those asked for here,
+/// not to be asked for twice before the log has them.
 fn lasting_rules(t: &mut apex_tool::Tool, offered: &mut std::collections::BTreeSet<String>) {
     use apex_core::entry::RuleAction;
     let wanted: Vec<String> = converters::exts(t.meta())
         .into_iter()
         .filter(|e| !converters::DEFAULTS.iter().any(|(d, _)| d == e))
         .collect();
-    offered.retain(|e| wanted.contains(e));
     let mut have = offered.clone();
-    let mut gone = vec![];
-    for (id, r) in &t.meta().rules {
+    for r in t.meta().rules.values() {
         let r = &r.rule;
         if r.verb != "Preview" || r.action != RuleAction::Tool("preview".into()) || r.start.is_none() {
             continue;
         }
-        match r.file.as_deref().and_then(converters::ext_of_pattern) {
-            Some(e) if wanted.contains(&e) => {
-                have.insert(e);
-            }
-            Some(e) if !converters::DEFAULTS.iter().any(|(d, _)| *d == e) => gone.push(*id),
-            _ => {}
+        if let Some(e) = r.file.as_deref().and_then(converters::ext_of_pattern) {
+            have.insert(e);
         }
-    }
-    for id in gone {
-        t.withdraw(id);
     }
     for ext in wanted.into_iter().filter(|e| !have.contains(e)) {
         let rule = apex_tool::Rule::verb("Preview")

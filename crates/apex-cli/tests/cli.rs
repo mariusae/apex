@@ -1023,6 +1023,8 @@ fn preview_is_a_live_pipe_through_a_converter() {
     let txt = rules.lines().find(|l| l.contains(r"\.txt$")).unwrap_or_else(|| panic!("{rules}"));
     assert!(txt.contains("-start='apex tool preview'") && txt.contains("\tsession\t"), "{rules}");
     assert_eq!(rules.matches(r"\.txt$").count(), 1, "{rules}");
+    // and the session's own Preview rule is still there: no tool removes it
+    assert!(rules.contains(r"html?|svg)$"), "the default Preview rule went: {rules}");
     drop(c);
     // a file, not open: the tool opens it, makes a preview of it beside it
     // with the converter's output, live

@@ -41,8 +41,11 @@ pub fn pattern_of_ext(ext: &str) -> String {
     format!("(?i)\\.{}$", regex_escape(ext))
 }
 
+/// (Only of a pattern `pattern_of_ext` writes: another rule's, the
+/// default's `(?i)\.(md|markdown|html?|svg)$` say, names no extension.)
 pub fn ext_of_pattern(p: &str) -> Option<String> {
-    p.strip_prefix("(?i)\\.").and_then(|r| r.strip_suffix('$')).map(regex_unescape)
+    let ext = p.strip_prefix("(?i)\\.").and_then(|r| r.strip_suffix('$')).map(regex_unescape)?;
+    (pattern_of_ext(&ext) == p).then_some(ext)
 }
 
 pub fn regex_escape(s: &str) -> String {
@@ -89,6 +92,9 @@ mod tests {
         let e: Vec<String> = exts(&meta).into_iter().collect();
         assert_eq!(e, vec!["htm", "html", "markdown", "rst", "svg"]);
         assert_eq!(ext_of_pattern(&pattern_of_ext("c++")).as_deref(), Some("c++"));
+        // the session's default rule is none of Preview's, nor any other's
+        assert_eq!(ext_of_pattern(r"(?i)\.(md|markdown|html?|svg)$"), None);
+        assert_eq!(ext_of_pattern(r"(?i)\.md$|x$"), None);
         assert_eq!(pattern_of_ext("md"), r"(?i)\.md$");
     }
 }
