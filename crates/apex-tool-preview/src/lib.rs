@@ -9,7 +9,9 @@
 //! The page is the tool's, and so are its links: one to a file Preview
 //! converts opens that file's preview (at the link's line), one to any
 //! other file plumbs it, as B3 on its name would; others are the
-//! client's.
+//! client's. A link followed is a jump on the session's navigation
+//! stack from the page, and Back and Fwd in a preview walk that stack,
+//! from page to page.
 //!
 //! Unprivileged: it attaches like anything else, reads the buffer from
 //! the entry stream, and writes the page through proposals.
@@ -41,11 +43,12 @@ fn debug() -> bool {
 }
 
 pub fn run(socket: &Path, session: &str, file: &str) -> Result<(), String> {
-    run_at(socket, session, file, None)
+    run_at(socket, session, file, None, None)
 }
 
-/// `run`, the source's caret put at `line` (a link's place in it).
-pub fn run_at(socket: &Path, session: &str, file: &str, line: Option<usize>) -> Result<(), String> {
+/// `run`, the source's caret put at `line` (a link's place in it), and,
+/// for a link followed in page `via`, the jump recorded from that page.
+pub fn run_at(socket: &Path, session: &str, file: &str, line: Option<usize>, via: Option<WindowId>) -> Result<(), String> {
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
     if debug() {
         eprintln!("preview: {file}");
@@ -58,7 +61,7 @@ pub fn run_at(socket: &Path, session: &str, file: &str, line: Option<usize>) -> 
     let Some(converter) = converters::converter(&remote.node.state.meta, &ext) else {
         return Err(format!("Preview: no converter for .{ext} files: apex set Preview.{ext} CMD (a command reading the file on stdin, writing HTML)"));
     };
-    let mut t = Tool { remote, socket: socket.to_path_buf(), session: session.to_string(), file, line, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None, linked: Vec::new() };
+    let mut t = Tool { remote, socket: socket.to_path_buf(), session: session.to_string(), file, line, via, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None, linked: Vec::new() };
     t.start()?;
     let r = t.main_loop();
     // the previews its links opened go on: this one is not done till they are
@@ -75,6 +78,8 @@ struct Tool {
     file: String,
     /// Where the source's caret goes when it opens (a link's line).
     line: Option<usize>,
+    /// The page whose link this preview is, if it is one's.
+    via: Option<WindowId>,
     converter: String,
     /// The source window and its buffer, once found.
     source: Option<(WindowId, BufferId)>,
@@ -149,16 +154,18 @@ impl Tool {
     /// The source (opened if need be), the page (found or made), the
     /// first render.
     fn start(&mut self) -> Result<(), String> {
-        // the file's window, opened when it is not (at the line asked for)
+        // the file's window, opened when it is not (at the line asked for);
+        // a link's, a jump from the page it was in, open or not
         let at = self.line.map(Pos::Line).unwrap_or(Pos::Keep);
-        if let (Some(_), Some(_)) = (self.line, self.window_named(&self.file)) {
-            let _ = self.propose(Proposal::Goto { loc: Loc { session: None, name: self.file.clone(), pos: at.clone() } }, TIMEOUT);
+        if (self.line.is_some() || self.via.is_some()) && self.window_named(&self.file).is_some() {
+            let loc = Loc { session: None, name: self.file.clone(), pos: at.clone() };
+            let _ = self.propose(self.goto(loc), TIMEOUT);
         }
         let src = match self.window_named(&self.file) {
             Some(w) => w,
             None => {
                 let loc = Loc { session: None, name: self.file.clone(), pos: at };
-                let r = self.propose(Proposal::Goto { loc }, TIMEOUT);
+                let r = self.propose(self.goto(loc), TIMEOUT);
                 if debug() {
                     eprintln!("preview: goto answered {r:?}");
                 }
@@ -176,7 +183,7 @@ impl Tool {
         if let Some(w) = self.preview_window() {
             if self.remote.node.window_live(w) {
                 let loc = Loc { session: None, name: w.0.to_string(), pos: Pos::Keep };
-                let _ = self.propose(Proposal::Goto { loc }, TIMEOUT);
+                let _ = self.propose(self.goto(loc), TIMEOUT);
                 return Err("shown".into());
             }
         }
@@ -199,8 +206,41 @@ impl Tool {
         // the page ours, and where its links go ours to say
         let _ = self.propose(Proposal::Own { window: page, by: Some(me) }, TIMEOUT);
         self.remote.link.answers_navigation = true;
+        // and Back and Fwd in it: the session's stack, from the page
+        for verb in ["Back", "Fwd"] {
+            let rule = PlumbRule { start: None, verb: verb.into(), owner: None, unlisted: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("preview-file".into()), win: Some(page), to: None };
+            let _ = self.remote.rule_add(rule, 0, true, TIMEOUT);
+        }
         self.render_or_say();
         Ok(())
+    }
+
+    /// Go to `loc`: for a link's preview, a jump from the page it was in.
+    fn goto(&self, loc: Loc) -> Proposal {
+        match self.via {
+            Some(from) => Proposal::Follow { loc, from },
+            None => Proposal::Goto { loc },
+        }
+    }
+
+    /// Back and Fwd, in a preview (any preview's: the rule names this
+    /// attachment's name, which every preview has): the session's stack,
+    /// from the page they were asked in.
+    fn answer_verbs(&mut self) {
+        for p in std::mem::take(&mut self.remote.link.plumbs) {
+            if p.verb != "Back" && p.verb != "Fwd" {
+                self.remote.plumb_ack(p.id, false);
+                continue;
+            }
+            let from = match p.ctx {
+                ExecCtx::Window(w) => Some(w),
+                _ => None,
+            };
+            if let Err(e) = self.propose(Proposal::Nav { back: p.verb == "Back", from }, TIMEOUT) {
+                let _ = self.propose(Proposal::Errors { dir: Some(p.dir.clone()), text: format!("{}: {e}\n", p.verb) }, TIMEOUT);
+            }
+            self.remote.plumb_ack(p.id, true);
+        }
     }
 
     /// Where the page's links go: a file Preview converts, its preview,
@@ -217,7 +257,7 @@ impl Tool {
                     if converters::converter(&self.remote.node.state.meta, &ext).is_some() {
                         let (socket, session) = (self.socket.clone(), self.session.clone());
                         self.linked.push(std::thread::spawn(move || {
-                            if let Err(e) = run_at(&socket, &session, &path, line) {
+                            if let Err(e) = run_at(&socket, &session, &path, line, Some(page)) {
                                 if e != "shown" {
                                     eprintln!("preview: {path}: {e}");
                                 }
@@ -262,6 +302,7 @@ impl Tool {
                 self.render_or_say();
             }
             self.answer_links();
+            self.answer_verbs();
             self.follow();
         }
     }

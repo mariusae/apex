@@ -1021,6 +1021,15 @@ fn a_previews_links_open_previews_or_plumb_the_file() {
     let src = ui.node.window_of(&b, WinKind::File).expect("b's source opened");
     let line = |r: &Remote| r.node.selection(ViewId::Body(src)).ok().and_then(|(q0, _)| r.node.state.window(src).ok().and_then(|w| w.body_buffer()).and_then(|bb| r.node.state.buffer(bb).ok()).map(|x| x.text.line_of(q0) + 1));
     assert_eq!(line(&ui), Some(3), "b's caret at the link's line");
+    // the jump was from a's page; Back in b's page goes there, and b's page
+    // is what Fwd returns to
+    assert_eq!(ui.node.state.layout.nav_back.last().map(|l| l.name.clone()), Some(page.0.to_string()), "the jump from a's page");
+    let pb = ui.node.window_of(&b, WinKind::Page).unwrap();
+    assert!(until(&mut ui, &|r| apex_core::plumb::verbs_for(&r.node.state.meta.rules, &r.node.window_path(pb), WinKind::Page, Some(pb), r.node.window_owner(pb)).iter().any(|v| v == "Back")), "Back offered in b's preview");
+    ui.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(pb), text: "Back".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut ui, &|r| r.node.state.layout.nav_forward.last().is_some_and(|l| l.name == pb.0.to_string())), "Back from b's page: {:?} / {:?}", ui.node.state.layout.nav_back, ui.node.state.layout.nav_forward);
+    ui.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Fwd".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut ui, &|r| r.node.state.layout.nav_back.last().is_some_and(|l| l.name == page.0.to_string()) && r.node.state.layout.nav_forward.is_empty()), "Fwd from a's page");
     // a link to c.go, which Preview does not convert: plumbed, so open
     ui.link.ask(apex_server::proto::Request::Navigate { window: page, url: format!("file://{c}") });
     assert!(until(&mut ui, &|r| r.node.window_of(&c, WinKind::File).is_some()), "c.go plumbed open");

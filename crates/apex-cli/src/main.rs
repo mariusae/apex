@@ -554,7 +554,9 @@ it adds the session one for every other extension a converter is set
 for (Preview.EXT) while it runs. It shows each file Preview is used on
 as a page beside it, live, and exits when no preview has been open for
 a minute. A link in a preview to a file Preview converts opens that
-file's preview (at the link's line); to any other file, it plumbs it. apex tool preview FILE does that once, for FILE (apex preview
+file's preview (at the link's line); to any other file, it plumbs it.
+Back and Fwd in a preview (cmd-[ and cmd-]) walk the session's
+navigation stack, a link followed a jump from the page it was in. apex tool preview FILE does that once, for FILE (apex preview
 FILE).
 
 apex tool web is the resident tool behind pages on the web, started
