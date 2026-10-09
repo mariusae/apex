@@ -366,6 +366,10 @@ pub enum Palette {
 
 pub const PALETTES: [Palette; 6] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::GitHub, Palette::Nova, Palette::Rsms];
 
+/// The palette until one is chosen: Classic, acme's own (its place in
+/// `PALETTES`).
+const DEFAULT_PALETTE: u8 = 2;
+
 impl Palette {
     pub fn title(self) -> &'static str {
         match self {
@@ -389,7 +393,7 @@ impl Palette {
     }
 }
 
-static PALETTE: AtomicU8 = AtomicU8::new(3);
+static PALETTE: AtomicU8 = AtomicU8::new(DEFAULT_PALETTE);
 
 pub fn palette() -> Palette {
     PALETTES[PALETTE.load(Ordering::Relaxed) as usize % PALETTES.len()]
@@ -397,7 +401,7 @@ pub fn palette() -> Palette {
 
 /// Chosen: kept in the `palette` state file.
 pub fn set_palette(p: Palette) {
-    PALETTE.store(PALETTES.iter().position(|x| *x == p).unwrap_or(3) as u8, Ordering::Relaxed);
+    PALETTE.store(PALETTES.iter().position(|x| *x == p).map_or(DEFAULT_PALETTE, |i| i as u8), Ordering::Relaxed);
     let f = crate::shell::state_file().with_file_name("palette");
     if let Some(d) = f.parent() {
         let _ = std::fs::create_dir_all(d);
@@ -405,7 +409,8 @@ pub fn set_palette(p: Palette) {
     let _ = std::fs::write(f, format!("{}\n", p.word()));
 }
 
-static MODE: AtomicU8 = AtomicU8::new(0);
+/// The appearance until one is chosen: the system's (2).
+static MODE: AtomicU8 = AtomicU8::new(2);
 static SYSTEM_DARK: AtomicBool = AtomicBool::new(false);
 
 pub fn mode() -> Mode {
@@ -497,10 +502,10 @@ fn file() -> std::path::PathBuf {
     crate::shell::state_file().with_file_name("theme")
 }
 
-/// View ▸ Show Sidebar (on by default): the sessions down the left, as
+/// View ▸ Show Sidebar (off by default): the sessions down the left, as
 /// vertical tabs, the one shown with its windows under it. Kept in the
 /// `sidebar` state file.
-static SIDEBAR: AtomicBool = AtomicBool::new(true);
+static SIDEBAR: AtomicBool = AtomicBool::new(false);
 
 pub fn sidebar() -> bool {
     SIDEBAR.load(Ordering::Relaxed)
@@ -519,8 +524,9 @@ pub fn set_sidebar(on: bool) {
 /// that does not read on its paper is moved until it does
 /// (`contrast.rs`). Kept in the `contrast` state file.
 static CONTRAST: AtomicBool = AtomicBool::new(true);
-/// View ▸ Blink Cursor: the keys' caret (and a terminal's cursor) blinks,
-/// or stays on -- the key window's ring says where the keys go too.
+/// View ▸ Blink Cursor (on by default): the keys' caret (and a terminal's
+/// cursor) blinks, or stays on -- the key window's ring says where the
+/// keys go too.
 static BLINK: AtomicBool = AtomicBool::new(true);
 
 pub fn blink() -> bool {
@@ -558,9 +564,9 @@ pub fn set_smooth_caret(on: bool) {
 /// View ▸ Layout Animations: windows and columns glide to their places,
 /// a window opening down from its top, the pointer riding along with the
 /// window it goes to (`glide.rs`) -- the layout's own moves, the most
-/// common in a session. Off, they are there at once. On until turned off;
+/// common in a session. Off, they are there at once. Off until chosen;
 /// kept in the `layoutanim` state file.
-static ANIMATE_LAYOUT: AtomicBool = AtomicBool::new(true);
+static ANIMATE_LAYOUT: AtomicBool = AtomicBool::new(false);
 
 pub fn animate_layout() -> bool {
     ANIMATE_LAYOUT.load(Ordering::Relaxed)
@@ -590,7 +596,7 @@ pub fn set_contrast(on: bool) {
 
 /// The choice of last time, applied.
 pub fn load() {
-    let side = std::fs::read_to_string(crate::shell::state_file().with_file_name("sidebar")).map(|s| s.trim() != "hidden").unwrap_or(true);
+    let side = std::fs::read_to_string(crate::shell::state_file().with_file_name("sidebar")).map(|s| s.trim() == "shown").unwrap_or(false);
     SIDEBAR.store(side, Ordering::Relaxed);
     let contrast = std::fs::read_to_string(crate::shell::state_file().with_file_name("contrast")).map(|s| s.trim() != "off").unwrap_or(true);
     CONTRAST.store(contrast, Ordering::Relaxed);
@@ -598,7 +604,7 @@ pub fn load() {
     BLINK.store(blink, Ordering::Relaxed);
     let smooth = std::fs::read_to_string(crate::shell::state_file().with_file_name("smoothcaret")).map(|s| s.trim() == "on").unwrap_or(false);
     SMOOTH_CARET.store(smooth, Ordering::Relaxed);
-    let layout = std::fs::read_to_string(crate::shell::state_file().with_file_name("layoutanim")).map(|s| s.trim() != "off").unwrap_or(true);
+    let layout = std::fs::read_to_string(crate::shell::state_file().with_file_name("layoutanim")).map(|s| s.trim() == "on").unwrap_or(false);
     ANIMATE_LAYOUT.store(layout, Ordering::Relaxed);
     let pal = std::fs::read_to_string(crate::shell::state_file().with_file_name("palette")).unwrap_or_default();
     // "system" was Xcode's palette's name before it had its own
@@ -608,8 +614,8 @@ pub fn load() {
     }
     let m = match std::fs::read_to_string(file()).map(|s| s.trim().to_string()).as_deref() {
         Ok("dark") => Mode::Dark,
-        Ok("system") => Mode::System,
-        _ => Mode::Light,
+        Ok("light") => Mode::Light,
+        _ => Mode::System,
     };
     MODE.store(match m { Mode::Light => 0, Mode::Dark => 1, Mode::System => 2 }, Ordering::Relaxed);
 }
@@ -620,4 +626,15 @@ fn save(m: Mode) {
         let _ = std::fs::create_dir_all(d);
     }
     let _ = std::fs::write(p, match m { Mode::Light => "light\n", Mode::Dark => "dark\n", Mode::System => "system\n" });
+}
+
+#[cfg(test)]
+mod default_tests {
+    use super::*;
+
+    #[test]
+    fn the_defaults_are_classic_and_the_systems() {
+        assert_eq!(PALETTES[DEFAULT_PALETTE as usize], Palette::Classic);
+        assert_eq!(MODE.load(Ordering::Relaxed), 2, "the system's appearance");
+    }
 }

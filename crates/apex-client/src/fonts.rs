@@ -51,6 +51,9 @@ pub enum Set {
 
 pub const ALL: [Set; 10] = [Set::System, Set::Classic, Set::Go, Set::Mona, Set::Nova, Set::Hco, Set::Inter, Set::Geist, Set::Styrene, Set::Lucida];
 
+/// The font set until one is chosen: Classic, acme's (its place in `ALL`).
+const DEFAULT_SET: u8 = 1;
+
 impl Set {
     pub fn title(self) -> &'static str {
         match self {
@@ -83,7 +86,7 @@ impl Set {
     }
 }
 
-static SET: AtomicU8 = AtomicU8::new(0);
+static SET: AtomicU8 = AtomicU8::new(DEFAULT_SET);
 
 pub fn current() -> Set {
     ALL[SET.load(Ordering::Relaxed) as usize % ALL.len()]
@@ -91,7 +94,7 @@ pub fn current() -> Set {
 
 /// Chosen: kept in the `fonts` state file, beside the theme's.
 pub fn set(s: Set) {
-    SET.store(ALL.iter().position(|x| *x == s).unwrap_or(0) as u8, Ordering::Relaxed);
+    SET.store(ALL.iter().position(|x| *x == s).map_or(DEFAULT_SET, |i| i as u8), Ordering::Relaxed);
     let p = crate::shell::state_file().with_file_name("fonts");
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
@@ -420,6 +423,12 @@ pub fn page_css() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_set_is_classic() {
+        assert_eq!(ALL[DEFAULT_SET as usize], Set::Classic);
+        assert_eq!(current(), Set::Classic, "until one is chosen");
+    }
 
     #[test]
     fn every_face_a_page_asks_for_is_served_and_named() {

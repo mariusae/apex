@@ -11,9 +11,9 @@ windows put away out of the tiling, which is the core's
 
 ## What changed
 
-- **Look.** Six palettes to live with (View ▸ Theme, `theme.rs`), each a
-  light and a dark, the appearance (View: Light, Dark, System) choosing
-  which: Alabaster (tonsky's, light and dark), Xcode (Xcode's Default
+- **Look.** Six palettes to live with (View ▸ Theme, `theme.rs`; Classic
+  until another is chosen), each a light and a dark, the appearance (View:
+  Light, Dark, System; System until another is chosen) choosing which: Alabaster (tonsky's, light and dark), Xcode (Xcode's Default
   Light and Dark, the system blue), Classic (acme's make -- cream paper,
   pale blue tags, a yellow selection -- toned down, in the hues of
   go.dev's playground) GitHub (Light Colorblind lifted off white,
@@ -26,7 +26,8 @@ windows put away out of the tiling, which is the core's
   where it matters (the terminal's ANSI, apex diff's lines) and B2's and
   B3's sweeps apart under a deuteranopia simulation. A grey header over
   each window, hairlines for acme's black borders.
-- **Fonts** (View ▸ Font, `fonts.rs`), one choice for text windows and
+- **Fonts** (View ▸ Font, `fonts.rs`; Classic until another is chosen),
+  one choice for text windows and
   tags, mono windows and terminals, the sidebar, the palettes and menus, and
   pages (previews, apex diff, as `--apex-font` and `--apex-mono`):
   System (SF Pro with its high legibility set and tabular figures, 14/20;
@@ -122,7 +123,7 @@ windows put away out of the tiling, which is the core's
   Its bare parts move the window and a double click there zooms
   it; the tiling's line for the top tag lies above acme's area (the
   row's rectangle starts a line up), the tag drawn in the bar instead.
-- **Sidebar** (`sidebar.rs`), as Manifold's: the
+- **Sidebar** (`sidebar.rs`; hidden until View ▸ Show Sidebar), as Manifold's: the
   sessions as vertical tabs in a card inset from the window's edges,
   running up round the window's buttons and its own toggle, one with
   them as Reflect's is (the title bar -- the session's name, the top
@@ -338,7 +339,7 @@ windows put away out of the tiling, which is the core's
   to cd into (`./` for the folder itself). Paths inside the directory
   are drawn in the tags from there on, unmarked (`src/main.rs`), and
   every other path whole; the directory itself is a drawn `./`.
-- **Layout Animations** (View menu, on by default): windows and columns
+- **Layout Animations** (View menu, off by default): windows and columns
   gliding to their places, a window opening down from its top, the
   pointer riding with the window it goes to. Off, the layout is where it
   goes at once; the overview, the stash's fan, a session sliding in, the
