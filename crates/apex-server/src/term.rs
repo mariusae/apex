@@ -383,6 +383,44 @@ impl TermHost {
         }
     }
 
+    /// Look's search of the whole screen, the history first: where `needle`
+    /// next is from `from` (`(column, history line)`), or before it with
+    /// `reverse`, wrapping round, as `find_match` finds in a buffer; its
+    /// start and (exclusive) end. A match is within a row. The viewport is
+    /// then moved to show it, a third of the way down, when it is not in
+    /// view.
+    pub fn find(&mut self, needle: &str, from: (u16, u64), reverse: bool) -> Option<((u16, u64), (u16, u64))> {
+        let Ok(mut t) = self.term.lock() else { return None };
+        let (_, total, _) = t.size();
+        let last_col = self.cols.saturating_sub(1);
+        // the rows, each its own line: a match is found where it is drawn
+        let mut text = String::new();
+        let mut starts = Vec::with_capacity(total as usize);
+        let mut at = 0usize;
+        for r in 0..total.min(u32::MAX as u64) as u32 {
+            starts.push(at);
+            let row: String = t.text((0, r), (last_col, r)).chars().map(|c| if c == '\n' { ' ' } else { c }).collect();
+            at += row.chars().count() + 1;
+            text.push_str(&row);
+            text.push('\n');
+        }
+        let line = (from.1 as usize).min(starts.len().saturating_sub(1));
+        let row_len = |l: usize| starts.get(l + 1).map_or(at, |&n| n) - starts.get(l).copied().unwrap_or(0) - 1;
+        let start = starts.get(line).copied().unwrap_or(0) + (from.0 as usize).min(row_len(line));
+        let i = apex_core::text::find_match(&text, needle, start, reverse)?;
+        let row = starts.partition_point(|&s| s <= i).saturating_sub(1);
+        let col = i - starts[row];
+        let end = col + needle.chars().count();
+        // shown: the viewport onto it, unless it is in view already
+        let screen_top = t.screen().top;
+        let rows = self.rows as u64;
+        let r = row as u64;
+        if r < screen_top || r >= screen_top + rows {
+            t.scroll(r as isize - screen_top as isize - (rows / 3) as isize);
+        }
+        Some(((col as u16, r), (end as u16, r)))
+    }
+
     /// The wheel as the program sees it, if it does: `delta` lines at
     /// cell `at`. With mouse reporting on, wheel buttons (64 up, 65
     /// down) in SGR or X10 form, one per line; on the alternate screen

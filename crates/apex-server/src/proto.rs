@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 52;
+pub const PROTOCOL: u32 = 53;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -107,6 +107,10 @@ pub enum ClientMsg {
     /// included, answered by `TermLines` (what a client reads to find the
     /// last command's output).
     TermRead { term: TermId, from: u64, to: u64 },
+    /// Look in a terminal: `text` found in its screen and history from
+    /// `from` (`(column, history line)`), forwards or back, wrapping
+    /// round; the view moved onto it. Answered by `TermFound`.
+    TermFind { term: TermId, text: String, from: (u16, u64), reverse: bool },
     /// Open a file (relative to the window's directory) in a column.
     OpenFile { col: ColumnId, ctx: ExecCtx, name: String },
     /// Open a file (relative to the window's directory) over window
@@ -324,6 +328,8 @@ pub enum ServerMsg {
     PostToPage { window: WindowId, json: String },
     RuleAdded { id: RuleId },
     TermLines { term: TermId, text: String },
+    /// Where `TermFind` found its text (start, exclusive end), or None.
+    TermFound { term: TermId, at: Option<((u16, u64), (u16, u64))> },
     /// A program in a terminal set the clipboard (OSC 52): the snarf
     /// buffer has the text already; a UI puts it on its own clipboard.
     Clipboard { text: String },

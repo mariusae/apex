@@ -98,6 +98,8 @@ pub struct Link {
     sinks: crate::plane::IoSinks,
     /// Terminal text read with `TermRead`.
     pub term_lines: Vec<(TermId, String)>,
+    /// Where `TermFind`s found their text.
+    pub term_found: Vec<(TermId, Option<((u16, u64), (u16, u64))>)>,
     /// Texts programs put on the clipboard (OSC 52), for the UI's.
     pub clips: Vec<String>,
     /// What completes a path, as `Candidates` asked (^F).
@@ -259,7 +261,7 @@ impl Link {
         for shard in log.shards() {
             sent.insert(shard, log.last_seq(shard));
         }
-        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
+        Ok((Link { attachment, kind, out, rx, sent, acked: HashMap::new(), made: Vec::new(), outputs: Vec::new(), applied: HashMap::new(), sessions: None, env: None, trace: None, plumbed: None, plumbs: Vec::new(), asks: Vec::new(), answers_navigation: false, answered: Vec::new(), window_events: Vec::new(), wants_window_events: false, page_posts: Vec::new(), rule_added: None, client_asks: Vec::new(), io: Vec::new(), ids: crate::plane::IoIds::new(), sinks, term_lines: Vec::new(), term_found: Vec::new(), candidates: Vec::new(), found: Vec::new(), clips: Vec::new(), last_pong: None, ended: None, error: None, foreign_end: HashMap::new(), pending_ack: HashMap::new(), ack_ms: None, next_id: 1, closer }, log, node))
     }
 
     pub fn send(&self, m: &ClientMsg) {
@@ -435,6 +437,7 @@ impl Link {
             ServerMsg::RuleAdded { id } => self.rule_added = Some(id),
             ServerMsg::Io { stream, frame } => self.io.push((stream, frame)),
             ServerMsg::TermLines { term, text } => self.term_lines.push((term, text)),
+            ServerMsg::TermFound { term, at } => self.term_found.push((term, at)),
             ServerMsg::Clipboard { text } => self.clips.push(text),
             ServerMsg::Candidates(c) => self.candidates.push(c),
             m @ ServerMsg::Found { .. } => self.found.push(m),

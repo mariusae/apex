@@ -700,6 +700,10 @@ impl Daemon {
                     props.push(p);
                 }
             }
+            ClientMsg::TermFind { term, text, from, reverse } => {
+                let at = s.server.term_find(&mut s.log, term, &text, from, reverse);
+                self.send(id, ServerMsg::TermFound { term, at });
+            }
             ClientMsg::TermRead { term, from, to } => {
                 let text = s.server.term(term).map(|h| h.text((0, from), (h.cols, to))).unwrap_or_default();
                 self.send(id, ServerMsg::TermLines { term, text });

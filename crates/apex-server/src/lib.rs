@@ -479,6 +479,16 @@ impl Server {
         Some(Proposal::Snarf { text })
     }
 
+    /// Look in a terminal: `text` found in its screen and history from
+    /// `from` (`TermHost::find`), the view moved onto it; where it is.
+    pub fn term_find(&mut self, log: &mut Log, id: TermId, text: &str, from: (u16, u64), reverse: bool) -> Option<((u16, u64), (u16, u64))> {
+        let found = self.terms.get_mut(&id)?.find(text, from, reverse);
+        if found.is_some() {
+            self.publish_term(log, id);
+        }
+        found
+    }
+
     pub fn term_resize(&mut self, log: &mut Log, id: TermId, cols: u16, rows: u16) {
         if let Some(p) = self.pending_terms.get_mut(&id) {
             // not started yet: it starts at this size

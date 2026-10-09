@@ -587,6 +587,33 @@ fn newterm_with_a_command_runs_it_instead_of_a_shell() {
     assert!(!node.window_live(w));
 }
 
+/// Look in a terminal: found in its rows by the host, which has them,
+/// forwards and back from a place, wrapping round.
+#[test]
+fn look_in_a_terminal_finds_in_its_rows() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    node.exec(&mut log, ExecCtx::Top, "Newterm printf 'alpha\\nbeta\\ngamma beta\\n'").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    server.close_orphan_terms(&mut log, &node);
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("gamma beta")), "grid:\n{}", rows(&node));
+    // the history line a row starting with `word` is
+    let line = |n: &Node, word: &str| {
+        let x = &n.state.terms[&t];
+        x.top + x.grid.iter().position(|r| r.iter().map(|c| c.ch).collect::<String>().starts_with(word)).unwrap() as u64
+    };
+    let (b, g) = (line(&node, "beta"), line(&node, "gamma"));
+    // from the start: the first; from past it: the second, in its row
+    assert_eq!(server.term_find(&mut log, t, "beta", (0, 0), false), Some(((0, b), (4, b))));
+    assert_eq!(server.term_find(&mut log, t, "beta", (1, b), false), Some(((6, g), (10, g))));
+    // back from the second: the first; and round from the end
+    assert_eq!(server.term_find(&mut log, t, "beta", (6, g), true), Some(((0, b), (4, b))));
+    assert_eq!(server.term_find(&mut log, t, "beta", (0, b), true), Some(((6, g), (10, g))));
+    assert_eq!(server.term_find(&mut log, t, "delta", (0, 0), false), None);
+}
+
 #[test]
 fn a_name_typed_into_the_tag_is_where_put_writes() {
     let (mut log, mut node, _col, mut server, _rx) = session();
