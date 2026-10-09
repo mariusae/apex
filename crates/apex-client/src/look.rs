@@ -17,6 +17,11 @@
 //! live, or the selection is one of them (after ⌘G, or B3, which puts
 //! its word in the argument too); once the selection is elsewhere, the
 //! marks are gone.
+//!
+//! A page and a terminal have no buffer to look in: a page is looked in
+//! by its view, as the browser finds (its places marked there), and a
+//! terminal in its screen and history, which only the host has
+//! (`TermFind`), what is found its selection and the view moved to it.
 
 use std::rc::Rc;
 
@@ -25,15 +30,25 @@ use gpui::{Context, Window};
 use apex_core::text::{find_all, find_match};
 use apex_core::*;
 
-use crate::app::Acme;
+use crate::app::{Acme, Backend};
+use apex_server::proto::ClientMsg;
 
 /// A look going on in a window's tag: where the body's selection was when
 /// the typing began, what was last looked for, and whether it was found.
 pub struct Live {
     pub window: WindowId,
     pub anchor: (usize, usize),
+    /// A terminal's anchor: where its selection began, else the top of
+    /// its view (`(column, history line)`).
+    pub term_at: Option<(u16, u64)>,
     pub arg: String,
     pub failed: bool,
+}
+
+/// Where a Look in a window is done when it has no buffer to look in.
+enum Elsewhere {
+    Page,
+    Term(TermId),
 }
 
 impl Acme {
@@ -54,13 +69,90 @@ impl Acme {
             }
             return;
         }
-        let anchor = match self.looking.as_ref().filter(|l| l.window == w) {
+        let (anchor, term_at) = match self.looking.as_ref().filter(|l| l.window == w) {
             Some(l) if l.arg == arg => return, // the caret moved, the word did not
-            Some(l) => l.anchor,
-            None => self.node.selection(ViewId::Body(w)).unwrap_or((0, 0)),
+            Some(l) => (l.anchor, l.term_at),
+            None => (self.node.selection(ViewId::Body(w)).unwrap_or((0, 0)), self.term_anchor(w)),
         };
-        let failed = !self.look_from(w, &arg, anchor, false);
-        self.looking = Some(Live { window: w, anchor, arg, failed });
+        self.looking = Some(Live { window: w, anchor, term_at, arg: arg.clone(), failed: false });
+        let failed = match self.elsewhere(w) {
+            Some(Elsewhere::Page) => {
+                self.webs.find_typed(w, &arg);
+                false
+            }
+            // what it finds comes back (`term_found`), and says then
+            Some(Elsewhere::Term(_)) => {
+                if !arg.is_empty() {
+                    self.term_look(w, &arg, false, term_at);
+                }
+                return;
+            }
+            None => !self.look_from(w, &arg, anchor, false),
+        };
+        if let Some(l) = self.looking.as_mut() {
+            l.failed = failed;
+        }
+    }
+
+    /// A window with no buffer to look in, and what is looked in instead.
+    fn elsewhere(&self, w: WindowId) -> Option<Elsewhere> {
+        match self.node.state.window(w).ok()?.body {
+            Body::Term(t) => Some(Elsewhere::Term(t)),
+            _ if self.node.state.window(w).ok()?.is_page() => Some(Elsewhere::Page),
+            _ => None,
+        }
+    }
+
+    /// Where a look in terminal window `w` begins: its selection's start,
+    /// else the top of its view.
+    fn term_anchor(&self, w: WindowId) -> Option<(u16, u64)> {
+        let t = self.term_of(w)?;
+        match self.term_sel {
+            Some((sw, a, b)) if sw == w => {
+                let a = if (a.1, a.0) <= (b.1, b.0) { a } else { b };
+                Some((a.0 as u16, a.1))
+            }
+            _ => Some((0, self.node.state.terms.get(&t)?.top)),
+        }
+    }
+
+    /// `text` looked for in terminal window `w`'s screen and history by the
+    /// host (`TermFind`): from `from`, else past the selection (before it,
+    /// `reverse`), else from the top of the view. An empty text is the
+    /// selection's. What is found comes back to `term_found`.
+    pub fn term_look(&mut self, w: WindowId, text: &str, reverse: bool, from: Option<(u16, u64)>) {
+        let Some(t) = self.term_of(w) else { return };
+        let sel = self.term_sel.filter(|(sw, _, _)| *sw == w).map(|(_, a, b)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) });
+        let text = if text.is_empty() { sel.and_then(|(a, b)| self.term_grid_text(w, a, b)).unwrap_or_default() } else { text.to_string() };
+        if text.is_empty() {
+            return;
+        }
+        let top = self.node.state.terms.get(&t).map_or(0, |x| x.top);
+        let from = from.unwrap_or(match (sel, reverse) {
+            (Some((a, _)), true) => (a.0 as u16, a.1),
+            (Some((_, b)), false) => (b.0 as u16, b.1),
+            (None, _) => (0, top),
+        });
+        match &mut self.backend {
+            Backend::Local(server) => {
+                let at = server.term_find(&mut self.log, t, &text, from, reverse);
+                let _ = self.node.catch_up(&self.log);
+                self.term_found(t, at);
+            }
+            Backend::Remote(link) => link.send(&ClientMsg::TermFind { term: t, text, from, reverse }),
+        }
+    }
+
+    /// What a `TermFind` found in terminal `t`: its selection, and a live
+    /// look there told whether it was found.
+    pub fn term_found(&mut self, t: TermId, at: Option<((u16, u64), (u16, u64))>) {
+        let Some(w) = self.node.state.windows.iter().find(|(_, x)| x.body == Body::Term(t)).map(|(w, _)| *w) else { return };
+        if let Some((a, b)) = at {
+            self.term_sel = Some((w, (a.0 as usize, a.1), (b.0 as usize, b.1)));
+        }
+        if let Some(l) = self.looking.as_mut().filter(|l| l.window == w) {
+            l.failed = at.is_none();
+        }
     }
 
     /// Escape in the argument: the look over, the selection made a caret
@@ -68,6 +160,11 @@ impl Acme {
     /// following it into the text, to edit where the look found.
     pub fn look_done(&mut self, w: WindowId) {
         self.looking = None;
+        // a page's or a terminal's: what was found stays as it is
+        if self.elsewhere(w).is_some() {
+            self.after();
+            return;
+        }
         let v = ViewId::Body(w);
         let (_, q1) = self.node.selection(v).unwrap_or((0, 0));
         let _ = self.node.select(&mut self.log, v, q1, q1);
@@ -112,7 +209,8 @@ impl Acme {
         let _ = self.node.select(&mut self.log, ViewId::Tag(w), start, end);
         self.node.warp = Some(apex_core::tiling::Warp::Sel(ViewId::Tag(w)));
         let anchor = self.node.selection(ViewId::Body(w)).unwrap_or((0, 0));
-        self.looking = Some(Live { window: w, anchor, arg, failed: false });
+        let term_at = self.term_anchor(w);
+        self.looking = Some(Live { window: w, anchor, term_at, arg, failed: false });
         self.after();
         cx.notify();
     }
@@ -123,6 +221,30 @@ impl Acme {
     pub fn find_next(&mut self, reverse: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(w) = self.window_at_pointer(window) else { return };
         let v = ViewId::Body(w);
+        // a page: the browser's find, again; a terminal: the host's, past
+        // its selection
+        match self.elsewhere(w) {
+            Some(Elsewhere::Page) => {
+                let arg = self.node.look_arg(w).map(|a| a.arg).unwrap_or_default();
+                self.webs.find(w, &arg, reverse);
+                self.after();
+                cx.notify();
+                return;
+            }
+            Some(Elsewhere::Term(_)) => {
+                let mut arg = self.node.look_arg(w).map(|a| a.arg).unwrap_or_default();
+                if arg.is_empty() {
+                    let sel = self.term_sel.filter(|(sw, _, _)| *sw == w).map(|(_, a, b)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) });
+                    arg = sel.and_then(|(a, b)| self.term_grid_text(w, a, b)).unwrap_or_default();
+                    let _ = self.node.set_look_arg(&mut self.log, w, &arg);
+                }
+                self.term_look(w, &arg, reverse, None);
+                self.after();
+                cx.notify();
+                return;
+            }
+            None => {}
+        }
         let mut arg = self.node.look_arg(w).map(|a| a.arg).unwrap_or_default();
         if arg.is_empty() {
             arg = self.node.selected_text(v).unwrap_or_default();

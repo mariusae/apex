@@ -1115,20 +1115,29 @@ fn put_in_an_autoindent_window_trims_blanks_and_one_undo_brings_them_back() {
 }
 
 #[test]
-fn look_in_a_pages_tag_is_found_in_the_page() {
-    let (mut log, mut node, col, _server, _rx) = session();
+fn look_in_a_pages_or_a_terminals_tag_is_found_by_the_client() {
+    let (mut log, mut node, col, mut server, _rx) = session();
     let page = perform(&mut node, &mut log, vec![Proposal::open_html(col, "/tmp/page", "<p>foo bar foo</p>", None)]).expect("a page");
     // Look foo in its tag: for the client to find in the page's view, not
     // searched for in the HTML the window holds
     node.exec(&mut log, ExecCtx::Window(page), "Look foo").unwrap();
-    assert_eq!(node.take_page_finds(), vec![(page, "foo".to_string(), false)]);
+    assert_eq!(node.take_client_finds(), vec![(page, "foo".to_string(), false)]);
     // B3 in its tag, when no rule takes the text: the same, either way
     perform(&mut node, &mut log, vec![Proposal::Look { ctx: ExecCtx::Window(page), text: "bar".into(), reverse: true }]);
-    assert_eq!(node.take_page_finds(), vec![(page, "bar".to_string(), true)]);
+    assert_eq!(node.take_client_finds(), vec![(page, "bar".to_string(), true)]);
+    // a terminal's: the same, the client having the host find it in the
+    // terminal's history (`TermFind`)
+    node.exec(&mut log, ExecCtx::Top, "Newterm true").unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let term = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("a terminal");
+    node.exec(&mut log, ExecCtx::Window(term), "Look foo").unwrap();
+    assert_eq!(node.take_client_finds(), vec![(term, "foo".to_string(), false)]);
+    perform(&mut node, &mut log, vec![Proposal::Look { ctx: ExecCtx::Window(term), text: "bar".into(), reverse: false }]);
+    assert_eq!(node.take_client_finds(), vec![(term, "bar".to_string(), false)]);
     // a text window's Look is acme's still: its body searched, nothing queued
     let w = node.new_window(&mut log, col, "/tmp/text", "one foo two").unwrap();
     node.exec(&mut log, ExecCtx::Window(w), "Look foo").unwrap();
-    assert!(node.take_page_finds().is_empty());
+    assert!(node.take_client_finds().is_empty());
     let b = node.state.window(w).unwrap().body_buffer().unwrap();
     assert_eq!(node.state.buffer(b).unwrap().view(ViewId::Body(w)).q0, 4, "found in the text");
 }

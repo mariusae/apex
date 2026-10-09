@@ -1924,9 +1924,21 @@ impl Acme {
             }
             self.show_at.insert(v, (q, 1));
         }
-        // Looks in pages: found in their views
-        for (w, text, reverse) in self.node.take_page_finds() {
-            self.webs.find(w, &text, reverse);
+        // Looks in pages, found in their views, and in terminals, by the
+        // host in their history
+        for (w, text, reverse) in self.node.take_client_finds() {
+            if self.term_of(w).is_some() {
+                self.term_look(w, &text, reverse, None);
+            } else {
+                self.webs.find(w, &text, reverse);
+            }
+        }
+        let found: Vec<(TermId, Option<((u16, u64), (u16, u64))>)> = match &mut self.backend {
+            Backend::Remote(link) => std::mem::take(&mut link.term_found),
+            Backend::Local(_) => Vec::new(),
+        };
+        for (t, at) in found {
+            self.term_found(t, at);
         }
         for loc in self.node.take_gotos() {
             self.goto(loc);
@@ -3965,7 +3977,7 @@ impl Acme {
     /// The text between two `(column, history line)` positions, from the
     /// rows on screen (a sweep is on screen); lines joined by newlines,
     /// trailing blanks dropped.
-    fn term_grid_text(&self, w: WindowId, a: (usize, u64), b: (usize, u64)) -> Option<String> {
+    pub(crate) fn term_grid_text(&self, w: WindowId, a: (usize, u64), b: (usize, u64)) -> Option<String> {
         let t = self.term_of(w)?;
         let term = self.node.state.terms.get(&t)?;
         let (p0, p1) = if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) };
@@ -4138,7 +4150,7 @@ impl Acme {
         true
     }
 
-    fn term_of(&self, w: WindowId) -> Option<TermId> {
+    pub(crate) fn term_of(&self, w: WindowId) -> Option<TermId> {
         match self.node.state.window(w).ok()?.body {
             Body::Term(t) => Some(t),
             _ => None,

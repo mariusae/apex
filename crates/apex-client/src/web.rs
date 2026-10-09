@@ -108,6 +108,17 @@ fn theme_css() -> String {
 /// them down.
 const LOOK_SCRIPT: &str = r#"(function () {
   let t = __TEXT__;
+  if (__TYPED__) {
+    // a look as it is typed: from where the place found begins, so that a
+    // letter more or less finds the same place while it still can;
+    // nothing typed, nothing marked
+    const s = window.getSelection();
+    if (s.rangeCount) s.collapseToStart();
+    if (!t) {
+      if (window.CSS && CSS.highlights) { CSS.highlights.delete('apex-look'); CSS.highlights.delete('apex-look-here'); }
+      return;
+    }
+  }
   if (!t) t = String(window.getSelection());
   if (!t) return;
   window.find(t, false, __REVERSE__, true, false, true, false);
@@ -1334,6 +1345,16 @@ impl Webs {
     }
 
     pub fn find(&self, w: WindowId, text: &str, reverse: bool) {
+        self.find_as(w, text, reverse, false);
+    }
+
+    /// `find` for a look being typed (`Look/…` in the tag, ⌘F): from
+    /// where the place last found begins, and an empty text no find.
+    pub fn find_typed(&self, w: WindowId, text: &str) {
+        self.find_as(w, text, false, true);
+    }
+
+    fn find_as(&self, w: WindowId, text: &str, reverse: bool, typed: bool) {
         if let Some(h) = self.hosts.get(&w) {
             // the other places the selection's tint, the place found that
             // tint deepened a quarter of the way to the ink: told apart by
@@ -1344,6 +1365,7 @@ impl Webs {
             // the text last, so that nothing in it is taken for a slot
             let js = LOOK_SCRIPT
                 .replace("__REVERSE__", if reverse { "true" } else { "false" })
+                .replace("__TYPED__", if typed { "true" } else { "false" })
                 .replace("__HERE__", &hex(deeper))
                 .replace("__ELSE__", &hex(t.body_sel))
                 .replace("__TEXT__", &js_string(text));
