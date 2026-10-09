@@ -354,8 +354,9 @@ a remote host) open it in the session, as B3 on it would.
 
 Plumb rule ls prints the table in the order it is tried: the rule's id,
 its owner, its priority, and the flags that make it. Plumb rule rm ID
-removes one. Plumb rule add installs one, owned by the session (or by
-this attachment with -mine, gone when it detaches):
+removes one of the session's; a tool's or a UI's is its own, to remove
+or to take with it when it goes. Plumb rule add installs one, owned by
+the session (or by this attachment with -mine, gone when it detaches):
 
 	apex plumb rule add -text='https?://\\S+' -client=open -args='$0'
 	apex plumb rule add -verb=Preview -file='\\.md$' -run='open -a Marked $file' -priority=10
@@ -1781,7 +1782,7 @@ fn rule(ctx: &Ctx, args: &[String]) -> R {
         Some("rm") => {
             for a in &args[1..] {
                 let n: u64 = a.trim_start_matches('r').parse().map_err(|_| format!("rule rm: {a}: not a rule id"))?;
-                c.send(&ClientMsg::RuleRm { id: RuleId(n) });
+                c.send(&ClientMsg::RuleRm { id: RuleId(n), session: true });
             }
             let _ = c.step(Duration::from_millis(50));
             Ok(())

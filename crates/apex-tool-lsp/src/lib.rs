@@ -420,7 +420,7 @@ impl Tool {
         }
         if let Some(ids) = self.rules.remove(lang) {
             for id in ids {
-                self.remote.send(&ClientMsg::RuleRm { id });
+                self.remote.send(&ClientMsg::RuleRm { id, session: false });
             }
         }
     }

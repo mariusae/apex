@@ -1104,9 +1104,10 @@ impl Tool {
         self.remote.rule_add(rule, r.priority, mine, TIMEOUT).map_err(Error)
     }
 
-    /// Remove a rule.
+    /// Remove a rule of the tool's own; another's (the session's, one
+    /// `offer_lasting` made among them) is not the tool's to remove.
     pub fn withdraw(&mut self, id: RuleId) {
-        self.remote.send(&ClientMsg::RuleRm { id });
+        self.remote.send(&ClientMsg::RuleRm { id, session: false });
     }
 
     // ---- settings ---------------------------------------------------------

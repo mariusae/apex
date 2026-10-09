@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 53;
+pub const PROTOCOL: u32 = 54;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -145,7 +145,15 @@ pub enum ClientMsg {
     /// (gone when it detaches), else by the session. Answered by
     /// `RuleAdded`.
     RuleAdd { rule: PlumbRule, priority: i32, mine: bool },
-    RuleRm { id: RuleId },
+    /// Remove a rule: only its owner's to do -- an attachment its own
+    /// rules; the session's (`mine` false, a rule's `start` among them)
+    /// with `session`, as `apex plumb rule rm` asks on the user's behalf.
+    /// Another's is refused, with an `Error`.
+    RuleRm {
+        id: RuleId,
+        #[serde(default)]
+        session: bool,
+    },
     /// A tool asks the leader to do something; `id` comes back in `Applied`.
     Propose { id: u64, proposal: Proposal },
     /// The leader's answer to a `Propose` it was handed (id 0: nobody waits).

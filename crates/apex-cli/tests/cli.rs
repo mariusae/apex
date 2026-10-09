@@ -924,6 +924,42 @@ fn a_web_views_proxy_and_files_ride_the_plane() {
     drop(c);
 }
 
+/// A rule is its owner's to remove: a tool's its own, the session's on
+/// the session's behalf (apex plumb rule rm); another's is refused.
+#[test]
+fn only_a_rules_owner_removes_it() {
+    let sock = daemon();
+    let id_of = |line: &str| line.split('\t').next().unwrap().to_string();
+    let has = |id: &str| ok(&sock, &["plumb", "rule", "ls"]).lines().any(|l| id_of(l) == id);
+    let preview = id_of(ok(&sock, &["plumb", "rule", "ls"]).lines().find(|l| l.contains("-verb=Preview")).expect("the session's Preview rule"));
+    let rid = |id: &str| RuleId(id.trim_start_matches('r').parse().unwrap());
+    let mut tool = Remote::connect_as(&sock, "main", "meddler", AttachmentKind::Tool).unwrap();
+    let settle = |r: &mut Remote| {
+        let deadline = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < deadline {
+            let _ = r.step(Duration::from_millis(20));
+        }
+    };
+    // the session's rule: not the tool's to remove
+    tool.send(&apex_server::proto::ClientMsg::RuleRm { id: rid(&preview), session: false });
+    settle(&mut tool);
+    assert!(has(&preview), "a tool removed the session's rule");
+    assert!(tool.link.error.as_deref().is_some_and(|e| e.contains("only its owner")), "{:?}", tool.link.error);
+    // its own: the tool's
+    let rule = PlumbRule { start: None, verb: "Shout".into(), owner: None, unlisted: false, text: None, file: None, kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("meddler".into()), win: None, to: None };
+    let own = tool.rule_add(rule, 0, true, Duration::from_secs(5)).unwrap().to_string();
+    assert!(has(&own));
+    // not the session's either, so not apex plumb rule rm's
+    ok(&sock, &["plumb", "rule", "rm", &own]);
+    assert!(has(&own), "the CLI removed a tool's rule");
+    tool.send(&apex_server::proto::ClientMsg::RuleRm { id: rid(&own), session: false });
+    settle(&mut tool);
+    assert!(!has(&own), "the tool could not remove its own rule");
+    // the session's, by apex plumb rule rm
+    ok(&sock, &["plumb", "rule", "rm", &preview]);
+    assert!(!has(&preview), "apex plumb rule rm left the session's rule");
+}
+
 /// A rule with -start and no tool of its name attached: the command
 /// starts it once, and what matched meanwhile waits for it (Plan 9's
 /// plumb client); a start that never attaches fails, and the walk goes on.

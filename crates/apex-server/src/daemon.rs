@@ -823,9 +823,21 @@ impl Daemon {
                 let _ = s.view.state.apply(Shard::Meta, &e);
                 self.send(id, ServerMsg::RuleAdded { id: rid });
             }
-            ClientMsg::RuleRm { id: rid } => {
-                let e = s.log.remove_rule(rid);
-                let _ = s.view.state.apply(Shard::Meta, &e);
+            ClientMsg::RuleRm { id: rid, session } => {
+                // its owner's to remove: an attachment's own, the session's
+                // on the session's behalf
+                let me = self.conns.get(&id).and_then(|c| c.attachment);
+                match s.view.state.meta.rules.get(&rid).map(|r| r.attachment) {
+                    None => {}
+                    Some(owner) if Some(owner) == me || (owner == SERVER && session) => {
+                        let e = s.log.remove_rule(rid);
+                        let _ = s.view.state.apply(Shard::Meta, &e);
+                    }
+                    Some(owner) => {
+                        let whose = if owner == SERVER { "the session's (apex plumb rule rm removes it)".to_string() } else { s.view.state.meta.attachments.get(&owner).map_or(format!("attachment {owner}'s"), |a| format!("{}'s", a.name)) };
+                        self.send(id, ServerMsg::Error { text: format!("rule rm: rule {rid} is {whose}, and only its owner removes it") });
+                    }
+                }
             }
             ClientMsg::Set { key, value, attachment } => {
                 let owner = match attachment {
