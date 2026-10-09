@@ -843,7 +843,11 @@ impl Tool {
     fn on_plumb(&mut self, p: ToolPlumb) {
         if p.verb == "Back" || p.verb == "Fwd" {
             // the session's stack: pop it, and the leader lands there
-            match self.propose(Proposal::Nav { back: p.verb == "Back" }, TIMEOUT) {
+            let from = match p.ctx {
+                ExecCtx::Window(w) => Some(w),
+                _ => None,
+            };
+            match self.propose(Proposal::Nav { back: p.verb == "Back", from }, TIMEOUT) {
                 Ok(_) => {}
                 Err(e) => self.errors(Some(&p.dir), &format!("{}: {e}\n", p.verb)),
             }

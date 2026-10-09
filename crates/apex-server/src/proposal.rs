@@ -127,8 +127,18 @@ pub enum Proposal {
     /// window is opened if it must be (the leader asks the server), and
     /// selected, shown, and warped to.
     Goto { loc: Loc },
-    /// `Back` (or `Fwd`): to the top of that stack.
-    Nav { back: bool },
+    /// A link followed in window `from` (a preview's): `Goto`, the origin
+    /// that window -- a page by its window (`Node::page_loc`), so that
+    /// Back returns to the page, not to the file it shows.
+    Follow { loc: Loc, from: WindowId },
+    /// `Back` (or `Fwd`): to the top of that stack. `from` is the window
+    /// it was asked in; a page there is where it goes back (or forward)
+    /// from, as its own place, not the text last selected.
+    Nav {
+        back: bool,
+        #[serde(default)]
+        from: Option<WindowId>,
+    },
     /// Insert at an address, valid at `version`, leaving the selection
     /// alone (what a tool writing output at a point wants; `ReplaceRange`
     /// selects what it put, as a pipe's output is selected). With
@@ -151,6 +161,20 @@ impl Proposal {
     pub fn open_html(col: ColumnId, name: &str, text: &str, label: Option<String>) -> Proposal {
         Proposal::OpenPage { col, page: apex_core::NewPage { content: apex_core::NewContent::Html { name: name.to_string(), text: text.to_string() }, via: apex_core::Via::Host, base: String::new(), label } }
     }
+}
+
+/// `Goto`, the origin `from` (the place the user leaves).
+fn goto_from(node: &mut Node, log: &mut Log, loc: Loc, from: Option<Loc>) -> Result<Option<WindowId>, CoreError> {
+    node.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: loc.clone() }))?;
+    if node.elsewhere(&loc) {
+        node.switches.push(loc); // another session: a UI switches to it
+        return Ok(None);
+    }
+    let w = node.land(log, &loc)?;
+    if w.is_none() {
+        node.gotos.push(loc); // the window must be opened first
+    }
+    Ok(w)
 }
 
 /// Apply a proposal through the leader. Returns the window it opened or
@@ -303,28 +327,28 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         }
         Proposal::Goto { loc } => {
             let from = node.current_loc();
-            node.append(log, Shard::Layout, Op::Layout(LayoutOp::Visit { from, to: loc.clone() }))?;
-            if node.elsewhere(&loc) {
-                node.switches.push(loc); // another session: a UI switches to it
-                return Ok(None);
-            }
-            let w = node.land(log, &loc)?;
-            if w.is_none() {
-                node.gotos.push(loc); // the window must be opened first
-            }
-            Ok(w)
+            goto_from(node, log, loc, from)
+        }
+        Proposal::Follow { loc, from } => {
+            let from = node.page_loc(from).or_else(|| node.current_loc());
+            goto_from(node, log, loc, from)
         }
         Proposal::Switch { session, window } => {
             node.switches.push(Loc { session: Some(session), name: window.map(|w| w.0.to_string()).unwrap_or_default(), pos: Pos::Keep });
             Ok(None)
         }
-        Proposal::Nav { back } => {
+        Proposal::Nav { back, from } => {
             let stack = if back { &node.state.layout.nav_back } else { &node.state.layout.nav_forward };
             let Some(loc) = stack.last().cloned() else {
                 return Err(CoreError::Missing(if back { "nothing to go back to".into() } else { "nothing to go forward to".into() }));
             };
-            let at = node.current_loc();
+            let at = from.and_then(|w| node.page_loc(w)).or_else(|| node.current_loc());
             node.append(log, Shard::Layout, Op::Layout(LayoutOp::NavPop { back, at }))?;
+            // a page closed since: its place is gone with it (its name is
+            // its window's, no file's)
+            if !node.elsewhere(&loc) && node.gone_page(&loc) {
+                return Err(CoreError::Missing("the window it was is closed".into()));
+            }
             if node.elsewhere(&loc) {
                 node.switches.push(loc); // back to another session
                 return Ok(None);

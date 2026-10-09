@@ -639,6 +639,36 @@ fn a_name_typed_into_the_tag_is_where_put_writes() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A link followed in a page (a preview's): the page is where it went
+/// from, by its window, and Back from the next page returns to it,
+/// showing it, and taking no text selection there; Fwd goes back.
+#[test]
+fn back_and_fwd_go_between_pages() {
+    let (mut log, mut node, col, _server, _rx) = session();
+    let pa = perform(&mut node, &mut log, vec![Proposal::open_html(col, "/tmp/a.md", "<p>a</p>", None)]).expect("a's page");
+    let src = node.new_window(&mut log, col, "/tmp/notes", "text").unwrap();
+    node.seltext = Some(ViewId::Body(src));
+    // the link in a's page to b.md: b's source, the jump from a's page
+    let b = Loc { session: None, name: "/tmp/b.md".into(), pos: Pos::Line(3) };
+    apex_server::proposal::apply(&mut node, &mut log, Proposal::Follow { loc: b, from: pa }).unwrap();
+    assert_eq!(node.state.layout.nav_back.last().map(|l| l.name.clone()), Some(pa.0.to_string()), "from a's page, by its window");
+    let _ = node.take_gotos();
+    let pb = perform(&mut node, &mut log, vec![Proposal::open_html(col, "/tmp/b.md", "<p>b</p>", None)]).expect("b's page");
+    // Back, asked in b's page: a's page shown; b's page is what Fwd returns to
+    let r = apex_server::proposal::apply(&mut node, &mut log, Proposal::Nav { back: true, from: Some(pb) }).unwrap();
+    assert_eq!(r, Some(pa));
+    assert_eq!(node.seltext, Some(ViewId::Body(src)), "a page takes no text selection");
+    assert_eq!(node.state.layout.nav_forward.last().map(|l| l.name.clone()), Some(pb.0.to_string()));
+    let r = apex_server::proposal::apply(&mut node, &mut log, Proposal::Nav { back: false, from: Some(pa) }).unwrap();
+    assert_eq!(r, Some(pb));
+    // a's page closed: Back says so, and does not go looking for a file
+    // named after its window
+    node.exec(&mut log, ExecCtx::Window(pa), "Del").unwrap();
+    let r = apex_server::proposal::apply(&mut node, &mut log, Proposal::Nav { back: true, from: Some(pb) });
+    assert!(r.as_ref().is_err_and(|e| e.to_string().contains("closed")), "{r:?}");
+    assert!(node.take_gotos().is_empty());
+}
+
 #[test]
 fn jumps_stack_up_and_back_returns() {
     let (mut log, mut node, col, server, _rx) = session();
@@ -667,15 +697,15 @@ fn jumps_stack_up_and_back_returns() {
     assert_eq!(node.selection(ViewId::Body(b)).unwrap(), (2, 4));
     assert_eq!(node.seltext, Some(ViewId::Body(b)));
     // Back: to a.txt at 4..7; where we were goes forward
-    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: true }).unwrap();
+    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: true, from: None }).unwrap();
     assert_eq!(r, Some(a));
     assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (4, 7));
     assert!(node.state.layout.nav_back.is_empty());
     assert_eq!(node.state.layout.nav_forward.len(), 1);
     // and Fwd returns
-    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false }).unwrap();
+    let r = apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false, from: None }).unwrap();
     assert_eq!(r, Some(b));
-    assert!(apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false }).is_err());
+    assert!(apex_server::proposal::apply(&mut node, &mut log, apex_server::Proposal::Nav { back: false, from: None }).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
 

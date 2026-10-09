@@ -1905,6 +1905,20 @@ impl Node {
     }
 
     /// Where the user is: the window last selected in, and its dot.
+    /// A page's place (a preview, a web window): its window, by id --
+    /// its name is its file's or its address, which a text window may
+    /// have too. None for any other window.
+    pub fn page_loc(&self, w: WindowId) -> Option<Loc> {
+        self.state.window(w).ok().filter(|x| x.is_page())?;
+        let session = (!self.state.meta.id.is_empty()).then(|| self.state.meta.id.clone());
+        Some(Loc { session, name: w.0.to_string(), pos: Pos::Keep })
+    }
+
+    /// A place that was a page (`page_loc`) whose window is gone.
+    pub fn gone_page(&self, loc: &Loc) -> bool {
+        loc.name.parse::<u64>().is_ok_and(|n| self.state.window(WindowId(n)).is_err()) && loc.pos == Pos::Keep
+    }
+
     pub fn current_loc(&self) -> Option<Loc> {
         let v = self.seltext?;
         let w = v.window()?;
@@ -1950,6 +1964,12 @@ impl Node {
     /// Land at a location whose window is open: select, show, warp.
     pub fn land(&mut self, log: &mut Log, loc: &Loc) -> Result<Option<WindowId>> {
         let Some(w) = self.window_named(&loc.name) else { return Ok(None) };
+        // a page: shown, and no more -- its HTML is no text to select in,
+        // nor for commands to act on (`seltext`)
+        if self.state.window(w).is_ok_and(|x| x.is_page()) {
+            self.reveal(log, w)?;
+            return Ok(Some(w));
+        }
         if let Some((q0, q1)) = self.loc_range(w, &loc.pos) {
             self.select(log, ViewId::Body(w), q0, q1)?;
         }
