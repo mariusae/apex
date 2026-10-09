@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plumbing Rules and Verbs · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Plumbing Rules and Verbs</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md">crates/apex-cli/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs">crates/apex-core/src/expand.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs">crates/apex-core/src/plumb.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+</ul>
+</details>
+<p>apex's plumber works like Plan 9's, adapted to a session. It decides what happens when someone clicks B3 on a piece of text, runs <code>apex plumb TEXT</code>, or executes a word that a rule offers, such as <code>Preview</code>, <code>Clear</code> or an lsp tool's <code>Def</code>. The plumber is a <strong>rule table</strong> kept in the session's metalog. Each rule has a predicate (which text, which window) and an action (open something, run a command, ask the UI, ask a tool). When a plumb or a verb arrives, the server in the daemon walks the table in priority order. The first rule that matches and is <em>taken</em> ends the walk. If nothing takes a B3, the text is looked for instead, as acme's Look does.</p>
+<p>Because the table is replicated state, every replica gives the same answer to &quot;which verbs does this window offer?&quot; and &quot;has a tool claimed this word here?&quot;. That includes the UI that draws the tools menu and the CLI that lists rules. Only the server performs the walk, since actions touch the host's files and processes. For the replication model see <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>. For the server around the walk see <a href="server.html">The Server: Commands, Files and Processes</a>. Tools answer rules through the SDK described in <a href="tool-sdk.html">Writing Tools: the apex-tool SDK</a>.</p>
+<h2 id="the-rule-table-in-the-metalog">The rule table in the metalog</h2>
+<p>A rule is a <code>PlumbRule</code> (<code>crates/apex-core/src/entry.rs:363-408</code>). The metalog doesn't interpret rules; it only stores and orders them. Two meta ops change the table:</p>
+<pre><code class="language-rust">PlumbRuleInstall { id: RuleId, attachment: AttachmentId, priority: i32, rule: PlumbRule },
+PlumbRuleRemove { id: RuleId },
+</code></pre>
+<p><code>State::apply</code> inserts into or removes from <code>Meta::rules</code>, a <code>BTreeMap&lt;RuleId, Rule&gt;</code>. <code>Rule</code> holds the owning attachment, the priority and the <code>PlumbRule</code> (<code>crates/apex-core/src/state.rs:394-398</code>, <code>849-854</code>). <code>Log::install_rule</code> allocates the next <code>RuleId</code> and pushes the entry (<code>crates/apex-core/src/log.rs:287-298</code>). Only the daemon's authoritative log installs rules. Clients ask for one with <code>ClientMsg::RuleAdd</code> and remove one with <code>ClientMsg::RuleRm</code>.</p>
+<p>Every rule has an <strong>owner</strong>:</p>
+<ul>
+<li><strong><code>SERVER</code>, the session.</strong> The session's rules stay until someone removes them. Rules from <code>apex plumb rule add</code> (without <code>-mine</code>) and the default rules belong to the session.</li>
+<li><strong>An attachment.</strong> These rules come from <code>RuleAdd { mine: true }</code>, which a tool's <code>Tool::offer</code> sends, and they are removed when the attachment detaches. The daemon walks <code>plumb::owned_by</code> and removes each rule when a connection goes (<code>crates/apex-server/src/daemon.rs:531-534</code>).</li>
+</ul>
+<p>Only a rule's owner may remove it (protocol 54). An attachment may remove its own rules. The session's rules can be removed only by a <code>RuleRm</code> with <code>session: true</code>, which is what <code>apex plumb rule rm</code> sends on the user's behalf. Any other removal is refused with an <code>Error</code> naming the owner (<code>daemon.rs:826-841</code>). <code>RuleAdd</code> runs <code>PlumbRule::check</code> before installing and answers with <code>RuleAdded { id }</code> (<code>daemon.rs:816-825</code>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L360-L408">crates/apex-core/src/entry.rs:360-408</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L530-L531">crates/apex-core/src/entry.rs:530-531</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L394-L398">crates/apex-core/src/state.rs:394-398</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L849-L854">crates/apex-core/src/state.rs:849-854</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L287-L298">crates/apex-core/src/log.rs:287-298</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L816-L841">crates/apex-server/src/daemon.rs:816-841</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L144-L156">crates/apex-server/src/proto.rs:144-156</a></p>
+<h2 id="anatomy-of-a-rule">Anatomy of a rule</h2>
+<h3 id="verb">Verb</h3>
+<p><code>verb</code> names the command the rule answers.</p>
+<ul>
+<li><strong><code>plumb</code></strong> (<code>plumb::PLUMB</code>) is B3. These rules are asked who wants a piece of text.</li>
+<li><strong>Any other word</strong> becomes a verb. It appears in the tools menu (B4) of every window the rule applies to, unless the rule is <code>unlisted</code>. B2 on the word runs it wherever it is written: in the tag, in the body, or through <code>apex exec</code>.</li>
+<li><strong><code>exec</code></strong> (<code>plumb::EXEC</code>) is special. It takes every B2 command in a window that nothing else took. win uses it so that B2 on an old command line types that line to the shell. It never appears in a menu.</li>
+</ul>
+<h3 id="predicates">Predicates</h3>
+<p>All predicates must hold. The window predicates are checked by <code>PlumbRule::applies_to</code>, the text predicate by <code>match_text</code>, and the filesystem checks by the walk itself.</p>
+<table>
+<thead>
+<tr>
+<th>Field (flag)</th>
+<th>Meaning</th>
+<th>Checked by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text</code> (<code>-text</code>)</td>
+<td>The plumbed text (or a verb's arguments) must match this regexp <strong>whole</strong>. It is anchored as <code>^(?:RE)$</code>, as Plan 9's <code>matches</code> is. Groups 0–9 bind <code>$0</code>..<code>$9</code>. With no <code>text</code>, any text matches and is bound as <code>$0</code>.</td>
+<td><code>match_text</code></td>
+</tr>
+<tr>
+<td><code>file</code> (<code>-file</code>)</td>
+<td>The window's name must match this regexp. It is unanchored, an <code>is_match</code> search.</td>
+<td><code>applies_to</code></td>
+</tr>
+<tr>
+<td><code>kind</code> (<code>-kind</code>)</td>
+<td>The window's <code>WinKind</code>: <code>file</code>, <code>dir</code>, <code>term</code>, <code>errors</code> or <code>page</code> (<code>web</code> and <code>preview</code> are accepted as old names for <code>page</code>).</td>
+<td><code>applies_to</code></td>
+</tr>
+<tr>
+<td><code>win</code> (<code>-win</code>)</td>
+<td>This one window. Window ids are never reused, so the rule can't come to mean a different window.</td>
+<td><code>applies_to</code></td>
+</tr>
+<tr>
+<td><code>owner</code> (<code>-owner</code>)</td>
+<td>The tool that owns the window (<code>WindowOp::Own</code>) must match this regexp, anchored whole. A window that no tool owns has the empty owner name, so <code>-owner=''</code> means &quot;a real file, not a tool's window&quot;.</td>
+<td><code>applies_to</code></td>
+</tr>
+<tr>
+<td><code>isfile</code> (<code>-isfile</code>)</td>
+<td>This template, expanded and resolved against the window's directory, must be a file.</td>
+<td>the walk</td>
+</tr>
+<tr>
+<td><code>isdir</code> (<code>-isdir</code>)</td>
+<td>The same, but it must be a directory.</td>
+<td>the walk</td>
+</tr>
+</tbody>
+</table>
+<p>A bad regexp never matches. <code>whole()</code> returns <code>None</code> for it, and in <code>applies_to</code> a <code>file</code> pattern that fails to compile rejects the window (<code>crates/apex-core/src/plumb.rs:75-129</code>). <code>check()</code> refuses bad <code>text</code> and <code>file</code> patterns when a rule is added, so bad patterns normally never reach the table.</p>
+<h3 id="actions">Actions</h3>
+<table>
+<thead>
+<tr>
+<th><code>RuleAction</code></th>
+<th>Flag</th>
+<th>What the walk does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Edit(tmpl)</code></td>
+<td><code>-edit</code></td>
+<td>Expands to <code>name</code> or <code>name:line</code>, resolves it against the directory, and proposes <code>Goto</code> if the path exists. If it doesn't exist, the walk goes on to the next rule.</td>
+</tr>
+<tr>
+<td><code>Run(tmpl)</code></td>
+<td><code>-run</code></td>
+<td>Runs the expanded command through the shell in the window's directory, with the selection on stdin and output to <code>dir/+Errors</code>. Running the command counts as taking the plumb.</td>
+</tr>
+<tr>
+<td><code>Client { verb, args }</code></td>
+<td><code>-client -args</code></td>
+<td>Asks the leading UI to do <code>verb</code> with the expanded <code>args</code>, for example <code>open</code> a URL. The UI may refuse.</td>
+</tr>
+<tr>
+<td><code>Tool(name)</code></td>
+<td><code>-tool</code></td>
+<td>Asks the tool attached under <code>name</code>. The tool takes or declines within a deadline.</td>
+</tr>
+</tbody>
+</table>
+<p>Two more fields matter for particular actions. <code>start</code> is valid only with <code>Tool</code> and gives the command that starts the tool when it isn't attached (see below). <code>to</code> (<code>-to=errors|window</code>) is stored, shown by <code>to_flags</code> and parsed by the CLI, but nothing in the server reads it yet: a <code>Run</code> rule's output always goes to <code>+Errors</code> (<code>crates/apex-server/src/lib.rs:1513-1529</code>).</p>
+<h3 id="validation">Validation</h3>
+<p><code>PlumbRule::check</code> (<code>plumb.rs:132-151</code>) rejects:</p>
+<ul>
+<li>a regexp that doesn't compile;</li>
+<li>an empty verb, or a verb containing whitespace;</li>
+<li>a rule for a <strong>built-in word</strong> (<code>plumb::BUILTINS</code>, such as <code>Put</code>, <code>Get</code> or <code>Undo</code>) that doesn't say where it applies with <code>-win</code>, <code>-file</code> or <code>-kind</code>. Such a rule would never fire, so it is refused instead of being installed quietly;</li>
+<li><code>start</code> on anything other than a <code>Tool</code> rule.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L360-L508">crates/apex-core/src/entry.rs:360-508</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L73-L152">crates/apex-core/src/plumb.rs:73-152</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L221-L243">crates/apex-core/src/plumb.rs:221-243</a></p>
+<h2 id="templates-and-bindings">Templates and bindings</h2>
+<p>Actions and the <code>isfile</code>/<code>isdir</code> predicates are templates. <code>plumb::expand</code> substitutes values from <code>Bindings</code> (<code>crates/apex-core/src/plumb.rs:13-71</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Value in the server's walk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>$0</code>..<code>$9</code></td>
+<td>The text match and its groups. With no <code>text</code> predicate, <code>$0</code> is the whole text.</td>
+</tr>
+<tr>
+<td><code>$file</code></td>
+<td>The context window's name (empty outside a window).</td>
+</tr>
+<tr>
+<td><code>$dir</code></td>
+<td>The directory of the walk: the request's <code>dir</code> if given (a terminal's cwd, <code>apex plumb</code>'s cwd), else the context's directory.</td>
+</tr>
+<tr>
+<td><code>$win</code></td>
+<td>The context window's id.</td>
+</tr>
+<tr>
+<td><code>$sel</code></td>
+<td>The leader's last selected text (<code>Node::seltext</code>).</td>
+</tr>
+<tr>
+<td><code>$line</code></td>
+<td>Accepted by <code>expand</code>, but the walk always binds it to the empty string (<code>lib.rs:1384-1391</code>).</td>
+</tr>
+<tr>
+<td><code>$$</code></td>
+<td>A literal <code>$</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Anything else after <code>$</code> is left as written, so <code>$nope</code> stays <code>$nope</code>. A missing group expands to nothing.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L13-L71">crates/apex-core/src/plumb.rs:13-71</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1383-L1391">crates/apex-server/src/lib.rs:1383-1391</a></p>
+<h2 id="priorities-and-order">Priorities and order</h2>
+<p><code>plumb::ordered</code> sorts the table by priority, highest first, then by <code>RuleId</code>, which is the order rules were installed (<code>plumb.rs:213-219</code>). The walk, <code>apex plumb rule ls</code> and <code>verbs_for</code> all use this order. Priorities in use:</p>
+<table>
+<thead>
+<tr>
+<th>Priority</th>
+<th>Rules</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Default for <code>apex plumb rule add</code> and for tools unless they say otherwise.</td>
+</tr>
+<tr>
+<td>−10</td>
+<td>The session's <code>Clear</code>, <code>Preview</code>, <code>Web</code> and <code>Newweb</code> rules; the UI's URL and <code>Snarfout</code> rules.</td>
+</tr>
+<tr>
+<td>−100</td>
+<td>The session's three path rules, so that anything installed later wins.</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L213-L219">crates/apex-core/src/plumb.rs:213-219</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1256-L1323">crates/apex-server/src/lib.rs:1256-1323</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1206-L1242">crates/apex-client/src/app.rs:1206-1242</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1832-L1835">crates/apex-cli/src/main.rs:1832-1835</a></p>
+<h2 id="the-walk">The walk</h2>
+<h3 id="where-walks-begin">Where walks begin</h3>
+<p>A walk starts from a <code>PlumbReq</code> (<code>crates/apex-server/src/lib.rs:1700-1725</code>). The request carries:</p>
+<ul>
+<li>the context;</li>
+<li>the text;</li>
+<li>an optional directory;</li>
+<li>the verb;</li>
+<li><code>edit_only</code>, which is Plan 9's <code>B</code>: only <code>Edit</code> rules apply;</li>
+<li><code>dry</code>, which only reports what would happen;</li>
+<li>the exec entry the request came from;</li>
+<li><code>at</code> and <code>sel</code>, where the pointer or dot was and what was swept;</li>
+<li><code>alt</code>, the word to try if the longer text finds nothing;</li>
+<li><code>reverse</code>, for shift-B3.</li>
+</ul>
+<p>Requests come from three places:</p>
+<ol>
+<li><strong><code>ClientMsg::Plumb</code></strong>, sent by a UI's B3, by <code>apex plumb</code>, <code>apex B</code> and <code>apex editor</code>, or by cmd-B3 with a verb. The daemon builds the request and calls <code>plumb_start</code>. The connection that sent the message is the asker (<code>daemon.rs:751-756</code>).</li>
+<li><strong>A verb executed with B2.</strong> <code>Server::perform</code> handles pending server execs. When a rule offers the word in that window, <code>verb_request</code> builds a request and queues it on <code>plumb_starts</code> (<code>lib.rs:1102-1107</code>). If no rule offers the word but an <code>exec</code> rule applies, the whole line goes to that rule (<code>lib.rs:1631-1659</code>). The daemon's <code>start_verbs</code> drains the queue with asker 0, which means nobody waits on the answer (<code>daemon.rs:1499-1508</code>).</li>
+<li><strong>A claimed built-in.</strong> <code>Node::claimed</code> asks <code>plumb::claims_verb</code> whether a <em>scoped</em> rule (one with <code>win</code>, <code>file</code>, <code>kind</code> or <code>owner</code>) takes a word in this window (<code>crates/apex-core/src/node.rs:2029-2039</code>). Because the table is replicated, the leader resolves a claimed word to the server even when it is a leader built-in such as <code>Undo</code>. The server then sends it through the rules first (<code>lib.rs:1022-1030</code>).</li>
+</ol>
+<h3 id="expansion-before-matching">Expansion before matching</h3>
+<p>For a B3 with a place (<code>at</code>), <code>plumb_start</code> runs acme's expansion <code>apex_core::expand::expand</code> on the buffer, as described in <a href="buffers-and-text.html">Buffers, Views and Undo</a>. The expansion starts from the click, or from the swept range. A name counts as a file if a window is called that or the path exists from the directory; a leading <code>~/</code> means the home directory. The rules see the expanded text. When the expansion names a file, the resolved name and its address are kept as <code>file</code>, so they can be opened if no rule takes the text (acme's look3). When the plumbed text has no place, as with a terminal's text or <code>apex plumb</code>, it is read as acme reads a selection, looking for a file name and an address. If there is nothing at the pointer, the walk ends at once (<code>lib.rs:1339-1396</code>).</p>
+<h3 id="stepping-through-the-rules">Stepping through the rules</h3>
+<p><code>plumb_advance</code> takes the remaining rules in order and skips a rule when:</p>
+<ul>
+<li>its verb differs from the request's;</li>
+<li><code>edit_only</code> is set and the rule isn't an <code>Edit</code> rule;</li>
+<li><code>applies_to</code> fails, judged on the context window's name, kind, id and owner;</li>
+<li>the text doesn't match;</li>
+<li>an <code>isfile</code> or <code>isdir</code> check fails.</li>
+</ul>
+<p>The first rule that survives runs its action. Each decision is pushed onto a trace, such as <code>&quot;r3 (session, p-100): text does not match&quot;</code>. A dry run (<code>apex plumb -dry-run</code>) returns that trace as <code>PlumbTrace</code> instead of acting (<code>lib.rs:1450-1549</code>).</p>
+<p>The walk is a small state machine. The server returns one <code>PlumbStep</code> at a time, and the host carries it out:</p>
+<pre><code class="language-rust">pub enum PlumbStep {
+    Done(Vec&lt;Proposal&gt;),
+    Refused { props: Vec&lt;Proposal&gt;, why: String },
+    Ask(Proposal),                 // ClientDo, to the leader
+    AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel },
+    Trace(Vec&lt;String&gt;),
+}
+</code></pre>
+<p>Answers come back through <code>plumb_next(id, Ok | Err)</code>, meaning taken or refused, or through <code>plumb_failed(id, why)</code>, meaning there was no answer at all. Both continue the walk from the next rule (<code>lib.rs:1402-1428</code>). In the daemon, <code>drive</code> carries out each step (<code>daemon.rs:1447-1488</code>). In-process, <code>plumb_local</code> in the client does the same and treats any <code>AskTool</code> as a failure, because there are no tools without a daemon (<code>crates/apex-client/src/app.rs:5674-5691</code>).</p>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;PlumbReq (B3, apex plumb, a verb)&quot;] --&gt; B[&quot;plumb_start: acme expand, bindings&quot;]
+    B --&gt; C{&quot;next rule in priority order&quot;}
+    C --&gt;|&quot;verb, window, text, isfile/isdir fail&quot;| C
+    C --&gt;|&quot;Edit: path exists&quot;| G[&quot;Done: Proposal::Goto&quot;]
+    C --&gt;|&quot;Edit: no such file&quot;| C
+    C --&gt;|&quot;Run&quot;| R[&quot;spawn shell, output to +Errors&quot;]
+    C --&gt;|&quot;Client&quot;| K[&quot;Ask leader: ClientDo&quot;]
+    C --&gt;|&quot;Tool&quot;| T[&quot;AskTool: daemon asks the tool&quot;]
+    K --&gt;|&quot;refused&quot;| C
+    T --&gt;|&quot;declined or failed&quot;| C
+    K --&gt;|&quot;taken&quot;| D[&quot;Done&quot;]
+    T --&gt;|&quot;taken&quot;| D
+    C --&gt;|&quot;no rules left&quot;| F{&quot;what was asked&quot;}
+    F --&gt;|&quot;alt word pending&quot;| C
+    F --&gt;|&quot;edit_only (B)&quot;| H[&quot;Goto path, or +Errors: no such file&quot;]
+    F --&gt;|&quot;plumb, expansion named a file&quot;| G
+    F --&gt;|&quot;plumb, otherwise&quot;| L[&quot;Refused: Proposal::Look&quot;]
+    F --&gt;|&quot;built-in verb, no tool failed&quot;| P[&quot;perform apex's own meaning&quot;]
+    F --&gt;|&quot;other verb&quot;| E[&quot;Refused: +Errors, exec Failed&quot;]
+</code></pre>
+<h3 id="when-no-rule-takes-it">When no rule takes it</h3>
+<p>The fallbacks at the end of <code>plumb_advance</code> (<code>lib.rs:1550-1622</code>) are tried in order:</p>
+<ol>
+<li><strong>The word.</strong> If <code>alt</code> is set, the walk restarts with that word. acme's expand tries the file-name expansion first and the word second.</li>
+<li><strong><code>B</code> (edit only).</strong> A window named in any session (<code>session.N[:line]</code>, parsed by <code>global_window</code>) is opened. Otherwise the text is opened as a path if it exists, and if not, <code>&quot;no such file&quot;</code> goes to <code>+Errors</code>.</li>
+<li><strong>B3.</strong> If the expansion named a file, that file is opened at its address. <code>address_pos</code> understands <code>12</code> and <code>#12</code>, and leaves the selection as it is for anything else. Otherwise the walk answers <code>Refused</code> with a <code>Proposal::Look</code>, carrying <code>reverse</code> for shift-B3, and the asker hears <code>&quot;no rule takes …: looked for it instead&quot;</code>. One exception: B3 on a terminal's or a page's own grid, with no span, is refused without a Look, because there is no text there to search.</li>
+<li><strong>A built-in verb.</strong> If every rule declined a word apex has its own meaning for, that meaning runs last: the exec is put in <code>plain</code> and taken off <code>performed</code>, so the next poll performs it plainly (§6.2 in ARCHITECTURE.md). This does <strong>not</strong> happen if any step <code>failed</code>, meaning a tool was absent or silent. Silence is not a decision. Without this rule, for example, <code>Get</code> would reload a generated window over a tool that had merely died.</li>
+<li><strong>Any other verb.</strong> The walk writes <code>&quot;VERB: no rule takes it here&quot;</code> to <code>+Errors</code> and marks the exec <code>Failed</code>.</li>
+</ol>
+<p>When the walk ends, <code>plumbed</code> sends <code>ServerMsg::Plumbed { ok, why }</code> to the asker. <code>apex plumb</code> exits non-zero on <code>ok: false</code>, as Plan 9's plumb does when the plumber refuses (<code>crates/apex-cli/src/main.rs:1645-1654</code>). A verb's exec gets its <code>Done</code> status from <code>plumb_finish</code>. For <code>Run</code>, the shell reports the status when it exits.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1022-L1030">crates/apex-server/src/lib.rs:1022-1030</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1102-L1107">crates/apex-server/src/lib.rs:1102-1107</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1325-L1675">crates/apex-server/src/lib.rs:1325-1675</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1700-L1758">crates/apex-server/src/lib.rs:1700-1758</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L751-L756">crates/apex-server/src/daemon.rs:751-756</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1447-L1508">crates/apex-server/src/daemon.rs:1447-1508</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs#L26-L54">crates/apex-core/src/expand.rs:26-54</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2029-L2039">crates/apex-core/src/node.rs:2029-2039</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5674-L5691">crates/apex-client/src/app.rs:5674-5691</a></p>
+<h2 id="verbs-in-the-tools-menu">Verbs in the tools menu</h2>
+<p><code>plumb::verbs_for</code> lists the words a window's tools menu shows. It includes every rule that applies to the window, in walk order and without duplicates, leaving out <code>plumb</code>, <code>exec</code> and <code>unlisted</code> rules (<code>plumb.rs:263-275</code>). The UI calls it for the B4 menu (<code>crates/apex-client/src/app.rs:4705</code>) and for the command palette (<code>crates/apex-client/src/commands.rs:130</code>). <code>offers_verb</code> is the matching test the server uses when a word is B2'd. Because both read the replicated table, the menu and the server always agree. Choosing a menu word executes it, so it reaches the server as a verb exec, as described above.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L245-L275">crates/apex-core/src/plumb.rs:245-275</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1629-L1659">crates/apex-server/src/lib.rs:1629-1659</a></p>
+<h2 id="tool-rules-asking-answering-deadlines">Tool rules: asking, answering, deadlines</h2>
+<p>On an <code>AskTool</code> step, the daemon looks for a connection in the same session whose attachment has the tool's name (<code>daemon.rs:1467-1486</code>). If it finds one, <code>ask_tool</code> sends <code>ServerMsg::Ask { id, request: Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel } }</code> and starts a timer thread. The tool answers with <code>ClientMsg::Answer { id, answer: Answer::Plumb { ok } }</code>. In the SDK that is <code>Tool::answer(&amp;plumb, taken)</code>, which sends it through <code>Remote::plumb_ack</code>. The protocol was once a dedicated <code>PlumbAck</code> message; it is now one kind of <code>Ask</code>/<code>Answer</code> request, the same framework that page navigation questions use (<code>proto.rs:404-421</code>).</p>
+<p>Deadlines depend on what was asked (<code>daemon.rs:198-206</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Duration</th>
+<th>Applies to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>B3_ANSWER</code></td>
+<td>1 s</td>
+<td>B3 (<code>plumb</code>). It is a search, it shouldn't keep the user waiting, and a refusal costs nothing.</td>
+</tr>
+<tr>
+<td><code>VERB_ANSWER</code></td>
+<td>10 s</td>
+<td>A verb. The tool may do the work before answering, for example a formatter reshaping a buffer before <code>Put</code> writes it.</td>
+</tr>
+<tr>
+<td><code>START_WAIT</code></td>
+<td>10 s</td>
+<td>A tool started by a rule's <code>start</code>, to attach.</td>
+</tr>
+</tbody>
+</table>
+<p>A timeout arrives as <code>Event::PlumbTimeout</code> and becomes <code>tool_failed</code> → <code>plumb_failed(&quot;no answer in time&quot;)</code> (<code>daemon.rs:304</code>, <code>1437-1445</code>). A late answer finds no entry in <code>tool_plumbs</code> and is ignored. A declined answer becomes <code>plumb_next(Err(&quot;refused&quot;))</code>. Both continue the walk, but only the failure blocks the built-in fallback. Two pieces of text haven't caught up with this. The <code>AskTool</code> doc comment in <code>lib.rs</code> says the tool has &quot;a second of silence&quot;. The CLI README says a tool &quot;answers within a second&quot;. Both are true only for B3.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant UI
+    participant D as &quot;apexd&quot;
+    participant S as &quot;Server walk&quot;
+    participant T as &quot;tool (e.g. preview)&quot;
+    UI-&gt;&gt;D: Plumb or verb exec
+    D-&gt;&gt;S: plumb_start
+    S--&gt;&gt;D: AskTool{tool, rule}
+    alt tool attached
+        D-&gt;&gt;T: Ask{id, Request::Plumb}
+    else not attached, rule has start
+        D-&gt;&gt;D: hold(), start_tool(cmd), START_WAIT timer
+        T-&gt;&gt;D: Hello (name = tool)
+        D-&gt;&gt;T: Ask{id, Request::Plumb} (held requests, in order)
+    end
+    T-&gt;&gt;D: Answer{id, Plumb{ok}}
+    D-&gt;&gt;S: plumb_next(Ok or Err)
+    S--&gt;&gt;D: Done or next step
+    D-&gt;&gt;UI: Plumbed{ok, why}
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L160-L209">crates/apex-server/src/daemon.rs:160-209</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L757-L767">crates/apex-server/src/daemon.rs:757-767</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1368-L1445">crates/apex-server/src/daemon.rs:1368-1445</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1467-L1486">crates/apex-server/src/daemon.rs:1467-1486</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L404-L421">crates/apex-server/src/proto.rs:404-421</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L585-L589">crates/apex-tool/src/lib.rs:585-589</a></p>
+<h2 id="tools-started-when-first-wanted-start">Tools started when first wanted (<code>start</code>)</h2>
+<p>Plan 9's <code>plumb client CMD</code> starts a program when no program has the port open. In apex, a <code>Tool(name)</code> rule with <code>start</code> does the same, with tools in place of ports (ARCHITECTURE.md §5). If the matched tool isn't attached and the rule carries <code>start</code>, <code>Daemon::hold</code> queues the request under <code>(session, tool)</code>. The first request held for that pair also runs <code>Server::start_tool</code> and arms a <code>START_WAIT</code> timer (<code>daemon.rs:1390-1408</code>).</p>
+<p><code>start_tool</code> runs the command as one of the session's processes, named after the tool, in the session's directory. A leading <code>apex </code> is replaced with the daemon's own <code>apex</code> executable, so the right binary runs (<code>lib.rs:1181-1191</code>). Two kinds of request can be held:</p>
+<ul>
+<li>a plumb (<code>Held::Plumb</code>);</li>
+<li>a request on the I/O plane for a page the tool serves (<code>Held::Stream</code>, for <code>tool://NAME/...</code>; see <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>).</li>
+</ul>
+<p>When an attachment of that name sends <code>Hello</code>, everything held is delivered in order (<code>daemon.rs:626-634</code>). If none arrives in time, <code>start_failed</code> resumes each held plumb as a failure (<code>&quot;tool NAME did not start&quot;</code>) and answers each held stream with a 503 (<code>daemon.rs:1410-1425</code>). A <code>Tool</code> rule with no <code>start</code> and no attached tool fails at once with <code>&quot;no tool NAME attached&quot;</code>.</p>
+<p>The rules that start tools belong to the session, so they exist whether or not the tool runs. A tool can add more of them while it runs with <code>Tool::offer_lasting</code>, which sends <code>RuleAdd { mine: false }</code>, keeping the same <code>start</code>. Its ordinary <code>offer</code> rules are owned by the tool and disappear when it detaches (<code>crates/apex-tool/src/lib.rs:1073-1111</code>). Stopping tools when idle is the tools' own business; see <a href="tool-pages.html">Preview, Web and Diff Tools</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L160-L169">crates/apex-server/src/daemon.rs:160-169</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L626-L634">crates/apex-server/src/daemon.rs:626-634</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1390-L1425">crates/apex-server/src/daemon.rs:1390-1425</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1181-L1191">crates/apex-server/src/lib.rs:1181-1191</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1073-L1111">crates/apex-tool/src/lib.rs:1073-1111</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L801-L834">ARCHITECTURE.md:801-834</a></p>
+<h2 id="the-sessions-default-rules-and-the-uis-rules">The session's default rules and the UI's rules</h2>
+<p><code>Server::install_default_rules</code> installs the rules a new session starts with, all owned by the session (<code>lib.rs:1256-1323</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>Predicate</th>
+<th>Action</th>
+<th>Priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>plumb</code></td>
+<td><code>-text='(\S+?):(\d+)(:\d+)?[.,;:)]*' -isfile='$1'</code></td>
+<td><code>-edit='$1:$2'</code></td>
+<td>−100</td>
+</tr>
+<tr>
+<td><code>plumb</code></td>
+<td><code>-text='(\S+?)[.,;:)]*' -isfile='$1'</code></td>
+<td><code>-edit='$1'</code></td>
+<td>−100</td>
+</tr>
+<tr>
+<td><code>plumb</code></td>
+<td><code>-text='(\S+?)[.,;:)]*' -isdir='$1'</code></td>
+<td><code>-edit='$1'</code></td>
+<td>−100</td>
+</tr>
+<tr>
+<td><code>Clear</code></td>
+<td><code>-kind=term</code></td>
+<td><code>-run='apex term clear $win'</code></td>
+<td>−10</td>
+</tr>
+<tr>
+<td><code>Preview</code></td>
+<td><code>-file=PREVIEWED -kind=file</code></td>
+<td><code>-tool=preview -start='apex tool preview'</code></td>
+<td>−10</td>
+</tr>
+<tr>
+<td><code>Web</code></td>
+<td><code>-unlisted</code></td>
+<td><code>-tool=web -start='apex tool web'</code></td>
+<td>−10</td>
+</tr>
+<tr>
+<td><code>Newweb</code></td>
+<td><code>-unlisted</code></td>
+<td><code>-tool=web -start='apex tool web'</code></td>
+<td>−10</td>
+</tr>
+</tbody>
+</table>
+<p>The three path rules reproduce what B3 did before there were rules. They accept trailing <code>.,;:)</code> after a name. <code>PREVIEWED</code> is <code>(?i)\.(md|markdown|html?|svg)$</code> (<code>lib.rs:104</code>).</p>
+<p>A UI adds its own rules when it attaches (<code>Acme::arm</code>, <code>crates/apex-client/src/app.rs:1206-1242</code>), each owned by the UI with <code>mine: true</code> at priority −10:</p>
+<ul>
+<li>B3 on <code>https?://\S+</code> → <code>-client=open -args='$0'</code>, which opens the URL the way the platform does;</li>
+<li><code>Snarfout</code> in terminals, and in File windows owned by <code>win-.*</code> → <code>-client=snarfout -args='$win'</code>.</li>
+</ul>
+<p>A <code>ClientDo</code> step is proposed to the session's leader. A UI's <code>Link</code> queues it for the app, which answers when it has done the work. A non-UI client, or the daemon leading on its own, refuses with &quot;cannot VERB&quot;, and the walk goes on (<code>crates/apex-server/src/remote.rs:389-397</code>, <code>crates/apex-server/src/proposal.rs:289</code>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L104">crates/apex-server/src/lib.rs:104</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1256-L1323">crates/apex-server/src/lib.rs:1256-1323</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1206-L1242">crates/apex-client/src/app.rs:1206-1242</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L389-L397">crates/apex-server/src/remote.rs:389-397</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L289">crates/apex-server/src/proposal.rs:289</a></p>
+<h2 id="apex-plumb-and-apex-plumb-rule"><code>apex plumb</code> and <code>apex plumb rule</code></h2>
+<p>From a shell, the rule table is programmed through the CLI, typically in a profile (see <a href="configuration.html">Configuration: Profile, Attach and Settings</a> and <a href="cli.html">The apex Command</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex plumb [-win=W] TEXT</code></td>
+<td>Plumbs TEXT from the current directory. Exits non-zero if no rule took it.</td>
+</tr>
+<tr>
+<td><code>apex plumb -dry-run TEXT</code></td>
+<td>Prints the walk's trace: each rule and why it did or didn't act.</td>
+</tr>
+<tr>
+<td><code>apex plumb -edit TEXT</code> / <code>apex B FILE...</code></td>
+<td>Plan 9's <code>B</code>: only <code>Edit</code> rules apply, else the text is opened as a path.</td>
+</tr>
+<tr>
+<td><code>apex plumb rule add FLAGS</code></td>
+<td>Builds a <code>PlumbRule</code> from the flags, runs <code>check()</code>, sends <code>RuleAdd</code>, and prints the new id.</td>
+</tr>
+<tr>
+<td><code>apex plumb rule rm ID...</code></td>
+<td>Removes rules (<code>r3</code> or <code>3</code>), sent with <code>session: true</code>.</td>
+</tr>
+<tr>
+<td><code>apex plumb rule ls</code></td>
+<td>Lists rules in walk order: id, owner, priority, and the flags that would recreate the rule (<code>PlumbRule::to_flags</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>The flags of <code>rule add</code> are listed in <code>RULE_FLAGS</code> (<code>crates/apex-cli/src/main.rs:127-146</code>). They are <code>-verb</code>, <code>-unlisted</code>, <code>-text</code>, <code>-file</code>, <code>-owner</code>, <code>-win</code>, <code>-kind</code>, <code>-isfile</code>, <code>-isdir</code>, exactly one of <code>-edit</code>, <code>-run</code>, <code>-client</code> (with <code>-args</code>) or <code>-tool</code>, then <code>-start</code>, <code>-to</code>, <code>-priority</code> and <code>-mine</code>. <code>rule_of</code> enforces the &quot;exactly one action&quot; requirement (<code>main.rs:1802-1855</code>). For example:</p>
+<pre><code class="language-sh">apex plumb rule add -verb=Preview -file='\.md$' -run='open -a Marked $file' -priority=10
+</code></pre>
+<p>Because each CLI invocation attaches as its own tool, a rule added with <code>-mine</code> is owned by that short-lived attachment and disappears as soon as the command exits. Rules from the CLI are therefore normally the session's.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L127-L146">crates/apex-cli/src/main.rs:127-146</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1624-L1681">crates/apex-cli/src/main.rs:1624-1681</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1761-L1855">crates/apex-cli/src/main.rs:1761-1855</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L154-L211">crates/apex-core/src/plumb.rs:154-211</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md#L121-L157">crates/apex-cli/README.md:121-157</a></p>
+<h2 id="known-rough-edges">Known rough edges</h2>
+<ul>
+<li><strong><code>-to</code> is ignored.</strong> <code>RunTo</code> is stored and listed, but <code>Run</code> output always goes to <code>+Errors</code>.</li>
+<li><strong><code>$line</code> is always empty</strong> in the server's bindings.</li>
+<li><strong>Stale deadline text.</strong> The CLI README and the <code>AskTool</code> doc comment describe a one-second deadline for every tool answer; verbs actually get ten seconds.</li>
+<li><strong>Incomplete error message.</strong> The CLI's <code>-kind</code> error lists <code>file, dir, term or errors</code>, though <code>page</code> (and its old names) parse too.</li>
+<li><strong>Two built-in lists.</strong> The review notes the lists of built-in words are kept twice: <code>plumb.rs::BUILTINS</code> and the leader's <code>Node::resolve</code> match (<code>crates/apex-core/src/node.rs:2021-2026</code>). They must be kept in step by hand.</li>
+<li><strong>Planned change.</strong> ARCHITECTURE.md plans to make plumbing one kind of request in a general window-event framework rather than a mechanism of its own. The <code>Ask</code>/<code>Answer</code> messages are the first step toward that.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1513-L1529">crates/apex-server/src/lib.rs:1513-1529</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1736-L1740">crates/apex-server/src/lib.rs:1736-1740</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1822-L1825">crates/apex-cli/src/main.rs:1822-1825</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2021-L2026">crates/apex-core/src/node.rs:2021-2026</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L753-L766">ARCHITECTURE.md:753-766</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="proposals.html">Proposals: How Others Change State</a></span><span class="next">Next: <a href="terminals.html">Terminals</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top current"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+<ul class="sections">
+<li class="l2"><a href="#the-rule-table-in-the-metalog">The rule table in the metalog</a></li>
+<li class="l2"><a href="#anatomy-of-a-rule">Anatomy of a rule</a></li>
+<li class="l3"><a href="#verb">Verb</a></li>
+<li class="l3"><a href="#predicates">Predicates</a></li>
+<li class="l3"><a href="#actions">Actions</a></li>
+<li class="l3"><a href="#validation">Validation</a></li>
+<li class="l2"><a href="#templates-and-bindings">Templates and bindings</a></li>
+<li class="l2"><a href="#priorities-and-order">Priorities and order</a></li>
+<li class="l2"><a href="#the-walk">The walk</a></li>
+<li class="l3"><a href="#where-walks-begin">Where walks begin</a></li>
+<li class="l3"><a href="#expansion-before-matching">Expansion before matching</a></li>
+<li class="l3"><a href="#stepping-through-the-rules">Stepping through the rules</a></li>
+<li class="l3"><a href="#when-no-rule-takes-it">When no rule takes it</a></li>
+<li class="l2"><a href="#verbs-in-the-tools-menu">Verbs in the tools menu</a></li>
+<li class="l2"><a href="#tool-rules-asking-answering-deadlines">Tool rules: asking, answering, deadlines</a></li>
+<li class="l2"><a href="#tools-started-when-first-wanted-start">Tools started when first wanted (start)</a></li>
+<li class="l2"><a href="#the-sessions-default-rules-and-the-uis-rules">The session&#39;s default rules and the UI&#39;s rules</a></li>
+<li class="l2"><a href="#apex-plumb-and-apex-plumb-rule">apex plumb and apex plumb rule</a></li>
+<li class="l2"><a href="#known-rough-edges">Known rough edges</a></li>
+</ul>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

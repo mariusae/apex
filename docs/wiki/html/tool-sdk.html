@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing Tools: the apex-tool SDK · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Writing Tools: the apex-tool SDK</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs">crates/apex-core/src/plumb.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs">crates/apex-tool/tests/tool.rs</a></li>
+</ul>
+</details>
+<p><code>apex-tool</code> is the extension point of apex. A tool is an ordinary program, usually started by a session (so <code>APEX_SOCKET</code> and <code>apexsession</code> are in its environment). It joins that session under a name and then takes part in it as the user does. It can make and write windows, put words in their tools menus, answer those words when B2 runs them or B3 plumbs text to them, follow what others type in a window, claim a window as its own, ask for the user's attention, and make and serve pages. The crate is a thin, synchronous layer over <code>apex_server::remote::Remote</code>, the headless client described on <a href="attach-protocol.html">The Attach Protocol</a>. Its stated aim is that &quot;nothing of the wire protocol or the replicated state shows through&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L65-L68">crates/apex-tool/src/lib.rs:65-68</a>).</p>
+<p>Several things are built on the crate: the JSON bridge (<code>apex tool bridge</code>) and the Go SDK on top of it (<a href="bridge-and-go.html">JSON Bridge and Go SDK</a>), the Preview and Web tools (<a href="tool-pages.html">Preview, Web and Diff Tools</a>), the agent tool (<a href="agent-tools.html">Coding Agents</a>) and <code>exp/acp</code>. Three bundled tools (<code>win</code>, <code>lsp</code> and, in part, preview) reach past it to <code>Remote</code> and <code>Proposal</code> directly (<a href="tool-win-and-lsp.html">win and Language Servers</a>). The review in ARCHITECTURE.md explains this by the primitives the SDK lacks, which are listed at the end of this page. How a tool's requests turn into state changes is covered on <a href="proposals.html">Proposals</a>, and the rule table its verbs live in on <a href="plumbing.html">Plumbing Rules and Verbs</a>.</p>
+<h2 id="where-a-tool-sits">Where a tool sits</h2>
+<p>A <code>Tool</code> wraps one <code>Remote</code>. The <code>Remote</code> holds a mirror <code>Log</code>, a full <code>Node</code> replica of the session and the <code>Link</code> to the daemon (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L722-L727">crates/apex-server/src/remote.rs:722-727</a>). The tool attaches as <code>AttachmentKind::Tool</code>, so it never leads a shard. Its writes are therefore <strong>proposals</strong>: they are routed through the daemon to whoever leads (the UI, or the daemon itself when no UI is attached), lowered there into entries, and answered with <code>Applied</code>. Reads such as <code>read</code>, <code>selection</code>, <code>windows</code> and <code>tag</code> never go over the wire. They look at the tool's own replica, which catches up as <code>Entries</code> arrive.</p>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph toolproc[&quot;tool process&quot;]
+        T[&quot;Tool (apex-tool)&quot;]
+        R[&quot;Remote: Log + Node replica + Link&quot;]
+        T --&gt; R
+    end
+    D[&quot;apexd session&quot;]
+    L[&quot;leader (UI or daemon)&quot;]
+    R -- &quot;Propose, RuleAdd, Answer, Notify, Io&quot; --&gt; D
+    D -- &quot;Entries, Applied, Ask(Plumb or Navigate), WindowEvent, Io&quot; --&gt; R
+    D -- &quot;Propose&quot; --&gt; L
+    L -- &quot;Append + Applied&quot; --&gt; D
+</code></pre>
+<p>The <code>Tool</code> struct keeps only a few pieces of state of its own beyond the <code>Remote</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L334-L349">crates/apex-tool/src/lib.rs:334-349</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>watched</code></td>
+<td>windows whose body edits by others become <code>Event::Edit</code></td>
+</tr>
+<tr>
+<td><code>ours</code></td>
+<td>windows the tool made, opened or watches, with the path and label last seen, so renames, relabels and deletions can be reported</td>
+</tr>
+<tr>
+<td><code>events</code></td>
+<td>the queue <code>next_event</code> hands out</td>
+</tr>
+<tr>
+<td><code>own</code></td>
+<td>the shape of the tool's own pending writes to watched windows, so they can be filtered out of the edit stream</td>
+</tr>
+<tr>
+<td><code>incoming</code></td>
+<td>requests for pages the tool serves, gathered frame by frame until they are complete</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1-L80">crates/apex-tool/src/lib.rs:1-80</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L334-L366">crates/apex-tool/src/lib.rs:334-366</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L44-L126">crates/apex-server/src/remote.rs:44-126</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L722-L769">crates/apex-server/src/remote.rs:722-769</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L27-L86">ARCHITECTURE.md:27-86</a></p>
+<h2 id="attaching">Attaching</h2>
+<p><code>Tool::attach(name)</code> finds the session the same way any command does. The socket comes from <code>apex_server::daemon::default_socket()</code>. The session comes from <code>apexsession</code>, then <code>APEX_SESSION</code>, and falls back to the default session name. <code>attach</code> then calls <code>attach_to(socket, session, name)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L352-L358">crates/apex-tool/src/lib.rs:352-358</a>). <code>attach_to</code> connects with <code>Remote::connect_as(..., AttachmentKind::Tool)</code> and calls <code>announce(name)</code>. Announcing sends <code>ClientMsg::Named</code> with the process group, pid and command line, so the tool shows under its own name in the top row and in <code>apex ps</code>, and <code>Kill</code> can find it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L891-L899">crates/apex-server/src/remote.rs:891-899</a>).</p>
+<p>The name matters beyond display. A rule's action is <code>RuleAction::Tool(name)</code>, and the daemon dispatches a plumb to the first connection in the session whose attachment carries that name (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1467-L1486">crates/apex-server/src/daemon.rs:1467-1486</a>). Names are not unique, which the review lists as a weakness.</p>
+<p>A few accessors describe the attachment itself:</p>
+<ul>
+<li><code>session()</code> returns the session's id and label.</li>
+<li><code>name()</code> returns the attachment's name as recorded in the metalog.</li>
+<li><code>socket()</code> returns the daemon's socket, for a tool that starts others.</li>
+<li><code>meta()</code> exposes the replica's <code>Meta</code> (settings, rules, attachments).</li>
+<li><code>setting(key)</code> returns the tool's own setting, else the session's.</li>
+<li><code>set(key, value)</code> records a setting that is dropped when the tool detaches.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L351-L385">crates/apex-tool/src/lib.rs:351-385</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1113-L1129">crates/apex-tool/src/lib.rs:1113-1129</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L891-L899">crates/apex-server/src/remote.rs:891-899</a></p>
+<h2 id="the-event-loop-next-event">The event loop: <code>next_event</code></h2>
+<p>A tool is a loop around <code>next_event(timeout)</code>. The method returns:</p>
+<ul>
+<li><code>Ok(Some(ev))</code> when there is something to handle;</li>
+<li><code>Ok(None)</code> when the wait ran out;</li>
+<li>an <code>Error</code> whose <code>is_closed()</code> holds once the session is over.</li>
+</ul>
+<p>Earlier, a timeout and the end of the session both returned <code>Ok(None)</code>. The review recorded this as bug 6, and it has since been fixed with the <code>CLOSED</code> error (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L108-L117">crates/apex-tool/src/lib.rs:108-117</a>). The test <code>next_event_tells_a_wait_run_out_from_the_session_ending</code> pins the fix (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L402-L419">crates/apex-tool/tests/tool.rs:402-419</a>).</p>
+<pre><code class="language-rust">pub fn next_event(&amp;mut self, timeout: Option&lt;Duration&gt;) -&gt; Result&lt;Option&lt;Event&gt;&gt;
+</code></pre>
+<p>Internally the method alternates two steps (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L392-L453">crates/apex-tool/src/lib.rs:392-453</a>):</p>
+<ul>
+<li><code>drain</code> handles every message already queued on the link without blocking.</li>
+<li><code>step</code> blocks for up to 100 ms (or what is left of the deadline) for one more message.</li>
+</ul>
+<p>Each message goes through <code>before</code> (for <code>Entries</code> only), then <code>Remote::handle</code>, which appends to the mirror log and catches the node up, then <code>after</code>. The two hooks turn what arrived into events:</p>
+<ul>
+<li>
+<p><strong><code>before</code></strong> sees buffer entries <em>before</em> they land in the replica. If the buffer is a watched window's body, each <code>BufferOp::Edit</code> becomes an <code>Event::Edit { window, q0, nd, text }</code>, unless it matches an entry in <code>own</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L455-L470">crates/apex-tool/src/lib.rs:455-470</a>).</p>
+</li>
+<li>
+<p><strong><code>after</code></strong> collects everything the link stored (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L472-L545">crates/apex-tool/src/lib.rs:472-545</a>):</p>
+<ul>
+<li>I/O frames on daemon-opened streams (numbered from <code>0x8000_0000</code>), assembled into <code>Event::Request</code>;</li>
+<li>navigation questions, which become <code>Event::Navigate</code>;</li>
+<li>window events, which become <code>Event::Page</code>;</li>
+<li>tool plumbs (<code>ToolPlumb</code>), which become <code>Event::Plumb</code>.</li>
+</ul>
+<p>It then compares every window in <code>ours</code> against the replica and emits <code>Renamed</code>, <code>Relabeled</code> or <code>Deleted</code>.</p>
+</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th><code>Event</code></th>
+<th>When it comes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Plumb(Plumb)</code></td>
+<td>a rule of the tool's matched; answer it</td>
+</tr>
+<tr>
+<td><code>Edit(Edit)</code></td>
+<td>someone else edited a watched window's body</td>
+</tr>
+<tr>
+<td><code>Renamed { window, path }</code></td>
+<td>a window in <code>ours</code> has a new path (a Put under a new name, a shell's <code>cd</code>), not by the tool's own <code>rename</code></td>
+</tr>
+<tr>
+<td><code>Relabeled { window, label }</code></td>
+<td>its label changed (a terminal's title)</td>
+</tr>
+<tr>
+<td><code>Deleted { window }</code></td>
+<td>it is gone; it also leaves <code>ours</code> and <code>watched</code></td>
+</tr>
+<tr>
+<td><code>Navigate(Navigation)</code></td>
+<td>a link was followed in a page the tool owns (after <code>handle_pages</code>)</td>
+</tr>
+<tr>
+<td><code>Page { window, event }</code></td>
+<td>a page event: navigated, loaded, title, a script message (after <code>handle_pages</code>)</td>
+</tr>
+<tr>
+<td><code>Request(Served)</code></td>
+<td>a complete request for <code>tool://NAME/...</code>; answer with <code>respond</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>alive()</code> drains the link and reports whether it is still open. It is meant for tools that have no window of their own whose deletion would tell them the session ended (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L951-L958">crates/apex-tool/src/lib.rs:951-958</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L191-L243">crates/apex-tool/src/lib.rs:191-243</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L387-L545">crates/apex-tool/src/lib.rs:387-545</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L341-L465">crates/apex-server/src/remote.rs:341-465</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L402-L419">crates/apex-tool/tests/tool.rs:402-419</a></p>
+<h2 id="proposing-and-what-can-go-wrong">Proposing, and what can go wrong</h2>
+<p>Every write goes through the private <code>propose</code>. It sends the proposal over the link with a fresh id. It then steps the link in slices of up to 50 ms, so events that arrive meanwhile are still collected, until <code>link.applied</code> has the answer or <code>TIMEOUT</code> (10 s) passes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L591-L608">crates/apex-tool/src/lib.rs:591-608</a>). It returns three kinds of error:</p>
+<ul>
+<li>the leader's own refusal (<code>Applied{Err}</code>), passed through as text;</li>
+<li><code>&quot;timed out waiting for the session&quot;</code>;</li>
+<li><code>&quot;the session is gone&quot;</code>.</li>
+</ul>
+<p>The <code>Ok</code> value is the window a proposal made, if it made one.</p>
+<p><code>Error</code> is a plain <code>String</code> newtype. There is no error enum, so beyond <code>is_closed</code> a tool can only show or log the message (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L82-L117">crates/apex-tool/src/lib.rs:82-117</a>).</p>
+<p>Some calls do not wait for an answer. They send a bare <code>ClientMsg</code>: <code>notify</code>, <code>unnotify</code>, <code>withdraw</code>, <code>set</code>, <code>answer</code>, <code>answer_navigation</code>, <code>post_to_page</code> and <code>respond</code>. Those calls always return <code>Ok</code>.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant T as Tool
+    participant D as apexd
+    participant L as leader
+    T-&gt;&gt;D: Propose{id, ReplaceRange{buffer, version, q0, q1, text}}
+    D-&gt;&gt;L: Propose{id', ...}
+    L-&gt;&gt;L: proposal::apply checks version
+    alt version matches
+        L-&gt;&gt;D: Append(entries), Applied{id', Ok}
+        D-&gt;&gt;T: Entries, Applied{id, Ok}
+    else changed meanwhile
+        L-&gt;&gt;D: Applied{id', Err}
+        D-&gt;&gt;T: Applied{id, Err &quot;buffer changed meanwhile&quot;}
+    end
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L82-L123">crates/apex-tool/src/lib.rs:82-123</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L585-L608">crates/apex-tool/src/lib.rs:585-608</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L244-L303">crates/apex-server/src/proposal.rs:244-303</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L104-L110">ARCHITECTURE.md:104-110</a></p>
+<h2 id="making-windows">Making windows</h2>
+<p>Every constructor proposes in the <strong>last column</strong> of the layout, and adds the window it gets back to <code>ours</code> (<code>remember</code>) so that its renames and deletion are reported.</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Proposal</th>
+<th>What it makes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>new_window(path)</code></td>
+<td><code>NewWindow{scratch: false}</code></td>
+<td>an empty window for a file at <code>path</code></td>
+</tr>
+<tr>
+<td><code>new_scratch(path, label)</code></td>
+<td><code>NewWindow{scratch: true}</code></td>
+<td>no file behind it (a transcript, a report)</td>
+</tr>
+<tr>
+<td><code>new_diagnostic(path, label)</code></td>
+<td><code>NewWindow{scratch, diagnostic}</code></td>
+<td>made stashed, like <code>+Errors</code>; new text is shown in a toast, and progress on its stash card</td>
+</tr>
+<tr>
+<td><code>new_page(path, label, html)</code></td>
+<td><code>Proposal::open_html</code></td>
+<td>a buffer-backed page whose body is the HTML; <code>replace</code> rewrites it in place</td>
+</tr>
+<tr>
+<td><code>new_web_page(url, near)</code></td>
+<td><code>Proposal::open_url</code>, then <code>Own</code></td>
+<td>a page at an address, in <code>near</code>'s column if given, owned by the tool</td>
+</tr>
+<tr>
+<td><code>diff(text, dir)</code></td>
+<td><code>new_page</code> or <code>replace</code> + <code>Show</code></td>
+<td><code>dir</code>'s page labelled &quot;Diff&quot;, rendered by <code>apex_diff::render</code>, with <code>Prev Next</code> added to the tag once</td>
+</tr>
+<tr>
+<td><code>open(name, line)</code></td>
+<td><code>Goto</code></td>
+<td>the file shown (opened if needed); then waits up to 10 s for a window of that name</td>
+</tr>
+</tbody>
+</table>
+<p><code>open</code> is a <code>Goto</code>, which moves the user and records the back stack. The review notes that the CLI's <code>open</code> is something else (an <code>OpenFile</code>) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L580-L583">ARCHITECTURE.md:580-583</a>). <code>bring(w)</code> and <code>switch(session, window)</code> are the other two ways of moving the user. <code>show(w, at)</code> and <code>show_line(w, n)</code> only scroll, and only when needed; they leave dot, the mouse and the back stack alone. The review keeps <code>show</code> distinct from the rest.</p>
+<p>The query side reads the replica:</p>
+<ul>
+<li><code>windows()</code> and <code>window(w)</code> return a <code>WindowInfo</code> with the path, label, kind, <code>scratch</code> and <code>live</code>.</li>
+<li><code>window_body</code> returns the <code>Body</code>.</li>
+<li><code>window_owner</code> returns the owning attachment.</li>
+<li><code>read</code>, <code>selection</code>, <code>line(w, n)</code> and <code>tag(w)</code> return text and positions.</li>
+</ul>
+<p>All offsets count characters, as apex does everywhere (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L61">crates/apex-tool/src/lib.rs:61</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L125-L147">crates/apex-tool/src/lib.rs:125-147</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L610-L786">crates/apex-tool/src/lib.rs:610-786</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L852-L880">crates/apex-tool/src/lib.rs:852-880</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L179-L192">crates/apex-tool/tests/tool.rs:179-192</a></p>
+<h2 id="writing-text-replace-append-insert-following-set-tag">Writing text: <code>replace</code>, <code>append</code>, <code>insert_following</code>, <code>set_tag</code></h2>
+<p><code>replace(w, q0, q1, text)</code> takes the body buffer's current length and <code>version</code> from the replica, clamps both ends (the constant <code>END = usize::MAX</code> means the end of the text), and proposes <code>ReplaceRange { select: false, version, .. }</code>. If the user typed in the meantime, the leader's version differs, the proposal fails, and <strong>nothing is written</strong>. The caller is expected to read again and retry (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L788-L816">crates/apex-tool/src/lib.rs:788-816</a>).</p>
+<p>This used to be a silent failure. <code>ReplaceRange</code> used to return <code>Ok(None)</code> on a conflict, which left a phantom entry in the tool's own-edit queue (bug 1 in the review). It now returns <code>Err</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L259-L267">crates/apex-server/src/proposal.rs:259-267</a>), and <code>replace</code> pops the remembered shape again when the proposal fails. <code>replace</code> never moves dot. <code>append(w, text)</code> is <code>replace(w, END, END, text)</code>.</p>
+<p><code>insert_following(w, at, text)</code> is the call for windows a program writes. It proposes <code>Insert { follow: true }</code>. The leader collects every view whose dot is exactly the empty range at <code>at</code>, inserts the text, and moves those dots to its end, all in the same round trip (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L290-L303">crates/apex-server/src/proposal.rs:290-303</a>). A dot sitting at the output point is carried along, so the user can keep typing at the end. A dot anywhere else, such as in a draft being typed, stays where the edit leaves it. The test <code>output_carries_the_dot_along_but_leaves_a_draft_alone</code> shows both cases: three writes carry the dot from 0 to 4 to 8, and then an insert before a draft at 13 shifts the draft's cursor to 19 without collapsing it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L26-L53">crates/apex-tool/tests/tool.rs:26-53</a>). <code>Insert</code> also refuses a stale <code>version</code>.</p>
+<p><code>set_tag(w, text)</code> replaces the whole tag text with <code>text.trim()</code> plus a trailing space. apex's own tag words (<code>Del Snarf Undo Put</code> and so on) and the window's path and label are window state, not tag text. A tool that furnishes a tag therefore writes all of its words, <code>Look</code> included. A fresh window's tag reads <code>&quot;Look &quot;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L194-L220">crates/apex-tool/tests/tool.rs:194-220</a>).</p>
+<p>Two further writes:</p>
+<ul>
+<li><code>select(w, q0, q1)</code> sets the selection.</li>
+<li><code>rename</code> and <code>set_label</code> change the window's path and label. Both update <code>ours</code> <em>before</em> proposing, so the tool's own change is never reported back as an event.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L788-L923">crates/apex-tool/src/lib.rs:788-923</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L244-L303">crates/apex-server/src/proposal.rs:244-303</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L26-L53">crates/apex-tool/tests/tool.rs:26-53</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L194-L220">crates/apex-tool/tests/tool.rs:194-220</a></p>
+<h2 id="offering-verbs-through-rules">Offering verbs through rules</h2>
+<p>A tool offers a verb by installing a plumbing rule whose action is itself. <code>Rule</code> is a builder:</p>
+<pre><code class="language-rust">let shout = t.offer(Rule::verb(&quot;Shout&quot;).window(w))?;
+let look  = t.offer(Rule::plumb().text(r&quot;#(\d+)&quot;).file(r&quot;\.go$&quot;).priority(5))?;
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Builder</th>
+<th>Rule field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Rule::verb(v)</code></td>
+<td><code>verb</code></td>
+<td>a word in the tools menu of matching windows, run wherever B2 finds it</td>
+</tr>
+<tr>
+<td><code>Rule::plumb()</code></td>
+<td><code>verb = &quot;plumb&quot;</code></td>
+<td>B3 on matching text goes to the tool</td>
+</tr>
+<tr>
+<td><code>.text(re)</code></td>
+<td><code>text</code></td>
+<td>the plumbed text, or the verb's arguments, must match whole; the groups arrive in <code>Plumb::groups</code></td>
+</tr>
+<tr>
+<td><code>.file(re)</code></td>
+<td><code>file</code></td>
+<td>the window's name must match</td>
+</tr>
+<tr>
+<td><code>.kind(k)</code></td>
+<td><code>kind</code></td>
+<td>the window kind</td>
+</tr>
+<tr>
+<td><code>.window(w)</code></td>
+<td><code>win</code></td>
+<td>this one window (ids are never reused)</td>
+</tr>
+<tr>
+<td><code>.owner(re)</code></td>
+<td><code>owner</code></td>
+<td>the owning tool's name must match; <code>&quot;&quot;</code> means no owner, i.e. a real file</td>
+</tr>
+<tr>
+<td><code>.unlisted()</code></td>
+<td><code>unlisted</code></td>
+<td>runs by B2 but is left out of the menu</td>
+</tr>
+<tr>
+<td><code>.priority(p)</code></td>
+<td>—</td>
+<td>higher goes first; 0 is usual</td>
+</tr>
+<tr>
+<td><code>.start(cmd)</code></td>
+<td><code>start</code></td>
+<td>how to start the tool if the rule matches while it is not attached</td>
+</tr>
+</tbody>
+</table>
+<p><code>offer_as</code> turns the builder into a <code>PlumbRule</code> with <code>action: RuleAction::Tool(self.name())</code>, checks it locally, and calls <code>Remote::rule_add</code>. That sends <code>ClientMsg::RuleAdd</code> and blocks until <code>RuleAdded{id}</code> arrives (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1088-L1105">crates/apex-tool/src/lib.rs:1088-1105</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L790-L795">crates/apex-server/src/remote.rs:790-795</a>). The <code>mine</code> flag decides who owns the rule:</p>
+<ul>
+<li><strong><code>offer</code></strong> installs the rule as the tool's own. When the connection goes, the daemon removes every rule owned by the attachment and then detaches it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L518-L536">crates/apex-server/src/daemon.rs:518-536</a>).</li>
+<li><strong><code>offer_lasting</code></strong> installs the rule as the session's (<code>SERVER</code>), so it outlives the tool. Together with <code>.start(cmd)</code> it is how a tool such as Preview or Web is started on first use; see <a href="plumbing.html">Plumbing Rules and Verbs</a>.</li>
+</ul>
+<p><code>withdraw(id)</code> sends <code>RuleRm{session: false}</code>. The daemon only removes a rule its owner asks to remove, so <code>withdraw</code> cannot remove a lasting rule (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L826-L833">crates/apex-server/src/daemon.rs:826-833</a>).</p>
+<p><code>Rule::owner</code> is how a rule targets one tool's windows without guessing from their names. The test <code>a_rule_may_name_the_tool_that_owns_the_window</code> offers <code>Snarfout</code> with <code>owner(&quot;win-.*&quot;)</code>. The word appears in win's window and not in the agent's window, even though both are named <code>/tmp/proj/-…</code>. It also offers <code>Back</code> with <code>owner(&quot;&quot;)</code>, which appears only on a real file (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L54-L86">crates/apex-tool/tests/tool.rs:54-86</a>). Unlisted verbs are tested the same way: <code>Allow</code> is not in the menu, but B2 on <code>Allow once</code> still reaches the tool with <code>text == &quot;once&quot;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L87-L110">crates/apex-tool/tests/tool.rs:87-110</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L245-L332">crates/apex-tool/src/lib.rs:245-332</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1073-L1111">crates/apex-tool/src/lib.rs:1073-1111</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L131-L151">crates/apex-core/src/plumb.rs:131-151</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L816-L833">crates/apex-server/src/daemon.rs:816-833</a></p>
+<h2 id="answering-plumbs-within-their-deadlines">Answering plumbs within their deadlines</h2>
+<p>When a rule of the tool's matches, the server's plumb walk produces an <code>AskTool</code> step. The daemon finds the tool's connection, sends <code>Ask { request: Request::Plumb {...} }</code>, and starts a timer. The deadline depends on the verb (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L198-L206">crates/apex-server/src/daemon.rs:198-206</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Constant</th>
+<th>Wait</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B3 (<code>verb == &quot;plumb&quot;</code>)</td>
+<td><code>B3_ANSWER</code></td>
+<td>1 s</td>
+<td>a search; it should not keep the user waiting, and a refusal costs nothing</td>
+</tr>
+<tr>
+<td>any verb</td>
+<td><code>VERB_ANSWER</code></td>
+<td>10 s</td>
+<td>the tool may do the work before answering, e.g. a formatter reshaping a buffer before letting Put write it</td>
+</tr>
+<tr>
+<td>a tool being started (<code>start</code>)</td>
+<td><code>START_WAIT</code></td>
+<td>10 s to attach</td>
+<td>then the plumb is handed to it with its usual wait</td>
+</tr>
+</tbody>
+</table>
+<p>The tool receives an <code>Event::Plumb</code> with these fields:</p>
+<ul>
+<li><code>id</code> and <code>rule</code>: the matching rule, which tells a tool with several rules apart.</li>
+<li><code>verb</code> and <code>text</code>: the arguments, or the plumbed text.</li>
+<li><code>dir</code>: where relative names resolve.</li>
+<li><code>window</code>: <code>None</code> when the word came from the top row.</li>
+<li><code>groups</code>: the text regexp's groups, <code>$0</code> first.</li>
+<li><code>at</code> and <code>sel</code>.</li>
+</ul>
+<p>For a verb, <code>at</code> is the window's dot. For B3, <code>at</code> is the pointer and <code>sel</code> is what was swept or expanded. <code>Plumb::range()</code> picks the first non-empty one of <code>sel</code> and <code>at</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L149-L178">crates/apex-tool/src/lib.rs:149-178</a>).</p>
+<p><code>answer(&amp;p, taken)</code> sends <code>Answer::Plumb { ok }</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L992-L995">crates/apex-server/src/remote.rs:992-995</a>), and the walk continues:</p>
+<ul>
+<li><strong>Taken</strong> finishes the walk.</li>
+<li><strong>Refused</strong> goes on to the next rule (<code>Server::plumb_next</code>).</li>
+<li><strong>No answer in time</strong>, or no such tool attached, also goes on (<code>plumb_failed</code>), but the plumb is marked <code>failed</code>.</li>
+</ul>
+<p>The <code>failed</code> mark matters for words apex knows itself (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1402-L1428">crates/apex-server/src/lib.rs:1402-1428</a>).</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Asked: rule matches, Ask sent to tool
+    Asked --&gt; Taken: answer(p, true)
+    Asked --&gt; NextRule: answer(p, false)
+    Asked --&gt; Failed: deadline passes or tool absent
+    NextRule --&gt; Builtin: no rule left, word is apex's
+    Failed --&gt; NoFallThrough: no rule left, word is apex's
+    Taken --&gt; [*]
+    Builtin --&gt; [*]: apex performs the word
+    NoFallThrough --&gt; [*]: the word fails
+</code></pre>
+<h2 id="claiming-built-in-words-such-as-put">Claiming built-in words such as Put</h2>
+<p>A rule may take a word apex has its own meaning for. The list is <code>apex_core::plumb::BUILTINS</code>: the leader's built-ins (<code>Cut</code>, <code>Paste</code>, <code>Undo</code>, <code>Del</code>, <code>Look</code>, <code>Edit</code>, ...) and the server's (<code>Put</code>, <code>Get</code>, <code>New</code>, <code>Win</code>, <code>Kill</code>, ...) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L230-L243">crates/apex-core/src/plumb.rs:230-243</a>).</p>
+<p>Such a rule must say where it applies, with <code>.window</code>, <code>.file</code> or <code>.kind</code>. <code>PlumbRule::check</code> refuses an unscoped claim, so <code>offer(Rule::verb(&quot;Put&quot;))</code> returns <code>Err</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L141-L146">crates/apex-core/src/plumb.rs:141-146</a>).</p>
+<p>What happens next depends on the answer:</p>
+<ul>
+<li><strong>Taken:</strong> the word meant what the tool said, and nothing else happens.</li>
+<li><strong>Refused:</strong> the word is handed back, and apex does what it always does. The crate docs describe a formatter as the typical case: it claims <code>Put</code>, tidies the buffer and refuses, so the ordinary <code>Put</code> writes the tidy text.</li>
+<li><strong>Never answered:</strong> this decides nothing. The word <em>fails</em> rather than falling through, so a dead tool cannot let <code>Get</code> reload a generated window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L52-L61">crates/apex-tool/src/lib.rs:52-61</a>).</li>
+</ul>
+<p><code>a_tool_takes_a_word_apex_knows_and_can_hand_it_back</code> covers each case (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L246-L323">crates/apex-tool/tests/tool.rs:246-323</a>):</p>
+<ul>
+<li>a taken <code>Put</code> leaves the file on disk unchanged;</li>
+<li>a refused <code>Put</code> writes it;</li>
+<li>an unscoped rule for <code>Put</code> is refused;</li>
+<li>a <code>Put</code> rule scoped to another file pattern does not intercept;</li>
+<li><code>Del</code>, which the leader rather than the server performs, keeps the window when taken and closes it when refused.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L160-L209">crates/apex-server/src/daemon.rs:160-209</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1385-L1488">crates/apex-server/src/daemon.rs:1385-1488</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1402-L1428">crates/apex-server/src/lib.rs:1402-1428</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L131-L151">crates/apex-core/src/plumb.rs:131-151</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L221-L243">crates/apex-core/src/plumb.rs:221-243</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L585-L589">crates/apex-tool/src/lib.rs:585-589</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L111-L134">crates/apex-tool/tests/tool.rs:111-134</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L246-L323">crates/apex-tool/tests/tool.rs:246-323</a></p>
+<h2 id="watching-other-windows-edits">Watching other windows' edits</h2>
+<p><code>watch(w)</code> adds a text window to <code>watched</code> (and to <code>ours</code>). <code>unwatch(w)</code> removes it. From then on, <code>before</code> compares every incoming buffer entry against the watched windows' body buffers and turns each <code>BufferOp::Edit</code> into an <code>Event::Edit</code>. The offsets are in the text as the tool last saw it: <code>nd</code> characters deleted at <code>q0</code>, and <code>text</code> inserted there.</p>
+<p>The proposals are applied by the leader as itself, so an entry does not say which attachment asked for it. The SDK therefore <strong>recognises its own edits by their shape</strong>. <code>replace</code> and <code>insert_following</code> push <code>(buffer, q0, nd, text)</code> onto <code>own</code>, capped at 256 entries, and <code>before</code> drops the first incoming edit that matches exactly (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L343-L346">crates/apex-tool/src/lib.rs:343-346</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L801-L808">crates/apex-tool/src/lib.rs:801-808</a>). The main test checks both sides: the tool's own <code>append</code> produces no event, and another attachment's <code>ReplaceRange</code> produces <code>Edit { q0: 16, nd: 0, text: &quot;typed\n&quot; }</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L141-L157">crates/apex-tool/tests/tool.rs:141-157</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L180-L189">crates/apex-tool/src/lib.rs:180-189</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L455-L470">crates/apex-tool/src/lib.rs:455-470</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1056-L1071">crates/apex-tool/src/lib.rs:1056-1071</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L141-L177">crates/apex-tool/tests/tool.rs:141-177</a></p>
+<h2 id="owning-windows-and-showing-status">Owning windows and showing status</h2>
+<p>Four calls mark a window as the tool's, each a proposal carrying the tool's attachment id (or <code>None</code> to clear it):</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Proposal</th>
+<th>Effect</th>
+<th>Ends</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_owner(w, on)</code></td>
+<td><code>Own</code></td>
+<td>content is the tool's doing: the tag loses its file menu (<code>Undo Redo Put Get</code>), <code>Del</code> asks nothing, <code>Rule::owner</code> can match it</td>
+<td>on <code>false</code> or detach</td>
+</tr>
+<tr>
+<td><code>set_live(w, on)</code></td>
+<td><code>Live</code></td>
+<td>the handle shows a process behind it; <code>Del</code> does not ask about unsaved text</td>
+<td>on <code>false</code> or detach</td>
+</tr>
+<tr>
+<td><code>set_working(w, on)</code></td>
+<td><code>Working{at: None}</code></td>
+<td>the handle pulses</td>
+<td>on <code>false</code> or detach</td>
+</tr>
+<tr>
+<td><code>set_progress(w, Some(p))</code></td>
+<td><code>Working{at: Some(p≤100)}</code></td>
+<td>the circle round the handle filled to <code>p</code>%</td>
+<td>on <code>None</code> or detach</td>
+</tr>
+<tr>
+<td><code>set_clean(w)</code></td>
+<td><code>Clean{version}</code></td>
+<td>the body is what it should be; dirtiness stops showing, as acme's <code>ctl clean</code></td>
+<td>when the user types again</td>
+</tr>
+</tbody>
+</table>
+<p><code>work_behind_a_window_shows_while_the_tool_is_there</code> checks that dropping the <code>Tool</code> stops the pulsing (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L221-L244">crates/apex-tool/tests/tool.rs:221-244</a>).</p>
+<p>Owning a page also matters for navigation. After <code>handle_pages()</code>, links followed in the tool's pages come to it as <code>Event::Navigate</code>, and it answers with <code>answer_navigation(n, NavAnswer)</code>. Page events arrive as <code>Event::Page</code>, and <code>post_to_page</code> speaks to the page's script. A tool that has not called <code>handle_pages</code> has every link answered <code>Default</code> at once by its own link (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L421-L429">crates/apex-server/src/remote.rs:421-429</a>). Requests for <code>tool://NAME/...</code> arrive as <code>Event::Request</code>, and <code>respond</code> sends the response head, the body in 256 KiB chunks, and <code>End</code>. With no tool of that name attached, the request gets 503 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L460-L487">crates/apex-tool/tests/tool.rs:460-487</a>). Pages themselves are described on <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L547-L583">crates/apex-tool/src/lib.rs:547-583</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L960-L1016">crates/apex-tool/src/lib.rs:960-1016</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L221-L244">crates/apex-tool/tests/tool.rs:221-244</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L421-L487">crates/apex-tool/tests/tool.rs:421-487</a></p>
+<h2 id="notifications-errors-snarf-and-commands">Notifications, errors, snarf and commands</h2>
+<p><code>notify(w)</code> sends <code>ClientMsg::Notify</code> and raises the window's notification. The notification shows on the window's handle, on the session's handle, and on the app tab; a click on the session's handle goes to the oldest one. A window has one notification at a time, and raising it again keeps its place in the queue. The notification goes away when:</p>
+<ul>
+<li>the tool calls <code>unnotify</code>;</li>
+<li>the user takes it or uses the window;</li>
+<li>the window goes;</li>
+<li>the tool detaches. <code>MetaOp::Detach</code> drops the attachment's notifications (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L828-L832">crates/apex-core/src/state.rs:828-832</a>).</li>
+</ul>
+<p><code>notified(w)</code> asks the replica whether it is still up. One tool cannot lower another's notification. The test also checks the oldest-first queue across two tools (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L325-L381">crates/apex-tool/tests/tool.rs:325-381</a>).</p>
+<p>The remaining calls are small:</p>
+<ul>
+<li><code>errors(dir, text)</code> appends to <code>+Errors</code> for <code>dir</code> or the session.</li>
+<li><code>snarf(text)</code> sets the snarf buffer and the clipboard of every UI (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L383-L400">crates/apex-tool/tests/tool.rs:383-400</a>).</li>
+<li><code>exec_in(w, text)</code> and <code>exec(text)</code> run <code>text</code> as B2 would, as <code>Proposal::Exec</code>.</li>
+<li><code>delete(w)</code> is just <code>exec_in(Some(w), &quot;Del&quot;)</code>.</li>
+</ul>
+<p>Because <code>delete</code> is an exec, rules can intercept it, and an unsaved window gets a warning instead. The review criticises this.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L925-L958">crates/apex-tool/src/lib.rs:925-958</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1018-L1054">crates/apex-tool/src/lib.rs:1018-1054</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L325-L400">crates/apex-tool/tests/tool.rs:325-400</a></p>
+<h2 id="testing">Testing</h2>
+<p><code>crates/apex-tool/tests/tool.rs</code> runs a real <code>Daemon::run_with</code> on a thread, on a fresh socket in the temp directory, for each test (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L13-L24">crates/apex-tool/tests/tool.rs:13-24</a>). The tests attach <code>Tool</code>s, plus bare <code>Remote</code>s that play &quot;another attachment&quot; or a UI. A <code>Remote</code> attached as <code>AttachmentKind::Ui</code> takes the lead, which the snarf test uses to check that a tool waits on a UI leader to apply its proposal. Most assertions wait on a replica with a deadline rather than sleeping, because every write is applied by the leader and only later replicated.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L1-L24">crates/apex-tool/tests/tool.rs:1-24</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/tests/tool.rs#L383-L400">crates/apex-tool/tests/tool.rs:383-400</a></p>
+<h2 id="known-gaps">Known gaps</h2>
+<p>ARCHITECTURE.md §4 reviews the tool APIs and finds them neither complete nor orthogonal. The points that bear on this crate:</p>
+<ul>
+<li><strong>Own edits are filtered, by shape.</strong> Because a tool never sees its own edits in order, it cannot reconstruct the sequence of changes to a buffer. Per the review, the LSP would desync after its own Fmt or Rename, and agent and acp keep hand-updated position tables. Matching by shape is also only a heuristic: an identical edit by someone else could be swallowed. The review proposes delivering every edit tagged with its origin (acme's E/K/M), or server-side marks.</li>
+<li><strong>Only watched windows report</strong>, selections are never reported, and there are no create or delete events for windows that are not the tool's own. <code>windows()</code> lacks dirty, owner, diagnostic, working and notified.</li>
+<li><strong>Missing primitives</strong> that send tools to the filesystem or to <code>apex</code> subprocesses:
+<ul>
+<li>terminal send and read;</li>
+<li>I/O-plane get and put for files on the session's host;</li>
+<li>reading the snarf buffer;</li>
+<li>window and buffer lifecycle events;</li>
+<li>back and forward navigation;</li>
+<li>an event when a setting changes;</li>
+<li>an undo-group mark;</li>
+<li>sam addresses (<code>addr</code>/<code>data</code>), though <code>apex_edit</code> has the evaluator.</li>
+</ul>
+</li>
+<li><strong>Overlapping calls.</strong> The four <code>new_*</code> constructors are one call with options. Owner, live, working and progress overlap. <code>replace</code>, <code>append</code>, <code>insert_following</code> and <code>set_tag</code> are one write with flags. <code>open</code>, <code>bring</code> and <code>switch</code> all mean &quot;go to&quot;. <code>notified</code> exists only to be polled.</li>
+<li><strong>Surfaces disagree.</strong> <code>insert_following</code> is missing from the bridge and Go, despite the crate's &quot;one for one&quot; claim; see <a href="bridge-and-go.html">JSON Bridge and Go SDK</a>.</li>
+</ul>
+<p>Two of the review's bugs about this crate are already fixed in the code: the silent <code>ReplaceRange</code> conflict and the ambiguous <code>Ok(None)</code> from <code>next_event</code>. The review's line numbers for <code>apex-tool/src/lib.rs</code> predate later changes; the shape filter is now at <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L455-L470">crates/apex-tool/src/lib.rs:455-470</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L141-L194">ARCHITECTURE.md:141-194</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L552-L666">ARCHITECTURE.md:552-666</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="configuration.html">Configuration: Profile, Attach and Settings</a></span><span class="next">Next: <a href="bridge-and-go.html">JSON Bridge and Go SDK</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top current"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+<ul class="sections">
+<li class="l2"><a href="#where-a-tool-sits">Where a tool sits</a></li>
+<li class="l2"><a href="#attaching">Attaching</a></li>
+<li class="l2"><a href="#the-event-loop-next-event">The event loop: next_event</a></li>
+<li class="l2"><a href="#proposing-and-what-can-go-wrong">Proposing, and what can go wrong</a></li>
+<li class="l2"><a href="#making-windows">Making windows</a></li>
+<li class="l2"><a href="#writing-text-replace-append-insert-following-set-tag">Writing text: replace, append, insert_following, set_tag</a></li>
+<li class="l2"><a href="#offering-verbs-through-rules">Offering verbs through rules</a></li>
+<li class="l2"><a href="#answering-plumbs-within-their-deadlines">Answering plumbs within their deadlines</a></li>
+<li class="l2"><a href="#claiming-built-in-words-such-as-put">Claiming built-in words such as Put</a></li>
+<li class="l2"><a href="#watching-other-windows-edits">Watching other windows&#39; edits</a></li>
+<li class="l2"><a href="#owning-windows-and-showing-status">Owning windows and showing status</a></li>
+<li class="l2"><a href="#notifications-errors-snarf-and-commands">Notifications, errors, snarf and commands</a></li>
+<li class="l2"><a href="#testing">Testing</a></li>
+<li class="l2"><a href="#known-gaps">Known gaps</a></li>
+</ul>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

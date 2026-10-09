@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building, Testing and Packaging · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Building, Testing and Packaging</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/.cargo/config.toml">.cargo/config.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/.github/workflows/rust.yml">.github/workflows/rust.yml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/Cargo.toml">Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs">crates/apex-cli/tests/ssh.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/Cargo.toml">crates/apex-client/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/Cargo.toml">crates/apex-core/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/benches/core.rs">crates/apex-core/benches/core.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs">crates/apex-core/tests/core.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/Cargo.toml">crates/apex-edit/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/benches/edit.rs">crates/apex-edit/benches/edit.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs">crates/apex-edit/tests/common/mod.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/debug_one.rs">crates/apex-edit/tests/debug_one.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/golden.rs">crates/apex-edit/tests/golden.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/sam_diff.rs">crates/apex-edit/tests/sam_diff.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/Cargo.toml">crates/apex-server/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs">crates/apex-server/build.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apex_bench.rs">crates/apex-server/src/bin/apex_bench.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs">crates/apex-server/src/providers.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/lsp.rs">crates/apex-tool-lsp/tests/lsp.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/Cargo.toml">crates/ghostty-vt-sys/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs">crates/ghostty-vt-sys/build.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/docs/index.html">docs/index.html</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex_test.go">go/apex/apex_test.go</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/Info.plist">mac/Info.plist</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh">mac/build-app.sh</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/zig-ar">mac/zig-ar</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/zig-cc">mac/zig-cc</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/third_party/pathfinder_simd/Cargo.toml">third_party/pathfinder_simd/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/third_party/pathfinder_simd/build.rs">third_party/pathfinder_simd/build.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/third_party/pathfinder_simd/src/lib.rs">third_party/pathfinder_simd/src/lib.rs</a></li>
+</ul>
+</details>
+<p>apex is one Cargo workspace. It produces the <code>apex-ui</code> client, the <code>apex</code> command (which is also the daemon and every bundled tool), <code>apexd</code>, <code>apex-bench</code> and a few helper binaries. Everything builds with a plain <code>cargo build</code> except for one non-Rust dependency. The terminal emulator is Ghostty's <code>libghostty-vt</code>, a Zig library, so a working build needs Zig 0.16. This page covers the workspace layout and its profiles, the native and patched dependencies, the build id that clients and daemons exchange, where each crate's tests and benchmarks live, and how <code>mac/build-app.sh</code> packages <code>Apex.app</code>. The app carries a Linux <code>apex</code> and <code>rc</code> so that it can attach to hosts over ssh.</p>
+<p>For what the crates do, see <a href="overview.html">apex Overview</a>. The remote-host side of packaging (how the carried binaries are found and installed) is on <a href="remote-hosts.html">Remote Hosts and Providers</a>. How the terminal library is used at runtime is on <a href="terminals.html">Terminals</a>.</p>
+<h2 id="the-cargo-workspace">The Cargo workspace</h2>
+<p>The root <code>Cargo.toml</code> lists every member crate, sets a shared edition (2021) and version (0.1.0) that members inherit with <code>version.workspace = true</code>, patches one crates.io dependency, and tunes the dev profile:</p>
+<pre><code class="language-toml">[patch.crates-io]
+pathfinder_simd = { path = &quot;third_party/pathfinder_simd&quot; }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package.&quot;*&quot;]
+opt-level = 3
+</code></pre>
+<p>Debug builds compile the workspace's own crates at <code>opt-level = 1</code>, which keeps rebuilds fast. Every dependency (gpui, ropey, postcard and the rest) is compiled at <code>opt-level = 3</code>. Dependencies are rarely rebuilt, and an unoptimised gpui or rope would make a debug client sluggish. No release profile is defined, so release builds use Cargo's defaults.</p>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Builds</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>crates/apex-edit</code></td>
+<td>library</td>
+<td>Edit language; criterion bench <code>edit</code></td>
+</tr>
+<tr>
+<td><code>crates/apex-core</code></td>
+<td>library</td>
+<td>state machine; criterion bench <code>core</code>; <code>blake3</code> with the <code>pure</code> feature so it cross-compiles with no C or assembly</td>
+</tr>
+<tr>
+<td><code>crates/apex-server</code></td>
+<td>library, <code>apexd</code>, <code>apex-bench</code></td>
+<td>its <code>build.rs</code> computes the build id</td>
+</tr>
+<tr>
+<td><code>crates/apex-client</code></td>
+<td><code>apex-ui</code></td>
+<td>gpui from Zed's git <code>main</code> branch</td>
+</tr>
+<tr>
+<td><code>crates/apex-cli</code></td>
+<td><code>apex</code></td>
+<td>the public command</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-*</code>, <code>apex-diff</code>, <code>apex-tool</code>, <code>apex-tool-bridge</code></td>
+<td>libraries and tools</td>
+<td>see <a href="tool-sdk.html">Writing Tools</a></td>
+</tr>
+<tr>
+<td><code>crates/ghostty-vt-sys</code></td>
+<td>FFI library</td>
+<td>builds and links libghostty-vt and a C shim</td>
+</tr>
+<tr>
+<td><code>exp/acp</code></td>
+<td>experimental ACP client</td>
+<td>see <a href="agent-tools.html">Coding Agents</a></td>
+</tr>
+</tbody>
+</table>
+<p>The Go SDK under <code>go/</code> is not part of the Cargo build. It has its own <code>go.mod</code>, and its integration test runs only against a live session (see below).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/Cargo.toml#L1-L26">Cargo.toml:1-26</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/Cargo.toml#L12">crates/apex-core/Cargo.toml:12</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/Cargo.toml#L21-L30">crates/apex-server/Cargo.toml:21-30</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/Cargo.toml#L7-L28">crates/apex-client/Cargo.toml:7-28</a></p>
+<h2 id="the-patched-pathfinder-simd">The patched pathfinder_simd</h2>
+<p>gpui pulls in <code>pathfinder_simd</code> through pathfinder's geometry crate. The upstream crate picks its backend at compile time. Its build script checks the compiler's release channel with <code>rustc_version</code> and sets the <code>pf_rustc_nightly</code> cfg on nightly. The library then uses an <code>arm</code> backend (built on nightly-only intrinsics) on aarch64 under nightly, an <code>x86</code> backend on x86, and a <code>scalar</code> backend otherwise or when the <code>pf-no-simd</code> feature is on.</p>
+<p>apex vendors version 0.5.6 under <code>third_party/pathfinder_simd</code> (the published <code>Cargo.toml.orig</code> is kept beside the normalised manifest) and points <code>[patch.crates-io]</code> at it. In the vendored <code>lib.rs</code>, the <code>arm</code> module itself is compiled only when all three of nightly, aarch64 and the absence of <code>pf-no-simd</code> hold. On aarch64, <code>apex-client</code> depends on the crate directly with <code>features = [&quot;pf-no-simd&quot;]</code>, with the comment &quot;Avoid pathfinder_simd's broken nightly-only aarch64 SIMD backend&quot;. Together these mean an Apple Silicon build uses the scalar backend whatever toolchain compiles it.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/third_party/pathfinder_simd/src/lib.rs#L11-L40">third_party/pathfinder_simd/src/lib.rs:11-40</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/third_party/pathfinder_simd/build.rs#L15-L28">third_party/pathfinder_simd/build.rs:15-28</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/third_party/pathfinder_simd/Cargo.toml#L12-L39">third_party/pathfinder_simd/Cargo.toml:12-39</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/Cargo.toml#L26-L28">crates/apex-client/Cargo.toml:26-28</a></p>
+<h2 id="libghostty-vt-the-zig-built-terminal-library">libghostty-vt: the Zig-built terminal library</h2>
+<p><code>ghostty-vt-sys</code> is the one crate that does not build with Cargo alone. Ghostty's VT library is written in Zig. Its C API exists only on Ghostty's <code>main</code> branch, because tagged releases carry only the OSC and SGR parsers. The build script therefore pins a commit (<code>GHOSTTY_COMMIT</code>, main as of 2026-09-21) and builds it with Zig 0.16.</p>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;build.rs main&quot;] --&gt; B{&quot;APEX_GHOSTTY_LIB set?&quot;}
+    B -- yes --&gt; L[&quot;use that prefix as is&quot;]
+    B -- no --&gt; C[&quot;build_lib&quot;]
+    C --&gt; D{&quot;cache/out/ZIGTARGET has libghostty-vt.a?&quot;}
+    D -- yes --&gt; L2[&quot;reuse cached prefix&quot;]
+    D -- no --&gt; E{&quot;APEX_GHOSTTY_SRC set?&quot;}
+    E -- yes --&gt; F[&quot;use that checkout&quot;]
+    E -- no --&gt; G[&quot;shallow git fetch of the pinned commit into cache/src&quot;]
+    F --&gt; H[&quot;zig build -Demit-lib-vt=true -Doptimize=ReleaseFast --prefix cache/out/ZIGTARGET&quot;]
+    G --&gt; H
+    H --&gt; L2
+    L --&gt; S[&quot;cc: compile src/shim.c against include/&quot;]
+    L2 --&gt; S
+    S --&gt; K[&quot;copy libghostty-vt.a into OUT_DIR/lib and link it statically&quot;]
+</code></pre>
+<h3 id="where-it-builds-and-caches">Where it builds and caches</h3>
+<p><code>build_lib</code> keeps everything under a cache directory: <code>$XDG_CACHE_HOME/apex</code> if that variable is set, otherwise <code>~/.cache/apex</code> (or <code>/tmp/.cache/apex</code> with no <code>HOME</code>). Inside it, <code>ghostty-&lt;first 12 hex of the commit&gt;/src</code> holds one shared checkout, and <code>out/&lt;zig target&gt;/</code> holds one installed prefix per target. The Zig build therefore runs once per commit and target, not once per <code>cargo build</code> or per <code>target/</code> directory. A fresh <code>CARGO_TARGET_DIR</code> reuses the cached library.</p>
+<p>The checkout is fetched with <code>git init</code>, <code>git remote add origin</code>, <code>git fetch --depth 1 origin &lt;commit&gt;</code> and <code>git checkout FETCH_HEAD</code>. The first build therefore needs the network, and later ones do not. Zig is invoked with <code>-Demit-xcframework=false</code>, because the xcframework would need <code>xcodebuild</code> and apex only links the archive. When cargo's <code>TARGET</code> differs from <code>HOST</code>, the script also passes <code>-Dtarget=&lt;zig target&gt;</code>, translating cargo's triple in <code>zig_target</code>. For example, <code>x86_64-unknown-linux-musl</code> becomes <code>x86_64-linux-musl</code> and <code>aarch64-apple-darwin</code> becomes <code>aarch64-macos</code>. For a native build Zig picks the platform itself.</p>
+<p>Once it has a prefix, the script compiles <code>src/shim.c</code> with <code>cc</code> as <code>apex_vt_shim</code>. It then copies <code>libghostty-vt.a</code> into <code>OUT_DIR/lib</code> and links it as <code>static=ghostty-vt</code>. The copy matters: if the linker were pointed at Zig's prefix it could find the dylib beside the archive and link that instead. If no archive is found under the chosen prefix, the build panics with <code>no libghostty-vt.a under …</code>.</p>
+<h3 id="environment-variables">Environment variables</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APEX_GHOSTTY_LIB</code></td>
+<td>A directory already holding <code>lib/libghostty-vt.a</code> and <code>include/</code>. Nothing is cloned or built.</td>
+</tr>
+<tr>
+<td><code>APEX_GHOSTTY_SRC</code></td>
+<td>A Ghostty checkout to build instead of fetching the pinned commit. The result still goes into the cache's <code>out/&lt;target&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>ZIG</code></td>
+<td>The Zig binary to use. Otherwise <code>zig</code> on the PATH if <code>zig version</code> succeeds, otherwise the lexically last <code>~/.local/zig-*-0.16*/zig</code>. With none, the build panics with &quot;libghostty-vt needs zig 0.16 to build&quot;.</td>
+</tr>
+<tr>
+<td><code>XDG_CACHE_HOME</code></td>
+<td>Moves the cache from <code>~/.cache/apex</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>All three <code>APEX_GHOSTTY_*</code>/<code>ZIG</code> variables are declared with <code>rerun-if-env-changed</code>, along with <code>src/shim.c</code> and <code>build.rs</code> itself. Note one quirk: once a cached prefix exists for the target, <code>APEX_GHOSTTY_SRC</code> is no longer consulted. To rebuild from a different checkout, use <code>APEX_GHOSTTY_LIB</code> or remove the cached <code>out/</code> directory.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs#L1-L171">crates/ghostty-vt-sys/build.rs:1-171</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/Cargo.toml#L1-L8">crates/ghostty-vt-sys/Cargo.toml:1-8</a></p>
+<h2 id="the-build-id">The build id</h2>
+<p><code>apex-server/build.rs</code> hashes the source tree so that a daemon and a client can tell whether they are the same build. It walks <code>crates/</code> recursively, collects every <code>.rs</code> file and adds <code>Cargo.lock</code>, then sorts the paths. For each file it feeds SHA-256 the path relative to the workspace root, a NUL, the contents and another NUL. The first 12 hex digits become the <code>APEX_BUILD_ID</code> compile-time variable. It reruns when anything under <code>crates/</code> or <code>Cargo.lock</code> changes.</p>
+<p>Only source paths and contents go into the hash, never the target triple or compiler flags. The Mac binary and the Linux binary it carries therefore get the same id from the same sources. Non-Rust files (such as the C shim, or the Go SDK under <code>go/</code>) are not part of the hash.</p>
+<p>The id surfaces in a few places:</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex_server::BUILD_ID</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L12">lib.rs:12</a>)</td>
+<td>the constant everything reads</td>
+</tr>
+<tr>
+<td><code>ServerMsg::Build { protocol, id }</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L459">daemon.rs:459</a>)</td>
+<td>sent by the daemon on each connection, before the welcome</td>
+</tr>
+<tr>
+<td><code>check_build</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L571-L583">remote.rs:571-583</a>)</td>
+<td>rejects only a different <code>PROTOCOL</code>; another build with the same protocol is accepted. The error names both builds and tells the user to <code>apex stop</code> the old daemon</td>
+</tr>
+<tr>
+<td><code>apex version</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1050-L1053">main.rs:1050-1053</a>)</td>
+<td>prints <code>apex build ID protocol N</code></td>
+</tr>
+</tbody>
+</table>
+<p>Deciding whether a remote host needs a new binary does not use the build id. <code>providers::deploy</code> compares the SHA-256 of the carried file with the one in <code>~/.apex/bin</code> on the host (see below and <a href="remote-hosts.html">Remote Hosts and Providers</a>). The handshake is on <a href="attach-protocol.html">The Attach Protocol</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs#L1-L41">crates/apex-server/build.rs:1-41</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L12">crates/apex-server/src/lib.rs:12</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L568-L583">crates/apex-server/src/remote.rs:568-583</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1050-L1053">crates/apex-cli/src/main.rs:1050-1053</a></p>
+<h2 id="cross-compiling-for-linux-hosts">Cross-compiling for Linux hosts</h2>
+<p>The app carries an <code>apex</code> for <code>x86_64-unknown-linux-musl</code>, a static binary that runs on any x86-64 Linux host. Zig provides both the C compiler and the linker, configured in <code>.cargo/config.toml</code>:</p>
+<pre><code class="language-toml">[target.x86_64-unknown-linux-musl]
+linker = &quot;mac/zig-cc&quot;
+rustflags = [&quot;-C&quot;, &quot;link-self-contained=no&quot;]
+
+[env]
+CC_x86_64-unknown-linux-musl = { value = &quot;mac/zig-cc&quot;, relative = true }
+AR_x86_64-unknown-linux-musl = { value = &quot;mac/zig-ar&quot;, relative = true }
+</code></pre>
+<p>Two small wrapper scripts make this work:</p>
+<ul>
+<li><strong><code>mac/zig-cc</code></strong> runs <code>zig cc -target x86_64-linux-musl</code>. It first strips any <code>--target=…</code> or <code>-target X</code> argument, because cc-rs passes Rust's triple, which Zig does not understand.</li>
+<li><strong><code>mac/zig-ar</code></strong> runs <code>zig ar</code>. macOS's <code>ar</code> writes a BSD symbol table that lld cannot read, so a C library built for the target (ring's is the example given) would look empty at link time.</li>
+</ul>
+<p><code>link-self-contained=no</code> stops Rust from adding its bundled musl start files, since Zig brings its own. Both wrappers hard-code the Zig path <code>$HOME/.local/zig-aarch64-macos-0.16.0/zig</code>, so on another machine or Zig version they need editing. The ghostty build script, by contrast, searches for Zig. In a cross build, <code>ghostty-vt-sys</code> sees <code>TARGET != HOST</code> and passes <code>-Dtarget=x86_64-linux-musl</code> to Zig. The Linux command therefore links a Linux archive, not the Mac's.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/.cargo/config.toml#L1-L10">.cargo/config.toml:1-10</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/zig-cc#L1-L15">mac/zig-cc:1-15</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/zig-ar#L1-L5">mac/zig-ar:1-5</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs#L88-L92">crates/ghostty-vt-sys/build.rs:88-92</a></p>
+<h2 id="packaging-apexapp-with-macbuild-appsh">Packaging Apex.app with mac/build-app.sh</h2>
+<p><code>mac/build-app.sh [--debug]</code> builds everything the app needs and assembles <code>target/Apex.app</code>. The client and command are built with the release profile unless <code>--debug</code> is given. The Linux command is always a release build.</p>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph builds[&quot;cargo&quot;]
+        U[&quot;apex-client: apex-ui&quot;]
+        C[&quot;apex-cli: apex&quot;]
+        LC[&quot;apex-cli for x86_64-unknown-linux-musl&quot;]
+        RH[&quot;rc from mariusae/rustrc into target/rc-host&quot;]
+        RL[&quot;rc for linux-musl into target/rc-linux-amd64&quot;]
+    end
+    subgraph app[&quot;target/Apex.app/Contents&quot;]
+        M1[&quot;MacOS/apex-ui&quot;]
+        M2[&quot;MacOS/apex, plus apex-editor and xdg-open symlinks&quot;]
+        M3[&quot;MacOS/rc&quot;]
+        R1[&quot;Resources/remote/linux-amd64/apex&quot;]
+        R2[&quot;Resources/remote/linux-amd64/rc&quot;]
+        P[&quot;Info.plist, PkgInfo, icon&quot;]
+    end
+    U --&gt; M1
+    C --&gt; M2
+    RH --&gt; M3
+    LC --&gt; R1
+    RL --&gt; R2
+</code></pre>
+<p>The script's steps, in order:</p>
+<ol>
+<li><code>cargo build $flag -p apex-client -p apex-cli</code> for the Mac.</li>
+<li><code>cargo build --release --target x86_64-unknown-linux-musl -p apex-cli</code> for Linux hosts, through the Zig wrappers above.</li>
+<li><code>cargo install --git https://github.com/mariusae/rustrc --bin rc</code> twice: once for the host into <code>target/rc-host</code>, and once for linux-musl into <code>target/rc-linux-amd64</code>. <code>cargo install</code> builds outside the tree, where <code>.cargo/config.toml</code> does not apply, so the script passes the linker and rustflags through <code>CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER</code> and <code>…_RUSTFLAGS</code>.</li>
+<li>It recreates <code>target/Apex.app</code> and copies in <code>apex-ui</code>, <code>apex</code> and <code>rc</code>. It symlinks <code>apex-editor</code> and <code>xdg-open</code> to <code>apex</code> (see <a href="cli.html">The apex Command</a>) and copies the Linux <code>apex</code> and <code>rc</code> into <code>Resources/remote/linux-amd64/</code>.</li>
+<li>It substitutes the workspace version (the first <code>^version</code> line of <code>Cargo.toml</code>) for <code>VERSION</code> in <code>mac/Info.plist</code>, and writes <code>PkgInfo</code>.</li>
+<li>It builds the icon. With Xcode, <code>xcrun actool</code> compiles the Icon Composer icon <code>mac/apex.icon</code> into <code>Assets.car</code> and <code>apex.icns</code>. Without it, the script falls back to <code>sips</code> and <code>iconutil</code>, making an <code>.icns</code> from <code>mac/space-bunny-1024.png</code> at 16–512 points, each at 1× and 2×.</li>
+<li>It signs the bundle ad hoc (<code>codesign --force --deep --sign -</code>) so Gatekeeper lets a local build launch. A failure here is ignored.</li>
+</ol>
+<p><code>Info.plist</code> names <code>apex-ui</code> as the executable, sets the bundle id <code>org.apex.editor</code> and macOS 12.0 as the minimum, and allows arbitrary loads under App Transport Security. Pages on a host's own network are often plain http, and Apex shows what a browser would (<a href="io-plane-and-pages.html">The I/O Plane and Pages</a>).</p>
+<h3 id="how-the-packaged-binaries-are-found-at-runtime">How the packaged binaries are found at runtime</h3>
+<p>The bundle layout matches what the server code looks for. <code>command_shell</code> runs B2 commands with <code>$acmeshell</code> if that is set. Otherwise it uses the first <code>rc</code> it finds: beside the running executable (<code>Contents/MacOS/rc</code>), then a dev tree's <code>target/rc-host/bin/rc</code> one to three directories up, then <code>~/.apex/bin/rc</code>, then any on the PATH. Failing all of those it uses <code>sh</code>.</p>
+<p>For other machines, <code>providers::bundled(target, name)</code> looks for <code>apex</code> and <code>rc</code> in these places, in order:</p>
+<ol>
+<li><code>$APEX_REMOTE_BINARIES/&lt;target&gt;/</code></li>
+<li><code>../Resources/remote/&lt;target&gt;/</code> relative to the executable (the app bundle)</li>
+<li><code>remote/&lt;target&gt;/</code> beside it</li>
+<li>a dev tree's <code>target/&lt;triple&gt;/release/</code> and <code>target/rc-&lt;target&gt;/bin/</code></li>
+<li>for the local machine's own kind only, the directory beside the executable</li>
+</ol>
+<p>A dev tree built by <code>build-app.sh</code> can therefore attach to Linux hosts without the app bundle. <code>deploy</code> copies a carried binary to <code>~/.apex/bin</code> on the host only when its SHA-256 differs. It writes the file beside the old one and then moves it into place, so a running daemon keeps its own binary.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh#L1-L60">mac/build-app.sh:1-60</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/Info.plist#L1-L28">mac/Info.plist:1-28</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1926-L1955">crates/apex-server/src/lib.rs:1926-1955</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L167-L250">crates/apex-server/src/providers.rs:167-250</a></p>
+<h2 id="tests-and-benchmarks">Tests and benchmarks</h2>
+<p><code>cargo test</code> at the root runs every crate's unit tests (in <code>#[cfg(test)]</code> modules inside the sources) and the integration tests below. Most integration tests start a daemon on a thread of the test process and talk to it over a real Unix socket. They need no UI and no running apex.</p>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Test file</th>
+<th>What it checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>apex-core</td>
+<td><code>tests/core.rs</code></td>
+<td>A leader node drives a session through the log store and a follower replays it; the two must agree byte for byte. Also fencing, undo, views, commands and Edit. Includes <code>snapshot_plus_tail_equals_replay</code> and a <code>proptest!</code> block where a snapshot taken partway plus the tail must equal full replay. Shrunk failures are kept in <code>tests/core.proptest-regressions</code>.</td>
+</tr>
+<tr>
+<td>apex-core</td>
+<td><code>tests/tiling.rs</code></td>
+<td>acme's tiling against what plan9port's <code>cols.c</code> and <code>rows.c</code> give by hand (font height 17, border 2)</td>
+</tr>
+<tr>
+<td>apex-edit</td>
+<td><code>tests/golden.rs</code></td>
+<td>Acceptance cases <code>(text, dot, program) → (text', dot', output)</code> or acme's error message, written from sam(1) and acme</td>
+</tr>
+<tr>
+<td>apex-edit</td>
+<td><code>tests/sam_diff.rs</code></td>
+<td>Differential tests against plan9port's <code>sam -d</code>: a hand-written corpus, then programs and regexps generated by proptest over small random texts</td>
+</tr>
+<tr>
+<td>apex-edit</td>
+<td><code>tests/debug_one.rs</code></td>
+<td><code>#[ignore]</code>d helper: runs program <code>$P</code> over text <code>$T</code> through both sam and apex-edit and prints the two results</td>
+</tr>
+<tr>
+<td>apex-server</td>
+<td><code>tests/socket.rs</code></td>
+<td>The attach protocol end to end, including the <code>Build</code> message carrying <code>BUILD_ID</code></td>
+</tr>
+<tr>
+<td>apex-server</td>
+<td><code>tests/server.rs</code></td>
+<td>The server performing execs through a leader, in process</td>
+</tr>
+<tr>
+<td>apex-server</td>
+<td><code>tests/signals.rs</code>, <code>tests/home.rs</code></td>
+<td>Each is its own test binary because it changes process-wide state: an ignored SIGTERM must not reach what <code>Kill</code> kills, and <code>~</code> expands for B3</td>
+</tr>
+<tr>
+<td>apex-cli</td>
+<td><code>tests/cli.rs</code></td>
+<td>The <code>apex</code> command end to end against a daemon on a thread</td>
+</tr>
+<tr>
+<td>apex-cli</td>
+<td><code>tests/ssh.rs</code></td>
+<td>Attaching over &quot;ssh&quot;. <code>APEX_SSH</code> points at a script that runs the command locally under a scratch <code>HOME</code>, and <code>APEX_REMOTE_BINARIES</code> at a copy of the test's own <code>apex</code>. Checks deploy, update on change, daemon start and bridging through <code>apex attach -stdio</code></td>
+</tr>
+<tr>
+<td>apex-tool</td>
+<td><code>tests/tool.rs</code></td>
+<td>The tool API: windows, verbs, watches, deletion</td>
+</tr>
+<tr>
+<td>apex-tool-win</td>
+<td><code>tests/win.rs</code></td>
+<td><code>apex tool win</code> against a headless daemon</td>
+</tr>
+<tr>
+<td>apex-tool-lsp</td>
+<td><code>tests/lsp.rs</code></td>
+<td><code>apex tool lsp</code> against <code>tests/fake-lsp.py</code>, which needs <code>python3</code></td>
+</tr>
+<tr>
+<td>apex-tool-web</td>
+<td><code>tests/web.rs</code></td>
+<td>Web and Newweb, page ownership and history</td>
+</tr>
+<tr>
+<td>apex-tool-agent</td>
+<td><code>tests/pane.rs</code></td>
+<td>The agent pane following an agent's log and transcript</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-sam-differential-tests">The sam differential tests</h3>
+<p><code>tests/common/mod.rs</code> runs a program through apex-edit and through <code>sam -d</code> and normalises both results to the same shape: error, text, dot, and output split into <code>p</code> text and <code>=</code> lines. It finds sam through <code>$SAM</code>, then <code>$PLAN9/bin/sam</code>, then <code>~/.local/plan9/bin/sam</code>. With no sam, each differential test prints <code>skipping: plan9port sam not found (set SAM or PLAN9)</code> and passes. A CI run or a machine without plan9port therefore does not exercise these tests. Install plan9port when working on <a href="edit-language.html">The Edit Language</a>.</p>
+<h3 id="benchmarks">Benchmarks</h3>
+<p>Benchmarks use criterion with <code>harness = false</code>:</p>
+<ul>
+<li><code>cargo bench -p apex-core</code> runs the <code>core</code> group: apply throughput, view adjustment with many windows on one buffer, hashing, snapshots and replay.</li>
+<li><code>cargo bench -p apex-edit</code> runs the <code>edit</code> group: the Edit language over large texts.</li>
+<li>The <code>apex-bench</code> binary in apex-server measures the attach protocol itself. With no arguments it starts a daemon on its own thread. <code>--socket PATH</code> talks to a running <code>apexd</code>. <code>--via CMD</code> attaches through a command's stdin and stdout, so that <code>apex attach --stdio</code> locally stands in for the extra pipe hops of ssh. See <a href="daemon.html">The Daemon</a>.</li>
+</ul>
+<h3 id="go">Go</h3>
+<p><code>go/apex/apex_test.go</code> is an integration test that skips unless <code>APEX_SOCKET</code> is set. It attaches as a tool (using <code>apex</code> from the PATH or <code>$APEX_BIN</code>) and exercises windows, ownership, tags and labels against that live session. See <a href="bridge-and-go.html">JSON Bridge and Go SDK</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L1-L3">crates/apex-core/tests/core.rs:1-3</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L275-L303">crates/apex-core/tests/core.rs:275-303</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L346-L401">crates/apex-core/tests/core.rs:346-401</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs#L1-L74">crates/apex-edit/tests/common/mod.rs:1-74</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/sam_diff.rs#L1-L21">crates/apex-edit/tests/sam_diff.rs:1-21</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/debug_one.rs#L1-L10">crates/apex-edit/tests/debug_one.rs:1-10</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs#L1-L80">crates/apex-cli/tests/ssh.rs:1-80</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/lsp.rs#L59-L62">crates/apex-tool-lsp/tests/lsp.rs:59-62</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apex_bench.rs#L1-L29">crates/apex-server/src/bin/apex_bench.rs:1-29</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/Cargo.toml#L10-L16">crates/apex-edit/Cargo.toml:10-16</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/Cargo.toml#L17-L23">crates/apex-core/Cargo.toml:17-23</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex_test.go#L11-L22">go/apex/apex_test.go:11-22</a></p>
+<h2 id="continuous-integration">Continuous integration</h2>
+<p><code>.github/workflows/rust.yml</code> defines one job on <code>ubuntu-latest</code>, triggered by pushes and pull requests to <code>main</code>. It checks out the repository and runs <code>cargo build --verbose</code>, then <code>cargo test --verbose</code>. That is the whole workflow. There is no Zig setup step, no plan9port, no cache of the Ghostty build, and no Mac or cross-compile job. The Linux job builds the whole workspace, including <code>ghostty-vt-sys</code>, so it depends on the runner already having a Zig 0.16 that <code>build.rs</code> can find. The sam differential tests skip themselves there, as described above.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/.github/workflows/rust.yml#L1-L22">.github/workflows/rust.yml:1-22</a></p>
+<h2 id="the-docs-site">The docs site</h2>
+<p><code>docs/</code> holds a static, single-page site: <code>index.html</code>, a screenshot, the space-bunny image and a <code>.nojekyll</code> marker, which tells GitHub Pages to serve the files as they are. Its &quot;Developing and building Apex&quot; section gives the short version of this page: clone, <code>cd apex</code>, run <code>mac/build-app.sh</code>, and you get <code>target/Apex.app</code>. It notes that the app runs on macOS while the daemon and <code>apex</code> also run on Linux. It links to DESIGN.md, MODERN.md and the DeepWiki overview.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/docs/index.html#L105-L121">docs/index.html:105-121</a></p>
+<h2 id="practical-notes">Practical notes</h2>
+<ul>
+<li><strong>First build:</strong> have Zig 0.16 available, either on the PATH or through <code>ZIG</code>, and network access to github.com for the Ghostty fetch. After that, builds are offline and the Zig step is cached under <code>~/.cache/apex</code>.</li>
+<li><strong>Pointing at a prebuilt Ghostty:</strong> set <code>APEX_GHOSTTY_LIB=/path/to/prefix</code> (it must contain <code>lib/libghostty-vt.a</code> and <code>include/</code>). This skips Zig entirely.</li>
+<li><strong>Rebuilding everything a client checks:</strong> any change under <code>crates/**/*.rs</code> or to <code>Cargo.lock</code> changes <code>BUILD_ID</code>. Only a change to <code>PROTOCOL</code> makes <code>check_build</code> refuse a daemon.</li>
+<li><strong>Linux cross-builds:</strong> check the hard-coded Zig path in <code>mac/zig-cc</code> and <code>mac/zig-ar</code> before running <code>build-app.sh</code> on a new machine.</li>
+<li><strong>Edit language work:</strong> install plan9port so that <code>sam_diff.rs</code> actually runs. Use <code>T=… P=… cargo test -p apex-edit --test debug_one -- --ignored --nocapture</code> to compare a single case against sam.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs#L16-L20">crates/ghostty-vt-sys/build.rs:16-20</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs#L22-L25">crates/apex-server/build.rs:22-25</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/zig-cc#L15">mac/zig-cc:15</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/debug_one.rs#L1-L10">crates/apex-edit/tests/debug_one.rs:1-10</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="agent-tools.html">Coding Agents: apex tool agent and apex-acp</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top current"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+<ul class="sections">
+<li class="l2"><a href="#the-cargo-workspace">The Cargo workspace</a></li>
+<li class="l2"><a href="#the-patched-pathfinder-simd">The patched pathfinder_simd</a></li>
+<li class="l2"><a href="#libghostty-vt-the-zig-built-terminal-library">libghostty-vt: the Zig-built terminal library</a></li>
+<li class="l3"><a href="#where-it-builds-and-caches">Where it builds and caches</a></li>
+<li class="l3"><a href="#environment-variables">Environment variables</a></li>
+<li class="l2"><a href="#the-build-id">The build id</a></li>
+<li class="l2"><a href="#cross-compiling-for-linux-hosts">Cross-compiling for Linux hosts</a></li>
+<li class="l2"><a href="#packaging-apexapp-with-macbuild-appsh">Packaging Apex.app with mac/build-app.sh</a></li>
+<li class="l3"><a href="#how-the-packaged-binaries-are-found-at-runtime">How the packaged binaries are found at runtime</a></li>
+<li class="l2"><a href="#tests-and-benchmarks">Tests and benchmarks</a></li>
+<li class="l3"><a href="#the-sam-differential-tests">The sam differential tests</a></li>
+<li class="l3"><a href="#benchmarks">Benchmarks</a></li>
+<li class="l3"><a href="#go">Go</a></li>
+<li class="l2"><a href="#continuous-integration">Continuous integration</a></li>
+<li class="l2"><a href="#the-docs-site">The docs site</a></li>
+<li class="l2"><a href="#practical-notes">Practical notes</a></li>
+</ul>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

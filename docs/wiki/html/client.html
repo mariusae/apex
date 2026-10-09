@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The UI Client (apex-ui) · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The UI Client (apex-ui)</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/Cargo.toml">crates/apex-client/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/README.md">crates/apex-client/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs">crates/apex-client/src/pool.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs">crates/apex-client/src/shell.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs">crates/apex-client/src/term_element.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs">crates/apex-client/src/text_element.rs</a></li>
+</ul>
+</details>
+<p><code>apex-ui</code> is apex's graphical client. It is a <a href="https://github.com/zed-industries/zed">gpui</a> application in the <code>apex-client</code> crate, and the app bundle runs it. It draws a session's state the way acme draws its screen: columns, windows, tags, bodies, terminals and pages. It turns the mouse and keyboard into log entries. The client is not a thin view. It runs a full <code>Node</code> replica and, once it attaches, it takes the leases and becomes the <strong>leader</strong> of the buffer, window and layout shards (see <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>). Every edit the user makes is sequenced in the client and shipped to the daemon, not the other way round.</p>
+<p>This page covers how the client is put together: the command line and launch in <code>main.rs</code>, the <code>Acme</code> entity in <code>app.rs</code>, the <code>Backend</code> that puts the server either behind a socket or in-process, the sync/render loop, and the <code>TextElement</code> that paints text straight from core state. Other pages cover the rest: <a href="client-input.html">Mouse, Keyboard and Look</a> for input, <a href="client-overlays.html">Pickers and Overlays</a> for overlays, <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a> for tabs, the sidebar and the title bar, and <a href="themes-and-fonts.html">Themes, Fonts and Colour</a> for themes. Terminal painting is on <a href="terminals.html">Terminals</a> and web views are on <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</p>
+<h2 id="architecture-at-a-glance">Architecture at a glance</h2>
+<p>The crate builds one binary, <code>apex-ui</code> (<code>[[bin]] name = &quot;apex-ui&quot;</code>). It depends on <code>apex-core</code> for state, <code>Node</code> and tiling, <code>apex-server</code> for <code>Server</code>, <code>Link</code>, the protocol and providers, and <code>apex-edit</code>. It also pulls in gpui from Zed's tree and <code>wry</code> for native web views. <code>main.rs</code> declares about forty modules. Most of them add to the one <code>Acme</code> type with further <code>impl Acme</code> blocks.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>main.rs</code></td>
+<td>Command line, app startup, <code>open_window</code>, and <code>impl Render for Acme</code>, which builds every frame's element tree</td>
+</tr>
+<tr>
+<td><code>app.rs</code></td>
+<td><code>Acme</code>, the per-window entity: <code>Log</code> + <code>Node</code> + <code>Backend</code>, input handlers, sync, measurement, execute and look</td>
+</tr>
+<tr>
+<td><code>shell.rs</code></td>
+<td>The app shell: menus and key bindings, login-shell environment, which sessions to reopen, starting the daemon, the session selector</td>
+</tr>
+<tr>
+<td><code>pool.rs</code></td>
+<td>Tabs (<code>TabId</code>) and parked sessions: links kept attached while not shown</td>
+</tr>
+<tr>
+<td><code>text_element.rs</code></td>
+<td><code>TextElement</code>, a custom gpui <code>Element</code> that shapes and paints a tag, top row or body from core state, and <code>TextLayout</code> for hit-testing</td>
+</tr>
+<tr>
+<td><code>term_element.rs</code></td>
+<td><code>TermElement</code>, the terminal grid painter (<a href="terminals.html">Terminals</a>)</td>
+</tr>
+<tr>
+<td><code>web.rs</code>, <code>webbar.rs</code></td>
+<td>Native WKWebView placement and page headers (<a href="io-plane-and-pages.html">I/O plane</a>)</td>
+</tr>
+<tr>
+<td><code>menu.rs</code>, <code>look.rs</code>, <code>warp.rs</code>, <code>cursor.rs</code></td>
+<td>B4 menu, live Look, pointer warps, cursor styles (<a href="client-input.html">input</a>)</td>
+</tr>
+<tr>
+<td><code>finder.rs</code>, <code>quickopen.rs</code>, <code>commands.rs</code>, <code>completion.rs</code>, <code>tagedit.rs</code>, <code>cwdbar.rs</code>, <code>field.rs</code></td>
+<td>Pickers and overlays (<a href="client-overlays.html">overlays</a>)</td>
+</tr>
+<tr>
+<td><code>sidebar.rs</code>, <code>titlebar.rs</code>, <code>switcher.rs</code>, <code>miniature.rs</code>, <code>shelf.rs</code>, <code>strips.rs</code>, <code>glide.rs</code>, <code>toasts.rs</code>, <code>attention.rs</code>, <code>procs.rs</code>, <code>standing.rs</code>, <code>restart.rs</code></td>
+<td>Chrome around the tiled windows (<a href="client-chrome.html">chrome</a>)</td>
+</tr>
+<tr>
+<td><code>theme.rs</code>, <code>fonts.rs</code>, <code>contrast.rs</code></td>
+<td>Palettes, font sets, terminal contrast (<a href="themes-and-fonts.html">themes</a>)</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-mermaid">flowchart TD
+    main[&quot;main.rs: parse args, start daemon, open_window&quot;]
+    acme[&quot;Acme entity (app.rs)&quot;]
+    node[&quot;Node replica (apex-core)&quot;]
+    log[&quot;Log (mirror, or the real one)&quot;]
+    backend{&quot;Backend&quot;}
+    remote[&quot;Backend::Remote(Link)&quot;]
+    local[&quot;Backend::Local(Server)&quot;]
+    daemon[&quot;apexd over Unix socket or provider bridge&quot;]
+    render[&quot;impl Render for Acme (main.rs)&quot;]
+    te[&quot;TextElement / TermElement / web views&quot;]
+    main --&gt; acme
+    acme --&gt; node
+    acme --&gt; log
+    acme --&gt; backend
+    backend --&gt; remote
+    backend --&gt; local
+    remote --&gt; daemon
+    render --&gt; acme
+    render --&gt; te
+    te --&gt;|&quot;Acme::source(view)&quot;| acme
+    te --&gt;|&quot;layouts.insert&quot;| acme
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/Cargo.toml#L1-L29">crates/apex-client/Cargo.toml:1-29</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1-L60">crates/apex-client/src/main.rs:1-60</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1-L5">crates/apex-client/src/app.rs:1-5</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/README.md#L1-L23">crates/apex-client/README.md:1-23</a></p>
+<h2 id="the-command-line-and-launch">The command line and launch</h2>
+<p><code>main()</code> parses its arguments by hand (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L680-L706">main.rs:680-706</a>) into a <code>Target</code>, which says where the window's session lives:</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Effect</th>
+<th><code>Target</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>(none)</em> <code>[files]</code></td>
+<td>Attach to the local daemon, starting it if needed. Reopen the last session, else the first existing one, else make <code>default</code></td>
+<td><code>Url</code> (from <code>shell::plan</code>)</td>
+</tr>
+<tr>
+<td><code>--session S</code></td>
+<td>That local session</td>
+<td><code>Url { SessionUrl::local(S) }</code></td>
+</tr>
+<tr>
+<td><code>--attach [SOCKET]</code></td>
+<td>Another daemon socket. A following argument is taken only if it ends in <code>.sock</code>, else the default socket is used. Sets <code>APEX_SOCKET</code></td>
+<td>(affects socket)</td>
+</tr>
+<tr>
+<td><code>--via CMD</code></td>
+<td>Speak the protocol over CMD's stdin/stdout</td>
+<td><code>Via</code></td>
+</tr>
+<tr>
+<td><code>--remote DEST</code> / <code>--ssh DEST</code></td>
+<td>A destination through its provider (<code>user@host</code>, <code>provider:name</code>)</td>
+<td><code>Url</code> with provider</td>
+</tr>
+<tr>
+<td><code>--url URL</code></td>
+<td>A session URL, parsed by <code>SessionUrl::parse</code>. A bad one exits with status 2</td>
+<td><code>Url</code></td>
+</tr>
+<tr>
+<td><code>--local</code></td>
+<td>Run the <code>Server</code> in this process</td>
+<td><code>Local</code></td>
+</tr>
+<tr>
+<td><code>-psn_…</code></td>
+<td>Ignored (Finder passes it)</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>A fourth variant, <code>Target::Choose(why)</code>, is used when nothing should be reopened: macOS asked not to (<code>ApplePersistenceIgnoreState</code>), or the previous launch died before it &quot;settled&quot;. <code>shell::reopen_refused</code> detects this through a <code>launching</code> marker file next to the state file. The marker is written at launch and removed 15 seconds later or on quit (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L459-L493">shell.rs:459-493</a>). The window then opens on no session with the session selector up.</p>
+<p>Before gpui starts, <code>shell::adopt_login_shell_environment</code> runs <code>$SHELL -l -i -c env</code> and adopts the result. An app launched from the Finder otherwise gets LaunchServices' bare <code>PATH</code>, and the daemon it starts would inherit that too (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L318-L345">shell.rs:318-345</a>). Inside <code>application().run</code>, <code>main</code> installs the Dock icon, cursors, symbol font, font sets, the tab <code>Pool</code>, the theme, the menus, the app-level actions (theme, palette, font, Quit, Install CLI) and the key bindings from <code>shell::bindings()</code>. Then it picks the target:</p>
+<ul>
+<li><strong>Local daemon.</strong> <code>shell::ensure_daemon</code> lists sessions on the socket. If nothing answers, it spawns <code>apex</code> from beside the executable or from <code>PATH</code> via <code>daemon::spawn_server</code>. A daemon of another build answers with <code>ErrorKind::Unsupported</code>. In that case the window still opens and offers a restart (<code>offer_restart</code>) instead of starting a second daemon over the first's socket (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L527-L550">shell.rs:527-550</a>).</li>
+<li><strong><code>shell::plan</code></strong> chooses the session. It takes the URL and frame remembered in <code>~/Library/Application Support/apex/last-sessions</code>, else the first session the daemon lists, else it creates <code>default</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L500-L521">shell.rs:500-521</a>).</li>
+<li><strong>Remote sessions</strong> are attached only after the window is open. <code>open_window</code> makes an offline window that says it is attaching, and <code>Pool::start</code> builds the link in the background, because uploading a binary or starting a remote daemon can take a while (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L845-L863">main.rs:845-863</a>).</li>
+</ul>
+<p>apex has one OS window. Every other open session is a tab in it, restored by <code>Pool::restore</code>. Quitting saves the open windows (<code>shell::save_open</code>), sets <code>QUITTING</code>, calls <code>close_link</code> on every window so bridges and daemons see the attachment leave, and closes the pool (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L755-L773">main.rs:755-773</a>). Closing the window, through the red button, <code>Exit</code> or <code>CloseWindow</code>, <em>parks</em> the session in the pool instead of detaching it.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L666-L891">crates/apex-client/src/main.rs:666-891</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L258-L314">crates/apex-client/src/shell.rs:258-314</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L349-L550">crates/apex-client/src/shell.rs:349-550</a></p>
+<h2 id="opening-a-window-and-driving-it">Opening a window and driving it</h2>
+<p><code>open_window</code> builds the gpui window with a transparent title bar and <code>app_owns_titlebar_drag</code>, since the title bar is apex's own. It then constructs the <code>Acme</code> entity according to the target (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L895-L1067">main.rs:895-1067</a>). The client is woken in two different ways, depending on the backend:</p>
+<ul>
+<li><strong>In-process (<code>Target::Local</code>).</strong> <code>Acme::new</code> returns an <code>UnboundedReceiver&lt;ServerEvent&gt;</code> along with the <code>Acme</code>. A spawned task feeds each event to <code>Acme::pump</code>, which hands it to <code>Server::pump</code>, performs the resulting proposals and syncs.</li>
+<li><strong>Over a link (<code>Url</code>, <code>Via</code>, <code>Choose</code>).</strong> The <code>Link</code>'s reader thread calls a <code>Wake</code> closure, which sends <code>()</code> on a futures channel. A task on the UI thread waits on that channel and calls <code>poll_remote</code>. It then handles a pending session switch, tells the pool the tab is open and settled, settles the snarf buffer to the clipboard, honours <code>leave_requested</code>/<code>close_requested</code>, and calls <code>cx.notify()</code> to redraw.</li>
+</ul>
+<p><code>offline_window</code> makes an <code>Acme</code> over a blank in-process session pointed at a URL, with <code>connected = false</code> and a <code>waiting</code> message. It is used for remote targets before their link exists, for <code>Choose</code>, and when a local attach fails (<code>offline</code>). A later Reconnect (⌘⇧R) or the picker attaches it for real (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1069-L1106">main.rs:1069-1106</a>).</p>
+<p><code>Acme::over</code> is the shared constructor. Besides filling in the hundred-odd fields, it starts two timers (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1688-L1764">app.rs:1688-1764</a>):</p>
+<ul>
+<li>a <strong>100 ms tick</strong> that polls things gpui cannot report. A native web view keeps pointer moves to itself, so the tick asks the system for the pointer position, and it also checks modifiers for ending ctrl-tab. It drives the caret blink, strips, tabs, link retry (<code>link_tick</code>), toasts and the Dock (<code>attention::tick</code>), and notifies only when something changed;</li>
+<li>a <strong>heartbeat</strong> every 3 s. <code>heartbeat</code> sends <code>ClientMsg::Ping</code>. If a pong is more than 8 s overdue, the link is marked disconnected even though the socket has not closed (ssh gone quiet, for example). A pong arriving later marks it connected again and records <code>ping_ms</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1651-L1686">app.rs:1651-1686</a>).</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L893-L1106">crates/apex-client/src/main.rs:893-1106</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1651-L1764">crates/apex-client/src/app.rs:1651-1764</a></p>
+<h2 id="the-acme-entity-and-the-backend">The <code>Acme</code> entity and the <code>Backend</code></h2>
+<p><code>Acme</code> is a gpui entity, one per OS window. Its core is three fields:</p>
+<pre><code class="language-rust">pub enum Backend {
+    /// In this process, sharing the log.
+    Local(Server),
+    /// Behind a socket; the log is a mirror.
+    Remote(Link),
+}
+
+pub struct Acme {
+    pub log: Log,
+    pub node: Node,
+    pub backend: Backend,
+    // ... about a hundred more fields of UI state
+}
+</code></pre>
+<p>The module comment states the design: &quot;Every change goes through the leader node as log entries. The server either runs in-process and shares the log, or sits behind a socket: the client's code path is the same, only the Backend differs.&quot; When the user types, <code>type_text</code> calls <code>self.node.insert(&amp;mut self.log, v, s)</code>. Cut, paste and snarf call <code>node.cut</code>, <code>node.replace_selection</code> and <code>node.snarf</code>, or append <code>LayoutOp::Snarf</code> directly (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5371-L5403">app.rs:5371-5403</a>). The node sequences the entries into <code>self.log</code>. With <code>Backend::Remote</code> that log is the <code>Link</code>'s mirror, which assigns sequence numbers ahead of the daemon (see <a href="attach-protocol.html">The Attach Protocol</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Constructor</th>
+<th>Backend</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Acme::new</code></td>
+<td><code>Local</code></td>
+<td>Fresh <code>Log</code>, attach as <code>AttachmentKind::Ui</code>, <code>init_session</code>, <code>Server::new</code>, default rules, open the named files (or <code>.</code>) through <code>server.open_file</code> + <code>perform</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L734-L756">app.rs:734-756</a>)</td>
+</tr>
+<tr>
+<td><code>Acme::attach</code></td>
+<td><code>Remote</code></td>
+<td>Take a parked session from the pool if there is one, else <code>connect_targeted</code>. Files open in the last column (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L761-L786">app.rs:761-786</a>)</td>
+</tr>
+<tr>
+<td><code>Acme::attach_via</code></td>
+<td><code>Remote</code></td>
+<td><code>--via</code>: <code>connect_via</code>, URL provider <code>&quot;via&quot;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1496-L1510">app.rs:1496-1510</a>)</td>
+</tr>
+<tr>
+<td><code>Acme::from_parked</code></td>
+<td><code>Remote</code></td>
+<td>Rebuild from a <code>pool::Parked</code> (link, log, node, pending previews, snarfouts, goto) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L790-L805">app.rs:790-805</a>)</td>
+</tr>
+<tr>
+<td><code>Acme::adopt</code></td>
+<td><code>Remote</code></td>
+<td>Swap a link made elsewhere (the pool's background attach) into an existing window, resetting per-session UI state (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1515-L1561">app.rs:1515-1561</a>)</td>
+</tr>
+</tbody>
+</table>
+<p><code>connect_link</code> connects to the local socket with <code>Link::over_streams_creating</code>. For a destination it first runs <code>providers::deploy</code> and then bridges through the provider's attach command (<code>remote::bridge_child</code>). <code>connect_existing_targeted</code> does the same with <code>Link::connect</code> / <code>Link::over_streams</code>, which do not create a session that has gone (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1430-L1479">app.rs:1430-1479</a>). Every link goes through <code>arm</code>, which sends the theme's terminal colours (<code>ClientConfig</code>) and installs this client's own plumbing rules with <code>mine: true</code>, so they go when it detaches (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1209-L1242">app.rs:1209-1242</a>):</p>
+<ul>
+<li><code>https?://\S+</code> → <code>RuleAction::Client { verb: &quot;open&quot; }</code>;</li>
+<li><code>Snarfout</code> for terminals, and for file windows owned by <code>win-.*</code> → <code>Client { verb: &quot;snarfout&quot; }</code>.</li>
+</ul>
+<p>The daemon routes such client rules back to the client as asks. <code>answer_asks</code> services them, running <code>open</code> (the platform's opener) or <code>preview</code>, and replies with <code>ClientMsg::Applied</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1281-L1335">app.rs:1281-1335</a>).</p>
+<p><strong>Wake targets and parking.</strong> A link's reader thread holds a forwarding closure from <code>pool::WakeTarget</code>, and the target behind it can be re-pointed. While the session is shown, the wake goes to the window. <code>Acme::park</code> swaps the link, log and node out into a <code>Parked</code> value for the pool, puts a blank in-process stand-in in their place, and resets per-session UI caches (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L811-L855">app.rs:811-855</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L120-L168">pool.rs:120-168</a>). A parked session keeps its leases. The daemon still forwards tools' proposals to it, and the pool applies them.</p>
+<p><strong>Leadership and fencing.</strong> <code>fenced()</code> is true when the backend is remote and the layout shard's lease is held by another attachment or has been released. The window title then reads &quot;watching (another client leads)&quot;, and the top row's square shows it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2279-L2282">app.rs:2279-2282</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1626-L1636">app.rs:1626-1636</a>). <code>in_process()</code> tells a real <code>--local</code> session apart from the blank stand-in an offline window holds: both are <code>Backend::Local</code>, but only the stand-in has a <code>wake</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L381-L682">crates/apex-client/src/app.rs:381-682</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L732-L856">crates/apex-client/src/app.rs:732-856</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1170-L1242">crates/apex-client/src/app.rs:1170-1242</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1413-L1611">crates/apex-client/src/app.rs:1413-1611</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L1-L20">crates/apex-client/src/pool.rs:1-20</a></p>
+<h2 id="sync-keeping-the-replica-and-the-wire-in-step">Sync: keeping the replica and the wire in step</h2>
+<p>Three methods move data between the node, the log and the backend.</p>
+<p><code>after()</code> runs after a command. In-process, it lets the server do what it was handed: <code>server.poll_execs</code> → <code>perform</code>, rule walks for B2'd verbs (<code>plumb_local</code>), and <code>close_orphan_terms</code>. Over a link it only flushes. Then it calls <code>sync</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2795-L2819">app.rs:2795-2819</a>).</p>
+<p><code>poll_remote()</code> handles everything the reader thread has queued (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2694-L2773">app.rs:2694-2773</a>):</p>
+<ol>
+<li><code>link.poll(&amp;mut node, &amp;mut log)</code> applies incoming entries and proposals. It returns false once the link is gone, which sets <code>link_closed</code>.</li>
+<li>It collects OSC 52 clips, completion candidates and session switches, and follows a rename made elsewhere (the metalog's label).</li>
+<li>It shows windows the link reports as made. Diagnostic windows stay stashed, and their news becomes a toast.</li>
+<li>It applies acme's <code>xfidwrite</code> scroll rule to program output (<code>take_outputs</code>): a view follows output if the insertion point was on screen, showing it three quarters down. Output before <code>iq1</code> shifts it along.</li>
+<li>It handles a session ended under it (<code>leave_requested</code>), runs <code>answer_asks</code> and <code>page_answers</code>, then <code>sync</code>, and turns an outside <code>Exit</code> (<code>node.quit_requested</code>) into <code>close_requested</code>.</li>
+</ol>
+<p><code>sync()</code> runs after every input handler and twice per frame. It drains the node's <strong>effect queues</strong> into client state: <code>take_shows</code> into <code>show_at</code>, <code>take_client_finds</code> (Look in terminals and pages), <code>take_gotos</code>, <code>take_switches</code>, and a <code>pending_goto</code> waiting for its file to open. Then it calls <code>link.flush(&amp;self.log)</code> and <code>node.catch_up(&amp;self.log)</code>. The comment states the guarantee: &quot;nothing the user typed is ever more than a frame away from the daemon&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1897-L1975">app.rs:1897-1975</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant U as &quot;User input&quot;
+    participant A as &quot;Acme&quot;
+    participant N as &quot;Node (leader)&quot;
+    participant L as &quot;Log / Link mirror&quot;
+    participant D as &quot;apexd&quot;
+    U-&gt;&gt;A: key_down / mouse_up
+    A-&gt;&gt;N: insert / exec / select
+    N-&gt;&gt;L: append entries (seq assigned locally)
+    A-&gt;&gt;A: after() then sync()
+    A-&gt;&gt;L: link.flush(log)
+    L-&gt;&gt;D: ClientMsg::Append
+    D--&gt;&gt;L: Entries (terms, metalog), proposals
+    L--&gt;&gt;A: Wake (reader thread)
+    A-&gt;&gt;L: poll_remote: link.poll(node, log)
+    A-&gt;&gt;N: catch_up, take_shows / take_gotos
+    A-&gt;&gt;A: cx.notify() then render
+</code></pre>
+<p>Terminal input goes straight to the backend instead of through entries, because the daemon leads the term shard. <code>term_key</code>, <code>term_type</code>, <code>term_paste</code> and <code>term_wheel</code> call the in-process <code>Server</code> directly, or send <code>ClientMsg::TermKey/TermType/TermPaste/TermScroll</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2836-L2874">app.rs:2836-2874</a>). Plumbing from B3 works the same way: <code>look_at</code> walks the rules locally with <code>plumb_local</code>, or sends <code>ClientMsg::Plumb</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5540-L5555">app.rs:5540-5555</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1897-L1975">crates/apex-client/src/app.rs:1897-1975</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2680-L2874">crates/apex-client/src/app.rs:2680-2874</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5533-L5555">crates/apex-client/src/app.rs:5533-5555</a></p>
+<h2 id="rendering-a-frame">Rendering a frame</h2>
+<p><code>impl Render for Acme</code> lives in <code>main.rs</code>, not <code>app.rs</code>. Each frame it does the following (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L67-L663">main.rs:67-663</a>):</p>
+<ol>
+<li><strong>Housekeeping.</strong> It advances the overview animation, handles a pending session switch, <code>leave_requested</code> and <code>close_requested</code> (parking the session and removing the window), and resolves a pending pointer warp against the previous frame's layouts.</li>
+<li><strong><code>sync(); measure(viewport); sync();</code></strong> <code>measure</code> gives the tiling this frame's metrics and the OS window's size. Syncing again picks up the entries that produced. Then <code>schedule_warp</code> and an updated window title.</li>
+<li><strong>Reset per-frame records.</strong> It clears <code>layouts</code>, <code>term_layouts</code>, <code>web_bars</code>, overlay bounds and title marks, then calls <code>sync_notes</code> and <code>sync_pulls</code>.</li>
+<li><strong>The root <code>div</code>.</strong> It binds every menu action (Undo → <code>menu_edit(&quot;undo&quot;)</code>, Put → <code>menu_command(&quot;Put&quot;)</code>, tab switching, ⌘P/⌘O/⌘⇧P, Find…) and every mouse and key handler (<code>key_down</code>, <code>mouse_down/up/move</code> for all buttons including <code>Navigate</code> for B4/B5, <code>mouse_pressure</code> for force-click B3, <code>scroll_wheel</code>).</li>
+<li><strong>A waiting tab.</strong> If <code>waiting</code> is set, the frame is a spinner and a message with the title bar and selector, and nothing else.</li>
+<li><strong>The tiled area.</strong> It walks <code>glided_layout()</code>, the replicated <code>Layout</code> with glides applied. For each column it draws the ground, the column tag (<code>TextElement { view: ViewId::ColTag }</code>), and for each window a &quot;card&quot; inset by <code>CARD_X</code>/<code>CARD_Y</code>: a tag <code>TextElement</code> (or <code>web_header</code> for a URL page), then a body chosen by <code>Body</code> kind. <code>Text</code> gets a <code>TextElement</code>, <code>Term</code> a <code>TermElement</code>, a page a canvas whose prepaint calls <code>web_place</code> to position the native WKWebView, and a tool page with no tool running a placeholder. Strips (minimized or stashed columns) get <code>strip_element</code>/<code>minimized_element</code>. Resize handles go on the lines between windows and between columns.</li>
+<li><strong>Overlays.</strong> The drag preview, strip slice, toasts, the B4 menu with its fade-in and blink-then-fade (<code>RAN</code>), then the title bar, standing banner, selector, finder, quickopen, command palette, completion, tag overlays, process card, cwd picker, overview and session preview.</li>
+<li><strong>The cutter.</strong> It is a deferred, zero-sized canvas painted last. It calls <code>webs.set_holes</code> with every overlay's bounds, so the native web views, which sit above everything gpui paints, get holes cut where overlays must show through.</li>
+</ol>
+<p>All placement uses the integer rectangles from the replicated layout (<code>col.r</code>, <code>s.r</code>, <code>s.body</code>) through an absolute-positioning helper <code>at(x, y, w, h, el)</code>. gpui's flexbox is used only for the chrome. The tiled area is offset by <code>left()</code> (the pinned sidebar's <code>SIDEBAR_W</code>) and <code>top()</code> (<code>title_h()</code>, which is the tag line plus <code>BORDER</code>, at least 38 px) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1116-L1122">main.rs:1116-1122</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2652-L2678">app.rs:2652-2678</a>).</p>
+<h3 id="measuring-for-the-tiling">Measuring for the tiling</h3>
+<p>The tiling in <code>apex_core::tiling</code> asks an <code>Info</code> trait for font metrics (see <a href="tiling-and-layout.html">Tiling and Layout</a>). The client supplies <code>ClientInfo</code> and installs it each frame as <code>node.tiling = Box::new(ClientInfo { … })</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L114-L152">app.rs:114-152</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2568-L2592">app.rs:2568-2592</a>). Its numbers come from the previous paint:</p>
+<ul>
+<li><code>font</code>, <code>row</code>, <code>prop</code>, <code>mono</code> are the tag line height, the tag row height, and the proportional and mono body line heights;</li>
+<li><code>tags</code> holds the wrapped line count and trailing newline of each window's tag, as <code>TextElement</code> recorded them in <code>tag_need</code>. A URL page's header, or a tag with <code>tagexpand</code> off, counts as one line;</li>
+<li><code>bodies</code> holds whether each body is mono, its line count from the origin, and whether it is a terminal. Terminals always take <code>maxlines</code>.</li>
+</ul>
+<p><code>measure</code> then resizes the layout to the viewport. Rows start at <code>-(font + BORDER)</code>, because the top row is drawn in the title bar. It calls <code>node.refit_window</code> for any window whose tag now wraps to a different number of lines than its slot allows (acme's <code>winsettag</code>). If a tag grew or shrank under the pointer, it queues a <code>Pending::Restore</code> warp, as acme's <code>winresize</code> moves the mouse (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2600-L2640">app.rs:2600-2640</a>). The client therefore feeds pixel geometry from its own fonts into replicated <code>LayoutOp</code>s. The review's critique of this is below.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L62-L663">crates/apex-client/src/main.rs:62-663</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1108-L1126">crates/apex-client/src/main.rs:1108-1126</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L114-L152">crates/apex-client/src/app.rs:114-152</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2565-L2678">crates/apex-client/src/app.rs:2565-2678</a></p>
+<h2 id="painting-text-from-core-state-textelement">Painting text from core state: <code>TextElement</code></h2>
+<p><code>TextElement { acme: Entity&lt;Acme&gt;, view: ViewId }</code> is a hand-written gpui <code>Element</code>. It does not use gpui's text widgets. It reads the buffer's rope, selection and origin straight out of <code>node.state</code> each frame, so there is no separate view model to keep in step. A <code>ViewId</code> is one of <code>Top</code>, <code>ColTag(c)</code>, <code>Tag(w)</code> or <code>Body(w)</code>, which <code>app::Kind</code> mirrors as <code>Top</code>, <code>ColTag</code>, <code>WinTag</code>, <code>Body</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L33-L50">app.rs:33-50</a>).</p>
+<pre><code class="language-mermaid">flowchart LR
+    RL[&quot;request_layout: fill the box the tiling gave&quot;]
+    PP[&quot;prepaint: Acme::source(view) then shape lines&quot;]
+    P[&quot;paint: selections, sweeps, glyphs, caret, handle, scroller&quot;]
+    TL[&quot;TextLayout stored in Acme.layouts&quot;]
+    HT[&quot;Acme::locate: hit-test next input&quot;]
+    RL --&gt; PP --&gt; P --&gt; TL --&gt; HT
+</code></pre>
+<p><strong><code>request_layout</code></strong> fills the box it is given (&quot;acme's tiling decides every rectangle&quot;). The top row is measured instead, from its process pills plus text (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L1591-L1643">text_element.rs:1591-1643</a>).</p>
+<p><strong><code>Acme::source(view)</code></strong> gathers everything the element needs into a <code>Source</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2878-L3033">app.rs:2878-3033</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L1179-L1249">text_element.rs:1179-1249</a>):</p>
+<ul>
+<li>the <code>Text</code> (a cheap rope clone), <code>sel</code> <code>(q0, q1)</code> and <code>origin</code> from the buffer's view;</li>
+<li>window flags: <code>mono</code>, <code>dirty</code> (<code>node.window_unsaved</code>), <code>stale</code>, <code>live</code> (a terminal, page or win window), <code>pulse</code> (a page loading, or the window &quot;working&quot;) and <code>progress</code>;</li>
+<li>interaction: <code>hl</code> (a sweep in progress, B2 <code>Exec</code> or B3 <code>Look</code>), <code>ran</code> (what B2 just ran, fading per <code>ran_fade</code>), <code>hint</code> (what a ⌘/⌥-click would take), Look <code>marks</code> and <code>strike</code>, <code>key_caret</code> (the blinking blue caret of the view the keys go to), <code>hovered</code>;</li>
+<li>for tags, <code>head</code>: a <code>Head</code> built by <code>tag_head</code>. It is the window's path split into folder atoms and a name, an optional label, and the verbs as icons. None of it is part of the tag's text;</li>
+<li>scrolling: <code>shift</code> (trackpad pixel scroll from <code>Smooth</code>), <code>want_visible</code> and <code>show_at</code> (acme's <code>textshow</code>, consumed when read).</li>
+</ul>
+<p>A view in a strip column gets an empty <code>Source</code>, so no text is laid out at zero width.</p>
+<p><strong><code>prepaint</code></strong> shapes the lines with <code>shape()</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L1401-L1570">text_element.rs:1401-1570</a>). <code>shape</code> expands tabs to <code>TABSTOP</code> (4), keeps a display-byte → rune map, prepends the tag head, and cuts the line into <code>TextRun</code>s wherever ink or face changes. Those changes include the sweep, the selection, head atoms, the verb icon cells (set in <code>.SystemUIFont</code> so an em is an em), and the name set in a medium weight. Then gpui's <code>shape_text</code> shapes it with an optional wrap width. The result is a <code>LineInfo</code> with its wrapped sub-rows.</p>
+<ul>
+<li><strong>Tags</strong> are shaped line by line. The wrapped row count goes into <code>tag_need</code>, which <code>measure</code> reads on the next frame. A window path that alone makes a one-line tag wrap is shortened by eliding leading folders (<code>shortened</code>). The top row and column tags do not wrap. They scroll sideways to keep the caret in view (<code>tag_scroll</code>), with fades at the cut edges.</li>
+<li><strong>Bodies</strong> follow acme's frame. Drawing starts from <code>origin</code>, which may fall mid-line: the first line is shaped whole and shifted up by the rows above the origin. Rows are added down to the bottom of the box. In a second pass, if <code>show_at</code> or <code>want_visible</code> asks for a position that is not fully on screen, <code>top_for</code> picks a new top row: the position at the top if it was above, else half-way down, or <code>quarters</code>/4 down for <code>show_at</code>. It counts wrapped rows, not lines, and the origin is written back with <code>set_origin</code>. Prepaint also records a screen of <code>rows</code> above the top so scrolling can step by visual rows, and <code>shown</code>, the rune range that sets the scrollbar thumb (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L1645-L1861">text_element.rs:1645-1861</a>).</li>
+</ul>
+<p><strong><code>paint</code></strong> draws selections, sweeps, glyphs, the caret, the window's handle &quot;dot&quot; (dirty, stale, live, notification ping, progress) and the overlay scroller. Last, it stores a <code>TextLayout</code> in <code>acme.layouts[view]</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L2242-L2259">text_element.rs:2242-2259</a>).</p>
+<p><code>TextLayout</code> is how input finds its way back to runes. <code>offset_at(pos)</code> maps a point to a rune offset through gpui's <code>closest_index_for_position</code> and the display map. <code>point_of(off)</code> goes the other way. <code>row_from</code> steps the origin by rows, <code>atom_at</code> and <code>atom_bounds</code> hit-test the tag head, and <code>scrollbar</code>/<code>layout_box</code> are the left lane's regions (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L785-L903">text_element.rs:785-903</a>). <code>Acme::locate(pos)</code> checks web scrollbars, then <code>term_layouts</code>, then <code>layouts</code>, and returns a <code>(Target, Region)</code> such as <code>Region::Text(offset)</code>, <code>Atom</code>, <code>Scrollbar</code> or <code>LayoutBox</code>. Overlays and the stash preview mask what lies under them (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3094-L3138">app.rs:3094-3138</a>). Input therefore always hit-tests against what was actually painted in the last frame.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L738-L903">crates/apex-client/src/text_element.rs:738-903</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L1150-L1861">crates/apex-client/src/text_element.rs:1150-1861</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L2238-L2261">crates/apex-client/src/text_element.rs:2238-2261</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2876-L3138">crates/apex-client/src/app.rs:2876-3138</a></p>
+<h2 id="what-the-client-handles-itself">What the client handles itself</h2>
+<p>Most commands go through <code>node.exec</code>, which makes Exec entries that the server or tools can see and claim (see <a href="node.html">The Node</a>). <code>Acme::execute</code> intercepts some words first and handles them locally (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5422-L5531">app.rs:5422-5531</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Word</th>
+<th>Handled by the client because…</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>End</code> (<code>-f</code>)</td>
+<td>Checks <code>node.session_clean</code>, then ends the session through <code>end_session</code></td>
+</tr>
+<tr>
+<td><code>Send</code> in a terminal</td>
+<td>The terminal selection is client-side (<code>term_sel</code>). Its text is typed into the pty</td>
+</tr>
+<tr>
+<td>A page's own verbs (<code>page_verbs</code> in the HTML head, e.g. apex diff's Prev/Next)</td>
+<td>Run inside the web view (<code>webs.verb</code>)</td>
+</tr>
+<tr>
+<td><code>Back</code>/<code>Fwd</code>/<code>Get</code> in an unowned URL page</td>
+<td>The page's own history and reload (<code>page_nav</code>)</td>
+</tr>
+<tr>
+<td><code>Snarf</code> in a terminal</td>
+<td>Copies the client-side terminal selection</td>
+</tr>
+<tr>
+<td><code>Paste</code></td>
+<td>Syncs the system clipboard into the snarf buffer before exec</td>
+</tr>
+</tbody>
+</table>
+<p>After <code>node.exec</code>, <code>Cut</code> and <code>Snarf</code> copy the snarf buffer to the system clipboard. An <code>Executed::Quit</code> quits the app in-process, or parks and closes the window over a link. Other client-side state that never reaches the log includes <code>iq1</code> and <code>typed_start</code> (Home/End and Escape targets), the terminal selection and sweeps, <code>Smooth</code> trackpad scrolling between whole lines, glides, the caret blink, hover and hint state, and the per-window seen-state for notifications and toasts. ⌘F/⌘G and live Look search locally (<code>look.rs</code>) and select through the node.</p>
+<p>Errors go to <code>+Errors</code> windows instead of dialogs. <code>notice</code> and <code>report</code> call <code>node.errors</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5407-L5420">app.rs:5407-5420</a>). If an attach fails, the window stays open, offline, with <code>connect_error</code>'s text, and a daemon of another build gets a &quot;Reconnect (⌘⇧R)&quot; hint (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1597-L1605">app.rs:1597-1605</a>). <code>reconnect</code> closes the stuck link and lets the pool attach again (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1581-L1595">app.rs:1581-1595</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5405-L5531">crates/apex-client/src/app.rs:5405-5531</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1581-L1605">crates/apex-client/src/app.rs:1581-1605</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L536-L682">crates/apex-client/src/app.rs:536-682</a></p>
+<h2 id="the-reviews-notes">The review's notes</h2>
+<p>ARCHITECTURE.md, the October 2026 review, is critical of the client's shape. Its line references predate later growth; <code>app.rs</code> is now nearly 6,000 lines.</p>
+<ul>
+<li><strong><code>app.rs</code> is too big.</strong> The review counts &quot;5,600 lines, about 100 fields&quot; and proposes splitting it into session, input, scroll, terminal, notes, client verbs, exec, view model and overlay modules. It also calls for one <code>ListPicker</code>, one overlay state instead of 14 <code>Option</code> fields, one blink clock, one navigation path and one window title.</li>
+<li><strong>Editing rules live in the client.</strong> <code>text_key</code> implements autoindent, ^A/^E, Home/End via <code>iq1</code> and Escape via <code>typed_start</code>, which are lost when another client takes over. <code>is_alnum</code>/<code>is_file_char</code>/<code>expand</code> copy the core's. The review suggests a <code>Node::key(view, Key)</code>.</li>
+<li><strong>Commands bypass the log.</strong> The intercepts in <code>execute</code>, and ⌘F/⌘G, make no Exec entry, so tools cannot see or claim them. The review suggests registering them as client rules, as <code>Snarfout</code> already is.</li>
+<li><strong><code>Backend::Local</code> is a second engine.</strong> It copies the daemon's orchestration, has drifted from it (it lacks tools, profile, the I/O plane, and the &quot;loop until settled&quot;), and accounts for about 24 Local/Remote branches. The review's plan is to delete it and run the daemon in-process over a socket pair, since <code>Link::over_streams</code> takes any byte streams.</li>
+<li><strong>Pixel layout is replicated.</strong> Because the client installs its own <code>ClientInfo</code>, a second UI with other fonts receives geometry measured by whichever node led last. The plan's item 7 is to replicate logical layout and let each client tile with its own metrics. That reverses a deliberate choice, discussed on <a href="tiling-and-layout.html">Tiling and Layout</a>.</li>
+<li><strong>Layout policy runs during render.</strong> <code>diagnostic_news</code> is called from <code>sync()</code>, twice a frame, and diffs whole diagnostic texts. The review suggests driving toasts from <code>take_outputs</code>.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L279-L331">ARCHITECTURE.md:279-331</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L342-L354">ARCHITECTURE.md:342-354</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L417-L459">ARCHITECTURE.md:417-459</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L536-L548">ARCHITECTURE.md:536-548</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L900-L935">ARCHITECTURE.md:900-935</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="remote-hosts.html">Remote Hosts and Providers</a></span><span class="next">Next: <a href="client-input.html">Mouse, Keyboard and Look</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top current"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture-at-a-glance">Architecture at a glance</a></li>
+<li class="l2"><a href="#the-command-line-and-launch">The command line and launch</a></li>
+<li class="l2"><a href="#opening-a-window-and-driving-it">Opening a window and driving it</a></li>
+<li class="l2"><a href="#the-acme-entity-and-the-backend">The Acme entity and the Backend</a></li>
+<li class="l2"><a href="#sync-keeping-the-replica-and-the-wire-in-step">Sync: keeping the replica and the wire in step</a></li>
+<li class="l2"><a href="#rendering-a-frame">Rendering a frame</a></li>
+<li class="l3"><a href="#measuring-for-the-tiling">Measuring for the tiling</a></li>
+<li class="l2"><a href="#painting-text-from-core-state-textelement">Painting text from core state: TextElement</a></li>
+<li class="l2"><a href="#what-the-client-handles-itself">What the client handles itself</a></li>
+<li class="l2"><a href="#the-reviews-notes">The review&#39;s notes</a></li>
+</ul>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

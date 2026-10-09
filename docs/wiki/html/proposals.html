@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proposals: How Others Change State · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Proposals: How Others Change State</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs">crates/apex-client/src/tagedit.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs">crates/apex-core/src/buffer.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs">crates/apex-server/tests/server.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+</ul>
+</details>
+<p>In apex, only a shard's leader appends entries to that shard (see <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>). When a UI is attached, it holds the leases on the buffer, window and layout shards. The daemon's <code>Server</code>, tools and the <code>apex</code> command all keep replicas of those shards, but they cannot write them. To change something they don't lead, they send a <strong>proposal</strong>: a request, as a value, that the leader turns into entries of its own. The server's own documentation states the rule: &quot;The server never writes a shard it does not lead: everything it wants done to buffers, windows or the layout is a <code>Proposal</code> for the leader&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L5-L8">crates/apex-server/src/lib.rs:5-8</a>).</p>
+<p>This page covers the <code>Proposal</code> enum, how proposals reach the leader, how <code>proposal::apply</code> lowers each one into the leader's entries, the <code>Applied</code> reply, and the different ways proposals handle a buffer that has changed under them. It ends with the architecture review's critique and the planned collapse. The messages that carry proposals are described on <a href="attach-protocol.html">The Attach Protocol</a>. The node methods that <code>apply</code> calls are on <a href="node.html">The Node: Leading and Built-in Commands</a>. The server that produces most proposals is on <a href="server.html">The Server: Commands, Files and Processes</a>.</p>
+<h2 id="where-proposals-come-from-and-where-they-go">Where proposals come from and where they go</h2>
+<p>Proposals have three kinds of sender:</p>
+<ul>
+<li><strong>The server.</strong> It answers the leader's B2 execs (<code>poll_execs</code>), reports command output (<code>ReplaceRange</code>, <code>Errors</code>, <code>Status</code>), answers Get and Put (<code>SetContent</code>, <code>Clean</code>, <code>PutTrimmed</code>, <code>SetPath</code>), reports file-watch events (<code>SetContent</code> or <code>Stale</code>) and finishes plumb walks (<code>Goto</code>, <code>Look</code>, <code>ClientDo</code>).</li>
+<li><strong>Tools and the CLI.</strong> A tool sends <code>ClientMsg::Propose { id, proposal }</code>, and the SDK's calls are built on these messages.</li>
+<li><strong>The UI itself.</strong> When it already leads, the UI applies proposals in place with <code>perform</code>. This is how the finder, the tag editor and page navigation reuse <code>Goto</code>, <code>SetPath</code> and <code>Navigate</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4340-L4346">crates/apex-client/src/app.rs:4340-4346</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L439">crates/apex-client/src/tagedit.rs:439</a>).</li>
+</ul>
+<p>The proposal always ends up at one leader, and that leader runs the same function, <code>proposal::apply</code>.</p>
+<pre><code class="language-mermaid">flowchart LR
+    srv[&quot;Server (in apexd)&lt;br/&gt;exec, Get/Put, watcher, plumber&quot;]
+    tool[&quot;tool or apex CLI&lt;br/&gt;Remote / apex-tool&quot;]
+    d[&quot;Daemon::propose&quot;]
+    ui[&quot;UI leader&lt;br/&gt;Link::handle&quot;]
+    head[&quot;daemon's own Node&lt;br/&gt;(no UI attached)&quot;]
+    apply[&quot;proposal::apply&lt;br/&gt;→ Node methods → entries&quot;]
+    srv --&gt;|&quot;Vec of Proposal, id 0&quot;| d
+    tool --&gt;|&quot;ClientMsg::Propose{id}&quot;| d
+    d --&gt;|&quot;ServerMsg::Propose&quot;| ui
+    d --&gt;|&quot;applied in place&quot;| head
+    ui --&gt; apply
+    head --&gt; apply
+    apply --&gt;|&quot;Append entries + Applied{id}&quot;| d
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1-L8">crates/apex-server/src/lib.rs:1-8</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1763-L1774">crates/apex-server/src/lib.rs:1763-1774</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L932-L979">crates/apex-server/src/daemon.rs:932-979</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L1-L3">crates/apex-server/src/proposal.rs:1-3</a></p>
+<h2 id="the-proposal-enum">The <code>Proposal</code> enum</h2>
+<p><code>Proposal</code> is a serde enum in <code>apex-server/src/proposal.rs</code>. It travels as postcard inside <code>ClientMsg::Propose</code> and <code>ServerMsg::Propose</code>. Any change to it is a wire change, which needs a bump of <code>PROTOCOL</code> in <code>proto.rs</code>. A comment at line 89 splits the variants into two groups: those the server produces, and those intended for tools (&quot;from tools (the control protocol)&quot;). In practice both groups are open to anyone who can send <code>Propose</code>.</p>
+<h3 id="windows-and-pages">Windows and pages</h3>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>What it asks for</th>
+<th>Lowered to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OpenWindow { col, from, name, kind, text, hash, select_line, cover }</code></td>
+<td>Show a file or directory listing. If one is open, reuse it; otherwise make a buffer and a window (acme's <code>makenewwindow</code>). With <code>cover</code>, put a window of its own over another window.</td>
+<td><code>window_of</code>, then <code>reveal</code> + select + warp; or <code>create_buffer_as</code> + <code>make_window</code>; or <code>cover_window</code></td>
+</tr>
+<tr>
+<td><code>NewWindow { col, name, label, scratch, diagnostic }</code></td>
+<td>An empty buffer at a path, which may be a scratch buffer. With <code>diagnostic</code>, the window is made in the stash.</td>
+<td><code>new_window_as</code> with a <code>Spec</code></td>
+</tr>
+<tr>
+<td><code>TermWindow { col, dir, label, term }</code></td>
+<td>A window on a terminal the server has created</td>
+<td><code>open_term_window</code></td>
+</tr>
+<tr>
+<td><code>OpenPage { col, page }</code></td>
+<td>A page window, whose content is HTML from a buffer or a URL</td>
+<td><code>open_page</code></td>
+</tr>
+<tr>
+<td><code>Navigate</code>, <code>Reload</code>, <code>PageScroll</code></td>
+<td>Page navigation state: the URL now, the reload counter, a buffer page's scroll position</td>
+<td><code>web_navigate</code>, <code>reload_page</code>, <code>scroll_page</code></td>
+</tr>
+<tr>
+<td><code>SetPath</code>, <code>SetLabel</code></td>
+<td>Rename a window, or set or clear its label</td>
+<td><code>set_window_path</code>, <code>set_window_label</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>Proposal::open_url</code> and <code>Proposal::open_html</code> are helper constructors that build <code>OpenPage</code> with <code>Via::Host</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L143-L154">proposal.rs:143-154</a>). Page semantics are described on <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</p>
+<h3 id="text-and-buffers">Text and buffers</h3>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>What it asks for</th>
+<th>Version check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SetContent { buffer, version, text, hash }</code></td>
+<td>Replace the whole buffer and mark it clean against <code>hash</code>. With <code>version: None</code>, the replace is unconditional (Get).</td>
+<td>Optional, see below</td>
+</tr>
+<tr>
+<td><code>Clean { buffer, version, hash }</code></td>
+<td>Put wrote the buffer as it stood at <code>version</code></td>
+<td>Implicit, through <code>clean_version</code></td>
+</tr>
+<tr>
+<td><code>PutTrimmed { buffer, version, runs, hash }</code></td>
+<td>Put in an autoindent window: delete the trailing blanks in <code>runs</code> as one undo step, then mark the buffer clean</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>ReplaceRange { select, dir, buffer, version, q0, q1, text }</code></td>
+<td>Pipe output (<code>select: true</code>), or a tool's write</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>Insert { buffer, version, at, text, follow }</code></td>
+<td>Insert at an offset and leave the selection alone. With <code>follow</code>, views whose caret sits at <code>at</code> move past the inserted text.</td>
+<td>Required</td>
+</tr>
+<tr>
+<td><code>Stale { buffer, hash }</code></td>
+<td>The file on disk changed under a dirty buffer</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>Errors { dir, text }</code></td>
+<td>Append to <code>dir</code>'s <code>+Errors</code>, or to the session's</td>
+<td>None</td>
+</tr>
+<tr>
+<td><code>Snarf { text }</code></td>
+<td>Set the snarf buffer</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<h3 id="commands-and-navigation">Commands and navigation</h3>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>What it asks for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Exec { ctx, text }</code></td>
+<td>Run <code>text</code> as if B2 had been clicked on it in <code>ctx</code>, through <code>Node::exec</code></td>
+</tr>
+<tr>
+<td><code>Edit { window, program }</code></td>
+<td>Run <code>Edit program</code> in the window's context, also through <code>Node::exec</code></td>
+</tr>
+<tr>
+<td><code>Builtin { ctx, text }</code></td>
+<td>Apex's own meaning of a word, without consulting the rules. A claimed word ends up here when its tool declines it.</td>
+</tr>
+<tr>
+<td><code>Look { ctx, text, reverse }</code></td>
+<td>Search, after B3 found no file. The text may be in a page or a terminal, which only a client can search.</td>
+</tr>
+<tr>
+<td><code>Status { ctx, exec, status }</code></td>
+<td>The outcome of an exec entry, skipped if its window is gone</td>
+</tr>
+<tr>
+<td><code>Goto { loc }</code>, <code>Nav { back }</code></td>
+<td>Move the user to a place, recording the back stack, or pop the back or forward stack</td>
+</tr>
+<tr>
+<td><code>Switch { session, window }</code></td>
+<td>Show another session; a UI does the switch</td>
+</tr>
+<tr>
+<td><code>Select { view, q0, q1 }</code>, <code>Show { view, at }</code></td>
+<td>Move dot without scrolling or focusing; or bring an offset on screen without moving dot</td>
+</tr>
+<tr>
+<td><code>ClientDo { verb, args }</code></td>
+<td>Something only a UI can do, such as <code>open</code> a URL, run the system previewer, or <code>snarfout</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="window-flags-and-notifications">Window flags and notifications</h3>
+<p><code>Own</code>, <code>Live</code> and <code>Working</code> each append one <code>WindowOp</code> to the window's shard. <code>Own</code> says a tool owns the window. <code>Live</code> says a tool's process is behind it. <code>Working</code> says work is in progress, optionally with a percentage. Each carries <code>by: Option&lt;AttachmentId&gt;</code>, and <code>None</code> clears the flag. <code>Notice { window }</code> calls <code>Node::notice</code> so a notified window isn't left hidden. The daemon proposes it right after it records a <code>ClientMsg::Notify</code> in the metalog (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L854-L864">daemon.rs:854-864</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L9-L154">crates/apex-server/src/proposal.rs:9-154</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L157-L160">crates/apex-server/src/proto.rs:157-160</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L309-L313">crates/apex-server/src/proto.rs:309-313</a></p>
+<h2 id="routing-to-the-leader">Routing to the leader</h2>
+<h3 id="in-the-daemon">In the daemon</h3>
+<p>Each daemon session records which UI connection leads it, as <code>leader: Option&lt;u64&gt;</code>. It is set when a UI says hello and takes the leases, and cleared when that UI disconnects and the leases are reclaimed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L596-L614">daemon.rs:596-614</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L537-L550">daemon.rs:537-550</a>). A tool's <code>Propose</code> gets a daemon-wide pending id. The daemon records who is waiting and passes the proposal on:</p>
+<pre><code class="language-rust">enum Pending {
+    /// A tool's proposal: (tool connection, tool's id).
+    Tool { conn: u64, id: u64 },
+    /// A plumb walk's `Ask`: (session id, plumb id, who asked).
+    Plumb { session: u64, plumb: u64, asker: u64 },
+}
+</code></pre>
+<p><code>Daemon::propose</code> then makes one of two choices (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L965-L979">daemon.rs:965-979</a>):</p>
+<ul>
+<li><strong>A UI leads.</strong> The daemon sends it <code>ServerMsg::Propose { id: pid, proposal }</code>.</li>
+<li><strong>No UI is attached.</strong> The daemon leads the session itself and calls <code>proposal::apply</code> on its own replica (<code>s.view</code>) and log. It then runs <code>after()</code> before answering, so the entries the proposal made reach every connection before the <code>Applied</code> reply does. A tool that waited for a new window therefore already has that window in its replica.</li>
+</ul>
+<p>When the leader sends back <code>ClientMsg::Applied { id, result }</code>, the daemon accepts it only from the current leader (<code>if is_leader</code>). It then calls <code>answered</code>. For a <code>Pending::Tool</code>, that relays <code>ServerMsg::Applied</code> to the tool under the tool's own id. For a <code>Pending::Plumb</code>, the plumb walk continues with <code>plumb_next</code>. This is how a refused <code>ClientDo</code> or <code>Goto</code> makes the walk try the next rule (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1354-L1366">daemon.rs:1354-1366</a>).</p>
+<p>The server's own proposals don't wait for anyone. <code>after()</code> collects what the <code>Server</code> returned (<code>poll_execs</code>, <code>open_file</code>, the watcher) and handles it in one of two ways. If a UI leads, each proposal goes out as <code>Propose { id: 0 }</code>, which means &quot;nobody waits&quot;. If no UI leads, the daemon applies them in a loop: apply, open any <code>gotos</code> whose windows were missing, poll the server again, and stop when no new proposals come back (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1513-L1591">daemon.rs:1513-1591</a>).</p>
+<p>Two daemon messages build their proposals before routing them. <code>OpenFile</code> becomes <code>server.open_file(...)</code>, which yields an <code>OpenWindow</code> or, on failure, an <code>Errors</code>. <code>EditOver</code> produces the same <code>OpenWindow</code> and then rewrites its <code>cover</code> to <code>Some(under)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L728-L750">daemon.rs:728-750</a>). <code>Snarf</code> from a non-UI attachment also sends <code>ServerMsg::Clipboard</code> to every UI on the session before routing (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L932-L944">daemon.rs:932-944</a>).</p>
+<h3 id="on-the-leading-client">On the leading client</h3>
+<p><code>Link::handle</code> in <code>remote.rs</code> receives <code>ServerMsg::Propose</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L373-L408">remote.rs:373-408</a>):</p>
+<ol>
+<li>For <code>Insert</code> and non-empty <code>ReplaceRange</code>, it records where the foreign text ends (<code>foreign_end</code>, <code>outputs</code>). The client uses this to keep win's output point.</li>
+<li>A <code>ClientDo</code> on a UI attachment is queued in <code>client_asks</code> and is <strong>not</strong> answered yet. The UI's <code>answer_asks</code> carries out <code>open</code>, <code>preview</code> or <code>snarfout</code>, then sends <code>Applied</code> itself, possibly much later, after an I/O-plane fetch (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1281-L1316">crates/apex-client/src/app.rs:1281-1316</a>). A non-UI leader refuses <code>ClientDo</code> at once.</li>
+<li>Every other variant goes to <code>proposal::apply(node, log, p)</code>. A window it returns is pushed onto <code>made</code>.</li>
+<li><code>flush(log)</code> ships the new entries as <code>Append</code>. <strong>Only after that</strong>, and only if <code>id != 0</code>, does the leader send <code>Applied { id, result }</code>.</li>
+</ol>
+<p>The daemon processes one connection's messages in order, and it forwards <code>Append</code> entries to every other connection in <code>after()</code> before it handles the next message. So a tool always sees the entries before it sees the <code>Applied</code> for them.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant T as tool
+    participant D as apexd
+    participant L as UI leader
+    T-&gt;&gt;D: Propose{id 7, Insert{buffer, version, at, text}}
+    D-&gt;&gt;D: pending[pid] = Tool{conn, 7}
+    D-&gt;&gt;L: Propose{pid, Insert}
+    L-&gt;&gt;L: proposal::apply → BufferOp::Edit entries
+    L-&gt;&gt;D: Append{buffer shard, entries}
+    L-&gt;&gt;D: Applied{pid, Ok(None)}
+    D-&gt;&gt;T: Entries{buffer shard}
+    D-&gt;&gt;T: Applied{7, Ok(None)}
+</code></pre>
+<h3 id="the-proposers-side">The proposer's side</h3>
+<p><code>Link::propose</code> assigns a per-link id, sends the message and returns the id. Replies land in the <code>applied</code> map (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L305-L312">remote.rs:305-312</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L409-L411">remote.rs:409-411</a>). <code>Remote::propose</code> blocks: it steps the link until its id shows up, until the timeout passes (&quot;timed out waiting for the leader&quot;), or until the connection closes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L747-L765">remote.rs:747-765</a>). The SDK's private <code>Tool::propose</code> does the same with a 10-second <code>TIMEOUT</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L123">crates/apex-tool/src/lib.rs:123</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L593-L599">crates/apex-tool/src/lib.rs:593-599</a>).</p>
+<p>Some cases have no reply path:</p>
+<ul>
+<li><strong>The proposer disconnects.</strong> The daemon drops its <code>Pending::Tool</code> entries (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L551">daemon.rs:551</a>).</li>
+<li><strong>The leader disconnects with a proposal in flight.</strong> The daemon has no code that resends that proposal to the next leader. The tool gets no answer and eventually hits its own timeout.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L190-L196">crates/apex-server/src/daemon.rs:190-196</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L932-L979">crates/apex-server/src/daemon.rs:932-979</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1354-L1366">crates/apex-server/src/daemon.rs:1354-1366</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1513-L1591">crates/apex-server/src/daemon.rs:1513-1591</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L305-L411">crates/apex-server/src/remote.rs:305-411</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L747-L765">crates/apex-server/src/remote.rs:747-765</a></p>
+<h2 id="proposalapply-lowering-into-entries"><code>proposal::apply</code>: lowering into entries</h2>
+<pre><code class="language-rust">pub fn apply(node: &amp;mut Node, log: &amp;mut Log, p: Proposal) -&gt; Result&lt;Option&lt;WindowId&gt;, CoreError&gt;
+</code></pre>
+<p><code>apply</code> is one big <code>match</code>, and nearly every arm calls a <code>Node</code> method or <code>node.append</code>. Those calls take the leader's epoch for the shard. If the caller does not hold the lease, <code>Node::append</code> fails with <code>CoreError::NotLeader</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L350-L356">crates/apex-core/src/node.rs:350-356</a>). So <code>apply</code> can only succeed on the leader. The leader then replicates the resulting entries like any other entries; to followers there is nothing special about them, because the proposal itself is never logged.</p>
+<p>The <code>Ok</code> value is &quot;the window it opened or searched in&quot;. The UI uses it to focus or reveal the window. A tool uses it as the id of the window it just made.</p>
+<p>Some arms also put work on the node's effect queues for the client. These queues are described on the <a href="node.html">node page</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Queue</th>
+<th>Filled by</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>node.seltext</code></td>
+<td><code>OpenWindow</code>, <code>NewWindow</code> (unless diagnostic)</td>
+<td>Where typing goes</td>
+</tr>
+<tr>
+<td><code>node.warp</code></td>
+<td><code>OpenWindow</code> on an open window, <code>Look</code></td>
+<td>Where the pointer should move</td>
+</tr>
+<tr>
+<td><code>node.gotos</code></td>
+<td><code>Goto</code>, <code>Nav</code> when <code>land</code> can't find the window</td>
+<td>A window to open first. In the daemon's loop this is <code>take_gotos</code> → <code>open_file</code> → <code>land</code>.</td>
+</tr>
+<tr>
+<td><code>node.switches</code></td>
+<td><code>Goto</code>/<code>Nav</code> to another session, <code>Switch</code></td>
+<td>A UI switches sessions</td>
+</tr>
+<tr>
+<td><code>node.shows</code></td>
+<td><code>Show</code></td>
+<td>Bring an offset on screen</td>
+</tr>
+<tr>
+<td><code>node.client_finds</code></td>
+<td><code>Look</code> in a page or terminal</td>
+<td>The client searches what it displays</td>
+</tr>
+</tbody>
+</table>
+<p>Several arms are more than one call:</p>
+<ul>
+<li><strong><code>OpenWindow</code>.</strong> With <code>cover</code> naming a live window, it reuses the file's buffer if one is open and calls <code>cover_window</code>. Otherwise, if a window on that name and kind exists, it reveals it, selects <code>select_line</code> and warps (acme's <code>openfile</code>). Otherwise it creates a buffer and a window. The private <code>select</code> helper converts a 1-based line number into a selection that includes the newline (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L160-L188">proposal.rs:160-188</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L451-L460">proposal.rs:451-460</a>).</li>
+<li><strong><code>Goto</code>.</strong> It always appends <code>LayoutOp::Visit { from, to }</code>, so the back stack is recorded even if the place is in another session or not yet open. <code>Nav</code> appends <code>LayoutOp::NavPop</code> and then lands the same way (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L304-L337">proposal.rs:304-337</a>).</li>
+<li><strong><code>Look</code>.</strong> This follows acme's <code>look3</code>. It searches the body of the window B3 was in, not <code>seltext</code>. For column and top-row contexts it falls back to <code>seltext</code>. A window found by the client goes to <code>find_in_client</code>. On a hit it reveals the window, unless the window is stashed and only being previewed. It also warps, and sets the tag's Look argument when the search ran in the window's own body (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L365-L405">proposal.rs:365-405</a>).</li>
+<li><strong><code>Exec</code> and <code>Edit</code>.</strong> Both go through <code>Node::exec</code>, so the <code>Edit</code> proposal has exactly the meaning of the <code>Edit</code> command. <code>Executed::Failed</code> becomes an <code>Err</code>. <code>Exec</code> in a window the command just stashed returns <code>None</code>, so the client doesn't bring that window back (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L410-L428">proposal.rs:410-428</a>).</li>
+<li><strong><code>Status</code>.</strong> Skipped if the window is gone, for example after <code>Del</code>; the metalog keeps the record (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L278-L288">proposal.rs:278-288</a>).</li>
+<li><strong><code>TermWindow</code> and <code>OpenPage</code>.</strong> Both call <code>node.catch_up(log)</code> first. The terminal or page they refer to may have been announced in entries the leader hasn't applied yet.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L156-L460">crates/apex-server/src/proposal.rs:156-460</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L228-L258">crates/apex-core/src/node.rs:228-258</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L350-L356">crates/apex-core/src/node.rs:350-356</a></p>
+<h2 id="version-conflicts">Version conflicts</h2>
+<p>A proposal is made against the proposer's replica, which may be behind the leader. Every proposal that rewrites a buffer carries the <code>Version</code> the proposer saw, but the variants handle a mismatch in different ways:</p>
+<table>
+<thead>
+<tr>
+<th>Proposal</th>
+<th>Who sends it</th>
+<th>If the buffer has moved past <code>version</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SetContent</code> with <code>Some(version)</code></td>
+<td>The file watcher, for a clean buffer</td>
+<td>If the buffer is <strong>dirty</strong>, it is marked <code>Stale</code> (once), and the call returns <code>Ok(None)</code>. If the buffer is clean, the content is replaced anyway.</td>
+</tr>
+<tr>
+<td><code>SetContent</code> with <code>None</code></td>
+<td><code>Get</code></td>
+<td>No check: the content is replaced and marked clean</td>
+</tr>
+<tr>
+<td><code>ReplaceRange</code></td>
+<td>Pipe output, tool writes</td>
+<td>Returns <code>Err(&quot;buffer … changed meanwhile: at version …, the write was for …&quot;)</code>. When <code>dir</code> is set (pipe output), it also writes <code>pipe output not applied: buffer changed meanwhile</code> and the text to that directory's <code>+Errors</code>.</td>
+</tr>
+<tr>
+<td><code>Insert</code></td>
+<td>win, tools appending output</td>
+<td>Returns <code>Err(&quot;buffer changed meanwhile&quot;)</code></td>
+</tr>
+<tr>
+<td><code>PutTrimmed</code></td>
+<td><code>Put</code> in an autoindent window</td>
+<td><code>Ok(None)</code> and nothing happens. The file on disk no longer matches the buffer, so the buffer stays dirty.</td>
+</tr>
+<tr>
+<td><code>Clean</code></td>
+<td><code>Put</code></td>
+<td>Appended as is. <code>BufferOp::Clean</code> sets <code>clean_version</code>, and <code>Buffer::dirty()</code> compares it with the current version, so a buffer typed into since then simply stays dirty.</td>
+</tr>
+</tbody>
+</table>
+<p>The watcher half of this lives in the server. <code>content_changed</code> proposes <code>Stale</code> for a dirty buffer and a versioned <code>SetContent</code> for a clean one. The comment explains why: if the leader has typed since, &quot;it flags the buffer stale instead&quot;. It also skips files whose hash matches the server's own last write (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L836-L865">crates/apex-server/src/lib.rs:836-865</a>). <code>Put</code> chooses between <code>Clean</code> and <code>PutTrimmed</code> according to whether trimming removed anything (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L332-L346">lib.rs:332-346</a>).</p>
+<p>A test checks the <code>ReplaceRange</code> behaviour. A write at an old version is an error, the tool's text doesn't end up in <code>+Errors</code>, and a selecting write selects in the view last selected in (<code>node.seltext</code>), even when that is a Zerox twin (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1351-L1372">crates/apex-server/tests/server.rs:1351-1372</a>). With <code>select: true</code>, a <code>ReplaceRange</code> chooses its view in this order: <code>seltext</code> if it is on this buffer, else a body view, else any view. It then calls <code>select</code> + <code>replace_selection</code>, so the output is left selected, as with acme's <code>|</code>. Without a selecting view it calls <code>replace_text</code>, which leaves dot alone, as acme's <code>data</code> file does.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L219-L348">crates/apex-server/src/proposal.rs:219-348</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L332-L354">crates/apex-server/src/lib.rs:332-354</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L720-L746">crates/apex-server/src/lib.rs:720-746</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L836-L865">crates/apex-server/src/lib.rs:836-865</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L603-L612">crates/apex-core/src/state.rs:603-612</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L120-L123">crates/apex-core/src/buffer.rs:120-123</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1351-L1372">crates/apex-server/tests/server.rs:1351-1372</a></p>
+<h2 id="errors-and-the-applied-result">Errors and the <code>Applied</code> result</h2>
+<p><code>apply</code> returns <code>CoreError</code>. The wire carries <code>Result&lt;Option&lt;WindowId&gt;, String&gt;</code>, using the error's <code>to_string()</code>. What happens to a failure depends on where the proposal came from:</p>
+<ul>
+<li>A <strong>tool's</strong> proposal sends the error back in <code>Applied</code>. The SDK turns it into its <code>Error</code>.</li>
+<li>A <strong>server</strong> proposal routed with id 0 has nobody to tell. The leading <code>Link</code> logs <code>remote: proposal: …</code> to stderr. The daemon's own loop logs <code>apexd: NAME: proposal: …</code>. In-process callers go through <code>perform</code>, which logs <code>proposal: …</code> and keeps the last window made (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1763-L1774">lib.rs:1763-1774</a>).</li>
+<li>A <strong>plumb walk's</strong> proposal (<code>PlumbStep::Ask</code>) feeds the result back into the walk. An <code>Err</code> from <code>ClientDo</code> or <code>Goto</code> lets the next rule try (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1461-L1466">daemon.rs:1461-1466</a>). A headless leader refuses <code>ClientDo</code> with &quot;no client here can VERB&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L289">proposal.rs:289</a>). This is how a URL rule that only a UI can satisfy falls through when no UI is attached. See <a href="plumbing.html">Plumbing Rules and Verbs</a>.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1354-L1366">crates/apex-server/src/daemon.rs:1354-1366</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1447-L1488">crates/apex-server/src/daemon.rs:1447-1488</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L389-L407">crates/apex-server/src/remote.rs:389-407</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1763-L1774">crates/apex-server/src/lib.rs:1763-1774</a></p>
+<h2 id="the-reviews-critique-and-the-planned-collapse">The review's critique and the planned collapse</h2>
+<p>The October 2026 architecture review (ARCHITECTURE.md) treats the proposal set as its main example of non-minimal design. Some of what it describes has been fixed since; this section reports the current state.</p>
+<p><strong>Bugs it found.</strong> All are fixed except the <code>Look</code> half of bug 4, which waits for the protocol collapse (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L141-L147">ARCHITECTURE.md:141-147</a>):</p>
+<ul>
+<li>Bug 1: <code>ReplaceRange</code> used to report success on a version conflict. It now returns <code>Err</code>.</li>
+<li>Bug 5: a selecting <code>ReplaceRange</code> used to select in an arbitrary view. It now prefers <code>seltext</code>.</li>
+<li>Bug 4, <code>Edit</code> half: <code>Proposal::Edit</code> used to drop warnings and ignore intents. It now routes through <code>Node::exec(&quot;Edit …&quot;)</code>.</li>
+<li>Bug 7: <code>Proposal::Complete</code> was dead code and no longer exists.</li>
+<li>The review's <code>OpenWeb</code>, <code>OpenHtml</code> and <code>WebNavigate</code> have been replaced by <code>OpenPage</code> and <code>Navigate</code>.</li>
+</ul>
+<p>The <code>Look</code> half of bug 4 remains: <code>Proposal::Look</code> still handles reverse search, column and top-row contexts, the tag's Look argument and the warp, while the <code>Look</code> built-in does not.</p>
+<p><strong>The proposed collapse.</strong> The review groups the variants by what they actually do and suggests one form for each group (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L197-L267">ARCHITECTURE.md:197-267</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Today</th>
+<th>Proposed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OpenWindow</code>, <code>NewWindow</code>, <code>TermWindow</code>, page opens, the daemon's <code>EditOver</code> rewrite, <code>NewWindow.diagnostic</code></td>
+<td>One <code>Open { body, place: Col/Near/Over/Stash, label, reuse, pos }</code></td>
+</tr>
+<tr>
+<td><code>OpenFile</code>, <code>EditOver</code>, <code>Plumb{edit_only}</code>, <code>Goto</code>, <code>Switch</code>, which can take three round trips through <code>node.gotos</code></td>
+<td>One server-handled <code>Goto{loc, ctx, place}</code> that proposes a single <code>Open{…, pos}</code></td>
+</tr>
+<tr>
+<td><code>SetContent</code>, <code>ReplaceRange</code>, <code>Insert</code>, <code>PutTrimmed</code>, with different conflict policies</td>
+<td>One conditional edit: <code>Edit { buffer, if_version, edits, after: {select, clean}, on_conflict: Fail | MarkStale(hash) }</code></td>
+</tr>
+<tr>
+<td><code>Exec</code>, <code>Builtin</code>, <code>Edit</code>, <code>Look</code></td>
+<td><code>Exec{ctx, text, plain}</code>, after B3's Look behaviour moves into the built-in</td>
+</tr>
+<tr>
+<td><code>Own</code>, <code>Live</code>, <code>Working</code>, plus <code>Notify</code>/<code>Notice</code></td>
+<td><code>Flag{window, kind: Owner | Live | Working{at} | Notify, on}</code></td>
+</tr>
+<tr>
+<td><code>Clean</code>, <code>Stale</code>, <code>Snarf</code>, <code>SetLabel</code>, <code>SetPath</code></td>
+<td>One allowlisted <code>Ops(Vec&lt;(Shard, Op)&gt;)</code></td>
+</tr>
+</tbody>
+</table>
+<p>The review also proposes replacing per-type reply slots with one <code>Req{id, body}</code> → <code>Reply{id, Result}</code> envelope. It moves <code>ClientDo</code> (&quot;a call to the UI posing as a proposal, routed to the leader rather than the asker&quot;) onto a mechanism where tools and clients can serve requests (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L518-L523">ARCHITECTURE.md:518-523</a>). Step 2 of the plan is &quot;Collapse the protocol&quot;, which &quot;roughly halves the proposal and message variants, and ends the <code>Look</code> drift&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L878-L888">ARCHITECTURE.md:878-888</a>).</p>
+<p>The review's conflict table is out of date in one respect: <code>ReplaceRange</code> no longer &quot;writes the text to +Errors and returns <code>Ok</code>&quot;. Its main point still holds. Four proposals handle a version conflict in four ways (mark stale, fail with an <code>+Errors</code> note, fail, or do nothing silently), and a caller has to know which one it is using. That is why the review says preview and win each grew a retry loop. On the tool side, the review notes that the SDK's <code>replace</code>, <code>append</code>, <code>insert_following</code> and <code>set_tag</code> are &quot;one write with flags, but with different conflict behaviour&quot;. It also notes that lsp, preview and win use <code>Remote</code> and <code>Proposal</code> directly instead of the SDK (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L593-L627">ARCHITECTURE.md:593-627</a>). See <a href="tool-sdk.html">Writing Tools: the apex-tool SDK</a> and <a href="tool-win-and-lsp.html">win and Language Servers</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L27-L137">ARCHITECTURE.md:27-137</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L141-L193">ARCHITECTURE.md:141-193</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L197-L277">ARCHITECTURE.md:197-277</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L518-L523">ARCHITECTURE.md:518-523</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L873-L888">ARCHITECTURE.md:873-888</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="attach-protocol.html">The Attach Protocol</a></span><span class="next">Next: <a href="plumbing.html">Plumbing Rules and Verbs</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child current"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+<ul class="sections">
+<li class="l2"><a href="#where-proposals-come-from-and-where-they-go">Where proposals come from and where they go</a></li>
+<li class="l2"><a href="#the-proposal-enum">The Proposal enum</a></li>
+<li class="l3"><a href="#windows-and-pages">Windows and pages</a></li>
+<li class="l3"><a href="#text-and-buffers">Text and buffers</a></li>
+<li class="l3"><a href="#commands-and-navigation">Commands and navigation</a></li>
+<li class="l3"><a href="#window-flags-and-notifications">Window flags and notifications</a></li>
+<li class="l2"><a href="#routing-to-the-leader">Routing to the leader</a></li>
+<li class="l3"><a href="#in-the-daemon">In the daemon</a></li>
+<li class="l3"><a href="#on-the-leading-client">On the leading client</a></li>
+<li class="l3"><a href="#the-proposers-side">The proposer&#39;s side</a></li>
+<li class="l2"><a href="#proposalapply-lowering-into-entries">proposal::apply: lowering into entries</a></li>
+<li class="l2"><a href="#version-conflicts">Version conflicts</a></li>
+<li class="l2"><a href="#errors-and-the-applied-result">Errors and the Applied result</a></li>
+<li class="l2"><a href="#the-reviews-critique-and-the-planned-collapse">The review&#39;s critique and the planned collapse</a></li>
+</ul>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

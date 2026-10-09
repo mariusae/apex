@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Server: Commands, Files and Processes · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The Server: Commands, Files and Processes</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md">crates/apex-server/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs">crates/apex-server/src/find.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/watch.rs">crates/apex-server/src/watch.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/home.rs">crates/apex-server/tests/home.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs">crates/apex-server/tests/server.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/signals.rs">crates/apex-server/tests/signals.rs</a></li>
+</ul>
+</details>
+<p><code>apex-server</code>'s <code>Server</code> is the part of apex that touches the world. It runs B2 commands and pipes, reads and writes files, watches them for outside changes, hosts terminals, keeps the session's record of running processes, walks the plumbing rules, and holds the session's current directory and environment. Two kinds of host drive it. The <a href="daemon.html">daemon</a> keeps one <code>Server</code> per session. A client running in-process owns the log itself and keeps a <code>Server</code> alongside it.</p>
+<p>One rule governs everything the server does: <strong>it never writes a shard it does not lead.</strong> Its own replica, <code>node</code>, runs as the <code>SERVER</code> attachment and leads only the pinned terminal shards. Anything it wants done to buffers, windows or the layout comes back as a <code>Proposal</code>. The caller applies proposals at once (in-process, <code>apex_server::perform</code>) or sends them to the session's leader. Proposals are described on <a href="proposals.html">Proposals</a>, terminals on <a href="terminals.html">Terminals</a>, and the plumbing walk on <a href="plumbing.html">Plumbing Rules and Verbs</a>. This page covers commands, files, processes, the ⌘O finder walk, <code>cd</code> and the environment.</p>
+<h2 id="architecture-and-responsibilities">Architecture and responsibilities</h2>
+<p>The server is a passive object. It owns no thread of its own, so the host must call it. Background work runs on threads the server spawns: the shell commands, the file watcher, a rescan ticker and terminal readers. All of it reports back through one unbounded channel of <code>ServerEvent</code>s, which <code>Server::new</code> returns to the caller. The host drains that channel into <code>Server::pump</code>, and after each client message or log change it calls <code>poll_execs</code> to find the execs addressed to the server.</p>
+<pre><code class="language-mermaid">flowchart TD
+    Host[&quot;Host (apexd session or in-process client)&quot;]
+    Server[&quot;Server&quot;]
+    View[&quot;view: Node (leader's or follower replica)&quot;]
+    Log[&quot;Log&quot;]
+    Chan[&quot;ServerEvent channel&quot;]
+    Shell[&quot;shell threads (rc -c)&quot;]
+    Watch[&quot;watch::Watches (notify)&quot;]
+    Ticker[&quot;rescan ticker (2 s)&quot;]
+    Terms[&quot;TermHost terminals&quot;]
+    Leader[&quot;leader: proposal::apply&quot;]
+    Host --&gt;|&quot;poll_execs(log, view)&quot;| Server
+    Host --&gt;|&quot;pump(log, view, ev)&quot;| Server
+    Server --&gt;|reads| View
+    Server --&gt;|&quot;term shards, metalog procs&quot;| Log
+    Server --&gt;|spawns| Shell
+    Shell --&gt;|&quot;ProcStarted, Shell&quot;| Chan
+    Watch --&gt;|&quot;File(path)&quot;| Chan
+    Ticker --&gt;|Rescan| Chan
+    Terms --&gt;|&quot;Term(id, ev)&quot;| Chan
+    Chan --&gt; Host
+    Server --&gt;|&quot;Vec of Proposal&quot;| Leader
+</code></pre>
+<p>The server reads the rest of the session through a <code>view: &amp;Node</code> that the caller passes to almost every method. In-process this is the client's own node. In the daemon it is a follower replica kept up to date. Writes the server does make directly go to the log in three ways: term-shard entries through its own <code>node</code>, <code>MetaOp::ProcStart</code>/<code>ProcRename</code>/<code>ProcExit</code> appended to the metalog by <code>flush_procs</code>, and the default rules installed at session creation.</p>
+<table>
+<thead>
+<tr>
+<th><code>ServerEvent</code></th>
+<th>Sent by</th>
+<th><code>pump</code> turns it into</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Term(id, ev)</code></td>
+<td>terminal reader, forwarded by a thread in <code>Server::new</code></td>
+<td>term-shard entries; <code>SetPath</code>/<code>SetLabel</code>/<code>Snarf</code>/<code>Working</code> proposals</td>
+</tr>
+<tr>
+<td><code>ProcStarted { pid, … }</code></td>
+<td>a shell thread, once the child has a pid</td>
+<td>a <code>MetaOp::ProcStart</code></td>
+</tr>
+<tr>
+<td><code>Shell { out, err, exit, mode, … }</code></td>
+<td>a shell thread, when the child exits</td>
+<td><code>Errors</code>, <code>ReplaceRange</code>, <code>Status</code> proposals and a <code>ProcExit</code></td>
+</tr>
+<tr>
+<td><code>File(path)</code></td>
+<td>the <code>notify</code> watcher</td>
+<td><code>SetContent</code> or <code>Stale</code>; a directory relisted</td>
+</tr>
+<tr>
+<td><code>Rescan</code></td>
+<td>a thread that ticks every <code>RESCAN</code> (2 s)</td>
+<td>the same, for changes no watcher reported</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1-L63">crates/apex-server/src/lib.rs:1-63</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L97-L224">crates/apex-server/src/lib.rs:97-224</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md#L1-L21">crates/apex-server/README.md:1-21</a></p>
+<h2 id="key-state-in-server">Key state in <code>Server</code></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>node</code></td>
+<td>The <code>SERVER</code> replica; leads the term shards only</td>
+</tr>
+<tr>
+<td><code>terms</code>, <code>pending_terms</code>, <code>windowed</code></td>
+<td>Live terminals, terminals waiting for their window, terminals whose window has been seen</td>
+</tr>
+<tr>
+<td><code>env</code></td>
+<td>Variables every command and terminal gets on top of acme's (<code>apexsession</code>, <code>apexsessionlabel</code>, <code>APEX_SOCKET</code>, <code>EDITOR</code>, <code>BROWSER</code> in the daemon)</td>
+</tr>
+<tr>
+<td><code>cwd</code></td>
+<td>The session's current directory, where top-row commands run</td>
+</tr>
+<tr>
+<td><code>performed</code>, <code>plain</code></td>
+<td>Execs already done (so a rescan of the state does not repeat them); execs to perform without consulting the rules</td>
+</tr>
+<tr>
+<td><code>running</code></td>
+<td><code>Arc&lt;Mutex&lt;Vec&lt;Running&gt;&gt;&gt;</code>, the commands started and not yet finished, shared with shell threads</td>
+</tr>
+<tr>
+<td><code>procs</code></td>
+<td>Pending <code>MetaOp</code>s for the metalog's process record</td>
+</tr>
+<tr>
+<td><code>watches</code>, <code>subscribed</code>, <code>stamps</code>, <code>changed</code></td>
+<td>The directory watcher, extra files clients subscribed to, the rescan's last look at each file, and subscribed files that changed</td>
+</tr>
+<tr>
+<td><code>put_warned</code></td>
+<td>Stale buffers that <code>Put</code> has already refused once</td>
+</tr>
+<tr>
+<td><code>plumbs</code>, <code>plumb_starts</code></td>
+<td>Plumb walks in progress; verb execs waiting for the host to start their walk</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L106-L156">crates/apex-server/src/lib.rs:106-156</a></p>
+<h2 id="execs-from-b2-to-a-command">Execs: from B2 to a command</h2>
+<p>When a user B2s a word, the leader's <code>Node::exec</code> resolves it. Leader built-ins (Cut, Undo, Del, Zerox, Look, Edit and so on) run on the leader. Everything else is recorded as an exec entry whose handler is <code>Handler::Server</code> and whose status is <code>Pending</code>. That includes pipes (<code>|</code>, <code>&lt;</code>, <code>&gt;</code>), <code>Put</code>, <code>Get</code>, <code>New name</code>, <code>Kill</code>, <code>Newterm</code>, <code>Win</code> and any unknown word. <code>Send</code> goes to the server only in a terminal window. A word that a rule has <em>claimed</em> in that window also goes to the server, because the rule walk runs there (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2016-L2049">crates/apex-core/src/node.rs:2016-2049</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2066-L2070">crates/apex-core/src/node.rs:2066-2070</a>).</p>
+<p><code>poll_execs</code> scans the view for such execs, in each window's <code>execs</code> and in the layout's <code>execs</code> (the top row and column tags). It skips any <code>(ctx, seq)</code> already in <code>performed</code> and hands the rest to <code>perform</code>. <code>perform</code> returns one of three things:</p>
+<ul>
+<li><code>Ok(Some(props))</code>: done now. <code>poll_execs</code> appends <code>Status { Done }</code>.</li>
+<li><code>Ok(None)</code>: asynchronous. The status arrives later with a <code>ServerEvent::Shell</code> or at the end of a plumb walk.</li>
+<li><code>Err(reason)</code>: the reason goes to the directory's <code>+Errors</code>, plus <code>Status { Failed(reason) }</code>.</li>
+</ul>
+<p>The first thing <code>poll_execs</code> does is <code>sync_watches</code>, so the watched directories follow the open buffers after every message the host handles.</p>
+<pre><code class="language-mermaid">flowchart TD
+    E[&quot;pending exec (ctx, seq, text)&quot;] --&gt; P{&quot;starts with | &lt; &gt; ?&quot;}
+    P --&gt;|yes| Pipe[&quot;spawn_shell with ShellMode Replace or Errors&quot;]
+    P --&gt;|no| C{&quot;claimed by a rule here and not plain?&quot;}
+    C --&gt;|yes| V[&quot;verb_request: push to plumb_starts&quot;]
+    C --&gt;|no| B{&quot;plain and a leader built-in?&quot;}
+    B --&gt;|yes| BI[&quot;Proposal::Builtin&quot;]
+    B --&gt;|no| M{&quot;first word&quot;}
+    M --&gt;|&quot;Put / Putall / Get&quot;| F[&quot;file proposals&quot;]
+    M --&gt;|&quot;New name&quot;| N[&quot;OpenWindow or NewWindow&quot;]
+    M --&gt;|&quot;Newterm&quot;| T[&quot;new_term: TermWindow&quot;]
+    M --&gt;|&quot;Win&quot;| W[&quot;spawn apex tool win as Win&quot;]
+    M --&gt;|&quot;Kill names&quot;| K[&quot;kill each&quot;]
+    M --&gt;|&quot;Send&quot;| S[&quot;type snarf into terminal&quot;]
+    M --&gt;|other| O{&quot;rule offers verb?&quot;}
+    O --&gt;|yes| V
+    O --&gt;|no| TT{&quot;terminal window?&quot;}
+    TT --&gt;|yes| TY[&quot;type the line to the shell&quot;]
+    TT --&gt;|no| SH[&quot;spawn_shell, output to +Errors&quot;]
+</code></pre>
+<p>A few cases need more explanation:</p>
+<ul>
+<li><strong>Pipes.</strong> The input is the exec's recorded span (<code>ExecAt</code>: buffer, <code>q0..q1</code>, version) read from the view. <code>|</code> and <code>&lt;</code> replace that range with the output: <code>ShellMode::Replace</code> produces a <code>ReplaceRange { select: true, version }</code> that is valid only at the recorded version. <code>&gt;</code> sends the output to <code>+Errors</code>. <code>&lt;</code> gets no stdin, and a pipe with no buffer also sends its output to <code>+Errors</code>.</li>
+<li><strong>Words in a terminal.</strong> In a terminal window, a word that nothing else took is typed into the running shell with a trailing newline. No second shell is started beside it. The test <code>b2_in_a_terminal_types_the_text_to_the_program_there</code> checks this, and also that a rule's verb in a terminal still goes to the rules.</li>
+<li><strong><code>Win</code>.</strong> This runs <code>apex tool win …</code> (see <a href="tool-win-and-lsp.html">win and Language Servers</a>) under the name <code>Win</code>, so <code>Kill Win</code> ends it.</li>
+<li><strong>Claimed words that fall through.</strong> A tool may claim a built-in word and then decline it. If the walk ends with every rule declining, the server puts <code>(ctx, seq)</code> in <code>plain</code> and removes it from <code>performed</code>, so the next <code>poll_execs</code> performs it again, this time with apex's own meaning. If the word is a leader built-in, that meaning is <code>Proposal::Builtin</code>. A tool that never answered sets <code>failed</code>, and the word does not fall through. The test <code>timed_out_get_rule_fails_without_reloading_generated_content</code> checks that a dead tool does not trigger a reload by <code>Get</code>.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L957-L1125">crates/apex-server/src/lib.rs:957-1125</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1604-L1622">crates/apex-server/src/lib.rs:1604-1622</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1629-L1659">crates/apex-server/src/lib.rs:1629-1659</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1020-L1065">crates/apex-server/tests/server.rs:1020-1065</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L215-L254">crates/apex-server/tests/server.rs:215-254</a></p>
+<h2 id="running-commands-through-rc">Running commands through rc</h2>
+<h3 id="the-shell-and-the-directory">The shell and the directory</h3>
+<p>Commands run the way acme's <code>runproc</code> runs them: <code>SHELL -c command</code>. <code>command_shell</code> picks <code>$acmeshell</code> if it is set. Otherwise it uses the bundled <code>rc</code> (<a href="build-and-test.html">mariusae/rustrc</a>), looking beside the executable, at <code>target/rc-host/bin/rc</code> one to three directories up (a development tree), in <code>~/.apex/bin/rc</code>, and then on <code>PATH</code>. The last fallback is <code>sh</code>. The test <code>commands_run_in_rc_with_acmes_environment</code> checks rc syntax (<code>for(i in a b) …</code>) when an rc is present.</p>
+<p><code>dir_of(view, ctx)</code> gives the working directory:</p>
+<ul>
+<li>a terminal window: the terminal's current directory, which OSC 7 keeps up to date;</li>
+<li>a URL page: the session <code>cwd</code>;</li>
+<li>a window whose name ends in <code>/</code>, or whose kind is <code>Dir</code> or <code>Errors</code>, and which names an existing directory: that directory;</li>
+<li>otherwise: the parent of the window's path if it exists, else the session <code>cwd</code>.</li>
+</ul>
+<p><code>a_window_at_a_directory_is_in_it</code> checks the scratch-window-at-a-directory case, which win's shells and tool panes rely on.</p>
+<h3 id="the-environment">The environment</h3>
+<p><code>command_env(view, ctx)</code> builds acme's variables. <code>winid</code> is the window's id; for the top row or a column tag it is the window holding the last selected text, or <code>0</code>. If the window has a path, <code>%</code> and <code>samfile</code> both name it. <code>Server::command_env</code> adds the session's <code>env</code> on top. <code>shell_in_started</code> first removes any inherited <code>acmeaddr</code>, <code>winid</code>, <code>%</code> and <code>samfile</code>, then sets these. A terminal's shell gets <code>env</code> plus <code>winid</code>, so a terminal does not start until its window exists (<code>spawn_pending</code>).</p>
+<h3 id="spawning-and-waiting">Spawning and waiting</h3>
+<p><code>spawn_shell_as</code> runs each command on a thread of its own, through <code>shell_in_started</code>:</p>
+<pre><code class="language-rust">let child = command
+    .arg(&quot;-c&quot;)
+    .arg(cmd)
+    .process_group(0) // its own group, so Kill reaches what the shell started
+    .current_dir(dir)
+    .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn();
+</code></pre>
+<p>Before <code>exec</code>, <code>default_signals</code> resets every common signal to its default disposition and clears the signal mask. An ignored disposition survives <code>exec</code>. A daemon started with SIGTERM ignored used to pass that on to everything it ran, so <code>Kill</code> ended nothing. The test <code>signals.rs</code> runs in a binary of its own and checks this.</p>
+<p>Once the child has a pid, a <code>started</code> callback sends <code>ServerEvent::ProcStarted</code>, so the metalog records the process before it can end. The process also goes into <code>running</code>, marked <code>script</code> if its name is <code>profile</code> or <code>attach</code>. Two more threads read stdout and stderr. If there is input, a third thread writes it to stdin. The command is over when the child <strong>exits</strong>, not when its pipes close: a background program such as <code>apex tool lsp &amp;</code> in a profile can hold the pipes open. After the child exits, the reader threads get up to 300 ms to drain. The exit string follows acme's wait message: empty for status 0, otherwise the code or <code>signal N</code>. The command's name is read back from <code>running</code> at the end, because a program may have renamed itself in the meantime.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant L as Leader
+    participant H as Host
+    participant S as Server
+    participant T as shell thread
+    participant C as rc child
+    L-&gt;&gt;H: exec entry (Handler::Server, Pending)
+    H-&gt;&gt;S: poll_execs(log, view)
+    S-&gt;&gt;T: spawn_shell_as
+    T-&gt;&gt;C: rc -c cmd (own process group)
+    T--&gt;&gt;S: ProcStarted (via channel)
+    S-&gt;&gt;H: Ok(None), nothing yet
+    C--&gt;&gt;T: exit status, stdout, stderr
+    T--&gt;&gt;H: ServerEvent::Shell
+    H-&gt;&gt;S: pump(log, view, ev)
+    S-&gt;&gt;S: ProcExit into procs, flush to metalog
+    S--&gt;&gt;H: Errors / ReplaceRange, then Status Done
+    H-&gt;&gt;L: proposals applied
+</code></pre>
+<p>When <code>pump</code> handles a <code>Shell</code> event, it records <code>ProcExit</code>. A non-empty exit adds <code>&quot;{name}: exit {exit}\n&quot;</code> to <code>+Errors</code>. Output goes to <code>+Errors</code> or replaces the range, stderr goes to <code>+Errors</code>, and a final <code>Status { Done }</code> closes the exec.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L238-L266">crates/apex-server/src/lib.rs:238-266</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L720-L746">crates/apex-server/src/lib.rs:720-746</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1127-L1148">crates/apex-server/src/lib.rs:1127-1148</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1926-L1964">crates/apex-server/src/lib.rs:1926-1964</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2001-L2034">crates/apex-server/src/lib.rs:2001-2034</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2072-L2188">crates/apex-server/src/lib.rs:2072-2188</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L377-L396">crates/apex-server/tests/server.rs:377-396</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/signals.rs#L1-L46">crates/apex-server/tests/signals.rs:1-46</a></p>
+<h2 id="processes-kill-and-process-groups">Processes, Kill and process groups</h2>
+<p>The server tracks running commands in two places. <code>running</code> is a live list behind a mutex, and the shell threads keep it up to date. The metalog has <code>meta.procs</code>, the replicated record that UIs draw as the top row and the process pills. Changes are queued in <code>procs</code> as <code>MetaOp</code>s and written by <code>flush_procs</code>, in the order they happened. <code>pump</code> and <code>poll_execs</code> call <code>flush_procs</code> as they go. The daemon calls it in <code>after</code>, for renames and ended adoptions.</p>
+<p><code>Running</code> holds the pid (which is also the process-group id, because of <code>process_group(0)</code>), its <code>name</code>, the full <code>cmd</code>, <code>dir</code>, the originating <code>ctx</code>, the <code>started</code> time, and two flags:</p>
+<ul>
+<li><code>adopted</code>: a program that announced itself with <code>ClientMsg::Named</code> but was not started by the server. It is killed by pid, not by group, and is forgotten when its connection goes (<code>forget_process</code>).</li>
+<li><code>script</code>: started by the <code>profile</code> or <code>attach</code> script. A program such a script starts in the background and that names itself is adopted as its own entry instead of renaming the script.</li>
+</ul>
+<p><code>command_name</code> gives a command's name: the first word without its directory, as in acme. <code>name_process</code> lets a program rename the entry of its group, but only when that entry still has the default name (the first word of its command). A name the server chose on purpose, such as <code>Win</code>, stays.</p>
+<p><code>kill(target)</code> is acme's <code>xkill</code>. It sends SIGTERM to every running command whose name <em>or pid</em> equals <code>target</code>. For a command the server started, the signal goes to <code>-(pid)</code>, the whole group, so it reaches rc and everything rc started. For an adopted program it goes to the pid alone. Terminal shells with a matching name or pid get SIGHUP instead, as if the window had closed. <code>kill</code> only sends signals. The ending is recorded when the process actually exits. The <code>Kill</code> command, the UI's pills (by pid) and <code>apex kill</code> (<code>ClientMsg::Kill</code>) all come here. <code>processes()</code> returns the running commands together with the live terminal shells, sorted by start time.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L73-L95">crates/apex-server/src/lib.rs:73-95</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L867-L955">crates/apex-server/src/lib.rs:867-955</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L323-L375">crates/apex-server/tests/server.rs:323-375</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L878-L884">crates/apex-server/src/daemon.rs:878-884</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L913-L920">crates/apex-server/src/daemon.rs:913-920</a></p>
+<h2 id="files-reading-get-and-put">Files: reading, Get and Put</h2>
+<h3 id="reading-and-folder-listings">Reading and folder listings</h3>
+<p><code>read_path</code> returns a display name and a text. For a file, the text is the bytes decoded as lossy UTF-8. For a directory, it is the listing: entry names sorted, directories with a trailing <code>/</code>, one per line, and the display name gets a trailing slash too. <code>open_file(col, from, dir, name, select_line)</code> resolves the name and reads it. It hashes the text with <code>Text::content_hash</code> and proposes <code>OpenWindow</code> with kind <code>Dir</code> or <code>File</code>. The leader reuses a window already showing that path. <code>resolve(dir, name)</code> expands <code>~/</code> from <code>$HOME</code>, joins relative names to <code>dir</code>, and normalises <code>.</code> and <code>..</code> lexically.</p>
+<h3 id="get">Get</h3>
+<p><code>Get</code> re-reads the window's file and proposes <code>SetContent { version: None, … }</code>, an unconditional replace that the leader follows with <code>Clean</code> at the new version. The dirty-window check (&quot;asked once before reloading&quot;) happens in the leader's <code>Node::exec</code> before the exec ever reaches the server (see <a href="node.html">The Node</a>).</p>
+<h3 id="put">Put</h3>
+<p><code>put</code> writes the window's buffer:</p>
+<ol>
+<li>A scratch buffer (errors, a preview, a transcript) or a non-file kind cannot be written unless a name is given: <code>Put: no file name</code>.</li>
+<li>The target is the argument, or the buffer's name. Either is resolved against <code>dir_of</code> if relative, so <code>Put</code> on a window renamed <code>notes.txt</code> writes <code>dir/notes.txt</code> and the window takes the absolute path (<code>SetPath</code>).</li>
+<li>For a <strong>stale</strong> buffer, a <code>Put</code> with no argument fails the first time with <code>NAME: modified since last read</code> and records the buffer in <code>put_warned</code>. A second <code>Put</code> writes, as in acme.</li>
+<li>In an <strong>autoindent</strong> window, trailing blanks are removed first (acme's <code>trimspaces</code>, <code>apex_core::text::trim_trailing_blanks</code>). The server then proposes <code>PutTrimmed { runs, version, hash }</code>. The leader deletes those runs as one undo step and marks the buffer clean, unless the buffer has moved past <code>version</code>, in which case it stays dirty. With nothing to trim, the proposal is a plain <code>Clean { version, hash }</code>.</li>
+<li>The written content's hash is stored in <code>watches.written[path]</code> so the watcher can recognise the server's own write (below).</li>
+</ol>
+<p><code>Putall</code> runs <code>put</code> for every dirty, named, non-scratch file window.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L268-L355">crates/apex-server/src/lib.rs:268-355</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1041-L1059">crates/apex-server/src/lib.rs:1041-1059</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1899-L1918">crates/apex-server/src/lib.rs:1899-1918</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L56-L63">crates/apex-server/src/proposal.rs:56-63</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L116-L121">crates/apex-server/src/proposal.rs:116-121</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L338-L347">crates/apex-server/src/proposal.rs:338-347</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L87-L125">crates/apex-server/tests/server.rs:87-125</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L617-L640">crates/apex-server/tests/server.rs:617-640</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1067-L1115">crates/apex-server/tests/server.rs:1067-1115</a></p>
+<h2 id="watching-files">Watching files</h2>
+<h3 id="parent-directories-not-files">Parent directories, not files</h3>
+<p><code>watch::Watches</code> wraps a <code>notify</code> watcher. It watches the <strong>parent directories</strong> of open files, non-recursively, plus the directories that directory windows show. It does not watch the files themselves, because editors and <code>git checkout</code> replace files by rename, and that breaks per-file watches. <code>sync(files, dirs)</code> computes the set of directories asked for. If the set is the same as last time, it returns without touching the disk, which matters because the daemon calls it after every message. Otherwise it watches the directories that exist and unwatches the ones no longer wanted. It also records a map from canonical path to named path, because FSEvents reports <code>/private/var/...</code> for a file opened as <code>/var/...</code>. <code>as_named</code> maps an event's path back to the name the buffer uses. <code>is_change</code> drops <code>Access</code> and <code>Other</code> events: on Linux every open of a watched file is an event, including the server's own reads, and forwarding those caused a re-read loop.</p>
+<p><code>Server::sync_watches</code> feeds <code>sync</code> with every buffer of kind <code>File</code> that is not scratch and has an absolute name, plus <code>subscribed</code> paths (files a client asked to watch with <code>subscribe</code>, used for the I/O plane's file watches, see <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>), plus the directories of <code>Dir</code> buffers.</p>
+<h3 id="deciding-what-a-change-means">Deciding what a change means</h3>
+<p>Events only name paths. The server decides what they mean by hashing the content:</p>
+<pre><code class="language-mermaid">flowchart TD
+    Ev[&quot;File(path) or Rescan&quot;] --&gt; Own{&quot;hash equals watches.written for path?&quot;}
+    Own --&gt;|yes| Nothing[&quot;nothing: our own Put&quot;]
+    Own --&gt;|no| Same{&quot;hash equals disk_hash, or clean buffer already has it?&quot;}
+    Same --&gt;|yes| Nothing2[&quot;nothing new&quot;]
+    Same --&gt;|no| Dirty{&quot;buffer dirty?&quot;}
+    Dirty --&gt;|&quot;yes, not yet stale&quot;| Stale[&quot;Proposal::Stale&quot;]
+    Dirty --&gt;|&quot;yes, already stale&quot;| Nothing3[&quot;nothing&quot;]
+    Dirty --&gt;|no| Set[&quot;SetContent with version = buffer.version&quot;]
+    Set --&gt; Lead{&quot;leader: version still current, or buffer clean?&quot;}
+    Lead --&gt;|yes| Reload[&quot;set_content, then Clean&quot;]
+    Lead --&gt;|&quot;no, dirty&quot;| LStale[&quot;BufferOp::Stale&quot;]
+</code></pre>
+<p><code>file_changed</code> maps the path to its named form and runs <code>path_changed</code>. That function finds the clean, non-scratch file buffer with this name, reads the file and hashes it. If the hash matches <code>watches.written</code>, the change is the server's own write and nothing happens. Otherwise it calls <code>content_changed</code>. Separately, a <code>Dir</code> window on the path's parent is relisted and passed through <code>content_changed</code> too, so a new file appears in its directory's window.</p>
+<p><code>content_changed</code> holds the rule for both:</p>
+<ul>
+<li>nothing new if the hash equals <code>buf.disk_hash</code>, or the buffer is clean and its text already hashes the same;</li>
+<li>for a dirty buffer, <code>Stale { buffer, hash }</code>, unless it is already stale; this puts <code>Get</code> in the tag;</li>
+<li>for a clean buffer, <code>SetContent { version: Some(buf.version), … }</code>.</li>
+</ul>
+<p>The <code>version</code> on that <code>SetContent</code> is what makes this safe. It is the version <strong>this replica</strong> saw. When the leader applies it, it checks: if the version has moved on and the buffer is dirty, the leader appends <code>BufferOp::Stale</code> and does not overwrite anything. A lagging follower in the daemon therefore never discards the user's typing.</p>
+<h3 id="rescans">Rescans</h3>
+<p>The watcher cannot see everything. EdenFS under Sapling changes files without inotify events, a directory may be created after it was asked for, and events get lost. So a thread sends <code>ServerEvent::Rescan</code> every two seconds. <code>rescan</code> calls <code>watches.recheck()</code> (forget the last request, so the next <code>sync</code> looks again for directories that now exist). It then relists every <code>Dir</code> window, and for every watched file compares <code>(mtime, len)</code> with the previous look in <code>stamps</code>. Only a file whose stamp moved goes through <code>path_changed</code>, and even then the content hash decides, so an unchanged file produces nothing. The first look at a file only records its stamp. A changed subscribed file goes into <code>changed</code>, which the daemon collects with <code>take_changed</code>. <code>a_rescan_finds_changes_no_watcher_reported</code> tests the whole path.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/watch.rs#L1-L112">crates/apex-server/src/watch.rs:1-112</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L752-L865">crates/apex-server/src/lib.rs:752-865</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L219-L231">crates/apex-server/src/proposal.rs:219-231</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L406-L407">crates/apex-server/src/proposal.rs:406-407</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1309-L1334">crates/apex-server/tests/server.rs:1309-1334</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md#L66-L71">crates/apex-server/README.md:66-71</a></p>
+<h2 id="the-o-finder-walk">The ⌘O finder walk</h2>
+<p><code>find.rs</code> serves the client's ⌘O quick-open (see <a href="client-overlays.html">Pickers and Overlays</a>) on the host where the files are. The daemon starts a <code>find::Job</code> for <code>ClientMsg::FindStart { id, dir }</code>, passes it <code>FindQuery { gen, query, limit }</code>, and drops it on <code>FindStop</code> or when the connection goes. Each job runs two named threads.</p>
+<p><strong>The walk</strong> (<code>apex-find-walk</code>) goes breadth first from the root, so entries near the root come first. Within a directory it sorts entries by name, in batches of <code>CHUNK</code> (4096) entries, so a huge directory shows up while it is still being read. It does not descend into directories whose names start with <code>.</code> or are <code>node_modules</code>, <code>__pycache__</code> or <code>buck-out</code>, although those directories are still listed. It lists links but does not follow them. It publishes entries to the shared <code>Index</code> in chunks of up to 4096 entries, or every <code>FLUSH</code> (50 ms), so a reader can snapshot the chunk list without blocking the walk. It stops at <code>CAP</code> (1,000,000) entries and sets <code>capped</code>. An error reading the root is kept and reported.</p>
+<p><strong>The matcher</strong> (<code>apex-find-match</code>) waits on a condvar for a new query generation, or for the index to have grown since the last answer, re-matching at most every <code>TICK</code> (120 ms) while the walk continues. With an empty query it sends the first <code>limit</code> entries in walk order. Otherwise it scores candidates with <code>apex_core::fuzzy</code> in parallel with rayon, in slices of 16384 with a <code>Scorer</code> per worker, and keeps a bounded heap of the best <code>limit</code>. Ties go to the earlier entry. When a query only extends the previous one, only the previous matches plus the entries indexed since are re-scored. A newer generation, or cancellation, abandons the work part way. The answer is a <code>ServerMsg::Found { id, gen, items, matched, indexed, done, capped, error }</code> sent directly to the asking connection's writer.</p>
+<p>Dropping a <code>Job</code> sets <code>cancel</code> and wakes both threads, so neither the walk nor the matching ever holds up the daemon's main thread.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L1-L124">crates/apex-server/src/find.rs:1-124</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L126-L199">crates/apex-server/src/find.rs:126-199</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L234-L335">crates/apex-server/src/find.rs:234-335</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L885-L902">crates/apex-server/src/daemon.rs:885-902</a></p>
+<h2 id="path-completion">Path completion</h2>
+<p><code>candidates(dir, prefix)</code> is the file-system half of acme's <code>textcomplete</code>, used by ^F completion. It splits the fragment at its last <code>/</code> and lists that directory (resolved against <code>dir</code>). It keeps names that start with the last part, sorts them, and marks directories. Dot files are included only if the fragment's last part starts with a dot. The daemon answers <code>ClientMsg::Candidates</code> with it, using <code>dir_of</code> for the directory.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1232-L1254">crates/apex-server/src/lib.rs:1232-1254</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L925-L931">crates/apex-server/src/daemon.rs:925-931</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1252-L1269">crates/apex-server/tests/server.rs:1252-1269</a></p>
+<h2 id="cd-and-the-session-environment">cd and the session environment</h2>
+<h3 id="current-directory">Current directory</h3>
+<p><code>cwd</code> starts as the process's directory. <code>cd(dir)</code> resolves <code>dir</code> against the current <code>cwd</code> and refuses anything that is not a directory (<code>cd: PATH: not a directory</code>). It then updates <code>cwd</code> and returns a <code>MetaOp::Cwd { host, dir }</code> (directory with a trailing slash) for the host to append to the metalog, so every replica knows where the session is. <code>place()</code> returns the same record for a new session. The daemon uses <code>cd</code> for <code>ClientMsg::Cd</code> and when a session is created in a given directory. <code>cwd</code> is where top-row commands, the profile, attach scripts and started tools run.</p>
+<h3 id="environment">Environment</h3>
+<p><code>env</code> is a list of variables layered over the server's own environment for every command and terminal. The daemon fills it when a session is made: <code>apexsession</code> (the session id), <code>apexsessionlabel</code>, <code>APEX_SOCKET</code>, and, where available, <code>EDITOR</code> (so <code>$EDITOR</code> opens in the session) and <code>BROWSER</code>. <code>set_env</code> updates or adds one variable. <code>apex env</code> (<code>ClientMsg::Env</code>) calls it and replies with the whole list. A rename of the session updates <code>apexsessionlabel</code>.</p>
+<p>The profile can change the environment. <code>run_profile</code> sources the host's profile (normally <code>~/.apex/profile</code>) in one shell named <code>profile</code>, run from <code>cwd</code> with its output going to <code>+Errors</code>. Before that it saves <code>profile_base</code>, the full environment the script will start with (<code>child_env</code>). The script is prefixed with an exit hook, <code>fn sigexit { apex env -import }</code> under rc or <code>trap 'apex env -import' EXIT</code> under sh, so the profile's final environment comes back as <code>ClientMsg::EnvImport</code>. <code>import_env</code> then compares it against the base. Variables that differ are set, variables the script dropped are unset, and the shell's own bookkeeping (<code>SHELL_OWN</code>: <code>status</code>, <code>pid</code>, <code>path</code>, <code>PWD</code>, <code>SHLVL</code> and others) is ignored. An import from anywhere other than the profile is compared against the environment a command would get at that moment.</p>
+<p><code>run_attach</code> runs a client's <code>~/.apex/attach</code> script on this host each time the client attaches, with <code>apexattachment</code> and <code>apexclient</code> added so <code>apex set</code> inside it applies to that attachment. <code>start_tool</code> starts a tool a rule asked for (<code>start</code>). It replaces a leading <code>apex </code> with this daemon's own binary (<code>apex_command</code>) and runs the command from <code>cwd</code>, named after the tool. <a href="configuration.html">Configuration</a> covers both scripts from the user's side.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1150-L1230">crates/apex-server/src/lib.rs:1150-1230</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1811-L1828">crates/apex-server/src/lib.rs:1811-1828</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1966-L1981">crates/apex-server/src/lib.rs:1966-1981</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L346-L400">crates/apex-server/src/daemon.rs:346-400</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L716-L727">crates/apex-server/src/daemon.rs:716-727</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L903-L912">crates/apex-server/src/daemon.rs:903-912</a></p>
+<h2 id="other-duties-briefly">Other duties, briefly</h2>
+<ul>
+<li><strong>Terminals.</strong> <code>new_term</code> creates a pinned <code>Term</code> shard led by the server's node and proposes a <code>TermWindow</code>. The shell starts in <code>spawn_pending</code> once the window exists. <code>close_orphan_terms</code> hangs up terminals whose windows are gone. <code>pump</code> turns terminal events (titles, OSC 7 directories, OSC 52, OSC 9;4 progress, OSC 133 marks, exit) into term-shard entries and proposals. See <a href="terminals.html">Terminals</a>.</li>
+<li><strong>Default rules.</strong> <code>install_default_rules</code> installs, owned by the session: the B3 rules for <code>name:line</code>, file and directory names (priority −100); <code>Clear</code> for terminals; and tool rules for <code>Preview</code> (files matching <code>PREVIEWED</code>), <code>Web</code> and <code>Newweb</code>, which start their tool on first use (priority −10). See <a href="plumbing.html">Plumbing Rules and Verbs</a>.</li>
+<li><strong>Plumb walks.</strong> <code>plumb_start</code>, <code>plumb_next</code>, <code>plumb_failed</code> and the <code>PlumbStep</code> they return (<code>Done</code>, <code>Refused</code>, <code>Ask</code>, <code>AskTool</code>, <code>Trace</code>) also live here, because a walk needs the file system: acme's <code>expand</code>, <code>isfile</code>/<code>isdir</code>, and running <code>Run</code> actions as shell commands.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L357-L589">crates/apex-server/src/lib.rs:357-589</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1256-L1323">crates/apex-server/src/lib.rs:1256-1323</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1325-L1428">crates/apex-server/src/lib.rs:1325-1428</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1700-L1743">crates/apex-server/src/lib.rs:1700-1743</a></p>
+<h2 id="how-the-hosts-drive-it">How the hosts drive it</h2>
+<p>In the daemon, each session's server events reach the single state-owning thread as <code>Event::Server(sid, ev)</code>. The thread calls <code>pump</code>, collects <code>take_changed</code> and <code>take_clips</code>, and passes the proposals to <code>after</code>. <code>after</code> flushes the process record, closes orphaned terminals, syncs watches and catches the follower view up. If no UI leads, the daemon applies the proposals itself and repeats, calling <code>poll_execs</code> again until no new proposals appear. Otherwise the proposals are sent to the leader. Appends from a client also end in <code>poll_execs</code>. In-process, the tests do the same by hand: <code>poll_execs</code>, <code>perform</code>, <code>close_orphan_terms</code>, and <code>pump</code> for each event (see <code>poll</code> and <code>pump_until</code> in <code>tests/server.rs</code>). The daemon's loop is described on <a href="daemon.html">The Daemon</a>.</p>
+<h2 id="testing">Testing</h2>
+<p>The integration tests drive a real <code>Server</code> against an in-process <code>Log</code> and <code>Node</code>. They set <code>SHELL=/bin/sh</code> so terminal tests do not depend on the login shell of whoever runs them.</p>
+<table>
+<thead>
+<tr>
+<th>Test file</th>
+<th>What it covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tests/server.rs</code></td>
+<td>Put/Get and listings; pipes; rc and acme's environment; Kill by name and by pid; the process record; Put to a name typed in the tag; Put's trimming and its undo; rescans; completion candidates; <code>dir_of</code>; rule-claimed <code>Get</code>; many terminal behaviours</td>
+</tr>
+<tr>
+<td><code>tests/signals.rs</code></td>
+<td>A server with SIGTERM ignored still kills its children (<code>default_signals</code>)</td>
+</tr>
+<tr>
+<td><code>tests/home.rs</code></td>
+<td>B3 on <code>~/…:1-130</code> opens the file under <code>$HOME</code> at line 1; a non-file is refused. A binary of its own because it sets <code>HOME</code></td>
+</tr>
+<tr>
+<td><code>find.rs</code> unit tests</td>
+<td>Breadth-first order and skipped directories; best-first matching that narrows; a dropped job sends nothing more; an ignored <code>large</code> benchmark on a real tree</td>
+</tr>
+<tr>
+<td><code>watch.rs</code> unit tests</td>
+<td>Reads are not changes</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/server.rs#L1-L85">crates/apex-server/tests/server.rs:1-85</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/home.rs#L1-L52">crates/apex-server/tests/home.rs:1-52</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/signals.rs#L1-L46">crates/apex-server/tests/signals.rs:1-46</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L337-L474">crates/apex-server/src/find.rs:337-474</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/watch.rs#L78-L94">crates/apex-server/src/watch.rs:78-94</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L285-L303">crates/apex-server/src/daemon.rs:285-303</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1513-L1551">crates/apex-server/src/daemon.rs:1513-1551</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="edit-language.html">The Edit Language (apex-edit)</a></span><span class="next">Next: <a href="daemon.html">The Daemon (apexd)</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top current"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture-and-responsibilities">Architecture and responsibilities</a></li>
+<li class="l2"><a href="#key-state-in-server">Key state in Server</a></li>
+<li class="l2"><a href="#execs-from-b2-to-a-command">Execs: from B2 to a command</a></li>
+<li class="l2"><a href="#running-commands-through-rc">Running commands through rc</a></li>
+<li class="l3"><a href="#the-shell-and-the-directory">The shell and the directory</a></li>
+<li class="l3"><a href="#the-environment">The environment</a></li>
+<li class="l3"><a href="#spawning-and-waiting">Spawning and waiting</a></li>
+<li class="l2"><a href="#processes-kill-and-process-groups">Processes, Kill and process groups</a></li>
+<li class="l2"><a href="#files-reading-get-and-put">Files: reading, Get and Put</a></li>
+<li class="l3"><a href="#reading-and-folder-listings">Reading and folder listings</a></li>
+<li class="l3"><a href="#get">Get</a></li>
+<li class="l3"><a href="#put">Put</a></li>
+<li class="l2"><a href="#watching-files">Watching files</a></li>
+<li class="l3"><a href="#parent-directories-not-files">Parent directories, not files</a></li>
+<li class="l3"><a href="#deciding-what-a-change-means">Deciding what a change means</a></li>
+<li class="l3"><a href="#rescans">Rescans</a></li>
+<li class="l2"><a href="#the-o-finder-walk">The ⌘O finder walk</a></li>
+<li class="l2"><a href="#path-completion">Path completion</a></li>
+<li class="l2"><a href="#cd-and-the-session-environment">cd and the session environment</a></li>
+<li class="l3"><a href="#current-directory">Current directory</a></li>
+<li class="l3"><a href="#environment">Environment</a></li>
+<li class="l2"><a href="#other-duties-briefly">Other duties, briefly</a></li>
+<li class="l2"><a href="#how-the-hosts-drive-it">How the hosts drive it</a></li>
+<li class="l2"><a href="#testing">Testing</a></li>
+</ul>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

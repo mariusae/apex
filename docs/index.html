@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" href="space-bunny.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
 <style>
   html { background: #fff; color: #000; }
   body {
@@ -25,7 +25,7 @@
   h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
   p, ul, pre { margin: 0 0 0.8em; }
   ul { padding-left: 1.4em; }
-  pre, code { font-family: "Source Code Pro", "Menlo", "Courier New", Courier, monospace; font-size: 0.88em; }
+  pre, code { font-family: "Inconsolata", "Menlo", "Courier New", Courier, monospace; font-size: 0.88em; }
   pre { padding-left: 1.4em; white-space: pre-wrap; }
   a { color: #00e; }
   a:visited { color: #551a8b; }
@@ -103,7 +103,8 @@ can provide plumbing rules, own windows, and respond to what is clicked
 in them. They can also implement fully stateful tools, just like in acme.</p>
 
 <h2>Developing and building Apex</h2>
-<p>Apex is implemented in Rust using <a href="https://gpui.rs">GPUI</a>.
+<p>Apex is implemented in Rust using <a href="https://gpui.rs">GPUI</a>
+with more than a little help from <a href="https://claude.ai">Claude</a>.
 The app runs on macOS; the daemon and
 the <code>apex</code> command also run on Linux, where the app attaches
 to them over ssh. To build the app:</p>
@@ -114,11 +115,11 @@ to them over ssh. To build the app:</p>
 
 <h2>Documentation</h2>
 <ul>
+<li>The <a href="wiki/html/index.html">design and implementation wiki</a> provides an overview of Apex's architecture and implementation.</li>
 <li>The <a href="https://github.com/mariusae/apex">source</a> is available on GitHub.</li>
 <li><a href="https://github.com/mariusae/apex/blob/main/DESIGN.md">DESIGN.md</a> describes how Apex is built, and why.</li>
 <li><a href="https://github.com/mariusae/apex/blob/main/MODERN.md">MODERN.md</a> describes Apex as a Mac app.</li>
 </ul>
-
 <footer><i>Apex is a work in progress.</i><br>
 Alien Space Bunny is by Wilhelm Bierbaum, based on artwork by Renée French.</footer>
 

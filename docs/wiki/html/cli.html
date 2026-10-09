@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The apex Command · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The apex Command</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md">crates/apex-cli/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs">crates/apex-cli/tests/cli.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs">crates/apex-cli/tests/ssh.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+</ul>
+</details>
+<p><code>apex</code> (the <code>apex-cli</code> crate) is the stable public surface of apex for scripts, shells and people. Scripts and tools never see the wire: they run <code>apex new</code>, <code>apex edit</code>, <code>apex exec</code> and so on, and the command speaks the <a href="attach-protocol.html">attach protocol</a> for them. The same binary is also the daemon (<code>apex server</code>, see <a href="daemon.html">The Daemon (apexd)</a>), the remote bridge (<code>apex attach -stdio</code>, see <a href="remote-hosts.html">Remote Hosts and Providers</a>), the launcher of the bundled tools (<code>apex tool …</code>, see <a href="tool-sdk.html">Writing Tools</a>), and, under other names, <code>$EDITOR</code> and <code>xdg-open</code> inside a session.</p>
+<p>All the subcommands share one design. Each one attaches to the session as a tool, so it has its own follower replica of the session state. It reads what it needs from that replica and sends changes as <a href="proposals.html">proposals</a> to whoever leads the shard: the UI if one is attached, otherwise the daemon. That is why <code>apex</code> works with no UI running, and why a UI that attaches later finds the result. Profiles, <code>apex env</code> and <code>apex set</code> are covered in more depth on <a href="configuration.html">Configuration</a>.</p>
+<h2 id="architecture-one-binary-a-table-of-commands">Architecture: one binary, a table of commands</h2>
+<p>The whole command lives in one file, <code>crates/apex-cli/src/main.rs</code>. It has four parts:</p>
+<ol>
+<li>A small Go-style flag parser (<code>Flag</code>, <code>Parsed</code>, <code>parse</code>).</li>
+<li>A static table <code>COMMANDS: &amp;[Cmd]</code>. Each entry holds the command's name, its usage line, a one-line summary, its flags, its long help text and a <code>run: fn(&amp;Ctx, &amp;Parsed) -&gt; R</code>. A second table, <code>TOPICS</code>, holds the help topics (<code>sessions</code>, <code>scripts</code>, <code>rules</code>, <code>windows</code>).</li>
+<li><code>main</code>, which resolves the socket and the session into a <code>Ctx</code>, finds the <code>Cmd</code> and calls it.</li>
+<li>One function per subcommand. Most of them start with <code>tool(ctx)</code> and use <code>apex_server::remote::Remote</code>.</li>
+</ol>
+<pre><code class="language-rust">struct Cmd {
+    name: &amp;'static str,
+    usage: &amp;'static str,
+    short: &amp;'static str,
+    flags: &amp;'static [Flag],
+    long: &amp;'static str,
+    run: fn(&amp;Ctx, &amp;Parsed) -&gt; R,
+}
+
+struct Ctx {
+    socket: PathBuf,
+    session: String,
+}
+</code></pre>
+<p>All help is generated from these tables. <code>apex</code> or <code>apex help</code> prints the overview (<code>overview</code>). <code>apex help CMD</code> prints the usage, the flags and the long text, and for <code>plumb</code> it also prints <code>RULE_FLAGS</code>. <code>apex help TOPIC</code> prints a topic. <code>apex CMD -h</code> prints only the usage and flags (<code>usage</code>). Because the long texts are the reference documentation, any change to a command's behaviour should update its <code>long</code> string as well.</p>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;argv0: apex, apex-editor or xdg-open&quot;] --&gt; B[&quot;rewrite args: editor / plumb&quot;]
+    B --&gt; C[&quot;parse(GLOBAL): -socket -session -ensure-server&quot;]
+    C --&gt; D[&quot;Ctx: socket and session resolved&quot;]
+    D --&gt; E[&quot;SESSION.N arguments switch the session&quot;]
+    E --&gt; F{&quot;-ensure-server?&quot;}
+    F -- yes --&gt; G[&quot;ensure_server: spawn daemon if socket silent&quot;]
+    F -- no --&gt; H[&quot;find Cmd in COMMANDS&quot;]
+    G --&gt; H
+    H --&gt; I[&quot;parse(cmd.flags, rest)&quot;]
+    I --&gt; J[&quot;cmd.run(ctx, parsed)&quot;]
+    J --&gt; K{&quot;Err?&quot;}
+    K -- &quot;usage&quot; --&gt; L[&quot;print usage, exit 2&quot;]
+    K -- &quot;other&quot; --&gt; M[&quot;apex NAME: error, exit 1&quot;]
+    K -- &quot;Ok&quot; --&gt; N[&quot;exit 0&quot;]
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1-L24">crates/apex-cli/src/main.rs:1-24</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L105-L148">crates/apex-cli/src/main.rs:105-148</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L598-L600">crates/apex-cli/src/main.rs:598-600</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L713-L854">crates/apex-cli/src/main.rs:713-854</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md#L1-L46">crates/apex-cli/README.md:1-46</a></p>
+<h2 id="flags-the-socket-and-the-session">Flags, the socket and the session</h2>
+<h3 id="go-style-flags">Go-style flags</h3>
+<p><code>parse</code> follows Go's <code>flag</code> package. Flags come before the arguments. The first argument that does not start with <code>-</code> (or is <code>-</code> alone) ends the flags, and so does <code>--</code>. A flag can be written <code>-name=value</code> or as <code>-name value</code>, where the value is the next argument. A boolean flag (<code>switch</code>) is written <code>-name</code>, or <code>-name=true</code>/<code>-name=false</code>, and <code>false</code> leaves it unset. Any number of leading dashes is accepted. <code>-h</code> and <code>-help</code> return the sentinel error <code>&quot;help&quot;</code>, which <code>main</code> turns into the usage. An unknown flag gives <code>flag provided but not defined: -NAME</code>, as Go does. <code>flag_tests</code> checks both value forms and checks that a switch never takes the next argument.</p>
+<p>Parsing happens in two stages. Global flags are parsed first, up to the command name. The command's own flags are parsed after it. A few subcommands parse a third time after a verb: <code>win list -json</code>, <code>text read -addr=…</code> and <code>plumb rule add …</code> each call <code>parse</code> again on the arguments after the verb.</p>
+<h3 id="global-flags-and-environment">Global flags and environment</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default chain</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-socket=PATH</code></td>
+<td><code>$APEX_SOCKET</code>, else <code>$TMPDIR/apex-$USER/main.sock</code> (<code>default_socket</code>)</td>
+<td>the daemon's Unix socket</td>
+</tr>
+<tr>
+<td><code>-session=NAME</code></td>
+<td><code>$apexsession</code>, then <code>$APEX_SESSION</code>, else <code>default</code></td>
+<td>session by id, an id prefix of four or more characters, or label</td>
+</tr>
+<tr>
+<td><code>-ensure-server</code></td>
+<td>off</td>
+<td>start a daemon first if nothing answers on the socket</td>
+</tr>
+</tbody>
+</table>
+<p>The daemon puts <code>apexsession</code> (the session's id), <code>apexsessionlabel</code> and <code>APEX_SOCKET</code> into the environment of every command and terminal in a session. As a result, <code>apex</code> run inside an apex terminal works on the session it is in without any flags.</p>
+<p>Some arguments name a window in a particular session, as <code>SESSION.N</code>, for example <code>3f2a.12</code>. <code>main</code> handles these specially. Unless the command is one that takes such names itself (<code>B</code>, <code>plumb</code>, <code>switch</code>, <code>attach</code>, the session commands, <code>ls</code>, <code>editor</code>), any argument after the command name that <code>apex_server::global_window</code> recognises switches <code>ctx.session</code> to that session and is replaced by the bare window id. <code>global_window</code> only accepts a session part made of hex digits and dashes, at least four characters long. That is how <code>apex text read 3f2a.12</code> reads window 12 of another session.</p>
+<h3 id="exit-status">Exit status</h3>
+<p>A command returns <code>R = Result&lt;(), String&gt;</code>. The error <code>&quot;usage&quot;</code> prints the usage and exits with status 2, and so do bad flags and unknown commands. Any other error is printed as <code>apex NAME: error</code> and exits with status 1.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L26-L103">crates/apex-cli/src/main.rs:26-103</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L121-L125">crates/apex-cli/src/main.rs:121-125</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L730-L791">crates/apex-cli/src/main.rs:730-791</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L2073-L2097">crates/apex-cli/src/main.rs:2073-2097</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L67-L79">crates/apex-server/src/daemon.rs:67-79</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L357-L369">crates/apex-server/src/daemon.rs:357-369</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1680-L1691">crates/apex-server/src/lib.rs:1680-1691</a></p>
+<h2 id="every-subcommand-is-a-tool">Every subcommand is a tool</h2>
+<p><code>tool(ctx)</code> is the common entry point:</p>
+<pre><code class="language-rust">fn tool(ctx: &amp;Ctx) -&gt; Result&lt;Remote, String&gt; {
+    Remote::connect_as(&amp;ctx.socket, &amp;ctx.session, &quot;apex-cli&quot;, AttachmentKind::Tool)
+        .map_err(|e| format!(&quot;{}: {e}&quot;, ctx.socket.display()))
+}
+</code></pre>
+<p>A <code>Remote</code> (in <code>apex-server/src/remote.rs</code>) is a headless client: a <code>Link</code> plus its own mirror <code>Log</code> and <code>Node</code>. <code>Link::over_streams_inner</code> sends <code>Hello</code> and checks the daemon's <code>Build</code> message with <code>check_build</code>, so a daemon on a different <code>PROTOCOL</code> is refused with an error saying to <code>apex stop</code> it. It then waits up to a minute for <code>Welcome</code>, builds <code>State::from_snapshot</code>, and catches the node up. Once that is done, the command can read the whole session synchronously from <code>c.node.state</code>: windows, layout, buffers, terms, <code>meta.procs</code>, <code>meta.rules</code> and <code>meta.settings</code>. A spawned reader thread delivers the messages that keep the replica current, and <code>Remote::step</code> handles one of them, blocking for up to the given timeout.</p>
+<p>The CLI changes the session in two ways:</p>
+<ul>
+<li><strong>Proposals.</strong> <code>Remote::propose(p, timeout)</code> sends <code>ClientMsg::Propose { id, proposal }</code> and then calls <code>step</code> until <code>link.applied</code> holds that id. The leader applies the proposal with <code>proposal::apply</code> and replies <code>Applied { id, result }</code>. The result can carry a <code>WindowId</code> for proposals that make a window. <code>new</code>, <code>win</code>, <code>edit</code>, <code>sel</code>, <code>show</code>, <code>exec</code>, <code>term new</code>, <code>web</code>, <code>switch</code>, <code>preview</code> and <code>editor</code>'s labelling work this way.</li>
+<li><strong>Direct requests the daemon serves itself.</strong> <code>OpenFile</code>, <code>Plumb</code>, <code>RuleAdd</code>/<code>RuleRm</code>, <code>Cd</code>, <code>Set</code>, <code>Env</code>/<code>EnvImport</code>, <code>Kill</code>, <code>Notify</code>, <code>EditOver</code>, <code>TermPaste</code>/<code>TermKey</code>/<code>TermClear</code> and <code>Io</code> are plain <code>ClientMsg</code>s. For these the command waits until the effect shows up in its replica or in a <code>Link</code> field: <code>link.plumbed</code>, <code>link.trace</code>, <code>link.rule_added</code>, <code>link.env</code>, <code>link.error</code> or <code>link.io</code>.</li>
+</ul>
+<p><code>wait(r, done)</code> in main.rs is the CLI's generic loop for the second case. It steps the <code>Remote</code> in 20 ms slices until a predicate on the replica holds, or until <code>TIMEOUT</code> (10 s) has passed. <code>Remote</code> has its own equivalent, <code>wait_for</code>, for its typed helpers (<code>rule_add</code>, <code>plumb_dry</code>, <code>env</code>, <code>io_response</code>, …).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant S as &quot;apex exec main.go Put&quot;
+    participant D as &quot;apexd&quot;
+    participant L as &quot;leader (UI or daemon)&quot;
+    S-&gt;&gt;D: Hello (kind Tool, name apex-cli)
+    D--&gt;&gt;S: Build, Welcome with snapshot
+    Note over S: State::from_snapshot, find_window in replica
+    S-&gt;&gt;D: Propose id=1 Exec Window(w) &quot;Put&quot;
+    D-&gt;&gt;L: Propose (routed to the shard's leader)
+    L-&gt;&gt;L: proposal::apply, new entries
+    L--&gt;&gt;D: Append entries, Applied id=1
+    D--&gt;&gt;S: Entries, Applied id=1
+    Note over S: Remote::propose returns, exit 0
+</code></pre>
+<p>When the process exits, the <code>Link</code> is dropped, its transport closes, and the daemon sees the attachment go. Anything the command owned goes with it, for example a rule added with <code>-mine</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L856-L877">crates/apex-cli/src/main.rs:856-877</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1-L5">crates/apex-server/src/remote.rs:1-5</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L207-L265">crates/apex-server/src/remote.rs:207-265</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L305-L312">crates/apex-server/src/remote.rs:305-312</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L373-L419">crates/apex-server/src/remote.rs:373-419</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L571-L583">crates/apex-server/src/remote.rs:571-583</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L722-L805">crates/apex-server/src/remote.rs:722-805</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1033-L1049">crates/apex-server/src/remote.rs:1033-1049</a></p>
+<h2 id="naming-windows-find-window">Naming windows: <code>find_window</code></h2>
+<p>Wherever a command takes <code>WIN</code>, it goes through <code>find_window(c, spec)</code>, which resolves against the replica in this order:</p>
+<ol>
+<li>A number is a window id. It must exist.</li>
+<li><code>SESSION.N</code> is window N, but only if <code>SESSION</code> is this session's id, a prefix of it (four or more characters) or its label. Otherwise the error says to use <code>-session=</code>.</li>
+<li>An exact path. If several windows have that path, the one plain non-scratch <code>File</code> window wins, so <code>notes.md</code> means the file rather than its preview.</li>
+<li>An exact label, if exactly one window has it.</li>
+<li>A kind name such as <code>errors</code>, if exactly one window has that kind.</li>
+<li>A unique substring of a path or label. Zero hits gives <code>no window matches &quot;…&quot;</code>, several gives <code>N windows match &quot;…&quot;</code>.</li>
+</ol>
+<p>Relative paths given by the user are made absolute against the CLI's current directory with <code>absolute</code>, which keeps a trailing <code>/</code>. Exactly where a command does this is noted in the subcommand sections below.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1232-L1298">crates/apex-cli/src/main.rs:1232-1298</a></p>
+<h2 id="the-subcommands">The subcommands</h2>
+<h3 id="daemon-and-sessions">Daemon and sessions</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server</code></td>
+<td>runs the daemon in the foreground with one first session</td>
+<td><code>Daemon::run(socket, session)</code></td>
+</tr>
+<tr>
+<td><code>ls</code></td>
+<td><code>label&lt;TAB&gt;id</code> for each session</td>
+<td><code>remote::list_sessions</code>, no attach</td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td>ends the daemon and every session in it</td>
+<td><code>remote::stop_any</code></td>
+</tr>
+<tr>
+<td><code>new-session NAME [DIR]</code></td>
+<td>makes a session (it is fine if it already exists) and prints its id</td>
+<td><code>valid_label</code>, checks that DIR is a directory, <code>ensure_server</code>, <code>remote::new_session</code></td>
+</tr>
+<tr>
+<td><code>end-session [-f] [NAME]</code></td>
+<td>ends a session; refused if a window is dirty, unless <code>-f</code></td>
+<td><code>remote::end_session</code></td>
+</tr>
+<tr>
+<td><code>rename-session [FROM] TO</code></td>
+<td>relabels a session</td>
+<td><code>remote::rename_session</code></td>
+</tr>
+<tr>
+<td><code>attach [-stdio] [[DEST/]SESSION | URL] [FILE...]</code></td>
+<td>opens the app, or bridges stdio</td>
+<td>see below</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>prints <code>apex build ID protocol N</code></td>
+<td><code>BUILD_ID</code>, <code>proto::PROTOCOL</code></td>
+</tr>
+</tbody>
+</table>
+<p>These commands use one-shot helpers in <code>remote.rs</code> that write a single frame and read until they get <code>Sessions</code> or <code>Error</code>, without attaching. Every one of those helpers checks <code>Build</code> as well.</p>
+<p><code>stop_any</code> deliberately does not depend on the protocol version. If <code>list_sessions</code> fails with <code>Unsupported</code>, meaning the daemon is of another protocol, it gets the socket peer's pid (<code>LOCAL_PEERPID</code> on macOS, <code>SO_PEERCRED</code> elsewhere). It then checks with <code>ps</code> that the process's command line contains <code>apex</code>, <code> server</code> and this very socket path, sends SIGTERM, and sends SIGKILL if the process is still alive after 3 s. This is how a daemon from an old build is cleared away.</p>
+<p><code>ensure_server</code> starts a daemon if <code>UnixStream::connect</code> fails. The daemon's first session is the requested name if that is a valid label, otherwise <code>default</code>, since an id cannot name a session on a fresh daemon. <code>daemon::spawn_server</code> re-executes the same binary as <code>apex -socket=… -session=… server</code> under <code>setsid</code>, with stderr going to <code>apexd.log</code> beside the socket.</p>
+<p><code>attach</code> first decides what it is attaching to. If the first argument does not exist as a path, it is the target, otherwise the target is the current session. A session URL (<code>local:///</code>, <code>ssh://…</code>, <code>sprite://…</code>, parsed by <code>providers::SessionUrl</code>) is reduced to a session name or to <code>dest/session</code>. With <code>-stdio</code>, it calls <code>ensure_server</code> and then <code>bridge</code>, which copies bytes between the socket and stdin/stdout on two threads until either side closes. Frames pass through untouched, and this is the whole server side of <a href="remote-hosts.html">remote hosts</a>. Without <code>-stdio</code>, it runs <code>apex-ui</code> (found beside the <code>apex</code> binary) as <code>--remote DEST --session S</code> or <code>--attach SOCKET --session S</code>, passing on the FILE arguments.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L881-L907">crates/apex-cli/src/main.rs:881-907</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L958-L961">crates/apex-cli/src/main.rs:958-961</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1050-L1053">crates/apex-cli/src/main.rs:1050-1053</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1120-L1228">crates/apex-cli/src/main.rs:1120-1228</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L509-L522">crates/apex-server/src/remote.rs:509-522</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L586-L720">crates/apex-server/src/remote.rs:586-720</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L29-L79">crates/apex-server/src/daemon.rs:29-79</a></p>
+<h3 id="windows-and-text">Windows and text</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Behaviour</th>
+<th>Mechanism</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>new [-diagnostic] [-label=L] [PATH]</code></td>
+<td>makes a window and prints its id; if stdin is not a terminal, its contents go in</td>
+<td><code>Exec Top &quot;New&quot;</code>, waits for the new window, <code>ReplaceRange</code> at 0, <code>SetPath</code>. With <code>-diagnostic</code>: <code>NewWindow { scratch, diagnostic }</code> in the last column (<code>-label</code> is only allowed with <code>-diagnostic</code>)</td>
+</tr>
+<tr>
+<td><code>open FILE...</code></td>
+<td>opens files in the first column; prints <code>id&lt;TAB&gt;path</code></td>
+<td><code>ClientMsg::OpenFile</code> per file, then waits for the window count to rise. A file that is already open adds no window</td>
+</tr>
+<tr>
+<td><code>win list [-json]</code></td>
+<td><code>id kind marks path label</code>, column by column, including stashed windows</td>
+<td>reads the layout with <code>tiling::stash_order</code>. Marks are <code>*</code> dirty, <code>&gt;</code> live, <code>+</code> scratch, <code>-</code> none. Dirty is suppressed for scratch and live windows</td>
+</tr>
+<tr>
+<td><code>win del|rename|label|tag</code></td>
+<td>Del as acme does it (warns once if dirty), move to another path, set label, read or replace the tag's user text</td>
+<td><code>Exec Window &quot;Del&quot;</code>, <code>SetPath</code>, <code>SetLabel</code>, <code>ReplaceRange</code> on the tag buffer</td>
+</tr>
+<tr>
+<td><code>text read [-addr=ADDR] WIN</code></td>
+<td>prints the body, or only what an address selects</td>
+<td>reads the replica. <code>-addr</code> runs <code>apex_edit::Edit</code> locally with the program <code>ADDRp</code> from the window's selection</td>
+</tr>
+<tr>
+<td><code>edit WIN PROGRAM</code></td>
+<td>runs an <a href="edit-language.html">Edit</a> program</td>
+<td><code>Proposal::Edit</code></td>
+</tr>
+<tr>
+<td><code>sel WIN [Q0 Q1]</code></td>
+<td>reads or sets the body selection</td>
+<td>replica, or <code>Proposal::Select</code></td>
+</tr>
+<tr>
+<td><code>show WIN [Q | :LINE]</code></td>
+<td>scrolls a place into view without moving dot</td>
+<td><code>Proposal::Show</code></td>
+</tr>
+<tr>
+<td><code>exec [WIN] COMMAND</code></td>
+<td>runs text as B2 would, in a window's context or the top row's</td>
+<td><code>Proposal::Exec</code></td>
+</tr>
+<tr>
+<td><code>events [-shard=S]</code></td>
+<td>streams every appended entry as JSON (<code>shard</code>, <code>seq</code>, <code>attachment</code>, <code>epoch</code>, <code>op</code>)</td>
+<td>reads <code>link.rx</code> directly and prints <code>Entries</code> before handling them</td>
+</tr>
+</tbody>
+</table>
+<p><code>text read -addr</code> is notable because it never touches the daemon. The address is evaluated on the CLI's own replica by the same <code>apex-edit</code> code the node uses, and the result is taken from the <code>p</code> command's output (<code>outcome.output_string()</code>).</p>
+<p><code>events</code> is acme's event file generalised. It prints the entries as they arrive and passes each message on to <code>c.handle</code>, so the replica keeps up. It runs until the connection ends or stdout closes.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1300-L1558">crates/apex-cli/src/main.rs:1300-1558</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L219-L288">crates/apex-cli/src/main.rs:219-288</a></p>
+<h3 id="terminals-and-processes">Terminals and processes</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>term new [CMD...]</code></td>
+<td>proposes <code>Exec Top &quot;Newterm CMD…&quot;</code>, waits for a new <code>TermId</code> in <code>state.terms</code> and prints it</td>
+</tr>
+<tr>
+<td><code>term send TERM TEXT</code></td>
+<td>sends <code>TermPaste</code> with the text. A trailing <code>\n</code> or <code>\r</code> is stripped and sent as a <code>TermKey</code> <code>enter</code> instead, because shells with bracketed paste take a pasted newline literally</td>
+</tr>
+<tr>
+<td><code>term read TERM</code></td>
+<td>prints the replicated grid (<code>state.terms[t].grid</code>), each row trimmed on the right</td>
+</tr>
+<tr>
+<td><code>term clear TERM</code></td>
+<td><code>TermClear</code>, which drops the scrollback</td>
+</tr>
+<tr>
+<td><code>ps [-a]</code></td>
+<td>lists <code>meta.procs</code>: pid, name, origin (window id, <code>col N</code> or <code>top</code>), start time, directory and command. With <code>-a</code> it includes the recently ended ones and how each ended</td>
+</tr>
+<tr>
+<td><code>kill NAME|PID...</code></td>
+<td>checks every target against the running records, sends <code>ClientMsg::Kill</code>, waits up to 2 s for those records to stop running, then prints what is still running</td>
+</tr>
+<tr>
+<td><code>cd [DIR]</code></td>
+<td>prints or changes <code>meta.cwd</code>. The path is normalised as a shell would, with a trailing <code>/</code>. Sends <code>ClientMsg::Cd</code> and waits for the replica to show it, or for <code>link.error</code></td>
+</tr>
+<tr>
+<td><code>label TEXT</code>, <code>awd [LABEL]</code></td>
+<td>write escape sequences to <code>/dev/tty</code> (stdout if that fails): <code>ESC ] ; text BEL</code> for the label, and for awd an OSC 7 <code>file://host/pwd</code> followed by the label (the host name by default)</td>
+</tr>
+<tr>
+<td><code>shell-integration zsh|bash</code></td>
+<td>prints hooks that emit OSC 133 prompt marks and OSC 7, active only when <code>TERM_PROGRAM=apex</code></td>
+</tr>
+</tbody>
+</table>
+<p>A terminal's TERM argument may be a terminal id or anything <code>find_window</code> accepts that names a <code>Body::Term</code> window. <code>label</code> and <code>awd</code> neither attach nor talk to the daemon. They speak to the terminal they run in, and the <a href="terminals.html">terminal</a> loop turns the sequences into the window's <code>DIR/-TITLE</code> name.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L909-L1048">crates/apex-cli/src/main.rs:909-1048</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1560-L1622">crates/apex-cli/src/main.rs:1560-1622</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1857-L1894">crates/apex-cli/src/main.rs:1857-1894</a></p>
+<h3 id="plumbing-b-and-editing-in-place">Plumbing, B and editing in place</h3>
+<p><code>plumb TEXT</code> sends <code>ClientMsg::Plumb</code> from the CLI's current directory, in the top-row context or, with <code>-win</code>, from a window. It waits for <code>link.plumbed</code>. If no rule took the text, the command exits non-zero with the reason, as Plan 9's <code>plumb</code> does, even though the session then falls back to Look. <code>-dry-run</code> uses <code>Remote::plumb_dry</code> and prints the trace instead. <code>-edit</code> sets <code>edit_only</code>, which tries only the rules that open in the session.</p>
+<p><code>plumb rule add|rm|ls</code> manages the <a href="plumbing.html">rule table</a>:</p>
+<ul>
+<li><code>rule_of</code> turns <code>RULE_FLAGS</code> into a <code>PlumbRule</code>. There must be exactly one action among <code>-edit</code>, <code>-run</code>, <code>-tool</code> and <code>-client</code>. <code>-kind</code> and <code>-to</code> are validated, priority defaults to 0, and the rule's own <code>check()</code> runs last. <code>Remote::rule_add</code> then prints the new id.</li>
+<li><code>rm</code> accepts ids with or without the <code>r</code> prefix.</li>
+<li><code>ls</code> prints the table in the order it is tried (<code>plumb::ordered</code>), showing each rule's owner: <code>session</code>, or <code>name(attachment)</code>.</li>
+</ul>
+<p><code>B FILE[:LINE]...</code> sends an <code>edit_only</code> plumb for each argument and waits for a window to appear. <code>switch SESSION [WIN]</code> proposes <code>Proposal::Switch</code> to the window showing this session.</p>
+<p><code>editor FILE</code> is plan9port's editinacme:</p>
+<ol>
+<li>It makes the path absolute and prints <code>editor: editing FILE</code> on stderr.</li>
+<li>If <code>$winid</code> names a window, it sends <code>EditOver { under, name }</code> and waits for a window on the file stacked over that one. Otherwise it plumbs the path <code>edit_only</code> and waits for a <code>File</code> window with that path.</li>
+<li>It labels the window <code>$EDITOR for PROG</code> (via <code>apex_server::waiting_program</code>) and steps until the window is gone.</li>
+<li>On interrupt (<code>catch_interrupts</code>/<code>INTERRUPTED</code>), it restores the old label and fails.</li>
+</ol>
+<p><code>notify [-win=WIN]</code> sends <code>Notify</code> for that window (default <code>$winid</code>) and returns once <code>window_notified</code> goes false again.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1624-L1855">crates/apex-cli/src/main.rs:1624-1855</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L790-L802">crates/apex-server/src/remote.rs:790-802</a></p>
+<h3 id="environment-settings-io-pages-and-tools">Environment, settings, I/O, pages and tools</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>env [-import] [KEY=VALUE...]</code></td>
+<td>sets session variables, or prints them all when given none. <code>-import</code> sends this process's whole environment as <code>EnvImport</code>, so the differences become the session's (the profile's exit hook uses this)</td>
+</tr>
+<tr>
+<td><code>set [KEY VALUE]</code></td>
+<td>sends <code>ClientMsg::Set</code>. If <code>$apexattachment</code> is set (inside an attach script), the setting belongs to that attachment. With no arguments it prints <code>owner key value</code> from <code>meta.settings</code></td>
+</tr>
+<tr>
+<td><code>cat PATH</code></td>
+<td><code>Remote::read_file</code>, a <code>GET file://PATH</code> on the <a href="io-plane-and-pages.html">I/O plane</a></td>
+</tr>
+<tr>
+<td><code>io [-watch] METHOD URL</code></td>
+<td>one request on the plane. A body is read from stdin for PUT, and for other non-GET/HEAD/DELETE/OPTIONS methods when stdin is not a terminal. A non-200 status prints the body and exits 1. <code>-watch</code> prints each <code>FileFrame</code> as it arrives. <code>CONNECT</code> becomes an nc-style tunnel, with a thread feeding stdin while the main loop prints the frames that come back</td>
+</tr>
+<tr>
+<td><code>web open URL</code> / <code>web [-label L] &lt;HTML</code></td>
+<td><code>Proposal::open_url</code> or <code>open_html</code> in the first column, then prints the new window's id</td>
+</tr>
+<tr>
+<td><code>preview FILE</code></td>
+<td>proposes <code>Exec Top &quot;apex tool preview FILE&quot;</code>, so the converter runs on the host as one of the session's commands</td>
+</tr>
+<tr>
+<td><code>diff [-C DIR] [FILE]</code></td>
+<td>reads a unified diff and calls <code>apex_tool::Tool::attach_to(..., &quot;diff&quot;).diff(...)</code></td>
+</tr>
+<tr>
+<td><code>md</code></td>
+<td>Markdown on stdin to an HTML page on stdout (<code>apex_tool_preview::markdown::markdown_page</code>); it never attaches</td>
+</tr>
+<tr>
+<td><code>tool win|lsp|preview|web|agent|bridge</code></td>
+<td>calls each tool crate's <code>run</code> in-process: <code>apex_tool_win</code>, <code>apex_tool_lsp</code>, <code>apex_tool_preview</code> (with a FILE, or as the resident tool), <code>apex_tool_web</code>, <code>apex_tool_agent::cmd</code>, <code>apex_tool_bridge</code></td>
+</tr>
+</tbody>
+</table>
+<p>The tools are covered on <a href="tool-win-and-lsp.html">win and Language Servers</a>, <a href="tool-pages.html">Preview, Web and Diff Tools</a>, <a href="agent-tools.html">Coding Agents</a> and <a href="bridge-and-go.html">JSON Bridge and Go SDK</a>. The CLI's only job for them is to pick the socket and session and call <code>run</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1055-L1118">crates/apex-cli/src/main.rs:1055-1118</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1896-L2070">crates/apex-cli/src/main.rs:1896-2070</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L804-L1031">crates/apex-server/src/remote.rs:804-1031</a></p>
+<h2 id="apex-editor-and-xdg-open">apex-editor and xdg-open</h2>
+<p><code>main</code> looks at the name the binary was run as before it parses anything:</p>
+<ul>
+<li>As <code>apex-editor</code>, it inserts <code>editor</code>, so <code>apex-editor FILE</code> behaves as <code>apex editor FILE</code>.</li>
+<li>As <code>xdg-open</code>, it requires exactly one argument that is not a flag and inserts <code>plumb</code>. Any program that opens a URL or a file that way (<code>gh</code>, <code>cargo doc --open</code>) gets it plumbed into the session, as B3 would.</li>
+</ul>
+<p>The daemon creates these links. For every new session, <code>editor_command</code> and <code>link_beside</code> make a symlink of that name beside a binary named <code>apex</code>, if it is missing and the directory allows it. The session environment then gets <code>EDITOR</code> (the link, or <code>PATH/apex editor</code> as a two-word fallback) and <code>BROWSER</code> (the <code>xdg-open</code> link). Since the binary's directory leads the session's <code>PATH</code>, <code>xdg-open</code> there is apex's own. The link has to be one word because zsh and rc do not split <code>$EDITOR</code>. The test binary is not named <code>apex</code>, so tests see the fallback.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L713-L729">crates/apex-cli/src/main.rs:713-729</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L357-L369">crates/apex-server/src/daemon.rs:357-369</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1600-L1628">crates/apex-server/src/daemon.rs:1600-1628</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L551-L604">crates/apex-cli/tests/cli.rs:551-604</a></p>
+<h2 id="error-handling-and-timing">Error handling and timing</h2>
+<p>Most waits are bounded by <code>TIMEOUT</code> (10 s). <code>Remote::propose</code> reports <code>timed out waiting for the leader</code>, <code>wait</code> reports <code>timed out</code>, and a closed connection gives <code>connection closed</code>. A few commands do not wait for an acknowledgement. <code>term send</code>, <code>term clear</code>, <code>set</code> and <code>rule rm</code> send their message and give the daemon 50 ms (<code>c.step</code>) before the process exits and the link closes. Code that needs certainty should check the result afterwards, for example with <code>apex set</code> alone.</p>
+<p><code>open</code> and <code>B</code> ignore their wait's timeout, because opening an already-open file adds no window. Errors the daemon sends (<code>ServerMsg::Error</code>) are printed by the link as <code>remote: server: …</code> and stored in <code>link.error</code>. <code>cd</code> is the command that turns that field into its own failure.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L22">crates/apex-cli/src/main.rs:22</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1354-L1376">crates/apex-cli/src/main.rs:1354-1376</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1586-L1619">crates/apex-cli/src/main.rs:1586-1619</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L455-L458">crates/apex-server/src/remote.rs:455-458</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L748-L765">crates/apex-server/src/remote.rs:748-765</a></p>
+<h2 id="tests">Tests</h2>
+<p><code>crates/apex-cli/tests/cli.rs</code> drives the real binary (<code>CARGO_BIN_EXE_apex</code>) against a <code>Daemon::run_with</code> on a thread. Each test has its own socket in the temp directory and a session named <code>main</code>. The helpers <code>apex</code>, <code>ok</code> and <code>labels</code> run one command and capture its output.</p>
+<ul>
+<li><code>scripts_drive_a_headless_session</code> is the core end-to-end check with no UI. It runs open, list, read, read with <code>-addr</code>, an Edit, Put through <code>exec</code>, <code>sel</code>, a <code>|sort</code> pipe, a terminal round trip (<code>term new</code>/<code>send</code>/<code>read</code>), session isolation, and Del's warn-once behaviour.</li>
+<li><code>attach_stdio_bridges_the_socket</code> attaches a <code>Link</code> over <code>apex attach -stdio</code>'s pipes.</li>
+<li>Other tests cover sessions and their ids, profiles and attach scripts, rules and tool refusal, <code>ps</code>/<code>kill</code>, <code>editor</code> (plain, over a terminal, interrupted), <code>io</code> tunnels and fetches, watches, preview, <code>env -import</code>, <code>notify</code>, <code>cd</code>, and <code>md</code>.</li>
+</ul>
+<p><code>tests/ssh.rs</code> fakes <code>ssh</code> with a script and checks the remote install-and-bridge path.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L1-L182">crates/apex-cli/tests/cli.rs:1-182</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs#L1-L36">crates/apex-cli/tests/ssh.rs:1-36</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="themes-and-fonts.html">Themes, Fonts and Colour</a></span><span class="next">Next: <a href="configuration.html">Configuration: Profile, Attach and Settings</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top current"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture-one-binary-a-table-of-commands">Architecture: one binary, a table of commands</a></li>
+<li class="l2"><a href="#flags-the-socket-and-the-session">Flags, the socket and the session</a></li>
+<li class="l3"><a href="#go-style-flags">Go-style flags</a></li>
+<li class="l3"><a href="#global-flags-and-environment">Global flags and environment</a></li>
+<li class="l3"><a href="#exit-status">Exit status</a></li>
+<li class="l2"><a href="#every-subcommand-is-a-tool">Every subcommand is a tool</a></li>
+<li class="l2"><a href="#naming-windows-find-window">Naming windows: find_window</a></li>
+<li class="l2"><a href="#the-subcommands">The subcommands</a></li>
+<li class="l3"><a href="#daemon-and-sessions">Daemon and sessions</a></li>
+<li class="l3"><a href="#windows-and-text">Windows and text</a></li>
+<li class="l3"><a href="#terminals-and-processes">Terminals and processes</a></li>
+<li class="l3"><a href="#plumbing-b-and-editing-in-place">Plumbing, B and editing in place</a></li>
+<li class="l3"><a href="#environment-settings-io-pages-and-tools">Environment, settings, I/O, pages and tools</a></li>
+<li class="l2"><a href="#apex-editor-and-xdg-open">apex-editor and xdg-open</a></li>
+<li class="l2"><a href="#error-handling-and-timing">Error handling and timing</a></li>
+<li class="l2"><a href="#tests">Tests</a></li>
+</ul>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

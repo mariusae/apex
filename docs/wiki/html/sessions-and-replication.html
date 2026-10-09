@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions, Shards and Leadership · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Sessions, Shards and Leadership</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md">DESIGN.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/README.md">crates/apex-core/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs">crates/apex-core/src/buffer.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs">crates/apex-core/src/ids.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs">crates/apex-core/tests/core.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+</ul>
+</details>
+<p>Every part of apex — the daemon, the UI, tools and the <code>apex</code> command — holds a copy of the same state and agrees on it in the same way. A <strong>session</strong> is a set of append-only logs called <strong>shards</strong>. Each shard has exactly one <strong>leader</strong>, the only party allowed to append to it. Everyone else is a <strong>follower</strong>: they replay the shard's entries through the same deterministic <code>apply</code> and reach identical state. This page describes that model: what a session, an attachment and a connection are, how state is split into shards, who leads each one, and how leadership moves through leases with fence epochs. It also explains two design decisions that follow from the model: views live in the buffer shard, and ids need no coordination.</p>
+<p>The entry types and <code>State::apply</code> itself are covered in <a href="core-state.html">Entries, State and Apply</a>. The <code>Node</code> that leads and follows is covered in <a href="node.html">The Node: Leading and Built-in Commands</a>. The messages that carry entries between processes are covered in <a href="attach-protocol.html">The Attach Protocol</a>, and the way non-leaders ask for changes is covered in <a href="proposals.html">Proposals: How Others Change State</a>.</p>
+<h2 id="sessions-attachments-and-connections">Sessions, attachments and connections</h2>
+<p>DESIGN.md defines three terms, and the code keeps them apart:</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>What it is</th>
+<th>Where it lives in code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Session</strong></td>
+<td>A whole workspace (shards, layout, windows, terminals) on one host. One daemon holds many.</td>
+<td><code>daemon.rs</code>'s <code>Session { id, label, log, server, view, leader }</code>, keyed by the session's identity</td>
+</tr>
+<tr>
+<td><strong>Attachment</strong></td>
+<td>The fenced identity a client gets when it joins a session. Leases are granted to attachments, never to sockets.</td>
+<td><code>AttachmentId(u64)</code>, recorded by <code>MetaOp::Attach { attachment, kind, name }</code></td>
+</tr>
+<tr>
+<td><strong>Connection</strong></td>
+<td>A socket (or any byte stream) carrying framed messages.</td>
+<td><code>Conn { session, attachment, kind, out, sent, … }</code> in the daemon</td>
+</tr>
+</tbody>
+</table>
+<p>A session's identity is a random UUID minted with the log (<code>new_session_id</code>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L401-L404">crates/apex-core/src/log.rs:401-404</a>). It is the metalog's second entry, <code>MetaOp::Identity</code>, and it never changes. The human label is a separate <code>MetaOp::Label</code> that a rename appends again.</p>
+<p>Attachments come in two kinds, <code>AttachmentKind::Ui</code> and <code>AttachmentKind::Tool</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L354-L358">crates/apex-core/src/entry.rs:354-358</a>). The log issues attachment ids in increasing order from 1 (<code>Log::attach</code>). <code>AttachmentId(0)</code> is reserved as <code>SERVER</code>, the identity the daemon uses when it leads a shard itself (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L43-L44">crates/apex-core/src/ids.rs:43-44</a>).</p>
+<p>DESIGN.md §4.1 describes connections that drop and resume without ending the attachment. The daemon does not work that way. <code>Hello</code> carries no attachment id to resume. When a connection goes, <code>Daemon::gone</code> removes the rules the attachment owned, appends <code>Detach</code>, and, if it was the leading UI, reclaims every lease it held so the server leads again (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L518-L553">crates/apex-server/src/daemon.rs:518-553</a>). A client that reconnects comes back as a new attachment with a fresh snapshot.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L38-L46">DESIGN.md:38-46</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L29-L44">crates/apex-core/src/ids.rs:29-44</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L72-L100">crates/apex-core/src/log.rs:72-100</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L176-L188">crates/apex-server/src/daemon.rs:176-188</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L518-L553">crates/apex-server/src/daemon.rs:518-553</a></p>
+<h2 id="shards">Shards</h2>
+<p>A shard is one independently replicated log together with the part of the state it drives. <code>Shard</code> is a small enum (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L46-L62">crates/apex-core/src/ids.rs:46-62</a>):</p>
+<pre><code class="language-rust">pub enum Shard {
+    Buffer(BufferId),
+    Window(WindowId),
+    Layout,
+    Term(TermId),
+    /// The session's metalog: shards, attachments, leases, plumb rules.
+    Meta,
+}
+
+impl Shard {
+    /// Pinned shards never lease out; the server always leads them.
+    pub fn is_pinned(&amp;self) -&gt; bool {
+        matches!(self, Shard::Term(_) | Shard::Meta)
+    }
+}
+</code></pre>
+<p>Each shard kind has its own op type. <code>Op::fits</code> checks that an op belongs on the shard it is being appended to, and both the log store and <code>apply</code> reject a mismatch (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L19-L41">crates/apex-core/src/entry.rs:19-41</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Shard</th>
+<th>One per</th>
+<th>Holds</th>
+<th>Leasable?</th>
+<th>Usual leader</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>buffer/bN</code></td>
+<td>buffer (a file, a tag, <code>+Errors</code>…)</td>
+<td>text, version, undo history, dirty/stale state, <strong>views</strong></td>
+<td>leasable</td>
+<td>the UI, else the daemon</td>
+</tr>
+<tr>
+<td><code>window/wN</code></td>
+<td>window</td>
+<td>tag and body ids, body kind (Text, Term, Page), font, execs and statuses, flags</td>
+<td>leasable</td>
+<td>the UI, else the daemon</td>
+</tr>
+<tr>
+<td><code>layout</code></td>
+<td>session</td>
+<td>columns, window placement in pixels, stash, navigation stacks, snarf</td>
+<td>leasable</td>
+<td>the UI, else the daemon</td>
+</tr>
+<tr>
+<td><code>term/tN</code></td>
+<td>terminal</td>
+<td>grid rows, cursor, modes, size</td>
+<td><strong>pinned</strong></td>
+<td>always the daemon</td>
+</tr>
+<tr>
+<td><code>meta</code></td>
+<td>session</td>
+<td>shards, attachments, leases, plumb rules, settings, notifications, processes, cwd</td>
+<td><strong>pinned</strong></td>
+<td>always the daemon</td>
+</tr>
+</tbody>
+</table>
+<p>DESIGN.md's table also lists a server-wide <code>registry</code> shard with <code>SessionNew/Del/Rename</code> entries. That shard is not built. The daemon keeps its sessions in an ordinary map, and a client learns about sessions from <code>ServerMsg::Sessions</code> listings, not from a replicated log.</p>
+<h3 id="why-split-the-state-into-shards">Why split the state into shards</h3>
+<p>Each shard has its own sequence numbers, so leadership can be decided shard by shard. The two pinned shards hold what only the host can produce. A terminal's grid comes from a pty and a VT parser that run where the daemon runs (see <a href="terminals.html">Terminals</a>). The metalog is the record of who leads what, so it cannot itself be leased. The leasable shards hold everything the user edits directly. Those go to the UI, so typing, selecting and rearranging never wait on a round trip.</p>
+<p>Shards have no atomicity between them. A cross-shard operation is several entries in several logs, and readers must tolerate seeing them in either order. Two things keep this workable. First, the metalog is replayed first: both <code>Node::catch_up</code> and the daemon's fan-out in <code>after</code> put <code>Shard::Meta</code> ahead of the others, so a shard's <code>ShardNew</code> arrives before its entries. Second, exec entries name what they act on (<code>ExecAt { buffer, version, q0, q1 }</code>), so readers do not have to guess at cross-shard order.</p>
+<h3 id="why-views-live-in-the-buffer-shard">Why views live in the buffer shard</h3>
+<p>A <em>view</em> is one text's selection and scroll origin: acme's <code>Text</code>. <code>ViewId</code> names a window's tag, a window's body, a column's tag, or the top row (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L83-L100">crates/apex-core/src/ids.rs:83-100</a>). It would be natural to keep a window's selection in that window's shard. apex keeps it in the buffer instead: <code>Buffer::views: BTreeMap&lt;ViewId, View&gt;</code>, changed by <code>BufferOp::ViewAdd</code>, <code>ViewDel</code>, <code>Select</code> and <code>Origin</code>.</p>
+<p>The reason is that an edit moves every selection on the buffer. <code>Buffer::splice</code> calls <code>adjust_views</code>, which applies acme's <code>textdelete</code>/<code>textinsert</code> rules to every view (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L148-L179">crates/apex-core/src/buffer.rs:148-179</a>). If <code>Select</code> lived in a separate log from <code>Edit</code>, two replicas could interleave a selection and an edit differently and end with different selections. Putting both in one shard gives them one sequence. This matters most for Zerox, where two windows show one buffer with independent selections.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L46-L111">crates/apex-core/src/ids.rs:46-111</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L115-L142">crates/apex-core/src/entry.rs:115-142</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L148-L179">crates/apex-core/src/buffer.rs:148-179</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L122-L155">DESIGN.md:122-155</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L323-L342">crates/apex-core/src/node.rs:323-342</a></p>
+<h2 id="the-replicated-state-machine">The replicated state machine</h2>
+<p>Every entry carries its sequence number and its provenance (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L8-L17">crates/apex-core/src/entry.rs:8-17</a>):</p>
+<pre><code class="language-rust">pub struct Entry {
+    pub seq: Seq,                 // 1-based, per shard
+    pub attachment: AttachmentId, // who sequenced it
+    pub epoch: Epoch,             // under which fence epoch
+    pub op: Op,
+}
+</code></pre>
+<p><code>State</code> holds the buffers, windows, layout, terminals and <code>Meta</code>, plus <code>applied: BTreeMap&lt;Shard, Seq&gt;</code>, the last sequence applied on each shard. <code>State::apply(shard, e)</code> rejects an op that does not fit the shard. It also rejects an entry whose <code>seq</code> is not exactly <code>applied + 1</code>, so a follower cannot skip or repeat an entry (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L550-L569">crates/apex-core/src/state.rs:550-569</a>). <code>apply</code> is pure: no clock, no randomness, no I/O. That is why a leader that appends and applies, and a follower that only applies, end with equal state.</p>
+<p>Any replica can take a snapshot of the whole <code>State</code> as postcard bytes (<code>to_snapshot</code>/<code>from_snapshot</code>). <code>applied</code> is part of the state, so a snapshot records exactly which prefix of each log it covers. A new attachment starts from the daemon's snapshot in <code>Welcome</code> and then applies entries after those marks. <code>State::hash</code> is a blake3 hash over the whole state, <code>applied</code> included, meant for detecting divergence. In the current code only the test suites and benchmarks call it. Those tests check that a follower replaying the log, and a node restored from a mid-way snapshot plus the tail, both equal the leader.</p>
+<p>Because a snapshot carries the state, logs need not grow forever. <code>Log::compact(shard, upto)</code> drops a prefix and moves the log's <code>base</code>. After each fan-out the daemon compacts every shard up to the lowest point that both its replicas and every connection have passed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1570-L1582">crates/apex-server/src/daemon.rs:1570-1582</a>). A client's mirror does the same in <code>compact_mirror</code>. For a shard the client leads, it also waits until the entries have been shipped and acked.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L8-L17">crates/apex-core/src/entry.rs:8-17</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L483-L569">crates/apex-core/src/state.rs:483-569</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L904-L1008">crates/apex-core/src/state.rs:904-1008</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L380-L389">crates/apex-core/src/log.rs:380-389</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L467-L480">crates/apex-server/src/remote.rs:467-480</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L157-L187">DESIGN.md:157-187</a></p>
+<h2 id="the-log-store-authority-and-mirror">The log store: authority and mirror</h2>
+<p><code>Log</code> in <code>log.rs</code> is the in-memory store of one session. It keeps one <code>ShardLog { entries, base }</code> per shard and a lease table of <code>LeaseState { holder, epoch, released }</code>. It is the <strong>fencing authority</strong>: every append is checked against the lease table. The same type plays two roles:</p>
+<ul>
+<li><strong>On the daemon it is the authority.</strong> It sequences the metalog itself (<code>push_meta</code>, always as <code>SERVER</code> at epoch 0). It accepts other leaders' entries through <code>append_entry</code>, which requires the entry's <code>(attachment, epoch)</code> to match the current lease and its <code>seq</code> to be the next one. It updates its lease table directly when it grants, reclaims or releases.</li>
+<li><strong>On a client it is a mirror</strong> (<code>Log::mirror(state, hook)</code>), built from the welcome snapshot. The mirror assigns the <em>same</em> sequence numbers the daemon will store, so the client can lead without waiting. The mirror never writes metalog entries of its own. When the client creates or deletes a shard, the <code>MirrorHook</code> sends <code>CreateShard</code>/<code>DeleteShard</code> to the daemon, and the mirror assumes the grant the daemon will make. When metalog entries arrive from the daemon, <code>append_entry</code> passes them through <code>note_meta</code> to keep the mirror's lease table in step.</li>
+</ul>
+<p><code>Node</code> reads its leases from the log, not from <code>State</code>. <code>refresh_leases</code> sets <code>epochs = log.held_by(self.attachment)</code>, the shards whose lease this attachment holds and has not released. The node can only append where it holds a lease: <code>Node::append</code> looks up its epoch for the shard, fails with <code>CoreError::NotLeader</code> if it has none, and passes the epoch to <code>Log::append</code>. <code>Log::append</code> fences again against the store (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L344-L356">crates/apex-core/src/node.rs:344-356</a>).</p>
+<table>
+<thead>
+<tr>
+<th><code>LogError</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Fenced { shard, holder, epoch }</code></td>
+<td>Wrong holder or epoch, lease released, or (in <code>append_entry</code>) a sequence gap</td>
+</tr>
+<tr>
+<td><code>NoShard</code> / <code>ShardExists</code></td>
+<td>Unknown shard, or it already exists</td>
+</tr>
+<tr>
+<td><code>WrongShard</code></td>
+<td>The op does not fit the shard</td>
+</tr>
+<tr>
+<td><code>Pinned</code></td>
+<td>Tried to request, grant, reclaim or delete a pinned lease or the metalog</td>
+</tr>
+<tr>
+<td><code>NotReleased</code></td>
+<td>Tried to grant while another attachment still holds the lease</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L10-L148">crates/apex-core/src/log.rs:10-148</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L213-L264">crates/apex-core/src/log.rs:213-264</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L344-L403">crates/apex-core/src/node.rs:344-403</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L33-L42">crates/apex-server/src/remote.rs:33-42</a></p>
+<h2 id="leaders-and-followers-in-a-running-session">Leaders and followers in a running session</h2>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph daemon[&quot;apexd: one Session&quot;]
+        log[(&quot;Log (authority)&lt;br/&gt;leases, fencing&quot;)]
+        view[&quot;view: Node(SERVER)&lt;br/&gt;follower of all,&lt;br/&gt;leader when no UI&quot;]
+        srvnode[&quot;Server.node: Node(SERVER)&lt;br/&gt;leads term shards&quot;]
+    end
+    ui[&quot;UI: Node(a) over mirror Log&lt;br/&gt;leads buffer, window, layout&quot;]
+    tool[&quot;tool / CLI: Node(t) over mirror Log&lt;br/&gt;follows everything&quot;]
+    ui --&gt;|&quot;Append (fenced)&quot;| log
+    srvnode --&gt;|&quot;append term, meta&quot;| log
+    log --&gt;|&quot;Entries, metalog first&quot;| ui
+    log --&gt;|&quot;Entries&quot;| tool
+    tool --&gt;|&quot;Propose&quot;| log
+    log --&gt;|&quot;Propose (routed)&quot;| ui
+    log --&gt; view
+</code></pre>
+<p>The daemon keeps two <code>SERVER</code> nodes per session. <code>Session::view</code> replays every shard, and when no UI is attached it leads the leasable shards itself. In that case <code>Daemon::propose</code> applies tool proposals straight into it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L967-L979">crates/apex-server/src/daemon.rs:967-979</a>). <code>Server::node</code> is the node that creates and appends to terminal shards and records processes. When a session is made, <code>view</code> lays out the session (<code>init_session</code>) before any UI exists, so tools can work in a session nobody is looking at.</p>
+<p>When a UI attaches, it leads <code>layout</code>, every <code>window</code> and every <code>buffer</code>. It types and edits by appending to its mirror and applying locally, then <code>Link::flush</code> ships each led shard's new entries as <code>Append</code>. The daemon checks them with <code>append_entry</code>, has <code>view</code> catch up, acks, and sends the entries to every other connection, metalog first (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1553-L1569">crates/apex-server/src/daemon.rs:1553-1569</a>). Tools and the CLI never lead. They follow and propose, and the daemon forwards each proposal to the leading UI's connection, whose <code>proposal::apply</code> turns it into the leader's own entries.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L176-L188">crates/apex-server/src/daemon.rs:176-188</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L386-L394">crates/apex-server/src/daemon.rs:386-394</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L650-L678">crates/apex-server/src/daemon.rs:650-678</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L932-L979">crates/apex-server/src/daemon.rs:932-979</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L359-L370">crates/apex-server/src/lib.rs:359-370</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L314-L372">crates/apex-server/src/remote.rs:314-372</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L27-L38">ARCHITECTURE.md:27-38</a></p>
+<h2 id="leases-fence-epochs-transfer-and-reclaim">Leases, fence epochs, transfer and reclaim</h2>
+<p>A lease is a <code>(holder, epoch)</code> pair per shard. The metalog records every change to it, and <code>Meta::leases</code> holds the replicated view: <code>Lease { holder, epoch, seq, pending, released }</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L375-L385">crates/apex-core/src/state.rs:375-385</a>). Every grant and every reclaim bumps the <strong>fence epoch</strong>. Since the log store refuses any append whose epoch is not the current one, a client that still believes it leads cannot write anything once it has lost the lease.</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Server: ShardNew (epoch 0)
+    Server --&gt; Holder: LeaseGrant (epoch+1)
+    [*] --&gt; Holder: create_shard by a client (ShardNew + LeaseGrant, epoch 1)
+    Holder --&gt; Pending: LeaseRequest
+    Pending --&gt; Released: LeaseRelease at seq
+    Holder --&gt; Released: LeaseRelease at seq
+    Released --&gt; Holder: LeaseGrant to new holder (epoch+1)
+    Holder --&gt; Server: LeaseReclaim (epoch+1)
+    Pending --&gt; Server: LeaseReclaim (epoch+1)
+</code></pre>
+<p>The operations on <code>Log</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Metalog entry</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>create_shard(shard, creator)</code></td>
+<td><code>ShardNew</code>, then <code>LeaseGrant</code></td>
+<td>A leasable shard goes to its creator at epoch 1. A pinned shard, or one the server creates, stays with <code>SERVER</code> at epoch 0.</td>
+</tr>
+<tr>
+<td><code>request(shard, to)</code></td>
+<td><code>LeaseRequest</code></td>
+<td>Refused for pinned shards. <code>apply</code> records the waiting attachment in <code>pending</code>.</td>
+</tr>
+<tr>
+<td><code>release(shard, from, seq)</code></td>
+<td><code>LeaseRelease</code></td>
+<td>Only the holder may release. It records the last sequence flushed, and further appends are fenced.</td>
+</tr>
+<tr>
+<td><code>grant(shard, to)</code></td>
+<td><code>LeaseGrant { epoch+1, seq }</code></td>
+<td>Allowed only if the server holds the lease or the holder has released. Otherwise <code>NotReleased</code>.</td>
+</tr>
+<tr>
+<td><code>reclaim(shard)</code></td>
+<td><code>LeaseReclaim { from, epoch+1, seq }</code></td>
+<td>Takes the lease back to <code>SERVER</code> whether or not the holder answers. The old epoch is dead from then on.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Transfer</strong> is cooperative: request, then the holder flushes and releases, then grant. Nothing is lost. <strong>Reclaim</strong> is the fallback for a holder that does not answer. It is safe because the old leader's unflushed entries can no longer be appended, so a reclaim can lose entries but can never let two leaders write the same shard.</p>
+<h3 id="single-player-mode-as-built">Single-player mode as built</h3>
+<p>DESIGN.md (§4.4) says a new UI tries transfer first and reclaims only after a deadline. The daemon is simpler: one UI leads a session at a time, and a new UI takes over at once. In <code>Daemon::hello</code>, for a <code>Ui</code> attachment, the daemon goes over every non-pinned shard, reclaims any lease held by an attachment that has not released, and grants the lease to the newcomer (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L596-L614">crates/apex-server/src/daemon.rs:596-614</a>). It then records the newcomer's connection as <code>Session::leader</code>. The request/release path exists in <code>Log</code> and <code>Node</code> (<code>take_lease</code>, <code>release_lease</code>), and the core test <code>fencing_rejects_a_stale_leader</code> exercises it. The daemon does not use it yet.</p>
+<p>The UI that was displaced keeps following. It finds out from the metalog it replays: <code>Acme::fenced</code> is true when the mirror's <code>layout</code> lease is no longer held by this attachment (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2279-L2282">crates/apex-client/src/app.rs:2279-2282</a>). The client then shows the session as fenced, or &quot;watching&quot;. The recovery path DESIGN.md describes, which re-submits an unflushed tail as base-versioned proposals into a <code>+Recovered</code> buffer, is not implemented. Tool-held buffer leases with a TTL are design intent too. Today tools only propose.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant U1 as UI 1 (attachment 3)
+    participant D as apexd Log
+    participant U2 as UI 2
+    U2-&gt;&gt;D: Hello(kind Ui)
+    D-&gt;&gt;D: Attach a4
+    D-&gt;&gt;D: LeaseReclaim(buffer/b.., epoch 2) for each lease a3 holds
+    D-&gt;&gt;D: LeaseGrant(to a4, epoch 3)
+    D-&gt;&gt;U2: Welcome(a4, snapshot)
+    D-&gt;&gt;U1: Entries(meta: Reclaim, Grant)
+    U1-&gt;&gt;D: Append(epoch 1 entries)
+    D--&gt;&gt;U1: Error: fenced
+    Note over U1: fenced() is true, so it follows
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L229-L378">crates/apex-core/src/log.rs:229-378</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L797-L848">crates/apex-core/src/state.rs:797-848</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L588-L642">crates/apex-server/src/daemon.rs:588-642</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L246-L272">crates/apex-core/tests/core.rs:246-272</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2279-L2282">crates/apex-client/src/app.rs:2279-2282</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L311-L365">DESIGN.md:311-365</a></p>
+<h2 id="creating-shards-from-a-client">Creating shards from a client</h2>
+<p>When a UI makes a new buffer, <code>Node::create_buffer_as</code> allocates a <code>BufferId</code>, calls <code>Node::create_shard</code>, and appends <code>BufferOp::Create</code>, all without waiting. On a mirror, <code>Log::create_shard</code> inserts the shard, assumes the lease <code>(creator, epoch 1)</code>, and sends <code>CreateShard</code> through the hook. Because the mirror writes no metalog entry of its own, <code>Node::create_shard</code> inserts the shard into <code>state.meta.shards</code> directly so that the entries that follow will apply (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L358-L372">crates/apex-core/src/node.rs:358-372</a>).</p>
+<p>The order on the wire is what makes this correct. The hook's <code>CreateShard</code> goes out on the same writer before the <code>Append</code> that <code>flush</code> sends later. So the daemon has already run <code>create_shard</code>, appending <code>ShardNew</code> and then <code>LeaseGrant</code> to the creator at epoch 1, by the time the entries arrive and pass the fence. Deleting works the same way in reverse. On a mirror, <code>Node::delete_shard</code> drops the shard's state at once with <code>apply_unsequenced</code> (a <code>ShardDel</code> that does not advance any sequence), and the daemon's <code>ShardDel</code> follows later.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L229-L264">crates/apex-core/src/log.rs:229-264</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L358-L418">crates/apex-core/src/node.rs:358-418</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L541-L548">crates/apex-core/src/state.rs:541-548</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L679-L694">crates/apex-server/src/daemon.rs:679-694</a></p>
+<h2 id="ids-without-coordination">Ids without coordination</h2>
+<p>All ids are plain <code>u64</code> newtypes: <code>BufferId</code>, <code>WindowId</code>, <code>ColumnId</code>, <code>TermId</code>, <code>AttachmentId</code>, <code>RuleId</code>, <code>GroupId</code>. Whoever creates a thing issues its id (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L1-L34">crates/apex-core/src/ids.rs:1-34</a>). A leader cannot ask the daemon for an id without waiting a round trip, so each <code>Node</code> takes ids from a range of its own:</p>
+<pre><code class="language-rust">/// Ids are unique per attachment without coordination.
+fn alloc(&amp;mut self) -&gt; u64 {
+    let id = (self.attachment.0 &lt;&lt; 40) | self.next_id;
+    self.next_id += 1;
+    id
+}
+</code></pre>
+<p>Undo groups use the same scheme with a separate counter (<code>new_group</code>). The attachment id fills the top 24 bits and a per-node counter the low 40 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L304-L315">crates/apex-core/src/node.rs:304-315</a>). Attachment ids are never reused within a session, so two attachments can never issue the same buffer, window or column id. The daemon's <code>SERVER</code> node allocates from prefix 0. The other ids come from the single place that sequences them:</p>
+<ul>
+<li><code>AttachmentId</code> comes from the authoritative log's <code>next_attachment</code>.</li>
+<li><code>RuleId</code> comes from the log's <code>next_rule</code>. A mirror starts its counter past the highest rule in its snapshot.</li>
+<li><code>TermId</code> comes from the <code>Server</code>'s own <code>next_term</code>, since only the daemon creates terminals.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L1-L44">crates/apex-core/src/ids.rs:1-44</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L304-L315">crates/apex-core/src/node.rs:304-315</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L102-L121">crates/apex-core/src/log.rs:102-121</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L275-L298">crates/apex-core/src/log.rs:275-298</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L364-L367">crates/apex-server/src/lib.rs:364-367</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/README.md#L18-L32">crates/apex-core/README.md:18-32</a></p>
+<h2 id="the-metalog">The metalog</h2>
+<p>Everything <em>about</em> the shards is in the metalog, rather than in the shards themselves. It is the session's authority, and the daemon always leads it. Its entries (<code>MetaOp</code>) fall into a few groups:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Entries</th>
+<th>Effect in <code>Meta</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Session</td>
+<td><code>Init</code>, <code>Identity</code>, <code>Label</code>, <code>Cwd</code></td>
+<td><code>id</code>, <code>label</code>, <code>host</code>, <code>cwd</code></td>
+</tr>
+<tr>
+<td>Shards</td>
+<td><code>ShardNew</code>, <code>ShardDel</code></td>
+<td><code>shards</code>, and the default lease (<code>SERVER</code>, epoch 0). <code>ShardDel</code> also drops the buffer, window (and its layout place) or terminal, and the shard's <code>applied</code> mark.</td>
+</tr>
+<tr>
+<td>Attachments</td>
+<td><code>Attach</code>, <code>Detach</code></td>
+<td><code>attachments</code>. <code>Detach</code> also drops that attachment's settings and the notifications it raised.</td>
+</tr>
+<tr>
+<td>Leases</td>
+<td><code>LeaseRequest</code>, <code>LeaseRelease</code>, <code>LeaseGrant</code>, <code>LeaseReclaim</code></td>
+<td><code>leases</code></td>
+</tr>
+<tr>
+<td>Plumbing</td>
+<td><code>PlumbRuleInstall</code>, <code>PlumbRuleRemove</code></td>
+<td><code>rules</code> (see <a href="plumbing.html">Plumbing Rules and Verbs</a>)</td>
+</tr>
+<tr>
+<td>Settings</td>
+<td><code>Set</code>, <code>Unset</code></td>
+<td><code>settings</code>, per owner (see <a href="configuration.html">Configuration</a>)</td>
+</tr>
+<tr>
+<td>Attention</td>
+<td><code>Notify</code>, <code>Unnotify</code></td>
+<td><code>notifications</code>, oldest first, at most one per window</td>
+</tr>
+<tr>
+<td>Processes</td>
+<td><code>ProcStart</code>, <code>ProcRename</code>, <code>ProcExit</code></td>
+<td><code>procs</code>, running ones plus the last 16 that ended</td>
+</tr>
+</tbody>
+</table>
+<p>Notifications and processes are in the metalog, not in window shards, because they are the daemon's to order and need no lease. Notifications follow the same rule as settings: a tool's notifications go when it detaches.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L510-L556">crates/apex-core/src/entry.rs:510-556</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L400-L429">crates/apex-core/src/state.rs:400-429</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L797-L900">crates/apex-core/src/state.rs:797-900</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L138-L145">DESIGN.md:138-145</a></p>
+<h2 id="design-and-code-what-differs">Design and code: what differs</h2>
+<p>DESIGN.md describes intent, and parts of this model are only partly built. In summary:</p>
+<table>
+<thead>
+<tr>
+<th>DESIGN.md says</th>
+<th>The code does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A <code>registry</code> shard lists sessions</td>
+<td>The daemon keeps a <code>sessions</code> map. There is no registry shard.</td>
+</tr>
+<tr>
+<td>Connections resume under the same attachment</td>
+<td>A dropped connection detaches. Reconnecting gives a new attachment.</td>
+</tr>
+<tr>
+<td>Transfer first, reclaim after a deadline</td>
+<td>A new UI reclaims and grants at once in <code>hello</code></td>
+</tr>
+<tr>
+<td>Fenced tails are recovered into <code>+Recovered</code></td>
+<td>Not implemented</td>
+</tr>
+<tr>
+<td>Tools may take buffer leases with a TTL</td>
+<td>Tools only propose</td>
+</tr>
+<tr>
+<td>Nodes compare hashes at attach and periodically</td>
+<td><code>State::hash</code> is used only in tests and benchmarks</td>
+</tr>
+</tbody>
+</table>
+<p>Everything else on this page — shards with fenced logs, pinned versus leasable shards, epoch-bumping grants and reclaims, the client mirror that sequences ahead of the daemon, views sequenced with edits, and attachment-prefixed ids — is what the code does today.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L122-L145">DESIGN.md:122-145</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L193-L216">DESIGN.md:193-216</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L311-L365">DESIGN.md:311-365</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L518-L642">crates/apex-server/src/daemon.rs:518-642</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="overview.html">apex Overview</a></span><span class="next">Next: <a href="core-state.html">Entries, State and Apply</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top current"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+<ul class="sections">
+<li class="l2"><a href="#sessions-attachments-and-connections">Sessions, attachments and connections</a></li>
+<li class="l2"><a href="#shards">Shards</a></li>
+<li class="l3"><a href="#why-split-the-state-into-shards">Why split the state into shards</a></li>
+<li class="l3"><a href="#why-views-live-in-the-buffer-shard">Why views live in the buffer shard</a></li>
+<li class="l2"><a href="#the-replicated-state-machine">The replicated state machine</a></li>
+<li class="l2"><a href="#the-log-store-authority-and-mirror">The log store: authority and mirror</a></li>
+<li class="l2"><a href="#leaders-and-followers-in-a-running-session">Leaders and followers in a running session</a></li>
+<li class="l2"><a href="#leases-fence-epochs-transfer-and-reclaim">Leases, fence epochs, transfer and reclaim</a></li>
+<li class="l3"><a href="#single-player-mode-as-built">Single-player mode as built</a></li>
+<li class="l2"><a href="#creating-shards-from-a-client">Creating shards from a client</a></li>
+<li class="l2"><a href="#ids-without-coordination">Ids without coordination</a></li>
+<li class="l2"><a href="#the-metalog">The metalog</a></li>
+<li class="l2"><a href="#design-and-code-what-differs">Design and code: what differs</a></li>
+</ul>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

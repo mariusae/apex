@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preview, Web and Diff Tools · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Preview, Web and Diff Tools</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs">crates/apex-diff/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs">crates/apex-tool-bridge/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/apex-markdown.css">crates/apex-tool-preview/src/apex-markdown.css</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs">crates/apex-tool-preview/src/converters.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs">crates/apex-tool-preview/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/markdown.rs">crates/apex-tool-preview/src/markdown.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs">crates/apex-tool-web/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/tests/web.rs">crates/apex-tool-web/tests/web.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+</ul>
+</details>
+<p>Three bundled programs show HTML in apex's Page windows. None of them gets special treatment. Each attaches to a session as a tool, reads state from its own replica and changes it through <a href="proposals.html">proposals</a>, just as a third-party tool built on the <a href="tool-sdk.html">apex-tool SDK</a> would:</p>
+<ul>
+<li><strong><code>apex tool preview</code></strong> pipes a file's buffer through a converter and writes the HTML into a page beside the file. It re-renders as the buffer changes and scrolls the page to follow the file's caret. The converter for an extension is named by a <code>Preview.EXT</code> setting; Markdown uses <code>apex md</code> by default.</li>
+<li><strong><code>apex tool web</code></strong> answers the <code>Web</code> and <code>Newweb</code> verbs by opening pages at URLs. It owns those pages and keeps each one's Back/Fwd history itself, because the log only records where a page currently is.</li>
+<li><strong>apex-diff</strong> is a library. It lays out a unified diff side by side, and every line number links into the file. It is reached through <code>apex diff</code>, the SDK's <code>Tool::diff</code> and the JSON bridge's <code>diff</code> command.</li>
+</ul>
+<p>Preview and Web are not resident by default. The session's default rules name them with a <code>start</code> command, so the daemon launches each one the first time its verb is used. Each exits again after a minute with nothing to do. How Page windows, <code>apexfile://</code> and the I/O plane work is covered on <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</p>
+<pre><code class="language-mermaid">flowchart LR
+  U[&quot;B2 Preview / Web / Newweb&quot;] --&gt; D[&quot;apexd plumb walk&quot;]
+  D --&gt;|&quot;tool attached&quot;| T[&quot;tool connection&quot;]
+  D --&gt;|&quot;not attached, rule has start&quot;| S[&quot;Server::start_tool&quot;]
+  S --&gt; P[&quot;apex tool preview / apex tool web&quot;]
+  P --&gt;|&quot;attaches, held plumbs replayed&quot;| T
+  P --&gt;|&quot;Proposals&quot;| L[&quot;leader of the shards&quot;]
+  CLI[&quot;apex diff / bridge diff&quot;] --&gt; TD[&quot;apex_tool::Tool::diff&quot;]
+  TD --&gt; AD[&quot;apex_diff::render&quot;]
+  TD --&gt;|&quot;new_page / replace&quot;| L
+</code></pre>
+<h2 id="starting-on-first-use-and-stopping-when-idle">Starting on first use and stopping when idle</h2>
+<p><code>Server::install_default_rules</code> sets up three tool rules at priority −10. All three have <code>start: Some(&quot;apex tool NAME&quot;)</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th><code>file</code> predicate</th>
+<th><code>kind</code></th>
+<th>unlisted</th>
+<th>Tool</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Preview</code></td>
+<td><code>PREVIEWED</code> = <code>(?i)\.(md|markdown|html?|svg)$</code></td>
+<td><code>File</code></td>
+<td>no</td>
+<td><code>preview</code></td>
+</tr>
+<tr>
+<td><code>Web</code></td>
+<td>—</td>
+<td>—</td>
+<td>yes</td>
+<td><code>web</code></td>
+</tr>
+<tr>
+<td><code>Newweb</code></td>
+<td>—</td>
+<td>—</td>
+<td>yes</td>
+<td><code>web</code></td>
+</tr>
+</tbody>
+</table>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1298-L1322">crates/apex-server/src/lib.rs:1298-1322</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L101-L104">lib.rs:101-104</a>). &quot;Unlisted&quot; means <code>Web</code> and <code>Newweb</code> work anywhere they are B2'd, but they do not clutter every window's B4 tools menu.</p>
+<p>When the plumb walk reaches a <code>RuleAction::Tool</code> rule, the daemon looks for a connection whose attachment has that tool's name. If there is none and the rule has a <code>start</code>, it calls <code>hold</code>. The plumb is queued under <code>(session, tool)</code>, and on the first queued item the daemon runs <code>Server::start_tool</code> and arms a timer of <code>START_WAIT</code> (10 s). <code>start_tool</code> replaces a leading <code>apex </code> with the daemon's own <code>apex</code> executable. It then runs the command as a session process named after the tool, in the session's directory, with errors going to the <code>+Errors</code> window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1467-L1486">daemon.rs:1467-1486</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1393-L1408">daemon.rs:1393-1408</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1181-L1191">lib.rs:1181-1191</a>).</p>
+<p>When an attachment with that name sends its Hello, the daemon replays everything held for it, in order (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L626-L634">daemon.rs:626-634</a>). If the timer fires first, <code>start_failed</code> lets each held plumb walk on to the next rule (&quot;tool … did not start&quot;). Held I/O streams get a 503 instead (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1410-L1425">daemon.rs:1410-1425</a>). Requests for <code>tool://</code> pages use the same mechanism through <code>io_relay</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1254-L1267">daemon.rs:1254-1267</a>).</p>
+<p>Both tools exit on their own using the same idle-timer pattern. The resident Preview counts the previews it has open in an <code>AtomicUsize</code>, and Web watches its <code>pages</code> map. When the count reaches zero, <code>idle_since</code> is set. Once it is older than <code>IDLE</code> (60 s), the loop returns. Any activity clears the timer. The rule is still in the session's table, so the next use starts the tool again.</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+  [*] --&gt; NotRunning
+  NotRunning --&gt; Starting: &quot;verb used, rule has start&quot;
+  Starting --&gt; Running: &quot;tool attaches, held plumbs replayed&quot;
+  Starting --&gt; NotRunning: &quot;START_WAIT passes, plumb walks on&quot;
+  Running --&gt; Idle: &quot;no previews or pages&quot;
+  Idle --&gt; Running: &quot;verb used&quot;
+  Idle --&gt; NotRunning: &quot;IDLE (60 s) passes, tool exits&quot;
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1298-L1322">crates/apex-server/src/lib.rs:1298-1322</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1181-L1191">crates/apex-server/src/lib.rs:1181-1191</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L169">crates/apex-server/src/daemon.rs:169</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1393-L1425">crates/apex-server/src/daemon.rs:1393-1425</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L336-L348">crates/apex-tool-preview/src/lib.rs:336-348</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L116-L146">crates/apex-tool-web/src/lib.rs:116-146</a></p>
+<h2 id="preview">Preview</h2>
+<h3 id="two-entry-points">Two entry points</h3>
+<p><code>apex tool preview</code> has two modes, chosen in <code>tool_cmd</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1066-L1073">crates/apex-cli/src/main.rs:1066-1073</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Function</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex tool preview</code></td>
+<td><code>run_resident</code></td>
+<td>The resident tool the default rule starts. It attaches as <code>preview</code>, answers <code>Preview</code> plumbs and runs one file preview per use, each on its own thread.</td>
+</tr>
+<tr>
+<td><code>apex tool preview FILE</code></td>
+<td><code>run</code></td>
+<td>Previews one file. It attaches as <code>preview-file</code>, announces itself as <code>preview</code>, and lives as long as both windows do.</td>
+</tr>
+<tr>
+<td><code>apex preview FILE</code></td>
+<td><code>preview_cmd</code></td>
+<td>Makes the path absolute and proposes <code>Exec</code> of <code>apex tool preview FILE</code> in the top row, so the preview runs on the host as a session command (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1080-L1089">main.rs:1080-1089</a>).</td>
+</tr>
+</tbody>
+</table>
+<p>The resident tool gets a <code>Plumb</code> event and finds the path of the window it came from. It declines the plumb (<code>answer(&amp;p, false)</code>, so the next rule is tried) when there is no path or <code>converters::converter</code> finds nothing for the extension. Otherwise it accepts the plumb and spawns a thread that calls <code>run(socket, session, file)</code>. The single-file run uses its own attachment name for a reason. The Preview rules route to the attachment named <code>preview</code>, and a plumb has to reach that one alone (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L44-L46">lib.rs:44-46</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L304-L345">lib.rs:304-345</a>).</p>
+<h3 id="converters-and-previewext">Converters and <code>Preview.EXT</code></h3>
+<p>A converter is any shell command that reads the source on stdin and writes HTML on stdout. <code>converters::converter(meta, ext)</code> looks for the setting key <code>Preview.&lt;ext lowercased&gt;</code> in this order:</p>
+<ol>
+<li>the session's settings (those owned by <code>SERVER</code>);</li>
+<li>any attachment's settings, such as one an attach script set;</li>
+<li>the built-in <code>DEFAULTS</code>.</li>
+</ol>
+<p>A setting that is empty or all whitespace switches the extension off and returns <code>None</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs#L18-L27">converters.rs:18-27</a>).</p>
+<pre><code class="language-rust">pub const DEFAULTS: &amp;[(&amp;str, &amp;str)] = &amp;[(&quot;md&quot;, &quot;apex md&quot;), (&quot;markdown&quot;, &quot;apex md&quot;),
+    (&quot;html&quot;, &quot;cat&quot;), (&quot;htm&quot;, &quot;cat&quot;), (&quot;svg&quot;, &quot;cat&quot;)];
+</code></pre>
+<p><code>exts(meta)</code> returns the default extensions plus every extension named by a <code>Preview.*</code> key, minus those switched off. This is the set of extensions Preview should be offered on (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs#L30-L37">converters.rs:30-37</a>). See <a href="configuration.html">Configuration</a> for <code>apex set</code>.</p>
+<h3 id="lasting-rules-for-extra-extensions">Lasting rules for extra extensions</h3>
+<p>The default rule only matches <code>PREVIEWED</code>. Before each event, the resident tool calls <code>lasting_rules</code> to cover any other extension a setting adds. For each wanted extension that is not in <code>DEFAULTS</code>, it checks whether a Preview rule already exists. It recovers each existing rule's extension from its <code>file</code> pattern with <code>ext_of_pattern</code>, which only understands the exact form <code>pattern_of_ext</code> writes, <code>(?i)\.EXT$</code>.</p>
+<p>If no rule exists, it installs one with <code>offer_lasting</code>: <code>Rule::verb(&quot;Preview&quot;).file(pattern).kind(File).priority(-10).start(&quot;apex tool preview&quot;)</code>. <code>offer_lasting</code> makes the rule the <strong>session's</strong> rather than the tool's (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1081-L1086">crates/apex-tool/src/lib.rs:1081-1086</a>). That gives two properties:</p>
+<ul>
+<li>The rule survives the tool's idle exit, so it can start the tool again.</li>
+<li>The rule also survives removal of the setting. In that case Preview simply declines the file. Removing the rule is left to <code>apex plumb rule rm</code>, because no tool removes a rule it does not own.</li>
+</ul>
+<p>The <code>offered</code> set prevents asking twice before the log has caught up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L350-L383">lib.rs:350-383</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs#L39-L75">converters.rs:39-75</a>).</p>
+<h3 id="setting-up-a-preview">Setting up a preview</h3>
+<p><code>run</code> works out the converter first. If there is none, it fails with a message that tells the user how to set one: <code>apex set Preview.EXT CMD</code>. <code>Tool::start</code> then does the following (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L130-L176">lib.rs:130-176</a>):</p>
+<ol>
+<li><strong>Find the source window.</strong> It looks for a window at the file's path whose kind is not <code>Page</code>. If none is open, it proposes <code>Goto</code> and waits up to <code>TIMEOUT</code> (10 s) for the window to appear in the replica.</li>
+<li><strong>Defer to a live preview.</strong> If a Page window already exists at that path and is <code>live</code> (another tool process is behind it), it proposes <code>Goto</code> to show that page and returns <code>Err(&quot;shown&quot;)</code>. Both the CLI and the resident thread treat that error as success.</li>
+<li><strong>Open the page beside the source.</strong> It uses the column after the source's column, or the source's own column if it is the last. The page comes from <code>Proposal::open_html(col, &amp;file, &quot;&quot;, None)</code>, a Page window whose document is an HTML buffer named after the file. A dead preview left from an earlier run is reused.</li>
+<li><strong>Mark the page live.</strong> It proposes <code>Live { window: page, by: Some(me) }</code>, then does the first render.</li>
+</ol>
+<h3 id="the-main-loop-render-on-settle-follow-the-caret">The main loop: render on settle, follow the caret</h3>
+<p><code>step</code> takes one server message and passes it through <code>before</code> before <code>Remote::handle</code> applies it. <code>before</code> notices <code>Entries</code> for the source buffer's shard and sets <code>dirty</code> and <code>last_edit</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L83-L93">lib.rs:83-93</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L218-L227">lib.rs:218-227</a>).</p>
+<p>The text comes from the replicated buffer, not the file, so unsaved edits show in the preview. Each pass of <code>main_loop</code> does the following (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L178-L202">lib.rs:178-202</a>):</p>
+<ul>
+<li>If either window is gone, it clears the page's <code>Live</code> mark (if the page is still there) and returns.</li>
+<li>If the source is dirty and has been quiet for <code>SETTLE</code> (250 ms), it renders.</li>
+<li>It calls <code>follow</code>, which reads the source body's selection, converts <code>q0</code> to a 1-based line and proposes <code>PageScroll { scroll: Some(Scroll::Line(line)) }</code> when the line has changed. The scroll is a proposal, so every client showing the page scrolls with it. The page finds the line through the <code>data-line</code> markers the converter writes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L204-L216">lib.rs:204-216</a>).</li>
+</ul>
+<pre><code class="language-mermaid">sequenceDiagram
+  participant Src as &quot;source buffer (log)&quot;
+  participant P as &quot;preview-file tool&quot;
+  participant C as &quot;converter (sh -c)&quot;
+  participant L as &quot;leader&quot;
+  Src-&gt;&gt;P: &quot;Entries for source shard&quot;
+  Note over P: &quot;dirty = true, wait SETTLE&quot;
+  P-&gt;&gt;C: &quot;buffer text on stdin&quot;
+  C--&gt;&gt;P: &quot;HTML on stdout&quot;
+  P-&gt;&gt;L: &quot;ReplaceRange(page_buf, version, q0..q1, middle)&quot;
+  L--&gt;&gt;P: &quot;Applied&quot;
+  P-&gt;&gt;L: &quot;PageScroll(Line(n)) when caret line changes&quot;
+</code></pre>
+<h3 id="rendering-as-a-minimal-edit">Rendering as a minimal edit</h3>
+<p><code>convert</code> runs the converter through <code>apex_server::command_shell() -c CONVERTER</code>, in the file's directory. The text is written to stdin on a separate thread so that a large document cannot deadlock against stdout. A non-zero exit becomes an error carrying the converter's stderr (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L274-L298">lib.rs:274-298</a>).</p>
+<p><code>render</code> compares the new HTML with <code>rendered</code>, the last HTML it wrote. If the two are equal, it does nothing. Otherwise it computes the common prefix and suffix in chars and proposes a single <code>ReplaceRange</code> of the changed middle, against the page buffer's current <code>version</code>. If that proposal is refused, it assumes someone else edited the page and replaces the whole buffer instead. It makes up to five attempts before giving up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L240-L271">lib.rs:240-271</a>).</p>
+<p>Errors never stop the preview. <code>render_or_say</code> reports a failure through <code>Proposal::Errors</code> into the errors window for the file's directory, which is diagnostic and shows as a toast. The page keeps its last good render, and the next edit triggers another try (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L229-L238">lib.rs:229-238</a>).</p>
+<p>Setting the environment variable <code>APEX_PREVIEW_DEBUG</code> traces start-up to stderr.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L1-L383">crates/apex-tool-preview/src/lib.rs:1-383</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs#L1-L75">crates/apex-tool-preview/src/converters.rs:1-75</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1055-L1089">crates/apex-cli/src/main.rs:1055-1089</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L51-L55">crates/apex-server/src/proposal.rs:51-55</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L104-L106">crates/apex-server/src/proposal.rs:104-106</a></p>
+<h2 id="apex-md-the-markdown-converter"><code>apex md</code>: the Markdown converter</h2>
+<p><code>apex md</code> reads Markdown on stdin and writes <code>markdown::markdown_page(text)</code> on stdout (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1112-L1118">main.rs:1112-1118</a>). <code>markdown_page</code> uses pulldown-cmark with tables, footnotes, strikethrough, task lists and heading attributes enabled. It then rewrites the event stream in three ways (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/markdown.rs#L33-L76">markdown.rs:33-76</a>):</p>
+<ul>
+<li><strong>Line markers.</strong> Before the start of every paragraph, heading, block quote, code block, list item, table or HTML block, it inserts <code>&lt;span class=&quot;apex-line&quot; data-line=&quot;N&quot;&gt;&lt;/span&gt;</code>. <code>N</code> is the 1-based source line. The source offset is mapped to a line by binary search over a table of line starts. Preview's caret following depends on these markers.</li>
+<li><strong>Front matter.</strong> <code>front_matter_len</code> measures a leading <code>---</code> (YAML) or <code>+++</code> (TOML) block, and parsing starts after it. The skipped length is added back when lines are numbered, so the markers still match the file. An unclosed block, or a fence line with text after it, is not front matter (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/markdown.rs#L8-L30">markdown.rs:8-30</a>).</li>
+<li><strong>Mermaid.</strong> A fenced block whose info string starts with <code>mermaid</code> becomes <code>&lt;pre class=&quot;mermaid&quot;&gt;…&lt;/pre&gt;</code> with its text escaped, and the client draws it as a diagram. Other fences stay as <code>&lt;pre&gt;&lt;code class=&quot;language-…&quot;&gt;</code>.</li>
+</ul>
+<p><code>heading_ids</code> gives each heading without an explicit <code>{#id}</code> a GitHub-style slug: lowercased, spaces turned into <code>-</code>, only alphanumerics, <code>-</code> and <code>_</code> kept. Repeated slugs get <code>-1</code>, <code>-2</code> and so on, so <code>#anchor</code> links work (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/markdown.rs#L78-L119">markdown.rs:78-119</a>).</p>
+<p>The page embeds <code>apex-markdown.css</code>, the editor's own look. Colours are <code>--apex-*</code> custom properties with acme's light palette as fallbacks (<code>--apex-bg: #FFFFEA</code>, and so on). The client overrides them with the theme (<a href="themes-and-fonts.html">Themes, Fonts and Colour</a>). Fonts come from <code>--apex-font</code> and <code>--apex-mono</code>, falling back to Lucida Grande and Menlo. Links are drawn as pale rounded chips, and those leading off the host (<code>http:</code>, <code>https:</code>) get a link glyph through a CSS mask (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/apex-markdown.css#L1-L40">apex-markdown.css:1-40</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/markdown.rs#L1-L158">crates/apex-tool-preview/src/markdown.rs:1-158</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/apex-markdown.css#L1-L40">crates/apex-tool-preview/src/apex-markdown.css:1-40</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1112-L1118">crates/apex-cli/src/main.rs:1112-1118</a></p>
+<h2 id="web">Web</h2>
+<h3 id="rules-and-ownership">Rules and ownership</h3>
+<p><code>apex_tool_web::run</code> attaches as <code>web</code> and calls <code>handle_pages</code>. That sets <code>answers_navigation</code> and <code>wants_window_events</code> on the link, so links followed in the pages it owns come to it as <code>Event::Navigate</code>, and page events come as <code>Event::Page</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L561-L568">crates/apex-tool/src/lib.rs:561-568</a>). It then offers these rules:</p>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>Rule</th>
+<th>Answered by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Web</code>, <code>Newweb</code></td>
+<td><code>Rule::verb(v).unlisted()</code>, but only if the session's rules don't already send <code>v</code> to <code>web</code> (the defaults do)</td>
+<td><code>verb</code>: open a page</td>
+</tr>
+<tr>
+<td><code>Back</code>, <code>Fwd</code></td>
+<td><code>owner(&quot;^web$&quot;)</code>, <code>kind(Page)</code></td>
+<td>step the page's <code>History</code> and <code>navigate</code></td>
+</tr>
+<tr>
+<td><code>Get</code></td>
+<td><code>owner(&quot;^web$&quot;)</code>, <code>kind(Page)</code></td>
+<td><code>reload</code> (a <code>Proposal::Reload</code> every client follows)</td>
+</tr>
+</tbody>
+</table>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L94-L113">crates/apex-tool-web/src/lib.rs:94-113</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L165-L207">lib.rs:165-207</a>)</p>
+<p>Because the <code>Get</code> rule is restricted to pages owned by <code>web</code>, B2 on <code>Get</code> in a web page's tag reloads it. In a text window, <code>Get</code> keeps its built-in meaning.</p>
+<p>On every pass of the loop, <code>adopt</code> claims each Page window whose body is <code>Body::Page(Source::Url)</code> and which has no owner. It uses <code>set_owner(w, true)</code> and starts that page's history at its current URL. In practice this picks up pages left behind by an earlier run of the tool, and pages opened another way, for example with <code>Proposal::open_url</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L148-L163">lib.rs:148-163</a>).</p>
+<h3 id="opening-a-page">Opening a page</h3>
+<p>For <code>Web</code>, the target is the argument text. If there is no argument, it is the selection in the window the verb ran in, read with <code>t.read(w)</code> and sliced at <code>p.at</code>. <code>Newweb</code> requires an argument and otherwise writes &quot;Newweb needs a URL&quot; to the errors window. An empty target from <code>Web</code> opens a blank page whose address the user can type.</p>
+<p><code>web_url(target, dir)</code> turns the target into an address (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L64-L80">lib.rs:64-80</a>):</p>
+<ul>
+<li>a <code>file://</code> URL (with an optional <code>localhost</code>) becomes <code>apexfile://PATH</code>;</li>
+<li>anything <code>apex_core::is_url</code> accepts is used unchanged;</li>
+<li>an absolute path becomes <code>apexfile://PATH</code>;</li>
+<li>a relative path is resolved against the plumb's <code>dir</code>.</li>
+</ul>
+<p><code>Tool::new_web_page</code> proposes <code>open_url</code> in the column of the originating window (else the last column), takes ownership of the page and remembers it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L684-L695">crates/apex-tool/src/lib.rs:684-695</a>).</p>
+<h3 id="history">History</h3>
+<p>The log holds only a page's current location, so history is the tool's own state, a <code>BTreeMap&lt;WindowId, History&gt;</code>:</p>
+<pre><code class="language-rust">pub struct History {
+    pub places: Vec&lt;String&gt;,
+    pub at: usize,
+    stepping: Option&lt;String&gt;,
+}
+</code></pre>
+<ul>
+<li><code>Event::Page { event: PageEvent::Navigated { url } }</code> calls <code>arrived(url)</code>. If the URL is the target of the tool's own Back/Fwd (<code>stepping</code>), arriving there completes the step and adds nothing. A re-arrival at the current place is ignored. Anything else drops the places ahead of <code>at</code>, as a browser does, and pushes the new URL.</li>
+<li><code>step(-1 | +1)</code> moves <code>at</code>, records <code>stepping</code> and returns the URL to navigate to. It returns <code>None</code> at either end.</li>
+<li><code>Event::Deleted</code> drops a window's history.</li>
+</ul>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L22-L62">lib.rs:22-62</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L126-L142">lib.rs:126-142</a>)</p>
+<h3 id="followed-links">Followed links</h3>
+<p><code>where_to(url)</code> answers each <code>Navigate</code> event. For <code>http://</code>, <code>https://</code>, <code>apexfile://</code>, <code>file://</code>, <code>tool://</code> and <code>about:</code> it answers <code>NavAnswer::Allow</code>: the link goes where it points, including the host's own files. Any other scheme, such as <code>mailto:</code>, gets <code>NavAnswer::Default</code>, which leaves it to the client's usual handling (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L82-L91">lib.rs:82-91</a>).</p>
+<h3 id="tests">Tests</h3>
+<p>The unit tests cover <code>History</code>, <code>web_url</code> and <code>where_to</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L209-L245">lib.rs:209-245</a>). <code>tests/web.rs</code> runs an in-process <code>Daemon</code> with the tool attached and a client <code>Remote</code>. It checks three things:</p>
+<ul>
+<li><code>Web</code> with a URL, <code>Web</code> on a selected relative path (which becomes <code>apexfile://DIR/doc.html</code>) and <code>Newweb</code> all open owned pages.</li>
+<li>Back, Fwd and Get work. The test simulates the client's <code>WindowEvent::Navigated</code> and checks that <code>reload</code> increments.</li>
+<li>A page opened with <code>open_url</code> and no owner is adopted by the tool.</li>
+</ul>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/tests/web.rs#L56-L110">crates/apex-tool-web/tests/web.rs:56-110</a>)</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L1-L245">crates/apex-tool-web/src/lib.rs:1-245</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/tests/web.rs#L1-L110">crates/apex-tool-web/tests/web.rs:1-110</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L561-L589">crates/apex-tool/src/lib.rs:561-589</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L684-L707">crates/apex-tool/src/lib.rs:684-707</a></p>
+<h2 id="apex-diff-unified-diffs-side-by-side">apex-diff: unified diffs side by side</h2>
+<p>apex-diff is a pure library and never touches the filesystem. Paths are resolved against a base directory the caller provides. The entry point is <code>render(text, base) = page(&amp;parse(text), base)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L522-L525">crates/apex-diff/src/lib.rs:522-525</a>).</p>
+<h3 id="where-it-is-used">Where it is used</h3>
+<p><code>apex_tool::Tool::diff(text, dir)</code> renders the diff with <code>dir</code> as the base, defaulting to the tool's working directory. It then looks for an existing Page window whose path is <code>DIR/</code> and whose label is <code>Diff</code>:</p>
+<ul>
+<li>If one exists, it overwrites the page's text and proposes <code>Show</code> to bring it into view.</li>
+<li>Otherwise it makes a new page with <code>new_page</code>.</li>
+</ul>
+<p>Either way, if the tag lacks <code>Next</code>, it writes <code>Prev Next</code> at the front of the tag, keeping whatever the user wrote after it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L709-L737">crates/apex-tool/src/lib.rs:709-737</a>).</p>
+<p><code>Tool::diff</code> has two callers:</p>
+<ul>
+<li><code>apex diff [FILE|-] [-C DIR]</code> reads the diff from the file or stdin, attaches as <code>diff</code> and calls it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1091-L1110">main.rs:1091-1110</a>).</li>
+<li>The JSON bridge's <code>diff</code> command takes <code>text</code> and <code>dir</code> and calls it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L235-L239">crates/apex-tool-bridge/src/lib.rs:235-239</a>). See <a href="bridge-and-go.html">JSON Bridge and Go SDK</a>.</li>
+</ul>
+<h3 id="parsing">Parsing</h3>
+<pre><code class="language-mermaid">classDiagram
+  class File {
+    old: Option~String~
+    new: Option~String~
+    notes: Vec~String~
+    hunks: Vec~Hunk~
+    name()
+    counts()
+  }
+  class Hunk {
+    old_start: usize
+    new_start: usize
+    section: String
+    lines: Vec~Line~
+  }
+  class Line {
+    Same
+    Del
+    Add
+    NoNewline
+  }
+  class Row {
+    left: Option
+    right: Option
+    kind: Kind
+    at: usize
+  }
+  File --&gt; Hunk
+  Hunk --&gt; Line
+  Hunk ..&gt; Row : &quot;rows()&quot;
+</code></pre>
+<p><code>parse</code> walks the diff line by line (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L79-L192">lib.rs:79-192</a>):</p>
+<ul>
+<li><strong>Hunk length.</strong> A hunk header <code>@@ -a,b +c,d @@ section</code> sets counters for the old-side and new-side lines still to come. A missing length counts as 1 (<code>hunk_header</code>). Until both counters reach zero, each line is a hunk line: <code> </code> (or an empty line, which is context whose leading space an editor stripped), <code>-</code>, <code>+</code> or <code>\</code>. Because of this, a removed line that happens to read <code>--- x</code> is never mistaken for the next file's header. Any other line ends the hunk early.</li>
+<li><strong>File start.</strong> A <code>diff --git</code> line starts a git file. It provides fallback names (<code>split_git_names</code> splits at <code> b/</code>) for entries that have no <code>---</code>/<code>+++</code>, such as mode changes, renames and binary files. Outside git, a <code>---</code> line immediately followed by a <code>+++</code> line starts a file.</li>
+<li><strong>Name cleaning.</strong> <code>clean</code> drops a tab-separated timestamp, undoes git's C-style quoting (<code>unquote</code> handles <code>\n</code>, <code>\t</code> and octal UTF-8 bytes), strips <code>a/</code> and <code>b/</code> in git diffs, and maps <code>/dev/null</code> to <code>None</code>.</li>
+<li><strong>Notes.</strong> Before a file's first hunk, lines such as <code>new file mode</code>, <code>deleted file mode</code>, <code>rename from/to</code>, <code>similarity index</code> and <code>Binary files</code> are recorded as notes. <code>new file mode</code> clears <code>old</code>, and <code>deleted file mode</code> clears <code>new</code>.</li>
+<li><strong>Skipped text.</strong> Anything before the first file, such as a commit message or <code>git show</code>'s header, is ignored.</li>
+</ul>
+<h3 id="pairing-rows">Pairing rows</h3>
+<p><code>rows(hunk)</code> builds the side-by-side table (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L293-L341">lib.rs:293-341</a>):</p>
+<ul>
+<li>A context line becomes a <code>Same</code> row, numbered on both sides.</li>
+<li>A run of <code>Del</code> lines followed by a run of <code>Add</code> lines is paired off row by row as <code>Changed</code>. Whichever run is longer leaves the rest of its lines as <code>Removed</code> or <code>Added</code>, against an empty side.</li>
+<li>Each row's <code>at</code> is the line of the <strong>new</strong> file that its links open. A removed line points to where the new file carries on (<code>n + adds.len()</code>).</li>
+</ul>
+<h3 id="the-page">The page</h3>
+<p><code>page(files, base)</code> produces a self-contained HTML document (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L376-L444">lib.rs:376-444</a>). It starts with a summary of files changed and lines added and removed. Each file then gets:</p>
+<ul>
+<li>a sticky <code>&lt;h2&gt;</code> heading with the name, <code>from OLD</code> for a rename, its +/− counts and any notes;</li>
+<li>two tables built from the same <code>Cells</code>: <code>split</code>, with old and new side by side (<code>split_rows</code>), and <code>inline</code>, with removed lines then added lines as <code>diff -u</code> shows them (<code>inline_rows</code>).</li>
+</ul>
+<p>The tables share their cells, and CSS picks which one to show. Below 1100 px of page width, <code>split</code> is hidden and <code>inline</code> is shown, so a page narrowed by its column switches layout without a re-render.</p>
+<p>Every line number, and each file name (at the file's first hunk), links to <code>file_url(base, path, line)</code>, which has the form <code>apexfile://localhost/ABS/PATH?line=N</code>. Bytes outside <code>[A-Za-z0-9/-._~]</code> are percent-encoded. The scheme is <code>apexfile://</code> and not <code>file://</code> because WebKit refuses navigation from a buffer page to a <code>file:</code> URL before apex ever sees it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L343-L360">lib.rs:343-360</a>). Deleted files have no links. The code text itself is not a link, so clicking in it places nothing and dragging selects text.</p>
+<p>The stylesheet (<code>STYLE</code>) uses <code>--apex-*</code> theme variables, falling back to acme's light colours. Added lines get a pale green tint (<code>#D8F0DC</code>) and removed lines a pale orange (<code>#FFECC8</code>). Orange was chosen over Gerrit's red because red and green run together under deuteranopia (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L1-L18">lib.rs:1-18</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L527-L573">lib.rs:527-573</a>).</p>
+<h3 id="prev-and-next">Prev and Next</h3>
+<p>The page declares <code>&lt;meta name=&quot;apex-verbs&quot; content=&quot;Prev Next&quot;&gt;</code> and defines <code>window.apexVerb</code>. B2 on Prev or Next in the tag therefore runs in the page's script. A &quot;chunk&quot; is a run of consecutive visible <code>tr.chg</code> rows.</p>
+<p>Each step normally moves on from the chunk the previous step landed on. If the user has scrolled that chunk out of view, Next goes to the first chunk at or below the top of the view, and Prev goes to the last chunk above it. <code>land</code> marks the chunk with a <code>cursor</code> bar and scrolls it to just below the file's sticky header, leaving up to ten lines of lead-in (or a third of the window) above it. A chunk already in that band is not scrolled (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L575-L642">lib.rs:575-642</a>).</p>
+<h3 id="tests-1">Tests</h3>
+<p>The unit tests check:</p>
+<ul>
+<li>parsing a git diff that includes a commit message, a new file and a deleted file with <code>\ No newline</code>;</li>
+<li>plain <code>diff -u</code> with timestamps, and a <code>--- x</code> line inside a hunk;</li>
+<li>row pairing and <code>at</code> values;</li>
+<li>tint classes on each kind of row;</li>
+<li>that both layouts and the media query are present;</li>
+<li>the Prev/Next markers;</li>
+<li>link targets, HTML escaping and URL encoding.</li>
+</ul>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L644-L801">lib.rs:644-801</a>)</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L1-L801">crates/apex-diff/src/lib.rs:1-801</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L709-L737">crates/apex-tool/src/lib.rs:709-737</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1091-L1110">crates/apex-cli/src/main.rs:1091-1110</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L235-L239">crates/apex-tool-bridge/src/lib.rs:235-239</a></p>
+<h2 id="how-the-three-compare">How the three compare</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Preview</th>
+<th>Web</th>
+<th>Diff</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Page source</td>
+<td>buffer of HTML (<code>open_html</code>) named after the file</td>
+<td>URL (<code>open_url</code>) fetched through the host</td>
+<td>buffer of HTML (<code>new_page</code>) at <code>DIR/</code>, labelled <code>Diff</code></td>
+</tr>
+<tr>
+<td>Process</td>
+<td>resident <code>preview</code>, plus a <code>preview-file</code> attachment per preview</td>
+<td>resident <code>web</code></td>
+<td>none: whoever calls <code>Tool::diff</code></td>
+</tr>
+<tr>
+<td>Started by</td>
+<td>default rule <code>start</code>, or lasting rules for extra extensions</td>
+<td>default rule <code>start</code></td>
+<td>the caller</td>
+</tr>
+<tr>
+<td>Keeps state</td>
+<td>last HTML, followed line</td>
+<td>per-page <code>History</code></td>
+<td>none (later diffs overwrite the page)</td>
+</tr>
+<tr>
+<td>Page's own words</td>
+<td>—</td>
+<td><code>Back</code>, <code>Fwd</code>, <code>Get</code> (tool rules)</td>
+<td><code>Prev</code>, <code>Next</code> (<code>apexVerb</code> in the page script)</td>
+</tr>
+<tr>
+<td>Ends</td>
+<td>when the source or page window goes; resident after 60 s idle</td>
+<td>after 60 s with no pages</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/lib.rs#L130-L176">crates/apex-tool-preview/src/lib.rs:130-176</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-web/src/lib.rs#L94-L146">crates/apex-tool-web/src/lib.rs:94-146</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L684-L737">crates/apex-tool/src/lib.rs:684-737</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-diff/src/lib.rs#L380-L444">crates/apex-diff/src/lib.rs:380-444</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="tool-win-and-lsp.html">win and Language Servers</a></span><span class="next">Next: <a href="agent-tools.html">Coding Agents: apex tool agent and apex-acp</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child current"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+<ul class="sections">
+<li class="l2"><a href="#starting-on-first-use-and-stopping-when-idle">Starting on first use and stopping when idle</a></li>
+<li class="l2"><a href="#preview">Preview</a></li>
+<li class="l3"><a href="#two-entry-points">Two entry points</a></li>
+<li class="l3"><a href="#converters-and-previewext">Converters and Preview.EXT</a></li>
+<li class="l3"><a href="#lasting-rules-for-extra-extensions">Lasting rules for extra extensions</a></li>
+<li class="l3"><a href="#setting-up-a-preview">Setting up a preview</a></li>
+<li class="l3"><a href="#the-main-loop-render-on-settle-follow-the-caret">The main loop: render on settle, follow the caret</a></li>
+<li class="l3"><a href="#rendering-as-a-minimal-edit">Rendering as a minimal edit</a></li>
+<li class="l2"><a href="#apex-md-the-markdown-converter">apex md: the Markdown converter</a></li>
+<li class="l2"><a href="#web">Web</a></li>
+<li class="l3"><a href="#rules-and-ownership">Rules and ownership</a></li>
+<li class="l3"><a href="#opening-a-page">Opening a page</a></li>
+<li class="l3"><a href="#history">History</a></li>
+<li class="l3"><a href="#followed-links">Followed links</a></li>
+<li class="l3"><a href="#tests">Tests</a></li>
+<li class="l2"><a href="#apex-diff-unified-diffs-side-by-side">apex-diff: unified diffs side by side</a></li>
+<li class="l3"><a href="#where-it-is-used">Where it is used</a></li>
+<li class="l3"><a href="#parsing">Parsing</a></li>
+<li class="l3"><a href="#pairing-rows">Pairing rows</a></li>
+<li class="l3"><a href="#the-page">The page</a></li>
+<li class="l3"><a href="#prev-and-next">Prev and Next</a></li>
+<li class="l3"><a href="#tests-1">Tests</a></li>
+<li class="l2"><a href="#how-the-three-compare">How the three compare</a></li>
+</ul>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

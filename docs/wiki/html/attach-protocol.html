@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Attach Protocol · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The Attach Protocol</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs">crates/apex-cli/tests/cli.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs">crates/apex-server/build.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs">crates/apex-server/src/plane.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs">crates/apex-server/tests/socket.rs</a></li>
+</ul>
+</details>
+<p>The attach protocol is the only wire in apex. Every client of a session talks to <code>apexd</code> over it: the gpui UI, the <code>apex</code> CLI, bundled tools such as <code>win</code> and <code>lsp</code>, and SDK tools. The client may be on the same machine, connected through a Unix socket, or on another machine, connected through <code>ssh host apex attach -stdio</code>. Over this wire, clients receive the replicated log entries of the shards they follow. A client that leads a shard ships its own entries back. A client that does not lead asks the leader for changes with proposals. Everything else also travels over it: terminal input, plumbing, questions to window owners, the ⌘O finder and the HTTP-shaped I/O plane.</p>
+<p>The protocol has two halves. <code>proto.rs</code> defines the message types and the framing. <code>remote.rs</code> is the client side: a <code>Link</code> that drives a local <code>Node</code> over a <em>mirror</em> <code>Log</code>, and <code>Remote</code>, which bundles the three for headless clients. The daemon side is in <code>daemon.rs</code>, described on <a href="daemon.html">The Daemon (apexd)</a>. The replication model behind it is on <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>. What proposals contain and how they are applied is on <a href="proposals.html">Proposals: How Others Change State</a>.</p>
+<h2 id="framing-and-encoding">Framing and encoding</h2>
+<p>A frame is a little-endian <code>u32</code> length followed by that many bytes of <a href="https://docs.rs/postcard">postcard</a>-encoded message. Every message in both directions uses this format, and two generic functions handle it:</p>
+<pre><code class="language-rust">pub fn write_frame&lt;W: Write, T: Serialize&gt;(w: &amp;mut W, msg: &amp;T) -&gt; io::Result&lt;()&gt;
+pub fn read_frame&lt;R: Read, T: for&lt;'de&gt; Deserialize&lt;'de&gt;&gt;(r: &amp;mut R) -&gt; io::Result&lt;Option&lt;T&gt;&gt;
+</code></pre>
+<p><code>read_frame</code> returns <code>Ok(None)</code> when the stream ends cleanly before a length prefix, which is how both sides notice a hang-up. It refuses frames larger than 256 MiB with <code>InvalidData</code>. A frame that will not decode is also an <code>InvalidData</code> error. On the daemon, such an error ends the connection and is logged as <code>apexd: connection N: …</code>. One common cause is a peer built from another wire version.</p>
+<p>Nothing in the framing assumes a socket. <code>Link::over_streams</code> takes any <code>Box&lt;dyn Read + Send&gt;</code> and <code>Box&lt;dyn Write + Send&gt;</code>. The remote story depends on this. On the host, <code>apex attach -stdio</code> copies bytes in both directions between its stdin/stdout and the daemon's socket, and never looks at the frames (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1202-L1228">main.rs:1202-1228</a>). On the client, <code>bridge_child</code> runs the bridge command (<code>ssh …</code>, or a provider's equivalent) in a process group of its own. It returns the child's pipes and a closer that <code>killpg</code>s the whole group, so no half-dead ssh is left holding the far end open. See <a href="remote-hosts.html">Remote Hosts and Providers</a>.</p>
+<p>Postcard is not self-describing: field names and variant names are not on the wire, only their order and types. The <a href="#versioning-protocol-and-the-build-id">Versioning</a> section covers what follows from that.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L1-L23">proto.rs:1-23</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L358-L382">proto.rs:358-382</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L191-L204">remote.rs:191-204</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L524-L550">remote.rs:524-550</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L465-L484">daemon.rs:465-484</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1202-L1228">main.rs:1202-1228</a></p>
+<h2 id="versioning-protocol-and-the-build-id">Versioning: PROTOCOL and the build id</h2>
+<p><code>PROTOCOL</code> is a single <code>u32</code> (currently 54) that covers <em>everything</em> the wire carries:</p>
+<ul>
+<li>the messages in <code>proto.rs</code></li>
+<li>the proposals</li>
+<li>apex-core's entries, ops, state and ids, which travel inside <code>Entries</code>, <code>Append</code> and the <code>Welcome</code> snapshot</li>
+<li><code>TermKey</code> and <code>Running</code></li>
+</ul>
+<p>The module doc puts the rule plainly: any change to any of these is a new protocol, so bump <code>PROTOCOL</code> with the change. The git history follows that rule (for example &quot;Protocol 54: a plumbing rule is only its owner's to remove&quot;).</p>
+<p>A second identifier says <em>which binary</em> is running. <code>build.rs</code> hashes every <code>.rs</code> file under <code>crates/</code> together with <code>Cargo.lock</code>, in sorted path order, using SHA-256. It exports the first 12 hex digits as <code>APEX_BUILD_ID</code>, and <code>lib.rs</code> exposes that as <code>apex_server::BUILD_ID</code>. The same sources give the same id on every target, so a client can compare itself with the linux binary it carries for remote hosts.</p>
+<p>The daemon says both values first on every connection. <code>Daemon::accept</code> queues <code>ServerMsg::Build { protocol, id }</code> before it reads anything. <code>Build</code> is variant 0 of <code>ServerMsg</code>, and the doc comment requires that it keep both its position and its shape. That way, a client of <em>any</em> version can decode the first frame even if every other variant has changed.</p>
+<p>The client checks the frame with <code>check_build</code>, which compares <strong>only the protocol</strong>. A daemon from another build that speaks the same protocol is accepted. A daemon speaking a different protocol produces an <code>io::ErrorKind::Unsupported</code> error that tells the user what to do:</p>
+<blockquote>
+<p>the daemon speaks apex protocol N (build …), this is protocol M (build …); when its sessions can be let go, stop it (<code>apex stop</code> on its machine) and attach again</p>
+</blockquote>
+<p>The UI uses that error kind to offer to restart a mismatched server (see <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>). <code>stop_any</code> handles daemons of another version, which may not decode our <code>Stop</code> correctly. It first tries <code>list_sessions</code>. If that fails with <code>Unsupported</code>, it finds the process at the far end of the socket (<code>LOCAL_PEERPID</code> on macOS, <code>SO_PEERCRED</code> elsewhere) and confirms with <code>ps</code> that it is an <code>apex … server</code> on that very socket. Only then does it send <code>SIGTERM</code>, and if the process is still alive after 3 s, <code>SIGKILL</code>. A unit test with a fake &quot;stale daemon&quot; checks that a process which is not an apex server is left alone.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L21-L23">proto.rs:21-23</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L296-L303">proto.rs:296-303</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs#L1-L41">build.rs:1-41</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L12">lib.rs:12</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L456-L459">daemon.rs:456-459</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L568-L632">remote.rs:568-632</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1084-L1127">remote.rs:1084-1127</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs#L290-L313">socket.rs:290-313</a></p>
+<h2 id="connection-lifecycle">Connection lifecycle</h2>
+<p>A connection exists before it is attached. The daemon gives each accepted socket a connection id, plus two threads:</p>
+<ul>
+<li>a <strong>reader</strong>, which turns frames into <code>Event::Msg(id, msg)</code> on the daemon's single event channel and sends <code>Event::Gone(id)</code> when the stream ends;</li>
+<li>a <strong>writer</strong>, which drains a per-connection <code>Sender&lt;ServerMsg&gt;</code>, coalesces whatever is queued, and flushes once per batch.</li>
+</ul>
+<p>All state lives on the one daemon thread that consumes the events.</p>
+<p>Some messages work without attaching: <code>NewSession</code>, <code>ListSessions</code>, <code>RenameSession</code> and <code>EndSession</code> (each answered with <code>Sessions</code>, or with <code>Error</code>), <code>Ping</code> (answered with <code>Pong</code>) and <code>Stop</code>. One-shot helpers in <code>remote.rs</code> use them: <code>list_sessions</code>, <code>new_session</code>, <code>rename_session</code>, <code>end_session</code> and <code>stop</code>. Each opens a socket, sends one frame, and reads until it gets its answer, checking any <code>Build</code> frame on the way. Any other message on an unattached connection gets <code>Error { text: &quot;not attached&quot; }</code>.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant C as &quot;Client (Link)&quot;
+    participant R as &quot;reader thread&quot;
+    participant D as &quot;apexd&quot;
+    C-&gt;&gt;D: connect (socket or bridge)
+    D--&gt;&gt;R: Build { protocol, id }
+    C-&gt;&gt;D: [NewSession { name }]
+    C-&gt;&gt;D: Hello { session, name, kind, attach }
+    R--&gt;&gt;C: Build (check_build)
+    D-&gt;&gt;D: log.attach, then for a UI reclaim and grant leases
+    D--&gt;&gt;R: Welcome { attachment, snapshot }
+    R--&gt;&gt;C: Welcome
+    C-&gt;&gt;C: State::from_snapshot, Log::mirror, Node::catch_up
+    D--&gt;&gt;R: Entries { Meta, ... } (leases moved)
+    Note over C,D: steady state: Append/Ack, Entries, Propose/Applied, ...
+</code></pre>
+<h3 id="hello-and-welcome">Hello and Welcome</h3>
+<p><code>Hello { session, name, kind, attach }</code> names the session in one of three ways: by its id, by its label, or by a unique prefix of the id of at least four characters (<code>Daemon::resolve</code>).</p>
+<p>The daemon records the attachment in the metalog (<code>log.attach</code>). If <code>kind</code> is <code>Ui</code>, it also runs single-player mode: for every unpinned shard whose lease is held by an attachment other than <code>SERVER</code>, it reclaims the lease, then grants every unpinned shard to the new attachment, and makes this connection the session's <code>leader</code>. A <code>Tool</code> attachment just follows.</p>
+<p>The reply is <code>Welcome { attachment, snapshot }</code>. The snapshot is the daemon's follower replica serialised with <code>State::to_snapshot</code>, taken <em>after</em> the grants, so it already shows the new attachment holding its leases. The connection's per-shard forwarding marks start at the log's current last sequence numbers, because the snapshot covers everything before them. Two more steps follow in <code>Daemon::hello</code>. First, any work held for a tool of this name is handed over: plumbs, or page requests waiting for a tool started by a rule's <code>start</code>. Second, the client's attach script runs on the host. Finally <code>after</code> forwards the new metalog entries to everyone.</p>
+<p>On the client, <code>over_streams_inner</code> sends <code>Hello</code> and then waits for at most 60 seconds (&quot;no welcome from the daemon within a minute&quot;). While waiting it handles three kinds of frame:</p>
+<ul>
+<li><code>Build</code> goes through <code>check_build</code>.</li>
+<li>An <code>Error</code> starting with &quot;no session&quot;, when the link was told to create one, triggers <code>NewSession</code> followed by a second <code>Hello</code> for the label. This is <code>over_streams_creating</code>, which the UI uses to open a session it was told to open. If the session is named by its label alone, <code>NewSession</code> is sent before the first <code>Hello</code>.</li>
+<li>Any other <code>Error</code> fails the connect.</li>
+</ul>
+<p>When <code>Welcome</code> arrives, the link decodes the snapshot, builds the mirror log and the <code>Node</code>, and calls <code>catch_up</code>. It then sets its shipping marks to the mirror's last sequence numbers. A <code>Ui</code> link also sends the local <code>~/.apex/attach</code> as the <code>attach</code> script (<code>local_attach</code>).</p>
+<h3 id="ending">Ending</h3>
+<p>A connection ends in one of three ways:</p>
+<ul>
+<li><strong>The client drops.</strong> <code>Link</code>'s <code>Drop</code> runs its closer, which shuts down the socket or kills the bridge's process group. The daemon's reader sees EOF and sends <code>Gone</code>.</li>
+<li><strong>The session ends.</strong> Every member is sent <code>Ended { id, label }</code> and then cut off.</li>
+<li><strong>The daemon stops.</strong> <code>ClientMsg::Stop</code> makes the main loop clear all connections and exit.</li>
+</ul>
+<p>In <code>Daemon::gone</code>, the daemon removes the attachment's rules and adopted processes, appends <code>Detach</code>, and, if this connection led, reclaims its leases so that the daemon leads again. The test <code>a_tool_works_on_a_headless_session_and_a_ui_takes_over</code> checks the Layout lease returning to <code>SERVER</code> after the UI drops.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L128-L141">daemon.rs:128-141</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L247-L311">daemon.rs:247-311</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L313-L329">daemon.rs:313-329</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L456-L642">daemon.rs:456-642</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L148-L265">remote.rs:148-265</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L508-L522">remote.rs:508-522</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L661-L720">remote.rs:661-720</a></p>
+<h2 id="the-messages">The messages</h2>
+<p><code>ClientMsg</code> (client to daemon) and <code>ServerMsg</code> (daemon to client) are plain enums. The tables group them by purpose. Each variant's doc comment in <code>proto.rs</code> gives the exact semantics.</p>
+<h3 id="replication">Replication</h3>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Direction</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Hello</code> / <code>Welcome</code></td>
+<td>C→S / S→C</td>
+<td>Attach, and receive the attachment id plus a state snapshot.</td>
+</tr>
+<tr>
+<td><code>Append { shard, entries }</code></td>
+<td>C→S</td>
+<td>Entries this client sequenced as leader.</td>
+</tr>
+<tr>
+<td><code>Ack { shard, seq }</code></td>
+<td>S→C</td>
+<td>The daemon stored this client's entries of <code>shard</code> up to <code>seq</code>.</td>
+</tr>
+<tr>
+<td><code>Entries { shard, entries }</code></td>
+<td>S→C</td>
+<td>New entries of a shard (or the metalog) for this client to replay.</td>
+</tr>
+<tr>
+<td><code>CreateShard</code> / <code>DeleteShard</code></td>
+<td>C→S</td>
+<td>Sent by the mirror log's hook when the leader makes or drops a shard. The daemon records the shard and grants the lease before processing the appends that follow.</td>
+</tr>
+<tr>
+<td><code>Propose { id, proposal }</code></td>
+<td>both</td>
+<td>From a tool: &quot;leader, please do this&quot;. From the daemon to the leader: &quot;apply this&quot; (<code>id</code> 0 means nobody waits).</td>
+</tr>
+<tr>
+<td><code>Applied { id, result }</code></td>
+<td>both</td>
+<td>The leader's answer, which the daemon passes back to the tool under the tool's own id.</td>
+</tr>
+<tr>
+<td><code>Error { text }</code></td>
+<td>S→C</td>
+<td>Something this connection asked for failed (a fenced append, an unknown window, a refused rule removal).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="plumbing-and-window-owners">Plumbing and window owners</h3>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Direction</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Plumb { ctx, text, dir, edit_only, dry, at, sel, alt, reverse, verb }</code></td>
+<td>C→S</td>
+<td>B3, <code>apex plumb</code>, or a verb at the pointer. The rule table decides.</td>
+</tr>
+<tr>
+<td><code>PlumbTrace { lines }</code></td>
+<td>S→C</td>
+<td>What a <code>dry</code> plumb would do, rule by rule.</td>
+</tr>
+<tr>
+<td><code>Plumbed { ok, why }</code></td>
+<td>S→C</td>
+<td>A plumb this connection asked for is over.</td>
+</tr>
+<tr>
+<td><code>Ask { id, request }</code></td>
+<td>both</td>
+<td>S→C: a <code>Request::Plumb</code> (a rule of yours claimed this; do you take it?) or a <code>Request::Navigate</code> (where does this link in your page go?). C→S: a leading client's <code>Navigate</code> question for a window's owner.</td>
+</tr>
+<tr>
+<td><code>Answer { id, answer }</code> / <code>Answered { id, answer }</code></td>
+<td>C→S / S→C</td>
+<td><code>Answer::Plumb { ok }</code> or <code>Answer::Navigate(NavAnswer)</code>. <code>Answered</code> carries <code>None</code> when nobody answered in time.</td>
+</tr>
+<tr>
+<td><code>RuleAdd</code> / <code>RuleAdded</code>, <code>RuleRm</code></td>
+<td>C↔S</td>
+<td>Install a rule (owned by this attachment if <code>mine</code>); remove one (only its owner may).</td>
+</tr>
+<tr>
+<td><code>WindowEvent</code>, <code>PostToPage</code></td>
+<td>both</td>
+<td>Page events for a window's owner; messages from the owner to the page's script, delivered by the client that leads.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="terminals">Terminals</h3>
+<p>The <code>Term*</code> messages carry what a client cannot express as log entries: keystrokes, pastes and typed text (<code>TermKey</code>, <code>TermPaste</code>, <code>TermType</code>), size (<code>TermResize</code>), scrollback clearing, focus and the mouse wheel (<code>TermClear</code>, <code>TermFocus</code>, <code>TermScroll</code>), and reads of the terminal's history.</p>
+<p><code>TermText</code> asks the server to snarf a range of a terminal; the answer comes back as a <code>Snarf</code> proposal. <code>TermRead</code> is answered with <code>TermLines</code>. <code>TermFind</code> (Look in a terminal) is answered with <code>TermFound</code>. <code>ClientConfig { term: TermColors }</code> tells the daemon the UI's ink, paper and 16 ANSI colours, so that programs asking with OSC 10, 11 or 4 learn the real background. Only a <code>Ui</code> connection's colours are taken. <code>TermColors::LIGHT</code> is what a session answers when no UI is attached.</p>
+<p>In the other direction, <code>Clipboard { text }</code> passes OSC 52 (and a tool's <code>Snarf</code>) to every UI on the session. The term shard itself is pinned and daemon-led: screen contents arrive as ordinary <code>Entries</code>. See <a href="terminals.html">Terminals</a>.</p>
+<h3 id="everything-else">Everything else</h3>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OpenFile</code>, <code>EditOver</code></td>
+<td>Open a file relative to a window's directory, in a column or covering a window.</td>
+</tr>
+<tr>
+<td><code>Env</code>, <code>EnvImport</code> → <code>Env { vars }</code></td>
+<td>Set or import session environment variables; the answer is the whole environment.</td>
+</tr>
+<tr>
+<td><code>Set { key, value, attachment }</code></td>
+<td>A session setting, or an attachment's setting.</td>
+</tr>
+<tr>
+<td><code>Notify</code>, <code>Unnotify</code></td>
+<td>Raise or lower a window's notification.</td>
+</tr>
+<tr>
+<td><code>Kill { targets }</code>, <code>Named { … }</code></td>
+<td>End commands; a program names itself for <code>ps</code> and the top row.</td>
+</tr>
+<tr>
+<td><code>Cd { dir }</code></td>
+<td>Change the session's directory.</td>
+</tr>
+<tr>
+<td><code>FindStart</code>, <code>FindQuery</code>, <code>FindStop</code> → <code>Found { … }</code></td>
+<td>⌘O: walk a directory on the host and match it as the query changes, by generation.</td>
+</tr>
+<tr>
+<td><code>Candidates</code> → <code>Candidates(…)</code></td>
+<td>^F path completion.</td>
+</tr>
+<tr>
+<td><code>Io { stream, frame: IoFrame }</code></td>
+<td>The I/O plane: <code>Request</code>, <code>Response</code>, <code>Body</code>, <code>End</code>, <code>Reset</code>.</td>
+</tr>
+<tr>
+<td><code>Ping</code>/<code>Pong</code>, <code>Sessions</code>, <code>Ended</code>, <code>Stop</code></td>
+<td>Liveness, session listing, session end, daemon exit.</td>
+</tr>
+</tbody>
+</table>
+<p>Many of these are answered only to the connection that asked; a reply is never a log entry. The daemon's <code>in_session</code> makes this explicit with <code>return</code> before <code>after</code> for request/answer pairs such as <code>TermRead</code>, <code>Answer</code>, <code>Ask</code>, <code>Io</code> and <code>Find*</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L25-L212">proto.rs:25-212</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L214-L246">proto.rs:214-246</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L296-L356">proto.rs:296-356</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L402-L455">proto.rs:402-455</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L644-L963">daemon.rs:644-963</a></p>
+<h2 id="replication-over-the-wire">Replication over the wire</h2>
+<h3 id="the-mirror-log">The mirror log</h3>
+<p>The key idea on the client side is that the <code>Node</code> does not know it is remote. It appends to a <code>Log</code> exactly as it would in-process. That <code>Log</code> is a <strong>mirror</strong>, built by <code>Log::mirror(&amp;state, hook)</code> from the snapshot:</p>
+<ul>
+<li>every shard starts at its applied sequence number, with no entries;</li>
+<li>leases are copied from the metalog state;</li>
+<li><code>next_rule</code> is set past existing rule ids.</li>
+</ul>
+<p>Because the client holds the lease, <code>Log::append</code> assigns the next sequence number locally. That is the same number the daemon will store, because the daemon's <code>append_entry</code> accepts an entry only if:</p>
+<ul>
+<li>its <code>attachment</code> and <code>epoch</code> match the lease, and</li>
+<li>its <code>seq</code> is exactly one past the daemon's last.</li>
+</ul>
+<p>So a leader types with no round trip, and the daemon's checks fence anyone who is behind: an entry from a stale epoch or with a gap is refused with <code>LogError::Fenced</code> and reported back as <code>Error</code>.</p>
+<p>The metalog is the exception: the daemon sequences it, and the mirror only receives it. Shard creation therefore takes a shortcut on a mirror. <code>create_shard</code> assumes the grant the daemon will make (the creator at epoch 1, or <code>SERVER</code> at epoch 0 for pinned shards). It then calls <code>MirrorHook::create_shard</code>. <code>remote.rs</code>'s <code>Hook</code> implements this by sending <code>ClientMsg::CreateShard</code> at once, so the request reaches the daemon ahead of the <code>Append</code> that <code>flush</code> sends later. The daemon runs <code>create_shard(shard, attachment)</code> on its own log, which makes <code>ShardNew</code> and <code>LeaseGrant</code> entries matching the client's assumption.</p>
+<pre><code class="language-mermaid">flowchart LR
+    N[&quot;Node (leader)&quot;] --&gt;|&quot;Log::append&quot;| M[&quot;mirror Log&quot;]
+    M --&gt;|&quot;hook: CreateShard&quot;| O[&quot;Outbound&quot;]
+    L[&quot;Link::flush&quot;] --&gt;|&quot;Append per shard&quot;| O
+    O --&gt;|frames| D[&quot;apexd: Log::append_entry&quot;]
+    D --&gt;|&quot;Ack&quot;| RT[&quot;reader thread&quot;]
+    D --&gt;|&quot;Entries to others&quot;| X[&quot;other connections&quot;]
+    RT --&gt;|&quot;mpsc&quot;| H[&quot;Link::handle&quot;]
+    H --&gt;|&quot;append_entry, catch_up&quot;| M
+</code></pre>
+<h3 id="flush-and-ack">Flush and Ack</h3>
+<p><code>Link::flush(&amp;log)</code> walks every shard in the mirror and sends each one's entries after the link's <code>sent</code> mark as an <code>Append</code>. It moves the mark and starts an ack timer for the shard if none is running. All the frames go out under one lock of the shared <code>Outbound</code>, followed by a single flush. The UI calls <code>flush</code> on every frame; the test <code>selection_and_scroll_position_survive_reattach</code> notes this (&quot;what the UI does on every frame&quot;).</p>
+<p>The daemon appends entry by entry and stops at the first error, which it reports. It then catches up its follower replica and moves <em>this connection's</em> forwarding mark to the log's end, so the appender is not sent its own entries back. It replies <code>Ack { shard, seq }</code> with the last entry stored. When a received <code>Ack</code> reaches the pending sequence number, <code>Link</code> records how long the round trip took in <code>ack_ms</code>.</p>
+<p>The <code>outbound</code> handle (<code>Outbound</code>, an <code>Arc&lt;Mutex&lt;BufWriter&lt;…&gt;&gt;&gt;</code>) is shared by the owner, the mirror hook and any threads using the I/O plane. Each <code>send</code> writes one frame and flushes.</p>
+<h3 id="receiving-entries">Receiving Entries</h3>
+<p>For <code>ServerMsg::Entries</code>, <code>Link::handle</code> does four things:</p>
+<ol>
+<li><strong>Records <code>foreign_end</code>.</strong> For buffer shards, it notes where each edit by <em>another</em> attachment ended. In a <code>win</code> window this is the output point.</li>
+<li><strong>Appends</strong> each entry to the mirror with <code>append_entry</code>, stopping at the first error.</li>
+<li><strong>Calls <code>node.catch_up(log)</code>.</strong></li>
+<li><strong>Moves the shipping mark</strong> past what arrived, unless this client leads the shard. Whatever the daemon handed over is the daemon's, and this step makes sure a follower never echoes it back in the next <code>flush</code>.</li>
+</ol>
+<p>The daemon side of this is <code>Daemon::after</code>, which runs after nearly every message. For each connection on the session, it sends the entries of each shard after that connection's mark. It sends <strong>the metalog first</strong>, because <code>ShardNew</code> and lease changes must arrive before the entries they announce.</p>
+<h3 id="compaction-on-both-sides">Compaction on both sides</h3>
+<p>Neither log keeps history. The daemon compacts each shard up to the minimum of four values:</p>
+<ul>
+<li>the last sequence number;</li>
+<li>what its follower replica has applied;</li>
+<li>what the <code>Server</code>'s node has applied;</li>
+<li>what every connection on the session has been sent.</li>
+</ul>
+<p>The mirror compacts in <code>compact_mirror</code>, run on <code>Entries</code> and on <code>Ack</code>. Its low-water mark is what the node has applied, further limited, for a shard this client leads, by what has been both sent and acked. A mirror therefore holds only what is still outstanding.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L40-L58">log.rs:40-58</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L102-L148">log.rs:102-148</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L213-L251">log.rs:213-251</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L380-L389">log.rs:380-389</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L21-L42">remote.rs:21-42</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L314-L372">remote.rs:314-372</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L444-L480">remote.rs:444-480</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L650-L690">daemon.rs:650-690</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1510-L1591">daemon.rs:1510-1591</a></p>
+<h2 id="proposals-and-questions-over-the-wire">Proposals and questions over the wire</h2>
+<p>A tool does not lead, so it changes state by proposal. <code>Link::propose(p)</code> assigns the next id from the link's counter, sends <code>Propose { id, proposal }</code>, and returns the id. The answer later shows up in <code>link.applied</code>.</p>
+<p>At the daemon, each tool proposal gets a daemon-side id in <code>pending</code> that records the tool's connection and its id. <code>Daemon::propose</code> then routes the proposal:</p>
+<ul>
+<li><strong>A UI leads:</strong> it is sent <code>ServerMsg::Propose { id: daemon_id, … }</code>. The UI's <code>Link::handle</code> applies it with <code>proposal::apply</code>, flushes the resulting entries, and replies <code>Applied { id }</code>. The daemon accepts <code>Applied</code> <strong>only from the session's leader</strong>, and maps it back through <code>pending</code> to <code>ServerMsg::Applied { id: tool_id }</code> on the tool's connection.</li>
+<li><strong>No UI is attached:</strong> the daemon applies it to its own replica. It runs <code>after</code> <em>before</em> answering, so the tool's replica already has the window the proposal made by the time <code>Applied</code> arrives.</li>
+</ul>
+<p>The <code>Server</code>'s own proposals (a command's output, a file's new content) go to the leader with <code>id: 0</code>, and nobody waits for them.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant T as &quot;Tool (Remote)&quot;
+    participant D as &quot;apexd&quot;
+    participant U as &quot;UI (leader)&quot;
+    T-&gt;&gt;D: Propose { id: 7, proposal }
+    D-&gt;&gt;D: pending[42] = Tool { conn, id: 7 }
+    alt a UI leads
+        D-&gt;&gt;U: Propose { id: 42, proposal }
+        U-&gt;&gt;U: proposal::apply, flush
+        U-&gt;&gt;D: Append { ... }
+        U-&gt;&gt;D: Applied { id: 42, result }
+        D-&gt;&gt;T: Entries { ... }
+        D-&gt;&gt;T: Applied { id: 7, result }
+    else headless
+        D-&gt;&gt;D: proposal::apply on its replica, after()
+        D-&gt;&gt;T: Entries { ... }
+        D-&gt;&gt;T: Applied { id: 7, result }
+    end
+</code></pre>
+<p>When <code>Link::handle</code> applies a proposal, it also does some bookkeeping:</p>
+<ul>
+<li>For <code>Insert</code> and non-empty <code>ReplaceRange</code>, it records the range in <code>outputs</code> (acme's scrolling rule) and in <code>foreign_end</code>.</li>
+<li>Windows the proposal made go to <code>made</code>.</li>
+<li><code>Proposal::ClientDo</code> (a rule asking the client to do something only it can) is queued in <code>client_asks</code> for a <code>Ui</code>, to be answered by the owner once done. Any other kind of client refuses it at once.</li>
+</ul>
+<p>Questions follow the same request-and-answer pattern with deadlines kept on the daemon:</p>
+<ul>
+<li><strong>Plumbs handed to tools.</strong> A <code>Request::Plumb</code> is sent to the tool attached under the rule's tool name. The tool has <code>B3_ANSWER</code> (1 s) to answer a B3 and <code>VERB_ANSWER</code> (10 s) to answer a verb. After that a <code>PlumbTimeout</code> event moves the walk on.</li>
+<li><strong>Navigation questions.</strong> A <code>Request::Navigate</code> from the leading client goes to the window's owner, with <code>ASK_ANSWER</code> (2 s) before <code>Answered { answer: None }</code>. A <code>Link</code> that has not set <code>answers_navigation</code> replies <code>NavAnswer::Default</code> immediately.</li>
+</ul>
+<p>Plumbing itself is described on <a href="plumbing.html">Plumbing Rules and Verbs</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L305-L312">remote.rs:305-312</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L373-L430">remote.rs:373-430</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L190-L209">daemon.rs:190-209</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L932-L956">daemon.rs:932-956</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L965-L979">daemon.rs:965-979</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1354-L1388">daemon.rs:1354-1388</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1583-L1587">daemon.rs:1583-1587</a></p>
+<h2 id="the-client-side-link">The client side: Link</h2>
+<p><code>Link</code> is the connection, not the replica. The owner keeps the <code>Log</code> and <code>Node</code> returned by <code>connect</code> and drives them. The UI holds them inside its app; a headless client holds them in <code>Remote</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Link::connect(path, session, name, kind, wake)</code></td>
+<td>Unix socket connect, then <code>over</code>.</td>
+</tr>
+<tr>
+<td><code>Link::over(stream, …)</code> / <code>over_streams(reader, writer, closer, …)</code></td>
+<td>Attach over a socket or any stream pair. Returns <code>(Link, Log, Node)</code>.</td>
+</tr>
+<tr>
+<td><code>Link::over_streams_creating(…, session, label, …)</code></td>
+<td>Same, making the session labelled <code>label</code> if the daemon has none by that name.</td>
+</tr>
+<tr>
+<td><code>flush(&amp;log)</code></td>
+<td>Ship sequenced entries as <code>Append</code>s.</td>
+</tr>
+<tr>
+<td><code>handle(node, log, msg)</code></td>
+<td>Apply one <code>ServerMsg</code>. Returns <code>false</code> when the connection is finished.</td>
+</tr>
+<tr>
+<td><code>poll(node, log)</code></td>
+<td>Drain <code>rx</code> without blocking.</td>
+</tr>
+<tr>
+<td><code>propose</code>, <code>ask</code>, <code>window_event</code>, <code>send</code></td>
+<td>Send messages; <code>propose</code> and <code>ask</code> return ids.</td>
+</tr>
+<tr>
+<td><code>io_open</code>, <code>io_plane</code></td>
+<td>Open an I/O-plane stream; get a thread-safe <code>IoPlane</code>.</td>
+</tr>
+<tr>
+<td><code>take_made</code>, <code>take_outputs</code></td>
+<td>Drain windows made and outputs written by proposals.</td>
+</tr>
+<tr>
+<td><code>close</code></td>
+<td>Run the closer (also run on <code>Drop</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>reader thread</strong> (<code>spawn_reader</code>) decodes frames and pushes them to the <code>rx</code> channel. After each one it calls an optional <code>Wake</code> callback, so an event loop that cannot block on <code>rx</code> (the gpui app) knows to poll; it also wakes once more when the stream ends. The thread intercepts <code>Io</code> frames for streams a thread registered through <code>IoPlane</code>: those go straight to that stream's sink, so a web view's proxy traffic never waits for the UI loop.</p>
+<p>Stream ids handed out by <code>IoIds</code> are odd and increasing. The daemon numbers the streams it opens itself on a tool's connection (requests for pages the tool serves) from <code>RELAYED</code> = <code>0x8000_0000</code> upward, above any id a tool opens itself.</p>
+<p>Most answers are stored in public fields for the owner to take: <code>applied</code>, <code>sessions</code>, <code>env</code>, <code>trace</code>, <code>plumbed</code>, <code>plumbs</code> (as <code>ToolPlumb</code>), <code>asks</code>, <code>answered</code>, <code>window_events</code> (kept only while <code>wants_window_events</code>), <code>page_posts</code>, <code>rule_added</code>, <code>io</code>, <code>term_lines</code>, <code>term_found</code>, <code>clips</code>, <code>candidates</code>, <code>found</code>, <code>last_pong</code>, <code>ended</code> and <code>error</code>. <code>handle</code> only records them; it does not act on them. That is why <code>handle</code> covers every <code>ServerMsg</code> variant with a single exhaustive <code>match</code>: adding a variant forces a decision here.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L44-L146">remote.rs:44-146</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L266-L312">remote.rs:266-312</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L339-L505">remote.rs:339-505</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1056-L1082">remote.rs:1056-1082</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L17-L79">plane.rs:17-79</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L171-L174">daemon.rs:171-174</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1438-L1492">app.rs:1438-1492</a></p>
+<h2 id="remote-headless-clients">Remote: headless clients</h2>
+<p><code>Remote { log, node, link }</code> is the bundle that the CLI, the bundled tools and the integration tests use. Its constructors are:</p>
+<ul>
+<li><code>connect</code>, which attaches as <code>Ui</code>;</li>
+<li><code>connect_as(…, kind)</code>;</li>
+<li><code>via(cmd, …)</code>, which runs <code>bridge_child(cmd)</code> and attaches over its pipes;</li>
+<li><code>connect_with</code>, which takes an explicit attach script, for tests.</li>
+</ul>
+<p>Note that plain <code>Remote::connect</code> attaches as a <strong>UI</strong> and so takes the leases. Tools should use <code>connect_as(…, AttachmentKind::Tool)</code>.</p>
+<p><code>Remote</code>'s value is its blocking helpers. Each sends a request and then calls <code>step(timeout)</code> repeatedly, handling one message at a time until a field of the link holds the answer or the deadline passes:</p>
+<table>
+<thead>
+<tr>
+<th>Helper</th>
+<th>Request → awaited answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>propose(p, timeout)</code></td>
+<td><code>Propose</code> → <code>applied[id]</code> (&quot;timed out waiting for the leader&quot;)</td>
+</tr>
+<tr>
+<td><code>rule_add</code></td>
+<td><code>RuleAdd</code> → <code>rule_added</code></td>
+</tr>
+<tr>
+<td><code>plumb_dry</code></td>
+<td><code>Plumb { dry: true }</code> → <code>trace</code></td>
+</tr>
+<tr>
+<td><code>env</code>, <code>env_import</code></td>
+<td><code>Env</code> / <code>EnvImport</code> → <code>env</code></td>
+</tr>
+<tr>
+<td><code>read_file</code></td>
+<td><code>GET file://…</code> → <code>Response</code> plus <code>Body</code>s up to <code>End</code></td>
+</tr>
+<tr>
+<td><code>watch</code> / <code>io_next_file</code> / <code>unwatch</code></td>
+<td><code>GET</code> with <code>Watch: 1</code> → the first <code>FileFrame</code>, then one per change</td>
+</tr>
+<tr>
+<td><code>io_open</code>, <code>io_send</code>, <code>io_end</code>, <code>io_response</code>, <code>io_collect</code>, <code>io_take</code></td>
+<td>Raw I/O-plane streams (bodies sent in 256 KiB chunks)</td>
+</tr>
+<tr>
+<td><code>plumb_ack</code>, <code>answer</code>, <code>announce</code>, <code>kill</code></td>
+<td>Fire-and-forget <code>Answer</code>, <code>Named</code>, <code>Kill</code></td>
+</tr>
+</tbody>
+</table>
+<p>Because each wait handles every message that arrives meanwhile, the replica stays current while a tool blocks. When <code>propose</code> returns, the entries the proposal produced have normally already been replayed, since the daemon forwards entries before <code>Applied</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L722-L1054">remote.rs:722-1054</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1129-L1149">remote.rs:1129-1149</a></p>
+<h2 id="testing">Testing</h2>
+<p><code>crates/apex-server/tests/socket.rs</code> runs a real <code>Daemon::run_with</code> on a thread with a fresh socket per test, and clients built from <code>Remote</code>. Its <code>wait</code> helper steps a client until a predicate holds. The tests cover the protocol's main guarantees:</p>
+<ul>
+<li><code>attach_edit_ack_and_reattach</code>: a UI edits, flushes and is acked up to the mirror's last sequence number. A second UI attaches, sees the same text, takes the leases (the first is now fenced at the server), and edits in turn.</li>
+<li><code>a_tool_works_on_a_headless_session_and_a_ui_takes_over</code>: proposals applied by the daemon as leader; a UI attaching and applying a tool's <code>Select</code>, with <code>Applied</code> coming back to the tool; leases returning to <code>SERVER</code> when the UI drops.</li>
+<li><code>selection_and_scroll_position_survive_reattach</code>: view state travels in the snapshot.</li>
+<li><code>the_daemon_says_its_build_first_and_stops_when_told</code>: the first frame is <code>Build</code> with this <code>PROTOCOL</code> and <code>BUILD_ID</code>, and <code>stop</code> removes the daemon.</li>
+<li><code>sessions_are_listed_and_made</code>, terminals over the socket, plumbing, page owners' <code>Ask</code>/<code>WindowEvent</code>/<code>PostToPage</code> routing, and the file watcher.</li>
+</ul>
+<p><code>remote.rs</code> has unit tests for <code>check_build</code> and for <code>stop_any</code>'s refusal to signal a process that is not an apex server. <code>crates/apex-cli/tests/cli.rs</code> attaches with <code>Link::over_streams</code> through <code>apex attach -stdio</code>, exercising the bridge path.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs#L1-L313">socket.rs:1-313</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs#L484-L532">socket.rs:484-532</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1084-L1127">remote.rs:1084-1127</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L166">cli.rs:166</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="daemon.html">The Daemon (apexd)</a></span><span class="next">Next: <a href="proposals.html">Proposals: How Others Change State</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top current"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+<ul class="sections">
+<li class="l2"><a href="#framing-and-encoding">Framing and encoding</a></li>
+<li class="l2"><a href="#versioning-protocol-and-the-build-id">Versioning: PROTOCOL and the build id</a></li>
+<li class="l2"><a href="#connection-lifecycle">Connection lifecycle</a></li>
+<li class="l3"><a href="#hello-and-welcome">Hello and Welcome</a></li>
+<li class="l3"><a href="#ending">Ending</a></li>
+<li class="l2"><a href="#the-messages">The messages</a></li>
+<li class="l3"><a href="#replication">Replication</a></li>
+<li class="l3"><a href="#plumbing-and-window-owners">Plumbing and window owners</a></li>
+<li class="l3"><a href="#terminals">Terminals</a></li>
+<li class="l3"><a href="#everything-else">Everything else</a></li>
+<li class="l2"><a href="#replication-over-the-wire">Replication over the wire</a></li>
+<li class="l3"><a href="#the-mirror-log">The mirror log</a></li>
+<li class="l3"><a href="#flush-and-ack">Flush and Ack</a></li>
+<li class="l3"><a href="#receiving-entries">Receiving Entries</a></li>
+<li class="l3"><a href="#compaction-on-both-sides">Compaction on both sides</a></li>
+<li class="l2"><a href="#proposals-and-questions-over-the-wire">Proposals and questions over the wire</a></li>
+<li class="l2"><a href="#the-client-side-link">The client side: Link</a></li>
+<li class="l2"><a href="#remote-headless-clients">Remote: headless clients</a></li>
+<li class="l2"><a href="#testing">Testing</a></li>
+</ul>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

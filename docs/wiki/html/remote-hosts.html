@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote Hosts and Providers · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Remote Hosts and Providers</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md">DESIGN.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs">crates/apex-cli/tests/ssh.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs">crates/apex-client/src/restart.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs">crates/apex-client/src/shell.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs">crates/apex-server/build.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs">crates/apex-server/src/providers.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh">mac/build-app.sh</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/README.md">providers/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/apex-remote-devserver">providers/apex-remote-devserver</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/apex-remote-sprite">providers/apex-remote-sprite</a></li>
+</ul>
+</details>
+<p>apex can attach to a session whose daemon runs on another machine. The UI on your Mac then edits files and runs terminals on that machine. The design keeps the remote side small. The only requirement on the destination is a way to run one shell command there with stdin and stdout connected, which is exactly what <code>ssh HOST COMMAND</code> does. apex copies its own <code>apex</code> binary (and <code>rc</code>) to the destination. It then runs <code>apex attach -stdio</code> there, which starts the daemon if needed and copies bytes between its stdio and the daemon's Unix socket. The client speaks the ordinary <a href="attach-protocol.html">attach protocol</a> over the child process's pipes, just as it would over a local socket.</p>
+<p>Most of the code is in one module, <code>crates/apex-server/src/providers.rs</code>. The bridge is in <code>apex-cli</code> (<code>attach -stdio</code>), and the child-process plumbing is in <code>apex-server</code>'s <code>remote.rs</code>. The client calls all of these when it opens a tab on a remote session (see <a href="client.html">The UI Client</a> and <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>). The daemon on the far end is the same <code>apexd</code> code described in <a href="daemon.html">The Daemon</a>.</p>
+<h2 id="providers">Providers</h2>
+<p>A <em>provider</em> is a program that runs a command on a destination. It is called as</p>
+<pre><code class="language-text">apex-remote-&lt;provider&gt; DESTINATION COMMAND
+</code></pre>
+<p>COMMAND is <strong>one argument</strong>: a shell command line for the destination. It uses <code>&amp;&amp;</code>, redirections and the destination's <code>$HOME</code>, so it must reach a shell over there. The provider has to run it with stdin and stdout connected and exit with the command's status. This is ssh's own calling convention, which is why <code>ssh</code> is the built-in provider and needs no script. There is no configuration file; the provider script is the whole configuration (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L1-L25">providers.rs:1-25</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/README.md">providers/README.md</a>).</p>
+<h3 id="destinations-dest">Destinations: <code>Dest</code></h3>
+<p>A destination is written <code>provider:name</code>, or a bare <code>name</code> for ssh (<code>user@host</code>). <code>Dest::parse</code> splits on the first <code>:</code>. It treats the split as a provider only when both sides are non-empty and the left side contains nothing but ASCII alphanumerics, <code>_</code> and <code>-</code>; anything else is an ssh destination. <code>Dest::spec</code> writes the destination back the way a user types it, with ssh destinations bare (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L34-L59">providers.rs:34-59</a>).</p>
+<p><code>Dest::program</code> chooses the executable to run, trying in this order (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L61-L82">providers.rs:61-82</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Source</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>APEX_PROVIDER_&lt;NAME&gt;</code></td>
+<td>Provider name upper-cased, with <code>-</code> replaced by <code>_</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>APEX_SSH</code></td>
+<td>Only for the <code>ssh</code> provider</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>apex-remote-&lt;provider&gt;</code> on <code>PATH</code></td>
+<td>Found by <code>on_path</code>, which requires a regular file</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>ssh</code></td>
+<td>Only for the <code>ssh</code> provider</td>
+</tr>
+<tr>
+<td>—</td>
+<td><code>NotFound</code> error</td>
+<td>&quot;no apex-remote-X command on the PATH for provider X&quot;</td>
+</tr>
+</tbody>
+</table>
+<p>So an <code>apex-remote-ssh</code> on the PATH overrides the real <code>ssh</code>. The tests use the environment variables to point at a fake host script.</p>
+<p><code>available()</code> lists the providers a session can be reached through. It returns <code>local</code> and <code>ssh</code> first, then every <code>apex-remote-NAME</code> file in the <code>PATH</code> directories, without duplicates. The client's &quot;Remote…&quot; form in the session selector (<code>Connect::new</code> in <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L968-L986">shell.rs:968-986</a>) offers this list, minus <code>local</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L85-L104">providers.rs:85-104</a>).</p>
+<h3 id="running-a-command-run">Running a command: <code>run</code></h3>
+<p><code>run(spec, cmd, stdin)</code> is the single primitive everything else is built from. It spawns <code>program DESTINATION CMD</code>. When <code>stdin</code> is given it pipes those bytes to the child and closes the pipe; otherwise stdin is <code>/dev/null</code>. It collects stdout. On a non-zero exit it returns an error carrying the trimmed stderr, or <code>&quot;{host}: {cmd}: {status}&quot;</code> if stderr was empty (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L111-L133">providers.rs:111-133</a>).</p>
+<h3 id="the-example-providers">The example providers</h3>
+<p>The <code>providers/</code> directory has two example scripts. Neither is installed automatically; you put one on your PATH under its name.</p>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>Wraps</th>
+<th>How the command is run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex-remote-sprite</code></td>
+<td><code>sprite exec</code></td>
+<td><code>exec sprite exec -s &quot;$1&quot; -- sh -c &quot;$2&quot;</code>, an argv-style tool wrapped in <code>sh -c</code></td>
+</tr>
+<tr>
+<td><code>apex-remote-devserver</code></td>
+<td><code>execdev</code></td>
+<td>Checks for exactly two arguments (exit 64 otherwise). Finds <code>execdev</code> via <code>$APEX_EXECDEV</code>, the PATH or a fixed fallback path (exit 127 if none). Runs <code>execdev &quot;$dest&quot; -- /bin/bash -l -c &quot;$remote_cmd&quot;</code> so a login shell picks up <code>/etc/profile.d</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both show the general recipe: a tool that takes an argv vector must run <code>$2</code> through a shell on the far side (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/apex-remote-sprite#L1-L9">providers/apex-remote-sprite:1-9</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/apex-remote-devserver#L1-L33">providers/apex-remote-devserver:1-33</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L1-L133">crates/apex-server/src/providers.rs:1-133</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/README.md#L1-L31">providers/README.md:1-31</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/apex-remote-sprite#L1-L9">providers/apex-remote-sprite:1-9</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/apex-remote-devserver#L1-L33">providers/apex-remote-devserver:1-33</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L968-L986">crates/apex-client/src/shell.rs:968-986</a></p>
+<h2 id="session-urls">Session URLs</h2>
+<p>A session anywhere is named by a <code>SessionUrl</code>. The scheme is the provider, the authority is the provider's argument, and the path is the session label. Examples are <code>local:///notes</code>, <code>ssh://me@box/dev</code> and <code>sprite://box/dev</code>. <code>local</code> is a pseudo-provider that means this machine's daemon and takes no argument. An optional <code>#id</code> suffix carries the session's identity (a UUID) once it is known (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L306-L320">providers.rs:306-320</a>).</p>
+<pre><code class="language-rust">pub struct SessionUrl {
+    pub provider: String,
+    pub arg: String,
+    pub session: String,     // the label
+    pub id: Option&lt;String&gt;,  // the identity, written `#id`
+}
+</code></pre>
+<p><code>SessionUrl::parse</code> strips a trailing <code>#id</code> and then accepts several spellings (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L363-L406">providers.rs:363-406</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Written</th>
+<th>Parsed as</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scheme://arg/session</code></td>
+<td>That provider, argument and session. An empty session means <code>default</code>. Rejected if the scheme has characters other than alphanumerics, <code>-</code> and <code>_</code>, if a non-local scheme has an empty argument, or if the session contains <code>/</code></td>
+</tr>
+<tr>
+<td><code>dest/session</code> (e.g. <code>me@host/dev</code>, <code>sprite:box/dev</code>)</td>
+<td>Destination through <code>Dest::parse</code>, via <code>split_spec</code></td>
+</tr>
+<tr>
+<td>A bare destination containing <code>@</code> or <code>:</code> (<code>sprite:box</code>)</td>
+<td>That destination's <code>default</code> session</td>
+</tr>
+<tr>
+<td>Anything else (<code>work</code>)</td>
+<td><code>SessionUrl::local(&quot;work&quot;)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Equality is by identity when both sides know it, and by label otherwise. Provider and argument must match either way. <code>Hash</code> covers only provider and argument, which keeps it consistent with that equality (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L322-L344">providers.rs:322-344</a>). <code>session_ref()</code> gives what to send the daemon: the id if known, otherwise the label. <code>dest()</code> turns the URL back into a destination spec for the functions in <code>providers.rs</code>, and returns <code>None</code> for local. <code>describe()</code> gives the human form: <code>notes (blah.host.com)</code>, just the host for a <code>default</code> session, <code>notes</code> for a local one, or <code>local</code>.</p>
+<p>Session labels are checked by <code>valid_label</code>. A label starts with a lowercase letter, continues with lowercase letters, digits and <code>-</code>, and does not end in <code>-</code>. Because a label starts with a letter, it is never mistaken for a prefix of a UUID. <code>DEFAULT_SESSION</code> is <code>&quot;default&quot;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L288-L304">providers.rs:288-304</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L278-L449">crates/apex-server/src/providers.rs:278-449</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L478-L528">crates/apex-server/src/providers.rs:478-528</a></p>
+<h2 id="putting-apex-on-the-destination">Putting apex on the destination</h2>
+<h3 id="choosing-a-binary">Choosing a binary</h3>
+<p><code>remote_target(host)</code> runs <code>uname -sm</code> on the destination and maps the result to apex's naming: <code>Linux</code>/<code>Darwin</code> become <code>linux</code>/<code>darwin</code>, and <code>x86_64</code>/<code>amd64</code> or <code>aarch64</code>/<code>arm64</code> become <code>amd64</code> or <code>arm64</code>. Any other OS or architecture is an error. <code>local_target()</code> names this machine the same way, from <code>std::env::consts</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L135-L165">providers.rs:135-165</a>).</p>
+<p>apex carries two programs for other machines, <code>CARRIED = [&quot;apex&quot;, &quot;rc&quot;]</code>. <code>bundled(target, name)</code> looks for them relative to the running executable (<code>crate::self_exe()</code>) and returns the first candidate that is a file (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L167-L209">providers.rs:167-209</a>):</p>
+<ol>
+<li><code>$APEX_REMOTE_BINARIES/&lt;target&gt;/&lt;name&gt;</code></li>
+<li><code>../Resources/remote/&lt;target&gt;/&lt;name&gt;</code>, inside <code>Apex.app</code></li>
+<li><code>remote/&lt;target&gt;/&lt;name&gt;</code> beside the executable</li>
+<li>In a dev tree, under <code>target/</code>: <code>&lt;triple&gt;/release/&lt;name&gt;</code> for <code>linux-amd64</code> (<code>x86_64-unknown-linux-musl</code>) and <code>linux-arm64</code> (<code>aarch64-unknown-linux-musl</code>), and <code>rc-&lt;target&gt;/bin/&lt;name&gt;</code></li>
+<li>For this machine's own kind only: <code>target/rc-host/bin/&lt;name&gt;</code>, then the executable's own directory</li>
+</ol>
+<p><code>mac/build-app.sh</code> fills case 2. It cross-builds <code>apex</code> for <code>x86_64-unknown-linux-musl</code>, installs <code>rc</code> for that target into <code>target/rc-linux-amd64</code>, and copies both into <code>Contents/Resources/remote/linux-amd64/</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh#L17-L29">mac/build-app.sh:17-29</a>). A Mac destination can use the app's own <code>apex</code> via case 5. See <a href="build-and-test.html">Building, Testing and Packaging</a>.</p>
+<h3 id="deploy"><code>deploy</code></h3>
+<p><code>deploy(host)</code> makes sure <code>~/.apex/bin/apex</code> and <code>~/.apex/bin/rc</code> on the destination match the local copies byte for byte. It returns the remote path (<code>REMOTE_BIN</code>, the literal <code>$HOME/.apex/bin/apex</code>) and whether anything was installed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L219-L250">providers.rs:219-250</a>). For each carried program it does the following:</p>
+<ol>
+<li>Find the local binary with <code>bundled</code>. A missing <code>apex</code> is an error (&quot;no apex for {target} in this build&quot;). A missing <code>rc</code> is skipped, because commands on the host then fall back to <code>sh</code>.</li>
+<li>Compute the local sha256 with <code>shasum -a 256</code> (<code>sha256_of</code>).</li>
+<li>Ask the destination for its hash: <code>(sha256sum F || shasum -a 256 F) | cut -c1-64</code>. A failure counts as an empty hash.</li>
+<li>If the hashes differ, send the bytes on the provider's stdin and run <code>mkdir -p $HOME/.apex/bin &amp;&amp; cat &gt; F.new &amp;&amp; chmod +x F.new &amp;&amp; mv F.new F</code>.</li>
+</ol>
+<p>Writing to <code>.new</code> and renaming means a daemon still running the old binary keeps its open file. <strong>What decides whether to update is the content hash of the binary, not the build id or the protocol.</strong> Any rebuild that changes the bytes is pushed on the next attach.</p>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;deploy(host)&quot;] --&gt; B[&quot;remote_target: uname -sm&quot;]
+    B --&gt; C{&quot;for apex, rc&quot;}
+    C --&gt; D[&quot;bundled(target, name)&quot;]
+    D --&gt;|&quot;none, apex&quot;| E[&quot;error: no apex for target&quot;]
+    D --&gt;|&quot;none, rc&quot;| C
+    D --&gt;|found| F[&quot;sha256 local vs remote&quot;]
+    F --&gt;|equal| C
+    F --&gt;|differ| G[&quot;cat &gt; F.new; chmod; mv F.new F&quot;]
+    G --&gt; C
+    C --&gt;|done| H[&quot;(REMOTE_BIN, installed)&quot;]
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L135-L250">crates/apex-server/src/providers.rs:135-250</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh#L17-L29">mac/build-app.sh:17-29</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L737-L768">DESIGN.md:737-768</a></p>
+<h2 id="attaching-apex-attach--stdio-and-the-bridge">Attaching: <code>apex attach -stdio</code> and the bridge</h2>
+<h3 id="the-command-line">The command line</h3>
+<p><code>attach_command(spec, session)</code> builds the local shell command whose stdin and stdout carry frames:</p>
+<pre><code class="language-text">&lt;program&gt; &lt;dest-name&gt; '$HOME/.apex/bin/apex -session=&lt;session&gt; attach -stdio'
+</code></pre>
+<p>The program and the destination name pass through <code>shell_quote</code>, which leaves strings of alphanumerics and <code>-_.@:/</code> bare and single-quotes everything else. The remote command is a single single-quoted word, so <code>$HOME</code> expands on the destination rather than locally. The session is filtered down to ASCII alphanumerics and <code>-_.</code> before it is spliced in (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L252-L261">providers.rs:252-261</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L451-L457">providers.rs:451-457</a>).</p>
+<h3 id="the-far-end-attach--stdio">The far end: <code>attach -stdio</code></h3>
+<p>On the destination, <code>apex attach -stdio</code> calls <code>ensure_server</code> and then <code>bridge</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1174-L1177">apex-cli main.rs:1174-1177</a>). <code>ensure_server</code> tries to connect to the socket. If nothing answers, it spawns a daemon whose first session is the requested label, or <code>default</code> when what was asked for is not a valid label (an id from a daemon that is gone) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L889-L900">main.rs:889-900</a>). <code>bridge</code> connects to the Unix socket and copies bytes both ways. One thread copies stdin to the socket and then shuts down the socket's write half. The main thread copies the socket to stdout in 64 KiB reads, flushing each one. The bridge returns when the socket side closes, even if stdin is still open. It never looks at frames: &quot;this is the whole remote story on the server side&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1199-L1228">main.rs:1199-1228</a>).</p>
+<p>Listing sessions on a host does not attach. <code>providers::list_sessions(host)</code> runs <code>$HOME/.apex/bin/apex -ensure-server ls</code>. The global <code>-ensure-server</code> flag starts the daemon first (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L758-L762">main.rs:758-762</a>). The function parses each <code>label&lt;TAB&gt;id</code> line into a <code>SessionInfo</code>, and accepts a bare label from an older apex (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L263-L276">providers.rs:263-276</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L902-L907">main.rs:902-907</a>).</p>
+<h3 id="the-near-end-bridge-child">The near end: <code>bridge_child</code></h3>
+<p><code>remote::bridge_child(cmd)</code> runs <code>sh -c cmd</code> with piped stdin and stdout, in a process group of its own (<code>process_group(0)</code>). It returns the two pipes and a closer. The closer sends <code>SIGTERM</code> to the whole group, then kills and reaps the child. The group matters because a bridge left behind keeps the far end open, and some providers only tear down cleanly when it goes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L524-L550">remote.rs:524-550</a>). The pipes are handed to <code>Link::over_streams</code>, or <code>over_streams_creating</code>, which makes the session if the daemon answers &quot;no session&quot;. From then on, the link behaves exactly as it does over a socket (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L225-L254">remote.rs:225-254</a>). Headless clients use <code>Remote::via(cmd, session, name, kind)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L739-L745">remote.rs:739-745</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant UI as &quot;apex-ui (Mac)&quot;
+    participant P as &quot;provider (ssh)&quot;
+    participant B as &quot;apex attach -stdio (host)&quot;
+    participant D as &quot;apex daemon (host)&quot;
+    UI-&gt;&gt;P: &quot;uname -sm; sha256 check; cat &gt; apex.new&quot;
+    UI-&gt;&gt;P: &quot;sh -c: ssh host '...apex -session=S attach -stdio'&quot;
+    P-&gt;&gt;B: &quot;start over ssh&quot;
+    B-&gt;&gt;D: &quot;ensure_server: spawn if socket silent&quot;
+    B-&gt;&gt;D: &quot;connect Unix socket&quot;
+    D--&gt;&gt;UI: &quot;Build { protocol, id } (via bridge)&quot;
+    UI-&gt;&gt;D: &quot;Hello { session, ... } (via bridge)&quot;
+    D--&gt;&gt;UI: &quot;Welcome { attachment, snapshot }&quot;
+    UI-&gt;&gt;D: &quot;Append / Propose ...&quot;
+    D--&gt;&gt;UI: &quot;Entries / Applied ...&quot;
+</code></pre>
+<h3 id="where-the-client-uses-it">Where the client uses it</h3>
+<table>
+<thead>
+<tr>
+<th>Caller</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Acme::connect_link</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1430-L1457">app.rs:1430-1457</a>)</td>
+<td>For a URL with a <code>dest()</code>: <code>deploy</code>, then <code>attach_command</code> with <code>session_ref()</code>, then <code>connect_via_link</code> (creating the session if missing)</td>
+</tr>
+<tr>
+<td><code>Acme::connect_existing_targeted</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1461-L1479">app.rs:1461-1479</a>)</td>
+<td>Same, for a tab from last time, with <code>Link::over_streams</code> so nothing is created</td>
+</tr>
+<tr>
+<td><code>Acme::attach_via</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1496-L1510">app.rs:1496-1510</a>)</td>
+<td><code>--via CMD</code>: any command at all, recorded with provider <code>via</code></td>
+</tr>
+<tr>
+<td><code>ask_host</code> in the session selector (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1362-L1380">shell.rs:1362-1380</a>)</td>
+<td><code>list_sessions</code>; if that fails, <code>deploy</code> and try again (a newly added host has no apex yet)</td>
+</tr>
+<tr>
+<td><code>restart_daemon</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs#L95-L132">restart.rs:95-132</a>)</td>
+<td><code>deploy</code>, then run <code>$HOME/.apex/bin/apex stop</code> on the host, then reattach every tab on that destination</td>
+</tr>
+<tr>
+<td>Ending and renaming remote sessions (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L870">app.rs:870</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1288">shell.rs:1288</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1588">shell.rs:1588</a>)</td>
+<td><code>providers::run</code> with <code>REMOTE_BIN end-session …</code> or <code>rename-session …</code></td>
+</tr>
+</tbody>
+</table>
+<p>On the command line, <code>apex attach [DEST/]SESSION | URL</code> normalises a URL to <code>dest/session</code>. For a remote target it launches <code>apex-ui --remote HOST --session SESS</code>, and the UI turns that into a <code>SessionUrl</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1165-L1197">main.rs:1165-1197</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L804-L818">apex-client main.rs:804-818</a>). For a remote session, the client opens the window first and attaches afterwards (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L845-L849">apex-client main.rs:845-849</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L252-L276">crates/apex-server/src/providers.rs:252-276</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L208-L218">crates/apex-cli/src/main.rs:208-218</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L889-L907">crates/apex-cli/src/main.rs:889-907</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1165-L1228">crates/apex-cli/src/main.rs:1165-1228</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L524-L550">crates/apex-server/src/remote.rs:524-550</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L739-L745">crates/apex-server/src/remote.rs:739-745</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1430-L1510">crates/apex-client/src/app.rs:1430-1510</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs#L95-L132">crates/apex-client/src/restart.rs:95-132</a></p>
+<h2 id="the-build-id-and-version-mismatches">The build id and version mismatches</h2>
+<p><code>apex-server/build.rs</code> computes the build id. It walks every <code>.rs</code> file under <code>crates/</code>, adds <code>Cargo.lock</code>, and sorts the list. It hashes each file's workspace-relative path and contents, each followed by a NUL, with SHA-256. The first 12 hex digits become <code>APEX_BUILD_ID</code>, exposed as <code>apex_server::BUILD_ID</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs#L1-L41">build.rs:1-41</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L12">lib.rs:12</a>). The hash depends only on the sources, so the macOS binary and the cross-built <code>linux-amd64</code> binary in the same app get the same id. <code>apex version</code> prints it with the protocol number (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1050-L1053">main.rs:1050-1053</a>).</p>
+<p>The daemon sends <code>ServerMsg::Build { protocol, id }</code> first on every connection (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L459">daemon.rs:459</a>). Over a bridge, this frame comes from the <em>remote</em> daemon. <code>check_build</code> refuses only on a <strong>protocol</strong> mismatch, returning an <code>Unsupported</code> error that tells the user to stop the old daemon. A different build id with the same protocol is accepted (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L568-L583">remote.rs:568-583</a>). Note that <code>apex help version</code> says that a client of another build &quot;refuses to go on&quot;, which is stricter than what the code does.</p>
+<p>Two things therefore keep a remote host current. <code>deploy</code>'s sha256 comparison replaces the binary on disk whenever the local build differs. A daemon already running the old binary keeps running it, though. If it speaks another protocol, the attach fails with <code>Unsupported</code>, and the client offers &quot;Restart Daemon&quot; for that host. That runs <code>deploy</code> and then <code>apex stop</code> there, and attaching again starts a fresh daemon from the new binary (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs#L76-L132">restart.rs:76-132</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/build.rs#L1-L41">crates/apex-server/build.rs:1-41</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L12">crates/apex-server/src/lib.rs:12</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L568-L583">crates/apex-server/src/remote.rs:568-583</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L459">crates/apex-server/src/daemon.rs:459</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L591-L594">crates/apex-cli/src/main.rs:591-594</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs#L76-L132">crates/apex-client/src/restart.rs:76-132</a></p>
+<h2 id="the-ssh-test-a-fake-host">The ssh test: a fake host</h2>
+<p><code>crates/apex-cli/tests/ssh.rs</code> tests the whole path without a second machine. <code>fake_host()</code> creates a scratch <code>HOME</code> and a socket path, and writes a <code>fake-ssh</code> script there:</p>
+<pre><code class="language-sh">#!/bin/sh
+# $1 is the host; the rest is the command
+shift
+export HOME=&lt;scratch&gt;
+export APEX_SOCKET=&lt;scratch&gt;.sock
+exec sh -c &quot;$*&quot;
+</code></pre>
+<p><code>binaries()</code> builds an <code>APEX_REMOTE_BINARIES</code> tree for <code>local_target()</code>. It holds a copy of the test's own <code>apex</code> (<code>CARGO_BIN_EXE_apex</code>) and a trivial <code>rc</code> script. Every test changes process-wide environment variables, so all of them hold the <code>ONE_AT_A_TIME</code> mutex. <code>stop_host</code> kills the daemon by its unique <code>-socket=</code> argument with <code>pkill -f</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs#L13-L55">ssh.rs:13-55</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deploy_installs_and_updates_our_binary_on_the_host</code></td>
+<td><code>remote_target</code> equals <code>local_target</code>. The first <code>deploy</code> installs <code>apex</code> and <code>rc</code> under the scratch <code>~/.apex/bin</code>. A second <code>deploy</code> installs nothing. After a byte is appended to the local binary, <code>deploy</code> installs again</td>
+</tr>
+<tr>
+<td><code>attaching_over_ssh_bridges_to_a_daemon_on_the_host</code></td>
+<td><code>list_sessions</code> starts the daemon and lists <code>default</code>. The <code>attach_command</code> starts with the script path and <code>box</code>. A <code>Remote::via</code> UI client makes a window, flushes and waits until the buffer shard is acked through the bridge. A second client attached through a new bridge sees the window <code>remote-notes</code></td>
+</tr>
+<tr>
+<td><code>a_provider_is_a_command_named_apex_provider_on_the_path</code></td>
+<td>Copies the script to <code>apex-remote-sprite</code> on the PATH and clears <code>APEX_SSH</code>. Checks <code>Dest::parse</code>, <code>program</code>, <code>spec</code> and <code>split_spec</code>, and that an unknown provider is an error. Then runs <code>deploy</code>, <code>list_sessions</code> and <code>Remote::via</code> against <code>sprite:box</code>, and the new session has two columns</td>
+</tr>
+<tr>
+<td><code>session_urls_name_a_provider_an_argument_and_a_session</code></td>
+<td>URL parsing and printing, <code>dest()</code>, the older spellings, and the rejection of <code>sprite:///nothing</code> and <code>&quot;&quot;</code></td>
+</tr>
+</tbody>
+</table>
+<p>The unit tests in <code>providers.rs</code> cover <code>available()</code> with an <code>apex-remote-zed</code> put on the PATH, <code>describe()</code>, identity-based equality, and label validation (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L459-L528">providers.rs:459-528</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/ssh.rs#L1-L166">crates/apex-cli/tests/ssh.rs:1-166</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L459-L528">crates/apex-server/src/providers.rs:459-528</a></p>
+<h2 id="edge-cases-and-errors">Edge cases and errors</h2>
+<ul>
+<li><strong>Unsupported hosts.</strong> <code>remote_target</code> fails on any OS other than Linux or Darwin, and on any architecture other than amd64 or arm64. <code>deploy</code> fails if the build carries no <code>apex</code> for the target. The Mac app carries only <code>linux-amd64</code> besides its own kind.</li>
+<li><strong>No <code>rc</code> on the host.</strong> This is not an error. Commands run with <code>sh</code> instead.</li>
+<li><strong>First contact.</strong> The session selector deploys and retries when <code>list_sessions</code> fails. If the deploy also fails, it reports the <em>first</em> error.</li>
+<li><strong>Hash probe failures.</strong> These are treated as &quot;different&quot;, so the binary is reinstalled rather than the attach failing.</li>
+<li><strong>Stray bridges.</strong> The closer from <code>bridge_child</code> kills the whole process group, so a provider's helper processes don't keep the remote end alive.</li>
+<li><strong><code>$HOME</code>.</strong> Remote paths are always written with a literal <code>$HOME</code> inside single quotes, so they expand on the destination.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/providers.rs#L135-L261">crates/apex-server/src/providers.rs:135-261</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L524-L550">crates/apex-server/src/remote.rs:524-550</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1362-L1380">crates/apex-client/src/shell.rs:1362-1380</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="io-plane-and-pages.html">The I/O Plane and Pages</a></span><span class="next">Next: <a href="client.html">The UI Client (apex-ui)</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top current"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+<ul class="sections">
+<li class="l2"><a href="#providers">Providers</a></li>
+<li class="l3"><a href="#destinations-dest">Destinations: Dest</a></li>
+<li class="l3"><a href="#running-a-command-run">Running a command: run</a></li>
+<li class="l3"><a href="#the-example-providers">The example providers</a></li>
+<li class="l2"><a href="#session-urls">Session URLs</a></li>
+<li class="l2"><a href="#putting-apex-on-the-destination">Putting apex on the destination</a></li>
+<li class="l3"><a href="#choosing-a-binary">Choosing a binary</a></li>
+<li class="l3"><a href="#deploy">deploy</a></li>
+<li class="l2"><a href="#attaching-apex-attach--stdio-and-the-bridge">Attaching: apex attach -stdio and the bridge</a></li>
+<li class="l3"><a href="#the-command-line">The command line</a></li>
+<li class="l3"><a href="#the-far-end-attach--stdio">The far end: attach -stdio</a></li>
+<li class="l3"><a href="#the-near-end-bridge-child">The near end: bridge_child</a></li>
+<li class="l3"><a href="#where-the-client-uses-it">Where the client uses it</a></li>
+<li class="l2"><a href="#the-build-id-and-version-mismatches">The build id and version mismatches</a></li>
+<li class="l2"><a href="#the-ssh-test-a-fake-host">The ssh test: a fake host</a></li>
+<li class="l2"><a href="#edge-cases-and-errors">Edge cases and errors</a></li>
+</ul>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

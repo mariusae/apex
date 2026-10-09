@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions, Tabs and Window Chrome · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Sessions, Tabs and Window Chrome</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/attention.rs">crates/apex-client/src/attention.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/glide.rs">crates/apex-client/src/glide.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/miniature.rs">crates/apex-client/src/miniature.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs">crates/apex-client/src/pool.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/procs.rs">crates/apex-client/src/procs.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs">crates/apex-client/src/restart.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shelf.rs">crates/apex-client/src/shelf.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs">crates/apex-client/src/shell.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/sidebar.rs">crates/apex-client/src/sidebar.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/standing.rs">crates/apex-client/src/standing.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/strips.rs">crates/apex-client/src/strips.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/switcher.rs">crates/apex-client/src/switcher.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlebar.rs">crates/apex-client/src/titlebar.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs">crates/apex-client/src/titlefit.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/toasts.rs">crates/apex-client/src/toasts.rs</a></li>
+</ul>
+</details>
+<p>Everything the apex client draws <em>around</em> acme's tiled columns lives in a set of small modules in <code>crates/apex-client/src</code>. These modules cover the tabs and the pool of sessions behind them, the session picker, the sidebar and title bar, the ctrl-tab walk and the ⌘⇧\ overview, the stash shelf and column strips, window glides, notifications and the Dock, diagnostic toasts, process pills, the window's standing with its daemon, and restarting a daemon of another build. Most of these modules are <code>impl Acme</code> blocks that add methods to the one big client type described on <a href="client.html">The UI Client (apex-ui)</a>. A few hold app-wide state as gpui globals: <code>Pool</code> and the attention queue.</p>
+<p>None of this chrome changes the replicated model, with two exceptions. Stashing goes through the node into the layout shard. Killing a process and taking a notification go to the server. Everything else is read from the session's replica (<code>Node</code>) every frame and painted. The tiling these pieces decorate is on <a href="tiling-and-layout.html">Tiling and Layout</a>. Leases, fencing and attachments, which the &quot;standing&quot; chip reports on, are on <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>. Input inside the windows is on <a href="client-input.html">Mouse, Keyboard and Look</a>, and the other pickers are on <a href="client-overlays.html">Pickers and Overlays</a>.</p>
+<h2 id="module-map">Module map</h2>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>What it owns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pool.rs</code></td>
+<td><code>Pool</code> global: the app's tabs (<code>TabId</code>, <code>Tab</code>, <code>State</code>), the parked sessions, recency order, launching links in the background</td>
+</tr>
+<tr>
+<td><code>app.rs</code> (parts)</td>
+<td><code>switch_to</code>, <code>park</code>, <code>adopt_parked</code>, <code>close_current_session</code>, <code>tab_word</code>, <code>tab_notified</code>, <code>next_notification</code></td>
+</tr>
+<tr>
+<td><code>shell.rs</code> (parts)</td>
+<td>The session picker (<code>Selector</code>, <code>Row</code>, <code>Host</code>, <code>Loading</code>), known hosts and sessions, recent sessions</td>
+</tr>
+<tr>
+<td><code>titlebar.rs</code></td>
+<td>Session name (click to rename), the chevron's session menu</td>
+</tr>
+<tr>
+<td><code>sidebar.rs</code></td>
+<td>Vertical tabs per host, the shown session's windows, stash and processes</td>
+</tr>
+<tr>
+<td><code>switcher.rs</code></td>
+<td>ctrl-tab walk with a slide, the ⌘⇧\ overview grid, sidebar row previews</td>
+</tr>
+<tr>
+<td><code>miniature.rs</code></td>
+<td><code>Mini</code>: a session, window or column drawn small and live from a replica</td>
+</tr>
+<tr>
+<td><code>shelf.rs</code></td>
+<td>The stash as a fan of cards in the title bar, with a live preview</td>
+</tr>
+<tr>
+<td><code>strips.rs</code></td>
+<td>Stashed columns (sheet edges) and minimized columns (slim cards with handles)</td>
+</tr>
+<tr>
+<td><code>glide.rs</code></td>
+<td>Animating windows and columns between layout positions</td>
+</tr>
+<tr>
+<td><code>attention.rs</code></td>
+<td>Cross-session notification queue, Dock badge and bounce, <code>NSBeep</code></td>
+</tr>
+<tr>
+<td><code>toasts.rs</code></td>
+<td>Toasts for new text in diagnostic windows</td>
+</tr>
+<tr>
+<td><code>procs.rs</code>, <code>titlefit.rs</code></td>
+<td>Process pills and their hover card; fitting path and pills to the bar</td>
+</tr>
+<tr>
+<td><code>standing.rs</code></td>
+<td>Leading / watching / stalled / offline / coming; chip, banner, card, auto-reconnect</td>
+</tr>
+<tr>
+<td><code>restart.rs</code></td>
+<td>Offering and doing a restart of a mismatched local server or remote daemon</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L1-L18">pool.rs:1-18</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/standing.rs#L1-L17">standing.rs:1-17</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/switcher.rs#L1-L18">switcher.rs:1-18</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shelf.rs#L1-L10">shelf.rs:1-10</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/toasts.rs#L1-L17">toasts.rs:1-17</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L1-L12">titlefit.rs:1-12</a></p>
+<h2 id="tabs-and-the-session-pool">Tabs and the session pool</h2>
+<h3 id="tabs-are-the-apps-sessions-are-the-hosts">Tabs are the app's, sessions are the host's</h3>
+<p>A session's identity cannot be relied on to name a tab. If you end a session and attach to its label again, the host makes a new session with a new id. The pool therefore gives each tab its own <code>TabId(u64)</code>, which never changes and is never reused, and keeps the session's <code>SessionUrl</code> beside it in <code>Tab::url</code>, correcting it as attaches report more. Everything in the UI (keys, clicks, notifications) refers to a tab by <code>TabId</code>. <code>Pool::open</code> is the only place a URL is turned into a tab. It is also the only caller of <code>one_session</code>, which treats two URLs as the same session when they are equal, or when they have the same provider, host argument and label (so a re-made session, or a rename one side has not heard about yet, keeps its tab).</p>
+<pre><code class="language-rust">pub struct Tab {
+    pub id: TabId,
+    pub url: SessionUrl,
+    pub state: State,   // Coming(Why) | Up | Down(String)
+}
+</code></pre>
+<p><code>State::word</code> gives the short word shown after a tab's name: &quot;connecting…&quot; or &quot;restoring…&quot; for <code>Coming(Why::Attaching | Why::Restoring)</code>, &quot;offline&quot; for <code>Down</code>, nothing for <code>Up</code>. <code>Why::sentence</code> gives the longer line shown on the blank page while a tab waits.</p>
+<p>Tabs persist across launches. <code>Pool::install</code> reads one URL per line from the <code>open-sessions</code> file beside the client's state file. It keeps only URLs that carry an identity, and makes each a tab in state <code>Down(&quot;not attached&quot;)</code>, so the bar is right from the first frame. <code>save_tabs</code> rewrites the file whenever the tab list or a tab's URL changes. Parked sessions do not persist: &quot;Nothing is parked across a launch.&quot;</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L39-L117">pool.rs:39-117</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L186-L238">pool.rs:186-238</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L269-L305">pool.rs:269-305</a></p>
+<h3 id="parked-sessions">Parked sessions</h3>
+<p>apex has one window. When it switches away from a session, <code>Acme::park</code> takes the remote <code>Link</code>, <code>Log</code> and <code>Node</code> off the window, puts a blank in-process stand-in in their place, and returns a <code>Parked</code>. The <code>Parked</code> holds the link, replica, URL, wake target, previews, live pages, snarfouts, a pending goto, and a <code>Seen</code> record. <code>Seen</code> stores the diagnostic text and notification times the window had already seen, so that showing the session again toasts and pings only what came in meanwhile. <code>Pool::park</code> stores the <code>Parked</code> under its tab and redirects the link's wake to the pool through <code>WakeTarget</code>: the reader thread holds a forwarding closure whose target can be swapped.</p>
+<p>A parked session is still the leader of its shards. The pool's tending task (<code>Pool::tend</code>) runs whenever a parked link wakes it, and does the following:</p>
+<ul>
+<li>It polls each link, which applies incoming entries.</li>
+<li>It discards shows, and opens gotos in the first column (URLs via <code>Proposal::open_url</code>, files via <code>ClientMsg::OpenFile</code>).</li>
+<li>It answers the rules' client asks. Only <code>open</code> can be answered; anything else is refused with &quot;the session is parked, nobody sees it&quot;.</li>
+<li>It clears pending I/O, then flushes and catches up.</li>
+</ul>
+<p>After that it copies each parked session's metalog label onto its tab's URL, so a rename made elsewhere shows. A link that has ended leaves its tab in place with <code>Down(&quot;the link ended&quot;)</code>.</p>
+<p>At most <code>CAP = 8</code> sessions stay parked. Beyond that, the least recently parked link is closed. Its tab stays, marked <code>Down(&quot;let go: 8 sessions are as many as stay attached&quot;)</code>, and showing it again attaches again. <code>park</code> also refuses to park a tab the window is already showing: a second UI attachment would take the lead (the daemon lets the latest UI lead) and leave the window fenced.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L119-L184">pool.rs:119-184</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L499-L539">pool.rs:499-539</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L586-L659">pool.rs:586-659</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L807-L853">app.rs:807-853</a></p>
+<h3 id="bringing-a-tab-up">Bringing a tab up</h3>
+<p><code>Pool::start</code> marks a tab <code>Coming(why)</code> and runs <code>Acme::connect_existing_targeted</code> (for tabs restored at launch, which must already exist) or <code>Acme::connect_blocking</code> on the background executor. A tab that is already coming is left alone. When the attempt finishes, <code>Pool::landed</code> decides where the link goes:</p>
+<ul>
+<li><strong>The tab was closed meanwhile.</strong> The link is closed.</li>
+<li><strong>Success.</strong> The session's real identity (<code>app::identified</code>) is written to the tab, which goes <code>Up</code>. If a window is sitting on that tab unconnected (<code>waiting_on</code>), the window <code>adopt</code>s the link. Otherwise the link is parked.</li>
+<li><strong>Failure.</strong> An <code>ErrorKind::Unsupported</code> error on a local URL means the server is from another version, and the app offers a restart (see below). A waiting window shows the error. With no window waiting, a &quot;no session…&quot; error drops the tab, since there is nothing to come back to, and any other error marks the tab <code>Down(why)</code>.</li>
+</ul>
+<p>At launch, <code>main.rs</code> opens the window and then calls <code>Pool::restore</code>, which starts every tab the window is not showing with <code>Why::Restoring</code> and <code>existing = true</code>. The exception is when the launch target is the picker; then the tabs wait in the bar.</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Down: &quot;install (from open-sessions) or Pool::open&quot;
+    Down --&gt; Coming: &quot;Pool::start&quot;
+    Coming --&gt; Up: &quot;landed Ok (adopted or parked)&quot;
+    Coming --&gt; Down: &quot;landed Err&quot;
+    Coming --&gt; [*]: &quot;landed Err 'no session' and no window waiting&quot;
+    Up --&gt; Down: &quot;link ended / evicted past CAP&quot;
+    Up --&gt; [*]: &quot;Pool::let_go&quot;
+    Down --&gt; [*]: &quot;Pool::let_go&quot;
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L307-L435">pool.rs:307-435</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L845-L869">main.rs:845-869</a></p>
+<h3 id="switching-closing-and-recency">Switching, closing and recency</h3>
+<p><code>Acme::switch_to(id)</code> is the single path for showing a tab. It parks the current session, sets <code>self.tab</code>, and records the tab as settled unless a ctrl-tab walk is in progress. If the pool has the session parked, <code>adopt_parked</code> swaps the link, log and node back in at once and restores <code>Seen</code>. Otherwise the window shows a blank page with the tab's <code>Why::sentence</code>, and <code>Pool::start</code> makes the link. Nothing waits on the UI thread, so moving on before the link lands loses nothing: the link parks itself when it arrives.</p>
+<p>The pool keeps two orders. <code>tabs</code> is the order the user arranged. <code>settled</code> holds tabs the window stopped on, most recent first. <code>by_recency</code> returns every settled tab first, followed by parked or coming tabs that were never settled on, most recently parked first. <code>most_recent</code> drives ⌘⇧K (<code>previous_session</code>) and <code>next_tab</code>. <code>close_current_session</code> switches to <code>next_tab</code>, which is the most recent other tab or else a neighbour, and then calls <code>Pool::let_go</code> on the old tab. If it was the last tab, the window closes. Other keyboard paths are cmd-N (<code>go_to_tab</code>) and ⌘⇧[ / ⌘⇧] (<code>cycle_tab</code>, wrapping).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant UI as &quot;Acme (window)&quot;
+    participant P as &quot;Pool (global)&quot;
+    participant BG as &quot;background executor&quot;
+    UI-&gt;&gt;UI: &quot;park() current link, log, node&quot;
+    UI-&gt;&gt;P: &quot;Pool::park(old tab, Parked)&quot;
+    UI-&gt;&gt;P: &quot;Pool::take(new tab)&quot;
+    alt parked
+        P--&gt;&gt;UI: &quot;Parked&quot;
+        UI-&gt;&gt;UI: &quot;adopt_parked (instant)&quot;
+    else not parked
+        UI-&gt;&gt;UI: &quot;wait(sentence) blank page&quot;
+        UI-&gt;&gt;P: &quot;Pool::start(id)&quot;
+        P-&gt;&gt;BG: &quot;connect_blocking / connect_existing_targeted&quot;
+        BG--&gt;&gt;P: &quot;landed(result)&quot;
+        P-&gt;&gt;UI: &quot;adopt(link) if window still waiting on tab, else park&quot;
+    end
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L942-L1003">app.rs:942-1003</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1030-L1129">app.rs:1030-1129</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L541-L584">pool.rs:541-584</a></p>
+<h2 id="the-session-picker">The session picker</h2>
+<p>⌘T, the sidebar's &quot;New Session&quot; row and the title menu's &quot;New Session…&quot; all call <code>open_selector</code>, which calls <code>open_picker</code>. The picker's state is a <code>Selector</code> holding:</p>
+<ul>
+<li>the open tabs, and recently closed sessions not open here (from the <code>recent-sessions</code> file, one per host and label);</li>
+<li>the known hosts, with this Mac first (<code>known_hosts</code> reads the <code>known-hosts</code> file and adds the hosts of recent sessions);</li>
+<li>each host's sessions as a <code>Loading</code>: <code>Seeded</code> from the <code>known-sessions</code> cache at once, <code>Ready</code> when the host answers, <code>Failed(last, why)</code> when it does not.</li>
+</ul>
+<p>Each host is asked in the background by <code>ask_host</code>. A remote host with no apex yet gets one via <code>providers::deploy</code> and is asked again. An <code>epoch</code> counter drops answers meant for an earlier opening of the picker.</p>
+<p><code>Selector::rows</code> builds one list filtered by the typed text, matched against label and host:</p>
+<table>
+<thead>
+<tr>
+<th>Row</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GoTo(TabId, url)</code></td>
+<td>A tab open here, other than the current one</td>
+</tr>
+<tr>
+<td><code>Open(url)</code></td>
+<td>A session a host has, or one recently closed</td>
+</tr>
+<tr>
+<td><code>Create(url, host)</code></td>
+<td>Make a session with the typed name, on each host that lacks one by that name (only if <code>valid_label</code> accepts it)</td>
+</tr>
+<tr>
+<td><code>NewHost</code></td>
+<td>The &quot;Add a host…&quot; form (<code>Connect</code>: a provider from <code>providers::available()</code>, and a host)</td>
+</tr>
+<tr>
+<td><code>Rename(name)</code></td>
+<td>Shown when opened with <code>open_rename</code> (right-click on a sidebar row)</td>
+</tr>
+<tr>
+<td><code>Note(text)</code></td>
+<td>Unpickable: an invalid label</td>
+</tr>
+</tbody>
+</table>
+<p><code>choose</code> dispatches the picked row. <code>GoTo</code> calls <code>switch_to</code>, <code>Open</code> and <code>Create</code> call <code>switch_to_url</code> (and so <code>Pool::open</code>), and <code>Rename</code> calls <code>rename_session</code> for this session or <code>rename_other</code>, which runs the daemon's rename locally or <code>apex rename-session</code> remotely. <code>keeping</code> keeps the cursor on its row while answers arrive and rows move.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L800-L1007">shell.rs:800-1007</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1015-L1218">shell.rs:1015-1218</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1259-L1410">shell.rs:1259-1410</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1648-L1685">shell.rs:1648-1685</a></p>
+<h2 id="title-bar-and-sidebar">Title bar and sidebar</h2>
+<h3 id="the-title-bar">The title bar</h3>
+<p><code>title_bar</code> in <code>main.rs</code> builds the bar as a Mac app's. Its height is <code>title_h()</code>: the tag line height plus a border, and at least 38 px. From left to right it holds:</p>
+<ol>
+<li>AppKit's traffic lights and the sidebar toggle.</li>
+<li>The session's name and chevron, only when the sidebar is hidden.</li>
+<li>The standing chip.</li>
+<li>The session's directory crumbs and the process pills, both fitted by <code>titlefit</code>.</li>
+<li>acme's top tag (<code>ViewId::Top</code>), still editable.</li>
+<li>Room for the stash shelf at the right end.</li>
+</ol>
+<p>Bare parts of the bar move the window on drag and zoom it on double-click. When the sidebar is pinned, its card extends up around the traffic lights.</p>
+<p><code>titlebar.rs</code> draws the session's name. Clicking it turns it into a <code>LineEdit</code> field with everything selected: return renames the session if the new name is non-empty and has no whitespace, and escape cancels. The chevron toggles a menu of every tab. The menu marks the current tab with ✓, shows a remote tab's host, shows <code>tab_word</code> (for example &quot;watching&quot; or &quot;offline&quot;), and puts the pjw glyph on other tabs with notifications. It ends with &quot;New Session…&quot;. When another tab has notifications, pjw also appears as a badge on the chevron itself. pjw is never used for the session being shown.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1116-L1122">main.rs:1116-1122</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1243-L1394">main.rs:1243-1394</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlebar.rs#L1-L245">titlebar.rs:1-245</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1985-L2025">app.rs:1985-2025</a></p>
+<h3 id="the-sidebar">The sidebar</h3>
+<p>When the sidebar is toggled on (<code>theme::sidebar()</code>), it is a 236 px column (<code>SIDEBAR_W</code>) holding a card inset 6 px. <code>sidebar_entries</code> groups rows by host: this Mac first, then known hosts, then any other host a tab is on. Under each host it lists the app's tabs (<code>Entry::Tab</code>), then that host's other sessions in a fainter style (<code>Entry::Known</code>; clicking one calls <code>switch_to_url</code>). Host headers appear only when there is more than one host, and say &quot;unreachable&quot; when the last ask failed. <code>sidebar_refresh</code> asks every host for its sessions in the background when the sidebar shows and again each minute.</p>
+<p>A tab row shows an initial avatar (accent-coloured for the current tab), the name, and a second line: the tab word, or else the host for a remote session. Hovering shows an × that closes the current session or calls <code>Pool::let_go</code> on another; otherwise a notified tab shows pjw. Hovering a row also draws <code>session_preview</code>, a 320 px live miniature of a parked session beside the row. Right-click opens the rename picker.</p>
+<p>Under the current tab, <code>window_rows</code> lists the session's windows column by column, then a &quot;Stashed&quot; section (latest first), then &quot;Processes&quot;. Each window row shows the window's handle dot (<code>window_dot</code>: unsaved, live, working, progress, notification age) and names it with <code>sidebar::names</code>. That function uses the window's label, else the last part of its path, else a kind such as &quot;Terminal&quot;, &quot;Errors&quot; or &quot;X preview&quot;, and prints paths relative to the session's directory using <code>shown</code>. Clicking a row calls <code>reveal_window</code>, or <code>unstash</code> for a stashed window.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/sidebar.rs#L1-L296">sidebar.rs:1-296</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/sidebar.rs#L298-L493">sidebar.rs:298-493</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/sidebar.rs#L577-L675">sidebar.rs:577-675</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L225-L238">main.rs:225-238</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/switcher.rs#L475-L516">switcher.rs:475-516</a></p>
+<h2 id="ctrl-tab-the-overview-and-miniatures">ctrl-tab, the overview and miniatures</h2>
+<h3 id="miniatures">Miniatures</h3>
+<p><code>miniature::snapshot(node, theme)</code> turns a replica into a <code>Mini</code>, a list of coloured rectangles and text lines in the session's own pixel coordinates. It includes the top tag, each shown column's tag and body background, each visible window's tag (path, label, then dim tag text), and the window body:</p>
+<ul>
+<li>a text window's lines from its body view's origin, with tabs expanded;</li>
+<li>a terminal's grid, in runs of the cell colours;</li>
+<li>a page as plain paper with its name, since a page's native WKWebView belongs only to the shown session.</li>
+</ul>
+<p><code>snapshot_window</code> draws a single window and <code>snapshot_column_at</code> a single column. <code>Mini::paint</code> scales the result to fit a width. <code>paint_tilted</code> takes a <code>Tilt</code> that can lean a card back with a slope. Because each card is rebuilt from the replica every frame, the cards are live.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/miniature.rs#L1-L80">miniature.rs:1-80</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/miniature.rs#L82-L185">miniature.rs:82-185</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/miniature.rs#L187-L307">miniature.rs:187-307</a></p>
+<h3 id="the-ctrl-tab-walk">The ctrl-tab walk</h3>
+<p>On the first ctrl-tab, <code>switcher_step</code> freezes an order in a <code>Switcher</code>: this tab, then <code>Pool::by_recency</code>. Each press steps the index (ctrl-shift-tab goes back) and calls <code>slide_to</code>. <code>slide_to</code> snapshots the outgoing session as a <code>Mini</code>, calls <code>switch_to</code>, and starts a 220 ms <code>SwitchSlide</code>. During the slide, the new content is offset by <code>dir * width * (1 - ease(t))</code> while the outgoing miniature slides out beside it. Because <code>switch_to</code> skips <code>note_settled</code> while a <code>Switcher</code> exists, sessions passed on the way are not counted as settled. Releasing control calls <code>switcher_commit</code>, which settles on the current tab. The 100 ms tick also commits if control has come up without gpui seeing it, for example while a page had the keys. Escape (<code>close_switcher</code>) slides back to the first entry.</p>
+<h3 id="the-overview-">The overview (⌘⇧)</h3>
+<p><code>toggle_overview</code> opens an <code>Overview</code>. <code>overview_grid</code> picks the column count that gives the largest cards with the layout's aspect ratio inside 48 px padding, capped at 45% of the window's width. <code>overview_overlay</code> animates the current session's card shrinking from the full window into its grid slot over 260 ms (<code>OVERVIEW_RISE</code>) while the others fade in from 92% size. An accent ring shows the focus. Hover and the arrow keys move the focus (<code>overview_key</code>), and return or a click picks a card. Escape, a click off the cards, or ⌘⇧\ again picks the current tab. The picked card grows to fill the window over 240 ms (<code>OVERVIEW_PICK</code>), and then <code>overview_tick</code> calls <code>switch_to</code> and <code>note_settled</code>. <code>session_card</code> draws a session that is neither shown nor parked as its state word, or &quot;not connected&quot;.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/switcher.rs#L20-L166">switcher.rs:20-166</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/switcher.rs#L168-L473">switcher.rs:168-473</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1706-L1712">app.rs:1706-1712</a></p>
+<h2 id="stash-shelf-column-strips-and-glides">Stash shelf, column strips and glides</h2>
+<h3 id="the-stash-shelf">The stash shelf</h3>
+<p>⌘M (<code>stash_key</code>) stashes the key window, or else the window under the pointer, through <code>Node::stash_window</code>. The shelf draws the layout's <code>stash</code> at the title bar's right end, latest on top, like a hand of cards. Each card peeks 5 px out from under the one above (at most 4 do). A card whose window is working or notified slides out a further 34 px (<code>PULL</code>) over 0.3 s, tracked per window by <code>sync_pulls</code> and <code>shelf_pulls</code>.</p>
+<p>Hovering or scrolling opens the fan (<code>Shelf::fan</code>, 160 ms, eased, reversible midway). The cards then spread leftward across at most half the bar, and the picked card's window appears below the bar as <code>shelf_preview</code>. For text and terminal windows the preview is the real <code>TextElement</code> and <code>TermElement</code>, live and editable; pages are drawn as a miniature. The preview's size is the window's stashed size, at least 480 by 320 (or 40% of the height), scaled down to fit. The fan closes <code>GRACE = 250 ms</code> after the pointer leaves both the cards and the preview, but not while a button is held. When it closes, <code>restack</code> brings windows worked in during the fan (<code>touched</code>) forward with <code>restash_window</code>. Clicking a card calls <code>unstash</code>.</p>
+<p><code>peek_errors</code> serves a toast's Show All. It opens the fan on a stashed window, selects the first line of what the toast said, and warps the pointer there.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shelf.rs#L24-L163">shelf.rs:24-163</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shelf.rs#L165-L326">shelf.rs:165-326</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shelf.rs#L328-L590">shelf.rs:328-590</a></p>
+<h3 id="column-strips">Column strips</h3>
+<p>A column can be shown as a strip in two ways:</p>
+<ul>
+<li><strong>Stashed</strong> (B3 on its box). <code>strip_element</code> draws three sheet edges at the right of the row. Hovering it (<code>strip_tick</code>, also driven from the 100 ms tick through <code>native_mouse</code>) opens <code>strip_slice</code>: a live <code>snapshot_column_at</code> miniature at the width the column would come back to, from <code>restore</code> as a millionth of the row (default a third, clamped to 240 px up to half the row), placed on the side with more room. Clicking the slice calls <code>bring_back_column</code>. The slice closes 150 ms after the pointer leaves.</li>
+<li><strong>Minimized.</strong> <code>minimized_element</code> draws a slim card with the column grip at the top and each window's handle dot where the window stands. Clicking a dot calls <code>press_handle</code> for that window; clicking anywhere else is the column box (<code>press_col_box</code>).</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/strips.rs#L1-L117">strips.rs:1-117</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/strips.rs#L119-L212">strips.rs:119-212</a></p>
+<h3 id="glides">Glides</h3>
+<p>The core moves windows instantly. <code>glided_layout</code> returns a copy of the layout in which any window or column whose rectangle changed since the last frame sits partway along a 160 ms ease-out cubic (<code>ease</code>) from the old rectangle to the new. A move begun before the last one finished restarts from the last target with an 80 ms <code>HURRY</code>. A window that appears among existing ones opens down from its top edge. Resizing the window, switching tabs (<code>row</code> holds both the row rectangle and the <code>TabId</code>) or turning off View ▸ Layout Animations makes everything snap into place.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/glide.rs#L1-L147">glide.rs:1-147</a></p>
+<h2 id="notifications-the-dock-and-toasts">Notifications, the Dock and toasts</h2>
+<h3 id="attentionrs">attention.rs</h3>
+<p>Each session's notifications are ordered by <code>Notification::at</code>, a sequence number in that session's metalog, so they cannot be compared across sessions. <code>attention::tick</code>, called at the end of every 100 ms tick, collects <code>(TabId, [(WindowId, Seq)])</code> from the parked sessions (<code>Pool::notifications</code>) and from the window's own node. <code>advance</code> then updates a global <code>Queue</code> of <code>Note = (TabId, WindowId, Seq)</code>. It drops notifications that have gone and appends new ones in the order first seen. It reports news only for tabs already in <code>Looked</code>, so a session seen for the first time brings no bounce for what it already had.</p>
+<p>The Dock badge shows the queue length; <code>badge</code> skips the AppKit call if the label is unchanged. If news came while no app window is active, <code>bounce</code> calls <code>requestUserAttention:</code> once with the informational level. ⌘G (<code>next_notification</code>) takes the oldest note: it switches tabs if needed (deferring through <code>pending_note</code> if the tab is still attaching), then dismisses the notification, shows its window and warps the pointer to it. With nothing queued it calls <code>beep()</code>. At launch, <code>dock_icon</code> sets the running icon from <code>mac/space-bunny-1024.png</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/attention.rs#L1-L160">attention.rs:1-160</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2032-L2065">app.rs:2032-2065</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1741">app.rs:1741</a></p>
+<h3 id="toasts">Toasts</h3>
+<p>Command errors go to their directory's +Errors window, and tool reports, such as LSP diagnostics, go to diagnostic windows. Neither is opened over the user's work. <code>diagnostic_news</code> runs during sync. For each window flagged <code>diagnostic</code>, it compares the text with what this client last saw (<code>diag_seen</code>). It skips windows that are laid out and showing lines (<code>diagnostic_seen</code>: <code>frmax &gt; 0</code>). It stashes the window if it was laid out. It then appends the new text to the window's <code>Toast</code> or makes a new one. Windows that already existed when the client first looked are primed silently (<code>diag_primed</code>).</p>
+<p><code>news(old, text, typing)</code> takes what was appended. If the text was rewritten, it takes the lines that were not there before, counting multiplicity. Either way it drops lines about the file being typed in (<code>path:</code> prefix), whose errors come and go with each key.</p>
+<p>Toasts stack at the lower right, newest at the bottom, and show the last 6 lines. Each stays 8 s (<code>STAY</code>) unless hovered. Any click off the toasts dismisses all of them (<code>toasts_click</code>). B1 on a toast, or its Show All, calls <code>toast_show_all</code>, which opens the stash preview (<code>peek_errors</code>) or reveals a window already in a column. The words in a toast respond as they would in the errors window: B3 or ⌘-click calls <code>look_in_errors</code> with the position of the word in the window, so <code>file:line</code> plumbs; B2 or ⌥-click executes the word in the window's context.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/toasts.rs#L1-L110">toasts.rs:1-110</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/toasts.rs#L112-L316">toasts.rs:112-316</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/toasts.rs#L318-L362">toasts.rs:318-362</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2102-L2113">app.rs:2102-2113</a></p>
+<h2 id="process-pills">Process pills</h2>
+<p><code>running_procs</code> returns the metalog's <code>procs</code> that are still running, excluding terminal shells (<code>ProcKind::Term</code>). <code>titlefit::choose</code> picks the richest step of a five-step <code>LADDER</code> of (<code>PathFit</code>, <code>ProcFit</code>) that leaves the top tag its room:</p>
+<ul>
+<li><code>Full</code>: one pill per command name, with a count when several share a name.</li>
+<li><code>Stack</code>: pills stacked as cards, newest on top.</li>
+<li><code>Count</code>: just a number.</li>
+</ul>
+<p>If anything is folded away, hovering fans every process out onto its own pill over the top row, so the bar never reflows under the pointer.</p>
+<p>On a pill, × (B1 or B2) calls <code>kill_proc</code>, which sends <code>ClientMsg::Kill</code> with the pid, or calls <code>server.kill</code> in process. This asks the server directly rather than running a command. B1 on the name (<code>proc_output</code>) goes to the process's output: its directory's errors window (created if missing) or the window whose buffer it replaces. B3 (<code>proc_origin</code>) goes to the window it was run from. Both use <code>go_to_window</code>, a <code>Proposal::Goto</code> by window id that pushes the back stack. Hovering a pill shows <code>proc_card</code>: the full command in the mono face, the pid and directory, and when and where it was started. The sidebar's &quot;Processes&quot; rows offer the same actions.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/procs.rs#L1-L149">procs.rs:1-149</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L24-L72">titlefit.rs:24-72</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L268-L324">titlefit.rs:268-324</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/sidebar.rs#L348-L407">sidebar.rs:348-407</a></p>
+<h2 id="connection-standing">Connection standing</h2>
+<p><code>Acme::standing</code> classifies the window's relationship with its session:</p>
+<table>
+<thead>
+<tr>
+<th>Standing</th>
+<th>When</th>
+<th>Word</th>
+<th>Mark</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Leading</code></td>
+<td>In process, or connected and holding the layout lease</td>
+<td>none</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>Watching { leader }</code></td>
+<td><code>fenced()</code>: the layout lease is held by another attachment or has been released</td>
+<td>watching</td>
+<td>eye, blue</td>
+</tr>
+<tr>
+<td><code>Stalled</code></td>
+<td>Remote, not connected, link still open</td>
+<td>stalled</td>
+<td>broken link, gold</td>
+</tr>
+<tr>
+<td><code>Offline { why }</code></td>
+<td>Link closed, or the tab's attach failed</td>
+<td>offline</td>
+<td>broken link, gold</td>
+</tr>
+<tr>
+<td><code>Coming</code></td>
+<td>Waiting on a tab that is coming up</td>
+<td>connecting…</td>
+<td>spinner</td>
+</tr>
+</tbody>
+</table>
+<p>Blue and gold are fixed values, not the palette's accent. They sit on the blue–yellow axis, which red-green colour blindness keeps apart, and were checked under a deuteranopia simulation (see <a href="themes-and-fonts.html">Themes, Fonts and Colour</a>). A non-leading standing shows a chip after the session's name; clicking it opens <code>standing_card_panel</code> with the host, the state, the ping time, the retry countdown and any unconfirmed edits. A banner under the title bar explains what the standing means and offers actions. Watching offers <strong>Take over</strong>, which is never done automatically, and reconnects so that the daemon lets the latest UI lead. Typing while watching flashes the banner (<code>flash_watching</code>).</p>
+<p><code>link_tick</code> runs every 100 ms:</p>
+<ul>
+<li>A gap over 5 s between ticks (<code>WAKE_GAP</code>) means the Mac slept. The tick sends a <code>Ping</code>, and if no pong arrives within 2 s it marks the link dead and retries at once.</li>
+<li>A stalled link is given up on 15 s after the daemon last answered (<code>STALL_GIVE_UP</code>), but only if nothing is unconfirmed.</li>
+<li>Offline retries follow <code>BACKOFF = [1, 2, 5, 10, 20, 30]</code> seconds, unless <code>hopeless(why)</code>: a protocol mismatch, a tab let go, or &quot;not attached&quot;.</li>
+</ul>
+<p><code>unconfirmed</code> counts, per shard this window leads, entries in the log beyond <code>link.acked</code>. Reconnecting would drop those edits. While the link is still open, <code>ask_reconnect</code> therefore asks first (<code>confirm_drop</code>, with &quot;Reconnect anyway&quot; or &quot;Wait&quot;). After a drop, a <code>lost_note</code> names the affected windows for 20 s.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/standing.rs#L19-L110">standing.rs:19-110</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/standing.rs#L112-L273">standing.rs:112-273</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/standing.rs#L275-L546">standing.rs:275-546</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2279-L2282">app.rs:2279-2282</a></p>
+<h2 id="restarting-a-mismatched-server">Restarting a mismatched server</h2>
+<p>When an attach to a local URL fails with <code>Unsupported</code> (the daemon &quot;speaks apex protocol N&quot;), <code>Pool::landed</code> and launch both call <code>offer_restart</code>. A static <code>OFFERED</code> flag limits the offer to once per launch. The offer is a warning prompt naming the daemon's protocol (parsed by <code>their_protocol</code>) and this build's <code>PROTOCOL</code>, with Restart Server or Not Now. Apex ▸ Restart Server… (<code>restart_server_asked</code>) asks the same question at any time, and counts windows with unsaved changes across this window and parked local sessions (<code>local_unsaved</code>).</p>
+<p><code>restart_server</code> calls <code>remote::stop_any</code> on the default socket and then <code>reattach_on(None)</code>. That reconnects this window if its session is local, calls <code>Pool::start</code> for every other local tab not shown, and reconnects other windows on that daemon. The first attach brings up a fresh server. Tabs are kept, and each attaches to a fresh session of its name. For a remote session, the standing card's and waiting page's <strong>Restart daemon</strong> (<code>restart_daemon_asked</code>) runs <code>providers::deploy</code> and then <code>apex stop</code> on the destination, off the UI thread, before calling <code>reattach_on(Some(dest))</code>. See <a href="remote-hosts.html">Remote Hosts and Providers</a> and <a href="attach-protocol.html">The Attach Protocol</a> for the build id and protocol check.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs#L1-L172">restart.rs:1-172</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L398-L410">pool.rs:398-410</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L856-L858">main.rs:856-858</a></p>
+<h2 id="the-tick-that-drives-the-chrome">The tick that drives the chrome</h2>
+<p>Several pieces of chrome change without user input: parked links, links coming up, toasts expiring. They are re-evaluated on a 100 ms loop in <code>app.rs</code>.</p>
+<pre><code class="language-mermaid">flowchart TD
+    T[&quot;100 ms tick (app.rs)&quot;] --&gt; SW[&quot;switcher_commit if ctrl released unseen&quot;]
+    T --&gt; ST[&quot;strip_tick (native pointer)&quot;]
+    T --&gt; TB[&quot;tabs_tick: tab names, notified, words changed?&quot;]
+    T --&gt; LK[&quot;link_tick: wake probe, retries, flashes&quot;]
+    T --&gt; TO[&quot;toasts present: redraw to expire&quot;]
+    T --&gt; AT[&quot;attention::tick: queue, badge, bounce&quot;]
+    PW[&quot;parked link wake&quot;] --&gt; TE[&quot;Pool::tend&quot;]
+    TE --&gt; TB
+</code></pre>
+<p><code>tabs_tick</code> compares a tuple of (id, URL, notified, word) for every tab with what was last drawn. It is the only thing that redraws the window when a parked session or a background attach changes a tab.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1700-L1743">app.rs:1700-1743</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1994-L2007">app.rs:1994-2007</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L189-L218">pool.rs:189-218</a></p>
+<h2 id="tests">Tests</h2>
+<p>The chrome's unit tests are small and pure:</p>
+<ul>
+<li><code>pool.rs</code>: which URL pairs map to the same tab.</li>
+<li><code>attention.rs</code>: queue order, first-look suppression, and re-raised notifications.</li>
+<li><code>standing.rs</code>: backoff growth, <code>hopeless</code>, and that only leading says nothing.</li>
+<li><code>restart.rs</code>: protocol parsing.</li>
+<li><code>toasts.rs</code>: the <code>news</code> diff rules.</li>
+<li><code>sidebar.rs</code>: <code>split_name</code> and <code>shown</code>.</li>
+</ul>
+<p>The rendering and gpui wiring have no automated tests.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/pool.rs#L662-L689">pool.rs:662-689</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/attention.rs#L162-L199">attention.rs:162-199</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/standing.rs#L647-L671">standing.rs:647-671</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/restart.rs#L174-L181">restart.rs:174-181</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/toasts.rs#L346-L362">toasts.rs:346-362</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/sidebar.rs#L554-L575">sidebar.rs:554-575</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="client-overlays.html">Pickers and Overlays</a></span><span class="next">Next: <a href="themes-and-fonts.html">Themes, Fonts and Colour</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child current"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+<ul class="sections">
+<li class="l2"><a href="#module-map">Module map</a></li>
+<li class="l2"><a href="#tabs-and-the-session-pool">Tabs and the session pool</a></li>
+<li class="l3"><a href="#tabs-are-the-apps-sessions-are-the-hosts">Tabs are the app&#39;s, sessions are the host&#39;s</a></li>
+<li class="l3"><a href="#parked-sessions">Parked sessions</a></li>
+<li class="l3"><a href="#bringing-a-tab-up">Bringing a tab up</a></li>
+<li class="l3"><a href="#switching-closing-and-recency">Switching, closing and recency</a></li>
+<li class="l2"><a href="#the-session-picker">The session picker</a></li>
+<li class="l2"><a href="#title-bar-and-sidebar">Title bar and sidebar</a></li>
+<li class="l3"><a href="#the-title-bar">The title bar</a></li>
+<li class="l3"><a href="#the-sidebar">The sidebar</a></li>
+<li class="l2"><a href="#ctrl-tab-the-overview-and-miniatures">ctrl-tab, the overview and miniatures</a></li>
+<li class="l3"><a href="#miniatures">Miniatures</a></li>
+<li class="l3"><a href="#the-ctrl-tab-walk">The ctrl-tab walk</a></li>
+<li class="l3"><a href="#the-overview-">The overview (⌘⇧\)</a></li>
+<li class="l2"><a href="#stash-shelf-column-strips-and-glides">Stash shelf, column strips and glides</a></li>
+<li class="l3"><a href="#the-stash-shelf">The stash shelf</a></li>
+<li class="l3"><a href="#column-strips">Column strips</a></li>
+<li class="l3"><a href="#glides">Glides</a></li>
+<li class="l2"><a href="#notifications-the-dock-and-toasts">Notifications, the Dock and toasts</a></li>
+<li class="l3"><a href="#attentionrs">attention.rs</a></li>
+<li class="l3"><a href="#toasts">Toasts</a></li>
+<li class="l2"><a href="#process-pills">Process pills</a></li>
+<li class="l2"><a href="#connection-standing">Connection standing</a></li>
+<li class="l2"><a href="#restarting-a-mismatched-server">Restarting a mismatched server</a></li>
+<li class="l2"><a href="#the-tick-that-drives-the-chrome">The tick that drives the chrome</a></li>
+<li class="l2"><a href="#tests">Tests</a></li>
+</ul>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

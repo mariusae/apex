@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Edit Language (apex-edit) · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The Edit Language (apex-edit)</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs">crates/apex-core/src/text.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/Cargo.toml">crates/apex-edit/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/README.md">crates/apex-edit/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/benches/edit.rs">crates/apex-edit/benches/edit.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs">crates/apex-edit/src/elog.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs">crates/apex-edit/src/exec.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/lib.rs">crates/apex-edit/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs">crates/apex-edit/src/parse.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs">crates/apex-edit/src/regx.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs">crates/apex-edit/tests/common/mod.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/debug_one.rs">crates/apex-edit/tests/debug_one.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/golden.rs">crates/apex-edit/tests/golden.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/sam_diff.rs">crates/apex-edit/tests/sam_diff.rs</a></li>
+</ul>
+</details>
+<p><code>apex-edit</code> is apex's implementation of acme's <code>Edit</code> command: sam's structural-regular-expression command language (<code>,x/foo/ c/bar/</code>, <code>/re/;/re2/p</code>, <code>s/a/b/g</code>, <code>{ … }</code> blocks and so on), plus the Plan 9 regular expressions it uses. It is a line-by-line port of plan9port's <code>src/cmd/acme/{regx.c, edit.c, ecmd.c, elog.c}</code>. It is also a <strong>pure</strong> library. It reads a rune-indexed text, runs a program, and returns a description of what should happen: a list of changes in original coordinates, the new dot, the printed output, any warnings, and <em>intents</em> for commands that touch the world (files, shell pipes, undo). The caller decides how to carry those out.</p>
+<p>The crate has no dependencies on the rest of apex (only <code>thiserror</code>), so you can test it against the reference implementation, plan9port's <code>sam</code>. Inside apex the main caller is the <a href="node.html">node</a>. <code>Node::run_edit</code> runs a program over a window's body and lowers the resulting changes into buffer entries in one undo group (see <a href="buffers-and-text.html">Buffers, Views and Undo</a> for the rope text that implements the crate's <code>Text</code> trait). The <a href="cli.html">apex command</a> also uses it directly for <code>apex text read -addr</code>.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The crate has four modules, one for each acme source file:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Ported from</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>regx.rs</code></td>
+<td><code>regx.c</code></td>
+<td>Compile a pattern into forward and backward instruction programs; run a leftmost-longest Thompson simulation with wrap-around</td>
+</tr>
+<tr>
+<td><code>parse.rs</code></td>
+<td><code>edit.c</code></td>
+<td>The command table, addresses, text and regexp arguments, <code>{ }</code> blocks; builds a <code>Cmd</code> tree</td>
+</tr>
+<tr>
+<td><code>exec.rs</code></td>
+<td><code>ecmd.c</code></td>
+<td><code>Edit::run</code>, address evaluation, command semantics, loops, intents</td>
+</tr>
+<tr>
+<td><code>elog.rs</code></td>
+<td><code>elog.c</code></td>
+<td>The change log: records changes against the original text, merges them as acme does, reverses them for application; <code>adjust_dot</code></td>
+</tr>
+</tbody>
+</table>
+<p>Everything is measured in runes (<code>char</code>), never in bytes. <code>lib.rs</code> defines the read-only <code>Text</code> trait that the engine reads through. It has implementations for <code>Vec&lt;char&gt;</code> and <code>[char]</code>, and <code>apex-core</code> implements it for its rope (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs#L107-L117">crates/apex-core/src/text.rs:107-117</a>). <code>lib.rs</code> also defines the <code>Error</code> type, which carries acme's message verbatim, and <code>apply</code>, which splices a list of changes into a <code>Vec&lt;char&gt;</code>.</p>
+<pre><code class="language-rust">pub trait Text {
+    fn len(&amp;self) -&gt; usize;
+    fn char_at(&amp;self, i: usize) -&gt; char;
+    fn read(&amp;self, q0: usize, q1: usize) -&gt; Vec&lt;char&gt; { … }
+}
+</code></pre>
+<pre><code class="language-mermaid">flowchart TD
+    P[&quot;program (str)&quot;] --&gt; PA[&quot;Parser::parsecmd&quot;]
+    PA --&gt; C[&quot;Cmd tree&quot;]
+    C --&gt; EX[&quot;Exec::cmdexec&quot;]
+    EX --&gt; AD[&quot;cmdaddress / lineaddr / charaddr&quot;]
+    AD --&gt; RX[&quot;Regex::execute / bexecute&quot;]
+    EX --&gt; RX
+    EX --&gt; EL[&quot;Elog: insert / delete / replace&quot;]
+    EX --&gt; OUT[&quot;output (p, =)&quot;]
+    EX --&gt; INT[&quot;intents (u w r e f b B D &lt; | &gt;)&quot;]
+    EL --&gt; FIN[&quot;Elog::finish (merge, reverse)&quot;]
+    FIN --&gt; CH[&quot;changes&quot;]
+    CH --&gt; DOT[&quot;adjust_dot&quot;]
+    CH --&gt; O[&quot;Outcome&quot;]
+    DOT --&gt; O
+    OUT --&gt; O
+    INT --&gt; O
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/README.md#L1-L27">crates/apex-edit/README.md:1-27</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/lib.rs#L1-L83">crates/apex-edit/src/lib.rs:1-83</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/Cargo.toml#L1-L16">crates/apex-edit/Cargo.toml:1-16</a></p>
+<h2 id="the-editrun-api">The <code>Edit::run</code> API</h2>
+<p><code>Edit</code> is the interpreter. Its only state is <code>last_pat</code>, the last regular expression seen. The empty pattern <code>//</code> refers to it, and it persists from one program to the next, as it does in acme. The node keeps one <code>Edit</code> per node for this reason (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L97-L137">crates/apex-edit/src/exec.rs:97-137</a>).</p>
+<pre><code class="language-rust">pub fn run(&amp;mut self, text: &amp;dyn Text, dot: (usize, usize),
+           name: Option&lt;&amp;str&gt;, program: &amp;str) -&gt; Result&lt;Outcome&gt;
+</code></pre>
+<p><code>dot</code> is clamped to the text. <code>name</code> is the buffer's file name. <code>=</code> prints it as a prefix, and <code>w</code>, <code>r</code> and <code>e</code> use it as their default file. <code>run</code> parses one command at a time and executes it, then finishes the log and adjusts dot. Any error aborts the whole run with acme's message, and no changes are returned.</p>
+<p>The <code>Outcome</code> has these fields (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L71-L95">crates/apex-edit/src/exec.rs:71-95</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>changes: Vec&lt;Change&gt;</code></td>
+<td>Changes in <strong>application order</strong> (last recorded first). Each is &quot;delete <code>nd</code> runes at <code>q0</code>, then insert <code>text</code>&quot;, in coordinates of the original text</td>
+</tr>
+<tr>
+<td><code>dot: (usize, usize)</code></td>
+<td>Dot after the changes are applied</td>
+</tr>
+<tr>
+<td><code>output: Vec&lt;Printed&gt;</code></td>
+<td>What <code>p</code> (<code>Printed::Text</code>) and <code>=</code> (<code>Printed::Address</code>, with a newline) printed, in order. <code>output_string()</code> concatenates them the way acme shows them in <code>+Errors</code></td>
+</tr>
+<tr>
+<td><code>intents: Vec&lt;Intent&gt;</code></td>
+<td>Effects for the caller to carry out</td>
+</tr>
+<tr>
+<td><code>warnings: Vec&lt;String&gt;</code></td>
+<td>acme's <code>warning: changes out of sequence</code>, at most once</td>
+</tr>
+</tbody>
+</table>
+<p>Because the changes are ordered from the end of the text backwards, applying them in sequence keeps every later change's coordinates valid. <code>apex_edit::apply</code> does exactly that (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/lib.rs#L76-L83">crates/apex-edit/src/lib.rs:76-83</a>).</p>
+<h3 id="intents">Intents</h3>
+<p>Commands with effects never act. They push an <code>Intent</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L39-L60">crates/apex-edit/src/exec.rs:39-60</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Intent</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>u [n]</code></td>
+<td><code>Undo { n }</code></td>
+<td>Negative <code>n</code> redoes. A missing count defaults to 1</td>
+</tr>
+<tr>
+<td><code>w [name]</code></td>
+<td><code>Write { name, q0, q1 }</code></td>
+<td>Defaults to the whole file. Errors with &quot;can't write file with pending modifications&quot; if the program has already changed the text</td>
+</tr>
+<tr>
+<td><code>r [name]</code></td>
+<td><code>Read { name, q0, q1 }</code></td>
+<td>Replace the range with the file</td>
+</tr>
+<tr>
+<td><code>e [name]</code></td>
+<td><code>Load { name }</code></td>
+<td>Replace the whole buffer</td>
+</tr>
+<tr>
+<td><code>f [name]</code></td>
+<td><code>SetName { name }</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>b name</code></td>
+<td><code>Browse { name }</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>B list</code></td>
+<td><code>Open { list }</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>D [list]</code></td>
+<td><code>Delete { list }</code></td>
+<td>Empty means the current window</td>
+</tr>
+<tr>
+<td><code>&lt;</code>, <code>|</code>, <code>&gt;</code> cmd</td>
+<td><code>Pipe { kind, cmd, q0, q1 }</code></td>
+<td><code>PipeKind::From</code>, <code>Through</code> and <code>To</code>. Dot is set to the range</td>
+</tr>
+</tbody>
+</table>
+<p><code>X</code> and <code>Y</code> (loops over files) fail with &quot;X command is not supported&quot;. apex has no file menu.</p>
+<h3 id="how-the-node-uses-a-run">How the node uses a run</h3>
+<p><code>Node::run_edit</code> reads the body's buffer, dot and name and calls <code>run</code>. It then turns each change into an <code>edit_op</code> in a fresh undo group, appends a <code>Select</code> of the new dot, and carries out <code>Undo</code> intents itself by calling <code>undo</code> or <code>redo</code> <code>|n|</code> times. The remaining intents, the output string and the warnings go back to the caller (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1758-L1791">crates/apex-core/src/node.rs:1758-1791</a>). The <a href="node.html">node page</a> covers what happens to them next. The CLI's <code>apex text read -addr A WIN</code> runs the program <code>Ap</code> with a fresh <code>Edit</code> and prints <code>output_string()</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1459-L1467">crates/apex-cli/src/main.rs:1459-1467</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L28-L137">crates/apex-edit/src/exec.rs:28-137</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L260-L336">crates/apex-edit/src/exec.rs:260-336</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1758-L1791">crates/apex-core/src/node.rs:1758-1791</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1447-L1474">crates/apex-cli/src/main.rs:1447-1474</a></p>
+<h2 id="regular-expressions-regxrs">Regular expressions (<code>regx.rs</code>)</h2>
+<h3 id="compilation">Compilation</h3>
+<p><code>Regex::compile</code> takes a pattern in runes and compiles it <strong>twice</strong> into a single instruction vector. The first pass builds the forward program (<code>start</code>). The second sets <code>backwards = true</code> and builds the backward program (<code>bstart</code>), whose only difference is that the operands of each catenation are swapped. The backward machine can therefore read the text right to left (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L420-L442">crates/apex-edit/src/regx.rs:420-442</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L239-L247">crates/apex-edit/src/regx.rs:239-247</a>).</p>
+<p>The compiler is the C code's operator-precedence parser. It has an operand stack (<code>andstack</code> of <code>{first, last}</code> instruction fragments) and an operator stack (<code>atorstack</code> of <code>(operator, subid)</code>). The operators have the C's precedences: <code>START</code> 0, <code>RBRA</code> 1, <code>LBRA</code> 2, <code>OR</code> 3, <code>CAT</code> 4, <code>STAR</code> 5, <code>PLUS</code> 6, <code>QUEST</code> 7. Catenation is implicit: an operand that follows an operand first pushes <code>CAT</code>. <code>evaluntil</code> reduces the stack into instructions:</p>
+<ul>
+<li><code>*</code> becomes an <code>Or</code> that loops back.</li>
+<li><code>+</code> is an operand followed by a looping <code>Or</code>.</li>
+<li><code>?</code> is an <code>Or</code> and a <code>Nop</code>.</li>
+<li><code>|</code> is an <code>Or</code> whose branches join at a <code>Nop</code>.</li>
+<li><code>( )</code> wraps its operand in <code>Lbra(subid)</code>/<code>Rbra(subid)</code>.</li>
+</ul>
+<p><code>optimize</code> then threads every <code>next</code> past <code>Nop</code>s (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L125-L288">crates/apex-edit/src/regx.rs:125-288</a>).</p>
+<p>The lexer understands <code>\</code> escapes (<code>\n</code> is a newline; any other escaped rune is itself), <code>* ? + | . ( ) ^ $</code> and <code>[…]</code> classes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L294-L322">crates/apex-edit/src/regx.rs:294-322</a>). These details follow acme:</p>
+<ul>
+<li>A negated class <code>[^…]</code> silently includes <code>\n</code>, so it never matches a newline (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L348-L378">crates/apex-edit/src/regx.rs:348-378</a>).</li>
+<li><code>.</code> does not match a newline.</li>
+<li><code>]</code> immediately after <code>[</code> closes an empty class, so <code>[]a]</code> matches nothing.</li>
+<li>Subexpressions beyond the tenth get id <code>-1</code> and are not recorded (<code>NRANGE</code> = 10: the whole match plus <code>\1</code>–<code>\9</code>).</li>
+<li>Compile errors carry acme's text, for example <code>unmatched `('</code>, <code>malformed `[]'</code> and <code>missing operand for *</code>. The executor prefixes them with the context (&quot;bad regexp in s command: …&quot;).</li>
+</ul>
+<p>The C code's fixed tables (<code>NLIST</code>, <code>NPROG</code>, <code>NSTACK</code>) are plain <code>Vec</code>s here, so there is no &quot;regexp list overflow&quot; error.</p>
+<h3 id="execution-leftmost-longest-with-wrap-around">Execution: leftmost-longest with wrap-around</h3>
+<p><code>execute(t, startp, eof)</code> searches forward. It is a Thompson simulation with two thread lists that are swapped at each rune. Each <code>Thread</code> carries an instruction index and a <code>Rangeset</code> of match and subexpression positions (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L466-L619">crates/apex-edit/src/regx.rs:466-619</a>). Two rules make it leftmost-longest:</p>
+<ul>
+<li><code>addinst</code> never adds an instruction already on the list. If a thread for that instruction exists with a <em>later</em> start, the earlier start replaces it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L387-L400">crates/apex-edit/src/regx.rs:387-400</a>).</li>
+<li><code>newmatch</code> replaces the current best match if the new one starts earlier, or starts at the same place and ends later (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L402-L406">crates/apex-edit/src/regx.rs:402-406</a>).</li>
+</ul>
+<p>A new thread at the program start is seeded at each position only while no match has been found. The search stops once a match exists and no threads are left. If the program's first instruction is a literal character, positions that cannot start a match are skipped quickly.</p>
+<p>The <code>eof</code> argument controls wrap-around. At the end of the range (<code>p &gt;= eof</code> or the end of the text) the machine runs one more step with a NUL character, so that pending <code>$</code>/<code>End</code> states resolve. If nothing has matched and <code>eof == INFINITY</code>, it then clears its lists and restarts at 0, scanning up to <code>startp</code>. Address searches (<code>/re/</code>) pass <code>INFINITY</code> and wrap. Commands (<code>x</code>, <code>y</code>, <code>g</code>, <code>v</code>, <code>s</code>) pass the end of their range and do not.</p>
+<p><code>bexecute(t, startp)</code> is the mirror image. It runs the backward program from <code>startp</code> down to 0 and wraps to the end of the text if nothing matched. It stores start positions negated so that <code>addinst</code>'s &quot;earlier start wins&quot; comparison still prefers the match nearest <code>startp</code>. <code>bnewmatch</code> swaps <code>q0</code>/<code>q1</code> back when it records a match (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L408-L416">crates/apex-edit/src/regx.rs:408-416</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L621-L769">crates/apex-edit/src/regx.rs:621-769</a>). In the backward machine <code>^</code> tests the rune just read for <code>\n</code>, and <code>$</code> looks at the rune after the position.</p>
+<p>One consequence matters for the tests: forward <code>$</code> (<code>Eol</code>) only matches when the <em>current</em> rune is <code>\n</code>. Past the end of the searched range the machine feeds NUL, so <code>$</code> never matches at the end of a range, even if a newline follows it in the text. sam behaves differently here (see below).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L1-L122">crates/apex-edit/src/regx.rs:1-122</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L125-L442">crates/apex-edit/src/regx.rs:125-442</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/regx.rs#L466-L842">crates/apex-edit/src/regx.rs:466-842</a></p>
+<h2 id="the-parser-parsers">The parser (<code>parse.rs</code>)</h2>
+<h3 id="the-command-table">The command table</h3>
+<p><code>CMDTAB</code> is acme's <code>cmdtab</code>, copied verbatim. Each row says whether the command takes text, a regexp or a target address (<code>m</code>, <code>t</code>). It also gives the default sub-command (<code>p</code> for <code>x y g v</code>, <code>f</code> for <code>X Y</code>), the default address (<code>DefAddr::No</code>, <code>Dot</code> or <code>All</code>), whether the command takes a count (<code>1</code> unsigned for <code>s</code>, <code>2</code> signed for <code>u</code>), and the characters that end a token argument (<code>LINEX</code> = newline, <code>WORDX</code> = blank or newline) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L10-L92">crates/apex-edit/src/parse.rs:10-92</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Commands</th>
+<th>Address default</th>
+<th>Argument</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>a i c</code></td>
+<td>dot</td>
+<td>text: <code>/…/</code> with any non-alphanumeric delimiter, or lines ending at <code>.</code></td>
+</tr>
+<tr>
+<td><code>d p</code> and newline</td>
+<td>dot</td>
+<td>none</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>dot</td>
+<td>count, <code>/re/rhs/</code>, optional <code>g</code></td>
+</tr>
+<tr>
+<td><code>m t</code></td>
+<td>dot</td>
+<td>a target address</td>
+</tr>
+<tr>
+<td><code>x y g v</code></td>
+<td>dot</td>
+<td><code>/re/</code> (optional for <code>x</code>), then a command or <code>p</code></td>
+</tr>
+<tr>
+<td><code>=</code></td>
+<td>dot</td>
+<td>token: empty, <code>#</code> or <code>+</code></td>
+</tr>
+<tr>
+<td><code>w</code></td>
+<td>whole file</td>
+<td>file name</td>
+</tr>
+<tr>
+<td><code>r</code></td>
+<td>dot</td>
+<td>file name</td>
+</tr>
+<tr>
+<td><code>e f b B D u X Y</code></td>
+<td>none (an address is an error)</td>
+<td>name, list or count</td>
+</tr>
+<tr>
+<td><code>&lt; | &gt;</code></td>
+<td>dot</td>
+<td>shell command up to newline</td>
+</tr>
+</tbody>
+</table>
+<h3 id="commands-and-arguments">Commands and arguments</h3>
+<p><code>Parser::new</code> appends a newline if the program lacks one. <code>parsecmd</code> reads an optional compound address, then a command character, and fills in a <code>Cmd</code>: <code>addr</code>, <code>re</code>, <code>arg</code> (<code>Arg::Cmd</code>, <code>Text</code> or <code>Addr</code>), <code>next</code> (for <code>{}</code> chains), <code>num</code> and <code>flag</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L113-L151">crates/apex-edit/src/parse.rs:113-151</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L324-L430">crates/apex-edit/src/parse.rs:324-430</a>). It returns <code>None</code> at the end of input or at a <code>}</code>. A <code>{</code> parses sub-commands until then and links them through <code>next</code>.</p>
+<p>Some small rules come from acme:</p>
+<ul>
+<li><code>cd</code> is rejected as &quot;unknown command cd&quot;.</li>
+<li>A <code>x</code> followed by a blank or newline has no regexp (<code>re == None</code>) and loops over lines.</li>
+<li><code>getregexp</code> updates the shared <code>lastpat</code> when the pattern is non-empty. With an empty pattern and no previous one it fails with &quot;no regular expression defined&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L432-L464">crates/apex-edit/src/parse.rs:432-464</a>).</li>
+<li><code>getrhs</code> turns <code>\n</code> into a newline. It leaves other backslash escapes in place so that <code>s</code> can interpret <code>\1</code>–<code>\9</code> and <code>\&amp;</code> itself, and it allows the closing delimiter to be omitted (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L238-L264">crates/apex-edit/src/parse.rs:238-264</a>).</li>
+<li><code>collecttext</code> handles both the delimited form and the multi-line form (<code>a</code> followed by newline, lines until a lone <code>.</code>) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L290-L322">crates/apex-edit/src/parse.rs:290-322</a>).</li>
+<li>Delimiters may not be <code>\</code> or alphanumeric (&quot;bad delimiter x&quot;).</li>
+</ul>
+<h3 id="addresses">Addresses</h3>
+<p>An <code>Addr</code> is a linked list. <code>typ</code> is one of <code># l / ? . $ + - , ; &quot; '</code>, plus the internal <code>*</code> for &quot;whole file&quot;. <code>next</code> chains simple addresses, and <code>left</code>/<code>next</code> hold the two sides of <code>,</code> and <code>;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L94-L111">crates/apex-edit/src/parse.rs:94-111</a>).</p>
+<p><code>simpleaddr</code> parses one element and recurses. When two elements are juxtaposed, it inserts the <code>+</code> that sam implies, so <code>./x/</code> becomes <code>. + /x/</code> and <code>$-1</code> stays as written. It rejects juxtaposed forms that make no sense (&quot;bad address syntax&quot;). <code>compoundaddr</code> builds the right-recursive <code>,</code> and <code>;</code> nodes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L466-L533">crates/apex-edit/src/parse.rs:466-533</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L1-L533">crates/apex-edit/src/parse.rs:1-533</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/parse.rs#L536-L622">crates/apex-edit/src/parse.rs:536-622</a></p>
+<h2 id="command-semantics-execrs">Command semantics (<code>exec.rs</code>)</h2>
+<h3 id="the-key-idea-everything-is-relative-to-the-original-text">The key idea: everything is relative to the original text</h3>
+<p>Every command, including commands inside loops and after earlier changes, reads the <strong>unmodified</strong> text. Changes go only into the <code>Elog</code>. Dot (<code>Exec::dot</code>) and the current command's address (<code>Exec::addr</code>, acme's global <code>addr</code>) are tracked in original coordinates. They are translated to final coordinates only at the end, by <code>adjust_dot</code>. So <code>,x/a/ c/X/</code> can address every match in the original text even though each <code>c</code> &quot;changes&quot; it, and a program like <code>{ a/X/ ; $a/Y/ }</code> sees the original <code>$</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L1-L11">crates/apex-edit/src/exec.rs:1-11</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L139-L152">crates/apex-edit/src/exec.rs:139-152</a>).</p>
+<h3 id="dispatch">Dispatch</h3>
+<p><code>cmdexec</code> resolves the command's address before dispatching. A missing address becomes <code>.</code>, or <code>*</code> for <code>DefAddr::All</code>. The result is evaluated into <code>self.addr</code> with <code>cmdaddress</code>. A <code>{</code> evaluates its own address once, then runs each sub-command with dot reset to that range. It fails with &quot;dot extends past end of buffer during { command&quot; if the range has gone out of bounds (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L183-L227">crates/apex-edit/src/exec.rs:183-227</a>). <code>dispatch</code> then does the following (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L229-L336">crates/apex-edit/src/exec.rs:229-336</a>):</p>
+<ul>
+<li><strong><code>a</code>, <code>i</code></strong> insert at the end or start of the address and set dot to the empty range there. <strong><code>c</code></strong> records a replace and sets dot to the address. <strong><code>d</code></strong> records a delete and leaves dot empty at the start.</li>
+<li><strong><code>s</code></strong> first collects every match in the range, honouring the count (<code>s2/…/</code> starts at the second match). An empty match at the position where the previous match ended is skipped, so <code>s/x*/-/g</code> substitutes once per position. It then builds each replacement, handling <code>&amp;</code>, <code>\1</code>–<code>\9</code> and escaped characters, and records it. Without <code>g</code> it stops after the first. &quot;no substitution&quot; is an error only at nesting depth 0, so <code>s</code> inside an <code>x</code> loop can quietly find nothing (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L440-L507">crates/apex-edit/src/exec.rs:440-507</a>).</li>
+<li><strong><code>m</code></strong> deletes and copies, in whichever order keeps the log in sequence. If the source and destination overlap it fails with &quot;move overlaps itself&quot;, unless they are identical, in which case it does nothing. <strong><code>t</code></strong> copies. Neither changes dot (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L509-L539">crates/apex-edit/src/exec.rs:509-539</a>).</li>
+<li><strong><code>p</code></strong> pushes <code>Printed::Text</code> of the range and sets dot. <strong><code>=</code></strong> prints a line address (<code>2</code>, <code>1,3</code>), a rune address (<code>=#</code> gives <code>#3,#6</code>) or the mixed form (<code>=+</code> gives <code>2+#1</code>), prefixed with <code>name:</code> if there is a name (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L365-L438">crates/apex-edit/src/exec.rs:365-438</a>).</li>
+<li><strong>Newline</strong> with no address extends dot to whole lines. If dot already covers whole lines, it moves to the next line (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L349-L363">crates/apex-edit/src/exec.rs:349-363</a>).</li>
+<li><strong><code>g</code> / <code>v</code></strong> run their sub-command with dot set to the range if the regexp does (or, for <code>v</code>, does not) match within it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L541-L553">crates/apex-edit/src/exec.rs:541-553</a>).</li>
+</ul>
+<h3 id="loops">Loops</h3>
+<p><code>x</code> and <code>y</code> with a regexp go through <code>looper</code>. It first computes <strong>all</strong> ranges (matches for <code>x</code>, the gaps between matches for <code>y</code>), using the same empty-match rule as <code>s</code>. Then <code>loopcmd</code> runs the sub-command once per range with dot set to it. <code>x</code> without a regexp uses <code>linelooper</code>, which walks line ranges with <code>lineaddr</code>. Both increment <code>nest</code> around the loop (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L555-L637">crates/apex-edit/src/exec.rs:555-637</a>). Because the ranges are computed up front against the original text, changes made by the loop body cannot disturb the iteration. After the loop, dot is the last range, adjusted through the change log.</p>
+<h3 id="address-evaluation">Address evaluation</h3>
+<p><code>cmdaddress</code> walks the <code>Addr</code> list (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L684-L742">crates/apex-edit/src/exec.rs:684-742</a>):</p>
+<ul>
+<li><code>#n</code> and <code>n</code> go through <code>charaddr</code> and <code>lineaddr</code>. These ports of acme's functions handle absolute positions (sign 0), forward offsets (<code>+</code>) and backward offsets (<code>-</code>). <code>lineaddr</code>'s counting rules make <code>+2</code> from the start of the file line 2, and line 0 the empty range at 0 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L744-L840">crates/apex-edit/src/exec.rs:744-840</a>).</li>
+<li><code>/re/</code> and <code>?re?</code> go through <code>nextmatch</code>. It searches forward from the end of the current range with wrap-around, or backward from its start. If the match is empty and sits exactly at the start point, it searches again one rune further on, so that repeated searches make progress (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L652-L682">crates/apex-edit/src/exec.rs:652-682</a>).</li>
+<li>A bare <code>+</code> or <code>-</code> (one followed by another <code>+</code>/<code>-</code> or by nothing) means one line.</li>
+<li><code>a,b</code> evaluates both sides from the same starting dot. <code>a;b</code> sets dot to <code>a</code> before evaluating <code>b</code>. The result is <code>a.q0..b.q1</code>, or &quot;addresses out of order&quot;.</li>
+<li><code>&quot;file&quot;</code> addresses fail with &quot;file addresses are not supported&quot;, and <code>'</code> fails with &quot;can't handle '&quot;, as it does in acme.</li>
+</ul>
+<p>Compiled regexps are cached by source in <code>Exec::re</code>, so a loop that applies the same pattern repeatedly does not recompile it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L172-L181">crates/apex-edit/src/exec.rs:172-181</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/exec.rs#L139-L840">crates/apex-edit/src/exec.rs:139-840</a></p>
+<h2 id="the-change-log-elogrs">The change log (<code>elog.rs</code>)</h2>
+<p><code>Elog</code> holds one <em>pending</em> change (<code>kind</code>: Null, Insert, Delete or Replace, with <code>q0</code>, <code>nd</code> and the runes <code>r</code>) and a list of flushed changes. Every new change is first merged into the pending one if possible. Otherwise the pending change is flushed. The merging rules are acme's, and they matter because they decide where dot ends up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs#L1-L158">crates/apex-edit/src/elog.rs:1-158</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Merges with a pending change when</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>replace(q0, q1, r)</code></td>
+<td>the pending change is a Replace that ends at or before <code>q0</code>, the gap is under <code>MINSTRING</code> (16) runes, and the total is under <code>MAXSTRING</code></td>
+<td>One Replace spanning both. The gap's <strong>original</strong> runes are copied into the replacement text</td>
+</tr>
+<tr>
+<td><code>insert(q0, r)</code></td>
+<td>the pending change is an Insert at the same <code>q0</code> and the total is under <code>MAXSTRING</code></td>
+<td>Text catenated. Long inserts are split into <code>RBUFSIZE</code> chunks</td>
+</tr>
+<tr>
+<td><code>delete(q0, q1)</code></td>
+<td>the pending change is a Delete ending exactly at <code>q0</code></td>
+<td><code>nd</code> grows</td>
+</tr>
+</tbody>
+</table>
+<p><code>MAXSTRING</code> is acme's <code>RBUFSIZE</code>, <code>(32*1024+24)/4</code> runes. For example, replacing <code>a</code> and <code>e</code> in <code>abcde</code> yields one change, <code>{q0: 0, nd: 5, text: &quot;XbcdX&quot;}</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs#L208-L216">crates/apex-edit/src/elog.rs:208-216</a>).</p>
+<p><strong>Out of sequence.</strong> acme expects each change to start at or after the previous one. The check is <code>sequence(q0, limit)</code>: <code>limit</code> is the pending change's <code>q0</code> for inserts and replaces, and its end for deletes. If a change starts before the limit, the log records <code>warning: changes out of sequence</code> (once), flushes the pending change and carries on. sam would refuse instead. The resulting addresses are what acme itself calls bogus. For example, <code>{ #4,#5d ; #1,#2d }</code> on <code>abcdef\n</code> deletes <code>b</code> and then <code>f</code> rather than <code>e</code>. The crate reproduces this exactly, and <code>apply</code> clamps addresses to the text (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs#L63-L73">crates/apex-edit/src/elog.rs:63-73</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/golden.rs#L274-L286">crates/apex-edit/tests/golden.rs:274-286</a>).</p>
+<p><code>finish</code> flushes the pending change and <strong>reverses</strong> the log, so it is in application order (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs#L152-L158">crates/apex-edit/src/elog.rs:152-158</a>).</p>
+<p><strong>Dot.</strong> <code>adjust_dot</code> replays the changes against dot using acme's <code>textdelete</code>/<code>textinsert</code> rules: a deletion before an end pulls it back, and an insertion strictly before an end pushes it forward. One extra convention applies: if dot is the empty range exactly at a change's <code>q0</code>, dot grows to cover the inserted text. That is why <code>a/X/</code> selects the <code>X</code>, and why a loop whose replacements merged into one change selects the merged span. The result is clamped to the final length (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs#L161-L198">crates/apex-edit/src/elog.rs:161-198</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant X as &quot;Exec (x loop)&quot;
+    participant L as Elog
+    participant R as &quot;Edit::run&quot;
+    X-&gt;&gt;L: &quot;replace(1,2,N)&quot;
+    Note over L: pending Replace q0=1 nd=1
+    X-&gt;&gt;L: &quot;replace(3,5,N)&quot;
+    Note over L: gap 1 lt MINSTRING, merge: q0=1 nd=4 text=NbN
+    X-&gt;&gt;R: commands done, dot = last range (3,5)
+    R-&gt;&gt;L: finish()
+    L--&gt;&gt;R: changes reversed, warnings
+    R-&gt;&gt;R: &quot;adjust_dot((3,5), changes)&quot;
+    Note over R: dot becomes (1,4), the merged span
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/elog.rs#L1-L262">crates/apex-edit/src/elog.rs:1-262</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/golden.rs#L162-L170">crates/apex-edit/tests/golden.rs:162-170</a></p>
+<h2 id="where-acme-and-sam-differ">Where acme and sam differ</h2>
+<p>The crate follows <strong>acme</strong> wherever acme's and sam's implementations differ. The differential harness knows about each of these differences:</p>
+<ul>
+<li><strong>Dot after a change.</strong> acme derives dot from the change log (the merged span is selected, and <code>m</code> and <code>t</code> don't move dot). sam sets dot per command. Dot is compared with sam only for programs that don't modify the text (<code>modifying</code> looks for <code>a c i d s m t r u e w &lt; | &gt;</code> anywhere in the parsed tree).</li>
+<li><strong>Changes out of sequence.</strong> acme warns, or for some overlaps says nothing, and proceeds. sam refuses (&quot;changes not in sequence&quot;).</li>
+<li><strong><code>$</code> at the end of a range.</strong> sam looks at the character just past the range. acme feeds NUL and never matches <code>$</code> there. Command regexps in the generated tests avoid <code>$</code>, and programs that combine <code>?</code> and <code>$</code> are skipped, because sam's backward machine matches <code>$</code> at the very end of the text.</li>
+<li><strong>Moving a range into itself.</strong> acme errors unless source and destination are identical. sam only rejects a destination that ends inside the source.</li>
+<li><strong>The bare newline command</strong> prints dot in <code>sam -d</code>; acme only selects it, so its output is not compared.</li>
+</ul>
+<p>The crate also departs from acme in a few places: its tables are dynamic, <code>X</code>/<code>Y</code> are unsupported, and file addresses are errors.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/README.md#L41-L71">crates/apex-edit/README.md:41-71</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs#L211-L309">crates/apex-edit/tests/common/mod.rs:211-309</a></p>
+<h2 id="tests-and-benchmarks">Tests and benchmarks</h2>
+<p><strong>Unit tests</strong> live beside the code. <code>regx.rs</code> checks leftmost-longest matching (<code>a|ab</code> on <code>xab</code> matches <code>ab</code>), classes and anchors, subexpressions, the backward machine and wrap-around, and compile errors. <code>parse.rs</code> checks command shapes, address juxtaposition, loops and blocks, multi-line text and parse errors. <code>elog.rs</code> checks merging, the out-of-sequence warning, reversal and <code>adjust_dot</code>.</p>
+<p><strong>Golden tests</strong> (<code>tests/golden.rs</code>) are acceptance cases written from sam(1) and acme's semantics. Each case is <code>(text, dot, program) → (text', dot', output)</code>, or an error with acme's exact message. They are grouped by feature: text commands, substitute, move and copy, addresses, loops, braces, <code>=</code>, the newline command, intents, errors, out-of-sequence behaviour, <code>lastpat</code> persisting across programs, and runes rather than bytes (<code>日本語</code>). The shared helper <code>common::ours</code> runs a program and applies its changes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/golden.rs#L1-L306">crates/apex-edit/tests/golden.rs:1-306</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs#L26-L64">crates/apex-edit/tests/common/mod.rs:26-64</a>).</p>
+<p><strong>Differential tests</strong> (<code>tests/sam_diff.rs</code>) use plan9port's <code>sam -d</code> as the oracle. <code>sam_binary</code> looks for <code>$SAM</code>, then <code>$PLAN9/bin/sam</code>, then <code>~/.local/plan9/bin/sam</code>. If none exists, the tests print a note and pass. <code>common::sam</code> writes the text to a temporary file, then pipes in the program followed by <code>=#</code> (to read back dot) and <code>w</code> (to read back the text). It separates <code>p</code> output (stdout) from <code>=</code> output and errors (stderr), and strips sam's <code>; #q0,#q1</code> suffix so <code>=</code> lines look like acme's. <code>compare</code> then matches errors by presence only (the messages differ), the text exactly, dot only for non-modifying programs, and output as a sorted multiset of lines (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs#L66-L309">crates/apex-edit/tests/common/mod.rs:66-309</a>). The suite has three tests:</p>
+<ul>
+<li><code>corpus_matches_sam</code>: 15 texts × about 110 hand-written programs.</li>
+<li><code>generated_programs_match_sam</code>: proptest, 400 cases. Random addresses and commands nested up to two levels, over 0–11-rune texts drawn from <code>a b c</code>, space and newline.</li>
+<li><code>generated_regexps_match_sam</code>: random regexps checked as <code>,x/re/ =#</code> (every forward match) and <code>$?re?=#</code> (the backward machine).</li>
+</ul>
+<p><code>tests/debug_one.rs</code> is an ignored test that runs one case through both implementations from the <code>T</code> and <code>P</code> environment variables and prints both results. <code>SAM_DEBUG</code> dumps sam's raw streams (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/debug_one.rs#L1-L10">crates/apex-edit/tests/debug_one.rs:1-10</a>).</p>
+<p><strong>Benchmarks</strong> (<code>cargo bench</code>, criterion) run over a text of about 1.1M runes (20,000 lines). They measure <code>,x/fox/ c/cat/</code>, <code>,s/dog/cat/g</code>, a line loop <code>,x/.*\n/ g/3$/ d</code>, applying 20k changes, repeated regexp search with <code>(quick|lazy) (brown|dog)</code>, and seeking to line 10000 with <code>10000=#</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/benches/edit.rs#L14-L68">crates/apex-edit/benches/edit.rs:14-68</a>). The README says sam builds on macOS with <code>./INSTALL -b</code> and clang alone. Building sam and the rest of the workspace is covered on <a href="build-and-test.html">Building, Testing and Packaging</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/sam_diff.rs#L1-L320">crates/apex-edit/tests/sam_diff.rs:1-320</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/golden.rs#L1-L306">crates/apex-edit/tests/golden.rs:1-306</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/tests/common/mod.rs#L1-L309">crates/apex-edit/tests/common/mod.rs:1-309</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/benches/edit.rs#L1-L71">crates/apex-edit/benches/edit.rs:1-71</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/README.md#L29-L39">crates/apex-edit/README.md:29-39</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="tiling-and-layout.html">Tiling and Layout</a></span><span class="next">Next: <a href="server.html">The Server: Commands, Files and Processes</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top current"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture">Architecture</a></li>
+<li class="l2"><a href="#the-editrun-api">The Edit::run API</a></li>
+<li class="l3"><a href="#intents">Intents</a></li>
+<li class="l3"><a href="#how-the-node-uses-a-run">How the node uses a run</a></li>
+<li class="l2"><a href="#regular-expressions-regxrs">Regular expressions (regx.rs)</a></li>
+<li class="l3"><a href="#compilation">Compilation</a></li>
+<li class="l3"><a href="#execution-leftmost-longest-with-wrap-around">Execution: leftmost-longest with wrap-around</a></li>
+<li class="l2"><a href="#the-parser-parsers">The parser (parse.rs)</a></li>
+<li class="l3"><a href="#the-command-table">The command table</a></li>
+<li class="l3"><a href="#commands-and-arguments">Commands and arguments</a></li>
+<li class="l3"><a href="#addresses">Addresses</a></li>
+<li class="l2"><a href="#command-semantics-execrs">Command semantics (exec.rs)</a></li>
+<li class="l3"><a href="#the-key-idea-everything-is-relative-to-the-original-text">The key idea: everything is relative to the original text</a></li>
+<li class="l3"><a href="#dispatch">Dispatch</a></li>
+<li class="l3"><a href="#loops">Loops</a></li>
+<li class="l3"><a href="#address-evaluation">Address evaluation</a></li>
+<li class="l2"><a href="#the-change-log-elogrs">The change log (elog.rs)</a></li>
+<li class="l2"><a href="#where-acme-and-sam-differ">Where acme and sam differ</a></li>
+<li class="l2"><a href="#tests-and-benchmarks">Tests and benchmarks</a></li>
+</ul>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

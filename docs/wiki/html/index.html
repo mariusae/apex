@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>apex Overview · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>apex Overview</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/Cargo.toml">Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md">DESIGN.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md">MODERN.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md">WEB.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/Cargo.toml">crates/apex-cli/Cargo.toml</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md">crates/apex-cli/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/README.md">crates/apex-client/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/README.md">crates/apex-core/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs">crates/apex-core/src/ids.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/lib.rs">crates/apex-core/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md">crates/apex-server/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apexd.rs">crates/apex-server/src/bin/apexd.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs">crates/apex-server/src/term.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/README.md">crates/apex-tool-agent/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/lib.rs">crates/ghostty-vt-sys/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/README.md">go/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh">mac/build-app.sh</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/README.md">providers/README.md</a></li>
+</ul>
+</details>
+<p>apex is a modernised acme. It keeps acme's way of working: a three-button mouse, tags that are text you type into, columns of tiled windows, B2 to execute, B3 to look, chords, plumbing, and everything as text. To that it adds what acme lacks for today's work. A client–server split lets the UI detach and re-attach, locally or over ssh. Terminals are embedded as first-class windows so coding agents can run inside the editor. And there is a tool API that does not depend on 9P or a mounted file system (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1-L7">DESIGN.md:1-7</a>).</p>
+<p>This page gives the big picture: the goals, the three kinds of process, how they talk, and where each part lives in the repository. The pages after it cover each part in depth, starting with the replication model (<a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>) and the deterministic core (<a href="core-state.html">Entries, State and Apply</a>).</p>
+<h2 id="what-apex-is-for">What apex is for</h2>
+<p>DESIGN.md lists the goals, and most of the code follows from them:</p>
+<ul>
+<li><strong>The acme experience.</strong> Colours, fonts and geometry follow plan9port. Local editing has no noticeable latency.</li>
+<li><strong>All state on the server.</strong> The UI renders and takes input. A client can detach at any time and re-attach with nothing lost.</li>
+<li><strong>Remotable.</strong> <code>apex attach host</code> over ssh is how you work on another machine. Files stay where the server runs, and nothing is synchronised.</li>
+<li><strong>Agents.</strong> Terminal windows are first-class. An agent runs in one and drives the editor through the same CLI a shell script would use.</li>
+<li><strong>Extensibility at least as good as acme's</strong>, with few concepts, exposed through the <code>apex</code> command and a typed protocol.</li>
+</ul>
+<p>It has no plugin language and no configuration language. Configuration is a script of <code>apex</code> commands (see <a href="configuration.html">Configuration</a>). &quot;Single player mode&quot; is deliberate: one UI attachment leads a session at a time (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L15-L36">DESIGN.md:15-36</a>).</p>
+<p>Two principles run through the code. <strong>Nothing is ever lost</strong>: anything set aside is kept and shown, and silent discard counts as a bug. <strong>State on the server, rendering on the client</strong>: the client is a renderer and input device that holds a replica (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L48-L57">DESIGN.md:48-57</a>).</p>
+<h3 id="features-at-a-glance">Features at a glance</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Where it is covered</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>acme's tiling, tags, columns, B1/B2/B3 and chords</td>
+<td><a href="tiling-and-layout.html">Tiling and Layout</a>, <a href="client-input.html">Mouse, Keyboard and Look</a></td>
+</tr>
+<tr>
+<td>The sam/acme <code>Edit</code> language and Plan 9 regexps</td>
+<td><a href="edit-language.html">The Edit Language</a></td>
+</tr>
+<tr>
+<td>B2 commands run through <code>rc</code>, with <code>$winid</code> and <code>$samfile</code></td>
+<td><a href="server.html">The Server</a></td>
+</tr>
+<tr>
+<td>Plumbing as a replicated rule table that tools extend</td>
+<td><a href="plumbing.html">Plumbing Rules and Verbs</a></td>
+</tr>
+<tr>
+<td>Hosted terminals (pty + libghostty-vt)</td>
+<td><a href="terminals.html">Terminals</a></td>
+</tr>
+<tr>
+<td>Pages (HTML windows) and an HTTP-shaped I/O plane</td>
+<td><a href="io-plane-and-pages.html">The I/O Plane and Pages</a></td>
+</tr>
+<tr>
+<td>Sessions on other hosts through ssh or other providers</td>
+<td><a href="remote-hosts.html">Remote Hosts and Providers</a></td>
+</tr>
+<tr>
+<td>A tool SDK in Rust, a JSON bridge and a Go package</td>
+<td><a href="tool-sdk.html">Writing Tools</a>, <a href="bridge-and-go.html">JSON Bridge and Go SDK</a></td>
+</tr>
+<tr>
+<td>Bundled tools: win, lsp, preview, web, agent</td>
+<td><a href="tool-win-and-lsp.html">win and Language Servers</a>, <a href="tool-pages.html">Preview, Web and Diff Tools</a>, <a href="agent-tools.html">Coding Agents</a></td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1-L57">DESIGN.md:1-57</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md#L1-L46">crates/apex-cli/README.md:1-46</a></p>
+<h2 id="the-model-in-one-paragraph">The model in one paragraph</h2>
+<p>A <strong>session</strong> (as in tmux) is a whole workspace living on one daemon, which hosts many. A client that joins a session gets an <strong>attachment</strong>, a fenced identity, over a <strong>connection</strong> (a socket that may drop and resume). The session's state is split into <strong>shards</strong>. Each shard is an independently replicated log with its own lease. Every shard has exactly one <strong>leader</strong>, which sequences entries into the log; everyone else replays them as a <strong>follower</strong>. A follower that wants a change <strong>proposes</strong> it to the leader (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L38-L46">DESIGN.md:38-46</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L122-L155">DESIGN.md:122-155</a>).</p>
+<p>In code, the shard is <code>apex_core::Shard</code>:</p>
+<pre><code class="language-rust">pub enum Shard {
+    Buffer(BufferId),
+    Window(WindowId),
+    Layout,
+    Term(TermId),
+    /// The session's metalog: shards, attachments, leases, plumb rules.
+    Meta,
+}
+</code></pre>
+<p><code>Term</code> and <code>Meta</code> are <em>pinned</em>: the server always leads them. Buffers, windows and the layout are <em>leasable</em>, so a UI that attaches takes their leases and edits with no round trip (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L46-L62">crates/apex-core/src/ids.rs:46-62</a>). DESIGN.md's table also lists a server-wide <code>registry</code> shard, but the code has no such shard: the daemon keeps its sessions in a map (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L211-L235">crates/apex-server/src/daemon.rs:211-235</a>).</p>
+<p>State changes in one way only. <code>State::apply</code> is deterministic and pure: no clock, no randomness, no I/O. So a replica that replays the same log ends up with byte-identical state. Anything with an effect on the world is an <strong>exec entry</strong> naming its handler. The node that matches the handler carries out the effect and reports the outcome as further entries (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L157-L187">DESIGN.md:157-187</a>).</p>
+<p>Ids need no coordination. Each attachment allocates from its own range, <code>attachment &lt;&lt; 40 | counter</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L306">crates/apex-core/src/node.rs:306</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L312">crates/apex-core/src/node.rs:312</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L1-L62">crates/apex-core/src/ids.rs:1-62</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L1-L56">crates/apex-core/src/entry.rs:1-56</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/README.md#L18-L32">crates/apex-core/README.md:18-32</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L100-L187">DESIGN.md:100-187</a></p>
+<h2 id="three-kinds-of-process">Three kinds of process</h2>
+<p>DESIGN.md names three kinds of process, and the code keeps the split (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L79-L96">DESIGN.md:79-96</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Process</th>
+<th>Binary</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Daemon</strong></td>
+<td><code>apex server</code> (or <code>apexd</code>)</td>
+<td>One per host, many sessions. Owns each session's authoritative <code>Log</code>, runs ptys and external commands, watches files, hosts the plumber and the I/O plane. Leads the pinned shards, and leads everything when no UI is attached.</td>
+</tr>
+<tr>
+<td><strong>UI client</strong></td>
+<td><code>apex-ui</code> (inside <code>Apex.app</code>)</td>
+<td>gpui app. Mirrors each session it shows, renders it, and while attached <em>leads</em> buffers, windows and the layout, so typing never waits on the network.</td>
+</tr>
+<tr>
+<td><strong>Tools and the CLI</strong></td>
+<td><code>apex &lt;subcommand&gt;</code>, <code>apex tool …</code>, third-party tools</td>
+<td>Attach as followers with their own replicas. They read locally and change things only by proposing.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-daemon">The daemon</h3>
+<p><code>Daemon</code> holds a map of <code>Session</code>s. Each session has its <code>Log</code>, a <code>Server</code>, and a follower <code>Node</code> replica called <code>view</code>, plus the connection that currently leads it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L176-L188">crates/apex-server/src/daemon.rs:176-188</a>). One thread owns all state. Connection readers and terminal events feed it through a channel, and each connection has a writer thread so a slow client never stalls the core. When no UI is attached, the daemon leads the session itself as the <code>SERVER</code> attachment, so scripts work headless and a UI that attaches later takes over (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1-L11">crates/apex-server/src/daemon.rs:1-11</a>).</p>
+<p>The socket defaults to <code>$TMPDIR/apex-$USER/main.sock</code>, overridden by <code>APEX_SOCKET</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L64-L79">crates/apex-server/src/daemon.rs:64-79</a>). <code>apex server</code> runs the daemon in the foreground (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L881-L887">crates/apex-cli/src/main.rs:881-887</a>). <code>apex attach</code>, and <code>-ensure-server</code> on any command, start one in the background when the socket does not answer (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L889-L900">crates/apex-cli/src/main.rs:889-900</a>). <code>apexd</code> is a thin standalone entry point to the same <code>Daemon::run</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apexd.rs#L1-L29">crates/apex-server/src/bin/apexd.rs:1-29</a>). See <a href="daemon.html">The Daemon</a>.</p>
+<h3 id="the-ui-client">The UI client</h3>
+<p><code>apex-ui</code> attaches to the local daemon, starting it if needed, and reopens the sessions it had last time. Flags choose another daemon (<code>--attach</code>), a pipe (<code>--via CMD</code>), a remote destination (<code>--remote DEST</code>), or an in-process server (<code>--local</code>) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1-L12">crates/apex-client/src/main.rs:1-12</a>).</p>
+<p>Its central type is <code>Acme</code>. It holds a <code>Log</code>, a <code>Node</code>, and a <code>Backend</code> that is either <code>Local(Server)</code> in the same process or <code>Remote(Link)</code> behind a socket (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L381-L392">crates/apex-client/src/app.rs:381-392</a>). Each frame, <code>render</code> syncs the node with the backend, measures the layout and paints straight from core state (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L67-L89">crates/apex-client/src/main.rs:67-89</a>). See <a href="client.html">The UI Client</a>.</p>
+<h3 id="tools-and-the-cli">Tools and the CLI</h3>
+<p>Every <code>apex</code> subcommand attaches to the session as a tool. It receives the same snapshot a UI would, reads from its own replica, and proposes to the leader (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1-L7">crates/apex-cli/src/main.rs:1-7</a>). So this works with no UI running, and a UI that attaches later finds the result:</p>
+<pre><code class="language-sh">apex new notes.txt
+apex edit notes.txt ',x/TODO/ c/DONE/'
+apex exec notes.txt Put
+</code></pre>
+<p>The bundled tools are subcommands of the same binary: <code>apex tool win | lsp | preview | web | agent | bridge NAME</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1055-L1078">crates/apex-cli/src/main.rs:1055-1078</a>). Each attaches through the same protocol as any other tool, with no special privileges (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L496-L499">crates/apex-cli/src/main.rs:496-499</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L61-L96">DESIGN.md:61-96</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1-L79">crates/apex-server/src/daemon.rs:1-79</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L176-L235">crates/apex-server/src/daemon.rs:176-235</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L381-L392">crates/apex-client/src/app.rs:381-392</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L713-L791">crates/apex-cli/src/main.rs:713-791</a></p>
+<h2 id="how-they-talk">How they talk</h2>
+<p>All three kinds of process use one wire. It is postcard messages in <code>u32</code> little-endian length-prefixed frames, over a Unix socket or any byte stream (such as ssh's stdio). On every connection the daemon first sends its <code>PROTOCOL</code> number and build id. The protocol number is bumped by hand with every wire change and currently stands at 54. A client of another protocol version stops at that first frame with an error saying what to do (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L23">crates/apex-server/src/proto.rs:23</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L606-L620">DESIGN.md:606-620</a>).</p>
+<p>The client side runs its <code>Node</code> over a <em>mirror</em> <code>Log</code>. The mirror assigns the same sequence numbers the server will store, so the UI leads with no wait and ships its entries on <code>flush</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md#L8-L24">crates/apex-server/README.md:8-24</a>). The details are on <a href="attach-protocol.html">The Attach Protocol</a> and <a href="proposals.html">Proposals</a>.</p>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph app[&quot;Apex.app (per machine)&quot;]
+        ui[&quot;apex-ui (gpui)&quot;]
+        node[&quot;Node replica, leader of buffers, windows, layout&quot;]
+        ui --- node
+    end
+    subgraph d[&quot;daemon (per host)&quot;]
+        sess[&quot;Session: Log + follower Node&quot;]
+        srv[&quot;Server: commands, Get/Put, watcher, plumber&quot;]
+        term[&quot;ptys + libghostty-vt, leads term shards&quot;]
+        plane[&quot;I/O plane&quot;]
+        sess --- srv
+        sess --- term
+    end
+    subgraph tools[&quot;tools on the host&quot;]
+        cli[&quot;apex CLI and scripts&quot;]
+        sdk[&quot;apex-tool SDK users&quot;]
+        bridge[&quot;apex tool bridge (JSON)&quot;]
+        go[&quot;Go SDK&quot;]
+        go --&gt; bridge
+        bridge --&gt; sdk
+    end
+    host[(&quot;files, processes, network&quot;)]
+    node &lt;--&gt;|&quot;Append, Entries, Propose, Applied&quot;| sess
+    ui &lt;--&gt;|&quot;Io frames&quot;| plane
+    cli &lt;--&gt;|&quot;Propose, Plumb, Term*&quot;| sess
+    sdk &lt;--&gt;|&quot;Hello, Entries, Propose, PlumbAck&quot;| sess
+    srv &lt;--&gt; host
+    term &lt;--&gt; host
+    plane &lt;--&gt; host
+</code></pre>
+<p>Some typical flows, as ARCHITECTURE.md traces them:</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant UI as &quot;UI (leader)&quot;
+    participant D as &quot;daemon&quot;
+    participant T as &quot;tool&quot;
+    UI-&gt;&gt;UI: key, Node applies the edit locally
+    UI-&gt;&gt;D: Append entries
+    D-&gt;&gt;T: Entries
+    T-&gt;&gt;D: Propose ReplaceRange
+    D-&gt;&gt;UI: Propose
+    UI-&gt;&gt;UI: proposal apply, new entries
+    UI-&gt;&gt;D: Append and Applied
+    D-&gt;&gt;T: Entries and Applied
+    UI-&gt;&gt;D: Plumb (B3)
+    D-&gt;&gt;T: Plumb (a rule names the tool)
+    T-&gt;&gt;D: PlumbAck
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L27-L126">ARCHITECTURE.md:27-126</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md#L1-L24">crates/apex-server/README.md:1-24</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L23">crates/apex-server/src/proto.rs:23</a></p>
+<h2 id="map-of-the-repository">Map of the repository</h2>
+<h3 id="workspace-crates">Workspace crates</h3>
+<p>The Cargo workspace members are listed in <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/Cargo.toml#L1-L13">Cargo.toml:1-13</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Crate</th>
+<th>Builds</th>
+<th>What it holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>crates/apex-edit</code></td>
+<td>lib</td>
+<td>The sam/acme Edit language and Plan 9 regexps, ported from plan9port (<code>regx.rs</code>, <code>parse.rs</code>, <code>exec.rs</code>, <code>elog.rs</code>). No dependencies on the rest.</td>
+</tr>
+<tr>
+<td><code>crates/apex-core</code></td>
+<td>lib</td>
+<td>The headless replicated state machine: <code>ids</code>, <code>entry</code>, <code>text</code>, <code>buffer</code>, <code>state</code>, <code>log</code>, <code>node</code>, plus <code>tiling</code>, <code>plumb</code>, <code>expand</code>, <code>fuzzy</code> and <code>transcript</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/lib.rs#L1-L29">crates/apex-core/src/lib.rs:1-29</a>). Depends on apex-edit.</td>
+</tr>
+<tr>
+<td><code>crates/apex-server</code></td>
+<td>lib; <code>apexd</code>, <code>apex-bench</code></td>
+<td>Everything with an effect: <code>Server</code> (lib.rs), <code>daemon</code>, <code>proto</code>, <code>proposal</code>, <code>remote</code> (client side of the wire), <code>pty</code>/<code>term</code>/<code>term_loop</code>, <code>watch</code>, <code>find</code>, <code>plane</code>, <code>providers</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1-L24">crates/apex-server/src/lib.rs:1-24</a>).</td>
+</tr>
+<tr>
+<td><code>crates/ghostty-vt-sys</code></td>
+<td>lib</td>
+<td>FFI to libghostty-vt with a C shim (<code>shim.c</code>) that walks the grid into term-shard cells (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/lib.rs#L1-L18">crates/ghostty-vt-sys/src/lib.rs:1-18</a>).</td>
+</tr>
+<tr>
+<td><code>crates/apex-client</code></td>
+<td><code>apex-ui</code></td>
+<td>The gpui client: <code>app.rs</code> (<code>Acme</code>), <code>text_element.rs</code>, <code>term_element.rs</code>, <code>web.rs</code>, pickers, menus, themes, fonts.</td>
+</tr>
+<tr>
+<td><code>crates/apex-cli</code></td>
+<td><code>apex</code></td>
+<td>The command, and the host of every bundled tool.</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool</code></td>
+<td>lib</td>
+<td>The Rust tool SDK: <code>Tool::attach</code>, windows, <code>offer</code>, <code>next_event</code>, <code>answer</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1-L39">crates/apex-tool/src/lib.rs:1-39</a>).</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-bridge</code></td>
+<td>lib</td>
+<td><code>apex tool bridge NAME</code>: a tool attachment driven by JSON lines on stdio.</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-win</code></td>
+<td>lib</td>
+<td><code>apex tool win</code>: acme's win, a shell in a text window.</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-lsp</code></td>
+<td>lib</td>
+<td><code>apex tool lsp</code>: language servers, one per workspace root.</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-preview</code></td>
+<td>lib</td>
+<td><code>apex tool preview</code>: a buffer through a converter, shown as a page.</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-web</code></td>
+<td>lib</td>
+<td><code>apex tool web</code>: web pages and their history.</td>
+</tr>
+<tr>
+<td><code>crates/apex-tool-agent</code></td>
+<td>lib</td>
+<td><code>apex tool agent</code>: Claude Code, Codex and Muse in apex terminals, fed by their hooks (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/README.md#L1-L23">crates/apex-tool-agent/README.md:1-23</a>).</td>
+</tr>
+<tr>
+<td><code>crates/apex-diff</code></td>
+<td>lib</td>
+<td>Unified diffs laid out side by side as a page. Used by apex-tool.</td>
+</tr>
+<tr>
+<td><code>exp/acp</code></td>
+<td><code>apex-acp</code></td>
+<td>Experimental Agent Client Protocol client, built on apex-tool only.</td>
+</tr>
+</tbody>
+</table>
+<p>The dependency order is simple: <code>apex-edit</code> ← <code>apex-core</code> ← <code>apex-server</code> ← everything else. The client and the CLI both link <code>apex-server</code>, because its <code>remote.rs</code> is the client side of the wire. The CLI also links every bundled tool crate (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/Cargo.toml#L11-L22">crates/apex-cli/Cargo.toml:11-22</a>).</p>
+<p>The bundled tools are not all built the same way. <code>lsp</code> and <code>win</code> use <code>apex-server</code>'s <code>Remote</code> and <code>Proposal</code> directly. <code>agent</code>, <code>preview</code>, <code>web</code> and <code>exp/acp</code> depend on the SDK, <code>apex-tool</code>. The architecture review counts this among the API gaps (see <a href="tool-sdk.html">Writing Tools</a>).</p>
+<h3 id="outside-the-crates">Outside the crates</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>go/apex</code>, <code>go/examples/upper</code></td>
+<td>The Go SDK. It starts <code>apex tool bridge NAME</code> and talks JSON to it, offering <code>Attach</code>, <code>Offer</code> and <code>Serve</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/README.md#L1-L28">go/README.md:1-28</a>).</td>
+</tr>
+<tr>
+<td><code>providers/</code></td>
+<td>Example <code>apex-remote-&lt;provider&gt;</code> scripts (sprite, devserver, x2p). A provider is called as <code>apex-remote-&lt;provider&gt; DESTINATION COMMAND</code>, and ssh is built in (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/README.md#L1-L31">providers/README.md:1-31</a>).</td>
+</tr>
+<tr>
+<td><code>mac/</code></td>
+<td><code>build-app.sh</code> builds <code>target/Apex.app</code>. The bundle contains <code>apex-ui</code>, <code>apex</code>, the <code>apex-editor</code> and <code>xdg-open</code> links to <code>apex</code>, <code>rc</code> (mariusae/rustrc), and a <code>linux-amd64</code> <code>apex</code> and <code>rc</code> cross-linked with Zig (<code>zig-cc</code>, <code>zig-ar</code>) for remote hosts (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh#L1-L32">mac/build-app.sh:1-32</a>).</td>
+</tr>
+<tr>
+<td><code>examples/profile</code></td>
+<td>An example <code>~/.apex/profile</code> for zsh, bash and fish.</td>
+</tr>
+<tr>
+<td><code>third_party/pathfinder_simd</code></td>
+<td>A patched crate, substituted through <code>[patch.crates-io]</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/Cargo.toml#L19-L20">Cargo.toml:19-20</a>).</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>The project's web page.</td>
+</tr>
+<tr>
+<td><code>.github/workflows/rust.yml</code></td>
+<td>CI.</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/Cargo.toml#L1-L26">Cargo.toml:1-26</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/lib.rs#L1-L29">crates/apex-core/src/lib.rs:1-29</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1-L24">crates/apex-server/src/lib.rs:1-24</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/Cargo.toml#L1-L22">crates/apex-cli/Cargo.toml:1-22</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/mac/build-app.sh#L1-L32">mac/build-app.sh:1-32</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/README.md#L1-L73">go/README.md:1-73</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/providers/README.md#L1-L31">providers/README.md:1-31</a></p>
+<h2 id="sessions-urls-and-remote-hosts">Sessions, URLs and remote hosts</h2>
+<p>Every session is a URL. <code>local:///name</code> is on this machine's daemon, <code>ssh://user@host/name</code> is reached over ssh, and <code>sprite://box/name</code> goes through a provider script. A daemon's first session is <code>default</code>.</p>
+<p>For a remote target, <code>apex attach</code> launches <code>apex-ui --remote DEST --session S</code>. The UI installs the right <code>apex</code> and <code>rc</code> into <code>~/.apex/bin</code> on the destination when its hash differs, then runs <code>apex attach -stdio</code> there. That command starts the destination's daemon if needed and copies bytes between its stdio and the daemon's socket. The bridge knows nothing of frames (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1165-L1190">crates/apex-cli/src/main.rs:1165-1190</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L724-L768">DESIGN.md:724-768</a>).</p>
+<p>Inside a session, commands and terminals get <code>apexsession</code> and <code>APEX_SOCKET</code>. So <code>apex</code> run from an apex terminal acts on the session it is in (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L735-L742">crates/apex-cli/src/main.rs:735-742</a>). The binary also answers to the names <code>apex-editor</code> (<code>$EDITOR</code>) and <code>xdg-open</code> (<code>$BROWSER</code>), which become <code>apex editor</code> and <code>apex plumb</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L713-L729">crates/apex-cli/src/main.rs:713-729</a>). See <a href="remote-hosts.html">Remote Hosts and Providers</a> and <a href="cli.html">The apex Command</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md#L20-L56">crates/apex-cli/README.md:20-56</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L713-L791">crates/apex-cli/src/main.rs:713-791</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1165-L1190">crates/apex-cli/src/main.rs:1165-1190</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L724-L768">DESIGN.md:724-768</a></p>
+<h2 id="window-kinds">Window kinds</h2>
+<p>A window's body says what its content is, and nothing else:</p>
+<pre><code class="language-rust">pub enum Body {
+    Text(BufferId),
+    Term(TermId),
+    Page(Source),   // Source::Buffer(id) | Source::Url, fetched via Host | Client | Tool(name)
+}
+</code></pre>
+<p><strong>Text</strong> windows show a buffer: acme's File, with its views, undo and dirty state. <strong>Term</strong> windows show a grid that the daemon writes as <code>TermOp</code> rows into a pinned term shard. <strong>Page</strong> windows are HTML drawn by the client in a WKWebView. A page's content is either a buffer written by a tool or a URL fetched through the host, the client, or a tool (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L45-L80">crates/apex-core/src/entry.rs:45-80</a>).</p>
+<p>Status, owner, live and working flags, and notifications are common to every kind. See <a href="buffers-and-text.html">Buffers, Views and Undo</a>, <a href="terminals.html">Terminals</a> and <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L45-L80">crates/apex-core/src/entry.rs:45-80</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L698-L730">ARCHITECTURE.md:698-730</a></p>
+<h2 id="the-design-documents">The design documents</h2>
+<p>Four documents at the root explain why the code is shaped as it is. Their <em>As built</em> notes describe what actually runs.</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DESIGN.md</code></td>
+<td>The source of truth for the architecture: goals, the model (nouns, shards, the state machine), leadership and fencing, proposals and commands, the protocol as built, the <code>apex</code> command, extensibility and plumbing, the Edit language, files, terminals, the client, logs and compaction, measurements, and open questions such as agents over ACP (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1-L11">DESIGN.md:1-11</a>).</td>
+</tr>
+<tr>
+<td><code>ARCHITECTURE.md</code></td>
+<td>An October 2026 review against four goals: a minimal design, the UI separated from the editing model, a minimal core, and orthogonal tool APIs. It lists bugs (now mostly fixed), duplication in the protocol and the client, UI policy leaking into the core, divergent tool surfaces, the Page design (§5, built), and an ordered plan (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L1-L23">ARCHITECTURE.md:1-23</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L873-L935">ARCHITECTURE.md:873-935</a>).</td>
+</tr>
+<tr>
+<td><code>WEB.md</code></td>
+<td>The I/O plane multiplexed over the session socket, web windows rendered on the client, and Preview as a live pipe through a converter. Where its Page details differ from ARCHITECTURE.md §5, §5 is what runs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L1-L17">WEB.md:1-17</a>).</td>
+</tr>
+<tr>
+<td><code>MODERN.md</code></td>
+<td>The modern-Mac look: six palettes, font sets, tags as title bars, handles as document dots, the caret, scrollers, cards and the title bar. acme's tiling and interaction model are left untouched (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md#L1-L10">MODERN.md:1-10</a>).</td>
+</tr>
+</tbody>
+</table>
+<p>Read the docs with some care, because the code has moved on in places. DESIGN.md's shard table lists a <code>registry</code> shard that the code does not have. apex-server's README credits alacritty's parser for terminal latency, but terminals now use libghostty-vt (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L1-L3">crates/apex-server/src/term.rs:1-3</a>). ARCHITECTURE.md warns that its own file and line references will drift.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1-L11">DESIGN.md:1-11</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L1-L23">ARCHITECTURE.md:1-23</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L1-L17">WEB.md:1-17</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md#L1-L10">MODERN.md:1-10</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md#L42-L50">crates/apex-server/README.md:42-50</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L1-L3">crates/apex-server/src/term.rs:1-3</a></p>
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li>To understand any change to state, read <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>, then <a href="core-state.html">Entries, State and Apply</a> and <a href="node.html">The Node</a>.</li>
+<li>To work on what touches the host (commands, files, terminals), read <a href="server.html">The Server</a>, <a href="daemon.html">The Daemon</a> and <a href="terminals.html">Terminals</a>.</li>
+<li>To work on the app, read <a href="client.html">The UI Client</a> and its child pages.</li>
+<li>To extend apex, read <a href="tool-sdk.html">Writing Tools</a>, <a href="plumbing.html">Plumbing Rules and Verbs</a> and <a href="cli.html">The apex Command</a>.</li>
+<li>To build it, read <a href="build-and-test.html">Building, Testing and Packaging</a>.</li>
+</ul>
+
+<div class="pager"><span class="next">Next: <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top current"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+<ul class="sections">
+<li class="l2"><a href="#what-apex-is-for">What apex is for</a></li>
+<li class="l3"><a href="#features-at-a-glance">Features at a glance</a></li>
+<li class="l2"><a href="#the-model-in-one-paragraph">The model in one paragraph</a></li>
+<li class="l2"><a href="#three-kinds-of-process">Three kinds of process</a></li>
+<li class="l3"><a href="#the-daemon">The daemon</a></li>
+<li class="l3"><a href="#the-ui-client">The UI client</a></li>
+<li class="l3"><a href="#tools-and-the-cli">Tools and the CLI</a></li>
+<li class="l2"><a href="#how-they-talk">How they talk</a></li>
+<li class="l2"><a href="#map-of-the-repository">Map of the repository</a></li>
+<li class="l3"><a href="#workspace-crates">Workspace crates</a></li>
+<li class="l3"><a href="#outside-the-crates">Outside the crates</a></li>
+<li class="l2"><a href="#sessions-urls-and-remote-hosts">Sessions, URLs and remote hosts</a></li>
+<li class="l2"><a href="#window-kinds">Window kinds</a></li>
+<li class="l2"><a href="#the-design-documents">The design documents</a></li>
+<li class="l2"><a href="#where-to-go-next">Where to go next</a></li>
+</ul>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

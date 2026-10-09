@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration: Profile, Attach and Settings · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Configuration: Profile, Attach and Settings</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md">crates/apex-cli/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs">crates/apex-cli/tests/cli.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs">crates/apex-server/src/pty.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs">crates/apex-server/src/term.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/page.rs">crates/apex-tool-agent/src/page.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs">crates/apex-tool-lsp/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs">crates/apex-tool-preview/src/converters.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/examples/profile">examples/profile</a></li>
+</ul>
+</details>
+<p>apex has no configuration file. Like acme, it is configured with scripts that run commands. A session is set up by a shell script on the host, the <strong>profile</strong>. Each UI's per-attachment changes come from a second script, the <strong>attach</strong> script, which also runs on the host. Both scripts use the <a href="cli.html">apex command</a> to act on the session they belong to. Two commands hold the state that outlives the scripts. <code>apex env</code> keeps the <strong>session environment</strong>, which every later terminal and command inherits. <code>apex set</code> keeps <strong>settings</strong>: replicated key/value pairs owned by the session or by one attachment, read by tools such as Preview and the language-server tool.</p>
+<p>This page covers what runs when, what each script can change, how the environment and settings are stored and looked up, and which variables apex itself puts into commands' environments. The daemon around these scripts is described on <a href="daemon.html">The Daemon (apexd)</a>. The rule table that profiles often fill is on <a href="plumbing.html">Plumbing Rules and Verbs</a>. The tools that read settings are on <a href="tool-pages.html">Preview, Web and Diff Tools</a> and <a href="tool-win-and-lsp.html">win and Language Servers</a>.</p>
+<h2 id="the-two-scripts">The two scripts</h2>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>Where it lives</th>
+<th>Where it runs</th>
+<th>When</th>
+<th>Runs as</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>~/.apex/profile</code></td>
+<td>the daemon's host</td>
+<td>the host, in the session's directory</td>
+<td>once, when a session is made</td>
+<td>process <code>profile</code>, output to <code>+Errors</code></td>
+<td><code>apex open</code>, <code>apex exec Newcol</code>, <code>apex plumb rule add</code>, <code>apex tool lsp &amp;</code>, <code>apex set …</code>, exporting variables</td>
+</tr>
+<tr>
+<td><code>~/.apex/attach</code></td>
+<td>the machine running the UI</td>
+<td>the session's host (the text is shipped)</td>
+<td>each time that UI attaches</td>
+<td>process <code>attach</code>, output to <code>+Errors</code>, with <code>$apexattachment</code></td>
+<td><code>apex set</code> for this client only</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>apex help scripts</code> topic describes the split this way: the host's profile is &quot;the session's setup on the machine running the daemon&quot;, and the client's attach script is &quot;its own per attachment, the UI's tweaks&quot;. When client and daemon are on the same machine, both files sit in the same <code>~/.apex</code>, and each runs once in its own role (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L616-L636">crates/apex-cli/src/main.rs:616-636</a>). In the app, the Profile menu action runs <code>New ~/.apex/profile</code>, which opens the host's profile, or makes it if it does not exist (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L162-L163">crates/apex-client/src/main.rs:162-163</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant C as &quot;apex new-session / daemon start&quot;
+    participant D as &quot;Daemon&quot;
+    participant S as &quot;Server (per session)&quot;
+    participant P as &quot;rc: profile&quot;
+    participant U as &quot;UI (apex-ui)&quot;
+    participant A as &quot;rc: attach&quot;
+    C-&gt;&gt;D: NewSession name, dir
+    D-&gt;&gt;S: Server::new, env = apexsession, apexsessionlabel, APEX_SOCKET, EDITOR, BROWSER
+    D-&gt;&gt;S: install_default_rules, init_session, Cwd
+    D-&gt;&gt;S: run_profile(host_profile)
+    S-&gt;&gt;P: rc -c &quot;fn sigexit {apex env -import}; . ~/.apex/profile&quot;
+    P-&gt;&gt;D: apex open / apex set / apex plumb rule add ...
+    P--&gt;&gt;D: on exit: EnvImport vars
+    D-&gt;&gt;S: import_env(vars)
+    U-&gt;&gt;D: Hello kind=Ui, attach=Script(client, text of ~/.apex/attach)
+    D-&gt;&gt;U: Welcome
+    D-&gt;&gt;S: run_attach(attachment, script)
+    S-&gt;&gt;A: rc -c text, with apexattachment, apexclient
+    A-&gt;&gt;D: apex set KEY VALUE (owner = this attachment)
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L616-L636">crates/apex-cli/src/main.rs:616-636</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L343-L401">crates/apex-server/src/daemon.rs:343-401</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L588-L642">crates/apex-server/src/daemon.rs:588-642</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L162-L163">crates/apex-client/src/main.rs:162-163</a></p>
+<h2 id="the-profile">The profile</h2>
+<h3 id="where-it-comes-from">Where it comes from</h3>
+<p><code>Daemon::run</code> takes the profile path from <code>$HOME/.apex/profile</code> on the daemon's host. Tests call <code>Daemon::run_with</code> instead and pass a path, so the real <code>$HOME</code> is never touched (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L241-L247">crates/apex-server/src/daemon.rs:241-247</a>). <code>new_session_in</code> builds the session in this order:</p>
+<ol>
+<li>It creates the log and the <code>Server</code>, and runs <code>cd</code> to the requested directory if one was given.</li>
+<li>It sets the session's base environment (see <a href="#variables-apex-sets">Variables apex sets</a>).</li>
+<li>It installs the default plumbing rules, lays out the session, and records the host and directory.</li>
+<li>Last, it calls <code>s.server.run_profile(&amp;s.view, self.host_profile.as_deref())</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L343-L401">crates/apex-server/src/daemon.rs:343-401</a>).</li>
+</ol>
+<p>Because the profile runs last, everything it does (opening windows, adding rules) lands on a session that is already laid out. A UI that attaches later sees the result, even if the profile ran with no UI connected.</p>
+<h3 id="how-it-runs">How it runs</h3>
+<p><code>Server::run_profile</code> returns at once if the file does not exist. Otherwise it builds a script that sources the profile with <code>. 'PATH'</code>. It runs that script in the session's directory through <code>spawn_shell_as(&quot;profile&quot;, ExecCtx::Top, …, ShellMode::Errors { dir: None }, env)</code>, so the profile is a process named <code>profile</code> in the top row and in <code>apex ps</code>, and its output goes to <code>+Errors</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1159-L1179">crates/apex-server/src/lib.rs:1159-1179</a>). The shell is <code>command_shell()</code>: <code>$acmeshell</code> if it is set; otherwise an <code>rc</code> found beside the binary, in a dev tree's <code>target/rc-host/bin</code>, or in <code>~/.apex/bin</code>; otherwise <code>rc</code> on the PATH; otherwise <code>sh</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1926-L1964">crates/apex-server/src/lib.rs:1926-1964</a>). This means the profile is normally an rc script, and <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/examples/profile">examples/profile</a> is written in rc.</p>
+<p>The processes <code>profile</code> and <code>attach</code> are marked <code>ProcKind::Script</code>, and their <code>Running</code> records are flagged <code>script</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1139">crates/apex-server/src/lib.rs:1139</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2126-L2127">crates/apex-server/src/lib.rs:2126-2127</a>). If a script starts a program in the background and that program announces itself (<code>ClientMsg::Named</code>), the session adopts it. <code>apex tool lsp &amp;</code> in a profile therefore appears as <code>lsp</code> in <code>apex ps</code> once the profile has exited (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L91-L94">crates/apex-server/src/lib.rs:91-94</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L199-L203">crates/apex-server/src/proto.rs:199-203</a>). The process counts as finished when the shell exits, not when its pipes close, so a background child that holds the pipes does not keep <code>profile</code> alive (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2134-L2136">crates/apex-server/src/lib.rs:2134-2136</a>). The test at <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L1169-L1187">crates/apex-cli/tests/cli.rs:1169-1187</a> checks this.</p>
+<h3 id="the-profiles-environment-becomes-the-sessions">The profile's environment becomes the session's</h3>
+<p>Exported variables normally disappear when the script that set them exits. The profile is an exception: its environment when it ends becomes the session's. <code>run_profile</code> puts an exit hook in front of the sourced file. Under rc the hook is <code>fn sigexit { apex env -import }</code>; under any other shell it is <code>trap 'apex env -import' EXIT</code>. Before spawning, it also records the full environment the profile was given as <code>profile_base</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1166-L1177">crates/apex-server/src/lib.rs:1166-1177</a>).</p>
+<p><code>apex env -import</code> sends its whole environment as <code>ClientMsg::EnvImport</code>. The daemon passes it to <code>Server::import_env</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L723-L727">crates/apex-server/src/daemon.rs:723-727</a>), which compares it with the base:</p>
+<pre><code class="language-rust">pub fn import_env(&amp;mut self, vars: Vec&lt;(String, String)&gt;) {
+    let base = self.profile_base.take().unwrap_or_else(|| child_env(&amp;self.env));
+    for (k, v) in &amp;vars {
+        if SHELL_OWN.contains(&amp;k.as_str()) { continue; }
+        if base.iter().find(|(b, _)| b == k).map(|(_, bv)| bv) != Some(v) {
+            self.set_env(k, v);
+        }
+    }
+    for (k, _) in &amp;base {
+        if !vars.iter().any(|(n, _)| n == k) { self.env.retain(|(n, _)| n != k); }
+    }
+}
+</code></pre>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1193-L1212">crates/apex-server/src/lib.rs:1193-1212</a>)</p>
+<p>Variables that are new or changed are set. Variables in the base that the script dropped are removed from the session's additions. Variables the shell keeps for itself (<code>SHELL_OWN</code>: rc's <code>pid</code>, <code>status</code>, <code>path</code>, <code>prompt</code>, <code>home</code> and others, plus sh's <code>PWD</code>, <code>OLDPWD</code>, <code>SHLVL</code>, <code>_</code>) are ignored (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1966-L1968">crates/apex-server/src/lib.rs:1966-1968</a>). rc exports its functions as <code>fn#NAME</code> variables, so a function the profile defines also reaches later commands. The test <code>the_profiles_environment_at_its_end_is_the_sessions</code> shows the whole behaviour. It uses <code>FOO=bar</code>, a list <code>x=(a b)</code> (stored as <code>a\u{1}b</code>), <code>fn g {…}</code>, and <code>EDITOR=()</code>. Afterwards <code>apex env</code> shows <code>FOO</code>, <code>x</code> and <code>fn#g</code>, shows no <code>EDITOR</code>, and a later <code>apex exec 'g there'</code> prints <code>hi there</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L1198-L1227">crates/apex-cli/tests/cli.rs:1198-1227</a>).</p>
+<p><code>profile_base</code> is taken with <code>take()</code>, so only the first import is measured against the profile's own starting environment. Any later <code>apex env -import</code>, from a terminal for example, is compared with <code>child_env(&amp;self.env)</code>: the daemon's process environment (minus <code>acmeaddr</code>, <code>winid</code>, <code>%</code>, <code>samfile</code>) with the session's additions on top (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1970-L1981">crates/apex-server/src/lib.rs:1970-1981</a>). Everything the caller's environment has beyond that is imported, including its own <code>$winid</code>. A profile that defines its own <code>sigexit</code> replaces the hook and gives up the import. The help text warns about this (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L630-L631">crates/apex-cli/src/main.rs:630-631</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1159-L1212">crates/apex-server/src/lib.rs:1159-1212</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1926-L1981">crates/apex-server/src/lib.rs:1926-1981</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L241-L247">crates/apex-server/src/daemon.rs:241-247</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L723-L727">crates/apex-server/src/daemon.rs:723-727</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L184-L246">crates/apex-cli/tests/cli.rs:184-246</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L1198-L1227">crates/apex-cli/tests/cli.rs:1198-1227</a></p>
+<h2 id="the-attach-script">The attach script</h2>
+<p>A UI reads its own <code>~/.apex/attach</code> through <code>remote::local_attach()</code>. The result is a <code>Script { client, text }</code>, where <code>client</code> is this machine's name (<code>term::sysname()</code>) and <code>text</code> is the file's contents. The script is sent only for <code>AttachmentKind::Ui</code> attachments; tools and CLI commands never send one (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L187">crates/apex-server/src/remote.rs:187</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L202">crates/apex-server/src/remote.rs:202</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L661-L671">crates/apex-server/src/remote.rs:661-671</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L278-L284">crates/apex-server/src/proto.rs:278-284</a>). The script travels in <code>ClientMsg::Hello</code>. A remote UI's attach script is therefore read on the laptop and run on the remote host.</p>
+<p>In <code>Daemon::hello</code>, after the attachment is recorded, any leases are granted and <code>Welcome</code> has been sent, the daemon calls <code>run_attach</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L635-L639">crates/apex-server/src/daemon.rs:635-639</a>). <code>Server::run_attach</code> does nothing for an empty script. Otherwise it runs the text as a process named <code>attach</code> in the session's directory, with its output in <code>+Errors</code>. On top of the usual command environment it adds <code>apexattachment</code> (the attachment's id) and <code>apexclient</code> (the client's machine name) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1214-L1230">crates/apex-server/src/lib.rs:1214-1230</a>). <code>apex set</code> reads <code>$apexattachment</code>, which is how a setting from this script becomes the client's own (see the next section). The attach script gets no exit hook, so its environment is not imported into the session.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L187-L203">crates/apex-server/src/remote.rs:187-203</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L661-L671">crates/apex-server/src/remote.rs:661-671</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L588-L642">crates/apex-server/src/daemon.rs:588-642</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1214-L1230">crates/apex-server/src/lib.rs:1214-1230</a></p>
+<h2 id="the-session-environment-apex-env">The session environment: <code>apex env</code></h2>
+<p>The daemon holds each session's environment additions in <code>Server::env: Vec&lt;(String, String)&gt;</code>: &quot;what every shell and command gets in its environment beyond acme's own&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L111-L114">crates/apex-server/src/lib.rs:111-114</a>). This environment is not replicated state. It lives only in the session's <code>Server</code> in the daemon, and the only ways to reach it are two protocol messages:</p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Sent by</th>
+<th>Effect</th>
+<th>Reply</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Env { set }</code></td>
+<td><code>apex env [KEY=VALUE…]</code></td>
+<td><code>set_env</code> for each pair; an empty list only asks</td>
+<td><code>ServerMsg::Env { vars }</code>, the whole <code>Server::env</code></td>
+</tr>
+<tr>
+<td><code>EnvImport { vars }</code></td>
+<td><code>apex env -import</code></td>
+<td><code>import_env(vars)</code>, as above</td>
+<td>the same</td>
+</tr>
+</tbody>
+</table>
+<p>(<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L163-L170">crates/apex-server/src/proto.rs:163-170</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L716-L727">crates/apex-server/src/daemon.rs:716-727</a>)</p>
+<p><code>env_cmd</code> in the CLI turns each argument into a pair, and rejects an argument without <code>=</code> with &quot;not KEY=VALUE&quot;. <code>-import</code> combined with arguments is an error. The command prints the environment only when called with no arguments and without <code>-import</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1896-L1921">crates/apex-cli/src/main.rs:1896-1921</a>). What it prints is the session's additions, not the daemon's whole environment. There is no <code>apex env</code> form that unsets a single variable. A variable is dropped only by an import that leaves it out.</p>
+<p>Changes apply only to processes started afterwards: B2 commands, terminals, <code>Win</code>, and tools started by rules. Processes already running keep their environment. <code>set_env</code> replaces an existing key in place, otherwise appends (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1150-L1157">crates/apex-server/src/lib.rs:1150-1157</a>). Renaming a session also updates <code>apexsessionlabel</code> this way (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L420-L421">crates/apex-server/src/daemon.rs:420-421</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L111-L121">crates/apex-server/src/lib.rs:111-121</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1150-L1157">crates/apex-server/src/lib.rs:1150-1157</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L163-L170">crates/apex-server/src/proto.rs:163-170</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1002-L1011">crates/apex-server/src/remote.rs:1002-1011</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L405-L414">crates/apex-cli/src/main.rs:405-414</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1896-L1921">crates/apex-cli/src/main.rs:1896-1921</a></p>
+<h2 id="settings-apex-set">Settings: <code>apex set</code></h2>
+<h3 id="storage">Storage</h3>
+<p>The environment lives only in the daemon. Settings, by contrast, are replicated: they are part of the metalog in <code>Meta</code>, keyed by owner (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L409-L411">crates/apex-core/src/state.rs:409-411</a>):</p>
+<pre><code class="language-rust">/// Settings by owner: the session's under `SERVER`, an attachment's
+/// under its id (gone when it detaches).
+pub settings: BTreeMap&lt;AttachmentId, BTreeMap&lt;String, String&gt;&gt;,
+</code></pre>
+<p>Two metalog operations change them. <code>MetaOp::Set { owner, key, value }</code> inserts or overwrites. <code>MetaOp::Unset { owner, key }</code> removes a key and drops the owner's map once it is empty. <code>MetaOp::Detach</code> removes everything the detaching attachment owned (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L828-L832">crates/apex-core/src/state.rs:828-832</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L855-L857">crates/apex-core/src/state.rs:855-857</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L890-L897">crates/apex-core/src/state.rs:890-897</a>). <code>Log::set</code> and <code>Log::unset</code> append them (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L301-L307">crates/apex-core/src/log.rs:301-307</a>). Since settings are metalog entries, every replica can read them locally: the UI, each tool, each CLI command. Nobody needs to ask the daemon.</p>
+<h3 id="writing">Writing</h3>
+<p><code>apex set KEY VALUE</code> sends <code>ClientMsg::Set { key, value, attachment }</code>. <code>attachment</code> is parsed from <code>$apexattachment</code> when that variable is set, which in practice means inside an attach script (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1923-L1947">crates/apex-cli/src/main.rs:1923-1947</a>). The daemon checks that the named attachment exists and replies <code>set: no attachment N</code> if it does not. With no attachment named, the owner is <code>SERVER</code>, i.e. the session. The daemon then appends <code>MetaOp::Set</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L842-L853">crates/apex-server/src/daemon.rs:842-853</a>). The same command therefore records a session setting when run from the profile or a terminal, and a client setting when run from that client's attach script. Tools built on the SDK call <code>Tool::set</code>, which always writes the session's setting (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1116-L1118">crates/apex-tool/src/lib.rs:1116-1118</a>).</p>
+<p>The CLI has no unset. <code>Log::unset</code> exists, but no <code>apex</code> subcommand calls it. To turn a converter off, set an empty value (see below).</p>
+<p><code>apex set</code> with no arguments reads the local replica and prints <code>OWNER\tKEY\tVALUE</code> lines. The owner is shown as <code>session</code>, or as <code>name(aN)</code> for an attachment.</p>
+<h3 id="reading">Reading</h3>
+<p><code>Meta::setting(a, key)</code> is the lookup most readers use: the attachment's own value first, then the session's (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L474-L479">crates/apex-core/src/state.rs:474-479</a>).</p>
+<pre><code class="language-mermaid">flowchart TD
+    Q[&quot;setting(a, key)&quot;] --&gt; O{&quot;a has key?&quot;}
+    O -- yes --&gt; V1[&quot;a's value&quot;]
+    O -- no --&gt; S{&quot;SERVER has key?&quot;}
+    S -- yes --&gt; V2[&quot;session's value&quot;]
+    S -- no --&gt; N[&quot;None: reader's default&quot;]
+    PV[&quot;Preview converter(ext)&quot;] --&gt; P1{&quot;session has Preview.ext?&quot;}
+    P1 -- yes --&gt; E{&quot;empty?&quot;}
+    P1 -- no --&gt; P2{&quot;any attachment has it?&quot;}
+    P2 -- yes --&gt; E
+    P2 -- no --&gt; D[&quot;DEFAULTS: md, markdown -&gt; apex md; html, htm, svg -&gt; cat&quot;]
+    E -- yes --&gt; OFF[&quot;no converter&quot;]
+    E -- no --&gt; CMD[&quot;that command&quot;]
+</code></pre>
+<p>The Preview tool does not use <code>Meta::setting</code>. Its <code>converter</code> looks at the session's value first, then any attachment's in id order, so an attach script's converter works for the whole session. It falls back to <code>DEFAULTS</code> last, and an empty value at any of those levels means &quot;no converter&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs#L12-L37">crates/apex-tool-preview/src/converters.rs:12-37</a>). <code>exts</code> collects every extension with a converter, which is how the tool knows which files to offer Preview on.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L409-L411">crates/apex-core/src/state.rs:409-411</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L474-L479">crates/apex-core/src/state.rs:474-479</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L828-L897">crates/apex-core/src/state.rs:828-897</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L301-L307">crates/apex-core/src/log.rs:301-307</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L842-L853">crates/apex-server/src/daemon.rs:842-853</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1923-L1947">crates/apex-cli/src/main.rs:1923-1947</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-preview/src/converters.rs#L12-L37">crates/apex-tool-preview/src/converters.rs:12-37</a></p>
+<h3 id="settings-in-use">Settings in use</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Read by</th>
+<th>How it is looked up</th>
+<th>Meaning and default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Preview.EXT</code></td>
+<td><code>apex tool preview</code> (<code>converters::converter</code>)</td>
+<td>session, then any attachment, then defaults</td>
+<td>A command that reads the file on stdin and writes HTML. <code>md</code>/<code>markdown</code> default to <code>apex md</code>; <code>html</code>/<code>htm</code>/<code>svg</code> to <code>cat</code>. An empty value turns one off.</td>
+</tr>
+<tr>
+<td><code>Preview.EXT</code>, then <code>Preview</code></td>
+<td>the UI's <code>preview_app</code>, for a rule with <code>-client=preview</code></td>
+<td><code>Meta::setting(me, …)</code></td>
+<td>The app that previews the file on the UI's machine; with neither set, the platform's own previewer</td>
+</tr>
+<tr>
+<td><code>Preview.md</code></td>
+<td><code>apex tool agent</code>'s pages</td>
+<td>the tool's <code>setting</code></td>
+<td>The Markdown converter; defaults to <code>apex md</code></td>
+</tr>
+<tr>
+<td><code>lsp.LANG</code></td>
+<td><code>apex tool lsp</code></td>
+<td><code>Meta::setting(tool, …)</code></td>
+<td>The server command for <code>go</code>, <code>rust</code>, <code>python</code>, <code>typescript</code> or <code>c</code>; defaults to <code>gopls</code>, <code>rust-analyzer</code>, <code>pyright-langserver --stdio</code>, <code>typescript-language-server --stdio</code>, <code>clangd</code></td>
+</tr>
+<tr>
+<td><code>lsp.LANG.root</code>, then <code>lsp.root</code></td>
+<td><code>apex tool lsp</code></td>
+<td>the same</td>
+<td>A workspace-root marker that takes precedence over the language's built-in markers</td>
+</tr>
+<tr>
+<td><code>Newterm.shell</code></td>
+<td><code>Newterm</code>, <code>apex term new</code></td>
+<td>the session's only (<code>setting(SERVER, …)</code>)</td>
+<td>The shell a terminal runs; otherwise the daemon's <code>$SHELL</code>, otherwise <code>/bin/sh</code></td>
+</tr>
+<tr>
+<td><code>Newterm.scrollback</code></td>
+<td>new terminals</td>
+<td>the session's only</td>
+<td>Lines of history kept; <code>DEFAULT_SCROLLBACK</code> is 10000</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>apex help set</code> text does not list <code>Newterm.scrollback</code>; it is documented under <code>apex help term</code>. Because both <code>Newterm</code> keys are read with <code>SERVER</code> as the attachment, setting them from an attach script has no effect.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L415-L432">crates/apex-cli/src/main.rs:415-432</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L315-L325">crates/apex-cli/src/main.rs:315-325</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1404-L1411">crates/apex-client/src/app.rs:1404-1411</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/page.rs#L33">crates/apex-tool-agent/src/page.rs:33</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L58-L62">crates/apex-tool-lsp/src/lib.rs:58-62</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L458-L460">crates/apex-tool-lsp/src/lib.rs:458-460</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L574-L581">crates/apex-tool-lsp/src/lib.rs:574-581</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1069-L1074">crates/apex-server/src/lib.rs:1069-1074</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1993-L1999">crates/apex-server/src/lib.rs:1993-1999</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs#L198-L206">crates/apex-server/src/pty.rs:198-206</a></p>
+<h2 id="variables-apex-sets">Variables apex sets</h2>
+<p>A command's environment is built in layers:</p>
+<ol>
+<li><strong>The daemon's process environment.</strong> At startup, <code>put_apex_on_path</code> puts <code>~/.apex/bin</code> and the binary's own directory (the app bundle's, for example) at the front of <code>PATH</code>, so that <code>apex</code> and <code>rc</code> resolve inside commands (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L81-L99">crates/apex-server/src/daemon.rs:81-99</a>).</li>
+<li><strong>acme's per-command variables</strong> (<code>command_env</code>): <code>winid</code> (the window, or <code>0</code> in the top row) and, for a window on a file, <code>%</code> and <code>samfile</code> naming it. Before spawning, <code>acmeaddr</code>, <code>winid</code>, <code>%</code> and <code>samfile</code> are first removed from the inherited environment, as acme's <code>runproc</code> does (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2001-L2027">crates/apex-server/src/lib.rs:2001-2027</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2094-L2101">crates/apex-server/src/lib.rs:2094-2101</a>).</li>
+<li><strong>The session's <code>Server::env</code></strong>, appended after those. <code>new_session_in</code> seeds it with the variables below; <code>apex env</code> and the profile's import add to it later (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L357-L369">crates/apex-server/src/daemon.rs:357-369</a>).</li>
+<li><strong>Script-only extras</strong>: <code>apexattachment</code> and <code>apexclient</code> for the attach script.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Set for</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apexsession</code></td>
+<td>everything in the session</td>
+<td>the session's identity (a UUID-like key)</td>
+</tr>
+<tr>
+<td><code>apexsessionlabel</code></td>
+<td>everything</td>
+<td>its label; updated on rename</td>
+</tr>
+<tr>
+<td><code>APEX_SOCKET</code></td>
+<td>everything</td>
+<td>the daemon's socket, so a bare <code>apex</code> works on this session</td>
+</tr>
+<tr>
+<td><code>EDITOR</code></td>
+<td>everything, unless removed</td>
+<td><code>apex-editor</code>, a symlink to <code>apex</code> beside the binary that runs <code>apex editor</code>; falls back to <code>PATH/apex editor</code> (two words) if the link cannot be made</td>
+</tr>
+<tr>
+<td><code>BROWSER</code></td>
+<td>everything, if the link exists</td>
+<td>the <code>xdg-open</code> symlink beside the binary, which plumbs its argument</td>
+</tr>
+<tr>
+<td><code>winid</code>, <code>%</code>, <code>samfile</code></td>
+<td>B2 commands and scripts</td>
+<td>acme's names for the window and its file</td>
+</tr>
+<tr>
+<td><code>winid</code></td>
+<td>terminals</td>
+<td>the terminal's window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L389-L393">crates/apex-server/src/lib.rs:389-393</a>)</td>
+</tr>
+<tr>
+<td><code>TERM</code>, <code>COLORTERM</code>, <code>TERM_PROGRAM=apex</code>, <code>TERM_FEATURES</code></td>
+<td>terminals (<code>pty::setup_env</code> also puts them in the daemon's own environment)</td>
+<td>xterm-256color with truecolor; rc's rcmain checks <code>$TERM_PROGRAM</code></td>
+</tr>
+<tr>
+<td><code>apexattachment</code>, <code>apexclient</code></td>
+<td>the attach script only</td>
+<td>the attachment id and the client machine's name</td>
+</tr>
+</tbody>
+</table>
+<p><code>editor_command</code> and <code>link_beside</code> create the symlinks the first time they are needed, but only when the running binary is named <code>apex</code>. A test binary's directory is left alone (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1600-L1628">crates/apex-server/src/daemon.rs:1600-1628</a>). <code>EDITOR</code> is a single word because zsh and rc do not split <code>$EDITOR</code> into words. A profile that unsets it, for example with <code>EDITOR=()</code>, removes it from the session, as the test above checks.</p>
+<p>Terminals get the session's <code>env</code> plus <code>winid</code> on top of their own variables (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L253-L282">crates/apex-server/src/term.rs:253-282</a>). They do not get <code>%</code> or <code>samfile</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L81-L99">crates/apex-server/src/daemon.rs:81-99</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L357-L369">crates/apex-server/src/daemon.rs:357-369</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1600-L1628">crates/apex-server/src/daemon.rs:1600-1628</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2001-L2027">crates/apex-server/src/lib.rs:2001-2027</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L2093-L2101">crates/apex-server/src/lib.rs:2093-2101</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L253-L282">crates/apex-server/src/term.rs:253-282</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs#L190-L195">crates/apex-server/src/pty.rs:190-195</a></p>
+<h2 id="the-example-profile">The example profile</h2>
+<p><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/examples/profile">examples/profile</a> is an rc profile meant to be copied to <code>~/.apex/profile</code> on the daemon's host. It begins with commented-out <code>apex set</code> lines for <code>Newterm.shell</code> and a few <code>Preview.EXT</code> converters (<code>pandoc</code> for <code>.rst</code>, <code>dot -Tsvg</code> for <code>.dot</code>). Its main job is to make zsh, bash and fish name their terminal window after the directory on every <code>cd</code>, as acme's win does, by calling <code>apex awd</code>. It also defines plan 9's <code>B</code> in each of them. rc needs none of this: its rcmain handles it when it sees <code>$TERM_PROGRAM</code>.</p>
+<p>A profile cannot edit the user's shell startup files, so the example works only through environment variables, which the exit hook then exports to the session:</p>
+<table>
+<thead>
+<tr>
+<th>Shell</th>
+<th>Mechanism in the profile</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>zsh</td>
+<td>Writes <code>~/.apex/shell/zsh/.zshenv</code>, which adds a <code>chpwd</code> hook calling <code>apex awd</code>, defines <code>B</code>, then restores <code>ZDOTDIR</code> from <code>APEX_USER_ZDOTDIR</code> (or <code>$HOME</code>) and sources the user's own <code>.zshenv</code>. The profile saves any existing <code>ZDOTDIR</code> in <code>APEX_USER_ZDOTDIR</code> and points <code>ZDOTDIR</code> at its directory.</td>
+</tr>
+<tr>
+<td>bash</td>
+<td>Sets <code>PROMPT_COMMAND</code> to call <code>apex awd</code> when <code>$PWD</code> changes and to define <code>B</code> once. A user startup file that sets its own <code>PROMPT_COMMAND</code> overrides this.</td>
+</tr>
+<tr>
+<td>fish</td>
+<td>Writes <code>~/.apex/shell/share/fish/vendor_conf.d/apex.fish</code>, which sets <code>fish_title</code> to the full <code>$PWD</code> (not fish's abbreviated form), runs <code>apex awd</code> on <code>PWD</code> changes, and defines <code>B</code>. The profile prepends <code>~/.apex/shell/share</code> to <code>XDG_DATA_DIRS</code>, defaulting the existing value to <code>/usr/local/share:/usr/share</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The last line, <code>dir=() xdg=()</code>, clears the profile's scratch variables so the import does not copy them into the session (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/examples/profile#L32-L74">examples/profile:32-74</a>). Any profile should do the same: an rc variable left set at the end becomes part of every later command's environment. The header comment states this contract (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/examples/profile#L17-L21">examples/profile:17-21</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/examples/profile#L1-L74">examples/profile:1-74</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L586-L590">crates/apex-cli/src/main.rs:586-590</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1882-L1894">crates/apex-cli/src/main.rs:1882-1894</a></p>
+<h2 id="edge-cases-and-where-the-docs-differ-from-the-code">Edge cases and where the docs differ from the code</h2>
+<ul>
+<li><strong>No profile file.</strong> <code>run_profile</code> returns quietly. The session still gets its default rules and base environment, but no <code>profile</code> process runs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1163">crates/apex-server/src/lib.rs:1163</a>).</li>
+<li><strong>Errors in the scripts</strong> appear in the top-level <code>+Errors</code> window like any command's output. A failing script stops nothing: the session is already made, and an attaching UI has already been welcomed.</li>
+<li><strong>Settings outlive their writer only if the session owns them.</strong> An attach script's settings are removed by <code>MetaOp::Detach</code> when that UI detaches, so they are reapplied on every attach. Session settings stay until overwritten.</li>
+<li><strong>Making a session that already exists</strong> returns <code>false</code> from <code>new_session_in</code> before anything runs, so the profile runs once per session (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L346-L349">crates/apex-server/src/daemon.rs:346-349</a>).</li>
+<li><strong>README vs code.</strong> <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md">crates/apex-cli/README.md</a> says that the creator's own <code>~/.apex/profile</code> is shipped and run after the host's, that <code>apexclient</code> is set for the profile, and that &quot;exports in it die with it&quot;. The code does none of these. <code>ClientMsg::NewSession</code> carries only <code>name</code> and <code>dir</code>, <code>run_profile</code> takes only the host's file and sets no <code>apexclient</code>, and the profile's final environment is imported (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L65">crates/apex-server/src/proto.rs:65</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1159-L1179">crates/apex-server/src/lib.rs:1159-1179</a>). The test <code>a_new_session_runs_the_hosts_profile_then_its_creators</code> checks only the host's file, despite its name. The <code>apex help scripts</code> text in <code>main.rs</code> matches the code.</li>
+<li><strong>Naming leftovers.</strong> The <code>Daemon::host_profile</code> field's doc comment still calls the file <code>~/.apex/init</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L213-L214">crates/apex-server/src/daemon.rs:213-214</a>).</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L213-L214">crates/apex-server/src/daemon.rs:213-214</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L346-L349">crates/apex-server/src/daemon.rs:346-349</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L65">crates/apex-server/src/proto.rs:65</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md#L72-L107">crates/apex-cli/README.md:72-107</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L184-L246">crates/apex-cli/tests/cli.rs:184-246</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L354-L379">crates/apex-cli/tests/cli.rs:354-379</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="cli.html">The apex Command</a></span><span class="next">Next: <a href="tool-sdk.html">Writing Tools: the apex-tool SDK</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child current"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+<ul class="sections">
+<li class="l2"><a href="#the-two-scripts">The two scripts</a></li>
+<li class="l2"><a href="#the-profile">The profile</a></li>
+<li class="l3"><a href="#where-it-comes-from">Where it comes from</a></li>
+<li class="l3"><a href="#how-it-runs">How it runs</a></li>
+<li class="l3"><a href="#the-profiles-environment-becomes-the-sessions">The profile&#39;s environment becomes the session&#39;s</a></li>
+<li class="l2"><a href="#the-attach-script">The attach script</a></li>
+<li class="l2"><a href="#the-session-environment-apex-env">The session environment: apex env</a></li>
+<li class="l2"><a href="#settings-apex-set">Settings: apex set</a></li>
+<li class="l3"><a href="#storage">Storage</a></li>
+<li class="l3"><a href="#writing">Writing</a></li>
+<li class="l3"><a href="#reading">Reading</a></li>
+<li class="l3"><a href="#settings-in-use">Settings in use</a></li>
+<li class="l2"><a href="#variables-apex-sets">Variables apex sets</a></li>
+<li class="l2"><a href="#the-example-profile">The example profile</a></li>
+<li class="l2"><a href="#edge-cases-and-where-the-docs-differ-from-the-code">Edge cases and where the docs differ from the code</a></li>
+</ul>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

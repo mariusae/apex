@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiling and Layout · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Tiling and Layout</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md">DESIGN.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs">crates/apex-core/src/tiling.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs">crates/apex-core/tests/tiling.rs</a></li>
+</ul>
+</details>
+<p>apex lays out its windows the way acme does. A row holds columns, and each column holds windows stacked top to bottom. Each window is a tag line (or several) above a body. A new window takes the lower half of the last window in its column, and clicking or dragging a window's layout box grows or moves it. <code>crates/apex-core/src/tiling.rs</code> is a port of the geometry in plan9port's <code>cols.c</code>, <code>rows.c</code> and the <code>winresize</code> half of <code>wind.c</code>, with the drawing taken out. Its functions and variables keep acme's names (<code>coladd</code>, <code>colgrow</code>, <code>rowdragcol</code>, <code>nl</code>, <code>onl</code>, <code>buggered</code>), so you can read the two side by side. apex also adds features acme lacks: columns that grow the way windows do, strips, minimizing, a session-wide stash, covered windows, and dropping a window near a column's edge to split off a new column.</p>
+<p>The tiling is part of the replicated state. Whichever node leads the layout shard runs these algorithms on a copy of the <code>Layout</code> and appends the result as a single <code>LayoutOp::Arrange</code> entry. Replicas apply the rectangles they receive and never recompute them. This page covers the data model, the algorithms, the <code>Info</code> trait that supplies font metrics, and the open question of whether pixels should be replicated at all. Shards and leadership are explained in <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>, entry application in <a href="core-state.html">Entries, State and Apply</a>, and the node methods that call into the tiling in <a href="node.html">The Node</a>. How the client draws and animates the layout is covered on <a href="client.html">The UI Client</a>, <a href="client-input.html">Mouse, Keyboard and Look</a> and <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>.</p>
+<h2 id="the-layout-as-data">The layout as data</h2>
+<p>The layout shard's state is <code>state::Layout</code>. Every coordinate in it is an integer pixel in the row's coordinate space, as in acme. The row has a rectangle <code>r</code>, and its first line is the top tag. Each column has a rectangle, and its first line is the column tag. A window's place in a column is a <code>Slot</code>, which records acme's per-window frame measurements along with apex's extra bookkeeping.</p>
+<pre><code class="language-mermaid">classDiagram
+    class Layout {
+        r: Rect
+        cols: Vec~Column~
+        full: Option~ColumnId~
+        stash: Vec~Stashed~
+        covers: Vec~Cover~
+    }
+    class Column {
+        id: ColumnId
+        tag: BufferId
+        r: Rect
+        wins: Vec~Slot~
+        full: Option~Full~
+        restore: i32
+        stashed: bool
+        after: Option~ColumnId~
+    }
+    class Slot {
+        window: WindowId
+        r: Rect
+        body: Rect
+        taglines, nlines, frmax, maxlines
+        extra: i32
+        share: i32
+        premax: i32
+    }
+    class Full {
+        window: WindowId
+        share: i32
+        r: Rect
+        extra: i32
+        col: Rect
+    }
+    class Stashed {
+        slot: Slot
+        col: ColumnId
+        above: Option~WindowId~
+    }
+    class Cover {
+        top: WindowId
+        under: WindowId
+    }
+    Layout --&gt; Column
+    Layout --&gt; Stashed
+    Layout --&gt; Cover
+    Column --&gt; Slot
+    Column --&gt; Full
+    Stashed --&gt; Slot
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Slot::r</code>, <code>Slot::body</code></td>
+<td>The window's rectangle, with its bottom trimmed to whole body lines, and the body's rectangle below the tag and a 1-pixel line.</td>
+</tr>
+<tr>
+<td><code>Slot::taglines</code>, <code>nlines</code>, <code>frmax</code>, <code>maxlines</code></td>
+<td>The number of lines the tag wraps to; the lines of text the body shows; acme's <code>body.fr.maxlines</code> (whole lines that fit, zero while hidden behind a full window); and acme's <code>w-&gt;maxlines</code>, which <code>colgrow</code> treats as the window's natural size.</td>
+</tr>
+<tr>
+<td><code>Slot::extra</code></td>
+<td>The pixels the body gave up so that it ends on a whole line. A window's allocation is <code>r.dy() + extra</code>.</td>
+</tr>
+<tr>
+<td><code>Slot::share</code></td>
+<td>The window's share of its column's window space, in parts per million (<code>SHARE_UNIT</code>). Zero means &quot;read it off the rectangles at the next resize&quot;.</td>
+</tr>
+<tr>
+<td><code>Slot::premax</code></td>
+<td>The share the window had before B2 maximized a window in its column. B1 restores it.</td>
+</tr>
+<tr>
+<td><code>Column::full</code></td>
+<td>The window grown to the whole column with B3, with its previous rectangle, share and the column's rectangle at that time.</td>
+</tr>
+<tr>
+<td><code>Column::restore</code></td>
+<td>The width the column had when it last became a strip, kept as a share of the row so it survives a window resize.</td>
+</tr>
+<tr>
+<td><code>Column::stashed</code>, <code>after</code></td>
+<td>A column put away at the row's right by an older apex. No current code sets <code>stashed</code>, but <code>rowbringback</code> and <code>back_at</code> still handle it.</td>
+</tr>
+<tr>
+<td><code>Layout::full</code></td>
+<td>The column given the whole row with B3. The other columns' rectangles go stale while it is set.</td>
+</tr>
+<tr>
+<td><code>Layout::stash</code></td>
+<td>Windows put away (⌘M, <code>Stash</code>), in the order they went.</td>
+</tr>
+<tr>
+<td><code>Layout::covers</code></td>
+<td>Window stacks: a window opened over another (for example, <code>apex editor</code> from a terminal).</td>
+</tr>
+</tbody>
+</table>
+<p><code>Layout</code> has helpers that the tiling and the node rely on: <code>shows</code>, <code>full_index</code>, <code>column_of</code>, <code>stashed_of</code>, <code>stack_top</code>/<code>stack</code>, <code>place_of</code> and <code>slot</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L254-L327">state.rs:254-327</a>). Note that <code>rowwhichcol</code> ignores columns that are hidden behind a full column, because their stale rectangles may lie under the full one (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L1124-L1128">tiling.rs:1124-1128</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L102-L252">crates/apex-core/src/state.rs:102-252</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L1-L63">crates/apex-core/src/tiling.rs:1-63</a></p>
+<h2 id="how-a-layout-change-is-replicated">How a layout change is replicated</h2>
+<p>Layout operations never change <code>state.layout</code> in place. Each <code>Node</code> method follows the same pattern:</p>
+<ol>
+<li>Clone the current layout.</li>
+<li>Run a tiling function on the clone with <code>&amp;*self.tiling</code> as the <code>Info</code>.</li>
+<li>Append the whole result with <code>Node::arrange</code>, often only if it changed.</li>
+<li>Set <code>self.warp</code> to where acme would move the mouse.</li>
+</ol>
+<pre><code class="language-rust">fn arrange(&amp;mut self, log: &amp;mut Log, l: &amp;Layout) -&gt; Result&lt;()&gt; {
+    self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone(), covers: l.covers.clone() }))?;
+    Ok(())
+}
+</code></pre>
+<p><code>State::apply_layout</code> checks that no window appears twice across the columns, the stash and the covered windows, and rejects the entry with <code>ApplyError::Exists</code> if one does. Otherwise it replaces <code>r</code>, <code>cols</code>, <code>stash</code> and <code>covers</code> wholesale and keeps <code>full</code> only if that column still exists. <code>LayoutOp::Init</code> sets the top tag buffer and the starting rectangle; <code>init_session</code> uses 1100×700 and then adds two columns, as acme's <code>-c 2</code> does.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant In as &quot;Client input or proposal&quot;
+    participant N as &quot;Node (layout leader)&quot;
+    participant T as &quot;tiling.rs&quot;
+    participant L as &quot;Log (layout shard)&quot;
+    participant F as &quot;Follower replica&quot;
+    In-&gt;&gt;N: grow_window / drag_window / resize_layout ...
+    N-&gt;&gt;N: clone state.layout
+    N-&gt;&gt;T: colgrow / coldragwin / rowresize (l, Info)
+    T--&gt;&gt;N: mutated Layout, Warp
+    N-&gt;&gt;L: append LayoutOp::Arrange
+    L--&gt;&gt;N: apply (replaces cols, stash, covers, full)
+    N-&gt;&gt;N: self.warp = Some(...)
+    L--&gt;&gt;F: Entries
+    F-&gt;&gt;F: apply Arrange, no recomputation
+</code></pre>
+<p><code>arrange_dropping</code> is used after drags. It also deletes the tag buffer shards of any columns that disappeared, such as a column left empty by dragging its last window out. The test <code>arrange_entries_replay_identically</code> checks that a follower replaying the log ends with the same <code>State::hash</code> and the same layout as the leader.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L290-L294">crates/apex-core/src/node.rs:290-294</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L425-L461">crates/apex-core/src/node.rs:425-461</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L256-L278">crates/apex-core/src/entry.rs:256-278</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L676-L703">crates/apex-core/src/state.rs:676-703</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L534-L552">crates/apex-core/tests/tiling.rs:534-552</a></p>
+<h2 id="the-info-trait-what-the-tiling-asks-about-text">The <code>Info</code> trait: what the tiling asks about text</h2>
+<p>acme reads tag line counts and body line counts off its frames. The tiling gets the same information through a trait:</p>
+<pre><code class="language-rust">pub trait Info {
+    fn font_height(&amp;self) -&gt; i32;
+    fn tag_row(&amp;self) -&gt; i32 { self.font_height() }
+    fn taglines(&amp;self, w: WindowId, width: i32, maxlines: i32) -&gt; i32;
+    fn body_font_height(&amp;self, w: WindowId) -&gt; i32;
+    fn body_nlines(&amp;self, w: WindowId, width: i32, maxlines: i32) -&gt; i32;
+}
+</code></pre>
+<p><code>font_height</code> is the height of a one-line tag. It is also the height of a column tag and of the top row. <code>tag_row</code> is how much each additional tag line adds. The two differ in the client because a tag's padding is added once for the whole tag, not once per line: <code>tag_height(info, n) = font_height + (n-1) * tag_row</code>, and <code>tag_lines_fit</code> is its inverse rounded down. <code>taglines_rule</code> is the tail of acme's <code>wintaglines</code> with <code>tagexpand</code> on. It caps the count at <code>maxlines</code>, adds a line for a trailing newline, and never returns zero (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L115-L153">tiling.rs:115-153</a>).</p>
+<p>There are two implementations:</p>
+<table>
+<thead>
+<tr>
+<th>Implementation</th>
+<th>Where</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Headless</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L86-L113">tiling.rs:86-113</a></td>
+<td>The default in <code>Node::new</code>, used by a daemon leading with no screen. Tag and body fonts are both 17 pixels, every tag is one line, and every body is full (<code>body_nlines</code> returns <code>maxlines</code>).</td>
+</tr>
+<tr>
+<td><code>ClientInfo</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L114-L152">app.rs:114-152</a></td>
+<td>Built by the UI's <code>measure</code> each frame from the last frame's layouts. It records the tag line height, the row height, proportional and mono line heights, each tag's wrapped line count and trailing newline, and each body's line count from its origin. Terminal bodies are always full.</td>
+</tr>
+</tbody>
+</table>
+<p><code>App::measure</code> installs a new <code>ClientInfo</code> into <code>node.tiling</code> on every frame. It then calls <code>resize_layout</code> if the OS window's size changed. The row's <code>y0</code> is set to <code>-(font + BORDER)</code>, so the top tag's line lies above the drawn area, where the title bar draws it instead. Finally, <code>measure</code> calls <code>refit_window</code> for each visible window whose tag now wraps to a different number of lines than its slot allows. This is acme's <code>winsettag</code> → <code>winresize</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L65-L153">crates/apex-core/src/tiling.rs:65-153</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L252-L260">crates/apex-core/src/node.rs:252-260</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2565-L2620">crates/apex-client/src/app.rs:2565-2620</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L759-L785">crates/apex-core/src/node.rs:759-785</a></p>
+<h2 id="window-geometry-winresize-whole-lines-and-shares">Window geometry: <code>winresize</code>, whole lines and shares</h2>
+<p><code>winresize(l, ci, wi, r, keepextra, info)</code> places one window in rectangle <code>r</code>, and every other function builds on it. It works out how many tag lines fit in <code>r</code>, then asks <code>Info::taglines</code>. In a strip it asks nothing: the tag is just its box, one line, because no text is drawn there to measure. If there is room for at least one body line, the body starts one pixel below the tag; otherwise the body is empty. Unless <code>keepextra</code> is set, the body is trimmed to a whole number of body-font lines, and the remainder is recorded in <code>Slot::extra</code>. The function then sets <code>frmax</code>, <code>nlines</code> and <code>maxlines</code>, and returns the window's new bottom edge. Callers pass <code>keepextra = true</code> for the last window in a column, so that window reaches the column's foot.</p>
+<p>The public <code>winresize</code> also clears <code>Slot::share</code>. Every caller except <code>colresize</code> is acting for the user, so shares are read again from the rectangles at the next resize. <code>colresize</code> calls the internal <code>winresize_in</code> instead and leaves the shares alone. This fixes a drift problem in acme's own <code>colresize</code>. acme scales each window's last height and trims it to whole lines, so the remainders were passed down the column on every resize, and dragging a window back and forth slowly gave the bottom window the whole column. apex sizes each window by its share of <code>space = column height − column tag − n × BORDER</code>, gives the last window whatever is left, and computes shares from <code>r.dy() + extra</code> in <code>sync_shares</code>. The test <code>resizing_back_and_forth_keeps_the_windows_proportions</code> resizes 200 times and checks that every window stays within one line of its starting height.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L173-L265">crates/apex-core/src/tiling.rs:173-265</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L397-L439">crates/apex-core/src/tiling.rs:397-439</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1904-L1915">DESIGN.md:1904-1915</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L597-L615">crates/apex-core/tests/tiling.rs:597-615</a></p>
+<h2 id="column-operations-acmes-colsc">Column operations (acme's <code>cols.c</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>acme</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>coladd</code></td>
+<td><code>coladd</code></td>
+<td>Adds a window at height <code>y</code>. With no <code>y</code>, it takes the lower half of the last window's body. It finds the window <code>v</code> it lands on and grows <code>v</code> with <code>colgrow(…,1)</code> up to 10 times if <code>v</code> is too small. It then splits <code>v</code> at <code>y</code>, clamped so <code>y</code> falls below <code>v</code>'s first tag line and leaves room for a minimal window. If it gives up (&quot;buggered&quot;), it re-runs <code>colresize</code> on the whole column. Accepts <code>Adding::New</code> (a fresh <code>Slot</code>, acme's <code>wininit</code>) or <code>Adding::Existing</code> (a moved slot).</td>
+</tr>
+<tr>
+<td><code>colclose</code></td>
+<td><code>colclose</code></td>
+<td>Removes a window. The next window extends up into its space, or if it was the last, the previous window extends down. Returns the removed slot and, when the next window moved up, that window's id, so acme can warp the mouse onto its <code>Del</code>.</td>
+</tr>
+<tr>
+<td><code>colresize</code></td>
+<td><code>colresize</code></td>
+<td>Gives the column a new rectangle and sizes its windows by their shares. A window grown to the whole column stays that way.</td>
+</tr>
+<tr>
+<td><code>colgrow</code></td>
+<td><code>colgrow</code></td>
+<td>Button 1 grows by a few lines, taken from neighbours (later windows first, then earlier ones, each giving up to half). Button 2 makes the window as big as possible. Button 3 calls <code>colfull</code>. Button −1 just refits the window in its own space. Follows acme's <code>nl</code>/<code>onl</code>/<code>dnl</code> arithmetic and packs the windows above and below.</td>
+</tr>
+<tr>
+<td><code>colsort</code></td>
+<td><code>colsort</code></td>
+<td>Sorts windows by name and keeps their heights.</td>
+</tr>
+<tr>
+<td><code>coldragwin</code></td>
+<td><code>coldragwin</code></td>
+<td>Handles a press and release on a window's box. Under 5 pixels of movement counts as a click, which grows the window. A flick to the right, under 10 pixels vertically and more than 30 across, tosses the window into the next column. A drop in another column moves it there. A drop above the previous window or below its own bottom shuffles it within the column. Otherwise it calls <code>colmovewin</code>.</td>
+</tr>
+<tr>
+<td><code>colmovewin</code></td>
+<td><code>coldragwin</code>'s resize</td>
+<td>Moves the line above window <code>wi</code> to <code>y</code>. Only the window above and this window change height. The window above keeps at least its first tag line, and the line is snapped to whole lines of the upper window's body.</td>
+</tr>
+<tr>
+<td><code>newwindow_y</code></td>
+<td><code>makenewwindow</code></td>
+<td>Decides where <code>New</code> and plumbed files go. If the largest empty area at the bottom of a body is more than 15 lines, or more than 3 lines and more than half the biggest window, the new window goes there. Otherwise it splits the originating window if that window is no less than two-thirds the size of the biggest one, and splits the biggest window if not.</td>
+</tr>
+</tbody>
+</table>
+<p>A click on a window's box dispatches the same way in <code>coldragwin</code> and in <code>Node::grow_window</code>:</p>
+<ul>
+<li><strong>B2</strong> calls <code>colmaximize</code>. It records every window's share in <code>premax</code> and then runs <code>colgrow(…,2)</code>, which reduces the other windows to their tags.</li>
+<li><strong>B3</strong> calls <code>colfull</code>. The window takes the whole column below its tag, keeping its place in the order. The other windows get <code>frmax = 0</code> and their rectangles go stale. <code>Full</code> records enough to put everything back exactly.</li>
+<li><strong>B1</strong> undoes the previous action when there is one: <code>unfull</code> if a window is full, <code>colunmaximize</code> if this is the maximized window (it restores the <code>premax</code> shares). Otherwise it calls <code>colgrow(…,1)</code>.</li>
+<li><strong>Shift-B1</strong> reaches <code>colminimize</code> through <code>Node::minimize_window</code>. The window shrinks to its tag where it stands. The window below takes its body space, or, if it was the last window, its tag moves to the column's foot and the window above extends down to it.</li>
+</ul>
+<p>Any operation that changes the column first calls <code>unfull</code>, so no algorithm ever works on stale rectangles. If the column was resized while one window was full, <code>unfull</code> rebuilds the shares with <code>whole_shares</code> and runs <code>colresize</code>. Otherwise every window returns to exactly the rectangle it had.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L267-L734">crates/apex-core/src/tiling.rs:267-734</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L877-L903">crates/apex-core/src/tiling.rs:877-903</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L987-L1120">crates/apex-core/src/tiling.rs:987-1120</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L868-L949">crates/apex-core/src/node.rs:868-949</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L117-L143">crates/apex-core/tests/tiling.rs:117-143</a></p>
+<h2 id="row-operations-acmes-rowsc-and-columns-that-grow">Row operations (acme's <code>rows.c</code>, and columns that grow)</h2>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rowadd</code></td>
+<td>acme's <code>rowadd</code>. Adds a column at <code>x</code>, or by default at 60% of the last column, which takes 40% of its width. If the last column is narrower than 100 pixels (a strip always is), the widest column gives the width instead. Returns <code>None</code> when the column to split is under 100 pixels wide.</td>
+</tr>
+<tr>
+<td><code>rowresize</code></td>
+<td>acme's <code>rowresize</code>. Columns keep their proportions. If some columns are strips, the strips keep <code>STRIP</code> width and the columns with room share the rest in their previous proportions. If a column is full, it simply takes the new row.</td>
+</tr>
+<tr>
+<td><code>rowclose</code></td>
+<td>acme's <code>rowclose</code>. Removes a column and gives its width to the next column, or to the previous one if it was last.</td>
+</tr>
+<tr>
+<td><code>rowdragcol</code></td>
+<td>acme's <code>rowdragcol</code>. A click calls <code>rowgrow</code>. A drag past a neighbour shuffles the column with <code>rowclose</code> and <code>rowadd</code>. Otherwise it calls <code>rowmovecol</code>.</td>
+</tr>
+<tr>
+<td><code>rowmovecol</code></td>
+<td>Moves the line between column <code>ci</code> and its left neighbour. Each side keeps at least <code>MINCOL</code> (80 + <code>SCROLLWID</code>) pixels. A drag past half of that minimizes the side to a strip and remembers its width.</td>
+</tr>
+<tr>
+<td><code>rowgrow</code></td>
+<td><code>colgrow</code> turned on its side; acme has no equivalent. Button 1 widens the column by a fifth of its width or a twelfth of the row, whichever is more, with each neighbour giving at most a third of what it has beyond a strip. On a strip, button 1 brings the column back instead. Button 2 calls <code>rowmaximize</code>, button 3 calls <code>rowfull</code>, and button 4 does nothing.</td>
+</tr>
+<tr>
+<td><code>rowmaximize</code> / <code>rowunmaximize</code></td>
+<td>Make every other column a strip while remembering widths, and restore them (<code>rowrestore_all</code>).</td>
+</tr>
+<tr>
+<td><code>rowminimize</code></td>
+<td>Shift-B1 on a column's box. The column becomes a strip where it stands, and its width goes to the nearest column with room, looking right first. The last column with room cannot be minimized.</td>
+</tr>
+<tr>
+<td><code>rowfull</code> / <code>reveal</code></td>
+<td>B3 gives one column the whole row by setting <code>Layout::full</code>. <code>reveal</code> lays the row out again with each column where it stood. Every other row operation calls it first.</td>
+</tr>
+<tr>
+<td><code>rowbringback</code>, <code>restore_one</code></td>
+<td>Return a strip to its remembered width (<code>natural</code>, or a fifth of the row if none), taking width from the nearest columns with room. Columns that are holding a strip's width give theirs back first.</td>
+</tr>
+<tr>
+<td><code>uncover</code></td>
+<td>Makes column <code>ci</code> visible because the user is being taken to a window in it: reveals a hidden row and brings back a strip.</td>
+</tr>
+</tbody>
+</table>
+<p>A <strong>strip</strong> is a column <code>STRIP = SCROLLWID + BORDER = 14</code> pixels wide (<code>is_strip</code>): a squeezed window's tag turned on its side. The client draws no text, body, terminal or page inside one. A click on the box of a window in a strip only brings the column back; the next click grows the window. <code>nearest_open</code> exists so that <code>Node::place</code> never puts a new window into a strip: the window goes to the nearest column with room instead.</p>
+<p><code>rowpack</code> is the shared final step for most row operations. It lays columns out left to right at given widths and gives any leftover to the last column with room. <code>settle</code> clears <code>restore</code> on the columns with room after a manual change, so they no longer hold width for a strip.</p>
+<p>The current code differs from DESIGN.md's account in one place. DESIGN.md describes B4 on a column's box collapsing it into its side, but <code>rowgrow</code> returns without doing anything for button 4, and the test <code>button_4_on_a_columns_box_does_nothing</code> checks that. Minimizing is now shift-B1 (<code>rowminimize</code>).</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Open
+    Open --&gt; Strip: &quot;shift-B1 (rowminimize), B2 on another, drag past MINCOL/2&quot;
+    Strip --&gt; Open: &quot;B1 on strip (rowbringback), uncover&quot;
+    Open --&gt; FullRow: &quot;B3 (rowfull)&quot;
+    FullRow --&gt; Open: &quot;B1/B3 on its box, any row change (reveal)&quot;
+    Open --&gt; Hidden: &quot;another column B3&quot;
+    Hidden --&gt; Open: &quot;reveal&quot;
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L1122-L1797">crates/apex-core/src/tiling.rs:1122-1797</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L20-L40">crates/apex-core/src/tiling.rs:20-40</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L726-L757">crates/apex-core/src/node.rs:726-757</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1833-L1898">DESIGN.md:1833-1898</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L806-L812">crates/apex-core/tests/tiling.rs:806-812</a></p>
+<h2 id="splitting-a-column-by-dropping-a-window-at-its-edge">Splitting a column by dropping a window at its edge</h2>
+<p><code>split_at</code> decides whether dragging a window's box should create a new column, as editor splits do in VS Code and Zed. It does so when the window is released within the outer eighth of a column (clamped to 16–48 pixels) at its left or right edge. Three restrictions apply:</p>
+<ul>
+<li>At its own column's left edge, the pointer has to be on the edge itself (within 2 pixels), so that a vertical drag drifting left does not split.</li>
+<li>At its own column's right edge, the pointer has to have moved more than 30 pixels to the right.</li>
+<li>A column narrower than 200 pixels, a strip, or the window's own column when it is the only window there, is never split.</li>
+</ul>
+<p><code>coldragsplit</code> halves the target column with <code>rowadd</code> and swaps the two halves for a left drop. It then moves the window into the new column and closes the column the window came from if the drag left it empty (<code>close_if_left_empty</code>). A column made empty with Newcol stays. <code>Node::drag_window</code> allocates the new column's id and tag buffer, and deletes the tag buffer again if the split fails.</p>
+<p><code>Node::dragged</code> runs the same code with placeholder ids (<code>u64::MAX</code>). This is how <code>drag_window_preview</code>, <code>drag_column_preview</code>, <code>column_edge_preview</code> and <code>window_edge_preview</code> show where a drop would land without appending anything to the log.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L909-L985">crates/apex-core/src/tiling.rs:909-985</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L951-L1061">crates/apex-core/src/node.rs:951-1061</a></p>
+<h2 id="the-stash-and-covered-windows">The stash and covered windows</h2>
+<p>The stash belongs to the session, not to a column. <code>stash</code> removes a window with <code>colclose</code> and pushes a <code>Stashed</code> record holding its slot (with a fresh share), its column, and <code>above</code>, the window just above it in the column's order. <code>stash_order</code> reconstructs a column's full order with stashed windows put back into it. <code>recall</code> returns a stashed window under the nearest laid-out window above it, following the <code>above</code> chain through other stashed windows. If the window's column is gone, it goes to the foot of the column <code>or</code>. The window gets back its old share, and the other windows give up space in proportion. A window with fewer than <code>FEW_LINES</code> (5) lines gets at least an even share; this applies to <code>+Errors</code> windows, which start out stashed. <code>left</code> passes a departing window's <code>above</code> on to the windows stashed beneath it. <code>restash</code> moves a record to the end of the stash so it shows first among the stash's cards, and <code>unstash</code> removes a record permanently when its window is closed.</p>
+<p>Diagnostic windows are placed and stashed in a single <code>Arrange</code> (<code>Node::place</code>). <code>Node::reveal</code> and <code>grow_window</code> on a stashed window call <code>unstash_window</code>, so going to a stashed window always brings it back.</p>
+<p>Covered windows are a separate mechanism. <code>restack(l, top, stack, info)</code> puts <code>stack[0]</code> into <code>top</code>'s slot in its column or in the stash, refits it with <code>colgrow(…,-1)</code>, hands on stash <code>above</code> links, and rewrites <code>covers</code> as consecutive pairs. <code>cover_window</code>, <code>swap_window</code>, <code>raise_window</code> and <code>delete_window</code> in the node all use it.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L648-L674">crates/apex-core/src/tiling.rs:648-674</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L736-L875">crates/apex-core/src/tiling.rs:736-875</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L536-L582">crates/apex-core/src/node.rs:536-582</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L892-L924">crates/apex-core/src/node.rs:892-924</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1286-L1322">crates/apex-core/src/node.rs:1286-1322</a></p>
+<h2 id="mouse-warps-and-node-level-policy">Mouse warps and node-level policy</h2>
+<p>Many tiling functions return a <code>Warp</code>, which the node stores in <code>self.warp</code> for the client to act on:</p>
+<table>
+<thead>
+<tr>
+<th>Warp</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NewWindow(w)</code></td>
+<td>Into the new window's body, near its box.</td>
+</tr>
+<tr>
+<td><code>WinButton(w)</code></td>
+<td>The middle of the window's layout box.</td>
+</tr>
+<tr>
+<td><code>Closed { window, next }</code></td>
+<td>Onto the <code>Del</code> of the window that took the closed window's place.</td>
+</tr>
+<tr>
+<td><code>ColButton(c)</code></td>
+<td>The column's box.</td>
+</tr>
+<tr>
+<td><code>Sel(view)</code></td>
+<td>The start of a selection.</td>
+</tr>
+</tbody>
+</table>
+<p>A click that turns a column into a strip returns no warp, because warping onto the strip would bring the column straight back out.</p>
+<p>The node adds placement policy on top of the tiling:</p>
+<ul>
+<li><strong><code>make_window</code></strong> picks the column. It uses <code>activecol</code> first, then the column holding the last selected text, then the column of <code>from</code>. It also calls <code>unfull</code> on a column with a full window, so the new window lands among the others.</li>
+<li><strong><code>notice</code></strong> handles a window that raises a notification while it is hidden. It turns the B3 that hides it into a B2, so the window shows as a tag or strip.</li>
+<li><strong><code>reveal</code></strong> grows a window that shows no lines.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L155-L171">crates/apex-core/src/tiling.rs:155-171</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L1707-L1748">crates/apex-core/src/tiling.rs:1707-1748</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L584-L612">crates/apex-core/src/node.rs:584-612</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L787-L866">crates/apex-core/src/node.rs:787-866</a></p>
+<h2 id="pixels-in-the-log-the-choice-and-the-critique">Pixels in the log: the choice and the critique</h2>
+<p>DESIGN.md chose to replicate pixel geometry on purpose, after acme's <code>Dump</code>. The layout shard stores every column and window rectangle, body rectangles, tag lines, lines shown and <code>maxlines</code>. Each operation is computed once by the leader and appended as a single <code>Arrange</code>, so replicas take the geometry and never recompute it. Borders are 2 logical pixels. The client paints any device pixels beyond acme's border width in the neighbour's colour.</p>
+<p>ARCHITECTURE.md's review argues that this puts one client's rendering into the core:</p>
+<ul>
+<li><code>Slot</code> holds frame measurements, and <code>tiling.rs</code> holds pixel constants and the <code>Info</code> trait.</li>
+<li>A second UI with different fonts or DPI would receive geometry measured by whichever node led last.</li>
+<li><code>mono</code>, <code>tabstop</code> and <code>tagexpand</code> have to be replicated because they change line counts.</li>
+<li>The layout API is in mouse terms: <code>grow_window(but)</code> and <code>drag_window(but, op, p)</code> take button numbers and points, and the previews have 5-pixel click thresholds.</li>
+</ul>
+<p>The review proposes intent-named operations (grow, maximize, fill column, move to column and y) and, as plan item 7, replicating only the logical layout: order, shares, and the full, stashed and cover flags. Each client would run the tiling with its own metrics. That would remove warps, mouse terms and font state from the core and keep several clients consistent. The review notes that this reverses a deliberate design decision and needs discussion first. The shares (<code>Slot::share</code>, <code>Column::restore</code>) already store proportions independently of pixels, and they would be the natural core of a logical layout.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1806-L1831">DESIGN.md:1806-1831</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/DESIGN.md#L1917-L1924">DESIGN.md:1917-1924</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L339-L353">ARCHITECTURE.md:339-353</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L375-L382">ARCHITECTURE.md:375-382</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L921-L927">ARCHITECTURE.md:921-927</a></p>
+<h2 id="tests">Tests</h2>
+<p><code>crates/apex-core/tests/tiling.rs</code> checks the port against what plan9port's <code>cols.c</code> and <code>rows.c</code> produce by hand for the same inputs, using <code>Headless</code> with font height 17 and border 2. Its helpers include:</p>
+<ul>
+<li><code>row()</code>: one 1000×700 column.</li>
+<li><code>three()</code>: three columns, each with a window.</li>
+<li><code>tiles()</code>: asserts that columns span the row with exactly one border between neighbours and that windows are as wide as their column.</li>
+</ul>
+<p>The tests cover:</p>
+<ul>
+<li><code>coladd</code> taking the lower half of the last window, landing after the window under <code>y</code>, and <code>colclose</code> naming the next window for the mouse warp.</li>
+<li>B1, B2 and B3 on window and column boxes, and their undo.</li>
+<li>Stash, recall order, recalls that happen out of order, the stash being per session, and handing on <code>above</code>.</li>
+<li>Row resize keeping both proportions and strips.</li>
+<li>Column-edge and window-edge drags, including that previews match drops.</li>
+<li>Edge splits, and the empty-column rule.</li>
+<li>Tag padding (<code>Padded</code>) and sparse bodies (<code>Sparse</code>) through custom <code>Info</code> implementations.</li>
+<li>Replay of <code>Arrange</code> entries.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L1-L28">crates/apex-core/tests/tiling.rs:1-28</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L648-L662">crates/apex-core/tests/tiling.rs:648-662</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L1125-L1160">crates/apex-core/tests/tiling.rs:1125-1160</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/tiling.rs#L1162-L1199">crates/apex-core/tests/tiling.rs:1162-1199</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="node.html">The Node: Leading and Built-in Commands</a></span><span class="next">Next: <a href="edit-language.html">The Edit Language (apex-edit)</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child current"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+<ul class="sections">
+<li class="l2"><a href="#the-layout-as-data">The layout as data</a></li>
+<li class="l2"><a href="#how-a-layout-change-is-replicated">How a layout change is replicated</a></li>
+<li class="l2"><a href="#the-info-trait-what-the-tiling-asks-about-text">The Info trait: what the tiling asks about text</a></li>
+<li class="l2"><a href="#window-geometry-winresize-whole-lines-and-shares">Window geometry: winresize, whole lines and shares</a></li>
+<li class="l2"><a href="#column-operations-acmes-colsc">Column operations (acme&#39;s cols.c)</a></li>
+<li class="l2"><a href="#row-operations-acmes-rowsc-and-columns-that-grow">Row operations (acme&#39;s rows.c, and columns that grow)</a></li>
+<li class="l2"><a href="#splitting-a-column-by-dropping-a-window-at-its-edge">Splitting a column by dropping a window at its edge</a></li>
+<li class="l2"><a href="#the-stash-and-covered-windows">The stash and covered windows</a></li>
+<li class="l2"><a href="#mouse-warps-and-node-level-policy">Mouse warps and node-level policy</a></li>
+<li class="l2"><a href="#pixels-in-the-log-the-choice-and-the-critique">Pixels in the log: the choice and the critique</a></li>
+<li class="l2"><a href="#tests">Tests</a></li>
+</ul>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

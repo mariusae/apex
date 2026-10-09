@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Themes, Fonts and Colour · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Themes, Fonts and Colour</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md">MODERN.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/assets/README.md">crates/apex-client/assets/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs">crates/apex-client/src/contrast.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs">crates/apex-client/src/fonts.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs">crates/apex-client/src/shell.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs">crates/apex-client/src/term_element.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs">crates/apex-client/src/text_element.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs">crates/apex-client/src/theme.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs">crates/apex-client/src/titlefit.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs">crates/apex-client/src/web.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs">crates/apex-server/src/term.rs</a></li>
+</ul>
+</details>
+<p>apex's UI client draws acme's tiling as a modern Mac app would. This page covers that look: the colour palettes, the font sets, and the colour checks that keep things readable for a reader with red-green colour blindness. This is all <strong>client-side presentation</strong>. None of it is in the replicated log. The choices are plain files beside the client's other state, and they change nothing about the rectangles that <a href="tiling-and-layout.html">Tiling and Layout</a> computes. The client also feeds the choices to three other places: the daemon, so programs in terminals can ask what colours they are drawn in; pages, as CSS variables and <code>@font-face</code> rules; and the terminal painter, which corrects contrast cell by cell.</p>
+<p>The rationale is in <code>MODERN.md</code>, the design notes for the <code>modern-mac</code> branch. It describes what changed from acme's look and why: palettes built from a few key colours, orange for red and blue for green wherever the difference matters, and B2's and B3's sweeps kept distinct under a deuteranopia simulation. The code is in four client modules: <code>theme.rs</code>, <code>fonts.rs</code>, <code>contrast.rs</code> and <code>titlefit.rs</code>. Small helpers live in <code>text_element.rs</code>. For how the client paints with these values, see <a href="client.html">The UI Client</a> and <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>. For terminals end to end, see <a href="terminals.html">Terminals</a>.</p>
+<h2 id="where-the-choices-live-and-how-they-spread">Where the choices live and how they spread</h2>
+<p>Every choice is a process-wide atomic: <code>PALETTE</code>, <code>MODE</code>, <code>SYSTEM_DARK</code> in <code>theme.rs</code>, and <code>SET</code>, <code>STEP</code> in <code>fonts.rs</code>. Each is persisted as a one-word file next to <code>~/Library/Application Support/apex/last-sessions</code> (<code>shell::state_file</code>). At launch, <code>main.rs</code> runs these in order: <code>text_element::install_symbols()</code>, <code>fonts::load()</code>, <code>fonts::install(cx)</code>, then <code>theme::load()</code>. After that, <code>theme::theme()</code> and <code>fonts::text()</code>/<code>mono()</code>/<code>ui()</code> are pure reads of those atomics, and every painter calls them at draw time.</p>
+<p>A change from the View menu goes through <code>shell::set_palette</code>, <code>set_theme</code>, <code>set_fonts</code> or <code>resize_fonts</code>. Each stores the new choice and calls <code>shell::apply_theme</code>. That function remakes the menus so the check mark moves, then defers a pass over every window. The pass calls <code>send_config()</code> so the daemon learns the new terminal colours, restyles pages rendered from buffers, has <code>Pool::send_config</code> tell parked sessions, and refreshes all windows. A font change also re-lays out every window, because the tiling counts in line heights. The system appearance is watched with <code>observe_window_appearance</code>. Under <code>Mode::System</code> it sets <code>SYSTEM_DARK</code> and re-applies the theme.</p>
+<pre><code class="language-mermaid">flowchart TD
+    Menu[&quot;View menu: Theme, Light/Dark/System, Font, Bigger/Smaller&quot;] --&gt; Atoms[&quot;atomics in theme.rs and fonts.rs&quot;]
+    Appearance[&quot;observe_window_appearance&quot;] --&gt; Atoms
+    Atoms --&gt; Files[&quot;state files: palette, theme, fonts, fontsize, contrast ...&quot;]
+    Atoms --&gt; Apply[&quot;shell::apply_theme&quot;]
+    Apply --&gt; Redraw[&quot;refresh_windows: text_element, term_element, chrome&quot;]
+    Apply --&gt; Config[&quot;ClientConfig { term: theme::term_colors() }&quot;]
+    Apply --&gt; Pages[&quot;webs.restyle: theme_css + fonts::page_css&quot;]
+    Config --&gt; Daemon[&quot;daemon: server.term_colors, TermHost::set_colors&quot;]
+    Redraw --&gt; Contrast[&quot;contrast::correct per terminal cell&quot;]
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>State file</th>
+<th>Holds</th>
+<th>Default</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>palette</code></td>
+<td><code>alabaster</code>, <code>xcode</code>, <code>classic</code>, <code>github</code>, <code>nova</code>, <code>rsms</code> (an old <code>system</code> is read as <code>xcode</code>)</td>
+<td>GitHub (<code>PALETTE</code> starts at 3)</td>
+<td><code>theme.rs</code></td>
+</tr>
+<tr>
+<td><code>theme</code></td>
+<td><code>light</code>, <code>dark</code>, <code>system</code></td>
+<td>light</td>
+<td><code>theme.rs</code></td>
+</tr>
+<tr>
+<td><code>fonts</code></td>
+<td>a set's word (<code>system</code>, <code>go</code>, <code>hco</code>, …)</td>
+<td>System</td>
+<td><code>fonts.rs</code></td>
+</tr>
+<tr>
+<td><code>fontsize</code></td>
+<td>the ⌘+/⌘− step, clamped to −5..14</td>
+<td>0</td>
+<td><code>fonts.rs</code></td>
+</tr>
+<tr>
+<td><code>contrast</code></td>
+<td><code>on</code>/<code>off</code>: View ▸ Correct Terminal Contrast</td>
+<td>on</td>
+<td><code>theme.rs</code></td>
+</tr>
+<tr>
+<td><code>blink</code>, <code>smoothcaret</code>, <code>layoutanim</code>, <code>sidebar</code></td>
+<td>other View toggles kept beside these</td>
+<td>on, off, on, shown</td>
+<td><code>theme.rs</code></td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L720-L724">crates/apex-client/src/main.rs:720-724</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1022-L1034">crates/apex-client/src/main.rs:1022-1034</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L27-L116">crates/apex-client/src/shell.rs:27-116</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L349-L352">crates/apex-client/src/shell.rs:349-352</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L392-L445">crates/apex-client/src/theme.rs:392-445</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L500-L623">crates/apex-client/src/theme.rs:500-623</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs#L86-L130">crates/apex-client/src/fonts.rs:86-130</a></p>
+<h2 id="palettes">Palettes</h2>
+<h3 id="the-theme-struct">The <code>Theme</code> struct</h3>
+<p>A <code>Theme</code> is a flat struct of packed <code>0xRRGGBB</code> values. The layout is the same for every palette:</p>
+<ul>
+<li><strong>acme's texts:</strong> paper and selection for bodies (<code>body_bg</code>, <code>body_sel</code>, <code>body_border</code>) and for tags (<code>tag_bg</code>, <code>tag_sel</code>, <code>tag_border</code>).</li>
+<li><strong>ink:</strong> <code>text</code> is the primary ink and <code>text_dim</code> the secondary.</li>
+<li><strong>accent:</strong> <code>accent</code> marks what is live, chosen or focused.</li>
+<li><strong>borders and columns:</strong> <code>border</code> replaces acme's black borders, and <code>column</code> is the colour of a column where no window is.</li>
+<li><strong>handle colours:</strong> <code>dirty</code>, <code>stale</code>, <code>fenced</code> and <code>progress</code>.</li>
+<li><strong>sweep colours:</strong> <code>exec_hl</code> for B2 and <code>look_hl</code> for B3.</li>
+<li><strong>chrome:</strong> <code>strip</code> for the title bar and sidebar, and the overlays' <code>panel_*</code> and <code>field_sel</code>.</li>
+<li><strong>terminal and diff colours:</strong> the terminal's sixteen ANSI colours (<code>ansi</code>), and apex diff's line tints (<code>diff_add</code>, <code>diff_del</code>).</li>
+</ul>
+<h3 id="building-a-palette-with-make">Building a palette with <code>make</code></h3>
+<p>There are six palettes (<code>Palette</code>), each with a light and a dark variant, so twelve <code>Theme</code> constants. <code>theme()</code> picks one from <code>(palette(), is_dark())</code>. GitHub's pair, <code>LIGHT</code> (GitHub Light Colorblind lifted off white) and <code>DARK</code> (GitHub Dark Dimmed), are written out field by field. The other ten are built by the <code>const fn make(Keys)</code>, so a palette is &quot;a handful of key colours from which the rest follows&quot;:</p>
+<pre><code class="language-rust">const fn make(k: Keys) -&gt; Theme {
+    Theme {
+        body_bg: k.paper, body_sel: k.sel, body_border: k.thumb,
+        tag_bg: k.header, tag_sel: k.header_sel, tag_border: k.line,
+        text: k.ink, text_dim: k.dim, accent: k.accent, border: k.line,
+        progress: k.accent, exec_hl: k.exec, look_hl: k.look, strip: k.sidebar,
+        panel_bg: k.popover, panel_border: k.line, panel_text: k.ink, panel_dim: k.faint,
+        panel_chosen_bg: k.chosen, panel_chosen_text: 0xFFFFFF, field_sel: k.sel, /* … */
+    }
+}
+</code></pre>
+<p>Most derived colours are not stored at all. They are computed from the theme with <code>text_element::mix</code>, a per-channel linear blend of packed RGB:</p>
+<table>
+<thead>
+<tr>
+<th>Derived value</th>
+<th>How it is computed</th>
+<th>Used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ground(t)</code></td>
+<td>dark: paper mixed 28% toward black; light: header mixed 7% toward ink</td>
+<td>what shows between the window cards, under column tags and the top row</td>
+</tr>
+<tr>
+<td><code>theme::step(base, n)</code></td>
+<td><code>base</code> moved 4.5% × n toward white (dark) or black (light)</td>
+<td>hover and press states in the sidebar, title bar, pickers, web bar (&quot;ghostty's way with its tabs&quot;)</td>
+</tr>
+<tr>
+<td><code>Theme::sweep(exec)</code></td>
+<td>light: wash = paper mixed 12% toward the button colour, ink = the colour deepened 20% toward black; dark: wash 36%, ink lightened 62% toward white</td>
+<td>B2/B3 sweeps, ⌘/⌥ pills, the B4 menu's chosen row, page links</td>
+</tr>
+<tr>
+<td><code>Theme::look_mark()</code></td>
+<td>paper mixed 7% (light) or 17% (dark) toward <code>look_hl</code></td>
+<td>the faint wash on every match during a live Look</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-six-palettes">The six palettes</h3>
+<p>Each palette constant's doc comment records where its colours came from:</p>
+<table>
+<thead>
+<tr>
+<th>Palette</th>
+<th>Light</th>
+<th>Dark</th>
+<th>Notes from the source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Alabaster</td>
+<td>tonsky's #f7f7f7 paper, black ink, #007acc accent</td>
+<td>#0e1415 paper, amber #cd974b accent</td>
+<td>red for B2, blue for B3</td>
+</tr>
+<tr>
+<td>Xcode</td>
+<td>Default Light, system blue #007aff</td>
+<td>Default Dark #1f1f24, #0a84ff</td>
+<td></td>
+</tr>
+<tr>
+<td>Classic</td>
+<td>acme's cream paper, pale blue tags, yellow selection, in go.dev playground hues</td>
+<td>go.dev's #202224, link blue #50b7e0</td>
+<td>B2 burnt orange, B3 deeper blue: Go's fuchsia and teal were 46 apart under a deuteranopia simulation, these 114</td>
+</tr>
+<tr>
+<td>GitHub</td>
+<td>Light Colorblind, canvas.subtle paper</td>
+<td>Dark Dimmed</td>
+<td>orange for red, blue for green, including the terminal's ANSI colours</td>
+</tr>
+<tr>
+<td>Nova</td>
+<td>Panic's Bright, sampled from Panic's preview</td>
+<td>Panic's Dark, #1b1c1d editor</td>
+<td></td>
+</tr>
+<tr>
+<td>rsms</td>
+<td>rsms's bright Sublime scheme over Adaptive UI</td>
+<td>dark mono, pink caret #f76ec9</td>
+<td>B2's grey or pink was 34 and 23 apart from B3's blue under deuteranopia; the chosen brown-orange is 84</td>
+</tr>
+</tbody>
+</table>
+<p>Two smaller details:</p>
+<ul>
+<li><strong>Terminal colours:</strong> every palette except GitHub's uses <code>ANSI_LIGHT</code>/<code>ANSI_DARK</code> for its terminal. Those are GitHub's colour-blind sixteen (&quot;since the reader is colour-blind whatever the paper&quot;), and their values are identical to <code>LIGHT.ansi</code> and <code>DARK.ansi</code>.</li>
+<li><strong>A stale comment:</strong> the module doc at the top of <code>theme.rs</code> still says &quot;four palettes&quot; even though it lists six.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L1-L72">crates/apex-client/src/theme.rs:1-72</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L84-L160">crates/apex-client/src/theme.rs:84-160</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L166-L353">crates/apex-client/src/theme.rs:166-353</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L357-L396">crates/apex-client/src/theme.rs:357-396</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L430-L487">crates/apex-client/src/theme.rs:430-487</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L57-L64">crates/apex-client/src/text_element.rs:57-64</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L173-L179">crates/apex-client/src/text_element.rs:173-179</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md#L14-L28">MODERN.md:14-28</a></p>
+<h2 id="colour-for-a-colour-blind-reader">Colour for a colour-blind reader</h2>
+<p>The look is designed for deuteranopia (red-green colour blindness). This shows up in three places.</p>
+<p><strong>The palettes avoid red-against-green distinctions.</strong> <code>MODERN.md</code> states the rule: every palette &quot;keeps orange-for-red and blue-for-green where it matters (the terminal's ANSI, apex diff's lines) and B2's and B3's sweeps apart under a deuteranopia simulation.&quot; The doc comments on <code>CLASSIC_LIGHT</code> and <code>RSMS_DARK_MONO</code> record the CIELAB distances that were measured under simulation when choosing the sweep colours. <code>Theme::progress</code> was likewise &quot;chosen under a deuteranopia simulation to stand apart from every handle colour it can sit beside.&quot; A stale handle is gold in every palette. A lost link's chip is also gold, and a watching one blue (see <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>).</p>
+<p><strong>Pages get the same rule.</strong> In <code>web.rs</code>, <code>theme_css</code> uses orange rather than red for a diff's removed lines. Its comment gives the simulated distances (14 and 16 apart in CIELAB from the added lines). Links in a page are drawn as B3's sweep is drawn.</p>
+<p><strong>Terminal ink is checked for both viewers.</strong> Contrast is checked for a normal viewer and for a deuteranope. <code>contrast.rs</code> carries the Machado, Oliveira and Fernandes (2009) full-severity deuteranopia matrix, applied in linear RGB. A colour pair only counts as readable if it passes for both (next section).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md#L24-L28">MODERN.md:24-28</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L43-L49">crates/apex-client/src/theme.rs:43-49</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L273-L284">crates/apex-client/src/theme.rs:273-284</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L337-L353">crates/apex-client/src/theme.rs:337-353</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L70-L100">crates/apex-client/src/web.rs:70-100</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs#L77-L93">crates/apex-client/src/contrast.rs:77-93</a></p>
+<h2 id="terminal-contrast-correction-oklab">Terminal contrast correction (Oklab)</h2>
+<h3 id="why-it-is-needed">Why it is needed</h3>
+<p>Programs in a terminal pick their colours for a dark background and name them outright, as a 256-colour index or a truecolor triple. On light paper an <code>ls</code> comes out pale yellow. A few programs pick for light paper and do the reverse on dark.</p>
+<p><code>term_element.rs</code> resolves each cell's colours with <code>color_rgb</code>. A packed cell colour is one of:</p>
+<ul>
+<li><code>0xfe…</code>: an index into <code>theme.ansi</code></li>
+<li><code>0xfd…</code>: the theme's ink or paper</li>
+<li>anything else: a literal RGB value</li>
+</ul>
+<p>Unless both foreground and background are the theme's defaults (0), the cell's ink goes through <code>contrast::correct(fg, bg_or_paper, theme)</code> while View ▸ Correct Terminal Contrast is on. Only the ink is ever moved, never the background.</p>
+<h3 id="the-algorithm">The algorithm</h3>
+<p><code>compute</code> works as follows:</p>
+<ol>
+<li><strong>Already readable:</strong> if <code>legible(fg, bg)</code> holds, the ink is returned unchanged. <code>legible</code> means a WCAG contrast of at least 4.5 (<code>TARGET</code>), taking the worse of the normal viewer's and the deuteranope's (<code>contrast_for_all</code>).</li>
+<li><strong>Convert:</strong> convert the ink to Oklab LCh (<code>oklch</code>), after Ottosson (2020). Oklab is used because there a step in lightness looks the same size on any hue.</li>
+<li><strong>Harmonise the hue:</strong> if the ink has chroma (≥ <code>GREY</code>, 0.04), find the nearest hue among the theme's twelve chromatic ANSI colours (indices 0, 7, 8 and 15 are greys and are skipped). If that hue is within <code>HARMONY_REACH</code> (0.7 rad), turn the ink's hue <code>HARMONY_PULL</code> (half) of the way toward it. Corrected colours then sit with the theme's own, but two of a program's colours do not collapse into one.</li>
+<li><strong>Pick a direction:</strong> go toward black or white, whichever the paper reads better against. That is down on light paper and up on dark, &quot;whatever the theme&quot;: ink on a program's own dark block goes light even in a light theme.</li>
+<li><strong>Find the edge:</strong> bisect lightness for 20 iterations to find the edge of readability. Each candidate is judged after packing to 8 bits, so rounding cannot push it just below the target. <code>fit</code> keeps the hue and chroma, reducing the chroma by bisection when sRGB cannot hold it.</li>
+<li><strong>Mirror past the edge:</strong> move the ink past the edge by <code>MIRROR</code> (0.5) times how far it started beyond it. An ink that was slightly unreadable lands slightly inside; one far off lands deep. The shades a program uses to tell things apart stay apart, and a dark terminal's &quot;bright&quot; colour becomes a light terminal's deeper one.</li>
+<li><strong>Hue unreachable:</strong> if even full black or white of that hue does not read, return that extreme.</li>
+</ol>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;cell ink fg on paper bg&quot;] --&gt; B{&quot;legible for both viewers?&quot;}
+    B -- yes --&gt; Z[&quot;return fg unchanged&quot;]
+    B -- no --&gt; C[&quot;Oklab LCh of fg&quot;]
+    C --&gt; D[&quot;harmonise hue toward nearest theme ANSI hue&quot;]
+    D --&gt; E[&quot;direction: toward black or white, whichever paper prefers&quot;]
+    E --&gt; F{&quot;reads at the extreme?&quot;}
+    F -- no --&gt; Y[&quot;return the extreme&quot;]
+    F -- yes --&gt; G[&quot;bisect lightness to the edge of reading&quot;]
+    G --&gt; H[&quot;mirror: edge + 0.5 x (edge - L)&quot;]
+    H --&gt; I[&quot;fit to sRGB gamut, pack to 8 bits&quot;]
+</code></pre>
+<h3 id="caching">Caching</h3>
+<p>Results are cached in a thread-local <code>HashMap</code>, so each cell costs one lookup. The cache is cleared wholesale when it reaches <code>CACHE_CAP</code> (8192). The key is <code>(fg, bg, dark)</code>, where <code>dark</code> comes from comparing the theme's address with GitHub's <code>DARK</code> constant. The other dark palettes therefore key as not dark, and the cache is not cleared when the theme changes. In practice this only matters when two themes with different ANSI colours see the same ink on the same paper.</p>
+<h3 id="tests">Tests</h3>
+<p>The tests pin down the behaviour. Ink that already reads is untouched. A dark terminal's yellow deepens on light paper and stays a yellow. Navy lifts on dark paper. A red that passes for a normal viewer but not a deuteranope is still corrected. xterm's red and yellow stay apart in lightness. The theme pulls a near hue partway toward its own, but not onto it. Greys gain no hue. An exhaustive sweep over a 6×6×6 RGB grid, on eight papers and both GitHub themes, checks that every answer reads or is an extreme.</p>
+<h3 id="telling-the-daemon">Telling the daemon</h3>
+<p><code>theme::term_colors()</code> packages the theme's ink, paper and sixteen colours as a <code>TermColors</code>. The client sends this in <code>ClientMsg::ClientConfig</code> on attach and on every theme change. The daemon accepts it only from UI attachments. It stores the colours as <code>server.term_colors</code> and passes them to <code>TermHost::set_colors</code>, which answers programs' OSC 4, 10 and 11 queries. A session with no UI attached answers with <code>TermColors::LIGHT</code>: acme's paper with xterm's sixteen. See <a href="attach-protocol.html">The Attach Protocol</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs#L1-L235">crates/apex-client/src/contrast.rs:1-235</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs#L237-L397">crates/apex-client/src/contrast.rs:237-397</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs#L34-L40">crates/apex-client/src/term_element.rs:34-40</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs#L145-L190">crates/apex-client/src/term_element.rs:145-190</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L489-L494">crates/apex-client/src/theme.rs:489-494</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L518-L589">crates/apex-client/src/theme.rs:518-589</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L25-L54">crates/apex-server/src/proto.rs:25-54</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L85-L90">crates/apex-server/src/proto.rs:85-90</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L810-L815">crates/apex-server/src/daemon.rs:810-815</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L763-L776">crates/apex-server/src/term.rs:763-776</a></p>
+<h2 id="font-sets">Font sets</h2>
+<p>One View ▸ Font choice (<code>fonts::Set</code>) decides four faces:</p>
+<ul>
+<li><code>text()</code>: text windows and tags</li>
+<li><code>mono()</code>: mono windows and terminals</li>
+<li><code>ui()</code>: the sidebar, sheets, menus, palettes and title bar</li>
+<li>the <code>--apex-font</code> / <code>--apex-mono</code> CSS variables for pages</li>
+</ul>
+<p><code>text()</code> and <code>mono()</code> return a <code>Spec</code>: family, size, line height, weight and extra OpenType features. Line heights are whole pixels, &quot;acme's tiling counts in them&quot;. <code>text_element::font_for(mono)</code> turns a <code>Spec</code> into a gpui <code>Font</code> in three steps:</p>
+<ol>
+<li>It applies <code>fonts::weight</code>.</li>
+<li>It adds the bundled symbols font as a fallback (<code>with_symbols</code>).</li>
+<li>It runs <code>unjoined</code>, which turns off <code>liga</code>, <code>clig</code> and <code>calt</code> so every character has its own glyph and a click can land between the letters of <code>ff</code>. It also turns on a slashed <code>zero</code>, then layers the set's own features over these.</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Set</th>
+<th>Text (size/line)</th>
+<th>Mono (12/16)</th>
+<th>UI</th>
+<th>Bundled?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>System</td>
+<td><code>.SystemUIFont</code> 14/20, <code>ss06</code> + <code>tnum</code></td>
+<td>Terminal.app's SF Mono at Medium, else <code>.SF NS Mono</code>, else Menlo</td>
+<td><code>.AppleSystemUIFont</code></td>
+<td>no (SF Mono read from Terminal.app at launch)</td>
+</tr>
+<tr>
+<td>Classic</td>
+<td>Lucida Grande 13/17</td>
+<td>Menlo</td>
+<td>Lucida Grande</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Go</td>
+<td>Go 14/20</td>
+<td>Go Mono</td>
+<td>Go</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Mona</td>
+<td>Mona Sans 15/21</td>
+<td>Monaspace Xenon with <code>calt</code>, <code>ss02</code>, <code>ss03</code>, <code>ss07</code>, <code>ss08</code></td>
+<td>Mona Sans</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Nova</td>
+<td>SF 14/20, <code>ss06</code> + <code>tnum</code></td>
+<td>Menlo</td>
+<td><code>.AppleSystemUIFont</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>H&amp;Co</td>
+<td>Ideal Sans SSm 14/20</td>
+<td>Operator Mono SSm</td>
+<td>Ideal Sans SSm</td>
+<td>no (installed)</td>
+</tr>
+<tr>
+<td>Inter</td>
+<td>Inter 14/20</td>
+<td>JetBrains Mono</td>
+<td>Inter</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Geist</td>
+<td>Geist 14/20</td>
+<td>Geist Mono</td>
+<td>Geist</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Styrene</td>
+<td>Styrene B LC 14/20</td>
+<td>JetBrains Mono</td>
+<td>Styrene B LC</td>
+<td>no (installed); JetBrains Mono bundled</td>
+</tr>
+<tr>
+<td>Lucida</td>
+<td>Lucida Grande 13/17</td>
+<td>installed Lucida Grande Mono (W1G cut first), else Menlo</td>
+<td>Lucida Grande</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<p><code>MODERN.md</code> lists nine sets; the code has a tenth, Lucida.</p>
+<h3 id="sizes-and-weights">Sizes and weights</h3>
+<p>⌘+ and ⌘− call <code>fonts::resize(±1)</code>, which moves <code>STEP</code> and saves it. ⌘0 resets it to 0. <code>sized</code> scales a face by <code>k = (text_size + step) / text_size</code>, with a floor of 6 px on the new text size. The text grows one pixel per step, the mono face in proportion. Sizes are rounded to the half pixel and line heights to whole pixels.</p>
+<p><code>fonts::weight</code> is a workaround for H&amp;Co's faces. Their weights are typographic, so asking for 400 gave the Bold. For that set it maps requested weights onto the 305–400 band where Core Text puts their cuts. Every other set passes weights through unchanged, so chrome code always asks through <code>fonts::weight(...)</code>.</p>
+<h3 id="loading-the-faces">Loading the faces</h3>
+<p><code>fonts::install</code> hands the bundled faces in <code>FACES</code> to gpui. It skips Radon's italics, which are only for pages. It then looks for Terminal.app's <code>SF-Mono-*</code> files, falling back to <code>/System/Library/Fonts/SFNSMono.ttf</code>, and records which one loaded. It also finds an installed Lucida Grande Mono by name.</p>
+<p>Pages run in a separate web-view process, so they get the fonts differently. <code>page_css</code> emits an <code>@font-face</code> for each bundled face at <code>apexfile://localhost/.apex-font/FILE</code>. For H&amp;Co it also adds <code>local()</code> faces by PostScript name. It sets the <code>--apex-font</code>, <code>--apex-mono</code> and <code>--apex-*-features</code> variables. The page's scheme handler in <code>web.rs</code> answers those URLs from the bytes compiled into the binary through <code>fonts::serve</code>. <code>serve</code> only returns a face listed in <code>FACES</code>. Pages also receive the theme's colours as <code>--apex-bg</code>, <code>--apex-fg</code>, <code>--apex-accent</code> and the rest (see <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs#L1-L84">crates/apex-client/src/fonts.rs:1-84</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs#L112-L271">crates/apex-client/src/fonts.rs:112-271</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs#L273-L418">crates/apex-client/src/fonts.rs:273-418</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs#L424-L436">crates/apex-client/src/fonts.rs:424-436</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L507-L557">crates/apex-client/src/text_element.rs:507-557</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1565-L1567">crates/apex-client/src/web.rs:1565-1567</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md#L29-L46">MODERN.md:29-46</a></p>
+<h2 id="fitting-the-title-bar-titlefitrs">Fitting the title bar (<code>titlefit.rs</code>)</h2>
+<p>The title bar must share its width with the top row's editable tag. <code>titlefit.rs</code> decides how much of two other things fits beside it: the session's directory and its running processes. Each has graded forms:</p>
+<ul>
+<li><strong>Directory (<code>PathFit</code>):</strong> Full is the host and every crumb. Short is the host, <code>…/</code> and the last two crumbs. Last is the last crumb alone.</li>
+<li><strong>Processes (<code>ProcFit</code>):</strong> Full is a pill per name, counted when there are several (<code>Win 5</code>). Stack is pills stacked as cards. Count is a bare number.</li>
+</ul>
+<p><code>LADDER</code> orders the combinations from richest to poorest. The directory gives way first, since process names say more than the folders above the session's own. <code>choose</code> returns the first step where directory, processes and the top row's needed width all fit in the room, or the last step if none do. The top row needs its full text while its caret is in it, and otherwise at most <code>TEXT_MIN</code> (200 px).</p>
+<pre><code class="language-rust">pub fn choose(room: f32, text: f32, path: impl Fn(PathFit) -&gt; f32, procs: impl Fn(ProcFit) -&gt; f32) -&gt; (PathFit, ProcFit) {
+    LADDER.iter().copied().find(|&amp;(a, b)| path(a) + procs(b) + text &lt;= room).unwrap_or(LADDER[LADDER.len() - 1])
+}
+</code></pre>
+<p><code>Acme::title_fit</code> measures every candidate width by shaping text in the <code>fonts::ui()</code> face. <code>title_room_mark</code> records the room the bar actually had in the last frame and calls <code>notify</code> when it changes by more than half a pixel, so the next frame refits.</p>
+<p>Anything shortened fans out under the pointer as an anchored, deferred card over the bar, so the bar never reflows under the pointer. The full path comes up in <code>path_strip</code>; every process gets a pill with its own × in <code>procs_fan</code>. <code>Marks</code> records where each part was drawn so <code>title_fan_at</code> and <code>pill_at</code> can hit-test. The pill colours come from the theme: the wash is <code>mix(text_dim, ground, 0.9)</code>, and the Count badge has an accent dot. Tests cover the ladder order, grouping processes by name in first-run order, and crumb indices.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L1-L99">crates/apex-client/src/titlefit.rs:1-99</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L147-L247">crates/apex-client/src/titlefit.rs:147-247</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L249-L449">crates/apex-client/src/titlefit.rs:249-449</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/titlefit.rs#L466-L504">crates/apex-client/src/titlefit.rs:466-504</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/MODERN.md#L371-L380">MODERN.md:371-380</a></p>
+<h2 id="the-assets-directory">The assets directory</h2>
+<p><code>crates/apex-client/assets/</code> holds what the client compiles in with <code>include_bytes!</code>. <code>README.md</code> there records each file's version, licence and how to update it, with SHA-256 hashes where it gives them.</p>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Used by</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SymbolsNerdFontMono-Regular.ttf</code></td>
+<td><code>text_element::install_symbols</code></td>
+<td>Nerd Fonts 3.5.1 symbols-only, MIT. Registered with CoreText for this process only (<code>CTFontManagerRegisterGraphicsFont</code>) and named as every font's fallback (<code>SYMBOLS</code>), so icons and powerline arrows draw without a patched font. It goes to CoreText rather than gpui because gpui will not load a family with no <code>m</code>.</td>
+</tr>
+<tr>
+<td><code>fonts/go</code>, <code>mona</code>, <code>monaspace</code></td>
+<td><code>fonts::FACES</code></td>
+<td>Copied from Manifold's <code>Frameworks/</code>; BSD and OFL licences beside them</td>
+</tr>
+<tr>
+<td><code>fonts/inter</code>, <code>jetbrains</code>, <code>geist</code></td>
+<td><code>fonts::FACES</code></td>
+<td>Bundled with their licence files, though the README does not list them yet</td>
+</tr>
+<tr>
+<td><code>pjw.svg</code></td>
+<td><code>shell::pjw</code></td>
+<td>Peter Weinberger's face from plan9port's PostScript prologue, filled even-odd; marks another session wanting the user</td>
+</tr>
+<tr>
+<td><code>mermaid.min.js.gz</code></td>
+<td><code>web.rs</code></td>
+<td>Mermaid 12.0.0, gzipped; given to pages that have mermaid blocks</td>
+</tr>
+<tr>
+<td><code>glass.svg</code>, <code>space-bunny.svg</code></td>
+<td>—</td>
+<td>Present in the directory but not described in the README</td>
+</tr>
+</tbody>
+</table>
+<p>To add a bundled face, put the file under <code>assets/fonts/DIR/</code>, add a <code>face!</code> line to <code>FACES</code> with its family, weight and italic flag, and point a <code>Set</code>'s <code>text_as_set</code>/<code>mono_as_set</code>/<code>ui</code>/<code>page_css</code> at the family. The <code>every_face_a_page_asks_for_is_served_and_named</code> test checks that each listed face is served and is larger than 10 kB.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/assets/README.md#L1-L52">crates/apex-client/assets/README.md:1-52</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/fonts.rs#L283-L330">crates/apex-client/src/fonts.rs:283-330</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L547-L607">crates/apex-client/src/text_element.rs:547-607</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a></span><span class="next">Next: <a href="cli.html">The apex Command</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child current"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+<ul class="sections">
+<li class="l2"><a href="#where-the-choices-live-and-how-they-spread">Where the choices live and how they spread</a></li>
+<li class="l2"><a href="#palettes">Palettes</a></li>
+<li class="l3"><a href="#the-theme-struct">The Theme struct</a></li>
+<li class="l3"><a href="#building-a-palette-with-make">Building a palette with make</a></li>
+<li class="l3"><a href="#the-six-palettes">The six palettes</a></li>
+<li class="l2"><a href="#colour-for-a-colour-blind-reader">Colour for a colour-blind reader</a></li>
+<li class="l2"><a href="#terminal-contrast-correction-oklab">Terminal contrast correction (Oklab)</a></li>
+<li class="l3"><a href="#why-it-is-needed">Why it is needed</a></li>
+<li class="l3"><a href="#the-algorithm">The algorithm</a></li>
+<li class="l3"><a href="#caching">Caching</a></li>
+<li class="l3"><a href="#tests">Tests</a></li>
+<li class="l3"><a href="#telling-the-daemon">Telling the daemon</a></li>
+<li class="l2"><a href="#font-sets">Font sets</a></li>
+<li class="l3"><a href="#sizes-and-weights">Sizes and weights</a></li>
+<li class="l3"><a href="#loading-the-faces">Loading the faces</a></li>
+<li class="l2"><a href="#fitting-the-title-bar-titlefitrs">Fitting the title bar (titlefit.rs)</a></li>
+<li class="l2"><a href="#the-assets-directory">The assets directory</a></li>
+</ul>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

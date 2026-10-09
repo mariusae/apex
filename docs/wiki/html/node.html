@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Node: Leading and Built-in Commands · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The Node: Leading and Built-in Commands</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs">crates/apex-core/src/ids.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs">crates/apex-core/src/tiling.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs">crates/apex-core/tests/core.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+</ul>
+</details>
+<p><code>Node</code> (in <code>crates/apex-core/src/node.rs</code>) is a replica of a session. It is the one object that both the gpui client and the daemon use to read and change session state. Every node holds a full <code>State</code> and keeps it current by replaying the log. For the shards it holds a lease on, it is also the <strong>leader</strong>: it turns user actions into entries, appends them to the log and applies them. Those actions are typing, selecting, cut and paste, undo, Look, running an Edit program, and the built-in commands such as <code>New</code>, <code>Del</code>, <code>Zerox</code> and <code>Sort</code>. The module's own summary says it: &quot;As leader of a shard a node performs the built-in commands, types, selects, and lowers Edit programs into entries; as follower it catches up.&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1-L4">node.rs:1-4</a>)</p>
+<p>This page sits between three others. <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a> explains leases and shards. <a href="core-state.html">Entries, State and Apply</a> describes the entries a node writes and how <code>State::apply</code> interprets them. <a href="buffers-and-text.html">Buffers, Views and Undo</a> explains what an edit entry does to a buffer. Pixel geometry is covered on <a href="tiling-and-layout.html">Tiling and Layout</a> and the Edit language on <a href="edit-language.html">The Edit Language</a>. Changes made by others reach a node as proposals, described in <a href="proposals.html">Proposals</a>.</p>
+<h2 id="who-runs-a-node">Who runs a Node</h2>
+<p>The UI client and the daemon both build nodes with <code>Node::new(attachment)</code>. Tools and the CLI build them through <code>Remote</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Attachment</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex-client</code> <code>Acme</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L737">app.rs:737</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L819">app.rs:819</a>)</td>
+<td>the UI's own</td>
+<td>Leads buffers, windows and layout once it takes the leases; supplies real font metrics through <code>node.tiling</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2592">app.rs:2592</a>)</td>
+</tr>
+<tr>
+<td><code>apexd</code> session view (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L386">daemon.rs:386</a>)</td>
+<td><code>SERVER</code></td>
+<td>Always a follower of UI-led shards; leads them itself while no UI is attached, applying proposals as a headless leader</td>
+</tr>
+<tr>
+<td><code>Server</code> in <code>apex-server</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L178">lib.rs:178</a>)</td>
+<td><code>SERVER</code></td>
+<td>The replica the server reads from</td>
+</tr>
+<tr>
+<td><code>Remote</code> for tools and the CLI (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L257">remote.rs:257</a>)</td>
+<td>the tool's</td>
+<td>Follower only; changes things by proposing</td>
+</tr>
+</tbody>
+</table>
+<p>Many methods are written for any leader to call. A headless leader uses the default <code>tiling::Headless</code> metrics. Its effect queues (below) are drained by the daemon or simply capped.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1-L4">crates/apex-core/src/node.rs:1-4</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L267-L288">crates/apex-core/src/node.rs:267-288</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1522-L1549">crates/apex-server/src/daemon.rs:1522-1549</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L27-L38">ARCHITECTURE.md:27-38</a></p>
+<h2 id="the-node-struct">The Node struct</h2>
+<pre><code class="language-rust">pub struct Node {
+    pub state: State,
+    pub attachment: AttachmentId,
+    epochs: BTreeMap&lt;Shard, Epoch&gt;,      // leases this node believes it holds
+    next_id: u64,
+    next_group: u64,
+    typing: Option&lt;(ViewId, GroupId)&gt;,   // the run of typing and its undo group
+    pub seltext: Option&lt;ViewId&gt;,         // acme's seltext
+    pub shows: Vec&lt;(ViewId, usize)&gt;,
+    pub gotos: Vec&lt;Loc&gt;,
+    pub client_finds: Vec&lt;(WindowId, String, bool)&gt;,
+    pub switches: Vec&lt;Loc&gt;,
+    pub quit_requested: bool,
+    warned: BTreeMap&lt;WindowId, Version&gt;, // Del's warn-once memory
+    edit: EditLang,                      // the Edit interpreter (remembers the last regexp)
+    pub tiling: Box&lt;dyn tiling::Info + Send + Sync&gt;,
+    pub warp: Option&lt;Warp&gt;,
+    pub activecol: Option&lt;ColumnId&gt;,     // acme's activecol
+}
+</code></pre>
+<p>Only <code>state</code> is replicated. Everything else belongs to this node alone:</p>
+<ul>
+<li><strong>Interaction state:</strong> <code>typing</code>, <code>seltext</code>, <code>activecol</code> and <code>warned</code>. These follow acme's globals of the same names.</li>
+<li><strong>Effect queues:</strong> <code>warp</code>, <code>shows</code>, <code>gotos</code>, <code>client_finds</code>, <code>switches</code> and <code>quit_requested</code>. They record what a client showing this replica should do next.</li>
+</ul>
+<p>The <a href="#the-reviews-view">architecture review</a> singles out both groups as UI concerns that leak into the core.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L221-L261">crates/apex-core/src/node.rs:221-261</a></p>
+<h2 id="replication-following-and-leading">Replication: following and leading</h2>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;Node::append(shard, op)&quot;] --&gt; B{&quot;epochs has shard?&quot;}
+    B -- no --&gt; E[&quot;CoreError::NotLeader&quot;]
+    B -- yes --&gt; C[&quot;log.append(shard, attachment, epoch, op)&quot;]
+    C --&gt; D[&quot;state.apply(shard, entry)&quot;]
+    F[&quot;Node::catch_up(log)&quot;] --&gt; G[&quot;Meta shard first&quot;]
+    G --&gt; H[&quot;every other shard: log.since(shard, state.applied(shard))&quot;]
+    H --&gt; I[&quot;state.apply each entry&quot;]
+    I --&gt; J[&quot;refresh_leases: epochs = log.held_by(attachment)&quot;]
+</code></pre>
+<p><strong>Catching up.</strong> <code>catch_up</code> applies, shard by shard, every entry the state has not yet seen. The metalog comes first, so shard creations and leases are known before the entries that depend on them (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L323-L342">node.rs:323-342</a>). It then refreshes <code>epochs</code> from the log store rather than from state: &quot;the log store is the fencing authority (a mirror knows the leases the server will honour)&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L344-L348">node.rs:344-348</a>).</p>
+<p><strong>Leading.</strong> <code>leads(shard)</code> is just <code>epochs.contains_key(&amp;shard)</code>. <code>append</code> looks up the epoch it holds for the shard, has the log sequence and fence the entry, and applies the result locally. It returns the entry's <code>Seq</code> and the <code>Applied</code> value from <code>State::apply</code>; <code>undo</code> uses that value to learn what range to select (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L350-L356">node.rs:350-356</a>). Every leader operation on this page eventually goes through <code>append</code>.</p>
+<p><strong>Shards and leases.</strong></p>
+<ul>
+<li><code>create_shard</code> catches up first, appends the metalog entries the log store makes, and applies them. On a mirror log (a client's copy, with a hook to the server) the server's metalog entry arrives later. Until then the node inserts the shard into <code>state.meta.shards</code> so entries for it can apply (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L358-L372">node.rs:358-372</a>).</li>
+<li><code>delete_shard</code> does the mirror case the other way round. It applies a fake, unsequenced <code>ShardDel</code> through <code>State::apply_unsequenced</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L374-L385">node.rs:374-385</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L541-L546">state.rs:541-546</a>).</li>
+<li><code>take_lease</code> and <code>release_lease</code> wrap the log's <code>grant</code> and <code>release</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L387-L403">node.rs:387-403</a>).</li>
+</ul>
+<p><strong>Ids without coordination.</strong> <code>alloc</code> puts the attachment id in the top bits and a per-node counter in the low 40 bits. Undo groups are built the same way (<code>new_group</code>). Two leaders can therefore never mint the same <code>BufferId</code>, <code>WindowId</code>, <code>ColumnId</code> or <code>GroupId</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L304-L315">node.rs:304-315</a>).</p>
+<p>The tests rely on one property throughout: after any sequence of leader operations, a fresh follower that replays the log reaches the same <code>State::hash</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L17-L21">tests/core.rs:17-21</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L32-L47">tests/core.rs:32-47</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L290-L403">crates/apex-core/src/node.rs:290-403</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs#L267-L273">crates/apex-core/src/log.rs:267-273</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L8-L47">crates/apex-core/tests/core.rs:8-47</a></p>
+<h2 id="making-buffers-windows-and-columns">Making buffers, windows and columns</h2>
+<p>A buffer is its own shard. <code>create_buffer_as</code> allocates a <code>BufferId</code>, creates <code>Shard::Buffer(id)</code> and appends <code>BufferOp::Create</code> with name, text, disk hash, <code>WinKind</code> and the scratch flag (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L412-L418">node.rs:412-418</a>).</p>
+<p><code>init_session</code> sets up a new session:</p>
+<ol>
+<li>It makes the top row's tag buffer, holding <code>TOP_TAG</code> (<code>&quot;Newcol Newterm Win Web Kill Putall Exit End &quot;</code>).</li>
+<li>It creates the layout shard with <code>LayoutOp::Init</code> and a guessed 1100×700 rectangle.</li>
+<li>It makes two columns, as acme's <code>-c 2</code> does, and returns the last one (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L420-L432">node.rs:420-432</a>).</li>
+</ol>
+<p>Each column gets a tag buffer holding <code>COL_TAG</code> (<code>&quot;New Cut Paste Snarf Sort Zerox Delcol &quot;</code>).</p>
+<p>A window is three things (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L518-L534">node.rs:518-534</a>):</p>
+<ul>
+<li>a tag buffer holding only <code>WIN_TAG</code> (<code>&quot;Look &quot;</code>);</li>
+<li>a <code>Shard::Window</code> whose first entry is <code>WindowOp::Create { tag, body, path, label, via, base }</code>;</li>
+<li>a view (<code>ViewAdd</code>) on the tag buffer and, for text or buffer-page bodies, on the body buffer.</li>
+</ul>
+<p>The rest of a tag (the path, the label and apex's own words) is not text in the tag. It is computed from state by <code>window_verbs</code>.</p>
+<p><code>place</code> then lays the window out with <code>tiling::coladd</code> and appends the whole new layout as one <code>LayoutOp::Arrange</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L728-L757">node.rs:728-757</a>). It redirects a window meant for a hidden or stripped column to the nearest open one, and puts a <em>diagnostic</em> window straight into the stash. Every layout change in the node works this way: clone <code>state.layout</code>, run a function from <code>tiling</code>, and <code>arrange</code> the result (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L290-L294">node.rs:290-294</a>).</p>
+<p>Other constructors follow the same pattern:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>What it makes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>new_window</code>, <code>new_window_as(spec)</code></td>
+<td>A window on a new buffer; <code>Spec</code> gives kind, scratch, label and diagnostic</td>
+</tr>
+<tr>
+<td><code>open_window</code>, <code>open_window_at</code></td>
+<td>A window on an existing buffer</td>
+</tr>
+<tr>
+<td><code>make_window</code></td>
+<td>acme's <code>makenewwindow</code>: picks <code>activecol</code>, else the column of <code>seltext</code>, else of <code>from</code>, else a fallback; un-fulls the column; picks a y; grows the window if it has fewer than two lines</td>
+</tr>
+<tr>
+<td><code>open_term_window</code></td>
+<td>A <code>Body::Term</code> window</td>
+</tr>
+<tr>
+<td><code>open_page</code>, <code>open_web_window</code>, <code>open_html_window</code></td>
+<td><code>Body::Page</code> windows (see <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>)</td>
+</tr>
+<tr>
+<td><code>cover_window</code>, <code>swap_window</code>, <code>raise_window</code></td>
+<td>Window stacks: one window over another in the same place</td>
+</tr>
+<tr>
+<td><code>zerox</code></td>
+<td>Another window on the same body buffer, keeping its label</td>
+</tr>
+<tr>
+<td><code>delete_window</code></td>
+<td>Drops views, restacks, closes or unstashes, deletes the window and tag shards, and deletes the body shard with its last view</td>
+</tr>
+</tbody>
+</table>
+<p><code>delete_window</code> sets <code>warp</code> to <code>Warp::Closed { window, next }</code> so the client can move the pointer as acme's <code>colclose</code> does. It also clears <code>seltext</code> and <code>warned</code> for the window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1286-L1334">node.rs:1286-1334</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L405-L640">crates/apex-core/src/node.rs:405-640</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L726-L757">crates/apex-core/src/node.rs:726-757</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1276-L1334">crates/apex-core/src/node.rs:1276-1334</a></p>
+<h2 id="editing-as-leader">Editing as leader</h2>
+<p>All text changes go through one private helper:</p>
+<pre><code class="language-rust">fn edit_op(&amp;mut self, log: &amp;mut Log, buffer: BufferId, q0: usize, nd: usize, text: &amp;str, group: GroupId) -&gt; Result&lt;()&gt; {
+    let version = self.state.buffer(buffer)?.version;
+    self.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Edit { version, q0, nd, text: text.into(), group }))?;
+    Ok(())
+}
+</code></pre>
+<p>Each edit carries the buffer's current version and an undo <code>GroupId</code>. Selections are separate <code>BufferOp::Select</code> entries, sequenced in the same shard so every replica agrees on where each view's dot is (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1383-L1396">node.rs:1383-1396</a>).</p>
+<p><strong>Typing groups.</strong> <code>typing</code> remembers the view being typed into and its group. <code>typing_group(view)</code> reuses that group for consecutive keystrokes in the same view, so a run of typing undoes as one step. A mouse selection, a command, <code>set_content</code>, <code>cut</code>, <code>undo</code> and the other non-typing operations call <code>end_typing()</code> to start a new group (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1367-L1381">node.rs:1367-1381</a>). The test <code>typing_undoes_as_one_group_until_a_mouse_action</code> checks exactly this (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L101-L117">tests/core.rs:101-117</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>What it appends</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>insert(view, text)</code></td>
+<td>Edit replacing the selection, then Select at its end. A newline in a body with <code>autoindent</code> copies the previous line's leading blanks.</td>
+</tr>
+<tr>
+<td><code>erase(view, Erase::{Char,Line,Word})</code></td>
+<td>acme's ^H/^U/^W. A non-empty selection is snarfed and cut first; the width comes from <code>bswidth</code> (acme's <code>textbswidth</code>) and never erases before the view's origin.</td>
+</tr>
+<tr>
+<td><code>backspace</code>, <code>delete_forward</code></td>
+<td>One rune either side, or the selection</td>
+</tr>
+<tr>
+<td><code>replace_selection</code></td>
+<td>Edit in a fresh group, then select the inserted text (acme's Paste)</td>
+</tr>
+<tr>
+<td><code>snarf</code>, <code>cut</code>, <code>paste</code></td>
+<td><code>LayoutOp::Snarf</code> (the snarf buffer lives in the layout shard), plus the edit</td>
+</tr>
+<tr>
+<td><code>undo</code>, <code>redo</code></td>
+<td><code>BufferOp::Undo</code>/<code>Redo { version }</code>; if apply returns <code>Applied::UndoRange(Some(..))</code>, a Select of that range. Returns <code>false</code> when the stack is empty.</td>
+</tr>
+<tr>
+<td><code>set_content</code></td>
+<td>The whole text replaced in one group (Get, watcher reload)</td>
+</tr>
+<tr>
+<td><code>insert_text</code>, <code>replace_text</code>, <code>delete_runs</code></td>
+<td>Edits at an address without touching dots beyond the shift (for tools, and Put's trim)</td>
+</tr>
+<tr>
+<td><code>select</code>, <code>set_origin</code></td>
+<td><code>Select</code> (also sets <code>seltext</code>), <code>Origin</code></td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1096-L1133">crates/apex-core/src/node.rs:1096-1133</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1365-L1590">crates/apex-core/src/node.rs:1365-1590</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L77-L117">crates/apex-core/tests/core.rs:77-117</a></p>
+<h2 id="look">Look</h2>
+<p><code>look_dir(view, needle, reverse)</code> is acme's <code>search</code>: a literal search over the buffer's runes, with the hit becoming the view's selection.</p>
+<ul>
+<li><strong>Forward</strong>, it searches from the selection's end to the end of the text, then wraps from 0.</li>
+<li><strong>Backward</strong> (shift-B3), it takes the last match ending at or before the selection's start, then wraps from the end.</li>
+</ul>
+<p>It returns whether anything was found (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1656-L1696">node.rs:1656-1696</a>, tested in <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L559-L585">tests/core.rs:559-585</a>).</p>
+<p>The tag's <code>Look</code> word has its own helpers:</p>
+<ul>
+<li><code>look_arg(w)</code> finds the first <code>Look</code> in a window's tag and parses its argument into a <code>LookArg</code>. The argument is the word after <code>Look</code>; <code>Look/word</code> marks it as <em>live</em> (searched for as it is typed); a closing slash lets it hold spaces, as in <code>Look/two words/</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1592-L1618">node.rs:1592-1618</a>).</li>
+<li><code>set_look_arg</code> rewrites that argument as <code>/arg/</code> after a B3 look (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1620-L1637">node.rs:1620-1637</a>).</li>
+<li><code>make_look_live</code> adds the slashes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1639-L1654">node.rs:1639-1654</a>).</li>
+<li><code>look_spaced</code> normalises <code>Look/x/</code> to <code>Look x</code> before commands are resolved (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L51-L64">node.rs:51-64</a>).</li>
+</ul>
+<p>Pages and terminals have no buffer to search. For these, <code>found_by_client(ctx)</code> returns the window, and the <code>Look</code> is queued with <code>find_in_client</code>, which keeps at most 8 because &quot;a leader with no screen never takes them&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1884-L1905">node.rs:1884-1905</a>). The B3 path is <code>Proposal::Look</code> in the server's <code>proposal::apply</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L365-L405">proposal.rs:365-405</a>). It calls <code>look_dir</code>, then <code>reveal</code>, sets <code>warp = Warp::Sel(v)</code>, and records the word with <code>set_look_arg</code>.</p>
+<p><code>double_click</code> and <code>acme_isalnum</code> are acme's <code>textdoubleclick</code> and <code>isalnum</code>, also in this module (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L103-L187">node.rs:103-187</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L17-L64">crates/apex-core/src/node.rs:17-64</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1592-L1696">crates/apex-core/src/node.rs:1592-1696</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L365-L405">crates/apex-server/src/proposal.rs:365-405</a></p>
+<h2 id="lowering-edit-programs">Lowering Edit programs</h2>
+<p><code>run_edit(window, program)</code> runs a sam-style Edit program against a snapshot of the body's text, dot and name, using the node's own <code>apex_edit::Edit</code> instance. That instance remembers the last regexp across programs. It then lowers the result (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1758-L1791">node.rs:1758-1791</a>):</p>
+<ol>
+<li>Every change becomes an <code>edit_op</code> in <strong>one</strong> new undo group, so the whole program undoes at once.</li>
+<li>The resulting dot becomes a <code>Select</code>.</li>
+<li><code>Intent::Undo { n }</code> is performed here as <code>n</code> undos, or <code>-n</code> redos.</li>
+<li>Every other intent, along with the output and warnings, is returned in <code>EditRun</code>.</li>
+</ol>
+<p>The <code>Edit</code> built-in appends the output and each warning to the window's +Errors. It then fails with &quot;file and pipe commands are not supported here yet&quot; if any intents remain (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2155-L2168">node.rs:2155-2168</a>). The changes are applied before that error is raised. Errors from the Edit language come back as <code>CoreError::Edit</code>. See <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L119-L140">tests/core.rs:119-140</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L213-L219">crates/apex-core/src/node.rs:213-219</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1758-L1791">crates/apex-core/src/node.rs:1758-1791</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L119-L140">crates/apex-core/tests/core.rs:119-140</a></p>
+<h2 id="commands-exec-entries-handlers-and-statuses">Commands: exec entries, handlers and statuses</h2>
+<p>Every B2 command, whether from a tag, the body, the CLI or <code>apex exec</code>, becomes an <strong>exec entry</strong> before anything runs. This makes the command visible to every replica, and lets the server or a tool perform it.</p>
+<pre><code class="language-mermaid">flowchart TD
+    X[&quot;Node::exec(ctx, text)&quot;] --&gt; G{&quot;text is Get, unclaimed, window non-empty and not a dir?&quot;}
+    G -- &quot;winclean says no&quot; --&gt; W[&quot;warn in +Errors, return Done(0)&quot;]
+    G -- otherwise --&gt; R[&quot;resolve_in(ctx, text)&quot;]
+    R --&gt; C{&quot;a rule claims the verb?&quot;}
+    C -- yes --&gt; S[&quot;Handler::Server&quot;]
+    C -- no --&gt; N[&quot;Node::resolve: built-in list&quot;]
+    N --&gt; A[&quot;append_exec: WindowOp::Exec or LayoutOp::Exec with ExecAt&quot;]
+    S --&gt; A
+    A --&gt; H{&quot;handler == Leader?&quot;}
+    H -- no --&gt; D[&quot;Executed::Deferred(seq), status Pending&quot;]
+    H -- yes --&gt; B[&quot;builtin(ctx, text)&quot;]
+    B -- ok --&gt; OK[&quot;Status Done (unless the window is gone); Done or Quit&quot;]
+    B -- &quot;Missing or Edit error&quot; --&gt; F[&quot;Status Failed(reason); Executed::Failed&quot;]
+</code></pre>
+<h3 id="types">Types</h3>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Defined in</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ExecCtx</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L124-L128">ids.rs:124-128</a></td>
+<td>Where B2 happened: <code>Window(w)</code>, <code>Column(c)</code>, or <code>Top</code></td>
+</tr>
+<tr>
+<td><code>Handler</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L146-L155">entry.rs:146-155</a></td>
+<td><code>Leader</code> (built-ins), <code>Server</code> (files, processes, terminals, the plumber), <code>Tool(name)</code></td>
+</tr>
+<tr>
+<td><code>ExecAt</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L157-L164">entry.rs:157-164</a></td>
+<td>The target buffer, its version and the selection at the time, &quot;so readers never guess at cross-shard order&quot;</td>
+</tr>
+<tr>
+<td><code>ExecOp</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L166-L172">entry.rs:166-172</a></td>
+<td><code>text</code>, <code>handler</code>, <code>at</code></td>
+</tr>
+<tr>
+<td><code>ExecStatusOp</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L174-L181">entry.rs:174-181</a></td>
+<td><code>Done</code>, <code>Failed(reason)</code>, <code>Unknown</code> (the performer died before reporting)</td>
+</tr>
+<tr>
+<td><code>ExecRecord</code>, <code>ExecStatus</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L15-L44">state.rs:15-44</a></td>
+<td>The applied record; status starts <code>Pending</code></td>
+</tr>
+<tr>
+<td><code>Executed</code></td>
+<td><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L200-L211">node.rs:200-211</a></td>
+<td><code>Done(seq)</code>, <code>Deferred(seq)</code>, <code>Failed(seq, reason)</code>, <code>Quit(seq)</code></td>
+</tr>
+</tbody>
+</table>
+<p>A window's execs are stored in its window shard (<code>WindowOp::Exec</code> and <code>WindowOp::Status</code>), keyed by the exec entry's sequence number. Execs from a column tag or the top row go in the layout shard (<code>LayoutOp::Exec { ctx, op }</code> and <code>LayoutOp::Status</code>) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1995-L2013">node.rs:1995-2013</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L660-L685">state.rs:660-685</a>). <code>ExecAt</code> is filled from <code>edit_target(ctx)</code>. In a window, that is <code>seltext</code> if it is a non-empty selection in the same window, and otherwise the window's body. Elsewhere it is <code>seltext</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1971-L1993">node.rs:1971-1993</a>).</p>
+<h3 id="resolution">Resolution</h3>
+<p><code>Node::resolve(text)</code> is a static list (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2015-L2027">node.rs:2015-2027</a>):</p>
+<ul>
+<li>Text starting with <code>|</code>, <code>&lt;</code> or <code>&gt;</code> goes to the server.</li>
+<li>These first words are <code>Leader</code>: <code>Cut Paste Snarf Undo Redo Look Edit Newcol Delcol Del Delete Zerox Stash Swap Font Sort Exit Tab Indent ID Send</code>. So is <code>New</code> with no argument.</li>
+<li>Everything else is <code>Server</code>, including <code>Get</code>, <code>Put</code>, <code>Kill</code>, <code>New name</code> and external commands.</li>
+</ul>
+<p><code>resolve_in</code> asks the replicated rule table first. If a plumbing rule restricted to some windows claims the verb (<code>claimed</code>, which calls <code>plumb::claims_verb</code>), the handler is <code>Server</code>, and the server walks the rules (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2029-L2049">node.rs:2029-2049</a>). <code>Send</code> in a terminal window is also forced to <code>Server</code> so the shell receives it. If a claiming tool declines, the server sends <code>Proposal::Builtin</code>, which calls <code>run_builtin</code>. That runs apex's own meaning without appending another status, because the walk owns the exec entry (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2107-L2116">node.rs:2107-2116</a>).</p>
+<p>Execs deferred to the server are picked up by <code>Server::poll_execs</code>. It scans every window's and the layout's execs for <code>Handler::Server</code> with status <code>Pending</code>, performs each one once, and answers with proposals that end in a <code>Proposal::Status</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L957-L993">lib.rs:957-993</a>). See <a href="server.html">The Server</a>.</p>
+<h3 id="the-built-ins">The built-ins</h3>
+<p><code>builtin</code> returns <code>Ok(true)</code> only for <code>Exit</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2118-L2286">node.rs:2118-2286</a>). If a built-in returns <code>CoreError::Missing</code>, its message becomes the <code>Failed</code> reason.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Cut</code> <code>Paste</code> <code>Snarf</code> <code>Undo</code> <code>Redo</code></td>
+<td>On <code>edit_target(ctx)</code>; nothing if there is none</td>
+</tr>
+<tr>
+<td><code>Look [text]</code></td>
+<td>Searches the body for the text, or for the body's selection; in pages and terminals, queued for the client</td>
+</tr>
+<tr>
+<td><code>Edit prog</code></td>
+<td><code>run_edit</code>; output and warnings go to +Errors</td>
+</tr>
+<tr>
+<td><code>New</code></td>
+<td>A new empty buffer in a window placed by <code>make_window</code>; makes a column if there are none; sets <code>seltext</code> to it</td>
+</tr>
+<tr>
+<td><code>Newcol</code></td>
+<td>A new column with one empty window</td>
+</tr>
+<tr>
+<td><code>Delcol</code></td>
+<td><code>colclean</code> (warn once per dirty window), then deletes every window and the column</td>
+</tr>
+<tr>
+<td><code>Del</code> / <code>Delete</code></td>
+<td><code>Delete</code> forces. <code>Del</code> closes at once if another body view of the buffer remains, or <code>winclean</code> allows it</td>
+</tr>
+<tr>
+<td><code>Stash</code>, <code>Swap</code></td>
+<td><code>stash_window</code>, <code>swap_window</code></td>
+</tr>
+<tr>
+<td><code>Zerox</code></td>
+<td><code>zerox</code>; on a directory, an error (&quot;is a directory; Zerox illegal&quot;)</td>
+</tr>
+<tr>
+<td><code>Tab n</code> / <code>Tab</code></td>
+<td><code>WindowOp::Tab</code>; with no number, reports the tab stop in +Errors</td>
+</tr>
+<tr>
+<td><code>Indent on/off</code></td>
+<td><code>WindowOp::Indent</code></td>
+</tr>
+<tr>
+<td><code>ID</code></td>
+<td>The window id, written to +Errors</td>
+</tr>
+<tr>
+<td><code>Send</code></td>
+<td>On a text window: the selection, or else the snarf buffer, appended to the body with a newline</td>
+</tr>
+<tr>
+<td><code>Font</code></td>
+<td>Toggles <code>WindowOp::Font { mono }</code></td>
+</tr>
+<tr>
+<td><code>Sort</code></td>
+<td><code>sort_column</code>, sorting windows by path</td>
+</tr>
+<tr>
+<td><code>Exit</code></td>
+<td>Sets <code>quit_requested</code>; returns <code>Executed::Quit</code></td>
+</tr>
+</tbody>
+</table>
+<p>After a successful built-in, <code>exec</code> appends <code>Done</code> unless the window no longer exists. <code>Del</code> removes the window's log, and in that case &quot;the metalog's ShardDel is the record&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2078-L2090">node.rs:2078-2090</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1969-L2286">crates/apex-core/src/node.rs:1969-2286</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L146-L181">crates/apex-core/src/entry.rs:146-181</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L15-L44">crates/apex-core/src/state.rs:15-44</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L957-L993">crates/apex-server/src/lib.rs:957-993</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L142-L244">crates/apex-core/tests/core.rs:142-244</a></p>
+<h2 id="dirty-checks-del-get-delcol-and-end">Dirty checks: Del, Get, Delcol and End</h2>
+<p><code>window_unsaved(w)</code> decides whether a window holds edits a file has not had. It is false for scratch windows, directories, windows owned by a tool and live windows. Otherwise it is the body buffer's <code>dirty()</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2288-L2299">node.rs:2288-2299</a>).</p>
+<p><code>winclean(w)</code> is acme's warn-once rule, with these cases (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1698-L1726">node.rs:1698-1726</a>):</p>
+<ul>
+<li>If the window is unsaved, it writes <code>NAME modified</code> (or <code>unnamed file modified</code>) to the window's +Errors and returns <code>false</code>.</li>
+<li>It records the buffer's version in <code>warned</code>. Asked again at the same version, it returns <code>true</code>.</li>
+<li>Any edit after the warning bumps the version, so the next request warns again.</li>
+<li>An unnamed buffer shorter than 100 runes is never warned about.</li>
+</ul>
+<p><code>winclean</code> is used by:</p>
+<ul>
+<li><code>Del</code>;</li>
+<li><code>Delcol</code> through <code>colclean</code>;</li>
+<li><code>End</code> through <code>session_clean</code>, which asks once per buffer rather than once per window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1728-L1746">node.rs:1728-1746</a>);</li>
+<li><strong><code>Get</code>'s dirty check</strong>. Before resolving <code>Get</code> (when no rule claims it), <code>exec</code> calls <code>winclean</code> on a non-empty, non-directory window. If that refuses, it returns <code>Executed::Done(0)</code> without appending an exec entry, so the server never reloads over unsaved edits until the user asks a second time (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2053-L2062">node.rs:2053-2062</a>).</li>
+</ul>
+<p><code>window_verbs(w)</code> computes the words drawn before the tag's text, as acme's <code>winsettag1</code> does (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1229-L1274">node.rs:1229-1274</a>):</p>
+<ul>
+<li>always <code>Del</code> and <code>Snarf</code>;</li>
+<li>for a file window with a file menu: <code>Undo</code> and <code>Redo</code> when their stacks are non-empty, <code>Put</code> when the buffer is dirty, named, not a directory and not live, and <code>Get</code> only when the buffer is stale;</li>
+<li><code>Swap</code> when the window covers another;</li>
+<li><code>Back Fwd Get</code> on URL pages;</li>
+<li><code>Send</code> on terminals.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1229-L1274">crates/apex-core/src/node.rs:1229-1274</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1698-L1756">crates/apex-core/src/node.rs:1698-1756</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2053-L2062">crates/apex-core/src/node.rs:2053-2062</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2288-L2312">crates/apex-core/src/node.rs:2288-2312</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L174-L216">crates/apex-core/tests/core.rs:174-216</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L490-L558">crates/apex-core/tests/core.rs:490-558</a></p>
+<h2 id="errors-windows">+Errors windows</h2>
+<p><code>error_dir(w)</code> is acme's <code>errorwin</code>: the directory a window's errors belong to (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1793-L1810">node.rs:1793-1810</a>):</p>
+<ul>
+<li>a file window's parent directory;</li>
+<li>the path itself for a directory, an errors window or a terminal;</li>
+<li><code>None</code> for unnamed windows and URL pages, which use the session's errors window.</li>
+</ul>
+<p><code>errors_path(dir)</code> turns the directory into the window's path, with a trailing slash, or the empty string for the session's own (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2315-L2322">node.rs:2315-2322</a>).</p>
+<p><code>errors(dir, text)</code> is acme's <code>errorwin1</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1825-L1850">node.rs:1825-1850</a>):</p>
+<ol>
+<li>It finds the <code>WinKind::Errors</code> window at that path, or makes one in the last column (creating a column if there is none). A new one is scratch and diagnostic, so <code>place</code> creates it already stashed.</li>
+<li>It appends the text at the end in its own undo group.</li>
+<li>It selects the new text.</li>
+<li>It pushes <code>(view, q0)</code> onto <code>shows</code> so the client can bring the start of the new text into view.</li>
+</ol>
+<p>The client does not show a diagnostic window it has not opened. It reports the news in a toast instead (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1917-L1926">app.rs:1917-1926</a>). Server-side command output reaches +Errors through <code>Proposal::Errors</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1793-L1850">crates/apex-core/src/node.rs:1793-1850</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2315-L2322">crates/apex-core/src/node.rs:2315-2322</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L456-L484">crates/apex-core/tests/core.rs:456-484</a></p>
+<h2 id="window-flags-and-notifications">Window flags and notifications</h2>
+<p>The node provides read-only views over replicated window flags (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1135-L1227">node.rs:1135-1227</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>window_owner(w)</code></td>
+<td>The owning tool's attachment name (<code>WindowOp::Own</code>), while that attachment is still attached</td>
+</tr>
+<tr>
+<td><code>window_live(w)</code></td>
+<td>A terminal whose program has not exited, or a text window kept live (<code>WindowOp::Live</code>) by an attachment still here</td>
+</tr>
+<tr>
+<td><code>window_working(w)</code>, <code>window_progress(w)</code></td>
+<td><code>WindowOp::Working</code>, held while the attachment that set it remains. <code>SERVER</code> always counts as present.</td>
+</tr>
+<tr>
+<td><code>window_diagnostic(w)</code></td>
+<td><code>WindowOp::Diagnostic</code></td>
+</tr>
+<tr>
+<td><code>window_kind</code>, <code>window_path</code>, <code>window_label</code>, <code>window_scratch</code></td>
+<td>What the window is, where, and whether a file is behind it</td>
+</tr>
+</tbody>
+</table>
+<p>Notifications are metalog state (<code>MetaOp::Notify</code> and <code>Unnotify</code>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L536-L543">entry.rs:536-543</a>). The metalog is pinned to the daemon, so a node never raises them itself. <code>notifications()</code> lists them oldest first, skipping any whose window is gone, and <code>window_notified(w)</code> asks about one window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1178-L1188">node.rs:1178-1188</a>). The one leader-side policy is <code>notice(w)</code>, applied through <code>Proposal::Notice</code>. It rearranges the layout just enough that a notified window is not hidden behind a maximised column or window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L832-L866">node.rs:832-866</a>). Behaviour is covered by <code>notifications_are_a_windows_and_go_with_it</code> and <code>a_notified_window_is_not_left_hidden</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L606-L658">tests/core.rs:606-658</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L798">tests/core.rs:798</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L832-L866">crates/apex-core/src/node.rs:832-866</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1135-L1227">crates/apex-core/src/node.rs:1135-1227</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L536-L543">crates/apex-core/src/entry.rs:536-543</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L606-L658">crates/apex-core/tests/core.rs:606-658</a></p>
+<h2 id="navigation-stacks">Navigation stacks</h2>
+<p>The session's back and forward stacks are in the layout shard (<code>layout.nav_back</code> and <code>layout.nav_forward</code>), so a session re-attached elsewhere keeps its history. Their elements are <code>Loc { session, name, pos }</code>, where <code>Pos</code> is <code>Keep</code>, <code>Chars(q0, q1)</code>, <code>Line(n)</code> (1-based) or <code>LineCol(line, col)</code> (0-based, UTF-16 columns as language servers count them) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L418-L444">entry.rs:418-444</a>).</p>
+<p>Two entries change the stacks (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L705-L723">state.rs:705-723</a>):</p>
+<ul>
+<li><code>LayoutOp::Visit { from, to }</code> pushes <code>from</code> onto the back stack and clears the forward stack. It skips duplicates and caps the stack at 50.</li>
+<li><code>LayoutOp::NavPop { back, at }</code> pops one stack and pushes <code>at</code> onto the other.</li>
+</ul>
+<p>The proposals <code>Goto</code> and <code>Nav</code> write them (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L304-L337">proposal.rs:304-337</a>). They use these Node helpers:</p>
+<table>
+<thead>
+<tr>
+<th>Helper</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>current_loc()</code></td>
+<td>Where the user is: <code>seltext</code>'s window and its dot, with the session id</td>
+</tr>
+<tr>
+<td><code>elsewhere(loc)</code></td>
+<td>Whether the place names another session (by id, id prefix or label)</td>
+</tr>
+<tr>
+<td><code>window_named(name)</code></td>
+<td>A window by numeric id or by path, preferring the file's own window over its errors window or page</td>
+</tr>
+<tr>
+<td><code>loc_range(w, pos)</code></td>
+<td>A <code>Pos</code> resolved to a rune range; a <code>Line</code> includes its newline, as acme's address does</td>
+</tr>
+<tr>
+<td><code>land(loc)</code></td>
+<td>Select, <code>reveal</code>, set <code>seltext</code> and <code>warp = Warp::Sel</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>web_navigate</code> deliberately does not touch these stacks. A page's link history belongs to its tool (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L710-L724">node.rs:710-724</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1852-L1960">crates/apex-core/src/node.rs:1852-1960</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L705-L723">crates/apex-core/src/state.rs:705-723</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L281-L286">crates/apex-core/src/entry.rs:281-286</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L304-L337">crates/apex-server/src/proposal.rs:304-337</a></p>
+<h2 id="effect-queues-for-the-client">Effect queues for the client</h2>
+<p>Some consequences of a leader operation are not state but instructions to whoever is drawing. The node collects them in fields that the owner drains:</p>
+<table>
+<thead>
+<tr>
+<th>Field / taker</th>
+<th>Filled by</th>
+<th>Drained by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>warp: Option&lt;Warp&gt;</code></td>
+<td><code>place</code>, <code>delete_window</code>, <code>grow_window</code>, drags, <code>land</code>, Look</td>
+<td>The client moves the pointer as acme would (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2366">app.rs:2366</a>); variants <code>NewWindow</code>, <code>WinButton</code>, <code>Closed</code>, <code>ColButton</code>, <code>Sel</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L157-L171">tiling.rs:157-171</a>)</td>
+</tr>
+<tr>
+<td><code>shows</code> / <code>take_shows</code></td>
+<td><code>errors</code>, <code>Proposal::Show</code></td>
+<td>The client scrolls the view to the position</td>
+</tr>
+<tr>
+<td><code>gotos</code> / <code>take_gotos</code></td>
+<td><code>Goto</code> and <code>Nav</code> whose window is not open</td>
+<td>The client opens the file and lands; with no UI, the daemon opens and lands itself (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1530-L1542">daemon.rs:1530-1542</a>)</td>
+</tr>
+<tr>
+<td><code>client_finds</code> / <code>take_client_finds</code></td>
+<td>Look in a page or terminal</td>
+<td>The client finds in the web view or the terminal's history; capped at 8</td>
+</tr>
+<tr>
+<td><code>switches</code> / <code>take_switches</code></td>
+<td>Goto, Nav or <code>Switch</code> naming another session</td>
+<td>The UI switches sessions</td>
+</tr>
+<tr>
+<td><code>quit_requested</code></td>
+<td><code>Exit</code></td>
+<td>The client closes its window after flushing (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2768">app.rs:2768</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>The client's <code>sync</code> drains these after catching up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1917-L1949">app.rs:1917-1949</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant T as tool or CLI
+    participant D as apexd
+    participant L as leader Node (UI)
+    participant C as client drawing
+    T-&gt;&gt;D: Propose Goto(loc)
+    D-&gt;&gt;L: Propose Goto(loc)
+    L-&gt;&gt;L: append Visit, land or push gotos
+    L-&gt;&gt;D: Append entries, Applied
+    C-&gt;&gt;L: take_gotos, take_shows, warp.take()
+    C-&gt;&gt;C: open file, scroll, move pointer
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L228-L260">crates/apex-core/src/node.rs:228-260</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L157-L171">crates/apex-core/src/tiling.rs:157-171</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1917-L1949">crates/apex-client/src/app.rs:1917-1949</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1522-L1549">crates/apex-server/src/daemon.rs:1522-1549</a></p>
+<h2 id="errors">Errors</h2>
+<p>Node operations return <code>Result&lt;T, CoreError&gt;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L87-L101">node.rs:87-101</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Raised when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Log(LogError)</code></td>
+<td>The log store rejects an append (fencing, wrong shard, missing shard)</td>
+</tr>
+<tr>
+<td><code>Apply(ApplyError)</code></td>
+<td><code>State::apply</code> rejects the entry</td>
+</tr>
+<tr>
+<td><code>NotLeader(shard)</code></td>
+<td><code>append</code> is called on a shard this node holds no lease on</td>
+</tr>
+<tr>
+<td><code>Missing(String)</code></td>
+<td>A user-level failure: &quot;column not empty&quot;, &quot;Del needs a window&quot;, &quot;x: not a built-in&quot;, and similar</td>
+</tr>
+<tr>
+<td><code>Edit(apex_edit::Error)</code></td>
+<td>The Edit program fails</td>
+</tr>
+</tbody>
+</table>
+<p><code>exec</code> turns <code>Missing</code> and <code>Edit</code> into a <code>Failed</code> status and <code>Executed::Failed</code>. All other errors propagate. <code>fencing_rejects_a_stale_leader</code> shows a node whose lease was taken failing to append (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/tests/core.rs#L246">tests/core.rs:246</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L87-L101">crates/apex-core/src/node.rs:87-101</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2078-L2096">crates/apex-core/src/node.rs:2078-2096</a></p>
+<h2 id="the-reviews-view">The review's view</h2>
+<p>ARCHITECTURE.md §2, &quot;UI in the core&quot;, criticises <code>node.rs</code>:</p>
+<ul>
+<li>The effect queues should become a returned <code>Effects</code> value or an injected sink.</li>
+<li><code>seltext</code> and <code>activecol</code> are per-node focus, yet they decide the targets of replicated commands, so the same command can resolve differently on the server and on the UI.</li>
+<li>The layout API is in mouse vocabulary (button numbers, 5-pixel preview thresholds).</li>
+<li>Tag chrome (<code>window_verbs</code>, <code>look_arg</code>), UI built-ins (<code>Font</code>, <code>Exit</code>, <code>ID</code>, Look in pages) and <code>Get</code>'s dirty check sit in the core.</li>
+<li><code>Node::resolve</code> keeps its own built-in list, separate from <code>plumb.rs::BUILTINS</code>.</li>
+<li>Placement policy, such as diagnostic windows made stashed and <code>notice</code>, belongs to the caller.</li>
+</ul>
+<p>Some details of the review predate the current code. It names <code>page_finds</code> and <code>find_in_page</code>, which are now <code>client_finds</code> and <code>find_in_client</code>. It mentions a <code>Web</code> built-in in the core, but <code>Web</code> is no longer in <code>Node::resolve</code>. It says <code>web_navigate</code> pushes onto the back stack, but the code now says it does not. Its line numbers are also stale.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L335-L415">ARCHITECTURE.md:335-415</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2015-L2027">crates/apex-core/src/node.rs:2015-2027</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L710-L724">crates/apex-core/src/node.rs:710-724</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="buffers-and-text.html">Buffers, Views and Undo</a></span><span class="next">Next: <a href="tiling-and-layout.html">Tiling and Layout</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top current"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+<ul class="sections">
+<li class="l2"><a href="#who-runs-a-node">Who runs a Node</a></li>
+<li class="l2"><a href="#the-node-struct">The Node struct</a></li>
+<li class="l2"><a href="#replication-following-and-leading">Replication: following and leading</a></li>
+<li class="l2"><a href="#making-buffers-windows-and-columns">Making buffers, windows and columns</a></li>
+<li class="l2"><a href="#editing-as-leader">Editing as leader</a></li>
+<li class="l2"><a href="#look">Look</a></li>
+<li class="l2"><a href="#lowering-edit-programs">Lowering Edit programs</a></li>
+<li class="l2"><a href="#commands-exec-entries-handlers-and-statuses">Commands: exec entries, handlers and statuses</a></li>
+<li class="l3"><a href="#types">Types</a></li>
+<li class="l3"><a href="#resolution">Resolution</a></li>
+<li class="l3"><a href="#the-built-ins">The built-ins</a></li>
+<li class="l2"><a href="#dirty-checks-del-get-delcol-and-end">Dirty checks: Del, Get, Delcol and End</a></li>
+<li class="l2"><a href="#errors-windows">&#43;Errors windows</a></li>
+<li class="l2"><a href="#window-flags-and-notifications">Window flags and notifications</a></li>
+<li class="l2"><a href="#navigation-stacks">Navigation stacks</a></li>
+<li class="l2"><a href="#effect-queues-for-the-client">Effect queues for the client</a></li>
+<li class="l2"><a href="#errors">Errors</a></li>
+<li class="l2"><a href="#the-reviews-view">The review&#39;s view</a></li>
+</ul>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

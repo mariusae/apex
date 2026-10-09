@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminals · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Terminals</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md">crates/apex-cli/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs">crates/apex-client/src/contrast.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs">crates/apex-client/src/term_element.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs">crates/apex-client/src/theme.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs">crates/apex-server/src/pty.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs">crates/apex-server/src/term.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs">crates/apex-server/src/term_loop.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs">crates/ghostty-vt-sys/build.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/lib.rs">crates/ghostty-vt-sys/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/shim.c">crates/ghostty-vt-sys/src/shim.c</a></li>
+</ul>
+</details>
+<p>A terminal window in apex is a window whose body is <code>Body::Term</code>. Its contents are a grid of cells kept in a <strong>term shard</strong>. The shell runs on the host that owns the session, on a pseudoterminal that the server opens itself. Ghostty's VT library (libghostty-vt) parses the program's output into a screen. A loop then turns that screen into <code>TermOp</code> entries, which the daemon appends to the term shard as its leader. Every client replays those entries like any other shard (see <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>) and paints the grid straight from core state. Keystrokes go the other way, as messages to the daemon. The daemon encodes them for the program, because the encoding depends on terminal modes that only the server knows.</p>
+<p>The pipeline has four layers. <code>pty.rs</code> owns the pty and the child process. <code>ghostty-vt-sys</code> is the FFI crate and C shim over libghostty-vt. <code>term_loop.rs</code> and <code>term.rs</code> hold the pty thread and the <code>TermHost</code>. On the client, <code>term_element.rs</code> draws the grid and <code>contrast.rs</code> corrects colours. This page follows the bytes through each layer. The <code>win</code> tool, which runs a shell in an editable <em>text</em> window instead of a grid, is covered in <a href="tool-win-and-lsp.html">win and Language Servers</a>. The surrounding <code>Server</code> and daemon are covered in <a href="server.html">The Server</a> and <a href="daemon.html">The Daemon</a>.</p>
+<h2 id="architecture-at-a-glance">Architecture at a glance</h2>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph Host[&quot;apexd host&quot;]
+        Shell[&quot;shell / program&quot;] &lt;--&gt;|&quot;pty master&quot;| Loop[&quot;EventLoop (pty thread)&quot;]
+        Loop --&gt;|&quot;scan: labels cut out&quot;| VT[&quot;Terminal (libghostty-vt via shim.c)&quot;]
+        VT --&gt;|&quot;events: WritePty, Title, Clipboard, Bell, Progress&quot;| Loop
+        Loop --&gt;|&quot;Report to TermEvent&quot;| Srv[&quot;Server::pump&quot;]
+        Srv --&gt;|&quot;changed_ops&quot;| Shard[&quot;term shard (TermOp entries)&quot;]
+        Srv --&gt;|&quot;SetPath, SetLabel, Snarf, Working&quot;| Props[&quot;Proposals&quot;]
+    end
+    Shard --&gt;|&quot;Entries over the attach protocol&quot;| Client[&quot;apex-ui Node state.terms&quot;]
+    Client --&gt; Paint[&quot;TermElement paints the grid&quot;]
+    Client --&gt;|&quot;TermKey, TermResize, TermScroll, ...&quot;| Srv
+</code></pre>
+<p>Each terminal has three threads of control. The <strong>pty thread</strong> (<code>EventLoop::run</code>) reads the master fd and feeds the parser. The <code>Server</code>'s forwarding thread moves <code>(TermId, TermEvent)</code> pairs into the single server event channel (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L161-L177">crates/apex-server/src/lib.rs:161-177</a>). The <strong>daemon's state thread</strong> calls <code>Server::pump</code>, which reads the screen under the <code>Terminal</code> mutex and appends ops. The <code>Terminal</code> is shared between the pty thread and the server as <code>Arc&lt;Mutex&lt;Terminal&gt;&gt;</code>. The pty thread holds the lock while it writes bytes into the parser, and the server holds it while it snapshots.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L1-L15">crates/apex-server/src/term.rs:1-15</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs#L1-L9">crates/apex-server/src/term_loop.rs:1-9</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L161-L177">crates/apex-server/src/lib.rs:161-177</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L285-L303">crates/apex-server/src/daemon.rs:285-303</a></p>
+<h2 id="the-pty-and-the-child-ptyrs">The pty and the child (<code>pty.rs</code>)</h2>
+<p>libghostty-vt opens no pty and starts no threads, so apex does both itself, following alacritty's <code>tty</code> module. <code>Pty::spawn</code> works in this order:</p>
+<ol>
+<li>It calls <code>notify_ready()</code> first. On macOS, a fork that happens while another thread is setting up libnotify can leave the child half-initialised, and the child is then killed by SIGKILL before exec. Registering and cancelling a notification once, under a <code>Once</code>, makes sure setup is finished before any fork. On other platforms the function is a no-op (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs#L135-L162">crates/apex-server/src/pty.rs:135-162</a>).</li>
+<li>It opens a pty with <code>rustix_openpty</code>, makes the master non-blocking (the loop polls and drains it), and sets the window size with <code>TIOCSWINSZ</code>. The size includes pixels at 8×16 per cell, which matches <code>CELL_W</code>/<code>CELL_H</code> in <code>term.rs</code>.</li>
+<li>It spawns the program with the slave as stdin, stdout and stderr, and removes <code>XDG_ACTIVATION_TOKEN</code> and <code>DESKTOP_STARTUP_ID</code> from the environment. In <code>pre_exec</code> the child calls <code>setsid()</code>, takes the slave as its controlling terminal with <code>TIOCSCTTY</code>, and resets SIGCHLD, SIGHUP, SIGINT, SIGQUIT, SIGTERM and SIGPIPE to their defaults so that job control and ^C reach the shell.</li>
+<li>It drops the parent's copy of the slave, so the slave is closed once the child closes it.</li>
+</ol>
+<p><code>Pty::exit</code> polls <code>try_wait</code> and caches the status. A death by signal is reported as <code>128 + signal</code>, the way a shell reports it. <code>hangup</code> kills and reaps the child, which is what closing the window does.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pty::spawn(opts, cols, rows)</code></td>
+<td>Open the pty and start the program in its own session</td>
+</tr>
+<tr>
+<td><code>read</code> / <code>write</code></td>
+<td>Raw <code>libc::read</code>/<code>write</code> on the master; <code>Ok(0)</code> at EOF</td>
+</tr>
+<tr>
+<td><code>resize</code></td>
+<td><code>TIOCSWINSZ</code></td>
+</tr>
+<tr>
+<td><code>exit</code> / <code>hangup</code></td>
+<td>Exit status once ended / kill and wait</td>
+</tr>
+<tr>
+<td><code>setup_env</code></td>
+<td>Sets <code>TERM=xterm-256color</code>, <code>COLORTERM=truecolor</code>, <code>TERM_PROGRAM=apex</code>, <code>TERM_FEATURES=T3UBCwHP</code> in the process environment</td>
+</tr>
+<tr>
+<td><code>shell_path(shell)</code></td>
+<td>The <code>Newterm.shell</code> setting, else <code>$SHELL</code>, else <code>/bin/sh</code></td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs#L17-L132">crates/apex-server/src/pty.rs:17-132</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/pty.rs#L177-L211">crates/apex-server/src/pty.rs:177-211</a></p>
+<h2 id="libghostty-vt-through-ghostty-vt-sys">libghostty-vt through <code>ghostty-vt-sys</code></h2>
+<h3 id="why-a-c-shim">Why a C shim</h3>
+<p>The VT library's API uses C enums, sized structs and tagged unions, and it is not yet stable. <code>shim.c</code> compiles against <code>&lt;ghostty/vt.h&gt;</code>, so those types are read from the real headers at compile time instead of being copied into Rust by hand. The shim walks the render state's rows and cells and returns exactly what the term shard needs: an <code>ApexCell</code> with a character, foreground, background, flags and link index. The Rust side (<code>lib.rs</code>) declares about fifteen <code>apex_vt_*</code> functions and wraps them in a safe <code>Terminal</code>.</p>
+<pre><code class="language-rust">#[repr(C)]
+pub struct Cell { pub ch: u32, pub fg: u32, pub bg: u32, pub flags: u8, pub link: u16 }
+
+pub struct Terminal { vt: *mut ApexVt, cells: Vec&lt;Cell&gt;, cols: u16, rows: u16 }
+unsafe impl Send for Terminal {}
+</code></pre>
+<p><code>Terminal</code> is <code>Send</code> because the library keeps no global state and starts no threads. Every call takes the handle.</p>
+<h3 id="what-the-shim-exposes">What the shim exposes</h3>
+<table>
+<thead>
+<tr>
+<th>C function</th>
+<th>Rust wrapper</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex_vt_new</code> / <code>apex_vt_free</code></td>
+<td><code>Terminal::new</code>, <code>Drop</code></td>
+<td>Create the terminal, render state and row/cell iterators; set the scrollback limit and the callbacks</td>
+</tr>
+<tr>
+<td><code>apex_vt_write</code></td>
+<td><code>write</code></td>
+<td>Feed bytes to the parser; afterwards, if the title callback fired, read the title and queue a title event</td>
+</tr>
+<tr>
+<td><code>apex_vt_resize</code>, <code>apex_vt_scroll</code>, <code>apex_vt_scroll_bottom</code></td>
+<td><code>resize</code>, <code>scroll</code>, <code>scroll_to_bottom</code></td>
+<td>Resize the grid and move the viewport through the history</td>
+</tr>
+<tr>
+<td><code>apex_vt_snapshot</code></td>
+<td><code>screen()</code></td>
+<td>Fill <code>cols*rows</code> cells, the cursor, the viewport's <code>top</code> line and the link table</td>
+</tr>
+<tr>
+<td><code>apex_vt_link</code></td>
+<td>(inside <code>screen()</code>)</td>
+<td>URI of a 1-based link index, valid until the next snapshot</td>
+</tr>
+<tr>
+<td><code>apex_vt_size</code></td>
+<td><code>size()</code></td>
+<td><code>(scrollback rows, total rows, at_bottom)</code></td>
+</tr>
+<tr>
+<td><code>apex_vt_text</code></td>
+<td><code>text(from, to)</code></td>
+<td>Plain text between two screen points, wrapped lines joined; returns <code>-len</code> if the buffer is too small</td>
+</tr>
+<tr>
+<td><code>apex_vt_mode</code></td>
+<td><code>mode(Mode)</code></td>
+<td>DECCKM, bracketed paste, focus events, alternate screen, any mouse mode, SGR mouse, alternate scroll</td>
+</tr>
+<tr>
+<td><code>apex_vt_set_colors</code></td>
+<td><code>set_colors</code></td>
+<td>Default fg/bg and a 256-entry palette (the 16 given, plus the xterm cube and grey ramp)</td>
+</tr>
+<tr>
+<td><code>apex_vt_next_event</code></td>
+<td><code>events()</code></td>
+<td>Pop queued events</td>
+</tr>
+</tbody>
+</table>
+<p><code>Terminal::screen</code> calls the snapshot up to twice. If the program resized the grid itself (DECCOLM), the shim returns <code>-1</code>, and the wrapper grows its buffer and asks again (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/lib.rs#L186-L213">crates/ghostty-vt-sys/src/lib.rs:186-213</a>).</p>
+<h3 id="colour-packing">Colour packing</h3>
+<p>The shim packs colours the way <code>apex_core::Cell</code> documents them:</p>
+<table>
+<thead>
+<tr>
+<th>Top byte</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0x00</code> (whole value 0)</td>
+<td>Theme default: ink for <code>fg</code>, no background for <code>bg</code></td>
+</tr>
+<tr>
+<td><code>0xff</code></td>
+<td>An exact RGB colour the program named, including palette indices 16–255, which are resolved through the palette</td>
+</tr>
+<tr>
+<td><code>0xfe</code></td>
+<td>One of the 16 ANSI colours by index, left for the client's theme to colour</td>
+</tr>
+<tr>
+<td><code>0xfd</code></td>
+<td>The theme's own ink (<code>…00</code>) or paper (<code>…01</code>); appears where a cell is inverse and a default colour swaps sides</td>
+</tr>
+</tbody>
+</table>
+<p><code>pack_color</code> keeps indices below 16 symbolic and resolves everything else. Three details in <code>apex_vt_snapshot</code> matter for full-screen programs:</p>
+<ul>
+<li><strong>Background-only cells.</strong> An erase while a background is set leaves cells whose content tag is <code>BG_COLOR_PALETTE</code> or <code>BG_COLOR_RGB</code>. Their colour is stored in the cell, not in its style, so the shim reads it from the cell. Otherwise the colour would show only under text.</li>
+<li><strong>Inverse video.</strong> Inverse swaps fg and bg, and a default side becomes <code>APEX_DEFAULT_FG</code>/<code>APEX_DEFAULT_BG</code>.</li>
+<li><strong>Faint.</strong> Faint text gets a fixed grey ink (<code>0xff777777</code>).</li>
+</ul>
+<p>Wide-character spacer cells are skipped and left blank, and invisible text becomes a space.</p>
+<h3 id="hyperlinks-and-events">Hyperlinks and events</h3>
+<p>OSC 8 links are interned per snapshot: <code>link_of</code> looks up the cell's URI in <code>vt-&gt;links</code> and returns a 1-based index. The table is cleared at the start of each snapshot.</p>
+<p>The library's callbacks push to a linked list of <code>ApexEvent</code>s:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WritePty</code></td>
+<td>Answers to queries such as DSR</td>
+</tr>
+<tr>
+<td><code>Bell</code></td>
+<td>BEL</td>
+</tr>
+<tr>
+<td><code>Clipboard</code></td>
+<td>OSC 52; the first content, decoded</td>
+</tr>
+<tr>
+<td><code>Progress</code></td>
+<td>OSC 9;4; the state byte and a percentage, or <code>0xff</code> for none</td>
+</tr>
+<tr>
+<td><code>Title</code></td>
+<td>Read after the write, because the title is only available once the callback has returned</td>
+</tr>
+</tbody>
+</table>
+<p><code>apex_vt_next_event</code> hands out each event's bytes borrowed until the next call. It keeps the last event in a thread-local and frees it on the following call. <code>Terminal::events</code> copies the bytes out immediately.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/lib.rs#L1-L273">crates/ghostty-vt-sys/src/lib.rs:1-273</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/shim.c#L1-L142">crates/ghostty-vt-sys/src/shim.c:1-142</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/shim.c#L146-L196">crates/ghostty-vt-sys/src/shim.c:146-196</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/shim.c#L215-L415">crates/ghostty-vt-sys/src/shim.c:215-415</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/shim.c#L427-L502">crates/ghostty-vt-sys/src/shim.c:427-502</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L294-L309">crates/apex-core/src/entry.rs:294-309</a></p>
+<h3 id="building-the-library">Building the library</h3>
+<p>libghostty-vt is Zig, and its C API exists only on Ghostty's main branch. <code>build.rs</code> therefore pins a commit (<code>GHOSTTY_COMMIT</code>) and builds that commit with Zig 0.16:</p>
+<pre><code>zig build -Demit-lib-vt=true -Demit-xcframework=false -Doptimize=ReleaseFast --prefix &lt;cache&gt;
+</code></pre>
+<p>When cross-compiling, it adds <code>-Dtarget=&lt;zig triple&gt;</code>; <code>zig_target</code> maps cargo triples to Zig's. The source checkout and the built libraries live under <code>$XDG_CACHE_HOME/apex</code> or <code>~/.cache/apex</code>, keyed by commit and target, so the build happens once per commit and target. The shim is compiled with <code>cc</code>, and only the static archive is copied into <code>OUT_DIR</code>, so the linker cannot pick up a dylib instead.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APEX_GHOSTTY_SRC</code></td>
+<td>Build from this checkout instead of cloning</td>
+</tr>
+<tr>
+<td><code>APEX_GHOSTTY_LIB</code></td>
+<td>Use a prebuilt directory holding <code>lib/libghostty-vt.a</code> and <code>include</code>; nothing is fetched or built</td>
+</tr>
+<tr>
+<td><code>ZIG</code></td>
+<td>The Zig to use; otherwise <code>zig</code> on PATH, otherwise the newest <code>~/.local/zig-*-0.16*/zig</code></td>
+</tr>
+</tbody>
+</table>
+<p>More on the build is in <a href="build-and-test.html">Building, Testing and Packaging</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs#L1-L95">crates/ghostty-vt-sys/build.rs:1-95</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/build.rs#L137-L164">crates/ghostty-vt-sys/build.rs:137-164</a></p>
+<h2 id="the-pty-event-loop-term-looprs">The pty event loop (<code>term_loop.rs</code>)</h2>
+<p><code>EventLoop</code> owns the <code>Pty</code>, a clone of the <code>Arc&lt;Mutex&lt;Terminal&gt;&gt;</code>, an <code>mpsc</code> receiver of <code>Msg</code> (<code>Input</code>, <code>Resize</code>, <code>Shutdown</code>), a self-pipe <code>Waker</code>, and a <code>report</code> callback. <code>spawn</code> runs it on a thread named <code>pty</code>. <code>Notifier</code> is the sending half. Each send also writes a byte to the waker pipe, so a message interrupts the <code>poll</code> even when the pty has been silent for hours.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant P as Program
+    participant L as EventLoop (pty thread)
+    participant T as Terminal (mutex)
+    participant S as Server::pump
+    L-&gt;&gt;L: messages() drains Input, Resize, Shutdown
+    L-&gt;&gt;P: flush pending input (as much as the pty takes)
+    L-&gt;&gt;L: poll(pty POLLIN or POLLOUT, waker, 1s)
+    P--&gt;&gt;L: bytes
+    L-&gt;&gt;L: scan() cuts out OSC ;label, OSC 7, OSC 133
+    L-&gt;&gt;T: write(bytes), events()
+    T--&gt;&gt;L: WritePty answers, Title, Clipboard, Bell, Progress
+    L-&gt;&gt;P: answers written back
+    L--&gt;&gt;S: Report as TermEvent (Label, Mark, Title, ..., Wakeup)
+    S-&gt;&gt;T: changed_ops() snapshot and diff
+    S-&gt;&gt;S: append TermOps to the term shard
+</code></pre>
+<p>Each turn of <code>run</code> does the following. It drains messages: <code>Resize</code> resizes the pty and the <code>Terminal</code> together, so the program never reads a size the screen does not have, and then reports a <code>Wakeup</code>. It flushes pending input. It polls the pty, with <code>POLLOUT</code> only when input is pending, together with the waker, using a one-second timeout. When the pty is readable it calls <code>read</code>. Once the child has exited, the loop does one more read to drain what the program wrote last, reports <code>Exit(status)</code>, and returns. A <code>Shutdown</code> message, sent by <code>TermHost</code>'s <code>Drop</code>, or a disconnected channel makes the loop hang up the child.</p>
+<h3 id="the-label-scan">The label scan</h3>
+<p>plan9port's <code>win</code> watches its shell's output for <code>ESC ] ; label BEL</code>, which is what its <code>label</code> and <code>awd</code> commands emit. apex does the same, and also takes OSC 7 (the working directory) and OSC 133 (semantic prompt marks). These sequences are for apex, not for the parser, so <code>scan</code> removes them from the stream before Ghostty sees it:</p>
+<ul>
+<li><code>ESC ] ; text</code> is a <code>Label::Name</code>.</li>
+<li><code>ESC ] 7; url</code> is a <code>Label::Cwd</code>.</li>
+<li><code>ESC ] 133; K[;status]</code> is a <code>Label::Mark(K, status)</code>.</li>
+<li>Every other OSC passes through untouched.</li>
+</ul>
+<p>An OSC ends at BEL or <code>ESC \</code>, and an ESC followed by anything else aborts it. An unterminated OSC of up to <code>MAX_LABEL</code> (4096) bytes is held in <code>carry</code>, so a label split across reads is still one label. A lone trailing ESC is also carried. Each label records the offset where it fell in the output.</p>
+<p><code>read</code> uses those offsets for OSC 133. It writes bytes into the terminal only up to each mark, then records the cursor's history line at that moment (<code>scrollback + cursor.y</code>) in <code>Report::Mark</code>. That way a mark refers to the line where the prompt actually is. Parser events are collected; <code>WritePty</code> answers are written back to the pty, and the rest become reports. A <code>Wakeup</code> follows any read that returned data.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs#L20-L115">crates/apex-server/src/term_loop.rs:20-115</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs#L117-L375">crates/apex-server/src/term_loop.rs:117-375</a></p>
+<h2 id="termhost-one-hosted-terminal-termrs"><code>TermHost</code>: one hosted terminal (<code>term.rs</code>)</h2>
+<p><code>TermHost::spawn</code> sets up one terminal:</p>
+<ul>
+<li>It starts the shell as a <strong>login shell</strong>: <code>-l</code>, or <code>-l -c CMD</code> for <code>Newterm cmd</code>.</li>
+<li>The environment holds the <code>TERM*</code> variables listed above plus <code>extra</code>, which is the session environment and <code>winid</code>.</li>
+<li>It creates a <code>Terminal</code> with <code>scrollback</code> lines; the <code>Newterm.scrollback</code> setting defaults to 10000.</li>
+<li>Its <code>report</code> closure maps each <code>Report</code> to a <code>TermEvent</code> and sends it on the server's channel.</li>
+</ul>
+<p>A <code>Progress</code> report becomes <code>Working(true, …)</code> only for the states <code>At</code> and <code>Unknown</code>. Failed, paused or removed all mean &quot;no longer working&quot;.</p>
+<p>The host also records what it needs for <code>ps</code>/<code>kill</code>: the pid, the name (the command's or the shell's), the command line and the start time. It keeps <code>dir</code> (where B2/B3 resolve names; updated from OSC 7 only when the path is a directory), <code>cwd</code> and <code>title</code> as reported, <code>initial_dir</code> and <code>label</code>, the working/progress state, and the prompt marks.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>write</code></td>
+<td>Queue bytes via the <code>Notifier</code></td>
+</tr>
+<tr>
+<td><code>resize</code></td>
+<td>Ignored if unchanged; otherwise <code>Msg::Resize</code></td>
+</tr>
+<tr>
+<td><code>key(&amp;TermKey)</code></td>
+<td><code>encode_key</code> with the current DECCKM mode</td>
+</tr>
+<tr>
+<td><code>paste</code></td>
+<td>Bracketed (<code>ESC[200~ … ESC[201~</code>) if the program asked; otherwise newlines become CR</td>
+</tr>
+<tr>
+<td><code>type_in</code></td>
+<td>Newlines become CR and nothing is bracketed, so the text runs (<code>Send</code>, B2)</td>
+</tr>
+<tr>
+<td><code>focus(on)</code></td>
+<td><code>CSI I</code> / <code>CSI O</code> if DECSET 1004 is on</td>
+</tr>
+<tr>
+<td><code>wheel(delta, at)</code></td>
+<td>With mouse reporting on: SGR or X10 wheel buttons 64/65, one per line. On the alternate screen with alternate scroll: up/down arrows. Otherwise <code>false</code>, meaning the display scrolls instead</td>
+</tr>
+<tr>
+<td><code>page(delta)</code></td>
+<td>On the alternate screen only, a scrollbar click sends one PageUp/PageDown</td>
+</tr>
+<tr>
+<td><code>text(p0, p1)</code></td>
+<td>Text between <code>(col, history line)</code> positions with the end exclusive, clamped to the screen</td>
+</tr>
+<tr>
+<td><code>find(needle, from, reverse)</code></td>
+<td>Look over history and screen, wrapping, using <code>apex_core::text::find_match</code> row by row; scrolls the viewport so the match sits a third of the way down if it is out of view</td>
+</tr>
+<tr>
+<td><code>clear_history</code></td>
+<td>Writes <code>ESC[3J</code> into the parser</td>
+</tr>
+<tr>
+<td><code>set_colors</code></td>
+<td>Passes a client's <code>TermColors</code> to the parser if they changed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-encoding">Key encoding</h3>
+<p><code>encode_key</code> produces xterm sequences with <strong>Option as Meta</strong>: ESC followed by the unmodified key, so opt-b sends <code>ESC b</code> and not the <code>∫</code> the macOS option layer composes. Opt-left/right send <code>ESC b</code>/<code>ESC f</code>, Terminal.app's defaults and what shells bind, instead of xterm's modified arrows. Other modified cursor and editing keys use xterm's <code>CSI 1;m X</code> or <code>CSI n;m ~</code> forms, where <code>m = 1 + shift + 2·alt + 4·ctrl</code>. Unmodified arrows honour application cursor mode (<code>ESC O A</code>). Control letters map to <code>c &amp; 0x1f</code>, and the usual punctuation aliases cover <code>^[ ^\ ^] ^^ ^_ ^? ^@</code>. Shift-Tab is <code>ESC[Z</code> and F1–F4 are SS3. The unit tests in <code>key_tests</code> pin these down.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L17-L53">crates/apex-server/src/term.rs:17-53</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L180-L521">crates/apex-server/src/term.rs:180-521</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L523-L669">crates/apex-server/src/term.rs:523-669</a></p>
+<h2 id="from-screen-to-the-term-shard">From screen to the term shard</h2>
+<h3 id="the-ops-and-the-state">The ops and the state</h3>
+<p>A terminal's shard is <strong>pinned to the daemon</strong>, which is the only replica that can see the pty. <code>Server::new_term</code> creates <code>Shard::Term(id)</code>, appends <code>TermOp::Create { cols: 80, rows: 24 }</code>, and proposes a <code>TermWindow</code> for a leader to open (<code>Node::open_term_window</code>). The shell itself is not started yet. It is recorded as a <code>PendingTerm</code>, and <code>spawn_pending</code> starts it once the window appears in the state, with <code>winid</code> set in its environment as acme's win does. If the client sends a size before then, the size is stored in the pending entry and the shell starts at that size. If spawning fails, the server appends <code>Exit { status: 1 }</code> and writes the error to <code>+Errors</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>TermOp</code></th>
+<th>Applied to <code>state::Term</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Create { cols, rows }</code></td>
+<td>New blank grid</td>
+</tr>
+<tr>
+<td><code>Rows { first, rows }</code></td>
+<td>Replace viewport rows starting at <code>first</code></td>
+</tr>
+<tr>
+<td><code>Links { links }</code></td>
+<td>The OSC 8 URIs that cells index</td>
+</tr>
+<tr>
+<td><code>Cursor { col, row, visible }</code></td>
+<td>Cursor position and visibility</td>
+</tr>
+<tr>
+<td><code>Resize { cols, rows }</code></td>
+<td>Grid resized, padded with blanks</td>
+</tr>
+<tr>
+<td><code>View { top, total }</code></td>
+<td>History line of the viewport's first row; rows in history plus screen</td>
+</tr>
+<tr>
+<td><code>Progress { going, at }</code></td>
+<td>OSC 9;4 state</td>
+</tr>
+<tr>
+<td><code>Marks { marks }</code></td>
+<td>All OSC 133 <code>PromptMark</code>s (prompt, output, end, exit)</td>
+</tr>
+<tr>
+<td><code>Screen { alt }</code></td>
+<td>Whether the alternate screen is active</td>
+</tr>
+<tr>
+<td><code>Exit { status }</code></td>
+<td>The program ended</td>
+</tr>
+</tbody>
+</table>
+<h3 id="publishing-only-what-changed">Publishing only what changed</h3>
+<p>The pty wakes often, so the shard must grow with the output, not with the number of wakeups. <code>publish_term</code> calls <code>TermHost::changed_ops</code>. That function takes a full <code>snapshot_ops</code> (<code>View</code>, <code>Links</code>, all <code>Rows</code>, <code>Cursor</code>, <code>Screen</code>) and compares it with the last <code>Published</code> snapshot. If the shape is the same, it emits only a <code>View</code> if top or total moved, <code>Links</code> if they differ, one <code>Rows</code> op per <strong>run of consecutive differing rows</strong>, <code>Cursor</code> if it moved, and <code>Screen</code> if alt changed. On the first publish, or after a resize, it emits everything. Nothing is appended when nothing changed.</p>
+<h3 id="resizing-while-scrolled-back">Resizing while scrolled back</h3>
+<p><code>term_resize</code> resizes immediately only when the terminal is at the bottom. If the user has scrolled back into the history, the new size is kept in <code>held_size</code> and applied by the next <code>publish_term</code> after the view returns to the bottom. The reason is that a resize makes a program redraw, and a coding agent's redraw can clear the scrollback, which would move the text the user is reading. Keys, typing and pastes call <code>scroll_to_bottom</code> first, so input always goes to the live screen.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L357-L470">crates/apex-server/src/lib.rs:357-470</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L492-L589">crates/apex-server/src/lib.rs:492-589</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L671-L783">crates/apex-server/src/term.rs:671-783</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L311-L350">crates/apex-core/src/entry.rs:311-350</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L346-L371">crates/apex-core/src/state.rs:346-371</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L728-L795">crates/apex-core/src/state.rs:728-795</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L616-L618">crates/apex-core/src/node.rs:616-618</a></p>
+<h2 id="what-the-program-says-titles-directories-clipboard-progress">What the program says: titles, directories, clipboard, progress</h2>
+<p><code>Server::pump</code> handles each <code>TermEvent</code>, and then always calls <code>publish_term</code>. It also gives every terminal the current client colours on each pump; it does this first.</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Wakeup</code>, <code>Bell</code></td>
+<td>Nothing beyond the publish</td>
+</tr>
+<tr>
+<td><code>Title(t)</code> (OSC 0/2) and <code>Name(t)</code> (<code>ESC ] ; t BEL</code>)</td>
+<td><code>h.title = Some(t)</code></td>
+</tr>
+<tr>
+<td><code>Cwd(s)</code> (OSC 7)</td>
+<td><code>cwd_path</code> parses a <code>file://host/path</code> URL (percent-decoded) or a bare path, expanding <code>~</code> and <code>~/</code> to <code>$HOME</code>; sets <code>cwd</code>, and also <code>dir</code> if the path is a directory</td>
+</tr>
+<tr>
+<td><code>Clipboard(text)</code> (OSC 52)</td>
+<td>Non-empty text goes into the snarf buffer via <code>Proposal::Snarf</code>, and into <code>clips</code>, which the daemon sends as <code>ServerMsg::Clipboard</code> to every UI on the session</td>
+</tr>
+<tr>
+<td><code>Working(on, at)</code> (OSC 9;4)</td>
+<td>On change: append <code>TermOp::Progress</code>, and propose <code>Working</code> on the window so its handle pulses</td>
+</tr>
+<tr>
+<td><code>Mark(kind, line, exit)</code> (OSC 133)</td>
+<td><code>A</code> starts a mark (the list is capped at the latest 1000), <code>C</code> sets its output line, <code>D</code> sets its end and exit once; append <code>Marks</code> when the list changed</td>
+</tr>
+<tr>
+<td><code>Exit(status)</code></td>
+<td>Record the process exit, clear any working state, append <code>TermOp::Exit</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="window-naming-dir-title">Window naming: <code>DIR/-TITLE</code></h3>
+<p>A terminal window carries a <code>path</code> and a <code>label</code>, and its tag reads as acme's win names it: the directory, then the label. <code>term::place</code> computes the pair:</p>
+<pre><code class="language-rust">pub fn place(cwd: Option&lt;&amp;Path&gt;, title: Option&lt;&amp;str&gt;, initial_dir: &amp;Path, initial_label: &amp;str) -&gt; (String, String)
+</code></pre>
+<p>The <strong>path</strong> is the OSC 7 directory once one has been reported, and after that nothing else ever sets it. Until then it is the directory the terminal started in. It always ends with a slash. The <strong>label</strong> is the title (an xterm title or a plan9port label), trimmed only at its ends. A coding agent's title, spinner and bars included, is kept as written. Without a title, the label is the starting label: the command's name for <code>Newterm cmd</code>, otherwise <code>sysname()</code> (<code>$sysname</code>, else the hostname up to the first dot, else <code>gnot</code>, as in win.c).</p>
+<p><code>pump</code> computes <code>window_place()</code> before and after each event. If the path changed it proposes <code>SetPath</code>, and if the label changed it proposes <code>SetLabel</code>. So <code>apex label TEXT</code> and <code>apex awd</code>, which only write these escape sequences to their terminal (see <a href="cli.html">The apex Command</a>), rename the window through this path.</p>
+<p><code>crates/apex-cli/README.md</code> says that with no directory reported the name is <code>-TITLE</code>. The code instead falls back to the starting directory, as the <code>name_tests</code> test checks.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L596-L716">crates/apex-server/src/lib.rs:596-716</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L55-L139">crates/apex-server/src/term.rs:55-139</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L867-L882">crates/apex-server/src/term.rs:867-882</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/README.md#L58-L70">crates/apex-cli/README.md:58-70</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L285-L303">crates/apex-server/src/daemon.rs:285-303</a></p>
+<h2 id="client-messages">Client messages</h2>
+<p>The client never writes to a term shard. It sends these <code>ClientMsg</code>s, which the daemon routes to <code>Server</code> methods (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L695-L715">crates/apex-server/src/daemon.rs:695-715</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Server method</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TermKey { term, key: TermKey }</code></td>
+<td><code>term_key</code>; a <code>TermKey</code> is a gpui-style key name, its text, and shift/control/alt</td>
+</tr>
+<tr>
+<td><code>TermPaste</code>, <code>TermType</code></td>
+<td><code>term_paste</code>, <code>term_type</code></td>
+</tr>
+<tr>
+<td><code>TermResize</code></td>
+<td><code>term_resize</code>, sent from the client's prepaint when the cell grid size changes</td>
+</tr>
+<tr>
+<td><code>TermScroll { delta, at }</code></td>
+<td><code>term_wheel</code>: with a cell, the wheel; without one, the scrollbar</td>
+</tr>
+<tr>
+<td><code>TermText</code>, <code>TermRead</code></td>
+<td>Text of a selection (answered with a <code>Snarf</code> proposal) or of history lines</td>
+</tr>
+<tr>
+<td><code>TermFind</code></td>
+<td>Look in the terminal; answered by <code>TermFound</code></td>
+</tr>
+<tr>
+<td><code>TermFocus</code>, <code>TermClear</code></td>
+<td>Focus reports; <code>Clear</code> drops the scrollback and the marks</td>
+</tr>
+<tr>
+<td><code>ClientConfig { term: TermColors }</code></td>
+<td>From a UI only: the ink, paper and 16 ANSI colours that OSC 4/10/11 queries are answered from</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L25-L37">crates/apex-server/src/proto.rs:25-37</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L79-L113">crates/apex-server/src/proto.rs:79-113</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L695-L715">crates/apex-server/src/daemon.rs:695-715</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L810-L815">crates/apex-server/src/daemon.rs:810-815</a></p>
+<h2 id="painting-the-grid-term-elementrs">Painting the grid (<code>term_element.rs</code>)</h2>
+<p><code>TermElement</code> is a gpui <code>Element</code> that fills the rectangle the tiling gives it. In <strong>prepaint</strong> it does the following:</p>
+<ol>
+<li>It measures the monospace cell width by shaping <code>&quot;M&quot;</code>, and derives <code>cols</code> and <code>rows</code> from the bounds. It calls <code>acme.term_resize</code>, which is how a window's size reaches the daemon.</li>
+<li>It reads <code>node.state.terms[term]</code>. For each cell it resolves colours with <code>color_rgb</code>: <code>0xfe</code> maps to <code>theme.ansi[i]</code>, <code>0xfd</code> to the theme's text or body background, and anything else is RGB.</li>
+<li>If contrast correction is on, it corrects the ink of every cell that has a colour of its own (<code>fg != 0 || bg != 0</code>); see below.</li>
+<li>It overlays highlights. A B2/B3 sweep in the button's colour (<code>term_hl</code>) wins over the selection (<code>term_sel</code>, acme's yellow <code>body_sel</code>). Where neither applies, the fading &quot;what B2 just ran&quot; blend (<code>term_ran</code>) is drawn.</li>
+<li>It builds a <code>RowDraw</code> per row. Background runs are merged per colour. Text runs are split by ink and bold. Each byte maps to its column, and underline stretches cover underlined cells and OSC 8 links.</li>
+<li>It collects prompt marks with a non-zero exit that are in view, the progress bar, the cursor, and the scroller state.</li>
+</ol>
+<p>In <strong>paint</strong>, each row is shaped as a single line, so font fallback still works. Glyphs are then placed <strong>cell by cell</strong> at <code>origin.x + cell_w * col</code>, so a glyph wider than a cell, such as a Nerd Font icon or a CJK ideograph, cannot push the rest of the row along. Emoji are painted with <code>paint_emoji</code>.</p>
+<p>On top of the text the element draws:</p>
+<ul>
+<li>a red gutter mark beside failed commands' prompts;</li>
+<li>a 2-px progress bar across the top, full width when no percentage was given;</li>
+<li>the cursor: the accent caret, blinking and optionally gliding, when keys go to this terminal; a thin dark caret otherwise; a hollow box once the program has exited;</li>
+<li>the overlay scroller, which measures <code>top</code> and <code>rows</code> against <code>total</code>.</li>
+</ul>
+<p>Finally it stores a <code>TermLayout</code> (bounds, origin, cell width, line height, row text) in <code>acme.term_layouts</code>. Mouse handling uses that layout to map points to cells (<code>cell_at</code>), as described in <a href="client-input.html">Mouse, Keyboard and Look</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs#L15-L238">crates/apex-client/src/term_element.rs:15-238</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs#L240-L362">crates/apex-client/src/term_element.rs:240-362</a></p>
+<h2 id="contrast-correction-contrastrs">Contrast correction (<code>contrast.rs</code>)</h2>
+<p>Programs pick colours for a dark terminal and name them outright. On light paper, <code>ls</code> then shows pale yellow, and the reverse happens on dark paper. <code>contrast::correct(fg, bg, theme)</code> checks each ink against the paper behind it and, where the pair does not read, moves <strong>only the ink's lightness</strong> until it does:</p>
+<pre><code class="language-mermaid">flowchart TD
+    A[&quot;correct(fg, bg, theme)&quot;] --&gt; C{&quot;cached?&quot;}
+    C --&gt;|yes| R[&quot;cached ink&quot;]
+    C --&gt;|no| L{&quot;legible: WCAG 4.5 for normal and deuteranope?&quot;}
+    L --&gt;|yes| F[&quot;fg unchanged&quot;]
+    L --&gt;|no| H[&quot;Oklch of fg; hue pulled halfway to the nearest theme hue within 0.7 rad&quot;]
+    H --&gt; E[&quot;end = black or white, whichever reads better on bg&quot;]
+    E --&gt; X{&quot;does the end read?&quot;}
+    X --&gt;|no| M[&quot;ink at the end: as far as the hue goes&quot;]
+    X --&gt;|yes| B[&quot;bisect lightness to the edge of reading&quot;]
+    B --&gt; MI[&quot;mirror past the edge by half the original shortfall&quot;]
+    MI --&gt; O[&quot;pack in 8 bits, check again, else the edge&quot;]
+</code></pre>
+<p>Details of the algorithm:</p>
+<ul>
+<li>&quot;Reads&quot; means a WCAG contrast ratio of at least 4.5. The check runs twice, once for a normal viewer and once through the Machado–Oliveira–Fernandes deuteranopia matrix, and the worse result counts. The reason is that a red can pass for a normal viewer and fail for a deuteranope. The colour choices were checked with the colour-blind user in mind; see <a href="themes-and-fonts.html">Themes, Fonts and Colour</a>.</li>
+<li>Lightness moves in <strong>Oklab</strong>, so a step looks the same size on any hue. The chroma is kept where sRGB allows; otherwise <code>fit</code> bisects down to the largest chroma that is in gamut. Greys (chroma &lt; 0.04) are not given a hue, and harmonisation only considers the twelve chromatic ANSI entries of the theme.</li>
+<li>Each ink is <strong>mirrored</strong> about the edge instead of being placed on it (<code>MIRROR = 0.5</code>). Shades a program uses to tell things apart therefore stay apart, and a dark theme's bright red becomes a light theme's deeper red.</li>
+<li>Results are cached in a thread-local <code>HashMap</code> keyed by <code>(fg, bg, dark)</code> and capped at 8192 entries. The cache is cleared when full, so a cell costs one lookup.</li>
+</ul>
+<p>The theme's own ink on the theme's own paper skips the check entirely. Correction is a View-menu setting, on by default and saved in the <code>contrast</code> state file.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs#L1-L235">crates/apex-client/src/contrast.rs:1-235</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/theme.rs#L578-L596">crates/apex-client/src/theme.rs:578-596</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/term_element.rs#L186-L192">crates/apex-client/src/term_element.rs:186-192</a></p>
+<h2 id="tests-and-edge-cases">Tests and edge cases</h2>
+<ul>
+<li><code>ghostty-vt-sys</code> tests cover how the shard sees the screen: colour packing, background-only erased cells, scrollback and viewport movement, <code>text</code> from anywhere in the history, the seven modes, query answers, OSC 52, OSC 9;4 states, and link interning.</li>
+<li><code>term_loop</code> tests check that labels leave the stream, that other OSCs pass through, that a label split across reads stays one label, and that an aborting ESC lets the whole sequence through.</li>
+<li><code>term.rs</code> tests cover <code>cwd_path</code>, <code>place</code>, key encoding, and <code>scrolled_back_does_not_follow_output</code>, which spawns a real <code>sh</code> and checks that a scrolled-back view stays put while output continues.</li>
+<li><code>contrast.rs</code> tests check, over a grid of RGB colours, papers and both themes, that every answer reads to both viewers or is pure black or white. They also check hue preservation and that distinguishable shades stay distinguishable.</li>
+</ul>
+<p>One edge case is visible in the code. The <code>Report::Label(Label::Mark …)</code> arm in <code>TermHost::spawn</code> maps to line 0, but <code>EventLoop::read</code> always turns marks into <code>Report::Mark</code> with the real line, so that arm is not reached in practice.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/ghostty-vt-sys/src/lib.rs#L275-L424">crates/ghostty-vt-sys/src/lib.rs:275-424</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs#L378-L422">crates/apex-server/src/term_loop.rs:378-422</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L141-L173">crates/apex-server/src/term.rs:141-173</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L837-L865">crates/apex-server/src/term.rs:837-865</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L293-L309">crates/apex-server/src/term.rs:293-309</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/contrast.rs#L237-L397">crates/apex-client/src/contrast.rs:237-397</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="plumbing.html">Plumbing Rules and Verbs</a></span><span class="next">Next: <a href="io-plane-and-pages.html">The I/O Plane and Pages</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top current"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture-at-a-glance">Architecture at a glance</a></li>
+<li class="l2"><a href="#the-pty-and-the-child-ptyrs">The pty and the child (pty.rs)</a></li>
+<li class="l2"><a href="#libghostty-vt-through-ghostty-vt-sys">libghostty-vt through ghostty-vt-sys</a></li>
+<li class="l3"><a href="#why-a-c-shim">Why a C shim</a></li>
+<li class="l3"><a href="#what-the-shim-exposes">What the shim exposes</a></li>
+<li class="l3"><a href="#colour-packing">Colour packing</a></li>
+<li class="l3"><a href="#hyperlinks-and-events">Hyperlinks and events</a></li>
+<li class="l3"><a href="#building-the-library">Building the library</a></li>
+<li class="l2"><a href="#the-pty-event-loop-term-looprs">The pty event loop (term_loop.rs)</a></li>
+<li class="l3"><a href="#the-label-scan">The label scan</a></li>
+<li class="l2"><a href="#termhost-one-hosted-terminal-termrs">TermHost: one hosted terminal (term.rs)</a></li>
+<li class="l3"><a href="#key-encoding">Key encoding</a></li>
+<li class="l2"><a href="#from-screen-to-the-term-shard">From screen to the term shard</a></li>
+<li class="l3"><a href="#the-ops-and-the-state">The ops and the state</a></li>
+<li class="l3"><a href="#publishing-only-what-changed">Publishing only what changed</a></li>
+<li class="l3"><a href="#resizing-while-scrolled-back">Resizing while scrolled back</a></li>
+<li class="l2"><a href="#what-the-program-says-titles-directories-clipboard-progress">What the program says: titles, directories, clipboard, progress</a></li>
+<li class="l3"><a href="#window-naming-dir-title">Window naming: DIR/-TITLE</a></li>
+<li class="l2"><a href="#client-messages">Client messages</a></li>
+<li class="l2"><a href="#painting-the-grid-term-elementrs">Painting the grid (term_element.rs)</a></li>
+<li class="l2"><a href="#contrast-correction-contrastrs">Contrast correction (contrast.rs)</a></li>
+<li class="l2"><a href="#tests-and-edge-cases">Tests and edge cases</a></li>
+</ul>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

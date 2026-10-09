@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding Agents: apex tool agent and apex-acp · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Coding Agents: apex tool agent and apex-acp</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/README.md">crates/apex-tool-agent/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/agent.rs">crates/apex-tool-agent/src/agent.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/cmd.rs">crates/apex-tool-agent/src/cmd.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs">crates/apex-tool-agent/src/event.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/history.rs">crates/apex-tool-agent/src/history.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs">crates/apex-tool-agent/src/hook.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/install.rs">crates/apex-tool-agent/src/install.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/lib.rs">crates/apex-tool-agent/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/page.rs">crates/apex-tool-agent/src/page.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/transcript.rs">crates/apex-tool-agent/src/transcript.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/vcs.rs">crates/apex-tool-agent/src/vcs.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs">crates/apex-tool-agent/src/win.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/tests/pane.rs">crates/apex-tool-agent/tests/pane.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/README.md">exp/acp/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs">exp/acp/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/term.rs">exp/acp/src/term.rs</a></li>
+</ul>
+</details>
+<p>apex hosts coding agents (Claude Code, Codex and Muse) in its <a href="terminals.html">terminals</a>, and <code>apex tool agent</code> is the bundled tool that serves them. For each agent it provides a transcript window, a page holding the agent's last answer, a diff of the agent's changes, <code>Allow</code>/<code>Deny</code>/<code>Ask</code> answers to permission questions, and a notification on the agent's terminal when the agent needs you. Nothing is added to the agents themselves. The tool runs on the hooks each agent already offers, and it is written only against the public <a href="tool-sdk.html">tool SDK</a> (<code>apex-tool</code>), like every other bundled tool. The command line reaches it through <code>apex tool agent …</code>, which <a href="cli.html"><code>apex-cli</code></a> hands straight to <code>apex_tool_agent::cmd::run</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1075">crates/apex-cli/src/main.rs:1075</a>).</p>
+<p>The page also covers <code>apex-acp</code>, an experiment in <code>exp/acp</code>. It is an <a href="https://agentclientprotocol.com">Agent Client Protocol</a> client that runs the agent itself as a child process and turns an apex window into the conversation. The two take opposite approaches. <code>apex tool agent</code> watches agents you started yourself in a terminal. <code>apex-acp</code> <em>is</em> the agent's interface. The agent tool deliberately copies several of apex-acp's conventions: the <code>~</code>/<code>•</code>/<code>–</code> margins, the <code>Preview</code> page and the <code>-NAME</code> window naming. Pages are described on <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>, and verbs and plumb rules on <a href="plumbing.html">Plumbing</a>.</p>
+<h2 id="architecture-hooks-logs-and-a-reader">Architecture: hooks, logs and a reader</h2>
+<p>The design rests on one decision: <strong>the hook and the tool share no socket and no daemon; they share files.</strong> Each agent runs the hook command at every event. The hook appends one JSON line to <code>~/.apex/agent/SESSION.jsonl</code> and exits. The tool reads those logs and nothing else. So nothing has to be running when an agent starts, nothing is lost if the tool isn't running, a tool started late sees everything that came before, and two tools see the same thing (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs#L1-L11">crates/apex-tool-agent/src/event.rs:1-11</a>).</p>
+<p>Replies to the agent also go through channels that already exist. A permission decision is written into the agent's log as a <code>Decision</code> event, where the waiting hook reads it. A prompt is typed into the agent's terminal with <code>apex term send</code>. A new agent is started with <code>Newterm</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L19-L22">crates/apex-tool-agent/src/win.rs:19-22</a>).</p>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;Agent (claude, codex, muse)&quot;] --&gt;|&quot;event JSON on stdin&quot;| H[&quot;apex tool agent hook AGENT&quot;]
+    H --&gt;|&quot;append one line&quot;| L[&quot;~/.apex/agent/SESSION.jsonl&quot;]
+    A --&gt;|&quot;writes its own record&quot;| T[&quot;agent transcript (projects/, rollout, session.jsonl)&quot;]
+    L --&gt;|&quot;watched dir + 5s pass&quot;| P[&quot;Pane (win.rs)&quot;]
+    T --&gt;|&quot;watched dir&quot;| P
+    P --&gt;|&quot;Decision event&quot;| L
+    L --&gt;|&quot;await_decision&quot;| H
+    P --&gt;|&quot;apex tool API&quot;| D[&quot;apexd session&quot;]
+    P --&gt;|&quot;apex term send / Newterm&quot;| A
+    S[&quot;ls / wait / events (cmd.rs)&quot;] --&gt;|&quot;read&quot;| L
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hook.rs</code></td>
+<td>The hook. Reads the agent's event JSON and appends an <code>Event</code>. For permission requests it waits for a <code>Decision</code></td>
+</tr>
+<tr>
+<td><code>event.rs</code></td>
+<td>The <code>Event</code> line format, log paths, the pane presence files, and <code>Tail</code>, which reads a file as it grows</td>
+</tr>
+<tr>
+<td><code>install.rs</code></td>
+<td>Writes the hooks into each agent's settings file, and takes them out again</td>
+</tr>
+<tr>
+<td><code>agent.rs</code></td>
+<td><code>Agent</code>/<code>Agents</code>: folds events into per-agent state, and renders the overview pane's text</td>
+</tr>
+<tr>
+<td><code>transcript.rs</code></td>
+<td>Parsers for the three agents' own transcript formats, plus <code>Writer</code>, which renders them</td>
+</tr>
+<tr>
+<td><code>page.rs</code></td>
+<td>The last exchange as markdown, run through the session's <code>Preview.md</code> converter</td>
+</tr>
+<tr>
+<td><code>vcs.rs</code></td>
+<td>Repository detection and the diff since the session began (git, Sapling, Mercurial)</td>
+</tr>
+<tr>
+<td><code>history.rs</code></td>
+<td>Past sessions on disk, Muse transcript lookup, Muse parent resolution</td>
+</tr>
+<tr>
+<td><code>win.rs</code></td>
+<td><code>Pane</code>: the tool proper. Windows, verbs, notifications, watches</td>
+</tr>
+<tr>
+<td><code>cmd.rs</code></td>
+<td>Command-line dispatch and the text commands <code>ls</code>, <code>wait</code>, <code>events</code></td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/lib.rs#L1-L67">crates/apex-tool-agent/src/lib.rs:1-67</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/README.md#L42-L78">crates/apex-tool-agent/README.md:42-78</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1-L33">crates/apex-tool-agent/src/win.rs:1-33</a></p>
+<h2 id="installing-the-hooks">Installing the hooks</h2>
+<p><code>apex tool agent install [claude|codex|muse]...</code> (all three by default) writes hook entries into three files:</p>
+<ul>
+<li>Claude Code: <code>~/.claude/settings.json</code></li>
+<li>Codex: <code>~/.codex/hooks.json</code></li>
+<li>Muse: <code>$XDG_CONFIG_HOME/muse/settings.json</code>, or <code>~/.config/muse/settings.json</code> when that variable is unset</li>
+</ul>
+<p>All three use the same <code>{&quot;hooks&quot;: {EVENT: [{&quot;hooks&quot;: [{type, command, timeout}]}]}}</code> shape (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/install.rs#L71-L87">crates/apex-tool-agent/src/install.rs:71-87</a>). Each agent gets its own list of events:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Events installed</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>claude</td>
+<td>15, including <code>PermissionRequest</code>, <code>PermissionDenied</code>, <code>Notification</code>, <code>StopFailure</code>, <code>PreCompact</code>/<code>PostCompact</code></td>
+<td></td>
+</tr>
+<tr>
+<td>codex</td>
+<td>12, including <code>Interrupt</code></td>
+<td>No <code>Notification</code> or <code>StopFailure</code>. Older Codex needs <code>codex_hooks = true</code></td>
+</tr>
+<tr>
+<td>muse</td>
+<td>14</td>
+<td>No <code>PermissionDenied</code> (Muse has no such event), and no <code>Interrupt</code>, because Muse wants that handler to return without waiting</td>
+</tr>
+</tbody>
+</table>
+<p>The command is written as <code>APEX tool agent hook AGENT</code>, with apex named <strong>as it was invoked</strong> rather than as it resolves. <code>invoked_as</code> makes a path absolute, or looks a bare name up on <code>PATH</code>, and does not follow symlinks. That way a dotslash or version-manager launcher keeps working after the cached binary behind it changes. Paths are shell-quoted when they need to be (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/install.rs#L97-L126">crates/apex-tool-agent/src/install.rs:97-126</a>).</p>
+<p><code>settle</code> makes an install idempotent and leaves everything else in the file alone. First it removes every handler of ours from every event, whatever events an older install used. A handler counts as ours if its command contains <code>tool agent hook</code>, or the older <code>apex-agent … hook</code>. Then it adds ours back and drops any groups and keys left empty. It writes the result through a temporary file and a rename, and only when the text actually changed. <code>PermissionRequest</code> handlers get a 120-second timeout and the rest get 5 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/install.rs#L128-L188">crates/apex-tool-agent/src/install.rs:128-188</a>). <code>uninstall</code> is the same pass with no command to add. Agents already running don't pick up new hooks until they restart.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/install.rs#L14-L212">crates/apex-tool-agent/src/install.rs:14-212</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/cmd.rs#L27-L45">crates/apex-tool-agent/src/cmd.rs:27-45</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/README.md#L25-L35">crates/apex-tool-agent/README.md:25-35</a></p>
+<h2 id="the-hook-and-the-event-log">The hook and the event log</h2>
+<h3 id="what-a-line-holds">What a line holds</h3>
+<p>An <code>Event</code> is small on purpose. The tool call's input is not kept; a <code>Write</code>'s input would be the whole file. Instead the call is summarised in words as <code>title</code>, which is what the pane shows anyway.</p>
+<pre><code class="language-rust">pub struct Event {
+    pub ms: i64, pub agent: String, pub event: String, pub session: String,
+    pub cwd: String, pub transcript: Option&lt;String&gt;, pub pid: Option&lt;u32&gt;,
+    pub apex: Option&lt;String&gt;, pub win: Option&lt;u64&gt;, pub rev: Option&lt;String&gt;,
+    pub sub: Option&lt;String&gt;, pub tool: Option&lt;String&gt;, pub call: Option&lt;String&gt;,
+    pub title: Option&lt;String&gt;, pub text: Option&lt;String&gt;, pub kind: Option&lt;String&gt;,
+    pub mode: Option&lt;String&gt;, pub plan: Option&lt;(u32, u32)&gt;,
+}
+</code></pre>
+<p><code>event_from</code> maps the agent's JSON onto these fields (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L241-L294">crates/apex-tool-agent/src/hook.rs:241-294</a>):</p>
+<ul>
+<li><strong><code>title</code></strong> comes from <code>transcript::call_title</code>. It uses the agent's own words where it gave some (Claude's <code>description</code>), and otherwise the thing itself: the command, a path relative to <code>cwd</code>, a pattern.</li>
+<li><strong><code>text</code></strong> is the prompt for <code>UserPromptSubmit</code>, or <code>last_assistant_message</code> for <code>Stop</code>. Both are kept nearly whole, cut at 64 KiB (<code>WHOLE</code>), because the page shows them. Notifications and failures are cut at 2000 characters (<code>LINE</code>).</li>
+<li><strong><code>kind</code></strong> is the first field present among <code>notification_type</code>, <code>session_start_method</code>, <code>source</code>, <code>session_end_reason</code>, <code>reason</code>, <code>agent_type</code>, <code>subagent_id</code> and <code>trigger</code>.</li>
+<li><strong><code>plan</code></strong> is (steps completed, total). It is taken from <code>TodoWrite</code>/<code>write_todos</code> todos or from Codex's <code>update_plan</code>.</li>
+<li><strong><code>call</code></strong> is the <code>tool_use_id</code>. A Muse permission request has no id, so one is made by hashing the tool and its input (<code>muse-XXXXXXXX</code>). That lets the pane's answer find its question.</li>
+</ul>
+<h3 id="facts-recorded-once-per-session">Facts recorded once per session</h3>
+<p>When the event is <code>SessionStart</code>, or when no log exists yet for the session (the hooks were installed mid-session, or the tool cleaned the log away), the hook also records three things (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L38-L48">crates/apex-tool-agent/src/hook.rs:38-48</a>):</p>
+<ul>
+<li><strong><code>pid</code></strong>: the agent's process. <code>agent_pid</code> walks up to eight ancestors. It returns the first one named after the agent (or <code>NAME.real</code>) or a JS runtime (<code>node</code>, <code>bun</code>, <code>deno</code>); failing that, it returns the nearest ancestor that isn't a shell (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L365-L397">crates/apex-tool-agent/src/hook.rs:365-397</a>).</li>
+<li><strong><code>apex</code>, <code>win</code></strong>: the apex session and window the agent was started in, taken from the <code>apexsession</code> and <code>winid</code> variables apex puts in a command's environment. Muse doesn't pass these to its hooks, so <code>here</code> reads them from the agent process's own environment instead. On Linux that comes from <code>/proc/PID/environ</code>; elsewhere from <code>ps -E</code> or <code>ps eww</code>, which is best-effort (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L321-L363">crates/apex-tool-agent/src/hook.rs:321-363</a>).</li>
+<li><strong><code>rev</code></strong>: where the repository stood, from <code>vcs::head</code>.</li>
+</ul>
+<h3 id="appending-and-reading">Appending and reading</h3>
+<p><code>append</code> serialises the event and writes it with a single <code>write_all</code> to a file opened in append mode. This keeps parallel tool calls from tearing each other's lines (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs#L127-L136">crates/apex-tool-agent/src/event.rs:127-136</a>).</p>
+<p>The log directory is <code>$APEX_AGENT_DIR</code>, or <code>~/.apex/agent</code>. An older <code>~/.apex/agents</code> directory is renamed to the new name the first time. Session ids are sanitised into file names (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs#L70-L90">crates/apex-tool-agent/src/event.rs:70-90</a>).</p>
+<p><code>Tail</code> is the reader shared by logs and transcripts:</p>
+<ul>
+<li>It remembers the byte offset it has reached.</li>
+<li>It returns only whole lines, and keeps a half-written line until the rest arrives.</li>
+<li>If the file has shrunk, it starts again from the beginning.</li>
+</ul>
+<p>Its definition is at <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs#L142-L190">crates/apex-tool-agent/src/event.rs:142-190</a>.</p>
+<h3 id="muse-subagents">Muse subagents</h3>
+<p>Muse gives each subagent a session of its own and tells the hook nothing about the parent. <code>route_subsession</code> works out where each event belongs:</p>
+<ul>
+<li>It finds the parent on disk as the session directory with <code>subagent/CHILD</code> beneath it (<code>history::resolve_parent</code>).</li>
+<li>It remembers the answer in a marker file <code>subs/CHILD</code>, which holds the parent's id, <code>drop</code>, or nothing while the parent is still unknown.</li>
+<li>It rewrites the event onto the parent's log, with <code>sub</code> set to the child.</li>
+</ul>
+<p>Muse's own observers are dropped from start to stop. These are subagents whose kind ends in <code>-reminder</code>, and calls to <code>submit_reminder_decision</code>. Markers older than a week are swept, since a session that was killed never says it stopped (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L67-L207">crates/apex-tool-agent/src/hook.rs:67-207</a>).</p>
+<p>The hook always exits 0. A failing hook would be the agent's problem, so this one never fails (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L1-L5">crates/apex-tool-agent/src/hook.rs:1-5</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs#L18-L195">crates/apex-tool-agent/src/event.rs:18-195</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L20-L65">crates/apex-tool-agent/src/hook.rs:20-65</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L296-L319">crates/apex-tool-agent/src/hook.rs:296-319</a></p>
+<h2 id="agent-state">Agent state</h2>
+<p><code>Agents</code> is a <code>BTreeMap</code> from session id to <code>Agent</code>. Every event in a log goes through <code>Agent::apply</code>, which updates its fields:</p>
+<ul>
+<li>What it was asked (<code>prompt</code>).</li>
+<li>The calls in flight (<code>running</code>). There can be several in parallel, and the last one started is the one shown.</li>
+<li>The question pending (<code>asked</code> and <code>asking</code>) and the pane's answer to it (<code>decided</code>).</li>
+<li>Its last word (<code>said</code>) and every finished <code>Exchange</code>, kept for the page's history.</li>
+<li>Why a turn failed (<code>why</code>).</li>
+<li>Subagents and what each one is running.</li>
+<li>The plan's progress.</li>
+</ul>
+<p>Subagent events update only that subagent's entry (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/agent.rs#L44-L269">crates/apex-tool-agent/src/agent.rs:44-269</a>).</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Starting
+    Starting --&gt; Idle: SessionStart
+    Idle --&gt; Working: UserPromptSubmit / PreToolUse
+    Working --&gt; Asking: PermissionRequest / permission_prompt
+    Asking --&gt; Working: Decision allow|deny / PostToolUse
+    Working --&gt; Idle: Stop / Interrupt / idle_prompt
+    Working --&gt; Failed: StopFailure
+    Failed --&gt; Working: UserPromptSubmit
+    Idle --&gt; Ended: SessionEnd
+    Working --&gt; Ended: SessionEnd or pid gone
+</code></pre>
+<p>The order of the <code>State</code> variants (<code>Asking</code>, <code>Failed</code>, <code>Idle</code>, <code>Working</code>, <code>Starting</code>, <code>Ended</code>) is also the order the pane lists agents in. Whatever needs an answer comes first. <code>Agents::ordered</code> sorts by state, then by start time, so a block keeps its place while the agent works, and it drops <code>Ended</code> agents.</p>
+<p>Each state has a margin glyph: <code>?</code>, <code>✗</code>, <code>~</code>, <code>▶</code>, <code>⋯</code>, <code>–</code>. <code>doing()</code> produces the block's third line. For an unanswered question that line carries the words <code>Allow Deny Ask</code>, so you can B2 them where they stand (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/agent.rs#L10-L26">crates/apex-tool-agent/src/agent.rs:10-26</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/agent.rs#L271-L345">crates/apex-tool-agent/src/agent.rs:271-345</a>).</p>
+<p>Some details of <code>apply</code>:</p>
+<ul>
+<li>A <code>SessionStart</code> that arrives mid-turn (a compaction) leaves <code>Working</code> alone.</li>
+<li><code>PreCompact</code> adds a pseudo-call &quot;compacting the context&quot;.</li>
+<li>A <code>Stop</code> with non-empty text records a new <code>Exchange</code>.</li>
+</ul>
+<p><code>agent::pane</code> renders the header, one block per agent, and a footer counting agents filtered out. <code>pane_text</code> joins these and returns where each block starts, measured in characters (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/agent.rs#L377-L477">crates/apex-tool-agent/src/agent.rs:377-477</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/agent.rs#L1-L477">crates/apex-tool-agent/src/agent.rs:1-477</a></p>
+<h2 id="the-tool-pane">The tool: <code>Pane</code></h2>
+<p><code>Pane::run</code> attaches to the session as the tool <code>agent</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L226-L229">crates/apex-tool-agent/src/win.rs:226-229</a>). <code>Pane::start</code> then sets up the tool's face (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L232-L292">crates/apex-tool-agent/src/win.rs:232-292</a>):</p>
+<ul>
+<li><strong>With <code>-a</code> only:</strong> the overview window <code>DIR/-agent</code>. It is owned by the tool and its tag reads <code>Look Open Goto Preview Changes Send Start History Ask</code>. <code>Allow</code>, <code>Deny</code> and <code>Resume</code> are offered as unlisted verbs, and a priority-10 plumb rule on the window opens the agent under B3.</li>
+<li><strong>Always:</strong> a plumb rule at priority −1 for any hex word shaped like an id (<code>[0-9a-fA-F]{6,}(-[0-9a-fA-F]{4,})*</code>). B3 on a session id anywhere then opens its transcript. A word that names no session is handed back.</li>
+<li><strong>Always:</strong> <code>CopyContext</code> on every <code>File</code>, <code>Dir</code> and <code>Errors</code> window.</li>
+<li><strong>Always:</strong> a <code>notify</code> watcher on the logs directory, and a presence file <code>panes/PID</code>.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Field</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-a</code></td>
+<td><code>pane</code></td>
+<td>Makes the overview window. Without it the tool has no window of its own</td>
+</tr>
+<tr>
+<td><code>-all</code></td>
+<td><code>all</code></td>
+<td>Every agent on the machine, not only those started in this apex session</td>
+</tr>
+<tr>
+<td><code>-quiet</code></td>
+<td><code>quiet</code></td>
+<td>No <code>asks:</code>/<code>failed:</code> notes in <code>+Errors</code></td>
+</tr>
+<tr>
+<td><code>-thoughts</code></td>
+<td><code>thoughts</code></td>
+<td>Transcripts include the agents' thinking as <code>  ·</code> lines</td>
+</tr>
+<tr>
+<td><code>-cwd DIR</code></td>
+<td><code>cwd</code></td>
+<td>The pane's directory</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-loop">The loop</h3>
+<p><code>serve</code> polls <code>next_event</code> every 20 ms (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L296-L385">crates/apex-tool-agent/src/win.rs:296-385</a>).</p>
+<p><strong>When a watch fires, or every 5 seconds (<code>SLOW</code>),</strong> it runs one pass:</p>
+<ol>
+<li><code>tick_details</code> reads the transcripts first, so that when a hook speaks of a call, the call's line is already there.</li>
+<li><code>look</code> reads the logs and applies new events.</li>
+<li><code>sweep</code> deletes the logs of ended sessions.</li>
+<li><code>render</code>, <code>sync_targets</code>, <code>sync_flags</code> and <code>sync_busy</code> update the windows.</li>
+</ol>
+<p>On the 5-second pass it also runs <code>check_alive</code>, which marks an agent <code>Ended</code> once <code>kill(pid, 0)</code> says its process is gone, and it touches the presence file. With nothing new, the pane is still re-rendered every 15 seconds (<code>MINUTES</code>) so the &quot;quiet for&quot; times stay current (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L76-L82">crates/apex-tool-agent/src/win.rs:76-82</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L588-L702">crates/apex-tool-agent/src/win.rs:588-702</a>).</p>
+<p>Watches are on directories, not files, because an appended file and a file renamed into place show up as different events. They are reference-counted per directory, so each open transcript keeps its own directory watched (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L563-L586">crates/apex-tool-agent/src/win.rs:563-586</a>).</p>
+<p><strong>Plumb events</strong> are dispatched by rule, in this order:</p>
+<ol>
+<li>A page's <code>Back</code>, <code>Fwd</code> or <code>Latest</code>.</li>
+<li>A verb in an agent's own terminal, which is about that agent (<code>verb_for</code>).</li>
+<li>A pane verb, applied to the agent that <code>meant</code> picks.</li>
+<li>B3 in a block.</li>
+<li>B3 on an id.</li>
+<li>A transcript window's <code>Send</code>.</li>
+</ol>
+<p>The loop ends when the pane window is deleted. Without a pane, it ends when the session is no longer alive.</p>
+<p><code>render_pane</code> rewrites only the blocks that changed, last first so earlier offsets stay valid, provided the set and order of blocks is unchanged. Otherwise it rewrites the whole window. The pane's handle pulses while any agent works, and the pane is marked clean when none is working (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L742-L788">crates/apex-tool-agent/src/win.rs:742-788</a>).</p>
+<p>The filters are applied in <code>render_pane</code> and <code>under()</code>:</p>
+<ul>
+<li>Without <code>-all</code>, inside an apex session, only agents whose recorded <code>apex</code> session is this one are shown.</li>
+<li>Outside an apex session, the pane's directory is the filter.</li>
+<li>A pane in <code>~</code> or <code>/</code> shows everything.</li>
+</ul>
+<h3 id="on-the-agents-own-window">On the agent's own window</h3>
+<p><code>current_in_windows</code> finds the agents of this apex session whose recorded window still exists. If a terminal has been reused for a new agent session, the most recently active agent wins (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L201-L217">crates/apex-tool-agent/src/win.rs:201-217</a>). Three passes use that list:</p>
+<ul>
+<li><strong><code>sync_targets</code></strong> offers <code>Transcript</code>, <code>Preview</code> and <code>Changes</code> on the window as priority-5 window rules. While the agent is asking and nothing has been decided, it also offers <code>Allow</code>, <code>Deny</code> and <code>Ask</code>. Rules are withdrawn when the agent or the window goes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L402-L448">crates/apex-tool-agent/src/win.rs:402-448</a>).</li>
+<li><strong><code>sync_flags</code></strong> raises a notification on the window while the agent is <code>Idle</code>, <code>Asking</code> or <code>Failed</code>, and lowers it when the agent leaves that state. <code>Flag</code> records whether the notification was ever seen raised. If it was raised and is now off, the user dismissed it, and it is not raised again until the agent has been back to work (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L468-L513">crates/apex-tool-agent/src/win.rs:468-513</a>).</li>
+<li><strong><code>sync_busy</code></strong> marks a working agent's window with <code>set_working</code>. If the plan gives a fraction, it uses <code>set_progress</code> with the percentage done (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L515-L545">crates/apex-tool-agent/src/win.rs:515-545</a>).</li>
+</ul>
+<p>Notifications and marks belong to the tool, so if the tool dies none are left behind. How notifications look in the client is covered on <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L50-L385">crates/apex-tool-agent/src/win.rs:50-385</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L402-L545">crates/apex-tool-agent/src/win.rs:402-545</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L588-L788">crates/apex-tool-agent/src/win.rs:588-788</a></p>
+<h2 id="answering-permissions">Answering permissions</h2>
+<p>A question is answered through the log. The hook asks only when three things are true: the event is a <code>PermissionRequest</code>, it is not a subagent's, and <code>pane_present</code> finds a presence file whose PID is alive. Without a live tool the hook doesn't wait at all.</p>
+<p>When it does ask, it remembers the log's length before appending. <code>await_decision</code> then polls the log every 100 ms from that offset, for up to 90 seconds (<code>WAIT</code>), looking for a <code>Decision</code> with the same <code>call</code>. If the answer is <code>allow</code> or <code>deny</code>, the hook prints Claude Code's <code>hookSpecificOutput</code> decision JSON, which Codex shares. If the answer is <code>ask</code>, or the wait times out, it prints nothing, and the agent falls back to its own prompt (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L50-L65">crates/apex-tool-agent/src/hook.rs:50-65</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L209-L236">crates/apex-tool-agent/src/hook.rs:209-236</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/event.rs#L92-L119">crates/apex-tool-agent/src/event.rs:92-119</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant Ag as Agent
+    participant Hk as hook
+    participant Log as SESSION.jsonl
+    participant Pn as Pane
+    Ag-&gt;&gt;Hk: PermissionRequest JSON
+    Hk-&gt;&gt;Log: append PermissionRequest (call id)
+    Hk-&gt;&gt;Hk: pane_present? then poll from offset
+    Log--&gt;&gt;Pn: watch fires, look()
+    Pn-&gt;&gt;Pn: state Asking, notify window, offer Allow Deny Ask
+    Note over Pn: user B2s Allow
+    Pn-&gt;&gt;Log: append Decision kind=allow
+    Log--&gt;&gt;Hk: await_decision finds it
+    Hk-&gt;&gt;Ag: hookSpecificOutput behavior allow
+</code></pre>
+<p><code>decide</code> picks the agent from the block that dot is in. With dot outside any block it uses the single agent that is asking, and otherwise reports in <code>+Errors</code>. <code>decide_for</code> appends the <code>Decision</code> event (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L887-L927">crates/apex-tool-agent/src/win.rs:887-927</a>).</p>
+<p>The same event updates the tool's own state. <code>allow</code> and <code>deny</code> return the agent to <code>Working</code>, and <code>ask</code> changes the line to &quot;asked at the terminal&quot;. <code>heard</code> turns the transcript's glyph to <code>▶</code> or <code>✗</code>. If not <code>-quiet</code>, it also writes <code>KIND ID asks: …</code> or <code>failed: …</code> to <code>+Errors</code> when an agent enters <code>Asking</code> or <code>Failed</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L624-L660">crates/apex-tool-agent/src/win.rs:624-660</a>).</p>
+<p>Note that the hook's 90-second wait fits inside the 120-second timeout that <code>install</code> gives the <code>PermissionRequest</code> handler.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L16-L65">crates/apex-tool-agent/src/hook.rs:16-65</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/hook.rs#L209-L236">crates/apex-tool-agent/src/hook.rs:209-236</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L887-L927">crates/apex-tool-agent/src/win.rs:887-927</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/install.rs#L166-L169">crates/apex-tool-agent/src/install.rs:166-169</a></p>
+<h2 id="transcripts">Transcripts</h2>
+<p>A transcript window is a scratch window at the agent's own directory, so a <code>path:line</code> in it B3s relative to where the agent worked. Its label is <code>KIND SHORTID</code>, which is how the README's <code>AGENTDIR/-claude+0b1c1425</code> name comes about. The window is owned by the tool, set live, has <code>Look Send</code> in its tag, and is watched for edits (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1202-L1255">crates/apex-tool-agent/src/win.rs:1202-1255</a>).</p>
+<p>The file comes from the hook's <code>transcript_path</code>. For Muse, <code>history::muse_transcript</code> searches <code>sessions/YYYY/MM/DD/ID/session.jsonl</code> instead (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1257-L1274">crates/apex-tool-agent/src/win.rs:1257-1274</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/history.rs#L102-L121">crates/apex-tool-agent/src/history.rs:102-121</a>).</p>
+<p>Each format has a <code>Parser</code> that turns one line into <code>Item</code>s: <code>User</code>, <code>Agent</code>, <code>Thought</code>, <code>Call{id,title,detail}</code>, <code>Result{id,ok,text}</code> or <code>Note</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/transcript.rs#L15-L31">crates/apex-tool-agent/src/transcript.rs:15-31</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/transcript.rs#L412-L424">crates/apex-tool-agent/src/transcript.rs:412-424</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Parser</th>
+<th>Source format</th>
+<th>What it skips</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Claude</code></td>
+<td><code>~/.claude/projects/PROJ/SESSION.jsonl</code>: <code>user</code>/<code>assistant</code> messages with <code>text</code>, <code>thinking</code>, <code>tool_use</code> and <code>tool_result</code> blocks; <code>system</code> <code>api_error</code> becomes a <code>Note</code></td>
+<td><code>isSidechain</code> (subagents), <code>isMeta</code>, <code>&lt;system-reminder&gt;</code> spans, local-command and bash wrappers</td>
+</tr>
+<tr>
+<td><code>Codex</code></td>
+<td>rollout <code>response_item</code>s: <code>message</code>, <code>reasoning</code>, <code>function_call</code>, <code>custom_tool_call</code>, <code>local_shell_call</code> and their outputs (with exit code)</td>
+<td><code>event_msg</code>, <code>turn_context</code>, environment and instructions messages</td>
+</tr>
+<tr>
+<td><code>Muse</code></td>
+<td><code>runtime.session</code> envelopes: run <code>started</code> (the prompt), <code>inbox_item_queued</code> from <code>user_steer</code>, <code>assistant_message_committed</code>, <code>reasoning_committed</code>, tool calls and result batches</td>
+<td>Task and hook bookkeeping, and queued items not from the user</td>
+</tr>
+</tbody>
+</table>
+<p><code>call_detail</code> adds lines under a call:</p>
+<ul>
+<li>the whole command when the title used the description instead;</li>
+<li>an edit as a trimmed <code>-</code>/<code>+</code> hunk, cut at a dozen lines a side;</li>
+<li>a write's line count;</li>
+<li>a plan as checkboxes;</li>
+<li>the first lines of a patch or a subagent prompt.</li>
+</ul>
+<p><code>brief</code> cuts any title to one line of 76 characters (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/transcript.rs#L48-L233">crates/apex-tool-agent/src/transcript.rs:48-233</a>).</p>
+<p><code>Writer</code> renders the items. A prompt is <code>~</code>, a blank line, then the user's text. An agent message is <code>•</code>. A call is a status glyph and its title, with an <em>anchor</em> (the glyph's offset) remembered by call id. A result rewrites that glyph to <code>✓</code> or <code>✗</code> and adds up to 12 lines of output. Hooks often speak of a call before its line is in the transcript, so <code>glyph()</code> keeps the change pending until the call is written (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/transcript.rs#L235-L404">crates/apex-tool-agent/src/transcript.rs:235-404</a>).</p>
+<p><code>Writer</code> emits <code>Op::Append</code> and <code>Op::Glyph</code> ops. <code>win::apply</code> applies an append with <code>insert_following</code>, so the window follows its output as <code>win</code> does, and a glyph with a one-character <code>replace</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1337-L1346">crates/apex-tool-agent/src/win.rs:1337-1346</a>).</p>
+<p>The user's edits arrive as <code>Event::Edit</code> and go to <code>Writer::shift</code>. An edit at or past the end is a draft, and the transcript keeps ending where it did. An edit inside moves the anchors, or drops those it covers.</p>
+<p><code>Send</code> in a transcript's tag reads everything after <code>wr.len</code>, types it into the agent's terminal, and then deletes it, because it comes back as the agent's own record of the prompt (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1006-L1024">crates/apex-tool-agent/src/win.rs:1006-1024</a>). <code>tick_details</code> marks the window clean unless a draft is being typed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1289-L1317">crates/apex-tool-agent/src/win.rs:1289-1317</a>). When the agent ends, the window gets the note &quot;the agent is gone&quot;.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/transcript.rs#L1-L745">crates/apex-tool-agent/src/transcript.rs:1-745</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1202-L1317">crates/apex-tool-agent/src/win.rs:1202-1317</a></p>
+<h2 id="preview-pages-and-changes">Preview pages and changes</h2>
+<h3 id="the-page">The page</h3>
+<p><code>Preview</code> toggles a page at the agent's directory. The page is owned by the tool, set live, has <code>Look Back Fwd Latest</code> in its tag, and has those three verbs offered on it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1055-L1082">crates/apex-tool-agent/src/win.rs:1055-1082</a>).</p>
+<p><code>page::markdown</code> quotes the prompt with <code>&gt; </code> and then gives the answer. <code>page::render</code> pipes that through the session's <code>Preview.md</code> setting, or <code>apex md</code> by default, using <code>$SHELL -c</code> in the agent's directory. It writes stdin from a separate thread so a large reply can't deadlock the pipe. If the converter fails, the error and the markdown are shown escaped inside <code>&lt;pre&gt;</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/page.rs#L11-L67">crates/apex-tool-agent/src/page.rs:11-67</a>).</p>
+<p>On each <code>Stop</code>, <code>show_page</code> moves the page to the new exchange, but only if it was showing the newest one. A page you have paged back through stays put. <code>navigate_page</code> steps through <code>Agent::exchanges</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1084-L1126">crates/apex-tool-agent/src/win.rs:1084-1126</a>). The <code>Preview.md</code> setting is described on <a href="configuration.html">Configuration</a>.</p>
+<h3 id="changes">Changes</h3>
+<p><code>Changes</code> writes a scratch window at the repository root, labelled <code>KIND ID diff</code>, and reuses it on later runs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1141-L1174">crates/apex-tool-agent/src/win.rs:1141-1174</a>).</p>
+<p><code>vcs::repo</code> finds the nearest <code>.git</code>, <code>.sl</code> or <code>.hg</code> going up the tree; a <code>.git</code> file, as in a worktree, counts too. <code>vcs::head</code> records the base revision when the session starts, using <code>git rev-parse HEAD</code>, <code>sl whereami</code> or <code>hg id -i --debug</code>. <code>vcs::changes</code> runs the status command and then the diff against that base, so commits the agent made are included. With no base it diffs against the last commit:</p>
+<ul>
+<li>git: <code>git diff --no-prefix --no-color BASE</code></li>
+<li>Sapling and Mercurial: <code>diff --noprefix --color=never -r BASE</code></li>
+</ul>
+<p><code>located</code> follows each hunk header with <code>path:line</code> for the start of the new side, so B3 opens the file there (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/vcs.rs#L36-L148">crates/apex-tool-agent/src/vcs.rs:36-148</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/page.rs#L1-L67">crates/apex-tool-agent/src/page.rs:1-67</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/vcs.rs#L1-L148">crates/apex-tool-agent/src/vcs.rs:1-148</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1043-L1174">crates/apex-tool-agent/src/win.rs:1043-1174</a></p>
+<h2 id="pane-verbs-history-and-reaching-agents">Pane verbs, history and reaching agents</h2>
+<p><code>meant</code> decides which agent a pane verb is about (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L826-L858">crates/apex-tool-agent/src/win.rs:826-858</a>):</p>
+<ul>
+<li>With an argument, the argument can be an id prefix, an agent kind, or a directory suffix.</li>
+<li>With no argument, it is the block that dot is in, or the only block there is.</li>
+<li>An ambiguous or unknown name gets a line in <code>+Errors</code>.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>Where</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Open</code> / <code>Transcript</code></td>
+<td>pane / agent window</td>
+<td>Opens the transcript, or brings it forward if it is already open</td>
+</tr>
+<tr>
+<td><code>Goto</code></td>
+<td>pane</td>
+<td><code>t.switch(session, window)</code> to the recorded apex session and window. An agent started outside apex gets an error</td>
+</tr>
+<tr>
+<td><code>Preview</code>, <code>Changes</code></td>
+<td>both</td>
+<td>As described above</td>
+</tr>
+<tr>
+<td><code>Send [ID] TEXT</code></td>
+<td>pane, transcript</td>
+<td><code>apex -session=S term send WIN &quot;TEXT\n&quot;</code>. Needs <code>apex</code> on <code>PATH</code>, beside the binary, or in <code>~/.apex/bin</code></td>
+</tr>
+<tr>
+<td><code>Start [AGENT] [DIR]</code></td>
+<td>pane</td>
+<td><code>Newterm AGENT</code>, or <code>Newterm cd DIR &amp;&amp; exec AGENT</code>, via <code>exec_in</code></td>
+</tr>
+<tr>
+<td><code>Resume ID</code></td>
+<td>pane, history</td>
+<td>Runs <code>Start</code> with <code>--resume ID</code> (claude) or <code>resume ID</code> (codex, muse) in the session's directory</td>
+</tr>
+<tr>
+<td><code>History</code></td>
+<td>pane</td>
+<td>Toggles <code>DIR/-agent+history</code> (label <code>agent history</code>)</td>
+</tr>
+<tr>
+<td><code>Allow</code>, <code>Deny</code>, <code>Ask</code></td>
+<td>both</td>
+<td>Writes a <code>Decision</code></td>
+</tr>
+<tr>
+<td><code>CopyContext</code></td>
+<td>any file, dir or errors window</td>
+<td>Snarfs <code>NAME:LINE:</code> followed by the selection fenced, or the current line when the selection is empty</td>
+</tr>
+</tbody>
+</table>
+<p>Sources for the table: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L860-L1041">crates/apex-tool-agent/src/win.rs:860-1041</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1348-L1390">crates/apex-tool-agent/src/win.rs:1348-1390</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L450-L466">crates/apex-tool-agent/src/win.rs:450-466</a>.</p>
+<p><code>history::sessions</code> gathers past sessions for a directory from three places, newest first (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/history.rs#L47-L78">crates/apex-tool-agent/src/history.rs:47-78</a>):</p>
+<ul>
+<li>Claude's project directory. Claude names it by replacing every non-alphanumeric character of the path with <code>-</code>.</li>
+<li>Codex <code>rollout-*.jsonl</code> files whose metadata gives that <code>cwd</code>.</li>
+<li>Muse <code>session.jsonl</code> logs.</li>
+</ul>
+<p>B3 on an id in the listing opens the past transcript with a note at the top (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1176-L1200">crates/apex-tool-agent/src/win.rs:1176-1200</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L1276-L1287">crates/apex-tool-agent/src/win.rs:1276-1287</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/win.rs#L826-L1041">crates/apex-tool-agent/src/win.rs:826-1041</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/history.rs#L26-L143">crates/apex-tool-agent/src/history.rs:26-143</a></p>
+<h2 id="ls-wait-and-events"><code>ls</code>, <code>wait</code> and <code>events</code></h2>
+<p>These read the same logs without attaching to apex, for scripts (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/cmd.rs#L46-L60">crates/apex-tool-agent/src/cmd.rs:46-60</a>):</p>
+<ul>
+<li><strong><code>ls</code></strong> reads every log whole (<code>read_all</code>) and prints <code>agent::pane</code>'s text with no filter.</li>
+<li><strong><code>wait ID</code></strong> finds the agent by unique id prefix, or by kind when exactly one agent has that kind. It applies events every 200 ms until the agent is no longer <code>Working</code> or <code>Starting</code>. The exit status gives the state. If the log disappears or the PID dies, it exits 3 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/cmd.rs#L103-L145">crates/apex-tool-agent/src/cmd.rs:103-145</a>).</li>
+<li><strong><code>events [-all]</code></strong> tails every log and prints one tab-separated line per event: <code>ms</code>, short session, agent, event, and <code>brief</code> of the title, kind or text. By default it starts at the current end of each log; <code>-all</code> starts from the beginning (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/cmd.rs#L147-L181">crates/apex-tool-agent/src/cmd.rs:147-181</a>).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th><code>wait</code> exit status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>Idle</code>: the turn is over</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>Asking</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>Failed</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>Ended</code>, or the process is gone</td>
+</tr>
+<tr>
+<td>4</td>
+<td>No such agent</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/src/cmd.rs#L1-L181">crates/apex-tool-agent/src/cmd.rs:1-181</a></p>
+<h2 id="testing-and-known-gaps">Testing and known gaps</h2>
+<p>Unit tests sit beside each module. They cover:</p>
+<ul>
+<li>event parsing and plan counting;</li>
+<li>Muse subagent routing and the marker sweep;</li>
+<li><code>await_decision</code>;</li>
+<li>idempotent install and uninstall, including replacing the older <code>apex-agent</code> hooks;</li>
+<li>state transitions and pane text;</li>
+<li>the three transcript parsers;</li>
+<li>the git diff end to end (skipped when <code>git</code> is absent).</li>
+</ul>
+<p><code>tests/pane.rs</code> runs a real <code>Daemon</code> on a thread and drives the pane through a <code>Remote</code>. It checks that a log becomes a block, that B3 opens the transcript, which then follows both the file and the hooks, that Muse agents work the same way, and that a ready agent raises a notification on its own window when there is no pane. Waits in these tests are shorter than the 5-second slow pass, so they prove the watches work (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/tests/pane.rs#L1-L60">crates/apex-tool-agent/tests/pane.rs:1-60</a>).</p>
+<p>The README lists what is not done:</p>
+<ul>
+<li>Codex, Sapling and Mercurial have been implemented from their documentation, not tested against running copies.</li>
+<li>Sessions that were already running when the hooks were installed are not seen until they restart.</li>
+<li>Muse subagents' permission questions are never put to the pane.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/README.md#L309-L319">crates/apex-tool-agent/README.md:309-319</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-agent/tests/pane.rs#L1-L60">crates/apex-tool-agent/tests/pane.rs:1-60</a></p>
+<h2 id="apex-acp-experimental">apex-acp (experimental)</h2>
+<p><code>apex-acp [claude|codex|CMD] [-cwd DIR] [-thoughts] [-transcript] [-resume]</code> runs an ACP agent as a child process. The agent is the one argument, or <code>$APEX_ACP_AGENT</code>. The default is the Claude adapter: <code>claude-agent-acp</code> if it is installed, otherwise <code>npx @agentclientprotocol/claude-agent-acp@latest</code>. The adapter needs node 20 or newer. <code>npx()</code> passes over any node that is too old, tries <code>$APEX_ACP_NODE_BIN</code> and Zed's bundled node, and says which node it found when none will do (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L254-L357">exp/acp/src/main.rs:254-357</a>).</p>
+<p>The window is <code>DIR/-claude</code>, named for the agent by <code>label</code>, which skips runner commands such as <code>python3</code> or <code>npx</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L229-L252">exp/acp/src/main.rs:229-252</a>). It is written only against <code>apex-tool</code>, attaches with <code>Tool::attach(&quot;acp&quot;)</code>, and is not part of the supported surface.</p>
+<h3 id="two-sides-joined-by-channels">Two sides joined by channels</h3>
+<p>The tool API is synchronous and the ACP library is async, so the program runs on two threads:</p>
+<ul>
+<li><strong>The window side, <code>Win</code>,</strong> runs on a thread of its own.</li>
+<li><strong>The agent side</strong> runs on a tokio current-thread runtime on the main thread.</li>
+</ul>
+<p>They exchange <code>Out</code> and <code>In</code> messages (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L71-L137">exp/acp/src/main.rs:71-137</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L197-L225">exp/acp/src/main.rs:197-225</a>).</p>
+<p><code>agent_side</code> registers handlers for session notifications and for the client requests. When it initializes, it declares filesystem read and write and terminal capabilities. The client requests are:</p>
+<ul>
+<li>permission;</li>
+<li><code>fs/read_text_file</code> and <code>fs/write_text_file</code>;</li>
+<li><code>terminal/create</code>, <code>output</code>, <code>wait_for_exit</code>, <code>kill</code> and <code>release</code>.</li>
+</ul>
+<p>Each request is forwarded to the window side together with its <code>Responder</code>, so the window side does the answering. After initialization, the agent side creates a new session, or with <code>-resume</code> restores the newest one. A failed <code>session/new</code> waits for a <code>Login</code>.</p>
+<p>The prompt loop then takes one prompt at a time:</p>
+<ul>
+<li>Prompts that arrive during a turn are queued.</li>
+<li><code>Interrupt</code> sends <code>CancelNotification</code> and drops the queue.</li>
+<li><code>Mode</code> and <code>List</code> requests during a turn are sent on spawned tasks.</li>
+<li><code>Load</code> during a turn is refused (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L361-L585">exp/acp/src/main.rs:361-585</a>).</li>
+</ul>
+<p>Past sessions come from paginated <code>session/list</code> calls. <code>restore</code> uses <code>session/load</code> when the agent can replay the session, otherwise <code>session/resume</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L593-L663">exp/acp/src/main.rs:593-663</a>).</p>
+<h3 id="the-window-side">The window side</h3>
+<p><code>Win</code> keeps the conversation window minimal. <code>•</code> is the agent, <code>–</code> is apex, and <code>~</code> ends a turn; what stands under a <code>~</code> is yours. A single <em>action line</em> at the end shows the current tool call and is removed when the call finishes. The full record goes into <code>Trans</code>, the <code>+transcript</code> window. <code>Trans</code> is kept whether or not that window is open, so <code>Transcript</code> always opens on the whole conversation (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L694-L878">exp/acp/src/main.rs:694-878</a>).</p>
+<p>Verbs work as follows:</p>
+<ul>
+<li>The tools menu lists <code>Send</code>, <code>Interrupt</code>, <code>Preview</code>, <code>Transcript</code> and <code>Stop</code>.</li>
+<li><code>Allow</code>, <code>Always</code>, <code>Deny</code>, <code>Never</code>, <code>Mode</code>, <code>Commands</code>, <code>Login</code> and <code>Resume</code> are unlisted.</li>
+<li>B3 on a hex id resumes that session.</li>
+</ul>
+<p><code>decide</code> answers the oldest pending permission with the option of the requested kind. If there is none of that kind it uses the nearest allow or reject, and if there is none at all it cancels. It then replaces the offered words with what was decided, in both windows (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L880-L929">exp/acp/src/main.rs:880-929</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L1433-L1470">exp/acp/src/main.rs:1433-1470</a>).</p>
+<p>File requests go through apex:</p>
+<ul>
+<li><strong><code>read_file</code></strong> returns an open window's text if there is one, so unsaved edits are included; otherwise it reads the disk.</li>
+<li><strong><code>write_file</code></strong> replaces the window's body and then runs <code>Put</code>, so the change is an edit you can see and undo. With no window open it writes straight to disk (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L2456-L2492">exp/acp/src/main.rs:2456-2492</a>).</li>
+</ul>
+<p>Terminals (<code>term.rs</code>) are child processes with their output captured, not ptys. Their output streams into <code>DIR/-claude+run</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/term.rs#L1-L7">exp/acp/src/term.rs:1-7</a>). The README lists what is not done: images, several agents in one window, and interactive commands. <code>fake_agent.py</code> exercises every path without a real agent.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/README.md#L1-L204">exp/acp/README.md:1-204</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L1-L46">exp/acp/src/main.rs:1-46</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L361-L663">exp/acp/src/main.rs:361-663</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/exp/acp/src/main.rs#L729-L929">exp/acp/src/main.rs:729-929</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="tool-pages.html">Preview, Web and Diff Tools</a></span><span class="next">Next: <a href="build-and-test.html">Building, Testing and Packaging</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child current"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture-hooks-logs-and-a-reader">Architecture: hooks, logs and a reader</a></li>
+<li class="l2"><a href="#installing-the-hooks">Installing the hooks</a></li>
+<li class="l2"><a href="#the-hook-and-the-event-log">The hook and the event log</a></li>
+<li class="l3"><a href="#what-a-line-holds">What a line holds</a></li>
+<li class="l3"><a href="#facts-recorded-once-per-session">Facts recorded once per session</a></li>
+<li class="l3"><a href="#appending-and-reading">Appending and reading</a></li>
+<li class="l3"><a href="#muse-subagents">Muse subagents</a></li>
+<li class="l2"><a href="#agent-state">Agent state</a></li>
+<li class="l2"><a href="#the-tool-pane">The tool: Pane</a></li>
+<li class="l3"><a href="#the-loop">The loop</a></li>
+<li class="l3"><a href="#on-the-agents-own-window">On the agent&#39;s own window</a></li>
+<li class="l2"><a href="#answering-permissions">Answering permissions</a></li>
+<li class="l2"><a href="#transcripts">Transcripts</a></li>
+<li class="l2"><a href="#preview-pages-and-changes">Preview pages and changes</a></li>
+<li class="l3"><a href="#the-page">The page</a></li>
+<li class="l3"><a href="#changes">Changes</a></li>
+<li class="l2"><a href="#pane-verbs-history-and-reaching-agents">Pane verbs, history and reaching agents</a></li>
+<li class="l2"><a href="#ls-wait-and-events">ls, wait and events</a></li>
+<li class="l2"><a href="#testing-and-known-gaps">Testing and known gaps</a></li>
+<li class="l2"><a href="#apex-acp-experimental">apex-acp (experimental)</a></li>
+<li class="l3"><a href="#two-sides-joined-by-channels">Two sides joined by channels</a></li>
+<li class="l3"><a href="#the-window-side">The window side</a></li>
+</ul>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

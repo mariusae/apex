@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickers and Overlays · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Pickers and Overlays</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs">crates/apex-client/src/commands.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs">crates/apex-client/src/completion.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs">crates/apex-client/src/cwdbar.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs">crates/apex-client/src/field.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs">crates/apex-client/src/finder.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs">crates/apex-client/src/quickopen.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs">crates/apex-client/src/shell.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs">crates/apex-client/src/tagedit.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs">crates/apex-client/src/text_element.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs">crates/apex-core/src/fuzzy.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs">crates/apex-server/src/find.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+</ul>
+</details>
+<p>Besides acme's tiled windows, the apex client draws a set of short-lived overlays. They are list pickers and one-line fields that take the keyboard for a moment and then go away. There are six of them: the ⌘P finder (and the same finder across all tabs), ⌘O quick open, the ⌘⇧P command palette, ^F inline file-name completion, the editing and folder picker on a window tag's head, and the folder picker under the title bar's working-directory crumbs. The session selector (⌘T) is built from the same parts but belongs on <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a>.</p>
+<p>None of these overlays is replicated state. Each is an <code>Option&lt;…&gt;</code> field on the <code>Acme</code> app (see <a href="client.html">The UI Client</a>), and none of them shows up in the log until the user picks something. A pick then goes through the normal paths: a <code>Proposal::Goto</code>, <code>Acme::goto</code>, <code>Acme::execute</code> (B2), <code>apex_server::perform</code> with <code>SetPath</code>/<code>SetLabel</code>, or a <code>cd</code>. Some overlays get their contents from the host. Quick open streams results from a find job, and the folder pickers and ^F use the server's <code>candidates</code> listing. That way a remote session's file system is listed where it lives (see <a href="server.html">The Server</a> and <a href="attach-protocol.html">The Attach Protocol</a>). Mouse and keyboard handling outside the overlays is covered on <a href="client-input.html">Mouse, Keyboard and Look</a>.</p>
+<h2 id="the-overlays-at-a-glance">The overlays at a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Overlay</th>
+<th>Opened by</th>
+<th>State field / type</th>
+<th>Items come from</th>
+<th>Matcher</th>
+<th>A pick does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Finder</td>
+<td>⌘P (<code>Goto</code>)</td>
+<td><code>finder: Option&lt;Finder&gt;</code></td>
+<td>open windows in layout order, plus files closed lately</td>
+<td><code>apex_core::fuzzy</code> (via <code>finder::score</code>)</td>
+<td><code>Proposal::Goto</code> by window id or path, switching tab first if needed</td>
+</tr>
+<tr>
+<td>Finder, all tabs</td>
+<td>⌘⇧O (<code>GotoAll</code>)</td>
+<td>same, <code>all: true</code></td>
+<td>every tab's replica (the current one and parked ones)</td>
+<td>same</td>
+<td>as above</td>
+</tr>
+<tr>
+<td>Quick open</td>
+<td>⌘O (<code>OpenPath</code>)</td>
+<td><code>quick: Option&lt;QuickOpen&gt;</code></td>
+<td>host-side <code>find::Job</code> walk of the session's cwd</td>
+<td><code>apex_core::fuzzy</code>, run on the host</td>
+<td><code>Acme::goto</code> on the file, or the folder with its slash</td>
+</tr>
+<tr>
+<td>Command palette</td>
+<td>⌘⇧P (<code>Commands</code>)</td>
+<td><code>commands: Option&lt;Commands&gt;</code></td>
+<td>window verbs, tag words, rule verbs, recent execs, <code>plumb::BUILTINS</code></td>
+<td><code>commands::score</code></td>
+<td><code>Acme::execute</code> as B2 in the target window</td>
+</tr>
+<tr>
+<td>^F completion</td>
+<td>^F or Insert in text</td>
+<td><code>completion: Option&lt;Completion&gt;</code></td>
+<td><code>Server::candidates</code> for the fragment</td>
+<td>prefix (<code>starts_with</code>)</td>
+<td>replaces the name, adding <code>/</code> after a folder or a space after a file</td>
+</tr>
+<tr>
+<td>Tag field</td>
+<td>double-click on path or label</td>
+<td><code>tag_edit: Option&lt;TagEdit&gt;</code></td>
+<td>none</td>
+<td>none</td>
+<td><code>Proposal::SetPath</code> / <code>SetLabel</code></td>
+</tr>
+<tr>
+<td>Tag path picker</td>
+<td>click on a folder or name in the tag</td>
+<td><code>picker: Option&lt;tagedit::Picker&gt;</code></td>
+<td>associated windows plus <code>candidates</code> folder listing</td>
+<td><code>apex_core::fuzzy</code></td>
+<td>goto window or entry; ⌥↩ replaces in place</td>
+</tr>
+<tr>
+<td>cwd picker</td>
+<td>click on a title-bar crumb</td>
+<td><code>cwd_picker: Option&lt;CwdPicker&gt;</code></td>
+<td><code>candidates</code> listing, folders only</td>
+<td><code>apex_core::fuzzy</code></td>
+<td><code>Acme::cd</code></td>
+</tr>
+</tbody>
+</table>
+<p>The key bindings are in <code>shell::bindings</code>: <code>cmd-p</code> → <code>Goto</code>, <code>cmd-shift-o</code> → <code>GotoAll</code>, <code>cmd-o</code> → <code>OpenPath</code>, <code>cmd-shift-p</code> → <code>Commands</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L258-L314">shell.rs:258-314</a>). <code>main.rs</code> connects these actions to <code>open_finder(false)</code>, <code>open_finder(true)</code>, <code>open_quick</code> and <code>open_commands</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L164-L173">main.rs:164-173</a>). The module comment at the top of <code>finder.rs</code> still calls the all-tabs finder ⌘⇧P. That comment is out of date: the binding is ⌘⇧O, and ⌘⇧P opens the command palette.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L258-L314">shell.rs:258-314</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L164-L173">main.rs:164-173</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L1-L18">finder.rs:1-18</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4371-L4375">app.rs:4371-4375</a></p>
+<h2 id="shared-building-blocks">Shared building blocks</h2>
+<pre><code class="language-mermaid">flowchart TD
+    LE[&quot;field::LineEdit&quot;] --&gt; FV[&quot;field::field_view&quot;]
+    FV --&gt; F[&quot;Finder&quot;]
+    FV --&gt; Q[&quot;QuickOpen&quot;]
+    FV --&gt; C[&quot;Commands&quot;]
+    FV --&gt; T[&quot;TagEdit&quot;]
+    FV --&gt; CW[&quot;CwdPicker&quot;]
+    LE --&gt; P[&quot;tagedit::Picker (typed into the tag)&quot;]
+    PAL[&quot;shell::palette_place / palette_panel / palette_field / palette_row&quot;] --&gt; F
+    PAL --&gt; Q
+    PAL --&gt; C
+    CH[&quot;shell::chosen&quot;] --&gt; PAL
+    CH --&gt; P
+    CH --&gt; CW
+    CH --&gt; CO[&quot;Completion&quot;]
+    FZ[&quot;apex_core::fuzzy&quot;] --&gt; F
+    FZ --&gt; P
+    FZ --&gt; CW
+    FZ --&gt; HOST[&quot;find::Job on the host&quot;]
+    HOST --&gt; Q
+    CAND[&quot;Server::candidates&quot;] --&gt; P
+    CAND --&gt; CW
+    CAND --&gt; CO
+</code></pre>
+<h3 id="the-one-line-field-lineedit">The one-line field: <code>LineEdit</code></h3>
+<p><code>field::LineEdit</code> is the text field used by every overlay. It holds a <code>String</code>, a <code>cursor</code> and an optional <code>anchor</code> (both counted in characters, not bytes), plus an undo stack of <code>(text, cursor)</code> pairs capped at 64 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs#L10-L18">field.rs:10-18</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs#L81-L86">field.rs:81-86</a>). Because it implements <code>Deref&lt;Target = str&gt;</code>, callers can use <code>filter.trim()</code> and <code>filter.is_empty()</code> directly.</p>
+<p><code>LineEdit::key(key, ch, mods) -&gt; Edited</code> is the editing state machine. It handles the keys a Mac text field answers:</p>
+<ul>
+<li>arrows: shift extends the selection, ⌥ moves by words, ⌘ moves to the ends;</li>
+<li>home and end;</li>
+<li>backspace (⌥ deletes a word, ⌘ deletes to the start) and forward delete;</li>
+<li>the emacs control keys ^A ^E ^B ^F ^D ^H ^U ^W ^K;</li>
+<li>any printable character, as long as ⌘ is not held.</li>
+</ul>
+<p>It returns <code>Changed</code>, <code>Moved</code> or <code>No</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs#L202-L312">field.rs:202-312</a>). Each overlay's key handler relies on this result: <code>Changed</code> re-filters and usually resets the cursor to 0, <code>Moved</code> only redraws, and <code>No</code> lets the key fall through. Word boundaries are alphanumerics plus <code>_</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs#L136-L164">field.rs:136-164</a>).</p>
+<p><code>field_view(e, caret_on, hint, active)</code> draws the field. It splits the text at the cursor and the selection ends, gives the selected span the <code>field_sel</code> background, puts a 1.5 px caret at the cursor, and shows the dimmed hint when the field is empty (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs#L315-L349">field.rs:315-349</a>).</p>
+<h3 id="the-palette-look-and-the-chosen-row">The palette look and the &quot;chosen&quot; row</h3>
+<p>Three overlays (the finder, quick open and the command palette) plus the session selector are drawn as a palette in the style of Manifold's. <code>palette_place</code> puts the panel across a translucent scrim (<code>veil()</code>), 30% of the way down the window. <code>palette_panel</code> is a 560 px card with 12 px rounded corners. <code>palette_field</code> is a 48 px search row with a magnifying glass. <code>palette_row</code> is a 34 px row (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L699-L797">shell.rs:699-797</a>).</p>
+<p>The anchored pickers (tag path, cwd and ^F) build their own panels, but all of them use <code>shell::chosen</code> to mark the selected row. <code>chosen</code> colours the row by the mouse button whose action it stands for. <code>Act::Exec</code> uses B2's sweep colours and is used by the command palette and the B4 menu. <code>Act::Look</code> uses B3's and is used by the finder, quick open and the pickers. In both cases a small bar is drawn at the row's left (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L745-L785">shell.rs:745-785</a>).</p>
+<p>Every panel also adds <code>self.overlay_mark()</code>. This is a zero-size canvas that records the panel's bounds in <code>overlay_bounds</code> for the current frame (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1131-L1154">app.rs:1131-1154</a>). Those bounds are used for two things: cutting holes in the native web views so the overlay shows above a page, and <code>over_overlay</code>, which makes the pointer over a panel count as being on no text. Keys then go to <code>kept_target</code> instead of to whatever is under the panel (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3140-L3156">app.rs:3140-3156</a>).</p>
+<h3 id="blinking">Blinking</h3>
+<p>Each overlay runs its own blink. The finder and the selector spawn a loop on <code>shell::BLINK</code> (500 ms). Quick open polls every 40 ms and redraws when the caret changes phase. The tag and cwd pickers loop at 530 ms. <code>Commands::caret_on</code> calculates a 530 ms phase but spawns no timer of its own, so its caret only blinks when something else causes a redraw (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L234-L257">finder.rs:234-257</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L101-L122">quickopen.rs:101-122</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L116-L118">tagedit.rs:116-118</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs#L95-L97">commands.rs:95-97</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/field.rs#L1-L349">field.rs:1-349</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L699-L797">shell.rs:699-797</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1131-L1154">app.rs:1131-1154</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3140-L3156">app.rs:3140-3156</a></p>
+<h2 id="routing-keys-clicks-and-the-edit-menu">Routing keys, clicks and the Edit menu</h2>
+<p>The overlays have no common type. <code>Acme</code>'s key handler checks them one at a time, in a fixed order, and gives the key to the first one that is up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4918-L4972">app.rs:4918-4972</a>):</p>
+<ol>
+<li><code>completion</code>, but only for keys without ⌘, and only if <code>completion_key</code> returns true;</li>
+<li><code>finder</code>;</li>
+<li><code>quick</code>, unless the key is ⌘O, which falls through so <code>OpenPath</code> can toggle the overlay closed;</li>
+<li><code>url_edit</code> (the page address bar, see <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>);</li>
+<li><code>tag_edit</code>;</li>
+<li><code>picker</code> (the tag path picker);</li>
+<li><code>cwd_picker</code>;</li>
+<li><code>session_edit</code>, then <code>session_menu</code> (escape only);</li>
+<li><code>commands</code>;</li>
+<li><code>selector</code>.</li>
+</ol>
+<p>Any key that reaches the text afterwards is followed by <code>completion_follow</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5045">app.rs:5045</a>).</p>
+<p>A mouse press anywhere closes them, again in a fixed order. <code>url_edit</code>, <code>tag_edit</code>, <code>picker</code>, <code>cwd_picker</code> and <code>completion</code> are dropped and the press goes on as usual. A press that closes <code>commands</code>, <code>finder</code>, <code>quick</code> or <code>selector</code> is used up by the close and does nothing else (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3301-L3335">app.rs:3301-3335</a>). Clicks on rows still work because each panel calls <code>stop_propagation</code> on its own mouse-down, so the press never reaches <code>mouse_down</code>.</p>
+<p>The Edit menu's actions (⌘X ⌘C ⌘V ⌘A ⌘Z) arrive as actions before any key event. <code>menu_edit</code> sends them to <code>overlay_edit</code> when the selector, finder, url field, palette or quick open is up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5109-L5115">app.rs:5109-5115</a>). <code>overlay_edit</code> asks <code>overlay_field()</code> for the field that has the keyboard. It checks the selector (or its new-host form), then <code>url_edit</code>, <code>commands</code>, <code>finder</code> and <code>quick</code>, and applies paste (first line of the clipboard, trimmed), select-all, copy, cut or undo to that field. If the text changed, it calls <code>overlay_changed</code>, which resets the list (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1412-L1494">shell.rs:1412-1494</a>). The tag field and the two folder pickers are missing from both checks, which the review below points out.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4918-L5047">app.rs:4918-5047</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3287-L3335">app.rs:3287-3335</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5063-L5115">app.rs:5063-5115</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1412-L1494">shell.rs:1412-1494</a></p>
+<h2 id="p-the-finder">⌘P: the finder</h2>
+<p><code>Finder</code> holds a <code>LineEdit</code> filter, a cursor, its <code>entries</code>, the <code>all</code> flag and <code>here</code>, the tab the window shows (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L76-L86">finder.rs:76-86</a>). Entries are gathered once, when the finder opens, by <code>session_entries</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L172-L204">finder.rs:172-204</a>):</p>
+<ul>
+<li>The open windows come in layout order. Within each column, <code>tiling::stash_order</code> puts stashed windows where they stood, and stashed windows whose column is gone (&quot;orphans&quot;) follow. Each window is followed by the windows it covers (<code>layout.stack(w)</code>), so picking a covered window brings it up.</li>
+<li>Each window gets a <code>label</code>: its own label, or <code>&quot;Errors&quot;</code> for an Errors window, or <code>&quot;Preview&quot;</code> for a page fed from a buffer. Windows with neither a name nor a label are skipped.</li>
+<li>Next come the session's recently closed files that are not open now.</li>
+</ul>
+<p>With <code>all</code> set, <code>finder_entries</code> does the same for every tab in <code>Pool::tabs</code>. It uses this window's <code>node</code> for the current tab and the parked <code>Node</code> replica for each other tab. Every entry gets <code>tab: Some((TabId, label))</code>, and <code>tab_label</code> appends <code> @ host</code> for remote sessions (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L206-L232">finder.rs:206-232</a>).</p>
+<h3 id="ranking">Ranking</h3>
+<p><code>Finder::picks</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L93-L114">finder.rs:93-114</a>):</p>
+<ul>
+<li>With nothing typed, it shows only open windows, in gathered order. Closed files are there to be found by name, not scrolled through.</li>
+<li>With a query, every entry is scored by <code>Entry::score</code>. That is the best of three scores: the path alone, the label alone, and <code>&quot;path label&quot;</code> together, so a query like <code>rust-analyzer</code> finds a window by its label (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L50-L57">finder.rs:50-57</a>). Results are sorted by score, then open before closed, then this tab before others, then gathered order.</li>
+</ul>
+<p><code>finder::score</code> passes through to <code>apex_core::fuzzy::score</code>, the Zed-style scorer that the host's ⌘O listing also uses. Every query character must appear in order. Each scores 1.0 at the start of the file name or when it continues the previous match, 0.9 after <code>/</code>, 0.8 at a word start, and 0.55 otherwise. A case mismatch halves the score, and matches inside the file name get a bonus (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs#L1-L14">fuzzy.rs:1-14</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L125-L135">finder.rs:125-135</a>).</p>
+<p>↑ and ↓ wrap around (<code>rem_euclid</code>). Typing resets the cursor to 0 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L116-L122">finder.rs:116-122</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L264-L293">finder.rs:264-293</a>).</p>
+<h3 id="picking">Picking</h3>
+<p><code>Acme::pick</code> goes to an open window <strong>by its id</strong>, not its path, because a file and its preview share a path. If the entry is in another tab, it calls <code>switch_to</code> first. If that tab is still attaching, the <code>Loc</code> is kept in <code>pending_goto</code> and used once the tab arrives. Otherwise it applies <code>Proposal::Goto { loc }</code> through <code>apex_server::proposal::apply</code>, which records the origin on the back stack, as a jump should (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L295-L323">finder.rs:295-323</a>; see <a href="proposals.html">Proposals</a>).</p>
+<h3 id="recently-closed-files">Recently closed files</h3>
+<p><code>track_closed</code> runs on every <code>sync</code>. It compares the file windows (not scratch ones) with those seen last time. When an absolute, non-directory file window has disappeared, it calls <code>note_closed</code>. It resets its baseline whenever the window's session URL changes, so switching tabs does not count as closing (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L325-L349">finder.rs:325-349</a>). <code>note_closed</code> keeps the 50 most recent paths per session, newest first and without duplicates, in <code>~/Library/Application Support/apex/recent-files</code>, one <code>url&lt;TAB&gt;path</code> per line. That makes the list per machine, not per replica (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L137-L168">finder.rs:137-168</a>).</p>
+<p>The panel marks each row: ▶ for an open terminal, ● for another open window, ○ for a closed file. It shows the label as a chip, the folder in the dim ink, &quot;closed&quot; for closed files, and a tab badge reading &quot;· here&quot; for the current tab. At most 24 rows are drawn (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L351-L433">finder.rs:351-433</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L1-L433">finder.rs:1-433</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs#L1-L14">fuzzy.rs:1-14</a></p>
+<h2 id="o-quick-open-backed-by-the-hosts-find-job">⌘O: quick open, backed by the host's find job</h2>
+<p>Quick open lists everything under the session's directory (<code>meta.cwd</code>) and matches it as the user types. The matching runs on the host, where the files are. The client only receives the best page of results.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant U as &quot;User&quot;
+    participant A as &quot;Acme (quickopen.rs)&quot;
+    participant L as &quot;Link / in-process queue&quot;
+    participant J as &quot;find::Job (host)&quot;
+    U-&gt;&gt;A: &quot;⌘O&quot;
+    A-&gt;&gt;L: &quot;FindStart {id, dir: cwd}&quot;
+    L-&gt;&gt;J: &quot;Job::start (walk thread)&quot;
+    A-&gt;&gt;L: &quot;FindQuery {id, gen 1, query '', limit 200}&quot;
+    loop &quot;every 40 ms while open&quot;
+        J--&gt;&gt;L: &quot;Found {id, gen, items, matched, indexed, done, capped}&quot;
+        A-&gt;&gt;L: &quot;quick_take: newest gen in [shown, gen]&quot;
+    end
+    U-&gt;&gt;A: &quot;types a key&quot;
+    A-&gt;&gt;L: &quot;FindQuery {gen+1, query, limit 200}&quot;
+    U-&gt;&gt;A: &quot;cursor nears end of page&quot;
+    A-&gt;&gt;L: &quot;FindQuery {same query, limit += 200}&quot;
+    U-&gt;&gt;A: &quot;Return / Esc / click / ⌘O&quot;
+    A-&gt;&gt;L: &quot;FindStop {id}&quot;
+    L-&gt;&gt;J: &quot;job dropped, threads end&quot;
+</code></pre>
+<p><code>open_quick</code> toggles: if quick open is already up, it closes it. If <code>cwd</code> is empty it shows a notice and stops. Otherwise it closes the finder and palette, assigns a new request id (<code>next_find</code>), and starts the listing:</p>
+<ul>
+<li>With <code>Backend::Remote</code>, it clears <code>link.found</code> and sends <code>ClientMsg::FindStart</code>.</li>
+<li>With <code>Backend::Local</code>, it starts <code>apex_server::find::Job</code> in-process, with a sink that pushes into an <code>Arc&lt;Mutex&lt;Vec&lt;ServerMsg&gt;&gt;&gt;</code>.</li>
+</ul>
+<p>It then sends the first query and spawns a 40 ms poll that calls <code>quick_take</code> and redraws when something arrived or the caret blinked (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L69-L124">quickopen.rs:69-124</a>). The daemon handles <code>FindStart</code> by starting a job whose sink writes straight to the asking connection, <code>FindQuery</code> by calling <code>job.query</code>, and <code>FindStop</code> by dropping the job (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L885-L902">daemon.rs:885-902</a>).</p>
+<p>On the host, the job walks breadth-first. It skips dot-directories, <code>node_modules</code>, <code>__pycache__</code> and <code>buck-out</code>, and does not follow directory links. It stops at <code>CAP</code> = 1,000,000 entries and reports that it did. Queries are matched with <code>apex_core::fuzzy</code> across cores, rematched as the walk adds entries, and abandoned partway through when a newer query arrives (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L1-L45">find.rs:1-45</a>).</p>
+<h3 id="generations-and-pages">Generations and pages</h3>
+<p>Each query carries a generation, <code>gen</code>. <code>quick_query(fresh)</code> increments <code>gen</code>. A fresh query resets <code>limit</code> to <code>PAGE</code> (200) and the cursor to 0. A query that is not fresh asks again with a larger limit (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L126-L141">quickopen.rs:126-141</a>).</p>
+<p><code>quick_take</code> accepts a <code>Found</code> message only if its id matches and <code>shown &lt;= gen &lt;= q.gen</code>. An answer to an older query can therefore still be shown until the newest one arrives, but never after. A larger page of the same query keeps the cursor where it is, clamped to the new length (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L143-L171">quickopen.rs:143-171</a>).</p>
+<p><code>quick_moved</code> asks for another page when more matches exist than have arrived, the cursor is within <code>ROWS</code> (12) of the end, and the previous page came back full (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L183-L192">quickopen.rs:183-192</a>). The cursor clamps at both ends instead of wrapping, and PageUp/PageDown move 12 rows.</p>
+<p><code>quick_pick</code> closes the overlay and calls <code>Acme::goto</code> with <code>root + rel</code>, adding a trailing <code>/</code> for a folder so it opens as a directory window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L231-L240">quickopen.rs:231-240</a>). <code>close_quick</code> sends <code>FindStop</code> for a remote job; an in-process job ends when it is dropped. The footer shows &quot;Indexing… N&quot; or &quot;N entries&quot;, the match count, and a note when the walk was capped (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L283-L306">quickopen.rs:283-306</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L1-L315">quickopen.rs:1-315</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L885-L902">daemon.rs:885-902</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L1-L45">find.rs:1-45</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L442-L443">remote.rs:442-443</a></p>
+<h2 id="p-the-command-palette">⌘⇧P: the command palette</h2>
+<p><code>open_commands</code> toggles. It first finds the target window with <code>command_target</code>: the visible window under <code>last_mouse</code>, or else the window of the last selected text (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs#L148-L153">commands.rs:148-153</a>). It then gathers <code>(text, Origin)</code> items with no duplicates, skipping empty strings and <code>|</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs#L100-L146">commands.rs:100-146</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Origin</th>
+<th>Glyph</th>
+<th>Items</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Tag</code></td>
+<td>›</td>
+<td><code>node.window_verbs(w)</code>, then each whitespace-separated word of the window's tag</td>
+</tr>
+<tr>
+<td><code>Tool</code></td>
+<td>⚙</td>
+<td><code>plumb::verbs_for(rules, path, kind, window, owner)</code>, the verbs the B4 menu offers (see <a href="plumbing.html">Plumbing</a>)</td>
+</tr>
+<tr>
+<td><code>Recent</code></td>
+<td>↺</td>
+<td>up to 40 exec texts from every window's <code>execs</code> and the layout's, newest first by <code>Seq</code></td>
+</tr>
+<tr>
+<td><code>Apex</code></td>
+<td>▸</td>
+<td><code>apex_core::plumb::BUILTINS</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>commands::score(text, q)</code> is a separate, simpler matcher. It matches a case-insensitive subsequence and scores +1 per character, +8 at index 0, +4 after a non-alphanumeric, and +5 for a run. The total is multiplied by 10 and reduced by <code>len/4</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs#L57-L83">commands.rs:57-83</a>). <code>matches()</code> sorts by score, keeps gathering order for ties, and returns at most 12 items.</p>
+<p>Return runs the selected item, or the typed text if nothing matches, through <code>Acme::execute(ctx, text)</code>, the same path B2 uses (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs#L155-L184">commands.rs:155-184</a>). <code>ctx</code> is <code>ExecCtx::Window(w)</code>, or <code>ExecCtx::Top</code> if there was no target. Rows are drawn with <code>Act::Exec</code> colours, and the panel has a higher deferred priority (2) than the finder's (1).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/commands.rs#L1-L233">commands.rs:1-233</a></p>
+<h2 id="f-inline-completion">^F: inline completion</h2>
+<p>^F, or the Insert key, in a text view calls <code>Acme::complete(v, q0)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5216-L5220">app.rs:5216-5220</a>). This is acme's <code>textcomplete</code>. It walks back from the caret over file-name characters to find the fragment, then asks the server for candidates in the view's directory. A local backend calls <code>server.candidates</code> directly and queues the answer. A remote one sends <code>ClientMsg::Candidates { view, ctx, at: q0, prefix }</code>, and the daemon replies to that connection only (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4760-L4780">app.rs:4760-4780</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L925-L929">daemon.rs:925-929</a>). <code>Server::candidates</code> lists the fragment's directory and returns names that start with the fragment's last part, sorted, each with a flag saying whether it is a directory, or an error string (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1235-L1246">lib.rs:1235-1246</a>).</p>
+<h3 id="routing-listings-by-at">Routing listings by <code>at</code></h3>
+<p>The folder pickers use the same <code>Candidates</code> request and reply. To tell the replies apart, they put a sentinel in the <code>at</code> field. On each <code>sync</code>, the client routes replies as follows (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1905-L1914">app.rs:1905-1914</a>):</p>
+<pre><code class="language-rust">if c.at == crate::tagedit::LISTING {          // usize::MAX
+    self.got_listing(c);                      // tag path picker
+} else if c.at == crate::cwdbar::CWD_LISTING { // usize::MAX - 1
+    self.got_cwd_listing(c);                  // cwd picker
+} else {
+    self.got_candidates(c);                   // ^F at caret offset `at`
+}
+</code></pre>
+<h3 id="what-happens-with-the-answer">What happens with the answer</h3>
+<p><code>got_candidates</code> ignores the reply if the caret has moved since the request. Otherwise (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L64-L93">completion.rs:64-93</a>):</p>
+<ul>
+<li><strong>No names:</strong> a <code>Completion</code> with <code>none</code> set is shown as &quot;No matches&quot; for 1.5 s.</li>
+<li><strong>One name:</strong> <code>complete_with</code> replaces the typed part of the name with the full name, adding <code>/</code> after a directory or a space after a file, and leaves no selection (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L95-L108">completion.rs:95-108</a>).</li>
+<li><strong>Several names:</strong> the longest common prefix (<code>common</code>) is inserted immediately, and the list stays open.</li>
+</ul>
+<p>While the list is up, typing still goes into the text. <code>completion_follow</code> runs after each key and narrows the list by <strong>prefix</strong> match on what has been typed since <code>start</code>. It closes the list when that span contains a non-name character, when the caret moves away, or when a <code>/</code> is typed. A directory's contents only come with the next ^F (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L168-L194">completion.rs:168-194</a>).</p>
+<p><code>completion_key</code> handles ↑/↓ (wrapping), Return/Tab (take the selected name) and Escape. It refuses keys while the list has not been placed on screen yet, so that Return goes to the text and does not pick a name the user never saw (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L123-L166">completion.rs:123-166</a>).</p>
+<p>The list is anchored at the screen position of the name's start, taken from the previous frame's layout. <code>completion_anchor</code> retries for up to <code>UNPLACED</code> (4) frames before giving up (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L196-L222">completion.rs:196-222</a>). The panel uses the window's own font (mono or proportional), shows at most 8 rows around the cursor, and draws the already-typed part of each name dimmed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L224-L298">completion.rs:224-298</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L1-L299">completion.rs:1-299</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1905-L1914">app.rs:1905-1914</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4760-L4780">app.rs:4760-4780</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L925-L929">daemon.rs:925-929</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1235-L1246">lib.rs:1235-1246</a></p>
+<h2 id="the-tag-head-path-and-label-fields-and-the-path-picker">The tag head: path and label fields, and the path picker</h2>
+<p>A window tag's head is laid out as atoms (<code>text_element::Atom</code>): <code>Dir(k)</code> for each folder in the path, <code>Name</code>, <code>Untitled</code>, <code>Label</code>, <code>Verb(i)</code> and <code>Typed</code>. <code>press_atom</code> decides what a press on each one does (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L166-L199">tagedit.rs:166-199</a>):</p>
+<pre><code class="language-mermaid">flowchart LR
+    A[&quot;press on tag atom&quot;] --&gt; B{&quot;atom / button / clicks&quot;}
+    B --&gt;|&quot;B1 or B2 on Verb&quot;| V[&quot;run on release (release_atom)&quot;]
+    B --&gt;|&quot;B1 x2 on Dir, Name, Untitled; B1 on Untitled&quot;| E[&quot;tag_edit_start(Path)&quot;]
+    B --&gt;|&quot;B1 x2 on Label&quot;| EL[&quot;tag_edit_start(Label)&quot;]
+    B --&gt;|&quot;B1 on Dir or Name&quot;| P[&quot;open_path_picker&quot;]
+    B --&gt;|&quot;B3 on Dir(k) or Name&quot;| L[&quot;look(path up to there)&quot;]
+    P --&gt;|&quot;second click within DOUBLE (500 ms)&quot;| E
+</code></pre>
+<h3 id="the-field">The field</h3>
+<p><code>tag_edit_start</code> places a <code>TagEdit</code> over the bounds of the path or label. For the path, it pre-selects the file name without its extension, since that is what a rename usually changes. For the label, it selects everything (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L218-L254">tagedit.rs:218-254</a>).</p>
+<p>When Return is pressed, <code>tag_edit_key</code> calls <code>apex_server::perform</code> with either <code>Proposal::SetPath { path: absolute_for(w, text) }</code> (an empty path does nothing) or <code>Proposal::SetLabel</code> (an empty label clears it) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L256-L281">tagedit.rs:256-281</a>). <code>absolute_for</code> resolves what was typed the way acme resolves names: absolute paths and URLs are kept, <code>~/</code> means home, and anything else is relative to the window's own folder (a directory window's parent) or to its error directory (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L283-L305">tagedit.rs:283-305</a>).</p>
+<h3 id="the-path-picker">The path picker</h3>
+<p>A single click on a folder or the name opens a picker under it, modelled on VS Code's breadcrumbs. <code>folder_of(path, atom)</code> gives the folder to list and the entry the path passes through, so the cursor starts on that entry (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L148-L164">tagedit.rs:148-164</a>). <code>open_path_picker</code> does nothing on URL pages. It works out how many rows fit below the tag (between 3 and 12), positions the panel so its names line up with the path text, and asks the host for the listing with <code>list_folder_as(ViewId::Tag(w), ExecCtx::Window(w), LISTING, dir)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L307-L363">tagedit.rs:307-363</a>).</p>
+<p>The picker's query is typed into the tag itself. <code>Head::picking</code> draws the folder followed by the typed text and its caret (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L978-L985">text_element.rs:978-985</a>). <code>picker_anchor</code> moves the panel to follow the <code>Typed</code> atom as the user goes into or out of folders (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L519-L532">tagedit.rs:519-532</a>).</p>
+<p><code>Picker::picks</code> lists <code>Choice::Window</code> rows first, then <code>Choice::Entry</code> rows (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L120-L146">tagedit.rs:120-146</a>). The window rows come from <code>associated(dir, except)</code>: the windows open on that folder, or on a file directly in it, that are not a plain file or folder window. That means Errors, previews, terminals and tool panes, ranked Errors first, then previews, then the rest (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L450-L483">tagedit.rs:450-483</a>). With nothing typed, entries are sorted folders first and then case-insensitively. With a query, both groups are fuzzy-scored with <code>finder::score</code> and sorted best first.</p>
+<p>Keys in <code>picker_key</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L376-L406">tagedit.rs:376-406</a>):</p>
+<ul>
+<li>↑/↓ move the cursor, clamped.</li>
+<li>→ or Tab on a folder goes into it (<code>picker_into</code>).</li>
+<li>← or Backspace with nothing typed goes up a folder (<code>picker_up</code>), with the cursor on the folder just left.</li>
+<li>Return picks. A window row is reached with <code>Proposal::Goto</code> by id. An entry is opened in a window of its own with <code>Acme::goto</code>. <strong>⌥Return</strong> replaces this window's contents instead: it applies <code>SetPath</code> and then <code>Get</code>, but only when the window shows the same kind of thing (a file for a file, a folder for a folder) and is not scratch or live. On an unsaved window, the first ⌥Return only sets <code>warned</code> and the footer asks for a second press (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L408-L448">tagedit.rs:408-448</a>).</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L1-L676">tagedit.rs:1-676</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3404-L3413">app.rs:3404-3413</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L978-L985">text_element.rs:978-985</a></p>
+<h2 id="the-cwd-picker-in-the-title-bar">The cwd picker in the title bar</h2>
+<p><code>cwd_bar</code> draws the session's <code>meta.host</code> (dimmed) and <code>meta.cwd</code> as crumbs. <code>crumbs(&quot;/a/bc/&quot;)</code> returns each part with its slash and the path up to and including it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L68-L83">cwdbar.rs:68-83</a>). <code>titlefit::first_crumb</code> shortens a long path to <code>…/</code> followed by the later crumbs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L100-L183">cwdbar.rs:100-183</a>). ⌘-click or B3 on a crumb plumbs the path up to that crumb, with <code>look(ExecCtx::Top, upto)</code>. A plain click opens the picker.</p>
+<p><code>CwdPicker</code> is close to a copy of the tag path picker, but simpler. It lists folders only (it filters <code>Candidates</code> on the directory flag), and its first row is <code>None</code>, shown as <code>./ this folder</code>, whenever nothing is typed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L29-L66">cwdbar.rs:29-66</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L211-L221">cwdbar.rs:211-221</a>). It asks for listings with <code>list_folder_as(ViewId::Top, ExecCtx::Top, CWD_LISTING, dir)</code>. It has the same → / Tab / ← / Backspace navigation as the path picker (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L223-L286">cwdbar.rs:223-286</a>). While it is open, the typed query appears after the crumbs.</p>
+<p>Return calls <code>Acme::cd(dir)</code>, which works like <code>apex cd</code>. A local backend calls <code>server.cd</code> and appends the resulting meta op to the log. A remote one sends <code>ClientMsg::Cd</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L86-L98">cwdbar.rs:86-98</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L254-L264">cwdbar.rs:254-264</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cwdbar.rs#L1-L392">cwdbar.rs:1-392</a></p>
+<h2 id="edge-cases-and-invariants">Edge cases and invariants</h2>
+<ul>
+<li><strong>Stale answers are dropped.</strong> ^F checks that the caret is still at <code>at</code>. The folder pickers check <code>p.dir == c.prefix</code> (and, for the tag picker, also the view). Quick open checks the request id and the generation window.</li>
+<li><strong>Goto by id.</strong> The finder and the path picker go to open windows by <code>WindowId</code>, written as a string, because two windows can share a path (a file and its preview).</li>
+<li><strong>Two navigation paths.</strong> The finder and the window rows of the path picker use <code>Proposal::Goto</code>, which pushes onto the back stack. Quick open and the path picker's entries use <code>Acme::goto</code> → <code>node.land</code>, which does not (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4238-L4248">app.rs:4238-4248</a>). So ⌘[ cannot go back from a ⌘O pick.</li>
+<li><strong>Cursor behaviour differs.</strong> The finder and ^F wrap at the ends. The palette, quick open and both folder pickers clamp. Most overlays reset the cursor to 0 on <code>Edited::Changed</code>.</li>
+<li><strong>Closing only some overlays.</strong> <code>open_quick</code> closes the finder and palette, <code>open_finder</code> closes the selector, and <code>open_cwd_picker</code> closes the tag picker and tag field. No single function closes all of them.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/completion.rs#L67-L71">completion.rs:67-71</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/tagedit.rs#L365-L374">tagedit.rs:365-374</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/quickopen.rs#L153-L157">quickopen.rs:153-157</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4238-L4248">app.rs:4238-4248</a></p>
+<h2 id="the-review-one-listpicker-one-overlay-state">The review: one ListPicker, one overlay state</h2>
+<p>The client section of ARCHITECTURE.md's review counts &quot;about nine&quot; list pickers. These are the six on this page plus the session selector, the title bar's session dropdown and the B4 menu. It notes:</p>
+<ul>
+<li>They use <strong>four matchers</strong>: <code>apex_core::fuzzy</code>, <code>commands::score</code>, substring (the session selector) and prefix (^F).</li>
+<li>Cursor wrapping and clamping differ between them.</li>
+<li>The cwd picker is nearly a copy of the tag path picker.</li>
+<li>The <code>shell::palette_*</code> helpers are only a partial shared primitive.</li>
+</ul>
+<p>Its proposal is a single <code>ListPicker</code> with:</p>
+<ul>
+<li>an item source: static, streamed from the host, or a folder walk;</li>
+<li>one matcher;</li>
+<li>a row renderer;</li>
+<li>a placement: centred, anchored, or at the caret.</li>
+</ul>
+<p>The two folder pickers would then become one source with different pick actions (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L279-L301">ARCHITECTURE.md:279-301</a>).</p>
+<p>The review also counts 14 separate <code>Option</code> overlay fields, each with hand-written &quot;is one up?&quot; checks that disagree with each other: <code>overlay_up</code>, the key routing, <code>menu_edit</code>, <code>menu_command</code> and <code>overlay_field</code>. It notes four or more copies of caret blinking at 500 or 530 ms, most of which ignore View ▸ Blink Cursor. A likely consequence, which the review did not confirm by running the app: ⌘C and ⌘V while the tag field, path picker or cwd picker is open go to the text under the pointer. The checks quoted above bear this out, since <code>menu_edit</code> and <code>overlay_field</code> do not list <code>tag_edit</code>, <code>picker</code> or <code>cwd_picker</code>.</p>
+<p>The proposed fix is one <code>Option&lt;Overlay&gt;</code>, or a small stack of them, behind a trait with <code>key</code>, <code>field</code>, <code>edit</code>, <code>render</code> and <code>bounds</code>. Together with &quot;one blink clock&quot; and &quot;one navigation path&quot;, this is part of the planned client cleanups (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L303-L324">ARCHITECTURE.md:303-324</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L928-L935">ARCHITECTURE.md:928-935</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L279-L324">ARCHITECTURE.md:279-324</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L928-L935">ARCHITECTURE.md:928-935</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L1412-L1439">shell.rs:1412-1439</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5109-L5115">app.rs:5109-5115</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="client-input.html">Mouse, Keyboard and Look</a></span><span class="next">Next: <a href="client-chrome.html">Sessions, Tabs and Window Chrome</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child current"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+<ul class="sections">
+<li class="l2"><a href="#the-overlays-at-a-glance">The overlays at a glance</a></li>
+<li class="l2"><a href="#shared-building-blocks">Shared building blocks</a></li>
+<li class="l3"><a href="#the-one-line-field-lineedit">The one-line field: LineEdit</a></li>
+<li class="l3"><a href="#the-palette-look-and-the-chosen-row">The palette look and the &#34;chosen&#34; row</a></li>
+<li class="l3"><a href="#blinking">Blinking</a></li>
+<li class="l2"><a href="#routing-keys-clicks-and-the-edit-menu">Routing keys, clicks and the Edit menu</a></li>
+<li class="l2"><a href="#p-the-finder">⌘P: the finder</a></li>
+<li class="l3"><a href="#ranking">Ranking</a></li>
+<li class="l3"><a href="#picking">Picking</a></li>
+<li class="l3"><a href="#recently-closed-files">Recently closed files</a></li>
+<li class="l2"><a href="#o-quick-open-backed-by-the-hosts-find-job">⌘O: quick open, backed by the host&#39;s find job</a></li>
+<li class="l3"><a href="#generations-and-pages">Generations and pages</a></li>
+<li class="l2"><a href="#p-the-command-palette">⌘⇧P: the command palette</a></li>
+<li class="l2"><a href="#f-inline-completion">^F: inline completion</a></li>
+<li class="l3"><a href="#routing-listings-by-at">Routing listings by at</a></li>
+<li class="l3"><a href="#what-happens-with-the-answer">What happens with the answer</a></li>
+<li class="l2"><a href="#the-tag-head-path-and-label-fields-and-the-path-picker">The tag head: path and label fields, and the path picker</a></li>
+<li class="l3"><a href="#the-field">The field</a></li>
+<li class="l3"><a href="#the-path-picker">The path picker</a></li>
+<li class="l2"><a href="#the-cwd-picker-in-the-title-bar">The cwd picker in the title bar</a></li>
+<li class="l2"><a href="#edge-cases-and-invariants">Edge cases and invariants</a></li>
+<li class="l2"><a href="#the-review-one-listpicker-one-overlay-state">The review: one ListPicker, one overlay state</a></li>
+</ul>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

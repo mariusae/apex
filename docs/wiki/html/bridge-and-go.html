@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON Bridge and Go SDK · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>JSON Bridge and Go SDK</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs">crates/apex-cli/tests/cli.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs">crates/apex-tool-bridge/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/README.md">go/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go">go/apex/apex.go</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex_test.go">go/apex/apex_test.go</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/examples/upper/main.go">go/examples/upper/main.go</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/go.mod">go/go.mod</a></li>
+</ul>
+</details>
+<p>apex's tool API lives in the <code>apex-tool</code> Rust crate (see <a href="tool-sdk.html">Writing Tools: the apex-tool SDK</a>). That crate links against the replica, the wire protocol and the proposal machinery, so a tool written in another language cannot use it directly. The <strong>bridge</strong> solves this. <code>apex tool bridge NAME</code> is a small process that attaches to a session as the tool <code>NAME</code> through <code>apex-tool</code>, then exposes that crate's methods and events as JSON, one object per line, on its standard input and output. A program in any language starts the bridge as a child process and talks to it. It never sees the <a href="attach-protocol.html">attach protocol</a>, <a href="proposals.html">proposals</a> or the replicated state.</p>
+<p>The <strong>Go package</strong> <code>github.com/mariusae/apex/go/apex</code> is a client of the bridge. It starts <code>apex tool bridge</code>, matches replies to requests by id, queues events and dispatches them to handlers from a <code>Serve</code> loop. This page covers the JSON surface, the Go package built on it, the <code>upper</code> example and the tests, and ends with the places where the bridge, the Go package and the Rust SDK disagree.</p>
+<h2 id="architecture">Architecture</h2>
+<p>The bridge is a thin layer and contains no state of its own beyond a table of pending HTTP-style requests. The state that matters (the tool's replica, its watched windows and the edits it expects to see come back) lives in the <code>apex_tool::Tool</code> the bridge holds. The Go side adds request/response matching, an unbounded event queue and handler tables.</p>
+<pre><code class="language-mermaid">flowchart LR
+  subgraph GoProcess[&quot;Go tool process&quot;]
+    Prog[&quot;tool code&quot;] --&gt; GT[&quot;apex.Tool&quot;]
+    GT --&gt; Call[&quot;call: id, pending map&quot;]
+    Rd[&quot;read goroutine&quot;] --&gt; Pend[&quot;pending replies&quot;]
+    Rd --&gt; Q[&quot;event queue&quot;]
+    Q --&gt; Serve[&quot;Serve: handlers&quot;]
+  end
+  Call -- &quot;JSON lines on stdin&quot; --&gt; Br[&quot;apex tool bridge NAME&quot;]
+  Br -- &quot;JSON lines on stdout&quot; --&gt; Rd
+  subgraph BridgeProcess[&quot;bridge process&quot;]
+    Br --&gt; AT[&quot;apex_tool::Tool&quot;]
+    AT --&gt; Rem[&quot;Remote (replica + Link)&quot;]
+  end
+  Rem -- &quot;postcard frames&quot; --&gt; D[&quot;apexd session&quot;]
+</code></pre>
+<p>The CLI wires <code>apex tool bridge NAME</code> straight to <code>apex_tool_bridge::run</code> with the socket and session it has resolved. The socket comes from <code>-socket</code>, then <code>$APEX_SOCKET</code>, then the default. The session comes from <code>-session</code>, then <code>$apexsession</code>, then <code>$APEX_SESSION</code>, then <code>default</code>. A tool started from a terminal inside a session, or from the profile, therefore lands in that session without being configured.</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Where</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apex.Tool</code> (Go)</td>
+<td><code>go/apex/apex.go</code></td>
+<td>Starts the bridge, numbers commands, routes replies, queues events, runs handlers</td>
+</tr>
+<tr>
+<td><code>Bridge</code></td>
+<td><code>crates/apex-tool-bridge/src/lib.rs</code></td>
+<td>Parses command lines, calls <code>apex_tool::Tool</code>, writes replies and events</td>
+</tr>
+<tr>
+<td><code>apex_tool::Tool</code></td>
+<td><code>crates/apex-tool/src/lib.rs</code></td>
+<td>Holds the replica through <code>Remote</code>, turns calls into proposals, synthesises events</td>
+</tr>
+<tr>
+<td><code>apex</code> CLI</td>
+<td><code>crates/apex-cli/src/main.rs</code></td>
+<td>Resolves socket and session; <code>tool bridge</code> subcommand</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L1-L119">crates/apex-tool-bridge/src/lib.rs:1-119</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L735-L742">crates/apex-cli/src/main.rs:735-742</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1055-L1061">crates/apex-cli/src/main.rs:1055-1061</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L54-L136">go/apex/apex.go:54-136</a></p>
+<h2 id="the-bridge-process">The bridge process</h2>
+<h3 id="start-up-and-the-main-loop">Start-up and the main loop</h3>
+<p><code>run(socket, session, name)</code> calls <code>Tool::attach_to</code>. If that fails, <code>run</code> returns the error before writing anything, so the first line a client reads is either <code>hello</code> or end of file. After attaching it writes <code>{&quot;event&quot;:&quot;hello&quot;,&quot;session&quot;:…,&quot;tool&quot;:NAME}</code>. A separate thread then reads stdin one line at a time into a channel, and sends <code>None</code> when it reaches EOF.</p>
+<p><code>main_loop</code> runs on a single thread and alternates between two steps:</p>
+<ol>
+<li>It drains every pending tool event with <code>next_event(Some(Duration::ZERO))</code> and writes each one as a JSON event. An error here, for example the link closing, ends the loop with <code>Err</code>.</li>
+<li>It waits up to 20 ms for a command line. Blank lines are skipped. A line that is not valid JSON gets <code>{&quot;ok&quot;:false,&quot;error&quot;:&quot;not JSON: …&quot;}</code>, which has no <code>id</code>. A valid line is executed and its reply written. EOF on stdin ends the loop with <code>Ok</code>.</li>
+</ol>
+<p>Whichever way the loop ends, <code>run</code> writes <code>{&quot;event&quot;:&quot;bye&quot;}</code> before returning. When stdin closes, the bridge exits cleanly. When the session or link ends, it exits with the error. Every write is flushed at once (<code>emit</code>), so a client sees every line immediately.</p>
+<p>Because commands are handled one at a time, <strong>replies come back in the order the commands were sent</strong>. Most commands are proposals that wait for the leader's <code>Applied</code>, for up to the tool's 10-second <code>TIMEOUT</code>. While a command waits, <code>apex_tool::Tool</code> keeps stepping its link and collects any events into its own queue. The bridge writes those events after the reply, on the next pass through the loop. Events can therefore appear between replies, but never inside one, and a client has to tell them apart by whether an <code>id</code> is present.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L87-L155">crates/apex-tool-bridge/src/lib.rs:87-155</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L122-L123">crates/apex-tool/src/lib.rs:122-123</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L591-L608">crates/apex-tool/src/lib.rs:591-608</a></p>
+<h3 id="command-framing">Command framing</h3>
+<p>A command is <code>{&quot;id&quot;: N, &quot;cmd&quot;: &quot;...&quot;, ...arguments}</code>. <code>command</code> copies <code>id</code> back unchanged, so it can be any JSON value. On success it adds <code>&quot;ok&quot;: true</code> to the result object. On failure the reply is <code>{&quot;id&quot;: N, &quot;ok&quot;: false, &quot;error&quot;: &quot;...&quot;}</code>. A missing <code>cmd</code> gives <code>cmd: which command</code>, and an unknown one gives <code>NAME: no such command</code>. Arguments are read leniently from a <code>serde_json::Value</code>. When a required argument is missing, the error is just its name: <code>path</code>, <code>text</code>, <code>window: a window id</code>.</p>
+<p>Offsets count characters, as they do everywhere in apex. In <code>write</code>, any <code>q0</code>/<code>q1</code> that is negative or not an integer becomes <code>apex_tool::END</code> (<code>usize::MAX</code>), and <code>replace</code> clamps it to the text length. So <code>{&quot;q0&quot;:-1,&quot;q1&quot;:-1}</code> appends.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L191-L209">crates/apex-tool-bridge/src/lib.rs:191-209</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L250-L259">crates/apex-tool-bridge/src/lib.rs:250-259</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L440-L441">crates/apex-tool-bridge/src/lib.rs:440-441</a></p>
+<h2 id="commands">Commands</h2>
+<p>Each command maps one-to-one onto an <code>apex_tool::Tool</code> method. The table lists the arguments each command reads and the reply fields it adds. &quot;→&quot; marks the method it calls.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Reply</th>
+<th>Calls</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>windows</code></td>
+<td>—</td>
+<td><code>windows: [{id,path,label,kind,scratch,live}]</code></td>
+<td><code>windows()</code></td>
+</tr>
+<tr>
+<td><code>window</code></td>
+<td><code>window</code></td>
+<td><code>window: {…}</code>; error <code>no such window</code></td>
+<td><code>window()</code></td>
+</tr>
+<tr>
+<td><code>new</code></td>
+<td><code>path</code>, <code>scratch?</code>, <code>label?</code>, <code>diagnostic?</code></td>
+<td><code>window: ID</code></td>
+<td><code>new_diagnostic</code> / <code>new_scratch</code> / <code>new_window</code></td>
+</tr>
+<tr>
+<td><code>page</code></td>
+<td><code>path</code>, <code>html</code>, <code>label?</code></td>
+<td><code>window</code></td>
+<td><code>new_page</code></td>
+</tr>
+<tr>
+<td><code>diff</code></td>
+<td><code>text</code>, <code>dir?</code></td>
+<td><code>window</code></td>
+<td><code>diff</code></td>
+</tr>
+<tr>
+<td><code>open</code></td>
+<td><code>name</code>, <code>line?</code></td>
+<td><code>window</code></td>
+<td><code>open</code></td>
+</tr>
+<tr>
+<td><code>read</code></td>
+<td><code>window</code></td>
+<td><code>text</code></td>
+<td><code>read</code></td>
+</tr>
+<tr>
+<td><code>selection</code></td>
+<td><code>window</code></td>
+<td><code>q0</code>, <code>q1</code></td>
+<td><code>selection</code></td>
+</tr>
+<tr>
+<td><code>write</code></td>
+<td><code>window</code>, <code>q0</code>, <code>q1</code>, <code>text</code></td>
+<td>—</td>
+<td><code>replace</code></td>
+</tr>
+<tr>
+<td><code>select</code></td>
+<td><code>window</code>, <code>q0</code>, <code>q1</code></td>
+<td>—</td>
+<td><code>select</code></td>
+</tr>
+<tr>
+<td><code>show</code></td>
+<td><code>window</code>, <code>at</code> or <code>line</code></td>
+<td>—</td>
+<td><code>show</code> / <code>show_line</code></td>
+</tr>
+<tr>
+<td><code>line</code></td>
+<td><code>window</code>, <code>line</code></td>
+<td><code>q0</code>, <code>q1</code></td>
+<td><code>line</code></td>
+</tr>
+<tr>
+<td><code>rename</code></td>
+<td><code>window</code>, <code>path</code></td>
+<td>—</td>
+<td><code>rename</code></td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td><code>window</code>, <code>label?</code></td>
+<td>—</td>
+<td><code>set_label</code></td>
+</tr>
+<tr>
+<td><code>tag</code> / <code>settag</code></td>
+<td><code>window</code> (+ <code>text</code>)</td>
+<td><code>text</code> / —</td>
+<td><code>tag</code> / <code>set_tag</code></td>
+</tr>
+<tr>
+<td><code>notify</code> / <code>unnotify</code></td>
+<td><code>window</code></td>
+<td>—</td>
+<td><code>notify</code> / <code>unnotify</code></td>
+</tr>
+<tr>
+<td><code>notified</code></td>
+<td><code>window</code></td>
+<td><code>on</code></td>
+<td><code>notified</code></td>
+</tr>
+<tr>
+<td><code>working</code> / <code>live</code> / <code>own</code></td>
+<td><code>window</code>, <code>on?</code> (default true)</td>
+<td>—</td>
+<td><code>set_working</code> / <code>set_live</code> / <code>set_owner</code></td>
+</tr>
+<tr>
+<td><code>progress</code></td>
+<td><code>window</code>, <code>at?</code> (clamped to 100)</td>
+<td>—</td>
+<td><code>set_progress</code></td>
+</tr>
+<tr>
+<td><code>clean</code></td>
+<td><code>window</code></td>
+<td>—</td>
+<td><code>set_clean</code></td>
+</tr>
+<tr>
+<td><code>delete</code></td>
+<td><code>window</code></td>
+<td>—</td>
+<td><code>delete</code> (Del in the window)</td>
+</tr>
+<tr>
+<td><code>exec</code></td>
+<td><code>window?</code>, <code>text</code></td>
+<td>—</td>
+<td><code>exec_in</code> (top row when <code>window</code> is null)</td>
+</tr>
+<tr>
+<td><code>errors</code></td>
+<td><code>dir?</code>, <code>text</code></td>
+<td>—</td>
+<td><code>errors</code></td>
+</tr>
+<tr>
+<td><code>snarf</code></td>
+<td><code>text</code></td>
+<td>—</td>
+<td><code>snarf</code></td>
+</tr>
+<tr>
+<td><code>switch</code></td>
+<td><code>session</code>, <code>window?</code></td>
+<td>—</td>
+<td><code>switch</code></td>
+</tr>
+<tr>
+<td><code>rule</code></td>
+<td><code>verb?</code>, <code>text?</code>, <code>file?</code>, <code>owner?</code>, <code>kind?</code>, <code>window?</code>, <code>priority?</code>, <code>unlisted?</code>, <code>start?</code>, <code>lasting?</code></td>
+<td><code>rule: ID</code></td>
+<td><code>offer</code> / <code>offer_lasting</code></td>
+</tr>
+<tr>
+<td><code>unrule</code></td>
+<td><code>rule</code></td>
+<td>—</td>
+<td><code>withdraw</code></td>
+</tr>
+<tr>
+<td><code>ack</code></td>
+<td><code>plumb</code>, <code>ok?</code> (default true)</td>
+<td>—</td>
+<td><code>answer</code></td>
+</tr>
+<tr>
+<td><code>watch</code> / <code>unwatch</code></td>
+<td><code>window</code></td>
+<td>—</td>
+<td><code>watch</code> / <code>unwatch</code></td>
+</tr>
+<tr>
+<td><code>set</code> / <code>setting</code></td>
+<td><code>key</code> (+ <code>value</code>)</td>
+<td>— / <code>value</code> (null when unset)</td>
+<td><code>set</code> / <code>setting</code></td>
+</tr>
+<tr>
+<td><code>respond</code></td>
+<td><code>stream</code>, <code>status?</code> (200), <code>headers?</code>, <code>body</code> or <code>body64</code></td>
+<td>—</td>
+<td><code>respond</code></td>
+</tr>
+<tr>
+<td><code>post</code></td>
+<td><code>window</code>, <code>message</code> (any JSON)</td>
+<td>—</td>
+<td><code>post_to_page</code></td>
+</tr>
+<tr>
+<td><code>pages</code></td>
+<td>—</td>
+<td>—</td>
+<td><code>handle_pages</code></td>
+</tr>
+<tr>
+<td><code>navigation</code></td>
+<td><code>navigation</code>, <code>window?</code>, <code>answer</code>, <code>url?</code></td>
+<td>—</td>
+<td><code>answer_navigation</code></td>
+</tr>
+</tbody>
+</table>
+<p>A few of these do more than forward their arguments:</p>
+<ul>
+<li><strong><code>window</code></strong> puts its result under the key <code>window</code> because the reply's own <code>id</code> is the command's id. A window's <code>kind</code> is <code>WinKind::name()</code>, which is one of <code>file</code>, <code>dir</code>, <code>term</code>, <code>errors</code> or <code>page</code>.</li>
+<li><strong><code>rule</code></strong> starts from <code>Rule::verb(verb)</code>, or from <code>Rule::plumb()</code> when there is no verb, then applies each optional field in turn. <code>kind</code> goes through <code>WinKind::parse</code>, which also accepts the old names <code>web</code> and <code>preview</code> for <code>page</code>. Any other value is rejected with <code>kind K: file, dir, term, errors or page</code>. With <code>lasting: true</code> the rule is offered through <code>offer_lasting</code>, so it belongs to the session and outlives the tool. The rules themselves, priorities and <code>start</code> are covered in <a href="plumbing.html">Plumbing Rules and Verbs</a>.</li>
+<li><strong><code>ack</code></strong> only knows the plumb's id. It builds a placeholder <code>Plumb</code> that has only that id, which works because <code>Tool::answer</code> only reads <code>p.id</code>. Leaving out <code>ok</code> means <em>taken</em>.</li>
+<li><strong><code>respond</code></strong> looks up the stream in the bridge's <code>requests</code> map, which <code>request</code> events fill. An unknown stream gets <code>no such request</code>. <code>headers</code> is a list of <code>[name, value]</code> pairs, and the body is either UTF-8 <code>body</code> text or base64 <code>body64</code>.</li>
+<li><strong><code>navigation</code></strong> maps <code>answer</code> strings onto <code>NavAnswer</code>: <code>allow</code>, <code>redirect</code> (which requires <code>url</code>), <code>handled</code>, and anything else as <code>default</code>.</li>
+</ul>
+<p>The bridge has its own small standard base64 encoder and decoder, so it does not need another dependency. The decoder ignores whitespace and <code>=</code> padding, and a unit test checks that data survives an encode/decode round trip.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L206-L443">crates/apex-tool-bridge/src/lib.rs:206-443</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L454-L501">crates/apex-tool-bridge/src/lib.rs:454-501</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L464-L483">crates/apex-core/src/entry.rs:464-483</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L586-L589">crates/apex-tool/src/lib.rs:586-589</a></p>
+<h2 id="events">Events</h2>
+<p>Events are objects with an <code>event</code> key and no <code>id</code>. <code>Bridge::event</code> turns each <code>apex_tool::Event</code> into JSON:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Fields</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hello</code></td>
+<td><code>session</code>, <code>tool</code></td>
+<td>written once by <code>run</code> after attaching</td>
+</tr>
+<tr>
+<td><code>plumb</code></td>
+<td><code>plumb</code> (id), <code>rule</code>, <code>verb</code>, <code>text</code>, <code>dir</code>, <code>window</code> (null from the top row), <code>groups</code>, <code>at</code>, <code>sel</code> (<code>{q0,q1}</code> or null)</td>
+<td><code>Event::Plumb</code>, via <code>plumb_json</code></td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td><code>window</code>, <code>q0</code>, <code>nd</code>, <code>text</code></td>
+<td><code>Event::Edit</code>, a watched window edited by someone else</td>
+</tr>
+<tr>
+<td><code>renamed</code></td>
+<td><code>window</code>, <code>path</code></td>
+<td><code>Event::Renamed</code></td>
+</tr>
+<tr>
+<td><code>relabeled</code></td>
+<td><code>window</code>, <code>label</code></td>
+<td><code>Event::Relabeled</code></td>
+</tr>
+<tr>
+<td><code>deleted</code></td>
+<td><code>window</code></td>
+<td><code>Event::Deleted</code></td>
+</tr>
+<tr>
+<td><code>navigate</code></td>
+<td><code>navigation</code>, <code>window</code>, <code>url</code></td>
+<td><code>Event::Navigate</code> (only after <code>pages</code>)</td>
+</tr>
+<tr>
+<td><code>request</code></td>
+<td><code>stream</code>, <code>method</code>, <code>url</code>, <code>path</code>, <code>headers</code>, <code>body</code> or <code>body64</code></td>
+<td><code>Event::Request</code>; also stored for <code>respond</code></td>
+</tr>
+<tr>
+<td><code>page</code></td>
+<td><code>window</code>, <code>what</code> (<code>navigated</code>/<code>loading</code>/<code>title</code>/<code>message</code>) and its field</td>
+<td><code>Event::Page</code> (only after <code>pages</code>)</td>
+</tr>
+<tr>
+<td><code>bye</code></td>
+<td>—</td>
+<td>written by <code>run</code> when the loop ends</td>
+</tr>
+</tbody>
+</table>
+<p>Only windows the tool made, opened or watched produce <code>renamed</code>, <code>relabeled</code> and <code>deleted</code> events, which are the windows <code>apex_tool::Tool</code> keeps in its <code>ours</code> map. A tool is not told about changes it made itself. <code>rename</code> and <code>set_label</code> update <code>ours</code> before proposing, so the change does not come back as an event. Edits work the same way: <code>replace</code> and <code>insert_following</code> remember the shape of each write to a watched window, and <code>before</code> drops a matching incoming edit instead of reporting it. That memory holds at most 256 writes. For a page's <code>message</code>, the bridge parses the script's JSON so the event carries a JSON value rather than a string. If parsing fails, the raw string is sent instead.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+  participant U as &quot;User (B2 on Shout)&quot;
+  participant D as &quot;apexd&quot;
+  participant B as &quot;bridge&quot;
+  participant G as &quot;Go Serve&quot;
+  U-&gt;&gt;D: exec &quot;Shout loud&quot; in window w
+  D-&gt;&gt;B: tool plumb (rule matched)
+  B-&gt;&gt;G: {&quot;event&quot;:&quot;plumb&quot;,&quot;plumb&quot;:7,&quot;verb&quot;:&quot;Shout&quot;,...}
+  G-&gt;&gt;G: handler(Plumb) returns taken
+  G-&gt;&gt;B: {&quot;id&quot;:12,&quot;cmd&quot;:&quot;write&quot;,...}
+  B-&gt;&gt;D: ReplaceRange proposal
+  D--&gt;&gt;B: Applied
+  B--&gt;&gt;G: {&quot;id&quot;:12,&quot;ok&quot;:true}
+  G-&gt;&gt;B: {&quot;id&quot;:13,&quot;cmd&quot;:&quot;ack&quot;,&quot;plumb&quot;:7,&quot;ok&quot;:true}
+  B-&gt;&gt;D: PlumbAck
+  B--&gt;&gt;G: {&quot;id&quot;:13,&quot;ok&quot;:true}
+</code></pre>
+<p>The plumb has to be answered before its deadline. The <code>apex-tool</code> crate documents this as one second for B3 text and ten for a verb. Silence counts as a failure, not a refusal, and a word apex has its own meaning for, such as <code>Put</code>, does not fall back to that meaning after a failure.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L157-L189">crates/apex-tool-bridge/src/lib.rs:157-189</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L446-L452">crates/apex-tool-bridge/src/lib.rs:446-452</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L28-L32">crates/apex-tool/src/lib.rs:28-32</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L343-L346">crates/apex-tool/src/lib.rs:343-346</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L455-L545">crates/apex-tool/src/lib.rs:455-545</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L793-L816">crates/apex-tool/src/lib.rs:793-816</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L905-L923">crates/apex-tool/src/lib.rs:905-923</a></p>
+<h2 id="the-go-package">The Go package</h2>
+<h3 id="attaching">Attaching</h3>
+<p><code>Attach(name, opts)</code> runs <code>apex [-socket=S] [-session=X] tool bridge NAME</code>. The binary is <code>opts.Binary</code> if set, otherwise <code>apex</code> from the path. The child's stderr goes to the Go program's stderr. <code>Attach</code> starts the <code>read</code> goroutine and then waits for the first event. If the bridge exits before writing one (the daemon is down, or <code>apex</code> is missing), <code>Attach</code> returns <code>the bridge did not attach (is the daemon running, and apex on the path?)</code>. Otherwise it stores the hello's <code>session</code> field, which <code>Session()</code> returns.</p>
+<pre><code class="language-go">type Options struct {
+	Socket  string // empty: apex's default ($APEX_SOCKET, ...)
+	Session string // empty: the session this program was started in
+	Binary  string // empty: &quot;apex&quot; on the path
+}
+</code></pre>
+<p><code>Close</code> closes the bridge's stdin and waits for it to exit. The bridge then writes <code>bye</code> and detaches, and the session removes the tool's own rules, live marks and ownership claims.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L41-L149">go/apex/apex.go:41-149</a></p>
+<h3 id="requests-replies-and-the-event-queue">Requests, replies and the event queue</h3>
+<p><code>call(cmd, args, result)</code> takes the next id from <code>nextID</code> and registers a one-slot channel for it in <code>pending</code>. It then marshals <code>{&quot;id&quot;, &quot;cmd&quot;, ...args}</code> and writes the line while holding <code>writeMu</code>. Several goroutines can therefore make calls at once, including handlers running inside <code>Serve</code>. <code>call</code> blocks until its reply arrives. If the reply has <code>ok</code> false, the error is <code>apex: CMD: ERROR</code>. If the channel is closed because the bridge has gone, the error is <code>apex: the session is gone</code>. On success, <code>unmarshalAll</code> re-encodes the reply map and decodes it into the caller's result struct.</p>
+<p>The <code>read</code> goroutine scans stdout with a buffer that can grow to 64 MiB, so a large <code>read</code> reply still fits. Lines it cannot parse are skipped. A line with an <code>id</code> goes to whichever caller is waiting for that id. Every other line is pushed onto <code>events</code>, an unbounded queue built from a mutex and a condition variable. When stdout ends, <code>read</code> records any scanner error, closes <code>done</code>, and closes every pending channel so no caller blocks forever. <code>queue.pop(done)</code> waits for an item, or returns <code>false</code> once <code>done</code> is closed and the queue is empty. A helper goroutine broadcasts on the condition variable when <code>done</code> closes, so a waiting <code>pop</code> wakes up.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L151-L232">go/apex/apex.go:151-232</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L1058-L1104">go/apex/apex.go:1058-1104</a></p>
+<h3 id="windows">Windows</h3>
+<p><code>Window</code> is a lightweight handle containing an <code>ID</code> and the <code>Tool</code>. <code>t.Window(id)</code> creates one for an id the tool learned some other way. Most methods are a single <code>call</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Go</th>
+<th>Bridge command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>t.Windows()</code>, <code>w.Info()</code></td>
+<td><code>windows</code>, <code>window</code></td>
+</tr>
+<tr>
+<td><code>t.New</code>, <code>t.NewScratch</code>, <code>t.NewDiagnostic</code></td>
+<td><code>new</code> (with <code>scratch</code>, <code>diagnostic</code>)</td>
+</tr>
+<tr>
+<td><code>t.NewPage</code>, <code>t.Diff</code>, <code>t.Open</code></td>
+<td><code>page</code>, <code>diff</code>, <code>open</code> (line sent only when &gt; 0)</td>
+</tr>
+<tr>
+<td><code>w.Read</code>, <code>w.Selection</code>, <code>w.Line</code></td>
+<td><code>read</code>, <code>selection</code>, <code>line</code></td>
+</tr>
+<tr>
+<td><code>w.Replace</code>, <code>w.Append</code> (<code>Replace(End, End, s)</code>), <code>w.Select</code></td>
+<td><code>write</code>, <code>select</code></td>
+</tr>
+<tr>
+<td><code>w.Show</code>, <code>w.ShowLine</code></td>
+<td><code>show</code> with <code>at</code> / <code>line</code></td>
+</tr>
+<tr>
+<td><code>w.Rename</code>, <code>w.SetLabel</code> (<code>&quot;&quot;</code> sends none)</td>
+<td><code>rename</code>, <code>label</code></td>
+</tr>
+<tr>
+<td><code>w.Tag</code>, <code>w.SetTag</code></td>
+<td><code>tag</code>, <code>settag</code></td>
+</tr>
+<tr>
+<td><code>w.SetWorking</code>, <code>w.SetProgress</code> (negative: done), <code>w.SetLive</code>, <code>w.SetOwner</code>, <code>w.SetClean</code></td>
+<td><code>working</code>, <code>progress</code>, <code>live</code>, <code>own</code>, <code>clean</code></td>
+</tr>
+<tr>
+<td><code>w.Notify</code>, <code>w.Unnotify</code>, <code>w.Notified</code></td>
+<td><code>notify</code>, <code>unnotify</code>, <code>notified</code></td>
+</tr>
+<tr>
+<td><code>w.Delete</code>, <code>w.Exec</code>, <code>t.Exec</code></td>
+<td><code>delete</code>, <code>exec</code> (with / without <code>window</code>)</td>
+</tr>
+<tr>
+<td><code>t.Snarf</code>, <code>t.Errors</code>, <code>t.Switch</code></td>
+<td><code>snarf</code>, <code>errors</code>, <code>switch</code></td>
+</tr>
+<tr>
+<td><code>t.Set</code>, <code>t.Setting</code> (returns value, set?, err)</td>
+<td><code>set</code>, <code>setting</code></td>
+</tr>
+<tr>
+<td><code>w.Post</code>, <code>t.HandlePages</code></td>
+<td><code>post</code>, <code>pages</code></td>
+</tr>
+<tr>
+<td><code>w.Watch(fn)</code>, <code>w.Unwatch()</code></td>
+<td><code>watch</code>, <code>unwatch</code> (and the <code>watchers</code> map)</td>
+</tr>
+</tbody>
+</table>
+<p><code>End</code> is <code>-1</code>, and the bridge turns it into <code>END</code>. <code>WindowInfo.Label</code> is a <code>*string</code>, so a window with no label decodes to <code>nil</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L234-L657">go/apex/apex.go:234-657</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L712-L730">go/apex/apex.go:712-730</a></p>
+<h3 id="rules-offer-offerlasting-and-handleverb">Rules: Offer, OfferLasting and HandleVerb</h3>
+<p>A Go <code>Rule</code> is a struct whose zero value matches everywhere, and each field that is set narrows it. When <code>Verb</code> is empty the rule is a plumb (B3) rule. <code>offer</code> only sends the fields that are set: non-empty strings, a non-nil <code>Window</code>, a non-zero <code>Priority</code>, and <code>Unlisted</code>, <code>Start</code> or <code>lasting</code> when true. The bridge then builds the rule from those fields.</p>
+<pre><code class="language-go">func (t *Tool) Offer(r Rule, handle func(Plumb) bool) (RuleID, error)
+func (t *Tool) OfferLasting(r Rule) (RuleID, error)
+func (t *Tool) HandleVerb(verb string, handle func(Plumb) bool)
+</code></pre>
+<p><code>Offer</code> records the handler in <code>handlers</code> under the rule id. <code>OfferLasting</code> installs a rule that belongs to the session, and that rule usually carries <code>Start</code> so that apex starts the tool when the rule next matches. No handler is attached to it. Plumbs from such rules, and from the session's default rules that start the tool, go to the handler registered with <code>HandleVerb</code> for their verb. An empty verb is registered under <code>&quot;plumb&quot;</code>. <code>Withdraw</code> removes the handler and sends <code>unrule</code>.</p>
+<p><code>Plumb</code> mirrors the Rust struct with Go types. <code>Window</code> is a <code>*Window</code>, nil when the plumb came from the top row, and <code>At</code> and <code>Sel</code> are <code>*Span</code>. <code>Plumb.Range()</code> returns the first non-empty one of <code>Sel</code> and <code>At</code>. This is the same rule as Rust's <code>Plumb::range</code>: what B3 took if it took anything, otherwise the window's dot.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L732-L906">go/apex/apex.go:732-906</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L172-L178">crates/apex-tool/src/lib.rs:172-178</a></p>
+<h3 id="serve">Serve</h3>
+<p><code>Serve(ctx)</code> is the dispatch loop. Each time round, it pops one event in a goroutine and selects on that goroutine against <code>ctx.Done()</code>. It then switches on the event's <code>event</code> field:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>What Serve does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bye</code></td>
+<td>returns <code>nil</code></td>
+</tr>
+<tr>
+<td><code>plumb</code></td>
+<td>looks up the handler by rule id, then by verb; calls it with a <code>Plumb</code>; <strong>always</strong> sends <code>ack</code> with whether it was taken (false when there is no handler)</td>
+</tr>
+<tr>
+<td><code>edit</code></td>
+<td>calls the window's <code>Watch</code> function, if any</td>
+</tr>
+<tr>
+<td><code>renamed</code>, <code>relabeled</code></td>
+<td>calls <code>OnRename</code> / <code>OnRelabel</code></td>
+</tr>
+<tr>
+<td><code>deleted</code></td>
+<td>drops the window's watcher, then calls <code>OnDelete</code></td>
+</tr>
+<tr>
+<td><code>navigate</code></td>
+<td>asks <code>HandlePages</code>'s nav function (<code>Default</code> without one) and sends <code>navigation</code></td>
+</tr>
+<tr>
+<td><code>request</code></td>
+<td>decodes <code>body</code> or <code>body64</code>, asks <code>HandleRequests</code>'s function (404 <code>not served</code> without one; status 0 becomes 200), and sends <code>respond</code> with the body in base64</td>
+</tr>
+<tr>
+<td><code>page</code></td>
+<td>calls <code>HandlePages</code>'s page function with a <code>PageEvent</code></td>
+</tr>
+</tbody>
+</table>
+<p>If the queue ends without a <code>bye</code>, <code>Serve</code> returns the scanner error, which is often <code>nil</code>. If <code>ctx</code> is cancelled, it returns <code>ctx.Err()</code>.</p>
+<p>Handlers run one at a time on the <code>Serve</code> goroutine, so a slow handler holds up every later event. That includes other plumbs, each with its own deadline. A handler may call back into the tool, because replies are routed by the <code>read</code> goroutine and not by <code>Serve</code>. When <code>ctx</code> is cancelled, the pop goroutine it started is left behind. If an event arrives later, that goroutine takes it off the queue and it is lost. A loop that cancels and then calls <code>Serve</code> again can therefore drop one event.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L908-L1056">go/apex/apex.go:908-1056</a></p>
+<h2 id="the-upper-example-and-the-tests">The upper example and the tests</h2>
+<p><code>go/examples/upper</code> is a complete tool. It attaches as <code>upper</code> and offers <code>Rule{Verb: &quot;Upper&quot;, Kind: &quot;file&quot;}</code>, which puts <code>Upper</code> in the tools menu of every file window. The handler takes <code>p.Range()</code>, which for a verb from the menu is the window's dot, and refuses when there is no window or the range is empty. It reads the text, converts it to <code>[]rune</code> so that character offsets index correctly, upper-cases the range, and returns whether <code>Replace</code> succeeded. Run it from a terminal in a session and it attaches to that session.</p>
+<p><code>go/apex/apex_test.go</code> has two tests:</p>
+<ul>
+<li><code>TestAgainstASession</code> is an integration test, skipped unless <code>APEX_SOCKET</code> is set. <code>APEX_BIN</code> can name the binary. It makes a window, appends text and reads it back, then owns it, cleans it, sets its tag and label and checks them through <code>Info</code>. Next it offers an unlisted <code>Shout</code> verb on that window, sets dot, runs <code>w.Exec(&quot;Shout loud&quot;)</code>, and checks that the handler receives the text <code>loud</code> and that <code>Range()</code> is the dot <code>0..3</code>.</li>
+<li><code>TestQueueEndsWhenDone</code> checks that <code>pop</code> on an empty queue returns once <code>done</code> closes.</li>
+</ul>
+<p>On the Rust side, <code>the_bridge_speaks_json_for_tools</code> in the CLI tests drives a real bridge against a test daemon over raw JSON. It covers <code>hello</code>, an unknown command's error, <code>new</code>/<code>write</code>/<code>read</code>/<code>windows</code>, <code>label</code> and <code>window</code>, a verb rule that shows up in <code>apex plumb rule ls</code>, a <code>plumb</code> event and its <code>ack</code>, a watched window reporting another attachment's edit as an <code>edit</code> event, <code>deleted</code> after <code>win del</code>, and <code>bye</code> once stdin is dropped.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/examples/upper/main.go#L1-L44">go/examples/upper/main.go:1-44</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex_test.go#L11-L98">go/apex/apex_test.go:11-98</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L1229-L1317">crates/apex-cli/tests/cli.rs:1229-1317</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/README.md#L66-L73">go/README.md:66-73</a></p>
+<h2 id="where-the-surfaces-disagree">Where the surfaces disagree</h2>
+<p>The bridge's doc comment and <code>apex-tool</code>'s say their commands and events are the crate's methods and events &quot;one for one&quot;. That is nearly true. The differences a maintainer should know about:</p>
+<ul>
+<li><strong><code>hello</code> fields.</strong> The bridge's doc comment promises <code>hello {attachment, session}</code>, but <code>run</code> writes <code>session</code> and <code>tool</code>. Go decodes an <code>attachment</code> field that never arrives, so <code>Tool.attachment</code> is always 0. Nothing reads it today. Also, <code>session</code> is the string the CLI resolved (<code>default</code>, a prefix, a label or an id), not necessarily the session's id.</li>
+<li><strong>Methods the bridge leaves out.</strong> <code>insert_following</code> is missing, so a Go tool cannot write output that the reader's dot follows, which is the behaviour <a href="tool-win-and-lsp.html">win</a> relies on. Also missing are <code>new_web_page</code>, <code>navigate</code>, <code>reload</code>, <code>bring</code>, <code>alive</code>, <code>window_body</code>, <code>window_owner</code> and <code>meta</code>.</li>
+<li><strong>Window kinds.</strong> Go's <code>WindowInfo.Kind</code> comment lists <code>file, dir, term, errors, web or preview</code>, but the bridge sends <code>WinKind::name()</code>, which returns <code>page</code> for every page. <code>Rule.Kind</code> documents the right set.</li>
+<li><strong>Deadlines.</strong> The Go package comment says a handler answers &quot;within a second&quot;. <code>Offer</code>'s comment, the bridge and the Rust crate all say one second for B3 text and ten for a verb.</li>
+<li><strong>Matching unowned windows.</strong> In Rust, <code>.owner(&quot;&quot;)</code> means &quot;a real file&quot;. Go leaves out empty strings, so it provides <code>NoOwner = &quot;^$&quot;</code> for the same thing.</li>
+<li><strong>Refusing.</strong> In Rust a tool may simply never answer a plumb, which counts as a failure. Go's <code>Serve</code> always acks, with <code>ok:false</code> when there is no handler, so a Go tool can only refuse, never fail.</li>
+<li><strong>Withdrawing.</strong> <code>Tool::withdraw</code> sends <code>RuleRm { session: false }</code>, which only removes the tool's own rules. Calling <code>unrule</code> on a rule made with <code>lasting</code> still replies <code>ok</code>, but the rule stays. The bridge does not report this.</li>
+<li><strong>The CLI's help text</strong> for <code>apex tool bridge</code> lists only a subset of the commands and events. It points to the Go source for the full list.</li>
+<li><strong>Error types.</strong> Rust returns <code>apex_tool::Error</code> and lets the caller check <code>is_closed()</code>. Through the bridge the session ending shows up as a <code>bye</code> event. In Go, a call made after that fails with <code>apex: the session is gone</code>.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L69-L76">crates/apex-tool-bridge/src/lib.rs:69-76</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-bridge/src/lib.rs#L92">crates/apex-tool-bridge/src/lib.rs:92</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L23-L25">go/apex/apex.go:23-25</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L129-L134">go/apex/apex.go:129-134</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L252-L253">go/apex/apex.go:252-253</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L777-L779">go/apex/apex.go:777-779</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/go/apex/apex.go#L822-L837">go/apex/apex.go:822-837</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L62-L68">crates/apex-tool/src/lib.rs:62-68</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L287-L296">crates/apex-tool/src/lib.rs:287-296</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L823-L844">crates/apex-tool/src/lib.rs:823-844</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L1107-L1111">crates/apex-tool/src/lib.rs:1107-1111</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L527-L535">crates/apex-cli/src/main.rs:527-535</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="tool-sdk.html">Writing Tools: the apex-tool SDK</a></span><span class="next">Next: <a href="tool-win-and-lsp.html">win and Language Servers</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child current"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+<ul class="sections">
+<li class="l2"><a href="#architecture">Architecture</a></li>
+<li class="l2"><a href="#the-bridge-process">The bridge process</a></li>
+<li class="l3"><a href="#start-up-and-the-main-loop">Start-up and the main loop</a></li>
+<li class="l3"><a href="#command-framing">Command framing</a></li>
+<li class="l2"><a href="#commands">Commands</a></li>
+<li class="l2"><a href="#events">Events</a></li>
+<li class="l2"><a href="#the-go-package">The Go package</a></li>
+<li class="l3"><a href="#attaching">Attaching</a></li>
+<li class="l3"><a href="#requests-replies-and-the-event-queue">Requests, replies and the event queue</a></li>
+<li class="l3"><a href="#windows">Windows</a></li>
+<li class="l3"><a href="#rules-offer-offerlasting-and-handleverb">Rules: Offer, OfferLasting and HandleVerb</a></li>
+<li class="l3"><a href="#serve">Serve</a></li>
+<li class="l2"><a href="#the-upper-example-and-the-tests">The upper example and the tests</a></li>
+<li class="l2"><a href="#where-the-surfaces-disagree">Where the surfaces disagree</a></li>
+</ul>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

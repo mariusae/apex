@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Daemon (apexd) · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The Daemon (apexd)</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs">crates/apex-core/src/ids.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/log.rs">crates/apex-core/src/log.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md">crates/apex-server/README.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apex_bench.rs">crates/apex-server/src/bin/apex_bench.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apexd.rs">crates/apex-server/src/bin/apexd.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs">crates/apex-server/tests/socket.rs</a></li>
+</ul>
+</details>
+<p>The daemon is the long-lived process on a host that owns apex sessions. It keeps each session's authoritative <code>Log</code>, the <code>Server</code> that runs commands, terminals and file I/O for it, and a follower replica of the whole session. It speaks the attach protocol to every client over a Unix socket. UIs, tools and the <code>apex</code> command all reach a session through it. When no UI is attached, the daemon leads the session itself, so tools and scripts can work on a headless session. The first UI that attaches takes over.</p>
+<p>This page covers <code>crates/apex-server/src/daemon.rs</code>, the <code>apexd</code> binary and the <code>apex-bench</code> measurement program. The replication model it implements (shards, leases, fencing) is described in <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>. The message formats are on <a href="attach-protocol.html">The Attach Protocol</a>. What the <code>Server</code> does with commands, files and processes is on <a href="server.html">The Server</a>, and how proposals become entries is on <a href="proposals.html">Proposals</a>.</p>
+<h2 id="starting-a-daemon">Starting a daemon</h2>
+<p>There are three ways a daemon process starts. All of them end in <code>Daemon::run(socket, session)</code>, which binds the socket, makes one first session, and loops until told to stop.</p>
+<table>
+<thead>
+<tr>
+<th>Entry point</th>
+<th>Where</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apexd [--socket PATH] [--session NAME]</code></td>
+<td><code>crates/apex-server/src/bin/apexd.rs</code></td>
+<td>Standalone binary. The session defaults to <code>default</code> and the socket to <code>default_socket()</code>. Unknown arguments exit with status 2.</td>
+</tr>
+<tr>
+<td><code>apex server</code></td>
+<td><code>crates/apex-cli/src/main.rs:881-887</code></td>
+<td>The same call from the CLI, using the CLI's <code>-socket</code> / <code>-session</code> (see <a href="cli.html">The apex Command</a>).</td>
+</tr>
+<tr>
+<td><code>spawn_server(exe, socket, session)</code></td>
+<td><code>daemon.rs:29-62</code></td>
+<td>Used by the CLI's <code>ensure_server</code> and by the UI. It runs <code>exe -socket=… -session=… server</code> detached and waits up to 5 s for the socket to answer.</td>
+</tr>
+</tbody>
+</table>
+<p><code>spawn_server</code> makes the child independent of whoever asked for it. In <code>pre_exec</code> it calls <code>setsid()</code>, so the end of an ssh session or a bridge's process group does not take the daemon with it. It also resets signal dispositions. Stdin and stdout are null, the working directory is <code>$HOME</code>, and stderr is appended to <code>apexd.log</code> beside the socket (<code>daemon_log</code>, <code>daemon.rs:1594-1598</code>). Everything the daemon <code>eprintln!</code>s, such as &quot;session X made&quot; or a connection's framing error, ends up there.</p>
+<p><code>default_socket()</code> returns <code>$APEX_SOCKET</code> if that is set. Otherwise it returns <code>$TMPDIR/apex-$USER/main.sock</code>. When neither <code>USER</code> nor <code>LOGNAME</code> is set, as in many container <code>exec</code>s, the numeric uid takes the user's place (<code>daemon.rs:64-79</code>).</p>
+<p><code>Daemon::run_with</code> does some process-wide setup before it binds:</p>
+<ul>
+<li><code>put_apex_on_path()</code> puts <code>~/.apex/bin</code> (where a remote install puts <code>apex</code> and <code>rc</code>) and the directory of the running binary (the app bundle's) at the front of <code>PATH</code>, so a session's commands and shells find <code>apex</code> and <code>rc</code> (<code>daemon.rs:84-99</code>).</li>
+<li>It ignores <code>SIGHUP</code>, so the daemon survives the terminal or ssh session that started it.</li>
+<li>It removes a stale socket file, binds a <code>UnixListener</code>, and spawns an accept thread.</li>
+</ul>
+<p><code>run</code> gives <code>~/.apex/profile</code> as the host profile. <code>run_with</code> takes the profile as a parameter so tests can pass <code>None</code> and keep the profile out of <code>$HOME</code>. The doc comment on the <code>host_profile</code> field still says <code>~/.apex/init</code>, but the code uses <code>~/.apex/profile</code>. The socket file is removed again when the loop ends.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apexd.rs#L1-L29">crates/apex-server/src/bin/apexd.rs:1-29</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L25-L99">crates/apex-server/src/daemon.rs:25-99</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L237-L311">crates/apex-server/src/daemon.rs:237-311</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1594-L1598">crates/apex-server/src/daemon.rs:1594-1598</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L879-L900">crates/apex-cli/src/main.rs:879-900</a></p>
+<h2 id="threads-and-the-event-loop">Threads and the event loop</h2>
+<p>One thread owns all daemon state. Every other thread talks to it through a single <code>std::sync::mpsc</code> channel of <code>Event</code>s. Each connection has its own writer thread draining a private outbound queue, so a slow client never stalls the core (<code>daemon.rs:1-11</code>).</p>
+<pre><code class="language-mermaid">flowchart LR
+    L[&quot;accept thread&quot;] --&gt;|&quot;Event::Accept&quot;| Q[(&quot;Event channel&quot;)]
+    R[&quot;reader thread per connection&quot;] --&gt;|&quot;Event::Msg / Gone&quot;| Q
+    S[&quot;server-event thread per session&quot;] --&gt;|&quot;Event::Server&quot;| Q
+    T[&quot;timer threads&quot;] --&gt;|&quot;PlumbTimeout / AskTimeout / StartTimeout&quot;| Q
+    IO[&quot;I/O stream threads&quot;] --&gt;|&quot;Event::Io&quot;| Q
+    Q --&gt; M[&quot;main loop: Daemon (owns sessions, conns)&quot;]
+    M --&gt;|&quot;ServerMsg via Sender&quot;| W[&quot;writer thread per connection&quot;]
+    W --&gt; SOCK[&quot;Unix socket&quot;]
+</code></pre>
+<p>The <code>Event</code> enum lists every input to the main loop:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Sent by</th>
+<th>Main loop action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Accept(UnixStream)</code></td>
+<td>listener thread</td>
+<td><code>accept</code>: gives the connection the next id and starts its reader and writer</td>
+</tr>
+<tr>
+<td><code>Msg(conn, ClientMsg)</code></td>
+<td>connection reader</td>
+<td><code>handle</code>, except <code>ClientMsg::Stop</code>, which clears all connections and breaks the loop</td>
+</tr>
+<tr>
+<td><code>Gone(conn)</code></td>
+<td>reader, at EOF or on a bad frame</td>
+<td><code>gone</code>: detach, return leases, drop streams</td>
+</tr>
+<tr>
+<td><code>Server(session id, ServerEvent)</code></td>
+<td>per-session forwarding thread</td>
+<td><code>Server::pump</code>, then <code>after</code>, file-watch fan-out, and OSC 52 clipboard to UIs</td>
+</tr>
+<tr>
+<td><code>PlumbTimeout(id)</code></td>
+<td>sleep thread from <code>ask_tool</code></td>
+<td><code>tool_failed</code>: the plumb walk moves on</td>
+</tr>
+<tr>
+<td><code>AskTimeout(id)</code></td>
+<td>sleep thread from <code>Ask</code> routing</td>
+<td><code>ask_over(id, None)</code></td>
+</tr>
+<tr>
+<td><code>StartTimeout(session, tool)</code></td>
+<td>sleep thread from <code>hold</code></td>
+<td><code>start_failed</code></td>
+</tr>
+<tr>
+<td><code>Io(conn, stream, IoUp)</code></td>
+<td>tunnel and fetch threads</td>
+<td><code>io_up</code>: forward the response head, body, end or failure</td>
+</tr>
+</tbody>
+</table>
+<p><code>accept</code> (<code>daemon.rs:456-510</code>) first queues <code>ServerMsg::Build { protocol, id }</code>, so the first frame on every connection says which apex this is. It then spawns two threads. The reader loops on <code>read_frame::&lt;ClientMsg&gt;</code> and posts <code>Event::Msg</code>. On EOF or a decode error (for example, a client built against another wire format) it logs the error and posts <code>Event::Gone</code>. The writer blocks on its queue, writes a frame, coalesces whatever else is already queued with <code>try_recv</code>, and flushes once. When its sender is dropped, it flushes, then calls <code>shutdown(Both)</code> on the socket so the peer sees EOF instead of hanging. A new <code>Conn</code> starts with no session or attachment and with kind <code>Tool</code> until <code>Hello</code> arrives.</p>
+<p><code>Daemon::send(id, msg)</code> only pushes onto that connection's channel; it never blocks on I/O. To cut a connection off, the daemon removes its <code>Conn</code> and so drops the sender. That is how <code>end_session</code> disconnects members and how <code>Stop</code> ends every connection.</p>
+<p>The per-session <code>Server</code> produces its own events (pty output, finished shell commands, file-watch hits, periodic rescans) on a <code>futures</code> unbounded channel returned by <code>Server::new</code>. <code>new_session_in</code> spawns a thread that blocks on that stream and re-posts each item as <code>Event::Server(sid, ev)</code>. Terminal events reach the main thread the same way.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1-L11">crates/apex-server/src/daemon.rs:1-11</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L101-L126">crates/apex-server/src/daemon.rs:101-126</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L267-L308">crates/apex-server/src/daemon.rs:267-308</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L372-L384">crates/apex-server/src/daemon.rs:372-384</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L456-L516">crates/apex-server/src/daemon.rs:456-516</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L159-L224">crates/apex-server/src/lib.rs:159-224</a></p>
+<h2 id="key-types">Key types</h2>
+<pre><code class="language-rust">struct Session {
+    id: u64,              // internal, stable across renames
+    label: String,        // for people
+    log: Log,             // authoritative
+    server: Server,       // effects on the world; leads the term shards
+    view: Node,           // follower of every shard; leader when no UI is attached
+    leader: Option&lt;u64&gt;,  // the UI connection that leads (single-player)
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Daemon</code></td>
+<td>All state: <code>sessions: BTreeMap&lt;String, Session&gt;</code> keyed by the session's identity string, <code>conns: HashMap&lt;u64, Conn&gt;</code>, and the in-flight tables <code>pending</code>, <code>tool_plumbs</code>, <code>asks</code>, <code>held</code> and <code>finds</code>, plus the channel ends.</td>
+</tr>
+<tr>
+<td><code>Session</code></td>
+<td>One session, as above. The map key is the log's identity (<code>log.id()</code>). <code>id</code> is a small internal number that events and connections use because it does not change on a rename.</td>
+</tr>
+<tr>
+<td><code>Conn</code></td>
+<td>One client connection: the session and <code>AttachmentId</code> it attached as, its <code>AttachmentKind</code>, its outbound <code>Sender&lt;ServerMsg&gt;</code>, <code>sent</code> (how far each shard has been forwarded to it), its open I/O-plane <code>streams</code>, and the pids of programs it <code>adopted</code> through <code>Named</code>.</td>
+</tr>
+<tr>
+<td><code>Pending</code></td>
+<td>Something waiting for the leader's <code>Applied</code>: either a tool's proposal (connection and the tool's own id) or a step of a plumb walk.</td>
+</tr>
+<tr>
+<td><code>Held</code></td>
+<td>Work waiting for a tool that a rule's <code>start</code> command is launching: a plumb, or a <code>tool://</code> page request.</td>
+</tr>
+<tr>
+<td><code>IoStream</code></td>
+<td>An open stream on the I/O plane: <code>Watch</code>, <code>Put</code>, <code>Tunnel</code>, <code>Fetch</code> or <code>Relay</code>. See <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>Each session has two replicas. <code>Session::view</code> is a <code>Node</code> running as the <code>SERVER</code> attachment that follows every shard, and it is what the daemon reads and leads with. <code>Server::node</code> is the server's own replica, which leads only the pinned terminal shards (<code>lib.rs:97-106</code>). Log compaction takes both into account (see below).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L128-L235">crates/apex-server/src/daemon.rs:128-235</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L97-L156">crates/apex-server/src/lib.rs:97-156</a></p>
+<h2 id="sessions-the-registry">Sessions: the registry</h2>
+<p>A daemon holds many sessions. The <code>sessions</code> map is the registry, and <code>resolve(s)</code> finds a session by any of three names (<code>daemon.rs:315-329</code>):</p>
+<ol>
+<li>its full identity (the map key),</li>
+<li>its label,</li>
+<li>a unique prefix of the identity, four characters or longer.</li>
+</ol>
+<p><code>infos()</code> lists the sessions as <code>SessionInfo { id, label }</code>, sorted by label. That is the reply to <code>ListSessions</code>, <code>NewSession</code>, <code>RenameSession</code> and <code>EndSession</code>. A failure gets <code>ServerMsg::Error { text }</code> instead.</p>
+<h3 id="creating-a-session">Creating a session</h3>
+<p><code>new_session_in(label, dir)</code> (<code>daemon.rs:346-401</code>) does nothing and returns <code>Ok(false)</code> if the label already resolves. A <code>NewSession</code> for an existing session therefore succeeds and simply replies with the list. Otherwise it:</p>
+<ol>
+<li>Makes a fresh <code>Log</code>, takes its identity as the key, and sets the label.</li>
+<li>Makes the <code>Server</code>. If <code>dir</code> is given, it <code>cd</code>s there first; a path that is not a directory is an error and nothing is made.</li>
+<li>Sets the session environment: <code>apexsession</code> (the identity), <code>apexsessionlabel</code>, <code>APEX_SOCKET</code>, <code>EDITOR</code>, and <code>BROWSER</code> when the <code>xdg-open</code> link exists. <code>EDITOR</code> is <code>apex-editor</code>, a symlink to the binary made beside it so that <code>$EDITOR file</code> works as a single word under zsh and rc. If the link cannot be made, it falls back to <code>PATH/apex editor</code> (<code>daemon.rs:1600-1628</code>). <code>link_beside</code> only makes links next to a binary named <code>apex</code>, so test binaries leave their directory alone.</li>
+<li>Spawns the server-event forwarding thread.</li>
+<li>Calls <code>server.install_default_rules(&amp;mut log)</code> to install the session's low-priority plumbing rules (see <a href="plumbing.html">Plumbing</a>).</li>
+<li>Makes the follower <code>Node::new(SERVER)</code>, catches it up, and calls <code>view.init_session(&amp;mut log)</code> to lay out the top row and two columns, so a tool can work before any UI attaches.</li>
+<li>Records where the session is (<code>MetaOp::Cwd</code> from <code>server.place()</code>: host and directory) and catches up again.</li>
+<li>Inserts the session and calls <code>server.run_profile(&amp;view, host_profile)</code> to start the host profile.</li>
+<li>Calls <code>after</code> to forward and settle.</li>
+</ol>
+<h3 id="renaming-and-ending">Renaming and ending</h3>
+<p><code>rename_session</code> checks the new label with <code>providers::valid_label</code> and refuses a label already in use. It changes <code>Session::label</code>, appends a label entry to the metalog (which is how attached clients learn the new name), and updates <code>apexsessionlabel</code> for commands started from then on.</p>
+<p><code>end_session(name, force)</code> (<code>daemon.rs:430-454</code>) refuses while any absolute-path, non-scratch <code>File</code> buffer is dirty, unless <code>force</code> is set. The error text points at <code>-f</code>. Otherwise every member connection receives <code>ServerMsg::Ended { id, label }</code> and then goes through <code>gone</code>. The session is removed from the map, every running process is <code>kill</code>ed, and dropping the <code>Server</code> ends its terminals.</p>
+<p><code>ClientMsg::Stop</code> (<code>apex stop</code>) is handled in the run loop itself, not in <code>handle</code>: it clears all connections and leaves the loop, so every session ends together with the daemon (<code>daemon.rs:277-281</code>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L313-L454">crates/apex-server/src/daemon.rs:313-454</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L555-L586">crates/apex-server/src/daemon.rs:555-586</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1600-L1628">crates/apex-server/src/daemon.rs:1600-1628</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1811-L1827">crates/apex-server/src/lib.rs:1811-1827</a></p>
+<h2 id="profile-and-attach-scripts">Profile and attach scripts</h2>
+<p>There is no configuration file. Two shell scripts run as commands of the session, and their output goes to <code>+Errors</code> like any command's (see <a href="configuration.html">Configuration</a>):</p>
+<ul>
+<li><strong>Profile.</strong> When a session is made, <code>Server::run_profile</code> sources the host's <code>~/.apex/profile</code> in one shell, named <code>profile</code> in the top row and run in the session's directory. It installs an exit hook (rc's <code>fn sigexit</code>, or <code>trap … EXIT</code> for other shells) that runs <code>apex env -import</code>. That sends the shell's final environment back as <code>ClientMsg::EnvImport</code>, and <code>Server::import_env</code> applies whatever changed relative to what the profile was given, unsetting anything the profile removed (<code>lib.rs:1159-1212</code>).</li>
+<li><strong>Attach.</strong> A <code>Hello</code> may carry an <code>attach: Option&lt;Script&gt;</code>, the client's own <code>~/.apex/attach</code> text. After <code>Welcome</code> is sent, <code>Server::run_attach</code> runs it on this host with <code>apexattachment</code> (the new attachment's id) and <code>apexclient</code> set, so <code>apex set</code> inside it applies to that attachment (<code>lib.rs:1214-1230</code>). An empty script is skipped.</li>
+</ul>
+<p><code>ClientMsg::Env { set }</code> sets variables, and both <code>Env</code> and <code>EnvImport</code> reply with the full <code>ServerMsg::Env { vars }</code>. <code>ClientMsg::Cd</code> changes the session's directory and appends the new <code>Cwd</code> to the metalog.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L396-L399">crates/apex-server/src/daemon.rs:396-399</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L635-L639">crates/apex-server/src/daemon.rs:635-639</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L716-L727">crates/apex-server/src/daemon.rs:716-727</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L903-L912">crates/apex-server/src/daemon.rs:903-912</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1159-L1230">crates/apex-server/src/lib.rs:1159-1230</a></p>
+<h2 id="attaching-leading-and-handing-back">Attaching, leading and handing back</h2>
+<p><code>hello(id, session, name, kind, attach)</code> (<code>daemon.rs:588-642</code>) attaches a connection to a session:</p>
+<ol>
+<li>Resolve the session, or reply <code>Error &quot;no session …&quot;</code>.</li>
+<li><code>log.attach(kind, name)</code> registers the attachment in the metalog and returns its <code>AttachmentId</code>.</li>
+<li>If the kind is <code>Ui</code>, take leadership in single-player mode. For every shard that is not pinned: if a holder other than <code>SERVER</code> still holds the lease and has not released it, <code>reclaim</code> it, which fences the previous UI. Then <code>grant</code> the lease to the new attachment and set <code>Session::leader = Some(conn)</code>. The previous UI stays connected but its appends are now refused.</li>
+<li>Catch up <code>view</code>, take a postcard snapshot of its state, and set the connection's <code>sent</code> marks to the log's last sequence numbers, because the snapshot already covers those entries.</li>
+<li>Reply <code>Welcome { attachment, snapshot }</code>.</li>
+<li>If work is <code>held</code> for a tool of this name (it was just started for that work), deliver it now, in order.</li>
+<li>Run the attach script, then call <code>after</code> so other connections learn from the metalog that the leases moved.</li>
+</ol>
+<p>Tools and CLI commands attach with kind <code>Tool</code>. They never take leases; they change state by proposing (see <a href="proposals.html">Proposals</a>).</p>
+<p><code>gone(id)</code> (<code>daemon.rs:518-553</code>) undoes all of this. It stops the connection's ⌘O find jobs and drops its I/O streams. It makes the server forget the processes the connection adopted, removes the plumbing rules the attachment owned, and appends a <code>detach</code>. If the connection was the leader, <code>leader</code> becomes <code>None</code> and every lease the attachment held is reclaimed to <code>SERVER</code>, so the daemon leads again until the next UI attaches. Pending tool proposals from the connection are dropped.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant T as Tool
+    participant D as Daemon (view as SERVER)
+    participant U as UI
+    T-&gt;&gt;D: Hello kind=Tool
+    D--&gt;&gt;T: Welcome snapshot
+    T-&gt;&gt;D: Propose id=7
+    Note over D: no leader, so proposal::apply on view and log
+    D--&gt;&gt;T: Entries (forwarded by after)
+    D--&gt;&gt;T: Applied id=7
+    U-&gt;&gt;D: Hello kind=Ui
+    Note over D: reclaim and grant each unpinned shard, leader = UI
+    D--&gt;&gt;U: Welcome snapshot
+    T-&gt;&gt;D: Propose id=8
+    D-&gt;&gt;U: Propose pid
+    U-&gt;&gt;D: Append entries
+    U-&gt;&gt;D: Applied pid
+    D--&gt;&gt;T: Entries, then Applied id=8
+    U--xD: connection closes
+    Note over D: gone: leases reclaimed to SERVER, daemon leads again
+</code></pre>
+<h3 id="proposals-and-who-applies-them">Proposals and who applies them</h3>
+<p><code>ClientMsg::Propose { id, proposal }</code> is assigned a daemon-side <code>pid</code> and recorded in <code>pending</code> as <code>Pending::Tool { conn, id }</code>. Then <code>propose(name, pid, p)</code> routes it (<code>daemon.rs:967-979</code>):</p>
+<ul>
+<li><strong>A UI leads.</strong> The proposal is sent to the UI as <code>ServerMsg::Propose { id: pid, … }</code>. The UI's later <code>ClientMsg::Applied</code> is accepted only from the current leader, and <code>answered(pid, result)</code> passes it back to the tool under the tool's own id.</li>
+<li><strong>No UI.</strong> <code>proposal::apply(&amp;mut view, &amp;mut log, p)</code> runs right away. The daemon calls <code>after</code> <em>before</em> answering, so the tool's replica already has, for example, the window its proposal made by the time it hears <code>Applied</code>.</li>
+</ul>
+<p>There is one special case. A non-UI connection's <code>Proposal::Snarf</code> is also sent as <code>ServerMsg::Clipboard</code> to every UI on the session, as a terminal's OSC 52 is (<code>daemon.rs:932-944</code>).</p>
+<h3 id="appends-from-the-leader">Appends from the leader</h3>
+<p><code>ClientMsg::Append { shard, entries }</code> appends each entry with <code>log.append_entry</code>, which checks fences and sequence numbers, and stops at the first failure, replying with an <code>Error</code> that names the shard and sequence. The connection's <code>sent</code> mark for the shard is moved to the log's end, because the appender already has its own entries. The highest accepted sequence is acknowledged with <code>Ack</code>. The daemon then polls the server for execs addressed to it (<code>poll_execs</code>) and starts any verb walks those produced (<code>daemon.rs:650-678</code>). <code>CreateShard</code> and <code>DeleteShard</code> are applied directly; a created shard's <code>sent</code> mark starts at 0.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L518-L553">crates/apex-server/src/daemon.rs:518-553</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L588-L694">crates/apex-server/src/daemon.rs:588-694</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L932-L979">crates/apex-server/src/daemon.rs:932-979</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1354-L1366">crates/apex-server/src/daemon.rs:1354-1366</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs#L131-L177">crates/apex-server/tests/socket.rs:131-177</a></p>
+<h2 id="after-settle-forward-compact"><code>after</code>: settle, forward, compact</h2>
+<p>Nearly every handler ends with <code>after(name, props)</code> (<code>daemon.rs:1513-1591</code>). It is the one place where the session's state is brought to rest and shipped out:</p>
+<ol>
+<li><strong>Server bookkeeping.</strong> <code>flush_procs</code> writes process starts, renames and exits into the metalog. <code>close_orphan_terms</code> starts shells whose windows have appeared and closes terminals whose windows are gone. <code>sync_watches</code> keeps the directory watches in step with the open files. Then <code>view.catch_up</code>.</li>
+<li><strong>Leading while headless.</strong> If <code>leader</code> is <code>None</code>, the server's proposals are applied here. The loop also opens and lands on any <code>take_gotos()</code> locations whose windows are not open: a URL becomes a web window, anything else is opened as a file in the first column. It then polls execs again, because what the daemon just did may have handed the server more work. The loop repeats until there are no proposals left.</li>
+<li><strong>Forwarding.</strong> For each connection on the session and each shard, the entries after the connection's <code>sent</code> mark are sent as <code>ServerMsg::Entries</code>. The metalog goes first, because it announces shards before their entries.</li>
+<li><strong>Compaction.</strong> For each shard, the daemon computes the lowest of: the log's last sequence, what <code>view</code> has applied, what <code>server.node</code> has applied, and every member connection's <code>sent</code> mark. It then calls <code>log.compact(shard, low)</code>. A log grows with what is outstanding, not with how long the session has existed.</li>
+<li><strong>Proposals to a UI leader.</strong> If a UI leads, the server's proposals are sent to it with <code>id: 0</code>, so no answer is expected.</li>
+<li><strong>Verbs.</strong> If <code>poll_execs</code> queued plumb starts for verbs, <code>start_verbs</code> begins those walks.</li>
+</ol>
+<p><code>Event::Server</code> runs <code>Server::pump</code> and then <code>after</code> with the returned proposals. It also streams changed files to watch subscribers (<code>file_changed</code>) and sends each OSC 52 clipboard text to every UI connection on the session (<code>daemon.rs:285-303</code>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L285-L303">crates/apex-server/src/daemon.rs:285-303</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1510-L1591">crates/apex-server/src/daemon.rs:1510-1591</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L567-L589">crates/apex-server/src/lib.rs:567-589</a></p>
+<h2 id="other-in-session-messages">Other in-session messages</h2>
+<p>Every message other than the session-level ones is handled by <code>in_session</code>. If the connection has not attached yet, it gets <code>Error &quot;not attached&quot;</code> (<code>daemon.rs:578-584</code>). The table groups what <code>in_session</code> does.</p>
+<table>
+<thead>
+<tr>
+<th>Messages</th>
+<th>What the daemon does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TermKey</code>, <code>TermPaste</code>, <code>TermType</code>, <code>TermResize</code>, <code>TermClear</code>, <code>TermFocus</code>, <code>TermScroll</code></td>
+<td>Passed to the <code>Server</code>'s terminal hosts. Their output comes back as entries on the term shard (see <a href="terminals.html">Terminals</a>).</td>
+</tr>
+<tr>
+<td><code>TermText</code>, <code>TermFind</code>, <code>TermRead</code></td>
+<td>Selection text becomes a <code>Snarf</code> proposal. Find replies <code>TermFound</code>, and read replies <code>TermLines</code>.</td>
+</tr>
+<tr>
+<td><code>OpenFile</code>, <code>EditOver</code></td>
+<td><code>Server::open_file</code> becomes an <code>OpenWindow</code> proposal (with <code>cover</code> set for <code>EditOver</code>), or an <code>Errors</code> proposal on failure.</td>
+</tr>
+<tr>
+<td><code>Plumb</code></td>
+<td><code>plumb_start</code> begins a walk, then <code>drive</code> carries it out.</td>
+</tr>
+<tr>
+<td><code>Ask</code>, <code>Answer</code></td>
+<td>A question about a window is routed to the window's owner with a 2 s <code>ASK_ANSWER</code> timeout. Answers are matched to a <code>tool_plumbs</code> or <code>asks</code> entry.</td>
+</tr>
+<tr>
+<td><code>PostToPage</code>, <code>WindowEvent</code></td>
+<td>Relayed: a page owner's post goes to the leading UI, and a window event goes to the window's owner.</td>
+</tr>
+<tr>
+<td><code>ClientConfig</code></td>
+<td>Accepted from UIs only; sets the colours terminals report to programs.</td>
+</tr>
+<tr>
+<td><code>RuleAdd</code>, <code>RuleRm</code></td>
+<td>Validated. A rule is owned by its attachment (<code>mine</code>) or by <code>SERVER</code>, and only the owner may remove it; a session-owned rule is removed when the request says it is on the session's behalf.</td>
+</tr>
+<tr>
+<td><code>Set</code></td>
+<td>A setting for the session or for a named attachment.</td>
+</tr>
+<tr>
+<td><code>Notify</code>, <code>Unnotify</code></td>
+<td>Raise a notification (plus a <code>Notice</code> proposal so the leader shows the window). Only the raiser, or a UI, may lower it.</td>
+</tr>
+<tr>
+<td><code>Named</code></td>
+<td><code>Server::name_process</code>. An adopted pid is remembered on the connection.</td>
+</tr>
+<tr>
+<td><code>FindStart</code>, <code>FindQuery</code>, <code>FindStop</code></td>
+<td>⌘O listing jobs, keyed by <code>(connection, request)</code>, whose results go straight onto the connection's channel.</td>
+</tr>
+<tr>
+<td><code>Kill</code></td>
+<td>Signals the targets. The processes' exits are recorded in the metalog when they happen.</td>
+</tr>
+<tr>
+<td><code>Candidates</code></td>
+<td>Path completions, sent only to the asker.</td>
+</tr>
+<tr>
+<td><code>Io</code></td>
+<td>The I/O plane (file GET/PUT/watch, <code>CONNECT</code>, http(s) fetch, <code>tool://</code> relay).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="plumb-walks-and-tool-deadlines">Plumb walks and tool deadlines</h3>
+<p>A plumb walk is a <code>Server</code>-side state machine. The daemon's <code>drive</code> (<code>daemon.rs:1448-1488</code>) carries out each <code>PlumbStep</code>:</p>
+<ul>
+<li><code>Done</code> or <code>Refused</code> applies the step's proposals and sends <code>Plumbed { ok, why }</code> to the asker. Asker 0, a verb the server started itself, is not told.</li>
+<li><code>Trace</code> is forwarded as <code>PlumbTrace</code>.</li>
+<li><code>Ask(proposal)</code> goes to the leader as a <code>Pending::Plumb</code>.</li>
+<li><code>AskTool</code> finds the connection attached under the tool's name and sends it <code>Ask</code>. The deadline is <code>B3_ANSWER</code> (1 s) for a B3 plumb and <code>VERB_ANSWER</code> (10 s) for a verb, since a verb may do its work before it answers. If no such tool is attached but the rule has a <code>start</code> command, the request is <code>hold</code>ed, the tool is started once (<code>Server::start_tool</code>), and it gets <code>START_WAIT</code> (10 s) to attach. If neither applies, the walk is told <code>&quot;no tool … attached&quot;</code>.</li>
+</ul>
+<p>Timeouts are handled by spawning a thread that sleeps for the deadline and then posts an event. The main loop discards the event if the entry has already been removed.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L160-L209">crates/apex-server/src/daemon.rs:160-209</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L644-L963">crates/apex-server/src/daemon.rs:644-963</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1368-L1508">crates/apex-server/src/daemon.rs:1368-1508</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1181-L1191">crates/apex-server/src/lib.rs:1181-1191</a></p>
+<h2 id="error-handling-and-edge-cases">Error handling and edge cases</h2>
+<ul>
+<li><strong>Bad frames</strong> end the connection, and the reason is logged to <code>apexd.log</code>. The daemon itself keeps running.</li>
+<li><strong>Fenced appends</strong> (from a UI that lost its leases) are refused by <code>Log::append_entry</code>, and the client gets an <code>Error</code>. Entries before the failure in the same batch stay accepted.</li>
+<li><strong>Applied from a non-leader</strong> is ignored (<code>daemon.rs:952-956</code>).</li>
+<li><strong>Proposal errors while headless</strong> are logged (<code>apexd: NAME: proposal: …</code>). A tool's own proposal gets its error back in <code>Applied</code>.</li>
+<li><strong>Sessions go away under pending work.</strong> Handlers look the session up by its internal id with <code>name_of</code> and return quietly if it is gone. <code>plumbed</code> and <code>ask_over</code> check that the asker is still connected.</li>
+<li><strong>The listener thread</strong> stops when the event channel closes. <code>run</code> returns an error only if binding fails.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L466-L483">crates/apex-server/src/daemon.rs:466-483</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L650-L678">crates/apex-server/src/daemon.rs:650-678</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1427-L1497">crates/apex-server/src/daemon.rs:1427-1497</a></p>
+<h2 id="tests">Tests</h2>
+<p><code>crates/apex-server/tests/socket.rs</code> runs a real daemon on a thread (<code>Daemon::run_with(path, &quot;main&quot;, None)</code>, with a socket path made unique by pid and a counter) and drives it with <code>Remote</code> clients. The tests cover:</p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>What it checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>attach_edit_ack_and_reattach</code></td>
+<td>Appends are acknowledged, and a second UI sees the same state, takes the leases and can edit.</td>
+</tr>
+<tr>
+<td><code>execs_and_terminals_over_the_socket</code></td>
+<td><code>OpenFile</code>, <code>Put</code>, a <code>|sort</code> pipe, and <code>Newterm</code> with keys whose output appears on the term shard.</td>
+</tr>
+<tr>
+<td><code>a_tool_works_on_a_headless_session_and_a_ui_takes_over</code></td>
+<td>Daemon leadership, handover to a UI, routing of proposals through the UI, and leases returning to <code>SERVER</code> when the UI drops.</td>
+</tr>
+<tr>
+<td><code>sessions_are_listed_and_made</code></td>
+<td>The registry, and that sessions are isolated from each other.</td>
+</tr>
+<tr>
+<td><code>the_watcher_reloads_clean_buffers_and_flags_dirty_ones</code></td>
+<td>File watching, stale buffers, and a <code>Put</code> that refuses once.</td>
+</tr>
+<tr>
+<td><code>the_daemon_says_its_build_first_and_stops_when_told</code></td>
+<td>The first frame is <code>Build</code>, and <code>Stop</code> removes the socket.</td>
+</tr>
+</tbody>
+</table>
+<p>Further tests cover B3 expansion, directory windows, links to places in other sessions, and page owners being asked about links and posting to their scripts.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/tests/socket.rs#L12-L313">crates/apex-server/tests/socket.rs:12-313</a></p>
+<h2 id="apex-bench-measurements">apex-bench measurements</h2>
+<p><code>apex-bench [--socket PATH] [--via CMD]</code> measures the attach protocol. Without <code>--socket</code> it starts <code>Daemon::run</code> on a thread of its own process. With <code>--via CMD</code> it attaches through a command's stdin and stdout, for example <code>apex attach --stdio</code>, which stands in for the ssh path without the network. It measures, in order (<code>apex_bench.rs:52-170</code>):</p>
+<ol>
+<li>2000 <code>Ping</code> / <code>Pong</code> round trips.</li>
+<li>5000 single-keystroke round trips: a local insert, <code>flush</code>, then waiting for the server's <code>Ack</code>.</li>
+<li>Throughput for 10 000 and 100 000 inserts in one flush.</li>
+<li>Attach time (connect, snapshot, decode) as the text grows by 0, 100, 1000 and 10 000 KB. Each probe takes the leases, so the bench reconnects afterwards to take them back.</li>
+<li>Terminal latency: 200 alternating <code>a</code> and backspace <code>TermKey</code>s, each timed until the term shard's next <code>Entries</code> arrives.</li>
+</ol>
+<p>It reports p50, p90, p99 and max for each. The README records a run on an M-series laptop:</p>
+<table>
+<thead>
+<tr>
+<th>what</th>
+<th>p50</th>
+<th>p99</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ping round trip</td>
+<td>21 µs</td>
+<td>42 µs</td>
+</tr>
+<tr>
+<td>keystroke → ack</td>
+<td>14 µs</td>
+<td>23 µs</td>
+</tr>
+<tr>
+<td>100 000 keystrokes in one flush</td>
+<td>1.8 M entries/s</td>
+<td></td>
+</tr>
+<tr>
+<td>attach, ~120 KB text (770 KB snapshot)</td>
+<td>4.2 ms</td>
+<td></td>
+</tr>
+<tr>
+<td>attach, 11.5 M runes (11.9 MB snapshot)</td>
+<td>34 ms</td>
+<td></td>
+</tr>
+<tr>
+<td>terminal key → rows on the client</td>
+<td>180 µs</td>
+<td>570 µs</td>
+</tr>
+</tbody>
+</table>
+<p>The README draws two conclusions. The transport is not where time goes. The snapshot is several times larger than the text because it carries the undo history, so compacting or excluding undo would make a large session's attach cost about what its text costs. Through the stdio bridge, the numbers rise only slightly (ping 26 µs, attach +4.5 ms). The README's remark that terminal latency is dominated by &quot;alacritty's parser&quot; and that &quot;the whole grid is published as <code>Rows</code> entries per wakeup&quot; predates the current code. Terminals now use libghostty-vt (see <a href="terminals.html">Terminals</a>), and <code>Server::publish_term</code> publishes only the rows that changed (<code>lib.rs:418-437</code>). macOS limits socket paths to 104 bytes, which matters for <code>--socket</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/bin/apex_bench.rs#L1-L194">crates/apex-server/src/bin/apex_bench.rs:1-194</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/README.md#L26-L57">crates/apex-server/README.md:26-57</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L418-L437">crates/apex-server/src/lib.rs:418-437</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="server.html">The Server: Commands, Files and Processes</a></span><span class="next">Next: <a href="attach-protocol.html">The Attach Protocol</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child current"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+<ul class="sections">
+<li class="l2"><a href="#starting-a-daemon">Starting a daemon</a></li>
+<li class="l2"><a href="#threads-and-the-event-loop">Threads and the event loop</a></li>
+<li class="l2"><a href="#key-types">Key types</a></li>
+<li class="l2"><a href="#sessions-the-registry">Sessions: the registry</a></li>
+<li class="l3"><a href="#creating-a-session">Creating a session</a></li>
+<li class="l3"><a href="#renaming-and-ending">Renaming and ending</a></li>
+<li class="l2"><a href="#profile-and-attach-scripts">Profile and attach scripts</a></li>
+<li class="l2"><a href="#attaching-leading-and-handing-back">Attaching, leading and handing back</a></li>
+<li class="l3"><a href="#proposals-and-who-applies-them">Proposals and who applies them</a></li>
+<li class="l3"><a href="#appends-from-the-leader">Appends from the leader</a></li>
+<li class="l2"><a href="#after-settle-forward-compact">after: settle, forward, compact</a></li>
+<li class="l2"><a href="#other-in-session-messages">Other in-session messages</a></li>
+<li class="l3"><a href="#plumb-walks-and-tool-deadlines">Plumb walks and tool deadlines</a></li>
+<li class="l2"><a href="#error-handling-and-edge-cases">Error handling and edge cases</a></li>
+<li class="l2"><a href="#tests">Tests</a></li>
+<li class="l2"><a href="#apex-bench-measurements">apex-bench measurements</a></li>
+</ul>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

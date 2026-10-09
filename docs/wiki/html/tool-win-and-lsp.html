@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>win and Language Servers · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>win and Language Servers</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs">crates/apex-core/src/plumb.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/transcript.rs">crates/apex-core/src/transcript.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs">crates/apex-server/src/term.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs">crates/apex-server/src/term_loop.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs">crates/apex-tool-lsp/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/pos.rs">crates/apex-tool-lsp/src/pos.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/fake-lsp.py">crates/apex-tool-lsp/tests/fake-lsp.py</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/lsp.rs">crates/apex-tool-lsp/tests/lsp.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs">crates/apex-tool-win/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/tests/win.rs">crates/apex-tool-win/tests/win.rs</a></li>
+</ul>
+</details>
+<p>apex ships two tools that are larger than the others and that predate, or sit beside, the <a href="tool-sdk.html">apex-tool SDK</a>. <code>apex tool win</code> is a port of plan9port's <code>win</code> (<code>src/cmd/9term/win.c</code>): it runs a shell on a pty and makes an ordinary editable text window its transcript, so the shell's output lands at an <em>output point</em> and whatever is typed after that point is sent to the shell a line at a time. <code>apex tool lsp</code> connects apex to language servers. It runs one server per language and workspace root, feeds each server edits taken from the replicated entry stream, writes diagnostics into a per-server window at <code>root/</code>, and offers the verbs <code>Def Refs Type Hov Sig Fmt Rn</code> in the tools menu of source windows.</p>
+<p>Neither tool is privileged. Each attaches to a session like any tool (see <a href="attach-protocol.html">The Attach Protocol</a>), keeps its own replica through a <code>Remote</code>, installs <a href="plumbing.html">plumbing rules</a> that name its attachment, and changes state only through <a href="proposals.html">proposals</a>. Both work with <code>Remote</code> and <code>Proposal</code> directly rather than through <code>apex_tool::Tool</code>, because both need to see each buffer entry <em>before</em> the replica applies it. The CLI starts them from <code>tool_cmd</code>: <code>apex tool win [cmd...]</code> runs in the current directory, and <code>apex tool lsp [-v]</code> runs until the link ends (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L1055-L1065">crates/apex-cli/src/main.rs:1055-1065</a>).</p>
+<h2 id="a-shared-pattern-seeing-entries-before-they-land">A shared pattern: seeing entries before they land</h2>
+<p>Both tools have the same small core loop, copied in each crate. <code>Remote::step</code> and <code>Remote::propose</code> take a <code>ServerMsg</code> from the link and apply it to the replica straight away (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L748-L765">crates/apex-server/src/remote.rs:748-765</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1041-L1049">crates/apex-server/src/remote.rs:1041-1049</a>). That ordering suits most tools. These two need the text as it was <em>before</em> each edit: win, to tell which region an edit touched relative to its output point, and lsp, to turn char offsets into LSP line/column positions against the pre-edit text. So each tool defines its own <code>step</code> and <code>propose</code>. These read <code>remote.link.rx</code> themselves, pass every message to <code>before(&amp;m)</code>, and only then call <code>remote.handle(m)</code>:</p>
+<pre><code class="language-rust">fn step(&amp;mut self, timeout: Duration) -&gt; bool {
+    match self.remote.link.rx.recv_timeout(timeout) {
+        Ok(m) =&gt; {
+            self.before(&amp;m);
+            let alive = self.remote.handle(m);
+            self.settle();
+            alive
+        }
+        ...
+</code></pre>
+<p>The local <code>propose</code> sends with <code>link.propose</code>, then calls this <code>step</code> until <code>link.applied</code> holds the answer, so messages that arrive while it waits still go through <code>before</code>. The comment on both copies says why: &quot;Remote::propose would apply them behind our back&quot;. Each main loop follows the same shape. It drains the link through <code>before</code>/<code>handle</code>, takes <code>remote.link.plumbs</code> (the <code>ToolPlumb</code>s its rules caught), drains its own event channel (pty output, or language-server messages), and sleeps 10 ms when nothing happened.</p>
+<p><code>ToolPlumb</code> carries the plumb <code>id</code> to acknowledge, the matching <code>rule</code>, the <code>ctx</code>, <code>verb</code>, <code>text</code>, <code>dir</code>, regexp <code>groups</code>, and the pointer and selection spans <code>at</code> and <code>sel</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L552-L566">crates/apex-server/src/remote.rs:552-566</a>). Each tool answers with <code>Remote::plumb_ack(id, ok)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L992-L995">crates/apex-server/src/remote.rs:992-995</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L263-L360">crates/apex-tool-win/src/lib.rs:263-360</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L428-L532">crates/apex-tool-lsp/src/lib.rs:428-532</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L729-L795">crates/apex-server/src/remote.rs:729-795</a></p>
+<h2 id="apex-tool-win">apex tool win</h2>
+<h3 id="setup">Setup</h3>
+<p><code>run(socket, session, dir, cmd)</code> makes the window, starts the shell and installs the rules (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L214-L261">crates/apex-tool-win/src/lib.rs:214-261</a>):</p>
+<ol>
+<li>It attaches as a <code>Tool</code> named <code>win-PID</code> and announces itself as <code>win</code>, which is the name shown in the top row and in <code>ps</code>.</li>
+<li>It names the window with the terminals' rule, <code>apex_server::term::place</code>: the path is the directory with a trailing slash, and the label is the command's name (<code>command_name</code>) or, with no command, the host name (<code>term::sysname</code>, plan9port's <code>sysname</code>) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L55-L87">crates/apex-server/src/term.rs:55-87</a>).</li>
+<li>It proposes <code>NewWindow { scratch: true, diagnostic: false }</code> in the last column and steps until the window appears in the replica. It then proposes <code>Own { by: me }</code>, so the window counts as a tool's transcript and not a file, and so a rule with <code>owner</code> <code>^win</code> matches it.</li>
+<li>It spawns the shell. With no command given, this is <code>command_shell()</code> with <code>-i</code>: <code>$acmeshell</code>, else apex's <code>rc</code>, else <code>sh</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1926-L1934">crates/apex-server/src/lib.rs:1926-1934</a>). The environment includes <code>winid</code>.</li>
+<li>It adds three rules for this window alone (<code>win_rules</code>): <code>Interrupt</code>, <code>EOF</code> and <code>apex_core::plumb::EXEC</code>, each with <code>win: Some(window)</code> and <code>RuleAction::Tool(name)</code>. Because the rules key on the window id and not its path, they survive renames (the shell's <code>awd</code> on <code>cd</code>), and two wins never take each other's plumbs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L191-L212">crates/apex-tool-win/src/lib.rs:191-212</a>). <code>EXEC</code> is the catch-all verb for &quot;every B2 command in a window that nothing else took&quot; and never appears in the menu (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/plumb.rs#L225-L228">crates/apex-core/src/plumb.rs:225-228</a>).</li>
+<li>It proposes <code>Live { by: me }</code> so the handle shows a live process and <code>Del</code> does not ask. When the shell exits, it clears <code>Live</code> again, if the window still exists.</li>
+</ol>
+<p>The loop ends when the link ends, the window is deleted, or the shell exits.</p>
+<h3 id="the-shell-on-its-pty">The shell on its pty</h3>
+<p><code>Shell::spawn</code> opens a pty with <code>openpty</code>. In <code>pre_exec</code> it calls <code>setsid</code>, makes the slave the controlling tty, and sets the termios as win's <code>stty</code> does: <code>ICANON | ECHO</code> on, <code>ONLCR</code> off, erase <code>^H</code>, intr DEL (0x7f). It also sets <code>TERM=dumb</code>, <code>termprog=win</code> and <code>TERM_PROGRAM=apex</code>. A reader thread forwards master output as <code>Event::Output(bytes)</code> and sends <code>Event::Exited</code> at EOF. The slave descriptor stays open in the <code>Shell</code> because only the slave's termios tells whether a program turned echo off: <code>echoing()</code> is win's <code>isecho</code>, and <code>intr()</code> reads the current interrupt character. Dropping the <code>Shell</code> sends <code>SIGHUP</code> to the child (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L38-L154">crates/apex-tool-win/src/lib.rs:38-154</a>).</p>
+<h3 id="the-windows-state">The window's state</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>p</code></td>
+<td>The output point in chars. Shell output is inserted here and typing lives after it.</td>
+</tr>
+<tr>
+<td><code>typing</code>, <code>breaks</code></td>
+<td>Text typed after <code>p</code> and not yet sent, and the count of newlines and <code>^D</code> in it.</td>
+</tr>
+<tr>
+<td><code>echo</code></td>
+<td>Bytes sent to the shell that the pty will echo back, kept so they can be cancelled.</td>
+</tr>
+<tr>
+<td><code>ours</code></td>
+<td>The tool's own inserts <code>(q0, text)</code> still on their way through the leader.</td>
+</tr>
+<tr>
+<td><code>carry</code></td>
+<td>A partial OSC label held over between reads.</td>
+</tr>
+<tr>
+<td><code>cook</code></td>
+<td>Set once a newline has been typed (win's <code>cook</code>).</td>
+</tr>
+<tr>
+<td><code>to_remove</code></td>
+<td>Ranges to delete once the current entries have landed (raw keys, DEL).</td>
+</tr>
+<tr>
+<td><code>cwd</code>, <code>title</code>, <code>initial_dir</code>, <code>label</code></td>
+<td>Input to <code>term::place</code> for the window's path and label.</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L156-L189">crates/apex-tool-win/src/lib.rs:156-189</a></p>
+<h3 id="edits-to-the-buffer-before">Edits to the buffer: <code>before</code></h3>
+<p><code>before</code> is win's event loop. It reads the window buffer's <code>BufferOp::Edit { q0, nd, text }</code> entries before they are applied (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L362-L411">crates/apex-tool-win/src/lib.rs:362-411</a>):</p>
+<ul>
+<li><strong>Our own output.</strong> For a pure insert whose <code>(q0, text)</code> equals the front of <code>ours</code>, the entry is popped and <code>p</code> advances by the insert's length. This is win's <code>'E'</code> event.</li>
+<li><strong>Deletes.</strong> <code>delete(q0, q0+nd)</code> removes the overlapping part of <code>typing</code>, adjusts <code>breaks</code>, and returns how far <code>p</code> moves back. Deletes wholly before <code>p</code> move it by their full length (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L484-L502">crates/apex-tool-win/src/lib.rs:484-502</a>). In raw mode, a delete that reaches into the typing also sends that many backspaces to the shell.</li>
+<li><strong>A lone DEL</strong> (<code>&quot;\u{7f}&quot;</code>). The range is queued in <code>to_remove</code> and the shell's interrupt character is written. This is how fn-backspace interrupts a running command, as the test <code>del_typed_in_the_window_interrupts_what_the_shell_runs</code> checks.</li>
+<li><strong>Other inserts.</strong> An insert before <code>p</code> shifts <code>p</code>. An insert inside the typing region (<code>q0 &lt;= p + typing.len()</code>) goes to <code>typed</code>.</li>
+</ul>
+<p>The deletions are deferred because <code>before</code> runs ahead of the replica. Once <code>handle</code> has applied the message, <code>settle</code> proposes a <code>ReplaceRange</code> with empty text for each pending range, in reverse order (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L279-L285">crates/apex-tool-win/src/lib.rs:279-285</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L601-L607">crates/apex-tool-win/src/lib.rs:601-607</a>).</p>
+<h3 id="typing-line-by-line">Typing, line by line</h3>
+<p><code>typed</code> → <code>addtype</code> → <code>sendtype</code> follow win.c (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L413-L482">crates/apex-tool-win/src/lib.rs:413-482</a>):</p>
+<ul>
+<li><code>addtype</code> inserts the text into <code>typing</code> at the char offset. If the text contains <code>^C</code> or DEL, it writes the interrupt character instead, moves <code>p</code> past all the typing and drops it.</li>
+<li><code>sendtype</code> sends each complete line, through its <code>\n</code> or <code>^D</code>, to the shell. It records the bytes in <code>echo</code> (cooked mode only) and moves <code>p</code> past them. Text without a break stays in <code>typing</code> until a newline arrives.</li>
+<li>In raw mode (<code>raw()</code> is true whenever the slave's echo is off, for example at a password prompt), every key is sent at once. The typed range is then queued for removal and <code>p</code> is moved back, so the program alone decides what appears.</li>
+</ul>
+<h3 id="shell-output">Shell output</h3>
+<p><code>main_loop</code> gathers all the pty output that is waiting into one buffer before acting on it. Each insert is a round trip to the leader, and a program that prints line by line would otherwise cost one round trip per line, which is costly when the leader is a far-away UI. <code>output</code> then processes the batch (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L508-L544">crates/apex-tool-win/src/lib.rs:508-544</a>):</p>
+<ol>
+<li><code>term_loop::scan</code> cuts OSC labels out of the stream (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term_loop.rs#L25-L41">crates/apex-server/src/term_loop.rs:25-41</a>). <code>Label::Name</code> becomes the title, <code>Label::Cwd</code> (OSC 7) becomes <code>cwd</code> through <code>term::cwd_path</code>, and OSC 133 marks are ignored because a text window has no prompts to mark. If the result of <code>term::place</code> changes, win proposes <code>SetPath</code> and/or <code>SetLabel</code>. In effect the window is named <code>DIR/</code> with the title as label, as for <a href="terminals.html">terminals</a>.</li>
+<li><code>echocancel</code> drops the leading bytes that match <code>echo</code>. It lets a CR stand for an expected LF and skips backspace-space-backspace runs. On the first mismatch it clears the whole expected echo (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L552-L576">crates/apex-tool-win/src/lib.rs:552-576</a>).</li>
+<li><code>dropcrnl</code> removes the CR from CR LF pairs and removes backspace runs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L658-L678">crates/apex-tool-win/src/lib.rs:658-678</a>).</li>
+<li><code>insert_output</code> pushes <code>(p, text)</code> onto <code>ours</code> and proposes <code>Insert { at: p, version, follow: true }</code>. With <code>follow</code>, the leader moves any empty dot sitting at <code>at</code> past the new text in the same round trip, so the caret stays after the output (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L133-L138">crates/apex-server/src/proposal.rs:133-138</a>). If the proposal fails, usually because the buffer's version moved when the user typed, the attempt is popped from <code>ours</code>, the tool steps once and tries again, up to 20 times. The entries that arrived in the meantime have already gone through <code>before</code> and moved <code>p</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L578-L599">crates/apex-tool-win/src/lib.rs:578-599</a>).</li>
+</ol>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant U as &quot;UI (leader)&quot;
+    participant W as &quot;win (before/step)&quot;
+    participant S as &quot;shell on pty&quot;
+    U-&gt;&gt;W: &quot;Entries: Edit insert 'ls\n' after p&quot;
+    W-&gt;&gt;W: &quot;typed: addtype, breaks += 1&quot;
+    W-&gt;&gt;S: &quot;write 'ls\n' (echo remembered)&quot;
+    S--&gt;&gt;W: &quot;Output: 'ls\r\n' + listing&quot;
+    W-&gt;&gt;W: &quot;scan labels, echocancel, dropcrnl&quot;
+    W-&gt;&gt;U: &quot;Propose Insert at p, follow&quot;
+    U--&gt;&gt;W: &quot;Entries: Edit insert at p (matches ours)&quot;
+    W-&gt;&gt;W: &quot;p += n&quot;
+</code></pre>
+<h3 id="plumbs-interrupt-eof-and-b2">Plumbs: Interrupt, EOF and B2</h3>
+<p><code>on_plumb</code> refuses any plumb whose context is not its own window. Of the rest, <code>Interrupt</code> writes the interrupt character, <code>EOF</code> writes <code>^D</code>, and <code>EXEC</code> (any B2 command in the window that no builtin or verb took) is acknowledged and passed to <code>send_command</code>. That is win's <code>sende</code>: it inserts the text plus a newline at the end of the typing, with <code>follow: false</code>, then proposes a <code>Select</code> after it. The insert goes through <code>before</code> like any typing, so the line is sent to the shell (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L609-L655">crates/apex-tool-win/src/lib.rs:609-655</a>). This is how B2 on an old command line runs it again. The test checks it still works after <code>SetPath</code> renames the window.</p>
+<h3 id="send-and-snarfout">Send and Snarfout</h3>
+<p>Neither word is implemented in win. Both work in win's window because they act on its text:</p>
+<ul>
+<li><strong>Send</strong> is a leader builtin. It takes the selection, or the snarf buffer if nothing is selected, appends a newline, and writes it at the end of the body, leaving dot after it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2251-L2272">crates/apex-core/src/node.rs:2251-2272</a>). In a win window that is typing like any other, so <code>before</code> sends it. Only in a <code>Body::Term</code> window is <code>Send</code> routed to the server instead (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2066-L2072">crates/apex-core/src/node.rs:2066-2072</a>).</li>
+<li><strong>Snarfout</strong> is a client rule at priority -10 for <code>WinKind::Term</code> windows and for file windows whose owner matches <code>win-.*</code>. That match works because win proposes <code>Own</code> with its <code>win-PID</code> attachment. The client reads the window's text and uses <code>transcript::last_output</code> to take the last command and its output, guessing prompts from the shape of the final line, and puts the result in the snarf buffer (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1224-L1275">crates/apex-client/src/app.rs:1224-1275</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/transcript.rs#L1-L41">crates/apex-core/src/transcript.rs:1-41</a>).</li>
+</ul>
+<h3 id="debugging-and-tests">Debugging and tests</h3>
+<p>Setting <code>APEX_WIN_DEBUG</code> prints every edit win sees, every line it sends and all raw output to stderr. <code>crates/apex-tool-win/tests/win.rs</code> runs a headless <code>Daemon</code> with win around <code>/bin/sh</code> and acts as a second tool attachment. The tests check that:</p>
+<ul>
+<li>typed lines reach the shell, and their output follows them exactly once;</li>
+<li>the window is live and dirty while the shell runs;</li>
+<li>the menu offers exactly <code>Interrupt</code> and <code>EOF</code>, and only for that window id;</li>
+<li>B2 <code>Exec</code> runs a command again, both before and after a rename;</li>
+<li>DEL interrupts a running <code>sleep</code>;</li>
+<li>B3 finds files in the window's directory.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L1-L679">crates/apex-tool-win/src/lib.rs:1-679</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/tests/win.rs#L37-L152">crates/apex-tool-win/tests/win.rs:37-152</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2251-L2272">crates/apex-core/src/node.rs:2251-2272</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1224-L1275">crates/apex-client/src/app.rs:1224-1275</a></p>
+<h2 id="apex-tool-lsp">apex tool lsp</h2>
+<h3 id="structure">Structure</h3>
+<pre><code class="language-mermaid">flowchart LR
+    D[&quot;apexd / leader&quot;] -- &quot;Entries, ToolPlumb&quot; --&gt; T[&quot;Tool (main_loop)&quot;]
+    T -- &quot;Propose: Goto, ReplaceRange, Errors, SetContent, Working, Nav&quot; --&gt; D
+    T -- &quot;RuleAdd / RuleRm&quot; --&gt; D
+    T -- &quot;didOpen, didChange, didClose, requests&quot; --&gt; S1[&quot;Server (lang, root) A&quot;]
+    T --&gt; S2[&quot;Server (lang, root) B&quot;]
+    S1 -- &quot;reader thread: Event::Lsp / LspGone&quot; --&gt; T
+    S2 --&gt; T
+    T -- &quot;diagnostics and messages&quot; --&gt; W[&quot;root/ window labelled with server name&quot;]
+</code></pre>
+<p><code>Tool</code> holds the following (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L356-L371">crates/apex-tool-lsp/src/lib.rs:356-371</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>servers</code></td>
+<td>Running <code>Server</code>s, keyed by <code>(language id, root)</code>.</td>
+</tr>
+<tr>
+<td><code>docs</code></td>
+<td>For each buffer it has told a server about, the server key and the uri.</td>
+</tr>
+<tr>
+<td><code>waiting</code></td>
+<td>Outstanding requests by <code>(key, id)</code>. Each is <code>Waiting::Initialize</code> or <code>Waiting::Plumb { plumb, verb, buffer, ctx, dir }</code>.</td>
+</tr>
+<tr>
+<td><code>rules</code></td>
+<td>Verb rule ids installed per language.</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>Keys whose servers failed to start or died. These are not retried.</td>
+</tr>
+</tbody>
+</table>
+<p><code>run</code> attaches as <code>lsp</code>, announces itself, installs the navigation rules and enters <code>main_loop</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L373-L384">crates/apex-tool-lsp/src/lib.rs:373-384</a>).</p>
+<h3 id="languages-commands-and-roots">Languages, commands and roots</h3>
+<p><code>LANGUAGES</code> lists the languages the tool knows, with their extensions, default server command and root markers (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L47-L63">crates/apex-tool-lsp/src/lib.rs:47-63</a>):</p>
+<table>
+<thead>
+<tr>
+<th>id</th>
+<th>Extensions</th>
+<th>Default server</th>
+<th>Root markers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>go</td>
+<td>go</td>
+<td><code>gopls</code></td>
+<td>go.work, go.mod</td>
+</tr>
+<tr>
+<td>rust</td>
+<td>rs</td>
+<td><code>rust-analyzer</code></td>
+<td>Cargo.toml</td>
+</tr>
+<tr>
+<td>python</td>
+<td>py, pyi</td>
+<td><code>pyright-langserver --stdio</code></td>
+<td>pyproject.toml, setup.py, requirements.txt</td>
+</tr>
+<tr>
+<td>typescript</td>
+<td>ts, tsx, js, jsx</td>
+<td><code>typescript-language-server --stdio</code></td>
+<td>package.json</td>
+</tr>
+<tr>
+<td>c</td>
+<td>c, h, cc, cpp, cxx, hh, hpp, hxx</td>
+<td><code>clangd</code></td>
+<td>compile_commands.json, Makefile</td>
+</tr>
+</tbody>
+</table>
+<p>Session settings (see <a href="configuration.html">Configuration</a>) are read through <code>meta.setting(attachment, key)</code>:</p>
+<ul>
+<li><code>lsp.LANG</code> replaces the server command, for example <code>lsp.go gopls</code>.</li>
+<li><code>lsp.LANG.root</code>, or failing that <code>lsp.root</code>, names a marker file or directory that overrides root discovery.</li>
+</ul>
+<p><code>root_of_with_marker</code> finds the root in this order:</p>
+<ol>
+<li>The nearest directory upward that contains the configured marker.</li>
+<li>The nearest directory upward that contains a language marker. Rust is the exception: it keeps climbing to a <code>Cargo.toml</code> that contains <code>[workspace]</code>, and falls back to the nearest crate if it finds none.</li>
+<li>The nearest <code>.git</code>.</li>
+<li>The file's own directory.</li>
+</ol>
+<p>The unit test shows a <code>.hg</code> marker overriding a nested crate (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L70-L151">crates/apex-tool-lsp/src/lib.rs:70-151</a>).</p>
+<h3 id="server-processes-and-json-rpc">Server processes and JSON-RPC</h3>
+<p><code>Server::spawn</code> splits the command on whitespace and runs it in the root, with stdin and stdout piped. Its stderr is discarded unless <code>APEX_LSP_DEBUG</code> is set. A reader thread parses <code>Content-Length</code> framed messages (<code>read_message</code>) into <code>Event::Lsp(key, value)</code> and sends <code>Event::LspGone(key)</code> at EOF. <code>notify</code> queues every notification except <code>initialized</code> until the server has answered <code>initialize</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L155-L301">crates/apex-tool-lsp/src/lib.rs:155-301</a>).</p>
+<p><code>server_name</code> decides what a server is called in the session. It is the base name of the command, or the base name of the script when the command is an interpreter such as <code>python3</code>, <code>node</code>, <code>env</code> or <code>npx</code>. For example, <code>python3 x/fake-lsp.py</code> is called <code>fake-lsp.py</code>. <code>uri_of</code> and <code>path_of_uri</code> convert between paths and percent-encoded <code>file://</code> uris (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L257-L340">crates/apex-tool-lsp/src/lib.rs:257-340</a>).</p>
+<p>Requests that come from the server get minimal replies. <code>workspace/configuration</code> gets an array of nulls, one per item, and every other request gets <code>null</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L639-L653">crates/apex-tool-lsp/src/lib.rs:639-653</a>).</p>
+<h3 id="document-sync">Document sync</h3>
+<p>On each pass, <code>sync_docs</code> looks at the replica's buffers with absolute names (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L564-L631">crates/apex-tool-lsp/src/lib.rs:564-631</a>):</p>
+<ul>
+<li><strong>New buffers of a known language.</strong> If the <code>(lang, root)</code> key has no server and has not failed, it spawns one. It sends <code>initialize</code> with <code>rootUri</code>, <code>workspaceFolders</code>, and capabilities for hover formats, <code>publishDiagnostics</code> and <code>workDoneProgress</code>, and records <code>Waiting::Initialize</code>. It then writes and marks working the server's window. Finally it sends <code>didOpen</code> with version 1 and the full text. Spawn failures are logged, added to <code>failed</code>, and reported in the root's <code>+Errors</code> window.</li>
+<li><strong>Buffers that have disappeared.</strong> These get <code>didClose</code>.</li>
+</ul>
+<p>Edits are sent incrementally from <code>before</code>, before the replica changes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L534-L562">crates/apex-tool-lsp/src/lib.rs:534-562</a>). One <code>Entries</code> message can hold several edits, and each must be measured against the text left by the one before. So <code>before</code> clones the buffer's text into a <em>shadow</em>. For each <code>Edit { q0, nd, text }</code> it computes start and end positions in the shadow, applies the edit to the shadow, bumps the uri's version, and sends a <code>didChange</code> with a single ranged <code>contentChanges</code> element.</p>
+<h3 id="utf-16-positions-posrs">UTF-16 positions (<code>pos.rs</code>)</h3>
+<p>apex addresses text by char (rune) offset (see <a href="buffers-and-text.html">Buffers, Views and Undo</a>). LSP addresses it by line and UTF-16 code unit. <code>pos.rs</code> converts between the two (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/pos.rs#L7-L47">crates/apex-tool-lsp/src/pos.rs:7-47</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>position(t, q)</code></td>
+<td>Converts char offset <code>q</code> (clamped to the text) to <code>{line, character}</code>, counting UTF-16 units from the line start.</td>
+</tr>
+<tr>
+<td><code>offset(t, p)</code></td>
+<td>Converts an LSP position back to a char offset. A line past the end gives <code>t.len()</code>, and a column past the end of the line clamps to the line's end.</td>
+</tr>
+<tr>
+<td><code>apply_edits(t, edits)</code></td>
+<td>Applies <code>TextEdit</code>s from the end backwards, so earlier offsets stay valid, and returns the new string.</td>
+</tr>
+</tbody>
+</table>
+<p>The unit tests check that a 😀 (one char, two UTF-16 units) shifts the column by two, and that edits apply from the end.</p>
+<h3 id="verbs-and-navigation-rules">Verbs and navigation rules</h3>
+<p>When the tool starts, <code>install_rules</code> adds <code>Back</code> and <code>Fwd</code> rules at priority -1, so the menu lists them after the language verbs. These rules have <code>kind: File</code> and <code>owner: Some(&quot;&quot;)</code>; the code comment says they are for &quot;a file window and one no tool owns&quot;, which leaves out terminals, agent windows and wins. They need no server: <code>on_plumb</code> proposes <code>Nav { back }</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L462-L477">crates/apex-tool-lsp/src/lib.rs:462-477</a>).</p>
+<p>The language verbs are added only once a server of that language has answered <code>initialize</code>. <code>install_verbs</code> adds one rule per verb with <code>file: \.(ext|...)$</code> and <code>kind: File</code> at priority 0. When a language's last server dies, <code>remove_verbs</code> sends <code>RuleRm</code> for them. The appearance of the verbs in the menu is therefore the user's sign that a server is ready (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L399-L426">crates/apex-tool-lsp/src/lib.rs:399-426</a>). The code comments say cmd-B3 on an identifier is <code>Def</code> at the pointer, while plain B3 stays acme's Look.</p>
+<p><code>on_plumb</code> works out the position and the request (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L842-L907">crates/apex-tool-lsp/src/lib.rs:842-907</a>):</p>
+<ol>
+<li>It takes the position from <code>p.at</code>, falling back to <code>p.sel</code>. If the buffer is not yet in <code>docs</code>, it runs <code>sync_docs</code> once, to cover a rule that becomes visible just before the first sync.</li>
+<li>It maps the verb to an LSP method:</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Verb</th>
+<th>Request</th>
+<th>What the answer does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Def</code> (also <code>plumb</code>)</td>
+<td><code>textDocument/definition</code></td>
+<td><code>open_at</code> the first location (<code>Location</code> or <code>LocationLink</code>'s <code>targetSelectionRange</code>).</td>
+</tr>
+<tr>
+<td><code>Type</code></td>
+<td><code>textDocument/typeDefinition</code></td>
+<td>Same as <code>Def</code>.</td>
+</tr>
+<tr>
+<td><code>Refs</code></td>
+<td><code>textDocument/references</code> (<code>includeDeclaration</code>)</td>
+<td>Writes <code>path:line:col</code> lines to the <code>+Errors</code> window for <code>dir</code>.</td>
+</tr>
+<tr>
+<td><code>Hov</code></td>
+<td><code>textDocument/hover</code></td>
+<td>Writes the hover text (string, <code>MarkupContent</code> or array) to <code>+Errors</code>.</td>
+</tr>
+<tr>
+<td><code>Sig</code></td>
+<td><code>textDocument/signatureHelp</code></td>
+<td>Writes signature labels to <code>+Errors</code>.</td>
+</tr>
+<tr>
+<td><code>Fmt</code></td>
+<td><code>textDocument/formatting</code> (tabSize 8, tabs)</td>
+<td>Applies the edits and proposes one whole-buffer <code>ReplaceRange</code> at the buffer's version.</td>
+</tr>
+<tr>
+<td><code>Rn NAME</code></td>
+<td><code>textDocument/rename</code></td>
+<td>Applies the edits from <code>changes</code> and <code>documentChanges</code>. Open buffers get a <code>ReplaceRange</code>; other files are rewritten on disk. A <code>PATH: renamed</code> report goes to <code>+Errors</code>.</td>
+</tr>
+</tbody>
+</table>
+<ol start="3">
+<li>If the server is still initializing, the plumb is acknowledged as handled and a &quot;still initializing&quot; note goes to <code>+Errors</code>. <code>Rn</code> with no argument is refused with a usage note. Otherwise the request is sent and <code>Waiting::Plumb</code> records it. When the answer arrives, <code>answer</code> runs (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L909-L1019">crates/apex-tool-lsp/src/lib.rs:909-1019</a>) and the plumb is acknowledged with its result. A null result means &quot;nothing&quot; and is acknowledged as <code>false</code>.</li>
+</ol>
+<p><code>open_at</code> proposes a single <code>Goto</code>, which records the origin on the session's back stack so that <code>Back</code> returns to it. If the target buffer is open in the replica, the range becomes <code>Pos::Chars(q0, q1)</code> through <code>pos::offset</code>; otherwise it becomes <code>Pos::LineCol</code>, and the leader opens the file (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L1021-L1037">crates/apex-tool-lsp/src/lib.rs:1021-1037</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant C as &quot;Client (cmd-B3)&quot;
+    participant L as &quot;Leader&quot;
+    participant T as &quot;apex tool lsp&quot;
+    participant S as &quot;language server&quot;
+    C-&gt;&gt;L: &quot;Plumb verb Def, at span&quot;
+    L-&gt;&gt;T: &quot;ToolPlumb (rule names lsp)&quot;
+    T-&gt;&gt;S: &quot;textDocument/definition at UTF-16 position&quot;
+    S--&gt;&gt;T: &quot;Location uri + range&quot;
+    T-&gt;&gt;L: &quot;Propose Goto (Chars or LineCol)&quot;
+    T-&gt;&gt;L: &quot;Answer Plumb ok=true&quot;
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L399-L477">crates/apex-tool-lsp/src/lib.rs:399-477</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L842-L1037">crates/apex-tool-lsp/src/lib.rs:842-1037</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/pos.rs#L1-L75">crates/apex-tool-lsp/src/pos.rs:1-75</a></p>
+<h2 id="diagnostics-messages-and-progress">Diagnostics, messages and progress</h2>
+<p>Each server has its own diagnostic window. Its path is <code>root/</code>, its label is the server's name, and it is a scratch window with <code>diagnostic: true</code>. <code>server_window</code> first looks for an existing window that matches all three, so a restarted tool finds its old window again. Only if there is none does it propose <code>NewWindow</code> and wait for it to appear (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L772-L800">crates/apex-tool-lsp/src/lib.rs:772-800</a>). The test checks that the window is made stashed.</p>
+<p><code>textDocument/publishDiagnostics</code> turns each diagnostic into <code>path:line:col: severity: first line of message</code>, using 1-based line and column numbers and severities error, warning, info or hint. It stores the lines per path in <code>diagnostics</code> and stamps <code>unsettled</code>. Nothing is written yet: the main loop copies <code>diagnostics</code> to <code>settled</code> only once <code>SETTLE</code> (1.5 s) has passed since the last publish, because &quot;a line being typed has errors that go with the next key, and would be a toast each&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L34-L40">crates/apex-tool-lsp/src/lib.rs:34-40</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L517-L526">crates/apex-tool-lsp/src/lib.rs:517-526</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L736-L767">crates/apex-tool-lsp/src/lib.rs:736-767</a>).</p>
+<p><code>write_window</code> writes the settled diagnostics, ordered by path because they are kept in a <code>BTreeMap</code>, followed by a blank line and the server's messages. The messages are the first line of each <code>window/showMessage</code> and a note when the server exits, capped at <code>MESSAGES</code> (20). It proposes a <code>SetContent</code> only if the text changed, and the client shows what is new as a toast (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L802-L821">crates/apex-tool-lsp/src/lib.rs:802-821</a>).</p>
+<p><code>say_progress</code> drives the window's working indicator. The window is working from spawn until <code>initialize</code> is answered, and afterwards while any <code>$/progress</code> token is open. The percentage shown is the lowest any open token reports. It proposes <code>Working { by, at }</code> only when this differs from what it last said (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L823-L840">crates/apex-tool-lsp/src/lib.rs:823-840</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L684-L719">crates/apex-tool-lsp/src/lib.rs:684-719</a>).</p>
+<p>When a server dies (<code>LspGone</code>), the tool:</p>
+<ul>
+<li>clears its progress;</li>
+<li>notes the exit in its window;</li>
+<li>forgets its documents;</li>
+<li>adds the key to <code>failed</code> so it is not restarted;</li>
+<li>removes the language's verbs if no other server of that language is still running.</li>
+</ul>
+<p>Dropping the <code>Tool</code> kills every server child (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L499-L514">crates/apex-tool-lsp/src/lib.rs:499-514</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L1040-L1046">crates/apex-tool-lsp/src/lib.rs:1040-1046</a>).</p>
+<p>On stderr, <code>log</code> always reports servers starting, becoming ready (with the number of queued notifications flushed), progress beginning and ending, and exiting. <code>-v</code> adds requests, answers, intermediate progress and diagnostic counts through <code>vlog</code>, and <code>APEX_LSP_DEBUG</code> adds the raw JSON-RPC traffic and the servers' stderr.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L479-L840">crates/apex-tool-lsp/src/lib.rs:479-840</a></p>
+<h2 id="testing-the-lsp-tool">Testing the lsp tool</h2>
+<p><code>crates/apex-tool-lsp/tests/lsp.rs</code> starts a headless daemon. A test attachment sets <code>lsp.go</code> to <code>python3 tests/fake-lsp.py --delay-initialize --hold-indexing</code>, opens a <code>main.go</code> under a <code>go.mod</code>, and then starts the tool. <code>fake-lsp.py</code> speaks just enough JSON-RPC for the test:</p>
+<ul>
+<li>it delays <code>initialize</code> by 2 s;</li>
+<li>it reports an <code>indexing</code> progress at 30% and a <code>fake ready</code> message;</li>
+<li>each <code>didOpen</code> and <code>didChange</code> publishes a single warning whose message is <code>len=N first=WORD</code>, where N is the document's length after the edit, so the test can see that incremental sync rebuilt the text correctly;</li>
+<li>it gives a fixed definition at line 1, columns 5 to 6, a plaintext hover, and a whole-file formatting edit (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/fake-lsp.py#L26-L81">crates/apex-tool-lsp/tests/fake-lsp.py:26-81</a>).</li>
+</ul>
+<p>The test then checks, in order:</p>
+<ol>
+<li><code>Back</code> is installed before <code>Fmt</code>, and <code>Fmt</code> appears only after <code>initialize</code> has been answered.</li>
+<li>The diagnostic window, labelled <code>fake-lsp.py</code>, is stashed, working at 30%, and then done.</li>
+<li>The window shows the message and <code>len=25</code>, then <code>len=33</code> after an 8-char insert.</li>
+<li><code>Def</code> selects the definition.</li>
+<li><code>Hov</code> writes to <code>+Errors</code>.</li>
+<li><code>Fmt</code> rewrites the buffer.</li>
+<li>The menu for the window is exactly <code>VERBS</code> followed by <code>NAV_VERBS</code>.</li>
+<li><code>Back</code> returns to where the second <code>Def</code> started.</li>
+</ol>
+<p>The unit tests in <code>lib.rs</code> and <code>pos.rs</code> cover root discovery, extension lookup, <code>server_name</code>, and the UTF-16 conversions.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/lsp.rs#L51-L122">crates/apex-tool-lsp/tests/lsp.rs:51-122</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/tests/fake-lsp.py#L1-L82">crates/apex-tool-lsp/tests/fake-lsp.py:1-82</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L125-L151">crates/apex-tool-lsp/src/lib.rs:125-151</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L273-L280">crates/apex-tool-lsp/src/lib.rs:273-280</a></p>
+<h2 id="things-to-know-when-changing-these-tools">Things to know when changing these tools</h2>
+<ul>
+<li><strong>Do not call <code>Remote::propose</code> or <code>Remote::step</code> here.</strong> Use the tool's own <code>propose</code> or <code>step</code>. Anything applied without passing through <code>before</code> breaks win's output point and lsp's <code>didChange</code> stream.</li>
+<li><strong>win depends on recognising its own inserts.</strong> <code>ours</code> is matched only against its front, by exact <code>(q0, text)</code>. If the leader changed the text or the position of an insert, <code>p</code> would drift.</li>
+<li><strong>The two tools use different version policies.</strong> win's <code>Insert</code> and <code>ReplaceRange</code> carry the buffer version and retry on conflict. lsp's <code>SetContent</code> carries <code>version: None</code>, so it overwrites unconditionally. <code>Fmt</code> and <code>Rn</code> propose once at the version they read and do not retry.</li>
+<li><strong><code>raw()</code> reduces to <code>!echoing()</code>.</strong> It is written as <code>!self.cook &amp;&amp; !echoing || !echoing</code>, which is true exactly when echo is off, so <code>cook</code> does not currently change the result.</li>
+<li><strong>Root discovery is per file.</strong> Opening files under two different roots runs two servers of the same language, each with its own diagnostic window.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L362-L411">crates/apex-tool-win/src/lib.rs:362-411</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L504-L506">crates/apex-tool-win/src/lib.rs:504-506</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-win/src/lib.rs#L578-L607">crates/apex-tool-win/src/lib.rs:578-607</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L802-L821">crates/apex-tool-lsp/src/lib.rs:802-821</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool-lsp/src/lib.rs#L964-L1003">crates/apex-tool-lsp/src/lib.rs:964-1003</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="bridge-and-go.html">JSON Bridge and Go SDK</a></span><span class="next">Next: <a href="tool-pages.html">Preview, Web and Diff Tools</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child current"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+<ul class="sections">
+<li class="l2"><a href="#a-shared-pattern-seeing-entries-before-they-land">A shared pattern: seeing entries before they land</a></li>
+<li class="l2"><a href="#apex-tool-win">apex tool win</a></li>
+<li class="l3"><a href="#setup">Setup</a></li>
+<li class="l3"><a href="#the-shell-on-its-pty">The shell on its pty</a></li>
+<li class="l3"><a href="#the-windows-state">The window&#39;s state</a></li>
+<li class="l3"><a href="#edits-to-the-buffer-before">Edits to the buffer: before</a></li>
+<li class="l3"><a href="#typing-line-by-line">Typing, line by line</a></li>
+<li class="l3"><a href="#shell-output">Shell output</a></li>
+<li class="l3"><a href="#plumbs-interrupt-eof-and-b2">Plumbs: Interrupt, EOF and B2</a></li>
+<li class="l3"><a href="#send-and-snarfout">Send and Snarfout</a></li>
+<li class="l3"><a href="#debugging-and-tests">Debugging and tests</a></li>
+<li class="l2"><a href="#apex-tool-lsp">apex tool lsp</a></li>
+<li class="l3"><a href="#structure">Structure</a></li>
+<li class="l3"><a href="#languages-commands-and-roots">Languages, commands and roots</a></li>
+<li class="l3"><a href="#server-processes-and-json-rpc">Server processes and JSON-RPC</a></li>
+<li class="l3"><a href="#document-sync">Document sync</a></li>
+<li class="l3"><a href="#utf-16-positions-posrs">UTF-16 positions (pos.rs)</a></li>
+<li class="l3"><a href="#verbs-and-navigation-rules">Verbs and navigation rules</a></li>
+<li class="l2"><a href="#diagnostics-messages-and-progress">Diagnostics, messages and progress</a></li>
+<li class="l2"><a href="#testing-the-lsp-tool">Testing the lsp tool</a></li>
+<li class="l2"><a href="#things-to-know-when-changing-these-tools">Things to know when changing these tools</a></li>
+</ul>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

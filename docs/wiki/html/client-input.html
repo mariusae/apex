@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mouse, Keyboard and Look · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Mouse, Keyboard and Look</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cursor.rs">crates/apex-client/src/cursor.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/glide.rs">crates/apex-client/src/glide.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs">crates/apex-client/src/look.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs">crates/apex-client/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/menu.rs">crates/apex-client/src/menu.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs">crates/apex-client/src/shell.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs">crates/apex-client/src/text_element.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/warp.rs">crates/apex-client/src/warp.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs">crates/apex-core/src/tiling.rs</a></li>
+</ul>
+</details>
+<p>apex keeps acme's interaction model. The keyboard goes to the text under the pointer. Three mouse buttons select (B1), execute (B2) and look (B3), and chords cut and paste while B1 is held. apex adds a fourth button, B4, which pops up a menu of the verbs that plumbing rules offer for the window. All of this lives in the gpui client, mostly in <code>Acme</code>'s handlers in <code>crates/apex-client/src/app.rs</code>. Every change still goes through the leader <code>Node</code> as log entries (see <a href="node.html">The Node</a>). The client only decides what a gesture means. It then calls <code>node.select</code>, <code>node.insert</code>, <code>node.exec</code> and the like, or sends a plumb to the server.</p>
+<p>This page follows input from the gpui event to the edit. It covers mapping a Mac's one button onto acme's three, sweeps and chords, the B4 menu, keyboard editing in <code>text_key</code>, the pointer warps acme makes after layout changes, how the caret and pointer are drawn, and the &quot;look as you type&quot; behind ⌘F/⌘G. Pickers and other overlays, which take the keys while they are open, are covered in <a href="client-overlays.html">Pickers and Overlays</a>. The client's overall structure is in <a href="client.html">The UI Client</a>, and the tiling that warps refer to is in <a href="tiling-and-layout.html">Tiling and Layout</a>.</p>
+<h2 id="where-input-arrives">Where input arrives</h2>
+<p><code>main.rs</code> puts all the listeners on the root element. Mouse down, up and up-outside go to <code>Acme::mouse_down</code> and <code>Acme::mouse_up</code> for Left, Middle, Right and <code>Navigate(Back)</code> (B4). A force click goes to <code>mouse_pressure</code>, B5 (<code>Navigate(Forward)</code>) to <code>b5_down</code>, moves to <code>mouse_move</code>, modifier changes to <code>modifiers_changed</code>, and keys to <code>key_down</code>. Menu-bar shortcuts (⌘F, ⌘G, ⌘⇧G, ⌘[, ⌘], Undo, Copy, and so on) arrive as gpui actions, before any key event. They are routed to <code>find_start</code>, <code>find_next</code>, <code>menu_command</code> and <code>menu_edit</code>.</p>
+<p>Before any of this runs, the client has to know what is under the pointer. <code>locate</code> turns a point into a <code>Target</code> (a text <code>View</code>, a <code>Term</code>, or a page's <code>Web</code> scrollbar) and a <code>Region</code> (a text offset, an atom in a tag's head, the scrollbar, the layout box, a terminal cell). It reads the <code>TextLayout</code>s and <code>TermLayout</code>s that the previous frame recorded. An overlay over the point hides what is beneath it, so <code>locate</code> returns <code>None</code> there. The one exception is the stash's preview, which is a real window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3094-L3146">app.rs:3094-3146</a>).</p>
+<pre><code class="language-mermaid">flowchart TD
+    EV[&quot;gpui event (main.rs listeners)&quot;] --&gt; LB[&quot;logical_button: alt=B2, cmd=B3, shift=B4&quot;]
+    LB --&gt; CH{&quot;B1 or terminal drag held?&quot;}
+    CH --&gt;|&quot;B2 or B3&quot;| CHORD[&quot;chord: cut / paste (terminal: copy / paste clipboard)&quot;]
+    CH --&gt;|no| LOC[&quot;locate(pos): Target and Region&quot;]
+    LOC --&gt; BOX[&quot;layout box: box_drag&quot;]
+    LOC --&gt; ATOM[&quot;tag head atom: press_atom&quot;]
+    LOC --&gt; SB[&quot;scrollbar: start_scrolling&quot;]
+    LOC --&gt; TXT[&quot;text: Drag in mouse.b1 / b2 / b3&quot;]
+    LOC --&gt; TERM[&quot;terminal: term_sel / term_sweep&quot;]
+    TXT --&gt;|&quot;mouse_up B2&quot;| EXEC[&quot;execute: node.exec&quot;]
+    TXT --&gt;|&quot;mouse_up B3&quot;| LOOK[&quot;look_at: Plumb to the server&quot;]
+    LB --&gt;|B4| MENU[&quot;menu_open (menu.rs)&quot;]
+    MENU --&gt;|&quot;button up&quot;| EXEC
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L189-L214">main.rs:189-214</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L154-L173">app.rs:154-173</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3094-L3164">app.rs:3094-3164</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L271-L273">shell.rs:271-273</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/shell.rs#L304-L305">shell.rs:304-305</a></p>
+<h2 id="the-three-button-model">The three-button model</h2>
+<h3 id="buttons-on-a-laptop">Buttons on a laptop</h3>
+<p>A Mac trackpad has one button, so <code>logical_button</code> follows plan9port's mapping. Option-click is B2, command-click is B3, and shift-click is B4 (<code>MouseButton::Navigate(Back)</code>, the tools menu). Real Middle and Right buttons pass through unchanged. The button that a left press stood for is remembered in <code>mouse.left_as</code>, so that <code>mouse_up</code> releases the same logical button (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3269-L3285">app.rs:3269-3285</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3743">app.rs:3743</a>). <code>logical_button_peek</code> makes the same mapping without recording it.</p>
+<p>There are two more ways in:</p>
+<ul>
+<li><strong>Force click</strong> on a trackpad (<code>mouse_pressure</code>) turns a B1 press into a B3 press at the same spot. This only happens if the B1 press has not swept anything yet. The unfinished B1 is dropped and a synthetic ⌘-click is fed back through <code>mouse_down</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4640-L4671">app.rs:4640-4671</a>).</li>
+<li><strong>B5</strong>, a mouse's forward button, runs <code>Back</code> in the window under the pointer, just as ⌘[ does (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3561-L3569">app.rs:3561-3569</a>).</li>
+</ul>
+<h3 id="what-each-press-records">What each press records</h3>
+<p><code>mouse_down</code> starts by clearing transient state. It makes the caret solid, ends any live look and gives keyboard focus back from a web view. A click outside the finder, quick-open, palette or session selector closes that overlay and does nothing else. While the B4 menu is up, every other press is ignored. After that, the press is dispatched on <code>(target, button, region)</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Press</th>
+<th>Region</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1</td>
+<td>text</td>
+<td>Select a caret, or a <code>double_click</code> expansion on a double click. Record <code>mouse.b1 = Drag{view, anchor}</code> and make this the active column.</td>
+</tr>
+<tr>
+<td>B1 while B2 held</td>
+<td>text</td>
+<td>Set <code>chord_arg</code>, so the B2 command takes the last selection as its argument (acme's <code>textselect2</code>).</td>
+</tr>
+<tr>
+<td>B2 / B3</td>
+<td>text</td>
+<td>Record <code>mouse.b2</code> / <code>mouse.b3</code>. B3 also records <code>b3_reverse</code> (shift) and <code>b3_cmd</code>.</td>
+</tr>
+<tr>
+<td>any</td>
+<td>layout box</td>
+<td>Record <code>box_drag</code>. The tiling op runs on release (acme's <code>coldragwin</code> / <code>rowdragcol</code>).</td>
+</tr>
+<tr>
+<td>any</td>
+<td>scrollbar</td>
+<td><code>start_scrolling</code> (acme's <code>textscroll</code>).</td>
+</tr>
+<tr>
+<td>B1</td>
+<td>terminal cell</td>
+<td>Start a client-side <code>term_sel</code>, or select a word on a double click.</td>
+</tr>
+<tr>
+<td>B2 / B3</td>
+<td>terminal cell</td>
+<td>Start a <code>term_sweep</code> and draw it as <code>term_hl</code>.</td>
+</tr>
+<tr>
+<td>B1</td>
+<td>the top row past its text</td>
+<td><code>window.start_window_move()</code>, as on a title bar.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>Mouse</code> struct holds all of this per-gesture state: the three drags, <code>chorded</code>, <code>chord_arg</code>, <code>box_drag</code>, <code>scrolling</code>, <code>autoscroll</code>, <code>term_drag</code>, <code>term_sweep</code> and the modifiers (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L77-L105">app.rs:77-105</a>).</p>
+<h3 id="sweeps">Sweeps</h3>
+<p><code>mouse_move</code> extends whichever drag is live. For B1 it re-selects from the anchor to <code>offset_at(pos)</code> through <code>node.select</code>, so the selection is replicated as the user sweeps. If the pointer goes above or below the text, it starts acme's <code>framescroll</code>: a spawned task calls <code>autoscroll_step</code> every 80 ms. That scrolls by however many lines the pointer is past the edge and extends the selection to the text at that edge (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3692-L3727">app.rs:3692-3727</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4129-L4151">app.rs:4129-4151</a>).</p>
+<p>B2 and B3 sweeps are not selections. They only set <code>self.hl = (view, lo, hi, HlKind::Exec | Look)</code>, which is drawn in that button's sweep colour (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3728-L3736">app.rs:3728-3736</a>). Scrollbar buttons repeat in the same way: one step at once, then after 200 ms one every 80 ms. Each step warps the pointer back onto the bar (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4056-L4117">app.rs:4056-4117</a>).</p>
+<h3 id="chords">Chords</h3>
+<p><code>chord</code> runs on every press, before <code>locate</code>. While B1 is down, B2 cuts and B3 pastes in the view where the B1 sweep started, wherever the pointer has gone since. In a terminal, B2 copies (there is nothing to cut) and B3 types the clipboard into the shell. Setting <code>chorded</code> freezes the sweep. A press that lands outside the window still reaches <code>chord</code> through <code>mouse_down_out</code>.</p>
+<p>On a laptop there are no extra buttons to chord with, so <code>modifiers_changed</code> does the same job. Pressing ⌥ while B1 is held cuts, and pressing ⌘ pastes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3520-L3559">app.rs:3520-3559</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3873-L3916">app.rs:3873-3916</a>). Cut and paste use the system clipboard as acme's snarf buffer. A paste also appends <code>LayoutOp::Snarf</code> so that the session's snarf matches the clipboard (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5383-L5403">app.rs:5383-5403</a>).</p>
+<h3 id="release-what-b2-runs-and-what-b3-looks-at">Release: what B2 runs and what B3 looks at</h3>
+<p>On release, <code>take_range_at</code> decides which text the button took:</p>
+<ol>
+<li><strong>On purpose.</strong> <code>explicit_range_at</code> takes the sweep if it is non-empty, or else the selection if the click was inside it.</li>
+<li><strong>By expansion.</strong> Otherwise it expands from the click. B2 uses <code>exec_word</code>, which grows over <code>is_exec_char</code> runes (file characters plus <code>&lt;|&gt;</code>). In a tag, a click inside a closed <code>Look/two words/</code> takes all of it. B3 uses <code>expand(.., is_file_char)</code>, acme's <code>isfilec</code>, which here also includes <code>~</code>.</li>
+</ol>
+<p>For B2, the text plus any chord argument goes to <code>execute</code>. The range is stored in <code>self.ran</code>. It is drawn as B2's sweep for a moment more on the <code>RAN</code> clock: on, off for a blink at 30–60 ms, on again, then fading out from 90 ms until it is gone at 210 ms. That shows what ran. <code>execute</code> handles a few words in the client itself before calling <code>node.exec</code>:</p>
+<ul>
+<li><code>End</code> ends the session.</li>
+<li><code>Send</code> in a terminal types the selection into the shell.</li>
+<li>Words that a page from a buffer says it answers are run in that page.</li>
+<li><code>Back</code>, <code>Fwd</code> and <code>Get</code> on an unowned URL page navigate the page.</li>
+<li><code>Snarf</code> in a terminal copies.</li>
+<li><code>Paste</code> syncs the clipboard into the session's snarf first.</li>
+</ul>
+<p>For B3, <code>look_at</code> sends a <code>PlumbReq</code> or a <code>ClientMsg::Plumb</code>. It carries the text, <code>at</code> (the anchor as a <code>Span</code>), <code>sel</code> (only when the range was explicit), the <code>reverse</code> flag (shift-B3) and an optional verb. Command-B3 sends verb <code>Def</code> (the LSP's rule), and shift-command-B3 runs <code>Back</code>. A real B3 counts as command-B3 when ⌘ is held. A ⌘-click stand-in counts only when control is held too (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3818-L3871">app.rs:3818-3871</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4688-L4696">app.rs:4688-4696</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5422-L5555">app.rs:5422-5555</a>). The server does the expansion and the plumbing walk, as described in <a href="plumbing.html">Plumbing Rules and Verbs</a>.</p>
+<p>Terminal sweeps end the same way, from the grid text. A B2 inside a terminal selection takes the selection. A plain B3 click prefers an OSC 8 link, then a whole <code>http(s)://</code> URL, then a file word (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3779-L3817">app.rs:3779-3817</a>).</p>
+<h3 id="the--hint">The ⌘/⌥ hint</h3>
+<p>While ⌘ alone or ⌥ alone is held over text, and no button is down, <code>update_hint</code> computes what a click would take there: B3's range for ⌘, B2's for ⌥. The rule is the same as <code>take_range_at</code>. The result is stored in <code>self.hint</code>, and the text element draws it as a pill in that button's sweep colour. The pointer turns into the pointing hand. <code>update_hint</code> runs again on every move and modifier change, and after every warp, because no event reports that a warp moved the pointer (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4578-L4607">app.rs:4578-4607</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L2014-L2039">text_element.rs:2014-2039</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L684-L728">app.rs:684-728</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3269-L3871">app.rs:3269-3871</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3931-L3975">app.rs:3931-3975</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4640-L4696">app.rs:4640-4696</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5383-L5555">app.rs:5383-5555</a></p>
+<h2 id="the-b4-tools-menu">The B4 tools menu</h2>
+<p>B4 (a real fourth button, or shift-click) on a window opens the verbs that the plumbing rules offer that window. <code>menu_open</code> gets them from <code>apex_core::plumb::verbs_for(rules, path, kind, window, owner)</code> and opens nothing if the list is empty. B4 on a layout box does something else: it minimizes the window or column (<code>minimize_box</code>).</p>
+<p><code>menu.rs</code> ports libdraw's <code>menuhit</code> as the mariusae/plan9port acme uses it. <code>Menu::place</code> positions the menu so that the item chosen last is under the pointer. The client remembers that item by text in <code>menu_last</code>. The menu is centred across the pointer and kept inside acme's area. It has 26 px rows (<code>ROW_H</code>) and a minimum width of 120. Past <code>MAXUNSCROLL</code> (25) items, or more than fit on screen, it shows <code>NSCROLL</code> (20) items at a time with a scroll lane down the right. <code>menu_open</code> then warps the pointer onto the centre of that item, as menuhit's <code>moveto</code> does, so a plain B4 click repeats the last choice (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/menu.rs#L64-L91">menu.rs:64-91</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4698-L4725">app.rs:4698-4725</a>).</p>
+<table>
+<thead>
+<tr>
+<th><code>Menu</code> function</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>place</code></td>
+<td>Compute <code>menur</code>, <code>textr</code>, <code>scrollr</code>, <code>off</code> and <code>lasti</code> for the items and the pointer</td>
+</tr>
+<tr>
+<td><code>sel(x, y)</code></td>
+<td>menusel: the drawn row under the point, or −1 outside the rows</td>
+</tr>
+<tr>
+<td><code>item_rect(i)</code></td>
+<td>The rectangle a row's highlight fills</td>
+</tr>
+<tr>
+<td><code>thumb()</code></td>
+<td>The scroll lane's thumb (menuscrollpaint)</td>
+</tr>
+<tr>
+<td><code>face()</code></td>
+<td>The interface font at 13.5 pt that items are drawn and measured in</td>
+</tr>
+</tbody>
+</table>
+<p>While the button is held, <code>mouse_move</code> sends every move to <code>menu_track</code>. It highlights the row under the pointer, or none outside the rows. On the lane it scrolls so that the pointer's height picks the window of items. <code>mouse_up</code> for <code>Navigate</code> calls <code>menu_up</code>. That runs the highlighted item through <code>execute(ExecCtx::Window(w), item)</code>, the same path B2 takes, and records it as <code>menu_last</code>. The menu is then kept as <code>menu_closing</code> so it can animate out.</p>
+<p><code>main.rs</code> draws the menu with B2's colours, because choosing an item runs it. It fades in over 90 ms. When the button comes up, the chosen row blinks on the <code>RAN</code> clock and the menu fades out. If nothing was chosen, it simply fades (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L574-L595">main.rs:574-595</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L1178-L1225">main.rs:1178-1225</a>). The tests in <code>menu.rs</code> check that the remembered item opens under the pointer, that the menu's width follows the widest item while staying on screen, and that long menus scroll.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/menu.rs#L1-L164">menu.rs:1-164</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3336-L3363">app.rs:3336-3363</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4698-L4758">app.rs:4698-4758</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L579-L587">app.rs:579-587</a></p>
+<h2 id="the-keyboard">The keyboard</h2>
+<h3 id="where-keys-go">Where keys go</h3>
+<p><code>key_down</code> first offers the key to whatever has a field open. The order is: the overview, ctrl-tab and the switcher, ^F's completion list, the finder, quick-open, a page's URL field, tag editing, the path picker, the cwd picker, the session name, the command palette, and the session selector. Each of these returns once it has handled the key.</p>
+<p>If none of them took it, the key goes to the text under the pointer, as in acme. <code>self.pointer(window)</code> is either where a warp last put the pointer or the real pointer position. <code>locate</code> turns that point into a target. Over an overlay, the key goes to <code>kept_target</code>, wherever keys went before. Over a page's scrollbar, it goes to the last selected text (<code>node.seltext</code>). Over no window at all, it goes nowhere. A key in a window also attends to that window, which dismisses its notification (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4893-L5047">app.rs:4893-5047</a>).</p>
+<p>A terminal target gets ⌘↑/⌘↓ (jump between prompt marks), ⌘⇧C (copy the last command's output), ⌘V (paste), and every un-⌘'d key encoded through <code>term_key</code>. A text target makes its column active for any key except the arrows and paging keys. It then calls <code>text_key</code>, and afterwards <code>live_look</code> for a tag. A key in a body ends any live look in that window.</p>
+<h3 id="text-key"><code>text_key</code></h3>
+<p><code>text_key</code> follows acme's <code>texttype</code>. Each key becomes a node operation:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>⌘Z / ⌘⇧Z / ⌘Y</td>
+<td><code>node.undo</code> / <code>node.redo</code></td>
+</tr>
+<tr>
+<td>⌘X ⌘C ⌘V ⌘A</td>
+<td>cut, snarf, paste, select all</td>
+</tr>
+<tr>
+<td>^F or Insert</td>
+<td><code>complete</code>: file-name completion before the caret (see <a href="client-overlays.html">Pickers and Overlays</a>)</td>
+</tr>
+<tr>
+<td>↑ / ↓ in a tag</td>
+<td>Collapse the tag to one line or expand it (<code>WindowOp::TagExpand</code>, then <code>refit_window</code>)</td>
+</tr>
+<tr>
+<td>↑ / ↓ elsewhere, PgUp / PgDn</td>
+<td>Scroll by a third, or two thirds, of the lines that fit</td>
+</tr>
+<tr>
+<td>^U ^W ^H, Backspace</td>
+<td><code>node.erase</code> with <code>Erase::Line</code>, <code>Word</code> or <code>Char</code> (acme's <code>textbswidth</code>)</td>
+</tr>
+<tr>
+<td>^A / ^E</td>
+<td>Caret to the start or end of the line</td>
+</tr>
+<tr>
+<td>other ^letters</td>
+<td>Insert the control character itself (win reads ^C and ^D from the text)</td>
+</tr>
+<tr>
+<td>Delete (fn-⌫)</td>
+<td>DEL (<code>\x7f</code>) in the body of a live window, so win interrupts; otherwise <code>delete_forward</code></td>
+</tr>
+<tr>
+<td>Enter</td>
+<td>A newline plus the previous line's leading whitespace when the window's <code>autoindent</code> is on. Ignored in column tags and the top row.</td>
+</tr>
+<tr>
+<td>Escape</td>
+<td>Select what was typed since <code>typed_start</code> (acme's Esc)</td>
+</tr>
+<tr>
+<td>← / →</td>
+<td>Move or collapse the caret</td>
+</tr>
+<tr>
+<td>Home / End</td>
+<td>acme's Khome/Kend: bring the last insertion point (<code>iq1</code>) back into view if it has scrolled off, otherwise go to the top of the text or show its end</td>
+</tr>
+<tr>
+<td>anything with <code>key_char</code></td>
+<td><code>type_text</code>: <code>node.insert</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>type_text</code> records the start of the current typing in <code>typed_start</code> so that Escape can select it. After typing or erasing, <code>iq1</code> records where the typing ended, which Home and End return to. Every handled key marks the view <code>want_visible</code>, so the next render scrolls the caret into view (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5180-L5379">app.rs:5180-5379</a>). <code>text_key</code> calls <code>flash_watching</code> first. When another client holds the lease, typed keys have no effect and the standing banner flashes.</p>
+<p>The Edit menu's actions go through <code>menu_edit</code>, and its commands (Put, Get, Del, New, Select All as <code>Edit ,</code>) go through <code>menu_command</code>. Both use acme's rule: they act on the window under the pointer, or failing that on the last selected text. While an overlay is open they act on its field instead, and over a page they act on the page (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5049-L5178">app.rs:5049-5178</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4893-L5379">app.rs:4893-5379</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L677-L681">app.rs:677-681</a></p>
+<h2 id="pointer-warps">Pointer warps</h2>
+<p>acme moves the mouse after layout changes. On a new window it lands in the body near the tag (<code>coladd</code>). On a layout-box click it lands on the box (<code>winmousebut</code>, <code>colmousebut</code>). When a window closes, it moves onto the next window's Del (<code>colclose</code>'s movetodel), or returns to where it was before the closed window was made (savemouse/restoremouse). After a Look or a jump, it moves onto the selection.</p>
+<p>The node records which of these is wanted as <code>node.warp: Option&lt;tiling::Warp&gt;</code>. It is replicated intent, not pixels (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L155-L171">tiling.rs:155-171</a>). The client turns it into a real cursor move, but only after a frame has laid out the new geometry:</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant H as &quot;Handler (click, key, Look)&quot;
+    participant S as &quot;Acme::sync&quot;
+    participant R as &quot;render (main.rs)&quot;
+    participant W as &quot;warp.rs&quot;
+    H-&gt;&gt;S: node sets warp, then after() calls sync()
+    S-&gt;&gt;S: take_warp: uncover the target, save or restore the mouse, set pending and warp_wait
+    R-&gt;&gt;R: resolve_warp returns early while warp_wait is set
+    R-&gt;&gt;R: frame laid out, then schedule_warp clears warp_wait and requests a frame
+    R-&gt;&gt;R: next frame: resolve_warp computes the target from layouts and glide
+    R-&gt;&gt;W: move_to(window, point)
+    W-&gt;&gt;W: CGWarpMouseCursorPosition, re-associate, show the pointer
+    R-&gt;&gt;R: pointer = Some(at), last_mouse = at, update_hint(at)
+</code></pre>
+<p><code>take_warp</code> runs at the end of <code>sync</code>. It first calls <code>node.uncover</code>, so a window in a collapsed or hidden column is brought back before the warp lands. <code>Warp::NewWindow</code> saves the mouse position in <code>mouse_saved</code>. A <code>Warp::Closed</code> for that same window becomes <code>Pending::Restore</code> to that saved point. Otherwise it goes to the next window's Del, or nowhere if there is no next window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2364-L2399">app.rs:2364-2399</a>).</p>
+<p><code>resolve_warp</code> runs at the top of <code>render</code>. It computes the target point:</p>
+<ul>
+<li><strong>New window:</strong> in the body, just past the scrollbar and below the tag.</li>
+<li><strong>Window or column box:</strong> the box's centre.</li>
+<li><strong>Closed:</strong> the centre of the Del (or stacked-Del) atom in the next window's tag layout.</li>
+<li><strong>Selection:</strong> the selection's first rune, halfway down its line, so that pressing B3 again goes to the next match. A terminal or page has no text layout, so it falls back to the top of the body.</li>
+</ul>
+<p>If the target window is still gliding (see <code>glide.rs</code>), the pointer travels with it, re-warped every frame to where the window is drawn. Meanwhile <code>warp_onto</code> makes the destination own the keys and the focus ring, whatever the pointer passes over. The pending warp is only cleared once the window has landed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2401-L2502">app.rs:2401-2502</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/glide.rs#L66-L74">glide.rs:66-74</a>). Setting <code>APEX_DEBUG_WARP</code> logs each warp with its target and slot.</p>
+<p>macOS sends no event for a warp. <code>warp::move_to</code> converts the view point to global y-down display coordinates through the NSView's window and the main screen, and calls <code>CGWarpMouseCursorPosition</code>. It then calls <code>CGAssociateMouseAndMouseCursorPosition(true)</code>, because otherwise a warp briefly freezes mouse movement. Finally it calls <code>setHiddenUntilMouseMoves: false</code>, so that a pointer moved from the keyboard (ctrl-tab, a Goto) is not left hidden (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/warp.rs#L36-L115">warp.rs:36-115</a>). The client keeps the warped position in <code>self.pointer</code>. <code>mouse_move</code> drops it, along with <code>warp_onto</code>, once the real mouse moves more than a pixel away. Until then, <code>pointer()</code> and <code>key_view</code> treat the warped position as where the pointer is (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2504-L2516">app.rs:2504-2516</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3645-L3649">app.rs:3645-3649</a>).</p>
+<p>The menu, the scrollbars and <code>scroll_step</code> call <code>move_to</code> directly, without going through <code>Warp</code>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L107-L112">app.rs:107-112</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L529-L532">app.rs:529-532</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L645-L652">app.rs:645-652</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1974">app.rs:1974</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2364-L2516">app.rs:2364-2516</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L83-L88">main.rs:83-88</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/warp.rs#L1-L115">warp.rs:1-115</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/tiling.rs#L155-L171">tiling.rs:155-171</a></p>
+<h2 id="caret-and-pointer-drawing">Caret and pointer drawing</h2>
+<h3 id="the-keys-caret">The keys' caret</h3>
+<p>Each text draws its own selection. Only one view has the <em>keys' caret</em>: the view <code>key_view</code> names. That is the text under the pointer, or the warp's destination while it glides. There is none when apex is not in front or the pointer is over a terminal.</p>
+<p><code>caret_tick</code> runs on every mouse move. It updates <code>caret_view</code> and <code>caret_term</code>. When either changes, it restarts the blink: solid for 500 ms, then toggling every 530 ms. With View ▸ Blink Cursor off, the caret stays solid. A click or key also restarts it from solid. <code>caret_tick</code> returns true only when something visible changed, so frames are only redrawn when the caret changes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2172-L2233">app.rs:2172-2233</a>).</p>
+<p><code>source()</code> passes <code>key_caret: Some(caret_on)</code> to that view's <code>TextElement</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3011-L3013">app.rs:3011-3013</a>). The element paints the keys' caret as a 2 px accent-coloured bar as tall as the ink. Other views' carets are a thin bar in text colour. When the client is fenced (another client leads), both are drawn hollow. With View ▸ Smooth Cursor on, <code>glide_caret</code> moves the caret from where it was last drawn to its new position over 90 ms, easing out. If the text's frame or scroll changed, it jumps there at once (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L423-L485">text_element.rs:423-485</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L2172-L2218">text_element.rs:2172-2218</a>).</p>
+<p>The same element paints the other input feedback. That includes the B2 and B3 sweep (<code>hl</code>), the fading <code>ran</code> range, the ⌘/⌥ hint pill, the faint wash over a live look's matches (<code>marks</code>), and the strike-through on a Look argument that found nothing (<code>strike</code>). These fields are documented on <code>Source</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L1220-L1248">text_element.rs:1220-1248</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L2003-L2139">text_element.rs:2003-2139</a>).</p>
+<h3 id="mouse-cursors">Mouse cursors</h3>
+<p><code>render</code> chooses the system cursor for acme's area. Over text it is the arrow, not the I-beam, because a click in apex does much more than place an insertion point. It is the pointing hand while a hint is showing, and the closed hand while a layout box is dragged. A column edge being dragged gets ResizeLeftRight, and a window edge ResizeUpDown. Over a page it is <code>cursor::NATIVE_CURSOR</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L300-L339">main.rs:300-339</a>).</p>
+<p><code>cursor.rs</code> exists because gpui only selects system cursors by name. <code>install()</code> swaps the implementations of three <code>NSCursor</code> class methods:</p>
+<ul>
+<li><code>contextualMenuCursor</code> returns <code>ApexNoCursor</code>, whose <code>set</code> does nothing. gpui's cursor rect over a page then stays silent and the page's own tracking areas decide the cursor.</li>
+<li><code>dragLinkCursor</code> returns plan9port's big arrow, built from its Plan 9 bitmaps at 1× and 2×.</li>
+<li><code>dragCopyCursor</code> returns the box cursor, built the same way.</li>
+</ul>
+<p>As the file's own comment notes, this branch's render asks for system styles, so of the three only the page no-op is used. <code>cursor::apply</code> sets a system cursor directly over a page. Setting <code>APEX_CURSOR_DEBUG</code> logs every <code>-[NSCursor set]</code> with the calling frames (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cursor.rs#L1-L13">cursor.rs:1-13</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cursor.rs#L232-L308">cursor.rs:232-308</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L719">main.rs:719</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L408-L419">app.rs:408-419</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2172-L2233">app.rs:2172-2233</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2905-L3033">app.rs:2905-3033</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/text_element.rs#L423-L485">text_element.rs:423-485</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L300-L339">main.rs:300-339</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/cursor.rs#L1-L308">cursor.rs:1-308</a></p>
+<h2 id="look-as-you-type-f-and-g">Look as you type, ⌘F and ⌘G</h2>
+<p><code>look.rs</code> makes acme's tag <code>Look</code> behave like incremental search, while the state stays in the text. The query is the first <code>Look</code> in the window's tag. <code>Node::look_arg</code> parses it into a <code>LookArg</code> with <code>at</code>, <code>start</code>, <code>end</code>, <code>arg</code>, <code>live</code> and <code>closed</code> fields. Only an argument written <code>Look/word</code> is <em>live</em>, meaning it is searched as you type. The slash marks this in the text itself, because a word typed after a bare <code>Look </code> could be a command. A closing slash, as in <code>Look/two words/</code>, lets the argument contain spaces (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L22-L41">node.rs:22-41</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1595-L1654">node.rs:1595-1654</a>).</p>
+<p>The client keeps the search session in <code>self.looking: Option&lt;look::Live&gt;</code>. It holds the window, the <code>anchor</code> (where the body's selection was when typing began), <code>term_at</code> for terminals, the last argument, and whether that argument <code>failed</code>.</p>
+<pre><code class="language-mermaid">stateDiagram-v2
+    [*] --&gt; Idle
+    Idle --&gt; Live: &quot;key in tag, caret inside live Look/arg (anchor = body selection)&quot;
+    Idle --&gt; Live: &quot;cmd-F (find_start)&quot;
+    Live --&gt; Live: &quot;arg changed: look again from anchor&quot;
+    Live --&gt; Live: &quot;cmd-G / cmd-shift-G: next or previous, anchor moves&quot;
+    Live --&gt; Idle: &quot;caret leaves the argument&quot;
+    Live --&gt; Idle: &quot;Escape (look_done): caret at end of match, pointer warped there&quot;
+    Live --&gt; Idle: &quot;any click, or a key in the body&quot;
+</code></pre>
+<p>After each key in a tag, <code>live_look(w)</code> runs. If the caret is a point inside the live argument and the argument has changed, it searches again from the anchor with <code>find_match</code>. Adding a letter therefore narrows to the same place or a later one, and deleting a letter goes back. An empty argument puts the selection back at the anchor. If nothing is found, the selection stays where it is, <code>failed</code> is set, and the argument is drawn struck through. <code>look_from</code> keeps <code>node.seltext</code> pointing at the tag, so the keys keep going into the argument, and it records <code>show_at</code> so the match scrolls into view (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L54-L95">look.rs:54-95</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L176-L196">look.rs:176-196</a>).</p>
+<p>The two shortcuts work on the window acme would act on (<code>window_at_pointer</code>):</p>
+<ul>
+<li><strong>⌘F (<code>find_start</code>).</strong> If the tag has no <code>Look</code>, it types <code>Look// </code> at the tag's start. It then calls <code>node.make_look_live</code> to rewrite the argument as <code>Look/…/</code>, selects the argument so it can be typed over, warps the pointer onto it with <code>Warp::Sel(Tag)</code>, and starts a <code>Live</code> look.</li>
+<li><strong>⌘G / ⌘⇧G (<code>find_next</code>).</strong> It searches for the argument again past or before the body's selection. If the argument is empty, it uses the selected text and writes it into the tag with <code>set_look_arg</code>. If a match is found, the pointer warps onto it as it does after B3. During a live look, the anchor moves to the match (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L198-L269">look.rs:198-269</a>).</li>
+</ul>
+<p>Escape in the argument calls <code>look_done</code>. The selection collapses to a caret at the end of the match, and the pointer is warped there, so the next keys edit at the match. While you are still typing, the pointer is not moved, because keys follow the pointer (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L158-L174">look.rs:158-174</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5024-L5033">app.rs:5024-5033</a>).</p>
+<p><code>look_marks</code> returns every occurrence of the argument in the body, found with <code>find_all</code>. The result is cached in <code>look_cache</code> by argument and buffer version. They are washed faintly while a look is live in that window, or while the body's selection is one of them, for example after ⌘G or a B3. Otherwise they are hidden (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L271-L300">look.rs:271-300</a>).</p>
+<p>Pages and terminals have no buffer to search. A page is searched by its web view's own find (<code>webs.find_typed</code>, <code>webs.find</code>). A terminal's screen and history exist only on the host, so <code>term_look</code> sends <code>ClientMsg::TermFind</code>, or calls <code>server.term_find</code> when the server is local. It searches from the terminal selection, or from the top of the view. The reply comes back through <code>term_found</code>, which sets <code>term_sel</code> and the live look's <code>failed</code> flag (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L97-L156">look.rs:97-156</a>). Terminals are covered in <a href="terminals.html">Terminals</a>, and pages in <a href="io-plane-and-pages.html">The I/O Plane and Pages</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L1-L301">look.rs:1-301</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L430-L433">app.rs:430-433</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3293-L3295">app.rs:3293-3295</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5018-L5042">app.rs:5018-5042</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/main.rs#L168-L170">main.rs:168-170</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L22-L59">node.rs:22-59</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1595-L1654">node.rs:1595-1654</a></p>
+<h2 id="notes-for-working-on-input">Notes for working on input</h2>
+<ul>
+<li><strong>Everything replicated goes through the node.</strong> Selections during a sweep, cut, paste, typing and undo are all node operations. <code>hl</code>, <code>ran</code>, <code>hint</code>, <code>term_sel</code>, <code>looking</code>, the menu and <code>pointer</code> are only this client's. After a handler appends entries, it calls <code>after()</code>. That polls local execs, or flushes the link, and then calls <code>sync()</code>, which picks up gotos, notifications and the next warp (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2795-L2819">app.rs:2795-2819</a>).</li>
+<li><strong>Geometry comes from the previous frame.</strong> <code>locate</code>, <code>offset_at</code>, the Del atom used by warps, and <code>menu_open</code>'s measurements all read the layouts the last render recorded. This is why warps wait one frame (<code>warp_wait</code>).</li>
+<li><strong>Stuck buttons.</strong> A B1 press clears any earlier <code>b1</code>, <code>autoscroll</code> and <code>term_drag</code>. A release that never arrived would otherwise turn the next B2 or B3 into a chord (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3366-L3373">app.rs:3366-3373</a>).</li>
+<li><strong>Layout animations.</strong> With View ▸ Layout Animations off, <code>glided_layout</code> places everything at once, so warps go straight to their targets (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/glide.rs#L84-L98">glide.rs:84-98</a>).</li>
+<li><strong>Tests.</strong> <code>app.rs</code> has unit tests for the <code>RAN</code> fade, for terminal double-click and selection hit-testing, and for scrolling. <code>menu.rs</code> tests menu placement. The live mouse and keyboard paths have no automated tests.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L2795-L2819">app.rs:2795-2819</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L3366-L3373">app.rs:3366-3373</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L5718-L5800">app.rs:5718-5800</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/glide.rs#L84-L146">glide.rs:84-146</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="client.html">The UI Client (apex-ui)</a></span><span class="next">Next: <a href="client-overlays.html">Pickers and Overlays</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child current"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+<ul class="sections">
+<li class="l2"><a href="#where-input-arrives">Where input arrives</a></li>
+<li class="l2"><a href="#the-three-button-model">The three-button model</a></li>
+<li class="l3"><a href="#buttons-on-a-laptop">Buttons on a laptop</a></li>
+<li class="l3"><a href="#what-each-press-records">What each press records</a></li>
+<li class="l3"><a href="#sweeps">Sweeps</a></li>
+<li class="l3"><a href="#chords">Chords</a></li>
+<li class="l3"><a href="#release-what-b2-runs-and-what-b3-looks-at">Release: what B2 runs and what B3 looks at</a></li>
+<li class="l3"><a href="#the--hint">The ⌘/⌥ hint</a></li>
+<li class="l2"><a href="#the-b4-tools-menu">The B4 tools menu</a></li>
+<li class="l2"><a href="#the-keyboard">The keyboard</a></li>
+<li class="l3"><a href="#where-keys-go">Where keys go</a></li>
+<li class="l3"><a href="#text-key">text_key</a></li>
+<li class="l2"><a href="#pointer-warps">Pointer warps</a></li>
+<li class="l2"><a href="#caret-and-pointer-drawing">Caret and pointer drawing</a></li>
+<li class="l3"><a href="#the-keys-caret">The keys&#39; caret</a></li>
+<li class="l3"><a href="#mouse-cursors">Mouse cursors</a></li>
+<li class="l2"><a href="#look-as-you-type-f-and-g">Look as you type, ⌘F and ⌘G</a></li>
+<li class="l2"><a href="#notes-for-working-on-input">Notes for working on input</a></li>
+</ul>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

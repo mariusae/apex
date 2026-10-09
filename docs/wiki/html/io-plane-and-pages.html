@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The I/O Plane and Pages · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>The I/O Plane and Pages</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md">ARCHITECTURE.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md">WEB.md</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs">crates/apex-cli/src/main.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs">crates/apex-cli/tests/cli.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs">crates/apex-client/src/web.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/webbar.rs">crates/apex-client/src/webbar.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs">crates/apex-server/src/daemon.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs">crates/apex-server/src/plane.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs">crates/apex-server/src/proto.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs">crates/apex-server/src/remote.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs">crates/apex-tool/src/lib.rs</a></li>
+</ul>
+</details>
+<p>A <strong>page</strong> is a window whose body the client draws as a web document instead of text or a terminal grid. Preview's rendered Markdown, <code>apex diff</code>'s side-by-side view, the agent tool's transcripts and a web browser on a URL are all pages. A page is session state like any other window. What it shows, where it has navigated to, how many times it has been reloaded and (for some pages) how far it is scrolled all live in the replicated log, so every client that attaches draws the same page. The pixels are a native <code>WKWebView</code> that each UI client places over the window's body rectangle.</p>
+<p>Pages need things the log is not built to carry: file bytes, file watches, HTTP fetches and raw TCP tunnels. The <strong>I/O plane</strong> carries them. It is a second set of numbered, HTTP-shaped streams multiplexed over the same session socket as the log, and it is scoped to the connection that opens them. This page covers both halves. For the log side of the wire, see <a href="attach-protocol.html">The Attach Protocol</a>. For how page state changes reach a leader, see <a href="proposals.html">Proposals</a>. For the tools that write pages, see <a href="tool-pages.html">Preview, Web and Diff Tools</a>.</p>
+<h2 id="two-planes-on-one-socket">Two planes on one socket</h2>
+<p>WEB.md sets out the rule that the two planes never mix. The <strong>log plane</strong> carries entries, leases and proposals, and everything on it is replicated. The <strong>I/O plane</strong> carries <code>Io { stream, frame }</code> messages in both directions. They are never logged, they belong to the connection that opened them, and they end when that connection ends. A fenced UI keeps its streams until its connection closes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L114-L117">WEB.md:114-117</a>). The plane is &quot;HTTP-shaped and nothing else&quot;: reading a file, watching it, fetching a URL and opening a tunnel are all requests. The frames are postcard-encoded like every other message. HTTP/1.1 text never appears on the wire.</p>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph Client[&quot;UI client (apex-ui)&quot;]
+        View[&quot;WKWebView per page&quot;]
+        Proxy[&quot;localhost CONNECT proxy (plane.rs)&quot;]
+        Fetcher[&quot;apexfile:// and apextool:// handlers&quot;]
+        Plane[&quot;IoPlane (ids, sinks)&quot;]
+        View --&gt;|&quot;http(s) traffic&quot;| Proxy
+        View --&gt;|&quot;custom schemes&quot;| Fetcher
+        Proxy --&gt; Plane
+        Fetcher --&gt; Plane
+    end
+    subgraph Daemon[&quot;apexd&quot;]
+        Io[&quot;Daemon::io / io_request&quot;]
+        Files[&quot;file:// GET, Watch, PUT&quot;]
+        Tunnel[&quot;CONNECT tunnel thread&quot;]
+        Fetch[&quot;http(s) fetch thread (ureq)&quot;]
+        Relay[&quot;tool:// relay&quot;]
+        Io --&gt; Files
+        Io --&gt; Tunnel
+        Io --&gt; Fetch
+        Io --&gt; Relay
+    end
+    Tool[&quot;Tool attachment (apex-tool)&quot;]
+    Plane &lt;--&gt;|&quot;ClientMsg::Io / ServerMsg::Io&quot;| Io
+    Relay &lt;--&gt;|&quot;streams from 0x80000000&quot;| Tool
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L21-L36">WEB.md:21-36</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L59-L160">WEB.md:59-160</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L204-L246">crates/apex-server/src/proto.rs:204-246</a></p>
+<h2 id="frames-and-streams">Frames and streams</h2>
+<p><code>IoFrame</code> has five variants, and both directions use the same type:</p>
+<pre><code class="language-rust">pub enum IoFrame {
+    Request { method: String, url: String, headers: Vec&lt;(String, String)&gt; },
+    Response { status: u16, headers: Vec&lt;(String, String)&gt; },
+    Body(Vec&lt;u8&gt;),
+    End,
+    Reset { reason: String },
+}
+</code></pre>
+<p>A client opens a stream by sending <code>Request</code> on an id it picks itself. <code>IoIds</code> hands out odd, increasing numbers, starting at 1 and stepping by 2 (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L17-L29">plane.rs:17-29</a>). The server answers with <code>Response</code>, any number of <code>Body</code> frames, and <code>End</code>. Either side may send <code>Reset</code> to abort. A client never sends <code>Response</code>, and the daemon ignores one if it arrives (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1048">daemon.rs:1048</a>).</p>
+<p>On a watch stream, each <code>Body</code> holds a postcard-encoded <code>FileFrame { version, path, bytes }</code>. The version starts at 1 and goes up by one on each change (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L229-L246">proto.rs:229-246</a>).</p>
+<p>The daemon tracks each connection's open streams in <code>Conn::streams: HashMap&lt;u32, IoStream&gt;</code>. One enum says what each stream is:</p>
+<table>
+<thead>
+<tr>
+<th><code>IoStream</code></th>
+<th>Opened by</th>
+<th>Held state</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Watch { path, version }</code></td>
+<td><code>GET file://…</code> with header <code>Watch: 1</code></td>
+<td>the path and the stream's own version counter</td>
+</tr>
+<tr>
+<td><code>Put { path, body }</code></td>
+<td><code>PUT file://…</code></td>
+<td>the body gathered so far; the file is written on <code>End</code></td>
+</tr>
+<tr>
+<td><code>Tunnel { sock, pending, headed }</code></td>
+<td><code>CONNECT host:port</code></td>
+<td>the socket once it connects, bytes that arrived before then, and whether the 200 has been sent</td>
+</tr>
+<tr>
+<td><code>Fetch { method, url, headers, body, started, headed }</code></td>
+<td><code>http://</code> or <code>https://</code></td>
+<td>the request; the body is gathered until <code>End</code></td>
+</tr>
+<tr>
+<td><code>Relay { conn, stream }</code></td>
+<td><code>tool://NAME/…</code></td>
+<td>the other half of the relay, on the tool's connection</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L214-L276">crates/apex-server/src/proto.rs:214-276</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L136-L174">crates/apex-server/src/daemon.rs:136-174</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L17-L54">crates/apex-server/src/plane.rs:17-54</a></p>
+<h2 id="what-the-daemon-answers">What the daemon answers</h2>
+<p><code>Daemon::io</code> receives every client frame. It first checks whether the stream is half of a relay. If so, it forwards the frame unchanged to the other half and tears both halves down on a <code>Reset</code>, or on an <code>End</code> from the tool's side. Otherwise it dispatches on the frame type (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L983-L1050">daemon.rs:983-1050</a>). <code>io_request</code> picks the handler from the method and the URL scheme (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1052-L1108">daemon.rs:1052-1108</a>):</p>
+<ul>
+<li><strong><code>file://</code></strong>, or a bare absolute path, is resolved by <code>file_url_path</code>. It accepts <code>file:///p</code> and <code>file://localhost/p</code> and percent-decodes the result.
+<ul>
+<li>A plain <code>GET</code> reads the file and replies <code>200</code> with <code>Content-Length</code>, then sends the bytes in 256 KiB chunks and <code>End</code>.</li>
+<li>A <code>GET</code> carrying a non-empty, non-<code>0</code> <code>Watch</code> header subscribes the session's <code>Server</code> file watcher to the path (<code>server.subscribe</code>). It replies <code>200</code> with <code>Watch: 1</code> and sends a first <code>FileFrame</code> with version 1. The stream then stays open.</li>
+<li>A <code>PUT</code> stores a <code>Put</code> stream and writes the file when the client sends <code>End</code>.</li>
+<li>Any other method gets <code>405</code>. An I/O error is mapped by <code>io_status</code> to a status code such as 404 or 403, with the message as the body.</li>
+</ul>
+</li>
+<li><strong><code>CONNECT host:port</code></strong> (a <code>tcp://</code> prefix is accepted too) is handled by <code>io_connect</code>. It spawns a thread that resolves the target and tries each address with a 15-second timeout. The thread hands a clone of the socket back to the state thread as <code>IoUp::Connected</code>, then reads from the socket and posts each chunk as <code>IoUp::Data</code>. The state thread writes everything the client sends straight into the socket. Bytes that arrive before the connection is up are kept in <code>pending</code> and flushed once it is (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1110-L1159">daemon.rs:1110-1159</a>). An <code>End</code> from the client half-closes the socket with <code>shutdown(Write)</code>. The stream ends when the far end closes.</li>
+<li><strong><code>http://</code> and <code>https://</code></strong> are handled by <code>io_fetch</code>, which fetches with <code>ureq</code> on a thread and sets <code>http_status_as_error(false)</code> so that every status passes through. The <code>Host</code> and <code>Content-Length</code> headers are dropped. For <code>GET</code>, <code>HEAD</code>, <code>DELETE</code> and <code>OPTIONS</code> the fetch starts immediately. For any other method the daemon gathers the body until the client's <code>End</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1161-L1204">daemon.rs:1161-1204</a>). The daemon does no TLS of its own: for <code>https</code> the host's HTTP client does it, and inside a tunnel the web view does.</li>
+<li><strong><code>tool://NAME/…</code></strong> goes to <code>io_relay</code> (see below).</li>
+<li>Any other scheme gets <code>501</code>.</li>
+</ul>
+<p>Results from the worker threads come back to the single state thread as <code>Event::Io(conn, stream, IoUp)</code>. <code>io_up</code> then forwards them, but only while the stream is still open. A failure before the response head becomes <code>502</code> with the reason as the body. A failure after the head becomes <code>Reset</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1206-L1248">daemon.rs:1206-1248</a>).</p>
+<h3 id="watches-as-streaming-responses">Watches as streaming responses</h3>
+<p>There is one filesystem subscription per path per session. It is shared with the watcher the server already runs for open files, and the open streams act as its reference count. When the watcher reports a change, <code>file_changed</code> reads the file once and sends a new <code>FileFrame</code> to every <code>Watch</code> stream on that path in every connection of the session. Each stream bumps its own version first (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1308-L1333">daemon.rs:1308-1333</a>). When a watch stream ends, whether by <code>End</code>, <code>Reset</code> or the connection going, <code>unwatch_unused</code> drops the subscription if no other stream still wants the path (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1335-L1352">daemon.rs:1335-1352</a>). This design replaced the older <code>ReadFile</code>, <code>Watch</code> and <code>Unwatch</code> messages along with the per-connection <code>watched</code> sets (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L146-L153">WEB.md:146-153</a>).</p>
+<h3 id="tool-served-requests-and-the-relay">Tool-served requests and the relay</h3>
+<p>A page <code>via</code> a tool loads <code>tool://NAME/path</code>. <code>io_relay</code> looks for a connection in the session whose attachment is named <code>NAME</code>. If it finds one, <code>relay_to</code> opens a stream on that connection, numbered from <code>RELAYED = 0x8000_0000</code> upward so that it cannot collide with the odd ids the tool picks for itself. It records each half as the other's <code>Relay</code> and forwards the <code>Request</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1251-L1281">daemon.rs:1251-1281</a>).</p>
+<p>If no such tool is attached but a rule whose action is <code>Tool(NAME)</code> has a <code>start</code> command, the request is held as <code>Held::Stream</code> and the command is run. When the tool says hello, the held request is relayed to it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L631">daemon.rs:631</a>). If the tool does not attach within <code>START_WAIT</code> (10 s), the request gets <code>503</code>. With no rule to start the tool, it gets <code>503</code> straight away (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1393-L1425">daemon.rs:1393-1425</a>). See <a href="plumbing.html">Plumbing</a> for <code>start</code>.</p>
+<p>On the tool's side, <code>apex-tool</code> treats incoming streams at or above <code>0x8000_0000</code> as requests. It gathers each one's body until <code>End</code> and then emits <code>Event::Request(Served)</code>. The tool answers with <code>Tool::respond(req, status, headers, body)</code>, which sends <code>Response</code>, the body in chunks, and <code>End</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L214-L230">apex-tool/src/lib.rs:214-230</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L474-L503">lib.rs:474-503</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L547-L559">lib.rs:547-559</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L983-L1352">crates/apex-server/src/daemon.rs:983-1352</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L1393-L1425">crates/apex-server/src/daemon.rs:1393-1425</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L474-L559">crates/apex-tool/src/lib.rs:474-559</a></p>
+<h2 id="the-plane-from-a-clients-side">The plane from a client's side</h2>
+<p>A program has two ways to use the plane.</p>
+<p><strong>Pumped by the owner.</strong> <code>Remote</code> exposes <code>io_open</code>, <code>io_send</code>, <code>io_end</code>, <code>io_take</code>, <code>io_response</code>, <code>io_collect</code> and <code>io_next_file</code>, plus the helpers <code>read_file</code> and <code>watch</code>. These read frames from <code>link.io</code> as the owner steps the link. The CLI's <code>apex io</code> is built this way (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L804-L925">remote.rs:804-925</a>).</p>
+<p><strong>From threads.</strong> <code>IoPlane</code> (in <code>plane.rs</code>) is a cloneable handle made of the link's <code>Outbound</code> sender, the shared <code>IoIds</code>, and an <code>IoSinks</code> registry that maps a stream to an mpsc <code>Sender</code>. <code>IoPlane::open</code> registers a sink before it sends the request. The link's reader thread (<code>spawn_reader</code>) offers every <code>ServerMsg::Io</code> to the sinks first, so frames for a stream that a thread is waiting on go straight to that thread and never reach the UI's queue (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1056-L1082">remote.rs:1056-1082</a>). <code>IoPlane::fetch</code> performs one whole request with a timeout. It sends <code>End</code> after the body, or with no body for <code>http*</code> and <code>tool://</code> URLs. For a plain <code>GET file://</code> the daemon needs no <code>End</code>. The result is <code>(status, headers, body)</code>, or an error such as &quot;timed out waiting for the host&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L56-L138">plane.rs:56-138</a>).</p>
+<p><code>apex io [-watch] METHOD URL</code> drives the plane from a shell: <code>GET</code> and <code>PUT</code> on files, a watch, <code>GET</code> on a URL fetched by the host, and <code>CONNECT HOST:PORT</code> acting as <code>nc</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/src/main.rs#L436-L449">apex-cli/src/main.rs:436-449</a>). These integration tests exercise the plane: <code>a_watched_file_streams_its_changes_until_unwatched</code>, <code>tunnels_and_fetches_go_through_the_host</code> and <code>a_web_views_proxy_and_files_ride_the_plane</code> in <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-cli/tests/cli.rs#L397">crates/apex-cli/tests/cli.rs</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L56-L138">crates/apex-server/src/plane.rs:56-138</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L804-L925">crates/apex-server/src/remote.rs:804-925</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/remote.rs#L1056-L1140">crates/apex-server/src/remote.rs:1056-1140</a></p>
+<h2 id="the-page-kind-in-the-core">The Page kind in the core</h2>
+<p>A window's body is one of <code>Text</code>, <code>Term</code> or <code>Page(Source)</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L45-L56">entry.rs:45-56</a>). A page's state is split between the body and fields that every <code>Window</code> carries:</p>
+<table>
+<thead>
+<tr>
+<th>Piece</th>
+<th>Where</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Source::Buffer(id)</code></td>
+<td><code>Body::Page</code></td>
+<td>The document is a buffer's HTML. It is written with ordinary edits, replicated, and patched in place on change. Used by Preview, diffs and the agent's pages.</td>
+</tr>
+<tr>
+<td><code>Source::Url</code></td>
+<td><code>Body::Page</code></td>
+<td>The document is at <code>Window::path</code>.</td>
+</tr>
+<tr>
+<td><code>Via::Host</code> (the default)</td>
+<td><code>Window::via</code></td>
+<td>The document and its resources are fetched through the session's host: its network, and its files as <code>file:///…</code>.</td>
+</tr>
+<tr>
+<td><code>Via::Client</code></td>
+<td><code>Window::via</code></td>
+<td>Fetched by the machine showing the window. Only the user makes these, never a tool.</td>
+</tr>
+<tr>
+<td><code>Via::Tool(name)</code></td>
+<td><code>Window::via</code></td>
+<td>Served by that tool over the plane (<code>tool://name/…</code>).</td>
+</tr>
+<tr>
+<td><code>base</code></td>
+<td><code>Window::base</code></td>
+<td>Where relative addresses resolve. If empty for a buffer page, the folder of the buffer's name is used.</td>
+</tr>
+<tr>
+<td><code>reload</code></td>
+<td><code>Window::reload</code></td>
+<td>A counter. Each client loads the page again when it moves.</td>
+</tr>
+<tr>
+<td><code>scroll</code></td>
+<td><code>Window::scroll</code></td>
+<td>Buffer pages only: <code>Scroll::Line(n)</code> (the last <code>data-line</code> marker at or before source line n) or <code>Scroll::Fraction(f)</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><code>WindowOp::Create</code> carries <code>via</code> and <code>base</code> alongside the body and path. Three window ops change a page afterwards. <code>Path</code> records a navigation, <code>Reload</code> bumps the counter, and <code>PageScroll</code> sets the scroll. <code>State::apply</code> handles them in <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L641-L646">state.rs:641-646</a>. <code>State::hash</code> includes <code>via</code>, <code>base</code>, <code>reload</code> and <code>scroll</code>, so replicas that diverge on page state are detected (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L923-L932">state.rs:923-932</a>).</p>
+<p>On the leader, <code>Node::open_page</code> turns a <code>NewPage { content, via, base, label }</code> into entries. For <code>NewContent::Html</code>, it creates a scratch buffer of <code>WinKind::Page</code>, then the window. For <code>NewContent::Url</code>, it creates a window whose path is the URL. <code>reload_page</code> refuses a window that is not a page. <code>scroll_page</code> refuses anything but a buffer page, because a URL page scrolls on the client, and it appends nothing if the scroll value is unchanged. <code>web_navigate</code> accepts only <code>Source::Url</code> pages and appends <code>WindowOp::Path</code> when the URL differs. A page's link history deliberately stays off the session's navigation stack: &quot;its history is its tool's&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L620-L724">node.rs:620-724</a>). Other attachments reach these through <code>Proposal::OpenPage</code>, <code>Navigate</code>, <code>Reload</code> and <code>PageScroll</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L43-L55">proposal.rs:43-55</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L202-L218">proposal.rs:202-218</a>). The SDK wraps them as <code>Tool::new_page</code>, <code>new_web_page</code>, <code>navigate</code> and <code>reload</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L661-L707">apex-tool/src/lib.rs:661-707</a>).</p>
+<pre><code class="language-mermaid">classDiagram
+    class Window {
+        body: Body
+        path: String
+        via: Via
+        base: String
+        reload: u64
+        scroll: Option~Scroll~
+        owner: Option~AttachmentId~
+    }
+    class Body {
+        Text(BufferId)
+        Term(TermId)
+        Page(Source)
+    }
+    class Source {
+        Buffer(BufferId)
+        Url
+    }
+    class Via {
+        Host
+        Client
+        Tool(String)
+    }
+    class Scroll {
+        Line(u32)
+        Fraction(f32)
+    }
+    Window --&gt; Body
+    Body --&gt; Source
+    Window --&gt; Via
+    Window --&gt; Scroll
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L45-L113">crates/apex-core/src/entry.rs:45-113</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L184-L208">crates/apex-core/src/entry.rs:184-208</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L46-L100">crates/apex-core/src/state.rs:46-100</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L620-L724">crates/apex-core/src/node.rs:620-724</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L705-L751">ARCHITECTURE.md:705-751</a></p>
+<h2 id="drawing-pages-on-the-client-webrs">Drawing pages on the client: <code>web.rs</code></h2>
+<p><code>Webs</code> owns one <code>WebHost</code> per page window. A <code>WebHost</code> wraps a <code>wry::WebView</code> built as a child of gpui's window with <code>build_as_child</code>, which on macOS is a <code>WKWebView</code>. <code>Webs</code> also owns the shared event channel, the session's <code>IoPlane</code>, and the port of the <code>CONNECT</code> proxy. <code>Acme::io_plane</code> returns a plane only when the backend is a remote link. An in-process <code>Backend::Local</code> has none, and its views use their own network and read files from disk directly (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4361-L4368">app.rs:4361-4368</a>).</p>
+<h3 id="placement-every-frame">Placement every frame</h3>
+<p>The body element calls <code>Acme::web_place(w, bounds)</code> each time it is laid out (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4273-L4327">app.rs:4273-4327</a>). It creates <code>Webs</code> with a plane the first time a view is wanted. It then branches on the body:</p>
+<ul>
+<li><strong>Buffer page.</strong> The client reads the buffer's text and version and works out the directory: <code>base</code>, or else the buffer name's folder. It calls <code>Webs::place_html</code>. On first use, <code>build</code> loads the HTML after <code>dress</code> has rewritten it. <code>dress</code> turns <code>file://</code> links in <code>href</code>, <code>src</code>, <code>srcset</code>, <code>poster</code>, <code>action</code> and CSS <code>url()</code> into <code>apexfile://localhost…</code>, adds <code>&lt;base href=&quot;apexfile://localhost DIR/&quot;&gt;</code> unless the page brings its own, and puts a <code>&lt;style id=&quot;apex-theme&quot;&gt;</code> with the <code>--apex-*</code> colours at the start of the head (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1848-L1938">web.rs:1848-1938</a>). When the version changes, the page is not reloaded. Instead, <code>morph_script</code> patches the DOM in place by matching nodes by position and name. Scroll position and page state survive the patch, and a drawn Mermaid diagram is kept while its source is unchanged (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1940-L1974">web.rs:1940-1974</a>). If <code>Window::scroll</code> is set, <code>Webs::follow</code> applies it once per new value: to a <code>data-line</code> marker a quarter of the way down the view, or to a fraction of the page (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1461-L1498">web.rs:1461-1498</a>).</li>
+<li><strong>URL page.</strong> If <code>page_orphaned</code> finds that the page's <code>Via::Tool</code> has no attachment, the client draws a placeholder rather than a page (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4353-L4359">app.rs:4353-4359</a>). Otherwise <code>Webs::place</code> builds the view on <code>webkit_url(path)</code>. If the window's path later differs from the URL the view last loaded or reported, the state has moved the page (a Goto, another client, a tool's <code>navigate</code>), and the view loads the new path (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1071-L1087">web.rs:1071-1087</a>). <code>set_owned</code> tells the page through <code>window.__apexOwned</code> whether a tool owns it.</li>
+<li><strong>Both.</strong> <code>Webs::reloads(w, win.reload)</code> reloads the view when the logged counter moves. It ignores the counter's first value (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1500-L1525">web.rs:1500-1525</a>).</li>
+</ul>
+<p>After layout, <code>Webs::settle</code> hides views for windows the layout does not draw and drops views for windows that are gone. A view that had the keyboard hands it back to gpui first (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1272-L1296">web.rs:1272-1296</a>).</p>
+<h3 id="what-a-view-is-built-with">What a view is built with</h3>
+<p><code>build</code> installs a set of initialization scripts and handlers (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1106-L1270">web.rs:1106-1270</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Piece</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CURSOR_SCRIPT</code></td>
+<td>Reports the CSS cursor under the pointer (<code>cursor:</code>) and button presses (<code>down:</code>). WebKit's own cursor never reaches the screen inside this window.</td>
+</tr>
+<tr>
+<td><code>KEEP_SCRIPT</code></td>
+<td>Keeps the page's selection painted while the keyboard is elsewhere (<code>__apexAway</code>/<code>__apexBack</code>).</td>
+</tr>
+<tr>
+<td><code>SCROLL_SCRIPT</code></td>
+<td>Hides the page's own scrollbar with a constructed stylesheet and reports <code>scroll:top,height,view</code> once per frame when it changes, for acme's scrollbar drawn beside the view.</td>
+</tr>
+<tr>
+<td><code>NAV_SCRIPT</code></td>
+<td>On a page a tool owns, intercepts plain left-clicks on links in the main document and posts <code>nav:URL</code> instead of following them.</td>
+</tr>
+<tr>
+<td><code>BRIDGE_SCRIPT</code></td>
+<td>Defines <code>window.apex.send</code> and <code>apex.onmessage</code>, except in an <code>http:</code> or <code>https:</code> document.</td>
+</tr>
+<tr>
+<td><code>FILE_SCRIPT</code>, <code>ANCHOR_SCRIPT</code>, <code>COPY_SCRIPT</code>, <code>MERMAID_SCRIPT</code>, <code>TOC_SCRIPT</code></td>
+<td>Installed for buffer pages only: file links made by scripts, anchors, copy handles on code blocks, Mermaid on request, and the table of contents.</td>
+</tr>
+<tr>
+<td>Page-load handler</td>
+<td><code>Loading(started)</code> events. For URL pages it also reports <code>Navigated(apex_url(url))</code> from the main frame's URL, ignoring <code>about:</code> pages.</td>
+</tr>
+<tr>
+<td>Navigation handler</td>
+<td>File links with a line, or to files a view does not show itself, become <code>Open(path, line)</code>. In buffer pages every link becomes <code>Link</code>. <code>file://</code> and bare-loopback links are rerouted. Everything else proceeds.</td>
+</tr>
+<tr>
+<td>Proxy config</td>
+<td>For any page that is not <code>Via::Client</code>, <code>wry::ProxyConfig::Http</code> pointing at the local <code>CONNECT</code> proxy.</td>
+</tr>
+<tr>
+<td><code>apexfile</code> and <code>apextool</code> protocols</td>
+<td>Asynchronous custom-scheme handlers, each request served on its own thread by <code>Fetcher</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="url-forms">URL forms</h3>
+<p>The session and WebKit spell some URLs differently. <code>webkit_url</code> and <code>apex_url</code> convert between the two forms, and the session only ever sees its own (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1998-L2030">web.rs:1998-2030</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Session form</th>
+<th>View form</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tool://NAME/p</code></td>
+<td><code>apextool://NAME/p</code></td>
+<td>WKWebView can only intercept custom schemes.</td>
+</tr>
+<tr>
+<td><code>apexfile:///p</code></td>
+<td><code>apexfile://localhost/p</code></td>
+<td>WebKit dispatches a custom scheme only when the URL has a host.</td>
+</tr>
+<tr>
+<td><code>http://127.0.0.1:N/…</code></td>
+<td><code>http://127-0-0-1.apex-host:N/…</code></td>
+<td>A web view never sends a loopback name through a proxy, so the host's loopback travels under an alias that the proxy undoes.</td>
+</tr>
+<tr>
+<td><code>http://localhost/…</code></td>
+<td><code>http://localhost.apex-host/…</code></td>
+<td>Same reason.</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1-L66">crates/apex-client/src/web.rs:1-66</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L529-L564">crates/apex-client/src/web.rs:529-564</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L611-L728">crates/apex-client/src/web.rs:611-728</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1071-L1270">crates/apex-client/src/web.rs:1071-1270</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4273-L4327">crates/apex-client/src/app.rs:4273-4327</a></p>
+<h2 id="network-through-the-host-the-connect-proxy">Network through the host: the CONNECT proxy</h2>
+<p><code>WKWebView</code> cannot intercept <code>http</code> or <code>https</code> with a scheme handler, but on macOS 14 and later it accepts a proxy configuration per data store (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L353-L369">WEB.md:353-369</a>). <code>start_connect_proxy(plane)</code> binds <code>127.0.0.1:0</code> and accepts connections, each handled on its own thread by <code>proxy_one</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L198-L296">plane.rs:198-296</a>). For each connection, <code>proxy_one</code>:</p>
+<ol>
+<li>Reads the request head byte by byte up to the blank line, with a 64 KiB cap. Anything other than <code>CONNECT</code> gets <code>405</code>.</li>
+<li>Undoes the loopback alias in the target host (<code>unalias_host</code>).</li>
+<li>Opens a <code>CONNECT</code> stream on the plane and waits up to 30 s for the answer. A non-200 answer becomes <code>502 Bad Gateway</code>, with the plane's status in <code>X-Apex-Status</code>. No answer becomes <code>504</code>.</li>
+<li>Replies <code>200 Connection Established</code>. It then pumps the socket into the stream on one thread, sending <code>End</code> when the socket closes, and pumps the stream's <code>Body</code> frames into the socket until <code>End</code> or <code>Reset</code>.</li>
+</ol>
+<p>TLS runs between the page and the origin, end to end through the tunnel. The page therefore sees the host's network: on a remote session, an internal dashboard on the remote machine loads as it would there. The alias has known gaps. Absolute loopback URLs in a page's own resources still go to the client's loopback, and the page's server sees the alias in its <code>Host</code> header (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L334-L351">WEB.md:334-351</a>). <code>APEX_WEB_DEBUG</code> in the environment makes the proxy and the views log what they do.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant V as WKWebView
+    participant P as proxy_one (client)
+    participant L as IoPlane / link
+    participant D as apexd (io_connect)
+    participant O as origin server
+    V-&gt;&gt;P: CONNECT example.com:443
+    P-&gt;&gt;L: Io Request CONNECT example.com:443
+    L-&gt;&gt;D: ClientMsg::Io
+    D-&gt;&gt;O: TCP connect (thread)
+    D--&gt;&gt;L: Response 200
+    L--&gt;&gt;P: frame via sink
+    P--&gt;&gt;V: 200 Connection Established
+    V-&gt;&gt;P: TLS bytes
+    P-&gt;&gt;D: Io Body frames
+    D-&gt;&gt;O: write to socket
+    O--&gt;&gt;D: bytes (reader thread)
+    D--&gt;&gt;P: Io Body frames
+    P--&gt;&gt;V: bytes
+    O--&gt;&gt;D: close
+    D--&gt;&gt;P: Io End
+    P--&gt;&gt;V: shutdown
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L140-L296">crates/apex-server/src/plane.rs:140-296</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L771-L787">crates/apex-client/src/web.rs:771-787</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L332-L369">WEB.md:332-369</a></p>
+<h2 id="apexfile-and-apextool"><code>apexfile://</code> and <code>apextool://</code></h2>
+<p><code>Fetcher::serve</code> answers <code>apexfile://</code> requests (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1546-L1620">web.rs:1546-1620</a>). It serves the bundled fonts first, from the client itself (<code>fonts::serve</code>). Otherwise it strips <code>localhost</code> (and the alias, if present), decodes the path, and fetches it with <code>plane.fetch(&quot;GET&quot;, file_url(path))</code>, or reads the disk when there is no plane. The content type comes from <code>mime_for</code> on the extension (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L298-L321">plane.rs:298-321</a>). Every response carries <code>Access-Control-Allow-Origin: *</code>.</p>
+<p>After a successful fetch, <code>Fetcher::watch</code> opens a <code>Watch: 1</code> stream on the path. There is at most one such stream per path per page, and at most 200 per page. The first frame is skipped because it holds the file the page already has. Each later <code>FileFrame</code> sends <code>WebEvent::Reload</code>. The watches end when the <code>WebHost</code> is dropped (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1622-L1659">web.rs:1622-1659</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L582-L592">web.rs:582-592</a>). Editing an image or stylesheet on the host therefore reloads the page that uses it. For a buffer page, a reload marks its version stale (<code>u64::MAX</code>), and the next placement morphs it.</p>
+<p><code>Fetcher::serve_tool</code> turns <code>apextool://NAME/…</code> into <code>tool://NAME/…</code> and passes the method and body through with <code>plane.fetch</code>. It takes the content type from the tool's <code>Content-Type</code> header, or else from the extension. With no plane it answers <code>503</code>, because an in-process session has no tools to ask.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1546-L1659">crates/apex-client/src/web.rs:1546-1659</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/plane.rs#L298-L321">crates/apex-server/src/plane.rs:298-321</a></p>
+<h2 id="page-events-owners-and-the-script-bridge">Page events, owners and the script bridge</h2>
+<p>Views report into <code>Webs</code>' channel. <code>Acme::web_events</code> drains it each sync and acts on each event (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4414-L4475">app.rs:4414-4475</a>):</p>
+<ul>
+<li><code>Navigated(url)</code> records the URL in the host, so that the window's name following it is not mistaken for a move to load. It tells the owner, and proposes <code>Navigate</code> if the window's path differs. Only the client that leads proposes; a watching client follows the log.</li>
+<li><code>Ask(url)</code>, and <code>Link(url)</code> on an owned page, become <code>ClientMsg::Ask { Request::Navigate }</code>. The daemon forwards the ask to the window's owner and gives it <code>ASK_ANSWER</code> (2 s) to reply. If nobody owns the window, or the owner does not answer in time, the asker receives <code>Answered { answer: None }</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L768-L791">daemon.rs:768-791</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L209">daemon.rs:209</a>). <code>page_answers</code> carries out the reply. <code>Handled</code> does nothing. <code>Redirect(u)</code> goes to <code>u</code>. <code>Allow</code>, <code>Default</code> or no answer go to the original URL. For a URL page this is a <code>Navigate</code> proposal when the target is <code>http(s)</code>, <code>apexfile</code>, <code>file</code> or <code>tool</code>; any other target is passed to the system's <code>open</code>. For a buffer page the link is followed with <code>follow_link</code>: an off-host <code>http(s)</code> link goes to the system browser, and anything else becomes a <code>Goto</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4477-L4559">app.rs:4477-4559</a>).</li>
+<li><code>Title</code>, <code>Loading</code> and <code>Message</code> are sent to the owner as <code>ClientMsg::WindowEvent</code>, which the daemon delivers only to the owner's connection (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L801-L809">daemon.rs:801-809</a>). <code>Message</code> is forwarded only if <code>bridged(w)</code> holds: the page is a buffer page, or a <code>Via::Tool</code> page at a <code>tool://</code> path. A page fetched from the web never speaks to an owner, even if it fakes <code>window.ipc</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4497-L4506">app.rs:4497-4506</a>).</li>
+<li><code>Copy</code> puts a code block's text into the snarf buffer (<code>LayoutOp::Snarf</code>) and onto the clipboard. <code>Scroll</code> updates the scrollbar thumb, <code>Cursor</code> updates the pointer, <code>Reroute</code> loads an aliased or <code>apexfile</code> URL and proposes the new path, and <code>Open</code> becomes a <code>Goto</code> at a line.</li>
+</ul>
+<p><code>page_owned(w)</code> holds only for a remote, unfenced client showing a page owned by an attachment other than its own. This is how &quot;only the leading client reports what happens in a page&quot; is enforced (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4491-L4495">app.rs:4491-4495</a>).</p>
+<p>The bridge also runs the other way. A tool calls <code>Tool::post_to_page(w, json)</code>, which sends <code>ClientMsg::PostToPage</code>. The daemon accepts it only from the window's owner and forwards it to the session's leader, which queues it in <code>link.page_posts</code>. <code>page_answers</code> hands it to <code>Webs::post</code>, and that calls <code>window.apex.onmessage(json)</code> in the page. Posted messages are never logged (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L792-L800">daemon.rs:792-800</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1433-L1439">web.rs:1433-1439</a>). A tool opts into navigation questions and page events with <code>Tool::handle_pages</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-tool/src/lib.rs#L561-L583">apex-tool/src/lib.rs:561-583</a>).</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant Pg as Page script
+    participant C as Leading UI (Acme)
+    participant D as apexd
+    participant T as Owning tool
+    Pg-&gt;&gt;C: ipc &quot;nav:URL&quot; (owned page)
+    C-&gt;&gt;D: Ask Navigate window url
+    D-&gt;&gt;T: Ask (2 s deadline)
+    T-&gt;&gt;D: Answer Navigate Redirect or Allow or Handled
+    D-&gt;&gt;C: Answered
+    C-&gt;&gt;D: Propose Navigate (URL page)
+    D--&gt;&gt;C: Entries WindowOp Path
+    Pg-&gt;&gt;C: ipc &quot;msg:JSON&quot; (apex.send)
+    C-&gt;&gt;D: WindowEvent Message
+    D-&gt;&gt;T: WindowEvent
+    T-&gt;&gt;D: PostToPage JSON
+    D-&gt;&gt;C: PostToPage (to leader)
+    C-&gt;&gt;Pg: apex.onmessage(JSON)
+</code></pre>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4414-L4559">crates/apex-client/src/app.rs:4414-4559</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/daemon.rs#L768-L809">crates/apex-server/src/daemon.rs:768-809</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L132-L143">crates/apex-server/src/proto.rs:132-143</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proto.rs#L404-L449">crates/apex-server/src/proto.rs:404-449</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L753-L773">ARCHITECTURE.md:753-773</a></p>
+<h2 id="back-fwd-get-and-the-web-header">Back, Fwd, Get and the web header</h2>
+<p>A URL page has no tag text. <code>webbar.rs</code> draws a header in the tag's place instead (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/webbar.rs#L86-L177">webbar.rs:86-177</a>). It holds the window's handle, which moves, resizes and minimizes the window like any other, plus back and forward buttons and an address pill. Clicking the pill starts a <code>UrlEdit</code> on a <code>LineEdit</code> pre-filled with the window path. Enter passes the typed text through <code>address()</code> and calls <code>node.web_navigate</code>. <code>address()</code> keeps any text with a scheme, <code>about:</code> or <code>data:</code> as it is. Text starting with <code>/</code> or <code>~</code> becomes <code>file://…</code>. Text starting with <code>localhost</code> or <code>127.0.0.1</code> becomes <code>http://…</code>, and anything else becomes <code>https://…</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/webbar.rs#L33-L84">webbar.rs:33-84</a>). While an address is being typed, <code>overlay_up</code> is true, which keeps the keyboard away from the pages.</p>
+<p><code>Acme::page_nav</code> handles the buttons and the tag words Back, Fwd and Get. On a page a tool owns, it proposes <code>Exec</code> of the word in the window, so the tool, which keeps the page's history, answers. On any other page, Get proposes <code>Reload</code>, so every client loads the page again, and Back and Fwd use the view's own WebKit history (<code>Webs::go</code>) (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4329-L4351">app.rs:4329-4351</a>).</p>
+<p>A buffer page can declare words of its own with <code>&lt;meta name=&quot;apex-verbs&quot; content=&quot;Prev Next&quot;&gt;</code>. <code>page_verbs</code> parses them from the first 8 KiB of the HTML, and B2 on one of those words runs <code>window.apexVerb(word)</code> in the page (<code>Webs::verb</code>). <code>apex diff</code>'s Prev and Next work this way (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L2032-L2048">web.rs:2032-2048</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1339-L1345">web.rs:1339-1345</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/webbar.rs#L1-L192">crates/apex-client/src/webbar.rs:1-192</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L4329-L4351">crates/apex-client/src/app.rs:4329-4351</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1010-L1019">crates/apex-client/src/web.rs:1010-1019</a></p>
+<h2 id="living-with-a-native-view">Living with a native view</h2>
+<p>A <code>WKWebView</code> draws above everything gpui paints and keeps pointer events to itself. The client works around this in four ways.</p>
+<ul>
+<li><strong>Holes for overlays.</strong> As each overlay (picker, finder, tools menu, toast) is laid out, it records its bounds. <code>Webs::set_holes</code> then masks each view's layer with a <code>CAShapeLayer</code>: the view's rectangle minus the overlays' (even-odd fill), widened by each panel's shadow margin. The overlay shows through and the page stays live around it. The same rectangles, without the margins, go to a hit-test override, so clicks inside an overlay belong to the overlay. With no overlay over a view, the mask is removed (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L834-L932">web.rs:834-932</a>).</li>
+<li><strong>The veil.</strong> While a dialog dims the window, <code>set_veil</code> adds a <code>CALayer</code> of the veil's colour inside each page's own layer, at a high z-position, so the same holes cut it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L934-L997">web.rs:934-997</a>).</li>
+<li><strong>Keys follow the pointer.</strong> <code>focus_tick</code> runs on a timer. It asks AppKit where the pointer is (<code>native_mouse</code>) and gives the keyboard to the page under it, or back to gpui's view (<code>focus_ui</code>) when the pointer is elsewhere, saving and restoring the page's selection as it goes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1021-L1062">web.rs:1021-1062</a>). With the pointer over a page, the Edit menu's Copy, Cut, Paste and Select All go to WebKit's own selectors (<code>Webs::edit</code>).</li>
+<li><strong>Find in a page.</strong> Look in a page's tag runs <code>LOOK_SCRIPT</code>. It uses <code>window.find</code> and marks matches with CSS custom highlights, so a morph neither drops the marks nor diffs against them (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L1347-L1374">web.rs:1347-1374</a>). See <a href="client-input.html">Mouse, Keyboard and Look</a>.</li>
+</ul>
+<p>Linux (WebKitGTK) placement and its proxy configuration are open questions. Most of the AppKit-specific code above is compiled out or stubbed off macOS.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/web.rs#L789-L1062">crates/apex-client/src/web.rs:789-1062</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L38-L51">WEB.md:38-51</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L653-L661">WEB.md:653-661</a></p>
+<h2 id="design-status-and-what-remains">Design status and what remains</h2>
+<p>ARCHITECTURE.md §5's note dated October 2026 lists what is built: the Page kind (<code>Body::Page</code>, <code>Source</code>, <code>Via</code>), its state in the log, the request and event framework (<code>Ask</code>/<code>Answer</code>, <code>WindowEvent</code>, <code>PostToPage</code>), tool-served pages, the script bridge, and Preview and Web as tools started when first wanted. Three special cases from before remain. Page verbs are still parsed from HTML (<code>apex diff</code> has no tool to answer them), Look in a page still goes through <code>Node</code>'s <code>page_finds</code> queue, and <code>ClientDo</code> is still used for things other than pages (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L685-L696">ARCHITECTURE.md:685-696</a>).</p>
+<p>Older sections of WEB.md describe <code>Body::Web</code>, <code>Body::Html</code>, <code>OpenWeb</code>, <code>OpenHtml</code> and <code>WebNavigate</code>. Those names are gone; where WEB.md and ARCHITECTURE.md §5 disagree, §5 describes what runs. The review in ARCHITECTURE.md also notes that the daemon's own HTTP fetch overlaps with <code>CONNECT</code> tunnelling, and that folder listings could become <code>GET file:///dir/</code> on the plane (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L513-L521">ARCHITECTURE.md:513-521</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/ARCHITECTURE.md#L670-L869">ARCHITECTURE.md:670-869</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/WEB.md#L11-L17">WEB.md:11-17</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="terminals.html">Terminals</a></span><span class="next">Next: <a href="remote-hosts.html">Remote Hosts and Providers</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top current"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+<ul class="sections">
+<li class="l2"><a href="#two-planes-on-one-socket">Two planes on one socket</a></li>
+<li class="l2"><a href="#frames-and-streams">Frames and streams</a></li>
+<li class="l2"><a href="#what-the-daemon-answers">What the daemon answers</a></li>
+<li class="l3"><a href="#watches-as-streaming-responses">Watches as streaming responses</a></li>
+<li class="l3"><a href="#tool-served-requests-and-the-relay">Tool-served requests and the relay</a></li>
+<li class="l2"><a href="#the-plane-from-a-clients-side">The plane from a client&#39;s side</a></li>
+<li class="l2"><a href="#the-page-kind-in-the-core">The Page kind in the core</a></li>
+<li class="l2"><a href="#drawing-pages-on-the-client-webrs">Drawing pages on the client: web.rs</a></li>
+<li class="l3"><a href="#placement-every-frame">Placement every frame</a></li>
+<li class="l3"><a href="#what-a-view-is-built-with">What a view is built with</a></li>
+<li class="l3"><a href="#url-forms">URL forms</a></li>
+<li class="l2"><a href="#network-through-the-host-the-connect-proxy">Network through the host: the CONNECT proxy</a></li>
+<li class="l2"><a href="#apexfile-and-apextool">apexfile:// and apextool://</a></li>
+<li class="l2"><a href="#page-events-owners-and-the-script-bridge">Page events, owners and the script bridge</a></li>
+<li class="l2"><a href="#back-fwd-get-and-the-web-header">Back, Fwd, Get and the web header</a></li>
+<li class="l2"><a href="#living-with-a-native-view">Living with a native view</a></li>
+<li class="l2"><a href="#design-status-and-what-remains">Design status and what remains</a></li>
+</ul>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>

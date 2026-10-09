@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buffers, Views and Undo · apex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; scroll-padding-top: 1em; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    margin: 0;
+    padding: 2em 1em 4em;
+  }
+  main { max-width: 34em; margin: 0 auto; }
+  .wiki { font-size: 0.9em; text-align: center; margin: 0 0 1.5em; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: bold; font-style: italic; margin: 1.4em 0 0.4em; }
+  h4 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.2em 0 0.4em; }
+  p, ul, ol, pre, table, blockquote { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  li > p { margin: 0; }
+  pre, code { font-family: Inconsolata, Menlo, monospace; font-size: 0.95em; }
+  pre code { font-size: 1em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  blockquote { padding-left: 1.4em; margin-left: 0; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 0.15em 1em 0.15em 0; }
+  th { border-bottom: 1px solid #000; }
+  img { max-width: 100%; }
+  p.sources { font-size: 0.85em; }
+  details.files { margin: 0 0 1.6em; }
+  details.files summary { cursor: pointer; }
+  details.files ul { list-style: none; padding-left: 1.4em; margin: 0.4em 0 0; }
+  details.files li { font-family: Inconsolata, Menlo, monospace; font-size: 0.88em; }
+  .diagram { margin: 0 0 0.8em; overflow-x: auto; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .pager { margin-top: 3em; font-size: 0.9em; display: flex; justify-content: space-between; gap: 1em; }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  nav.pages { font-size: 0.9em; }
+  nav.pages ol { list-style: none; padding: 0; margin: 0; }
+  nav.pages li { margin: 0.15em 0; }
+  nav.pages li.child { padding-left: 1.4em; }
+  nav.pages li.current > a { color: #000; font-weight: bold; text-decoration: none; }
+  nav.pages > ol > li > a { display: grid; grid-template-columns: 2.2em 1fr; }
+  nav.pages > ol > li.child > a { grid-template-columns: 2.4em 1fr; }
+  nav.pages ul.sections { list-style: none; padding-left: 2.2em; margin: 0.2em 0 0.4em; font-size: 0.95em; }
+  nav.pages ul.sections li.l3 { padding-left: 1em; }
+  nav.pages h2 { margin: 0 0 0.6em; }
+
+  @media (min-width: 1100px) {
+    nav.pages {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 16em;
+      overflow-y: auto; padding: 2.4em 1em 2em 1.5em;
+    }
+    nav.pages h2 { display: none; }
+  }
+  @media (max-width: 1099px) {
+    nav.pages { max-width: 34em; margin: 3em auto 0; }
+    nav.pages ul.sections { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<div class="wiki"><a href="index.html">apex</a> · updated October 8, 2026 · <code>7507b874a9b6</code></div>
+<h1>Buffers, Views and Undo</h1>
+<details class="files">
+<summary>Relevant source files</summary>
+<ul>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs">crates/apex-client/src/app.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs">crates/apex-client/src/finder.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs">crates/apex-client/src/look.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs">crates/apex-core/src/buffer.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs">crates/apex-core/src/entry.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs">crates/apex-core/src/expand.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs">crates/apex-core/src/fuzzy.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs">crates/apex-core/src/ids.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs">crates/apex-core/src/node.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs">crates/apex-core/src/state.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs">crates/apex-core/src/text.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/transcript.rs">crates/apex-core/src/transcript.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/lib.rs">crates/apex-edit/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs">crates/apex-server/src/find.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs">crates/apex-server/src/lib.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs">crates/apex-server/src/proposal.rs</a></li>
+<li><a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs">crates/apex-server/src/term.rs</a></li>
+</ul>
+</details>
+<p>Every piece of text in apex lives in a <strong>buffer</strong>: a window's body and its tag, a column's tag, and the top row. A buffer corresponds to acme's <code>File</code>. It holds the text, a version counter, the flags that say how it compares with the disk, the undo and redo history, and the <strong>views</strong> (selection and scroll origin) of every text that shows it. Each buffer is a shard with its own replicated log (see <a href="sessions-and-replication.html">Sessions, Shards and Leadership</a>). The <code>BufferOp</code> entries in that log are applied by <code>State::apply</code> (see <a href="core-state.html">Entries, State and Apply</a>). This page covers what those entries do to a buffer.</p>
+<p>The page also covers three helpers in <code>apex-core</code> that work on text without changing it: acme's B3 expansion (<code>expand.rs</code>), the fuzzy path matcher behind the file pickers (<code>fuzzy.rs</code>), and the shell-transcript reader behind <code>Snarfout</code> (<code>transcript.rs</code>). For how a leader turns keystrokes, mouse actions and Edit programs into buffer entries, see <a href="node.html">The Node</a>. For the Edit language that reads buffers through <code>apex_edit::Text</code>, see <a href="edit-language.html">The Edit Language</a>.</p>
+<h2 id="text-on-a-rope">Text on a rope</h2>
+<p><code>apex_core::text::Text</code> is a newtype over a <code>ropey::Rope</code>. Every offset in it counts <strong>runes</strong> (Unicode scalar values), never bytes, as in acme. Positions in entries, views, undo records and the Edit language all use this unit.</p>
+<pre><code class="language-rust">#[derive(Clone, Debug, Default)]
+pub struct Text(Rope);
+</code></pre>
+<p>The API is small. <code>len</code>, <code>char_at</code> and <code>slice(q0, q1)</code> read the text. <code>replace(q0, nd, s)</code> is the only mutator: it removes <code>nd</code> runes at <code>q0</code> and inserts <code>s</code>, clamping both ends to the text, so an out-of-range edit cannot panic. The line helpers (<code>line_count</code>, <code>line_range</code>, <code>line</code>, <code>line_start</code>, <code>line_of</code>) follow ropey's line model, where a text ending in a newline has an empty last line. <code>line_range</code> leaves the newline out of the range it returns (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs#L9-L99">crates/apex-core/src/text.rs:9-99</a>).</p>
+<p>Hashing feeds the rope to BLAKE3 chunk by chunk. <code>content_hash()</code> returns the hex digest. The file watcher, <code>Put</code>, <code>Get</code> and <code>open_file</code> hash the bytes on disk the same way (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L302">crates/apex-server/src/lib.rs:302</a>), so a buffer's text and a file on disk can be compared by hash alone.</p>
+<p>The serde impls write a <code>Text</code> as a plain string and rebuild the rope when reading it back (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs#L119-L130">crates/apex-core/src/text.rs:119-130</a>). Snapshots and <code>BufferOp::Create</code> therefore carry ordinary strings.</p>
+<h3 id="the-apex-edittext-view">The <code>apex_edit::Text</code> view</h3>
+<p><code>apex-edit</code> has no dependency on ropey. It defines its own read-only, rune-indexed trait (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/lib.rs#L24-L37">crates/apex-edit/src/lib.rs:24-37</a>), and <code>Text</code> implements it. The <code>read(q0, q1)</code> method is overridden to slice the rope rather than call <code>char_at</code> once per rune (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs#L107-L117">crates/apex-core/src/text.rs:107-117</a>). When the node runs an Edit program, it clones the buffer's <code>Text</code> and passes it to <code>EditLang::run</code>. Every change the run returns becomes a <code>BufferOp::Edit</code>, and all of them share one new undo group (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1766-L1776">crates/apex-core/src/node.rs:1766-1776</a>).</p>
+<h3 id="free-functions-on-text">Free functions on text</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>What it does</th>
+<th>Used by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trim_trailing_blanks(text)</code></td>
+<td>acme's <code>trimspaces</code>. Removes spaces and tabs before each newline and at the end of the text. Returns the trimmed text and the removed runs, ordered from the end backwards so that deleting them in order leaves earlier offsets valid. A <code>\r</code> is not treated as a line end, so CRLF files keep their blanks.</td>
+<td><code>Put</code> in an autoindent window</td>
+</tr>
+<tr>
+<td><code>find_match(text, needle, from, reverse)</code></td>
+<td>Literal search from <code>from</code>, wrapping round. With <code>reverse</code>, it finds the last match that starts before <code>from</code>.</td>
+<td>Client Look (<code>look.rs</code>) and terminal search</td>
+</tr>
+<tr>
+<td><code>find_all(text, needle)</code></td>
+<td>Every non-overlapping literal match, as rune ranges</td>
+<td>Client Look highlighting</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/text.rs#L1-L251">crates/apex-core/src/text.rs:1-251</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-edit/src/lib.rs#L24-L37">crates/apex-edit/src/lib.rs:24-37</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1766-L1776">crates/apex-core/src/node.rs:1766-1776</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/look.rs#L30">crates/apex-client/src/look.rs:30</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/term.rs#L410">crates/apex-server/src/term.rs:410</a></p>
+<h2 id="the-buffer">The buffer</h2>
+<pre><code class="language-mermaid">classDiagram
+    class Buffer {
+        BufferId id
+        String name
+        WinKind kind
+        bool scratch
+        Text text
+        Version version
+        Version clean_version
+        Option~String~ disk_hash
+        bool stale
+        BTreeMap~ViewId,View~ views
+        Vec~Group~ undo
+        Vec~Group~ redo
+        dirty() bool
+        edit(q0, nd, text, group)
+        undo() Option~range~
+        redo() Option~range~
+    }
+    class View {
+        usize q0
+        usize q1
+        usize origin
+    }
+    class Group {
+        GroupId id
+        Vec~Rec~ recs
+    }
+    class Rec {
+        usize q0
+        String deleted
+        String inserted
+    }
+    Buffer &quot;1&quot; --&gt; &quot;*&quot; View : views
+    Buffer &quot;1&quot; --&gt; &quot;*&quot; Group : undo and redo
+    Group &quot;1&quot; --&gt; &quot;*&quot; Rec
+</code></pre>
+<p>The fields of <code>Buffer</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L43-L67">crates/apex-core/src/buffer.rs:43-67</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>A file's or directory's path. For other kinds it is the directory an errors window belongs to, or the file a preview shows. Empty for tags.</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td>A <code>WinKind</code> (file, directory, errors, preview, and so on).</td>
+</tr>
+<tr>
+<td><code>scratch</code></td>
+<td>No file stands behind the buffer (a transcript, a tool's window, errors, a preview). <code>Put</code> has nothing to write and <code>Del</code> has nothing to ask about.</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>The rope.</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>The number of modifying entries applied: <code>Edit</code>, <code>Undo</code> and <code>Redo</code>. It only goes up.</td>
+</tr>
+<tr>
+<td><code>clean_version</code></td>
+<td>The version at the last load or <code>Put</code>.</td>
+</tr>
+<tr>
+<td><code>disk_hash</code></td>
+<td>The content hash of what is on disk, when known.</td>
+</tr>
+<tr>
+<td><code>stale</code></td>
+<td>The file changed on disk while the buffer was dirty.</td>
+</tr>
+<tr>
+<td><code>views</code></td>
+<td>One <code>View</code> per text showing the buffer, keyed by <code>ViewId</code>.</td>
+</tr>
+<tr>
+<td><code>undo</code>, <code>redo</code></td>
+<td>Stacks of <code>Group</code>s.</td>
+</tr>
+</tbody>
+</table>
+<p><code>Version</code> is a <code>u64</code> alias described in the code as &quot;the number of modifying entries applied&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L40-L41">crates/apex-core/src/ids.rs:40-41</a>). <code>Edit</code>, <code>Undo</code> and <code>Redo</code> entries each carry the version they were made against. <code>apply_buffer</code> rejects any of them whose version differs from the buffer's with <code>ApplyError::Version</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L582-L602">crates/apex-core/src/state.rs:582-602</a>). Because a buffer has a single leader, this check should never fail on a follower; a failure means the replicas disagree. Proposals from other attachments carry a version too, and each proposal decides what to do when that version is out of date (see <a href="proposals.html">Proposals</a>).</p>
+<h3 id="dirty-clean-and-stale">Dirty, clean and stale</h3>
+<p><code>dirty()</code> is computed, not stored (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L115-L130">crates/apex-core/src/buffer.rs:115-130</a>). A buffer is clean when <code>version == clean_version</code>. Otherwise, with no <code>disk_hash</code>, it is dirty. With a <code>disk_hash</code>, it is dirty only if the text's hash differs from the disk's. As a result, typing something and undoing it all leaves the buffer clean again, as in acme. Acme gets this by rewinding the file's sequence number on undo. Apex's version only goes forward, so it compares the text against the disk's hash instead. Retyping the original text by hand also makes the buffer clean. Without a disk hash, any change makes it dirty, even one that is undone (see the test <code>typing_and_undoing_it_all_is_clean_again</code>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L275-L294">crates/apex-core/src/buffer.rs:275-294</a>).</p>
+<p>Hashing a large text on every <code>dirty()</code> call would be slow, so the hash at a given version is cached in <code>Memo</code>, a mutex around <code>Option&lt;(Version, String)&gt;</code>. The cache is not part of the state. It is <code>#[serde(skip)]</code>, a clone starts empty, two memos always compare equal, and <code>hash_into</code> ignores it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L69-L91">crates/apex-core/src/buffer.rs:69-91</a>).</p>
+<p>Two entries change the flags:</p>
+<ul>
+<li><code>BufferOp::Clean { version, disk_hash }</code> sets <code>clean_version</code>, replaces <code>disk_hash</code> and clears <code>stale</code>.</li>
+<li><code>BufferOp::Stale { disk_hash }</code> sets <code>stale</code> and records the new disk hash (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L603-L613">crates/apex-core/src/state.rs:603-613</a>).</li>
+</ul>
+<p>These entries come from the server's file handling. When a watched file changes and the hash is not one the server wrote itself, <code>content_changed</code> does one of three things. If the hash matches what the buffer already knows, it does nothing. If the buffer is clean, it proposes <code>SetContent</code> against the version it saw. If the buffer is dirty, it proposes <code>Stale</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L836-L865">crates/apex-server/src/lib.rs:836-865</a>).</p>
+<p>The leader applies <code>SetContent</code> as a whole-buffer <code>Edit</code>, made by <code>Node::set_content</code> in a new undo group, followed by <code>Clean</code>. If the buffer has been typed into since the proposed version and is dirty, the leader appends <code>Stale</code> instead (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L219-L231">crates/apex-server/src/proposal.rs:219-231</a>). Since a reload is an ordinary edit, <code>Undo</code> after a reload brings back the old text.</p>
+<p><code>Put</code> in an autoindent window writes the trimmed text and proposes <code>PutTrimmed</code>. The leader turns that into one undo group of deletions (<code>Node::delete_runs</code>) followed by <code>Clean</code>, so the first <code>Undo</code> after a <code>Put</code> restores all the blanks at once. If the buffer moved on while the file was being written, the leader skips the trim and the buffer stays dirty (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L332-L346">crates/apex-server/src/lib.rs:332-346</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L338-L348">crates/apex-server/src/proposal.rs:338-348</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1117-L1127">crates/apex-core/src/node.rs:1117-1127</a>).</p>
+<h3 id="the-buffer-ops">The buffer ops</h3>
+<table>
+<thead>
+<tr>
+<th><code>BufferOp</code></th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Create { name, text, disk_hash, kind, scratch }</code></td>
+<td>The first entry of a buffer's log. Fails with <code>Exists</code> if the buffer already exists.</td>
+</tr>
+<tr>
+<td><code>Edit { version, q0, nd, text, group }</code></td>
+<td><code>Buffer::edit</code>: splice, record for undo, version + 1</td>
+</tr>
+<tr>
+<td><code>Undo { version }</code> / <code>Redo { version }</code></td>
+<td><code>Buffer::undo</code> / <code>redo</code>. Returns <code>Applied::UndoRange</code>.</td>
+</tr>
+<tr>
+<td><code>Clean</code>, <code>Stale</code></td>
+<td>Disk-state flags, described above</td>
+</tr>
+<tr>
+<td><code>Rename { name }</code></td>
+<td>Sets the name</td>
+</tr>
+<tr>
+<td><code>ViewAdd</code> / <code>ViewDel { view }</code></td>
+<td>A text starts or stops showing the buffer</td>
+</tr>
+<tr>
+<td><code>Select { view, q0, q1 }</code></td>
+<td><code>set_select</code>, clamped to the text, with <code>q1 &gt;= q0</code></td>
+</tr>
+<tr>
+<td><code>Origin { view, origin }</code></td>
+<td><code>set_origin</code>, clamped</td>
+</tr>
+</tbody>
+</table>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L1-L265">crates/apex-core/src/buffer.rs:1-265</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L115-L142">crates/apex-core/src/entry.rs:115-142</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L508-L631">crates/apex-core/src/state.rs:508-631</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L307-L355">crates/apex-server/src/lib.rs:307-355</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/proposal.rs#L219-L235">crates/apex-server/src/proposal.rs:219-235</a></p>
+<h2 id="views">Views</h2>
+<p>A <code>View</code> is acme's <code>Text</code> minus the text itself: a selection <code>q0..q1</code> and a scroll <code>origin</code>, all in runes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L11-L17">crates/apex-core/src/buffer.rs:11-17</a>). <code>ViewId</code> names the text a view belongs to: <code>Tag(WindowId)</code>, <code>Body(WindowId)</code>, <code>ColTag(ColumnId)</code> or <code>Top</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L83-L100">crates/apex-core/src/ids.rs:83-100</a>). Tags are also buffers, so they get views by the same mechanism. <code>make_window_shards</code> creates a tag buffer for each new window and appends <code>ViewAdd</code> for the tag and, when the body is text or a buffer-backed page, for the body (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L521-L534">crates/apex-core/src/node.rs:521-534</a>).</p>
+<h3 id="why-views-live-in-the-buffer">Why views live in the buffer</h3>
+<p>Selections and origins are stored in the buffer, and the buffer's log orders them together with the edits that move them. If a window's selection lived in some other shard, a replica could apply the window's <code>Select</code> and the buffer's <code>Edit</code> in either order and end up with a different caret. Keeping them in one log means every replica adjusts every view with the same arithmetic at the same point in the sequence. <code>Buffer::hash_into</code> hashes every view, so a disagreement shows up in <code>State::hash</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L234-L264">crates/apex-core/src/buffer.rs:234-264</a>).</p>
+<h3 id="acmes-textinsert-and-textdelete-rules">acme's textinsert and textdelete rules</h3>
+<p><code>splice</code> clamps <code>q0</code> and <code>nd</code> to the text, records what was deleted, replaces the text, and calls <code>adjust_views(q0, nd, ni)</code> on every view. That function applies acme's deletion rule and then its insertion rule (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L148-L187">crates/apex-core/src/buffer.rs:148-187</a>):</p>
+<pre><code class="language-rust">if nd &gt; 0 {
+    if q0 &lt; v.q0 { v.q0 -= nd.min(v.q0 - q0); }
+    if q0 &lt; v.q1 { v.q1 -= nd.min(v.q1 - q0); }
+    if q0 + nd &lt;= v.origin { v.origin -= nd; }
+    else if q0 &lt; v.origin { v.origin = q0; }
+}
+if ni &gt; 0 {
+    if q0 &lt; v.q1 { v.q1 += ni; }
+    if q0 &lt; v.q0 { v.q0 += ni; }
+    if q0 &lt; v.origin { v.origin += ni; }
+}
+</code></pre>
+<p>The comparisons are strict, as in acme. An insertion exactly at a view's <code>q0</code> (or <code>q1</code>, or <code>origin</code>) does not move it. So when you type at a caret, the edit alone leaves the caret before the new text, and the leader moves it with an explicit <code>Select</code> after the <code>Edit</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1428-L1430">crates/apex-core/src/node.rs:1428-1430</a>). A deletion that overlaps a selection shrinks it. A deletion that covers the origin moves the origin to the start of the deletion. The tests <code>views_follow_edits_like_acme</code> and <code>origin_tracks_deletions</code> cover these cases (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L296-L338">crates/apex-core/src/buffer.rs:296-338</a>).</p>
+<p>The node depends on views moving with the edit alone. <code>Node::insert_text</code> and <code>replace_text</code>, used by tools such as win to write a shell's output, append only the <code>Edit</code>. Every other view's selection stays wherever the shift rules put it (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1105-L1133">crates/apex-core/src/node.rs:1105-1133</a>).</p>
+<h3 id="zerox">Zerox</h3>
+<p>Because views are keyed per text inside the buffer, acme's <code>Zerox</code> (a second window on the same file) needs no extra machinery. <code>Node::zerox</code> opens a new window whose body is <code>Body::Text</code> of the same <code>BufferId</code>, placed in the window's column as acme's <code>coladd</code> would (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1276-L1284">crates/apex-core/src/node.rs:1276-1284</a>). The new window has its own tag buffer and adds a <code>ViewId::Body</code> view to the shared buffer. Every edit made in either window then adjusts both windows' selections and origins through <code>adjust_views</code>. The built-in refuses directories and writes &quot;Zerox illegal&quot; to the errors window (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2241-L2249">crates/apex-core/src/node.rs:2241-2249</a>).</p>
+<p>When a window is deleted, it appends <code>ViewDel</code> for its views. The body buffer's shard is deleted only once its <code>views</code> map is empty, that is, when the last window on the buffer goes (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1290-L1328">crates/apex-core/src/node.rs:1290-1328</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L11-L17">crates/apex-core/src/buffer.rs:11-17</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L148-L232">crates/apex-core/src/buffer.rs:148-232</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L83-L100">crates/apex-core/src/ids.rs:83-100</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L521-L534">crates/apex-core/src/node.rs:521-534</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1276-L1328">crates/apex-core/src/node.rs:1276-1328</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L2241-L2249">crates/apex-core/src/node.rs:2241-2249</a></p>
+<h2 id="undo-and-redo">Undo and redo</h2>
+<h3 id="records-and-groups">Records and groups</h3>
+<p><code>Buffer::edit</code> splices the text and records a <code>Rec { q0, deleted, inserted }</code>, which holds what was there before and what replaced it. The record goes into the group named by the entry's <code>GroupId</code>. If the top group on the undo stack has the same id, the record is appended to it. Otherwise a new group is pushed, and the oldest group is dropped once there are more than <code>MAX_UNDO</code> (1000). Every edit clears the redo stack and increments the version (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L93-L146">crates/apex-core/src/buffer.rs:93-146</a>).</p>
+<p>So &quot;consecutive edits with the same group undo together&quot; (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L123-L125">crates/apex-core/src/entry.rs:123-125</a>). The group is chosen by the leader:</p>
+<ul>
+<li><code>new_group</code> makes <code>GroupId((attachment &lt;&lt; 40) | next_group)</code>. Leaders on different attachments can therefore create groups without coordinating, in the same way node ids are allocated (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L304-L315">crates/apex-core/src/node.rs:304-315</a>).</li>
+<li>A run of typing in one view reuses a single group (<code>typing_group</code>). Selecting, a command, cut, paste, undo and other actions call <code>end_typing</code>, so the next keystroke starts a new group (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1367-L1381">crates/apex-core/src/node.rs:1367-1381</a>).</li>
+<li>A whole Edit program, a <code>SetContent</code> reload, or a <code>Put</code> trim each takes one fresh group.</li>
+</ul>
+<h3 id="inverses-come-from-the-history">Inverses come from the history</h3>
+<p>The <code>Undo</code> and <code>Redo</code> entries carry nothing but a version:</p>
+<pre><code class="language-rust">/// Undo the most recent group (its inverse is derived from history).
+Undo { version: Version },
+</code></pre>
+<p>Every replica holds the same <code>undo</code> and <code>redo</code> stacks, because they are part of the state and included in <code>hash_into</code>. Each replica can therefore work out the inverse of an undo for itself, and the log never has to carry the restored text. <code>Buffer::undo</code> pops the top group and replays its records in reverse: each one replaces <code>inserted.len()</code> runes at <code>q0</code> with <code>deleted</code> and adjusts views as an ordinary edit would. It then pushes the group onto <code>redo</code> and increments the version. <code>redo</code> replays a group forwards and moves it back to <code>undo</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L189-L216">crates/apex-core/src/buffer.rs:189-216</a>).</p>
+<p>Both return the range of the last record they processed. For undo, that is the earliest edit of the group, restored. For redo, it is the group's latest edit. Acme selects this range. <code>State::apply</code> passes it out as <code>Applied::UndoRange</code>, and the leader's <code>Node::undo</code> and <code>Node::redo</code> follow up with a <code>Select</code> on the view that asked (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1564-L1590">crates/apex-core/src/node.rs:1564-1590</a>). Undo history belongs to the buffer, not to a view. Undo in either of two Zerox windows undoes the last group made in either one.</p>
+<pre><code class="language-mermaid">sequenceDiagram
+    participant L as &quot;Leader Node&quot;
+    participant Log as &quot;Buffer log&quot;
+    participant S as &quot;State (any replica)&quot;
+    L-&gt;&gt;Log: &quot;Edit {v=7, q0, nd, text, g1}&quot;
+    Log-&gt;&gt;S: apply
+    S-&gt;&gt;S: &quot;splice, push Rec to group g1, clear redo, v=8&quot;
+    L-&gt;&gt;Log: &quot;Select {view, p, p}&quot;
+    Note over L: &quot;end_typing (command or click)&quot;
+    L-&gt;&gt;Log: &quot;Undo {v=8}&quot;
+    Log-&gt;&gt;S: apply
+    S-&gt;&gt;S: &quot;pop g1, replay Recs reversed, push to redo, v=9&quot;
+    S--&gt;&gt;L: &quot;Applied::UndoRange(q0, q1)&quot;
+    L-&gt;&gt;Log: &quot;Select {view, q0, q1}&quot;
+</code></pre>
+<p>Note what this design implies. The <code>Undo</code> entry is only meaningful against the exact history it was sequenced after, and that is why it carries a version. A redo is also an ordinary forward step: the version keeps rising, and <code>dirty()</code> relies on the disk hash rather than the version to notice that a buffer is back to its saved state. The test <code>undo_redo_round_trip</code> checks a two-record group, the ranges returned, and that the version reaches 4 after edit, edit, undo and redo (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L315-L327">crates/apex-core/src/buffer.rs:315-327</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L19-L41">crates/apex-core/src/buffer.rs:19-41</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L93-L216">crates/apex-core/src/buffer.rs:93-216</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/entry.rs#L123-L129">crates/apex-core/src/entry.rs:123-129</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/state.rs#L589-L602">crates/apex-core/src/state.rs:589-602</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/ids.rs#L33-L34">crates/apex-core/src/ids.rs:33-34</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L304-L315">crates/apex-core/src/node.rs:304-315</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1367-L1387">crates/apex-core/src/node.rs:1367-1387</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1564-L1590">crates/apex-core/src/node.rs:1564-1590</a></p>
+<h2 id="the-edit-path-at-a-glance">The edit path at a glance</h2>
+<pre><code class="language-mermaid">flowchart TD
+    K[&quot;Keystroke, Paste, Edit program, proposal&quot;] --&gt; N[&quot;Node as leader picks q0, nd, text and a GroupId&quot;]
+    N --&gt; E[&quot;BufferOp::Edit with current version&quot;]
+    E --&gt; A[&quot;State::apply checks seq and version&quot;]
+    A --&gt; B[&quot;Buffer::edit&quot;]
+    B --&gt; SP[&quot;splice: Text::replace&quot;]
+    B --&gt; AV[&quot;adjust_views: acme rules on every View&quot;]
+    B --&gt; UR[&quot;push Rec into undo group, clear redo&quot;]
+    B --&gt; V[&quot;version += 1&quot;]
+    N --&gt; SEL[&quot;BufferOp::Select to place the caret&quot;]
+    SEL --&gt; A
+</code></pre>
+<h2 id="b3-expansion-expandrs">B3 expansion (<code>expand.rs</code>)</h2>
+<p><code>expand.rs</code> ports acme's <code>expand</code> and <code>expandfile</code> from <code>look.c</code> one for one. Given a buffer's <code>Text</code>, a click point (<code>q0 == q1</code>) or a sweep (<code>q0 &lt; q1</code>), and an <code>is_file</code> predicate, <code>expand</code> returns an <code>Expansion</code>. That holds the range B3 took and, when the text names a file, the name as written together with the address text after its colon (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs#L26-L54">crates/apex-core/src/expand.rs:26-54</a>).</p>
+<pre><code class="language-rust">pub struct Expansion {
+    pub q0: usize,
+    pub q1: usize,
+    pub file: Option&lt;(String, String)&gt;, // (name as written, address)
+}
+</code></pre>
+<p>The character classes are acme's: <code>isfilec</code> is alphanumeric (by <code>acme_isalnum</code>) or one of <code>.-+/:@</code>, plus <code>~</code> so that <code>~/x</code> and backup names like <code>x~</code> are names. <code>isaddrc</code> is <code>0-9+-/$.#,;?</code>. <code>isregexc</code> is alphanumeric or one of <code>^+-.*?#,;[]()$</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs#L9-L24">crates/apex-core/src/expand.rs:9-24</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L148-L156">crates/apex-core/src/node.rs:148-156</a>).</p>
+<p><code>expandfile</code> runs first (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs#L64-L149">crates/apex-core/src/expand.rs:64-149</a>):</p>
+<ol>
+<li><strong>For a click</strong>, it scans right over file characters and stops at the first colon, unless that colon belongs to <code>http://</code> or <code>https://</code>. It then scans left over file, address and regexp characters, noting a colon it passes if none was found yet. If a colon was found, the range ends at it, or extends over the address characters that follow. The address text then runs from after the colon up to the next blank (<code>amax</code>).</li>
+<li>A range starting <code>http://</code> or <code>https://</code> is taken whole, dropping a final <code>.</code> so that a URL at the end of a sentence does not swallow the full stop. It has no file part.</li>
+<li>Otherwise the text is checked as a name. The first colon must be followed by an address character or be the last character. Every character before the colon must be a file character or a space. If the range has a name before its colon (so <code>amin != q0</code>), <code>is_file(name)</code> must say it exists. A bare <code>:12</code> therefore yields the name <code>&quot;&quot;</code>, which means the window's own file.</li>
+</ol>
+<p>If <code>expandfile</code> finds nothing, <code>expand</code> falls back to acme's word: a click extends over <code>acme_isalnum</code> characters on both sides, and a sweep is returned unchanged. If the result is empty (for example, a click on a blank), <code>expand</code> returns <code>None</code>.</p>
+<p>The function does not touch the file system itself. The server calls it from the plumbing walk with an <code>is_file</code> that accepts an empty name, any window's path, or a path that exists when resolved against the window's directory (with <code>~/</code> handled by <code>resolve</code>). It then binds the expanded text, selection and <code>(file, addr)</code> for the rules. Text with no place in a buffer, such as a terminal's text or <code>apex plumb</code>'s argument, is wrapped in a temporary <code>Text</code> and expanded as one selection (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1339-L1382">crates/apex-server/src/lib.rs:1339-1382</a>). See <a href="plumbing.html">Plumbing Rules and Verbs</a>. The client has a separate, simpler <code>expand</code> helper in <code>app.rs</code> for highlighting under the pointer. It is not this function.</p>
+<p>The tests show the behaviour that matters. A click anywhere in <code>plan9port/CHANGES:123:1</code> (on the directory, the file name or the number) yields the same file and the address <code>123:1</code>. With no such file, the click yields the word under the pointer. URLs lose a trailing period. <code>~/src/x/main.rs:1-130</code> is a name with a line range (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs#L151-L221">crates/apex-core/src/expand.rs:151-221</a>).</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/expand.rs#L1-L221">crates/apex-core/src/expand.rs:1-221</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L148-L156">crates/apex-core/src/node.rs:148-156</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/lib.rs#L1339-L1382">crates/apex-server/src/lib.rs:1339-1382</a></p>
+<h2 id="the-fuzzy-matcher-fuzzyrs">The fuzzy matcher (<code>fuzzy.rs</code>)</h2>
+<p><code>fuzzy.rs</code> scores a query against a path in the spirit of Zed's matcher. Each query character must appear in the path in order, ignoring case. Each matched character scores according to where it falls (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs#L1-L14">crates/apex-core/src/fuzzy.rs:1-14</a>):</p>
+<table>
+<thead>
+<tr>
+<th>Position of the matched path character</th>
+<th>Score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First character of the file name (after the last <code>/</code>)</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>Right after a <code>/</code></td>
+<td>0.9</td>
+</tr>
+<tr>
+<td>Continues the previous character's match</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>Word start: after <code>-</code>, <code>_</code>, <code>.</code>, a space or a digit, or a lower-to-upper case change</td>
+<td>0.8</td>
+</tr>
+<tr>
+<td>Anywhere else</td>
+<td>0.55</td>
+</tr>
+</tbody>
+</table>
+<p>A case mismatch halves the score, and any match inside the file name adds 0.15. The best alignment wins. The final score is the mean per query character, minus <code>0.0005</code> per path character, so shorter paths edge ahead.</p>
+<p>The matcher is built to run against a million paths per keystroke:</p>
+<ul>
+<li><code>Query::new</code> prepares the query once: its characters, their lower-case forms, and, for an ASCII query, lower-case bytes.</li>
+<li><code>Query::could_match</code> is a single in-order subsequence pass over the path's bytes (or chars, when the path is not ASCII). Most paths fail here and cost only that pass.</li>
+<li><code>Scorer::score</code> runs a dynamic program over buffers it keeps between paths (<code>p</code>, <code>prev</code>, <code>cur</code>, <code>best</code>), so no allocation happens per path. For query character <em>i</em> at path position <em>j</em>, the score is the larger of a &quot;gap&quot; step (this character's score plus the best score of character <em>i−1</em> anywhere before <em>j</em>) and a &quot;consecutive&quot; step (the score with the continuation bonus plus character <em>i−1</em>'s score at <em>j−1</em>). <code>best</code> holds the running maximum across positions for the next row (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs#L66-L152">crates/apex-core/src/fuzzy.rs:66-152</a>).</li>
+</ul>
+<p><code>fuzzy::score(query, path)</code> is the one-off convenience wrapper. The test suite keeps the original recursive, memoised scorer as a reference and checks that the dynamic program agrees with it to within 1e-9 over a grid of paths and queries, including non-ASCII ones. It also checks that the quick filter never rejects a real match (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs#L159-L241">crates/apex-core/src/fuzzy.rs:159-241</a>).</p>
+<p>There are two users. The host's ⌘O find job matches its index in parallel with <code>Query</code> and <code>Scorer</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L12-L31">crates/apex-server/src/find.rs:12-31</a>). The client's finder calls <code>fuzzy::score</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L134">crates/apex-client/src/finder.rs:134</a>). See <a href="client-overlays.html">Pickers and Overlays</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/fuzzy.rs#L1-L241">crates/apex-core/src/fuzzy.rs:1-241</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-server/src/find.rs#L1-L31">crates/apex-server/src/find.rs:1-31</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/finder.rs#L134">crates/apex-client/src/finder.rs:134</a></p>
+<h2 id="reading-a-shell-transcript-transcriptrs">Reading a shell transcript (<code>transcript.rs</code>)</h2>
+<p><code>transcript::last_output(text)</code> implements <code>Snarfout</code>: it finds the last command in a shell transcript (a terminal's text or a win window) and what that command printed. Nothing marks prompts, so it uses a heuristic. The last non-blank line is taken to be the prompt waiting for input. Its final non-space character is the prompt marker (<code>%</code>, <code>$</code> and so on), and its first word is the prompt's head. Working backwards, the first earlier line that starts with the same head and contains <code>marker + &quot; &quot;</code> (or ends with the marker) is the previous prompt, and the command is whatever follows the marker on that line.</p>
+<p>The result normalises the prompt to <code>$ </code>: it is <code>$ command</code> followed by the lines between that prompt and the current one. It returns <code>None</code> when no earlier prompt can be found, as with a lone <code>$ </code> or an empty text. Blank rows after the prompt, as in a terminal grid, are skipped, and tabs in the output are kept (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/transcript.rs#L1-L62">crates/apex-core/src/transcript.rs:1-62</a>). The client calls it for <code>Snarfout</code> and reports &quot;no earlier prompt to tell the output by&quot; when it returns <code>None</code> (<a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1269">crates/apex-client/src/app.rs:1269</a>). See <a href="tool-win-and-lsp.html">win and Language Servers</a> and <a href="terminals.html">Terminals</a>.</p>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/transcript.rs#L1-L62">crates/apex-core/src/transcript.rs:1-62</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-client/src/app.rs#L1269">crates/apex-client/src/app.rs:1269</a></p>
+<h2 id="working-on-this-code">Working on this code</h2>
+<ul>
+<li><strong>Changing <code>Buffer</code>'s fields</strong> changes the snapshot format and <code>State::hash</code>. Add any new state field to <code>hash_into</code>, or divergence between replicas will go unnoticed. Anything derived and per-replica, like <code>Memo</code>, must be skipped by serde and ignored by equality and hashing.</li>
+<li><strong>Changing <code>adjust_views</code></strong> changes every replica's caret behaviour, and every tool that writes text, such as win, relies on it. Keep the strict comparisons unless acme's behaviour is the thing you mean to change, and extend <code>views_follow_edits_like_acme</code>.</li>
+<li><strong>New editing actions</strong> should go through <code>Node::edit_op</code> with a deliberate choice of group. Reuse <code>typing_group</code> only for keystroke-like input. Call <code>end_typing</code> and <code>new_group</code> for anything a user would expect to undo as a unit.</li>
+<li><strong>Text offsets are runes</strong> everywhere in the core. Convert at the boundary: the client converts for display, and the LSP tool converts to UTF-16.</li>
+</ul>
+<p class="sources">Sources: <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L63-L91">crates/apex-core/src/buffer.rs:63-91</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/buffer.rs#L234-L264">crates/apex-core/src/buffer.rs:234-264</a>, <a href="https://github.com/mariusae/apex/blob/7507b874a9b6d12317bc055ef100a9b66aaf240c/crates/apex-core/src/node.rs#L1367-L1387">crates/apex-core/src/node.rs:1367-1387</a></p>
+
+<div class="pager"><span class="prev">Previous: <a href="core-state.html">Entries, State and Apply</a></span><span class="next">Next: <a href="node.html">The Node: Leading and Built-in Commands</a></span>
+</div>
+</main>
+<nav class="pages">
+<h2>Pages</h2>
+<ol>
+<li class="top"><a href="overview.html"><span class="num">1</span>apex Overview</a>
+</li>
+<li class="top"><a href="sessions-and-replication.html"><span class="num">2</span>Sessions, Shards and Leadership</a>
+</li>
+<li class="top"><a href="core-state.html"><span class="num">3</span>Entries, State and Apply</a>
+</li>
+<li class="child current"><a href="buffers-and-text.html"><span class="num">3.1</span>Buffers, Views and Undo</a>
+<ul class="sections">
+<li class="l2"><a href="#text-on-a-rope">Text on a rope</a></li>
+<li class="l3"><a href="#the-apex-edittext-view">The apex_edit::Text view</a></li>
+<li class="l3"><a href="#free-functions-on-text">Free functions on text</a></li>
+<li class="l2"><a href="#the-buffer">The buffer</a></li>
+<li class="l3"><a href="#dirty-clean-and-stale">Dirty, clean and stale</a></li>
+<li class="l3"><a href="#the-buffer-ops">The buffer ops</a></li>
+<li class="l2"><a href="#views">Views</a></li>
+<li class="l3"><a href="#why-views-live-in-the-buffer">Why views live in the buffer</a></li>
+<li class="l3"><a href="#acmes-textinsert-and-textdelete-rules">acme&#39;s textinsert and textdelete rules</a></li>
+<li class="l3"><a href="#zerox">Zerox</a></li>
+<li class="l2"><a href="#undo-and-redo">Undo and redo</a></li>
+<li class="l3"><a href="#records-and-groups">Records and groups</a></li>
+<li class="l3"><a href="#inverses-come-from-the-history">Inverses come from the history</a></li>
+<li class="l2"><a href="#the-edit-path-at-a-glance">The edit path at a glance</a></li>
+<li class="l2"><a href="#b3-expansion-expandrs">B3 expansion (expand.rs)</a></li>
+<li class="l2"><a href="#the-fuzzy-matcher-fuzzyrs">The fuzzy matcher (fuzzy.rs)</a></li>
+<li class="l2"><a href="#reading-a-shell-transcript-transcriptrs">Reading a shell transcript (transcript.rs)</a></li>
+<li class="l2"><a href="#working-on-this-code">Working on this code</a></li>
+</ul>
+</li>
+<li class="top"><a href="node.html"><span class="num">4</span>The Node: Leading and Built-in Commands</a>
+</li>
+<li class="child"><a href="tiling-and-layout.html"><span class="num">4.1</span>Tiling and Layout</a>
+</li>
+<li class="top"><a href="edit-language.html"><span class="num">5</span>The Edit Language (apex-edit)</a>
+</li>
+<li class="top"><a href="server.html"><span class="num">6</span>The Server: Commands, Files and Processes</a>
+</li>
+<li class="child"><a href="daemon.html"><span class="num">6.1</span>The Daemon (apexd)</a>
+</li>
+<li class="top"><a href="attach-protocol.html"><span class="num">7</span>The Attach Protocol</a>
+</li>
+<li class="child"><a href="proposals.html"><span class="num">7.1</span>Proposals: How Others Change State</a>
+</li>
+<li class="top"><a href="plumbing.html"><span class="num">8</span>Plumbing Rules and Verbs</a>
+</li>
+<li class="top"><a href="terminals.html"><span class="num">9</span>Terminals</a>
+</li>
+<li class="top"><a href="io-plane-and-pages.html"><span class="num">10</span>The I/O Plane and Pages</a>
+</li>
+<li class="top"><a href="remote-hosts.html"><span class="num">11</span>Remote Hosts and Providers</a>
+</li>
+<li class="top"><a href="client.html"><span class="num">12</span>The UI Client (apex-ui)</a>
+</li>
+<li class="child"><a href="client-input.html"><span class="num">12.1</span>Mouse, Keyboard and Look</a>
+</li>
+<li class="child"><a href="client-overlays.html"><span class="num">12.2</span>Pickers and Overlays</a>
+</li>
+<li class="child"><a href="client-chrome.html"><span class="num">12.3</span>Sessions, Tabs and Window Chrome</a>
+</li>
+<li class="child"><a href="themes-and-fonts.html"><span class="num">12.4</span>Themes, Fonts and Colour</a>
+</li>
+<li class="top"><a href="cli.html"><span class="num">13</span>The apex Command</a>
+</li>
+<li class="child"><a href="configuration.html"><span class="num">13.1</span>Configuration: Profile, Attach and Settings</a>
+</li>
+<li class="top"><a href="tool-sdk.html"><span class="num">14</span>Writing Tools: the apex-tool SDK</a>
+</li>
+<li class="child"><a href="bridge-and-go.html"><span class="num">14.1</span>JSON Bridge and Go SDK</a>
+</li>
+<li class="child"><a href="tool-win-and-lsp.html"><span class="num">14.2</span>win and Language Servers</a>
+</li>
+<li class="child"><a href="tool-pages.html"><span class="num">14.3</span>Preview, Web and Diff Tools</a>
+</li>
+<li class="child"><a href="agent-tools.html"><span class="num">14.4</span>Coding Agents: apex tool agent and apex-acp</a>
+</li>
+<li class="top"><a href="build-and-test.html"><span class="num">15</span>Building, Testing and Packaging</a>
+</li>
+</ol>
+</nav>
+<script type="module">
+
+const blocks = document.querySelectorAll("main pre code.language-mermaid");
+if (blocks.length) {
+  const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs");
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "15px",
+      primaryColor: "#fff",
+      primaryBorderColor: "#000",
+      primaryTextColor: "#000",
+      lineColor: "#000",
+      secondaryColor: "#fff",
+      tertiaryColor: "#fff",
+      edgeLabelBackground: "#fff",
+      clusterBkg: "#fff",
+      clusterBorder: "#000",
+      noteBkgColor: "#fff",
+      noteBorderColor: "#000",
+      actorBkg: "#fff",
+      actorBorder: "#000",
+      signalColor: "#000",
+    },
+  });
+  let n = 0;
+  for (const code of blocks) {
+    try {
+      const { svg } = await mermaid.render("diagram-" + n++, code.textContent);
+      const div = document.createElement("div");
+      div.className = "diagram";
+      div.innerHTML = svg;
+      code.parentElement.replaceWith(div);
+    } catch (e) {
+      console.warn("mermaid:", e);
+    }
+  }
+}
+</script>
+</body>
+</html>
