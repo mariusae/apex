@@ -34,7 +34,7 @@
   a:visited { color: #551a8b; }
   figure { margin: 0 0 1em; }
   figure img { display: block; max-width: 100%; height: auto; }
-  figure img + img { margin-top: 0.4em; }
+  figure img + img { margin-top: -1.2em; }
   figcaption { font-size: 0.9em; font-style: italic; margin-top: 0.3em; }
   .contents { columns: 2; column-gap: 2em; }
   footer { margin-top: 3em; font-size: 0.9em; text-align: center; }
@@ -117,13 +117,13 @@ A ring in the accent colour means a program is live in the window; a
 spinning arc means it is working. A window that wants your attention has
 its tag tinted.</p>
 
-<figure><img src="guide-tag-clean.png" alt="The tag of a clean window: a hollow dot, the path crates/apex-core/src/state.rs, icons for Del, Snarf and Redo, then Look." width="693" height="30"><img src="guide-tag-dirty.png" alt="The same tag with unsaved changes: a filled dot, and icons for Del, Snarf, Undo and Put." width="694" height="27"><img src="guide-tag-term.png" alt="A terminal's tag: a ringed dot, the directory, the label airy, and icons for Del, Snarf and Send." width="695" height="133"><figcaption>A clean file, the same file with unsaved changes (now offering Undo and Put), and a terminal with a live shell.</figcaption></figure>
+<figure><img src="guide-tag-clean.png" alt="The tag of a clean window: a hollow dot, the path crates/apex-core/src/state.rs, icons for Del, Snarf and Redo, then Look." width="724" height="61"><img src="guide-tag-dirty.png" alt="The same tag with unsaved changes: a filled dot, and icons for Del, Snarf, Undo and Put." width="724" height="61"><img src="guide-tag-term.png" alt="A terminal's tag: a ringed dot, the directory, the label airy, and icons for Del, Snarf and Send." width="739" height="186"><figcaption>A clean file, the same file with unsaved changes (now offering Undo and Put), and a terminal with a live shell.</figcaption></figure>
 
 <p>Window bodies come in three kinds: text, terminals, and pages
 (HTML, drawn by a web view). They are tiled, moved, and closed in
 exactly the same way.</p>
 
-<figure><a href="guide-screen.png"><img src="guide-screen.png" alt="Apex with two columns. The title bar holds the session's name, its directory, pills for the running lsp, agent and preview tools, and the top row's commands. Each column has a tag of commands; the left window shows DESIGN.md, the right a Preview of it." width="1000" height="628"></a><figcaption>The title bar: the session, its directory, the running tools, and the top row. Below, two columns, each with its tag; on the left a file, on the right its Preview.</figcaption></figure>
+<figure><a href="guide-screen.png"><img src="guide-screen.png" alt="Apex with two columns. The title bar holds the session's name, its directory, pills for the running lsp, agent and preview tools, and the top row's commands. Each column has a tag of commands; the left window shows DESIGN.md, the right a Preview of it." width="1111" height="739"></a><figcaption>The title bar: the session, its directory, the running tools, and the top row. Below, two columns, each with its tag; on the left a file, on the right its Preview.</figcaption></figure>
 
 <p>The sidebar (⌃⌘S, or the button by the window's traffic lights) lists
 your sessions, grouped by host, and the windows of the one showing.</p>
@@ -255,7 +255,7 @@ this for you: it puts the caret in the window's Look argument, ready to
 type. ⌘G and ⌘⇧G find the next and previous matches. While a search is
 going on, every match in the window is faintly highlighted.</p>
 
-<figure><img src="guide-look.png" alt="A window whose tag reads Look/acme/ with the caret in the argument. In the body the first acme is selected, and the later ones are faintly highlighted." width="598" height="399"><figcaption>Typing <code>Look/acme/</code>: the match is selected, and the others are marked.</figcaption></figure>
+<figure><img src="guide-look.png" alt="A window whose tag reads Look/acme/ with the caret in the argument. In the body the first acme is selected, and the later ones are faintly highlighted." width="665" height="472"><figcaption>Typing <code>Look/acme/</code>: the match is selected, and the others are marked.</figcaption></figure>
 
 <p>Looking works in terminals and pages too, searching what they show
 (and a terminal's scrollback).</p>
@@ -284,7 +284,7 @@ work in it right there. Click a card to bring the window back where it was.
 Anything that goes to a stashed window, such as a look or a notification,
 brings it back as well.</p>
 
-<figure><img src="guide-stash.png" alt="Two stashed windows, Errors and rust-analyzer, as cards at the right of the title bar. Below them, the Errors window is shown live, with two lines selected." width="508" height="418"><figcaption>The stash fanned out: Errors and rust-analyzer's diagnostics, the first shown below the cards, live.</figcaption></figure>
+<figure><img src="guide-stash.png" alt="Two stashed windows, Errors and rust-analyzer, as cards at the right of the title bar. Below them, the Errors window is shown live, with two lines selected." width="560" height="439"><figcaption>The stash fanned out: Errors and rust-analyzer's diagnostics, the first shown below the cards, live.</figcaption></figure>
 
 <h2 id="keyboard">The keyboard</h2>
 
@@ -351,7 +351,7 @@ it appears briefly in a toast at the lower right. B3 on a
 <code>file:line</code> in the toast goes there; <i>Show All</i> shows the
 window. Language servers and other tools report the same way.</p>
 
-<figure><img src="guide-toast.png" alt="A toast headed Errors /Users/marius/, with Show All and a close button, listing file:line:col lines from a search." width="594" height="153"><figcaption>A toast with what is new in <code>+Errors</code>. Each <code>file:line</code> can be clicked with B3.</figcaption></figure>
+<figure><img src="guide-toast.png" alt="A toast headed Errors /Users/marius/, with Show All and a close button, listing file:line:col lines from a search." width="584" height="212"><figcaption>A toast with what is new in <code>+Errors</code>. Each <code>file:line</code> can be clicked with B3.</figcaption></figure>
 
 <p>A window can ask for your attention: an agent waiting for an answer,
 say, or a script running <code>apex notify</code>. Its tag is tinted,
