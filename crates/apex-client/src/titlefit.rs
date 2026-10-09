@@ -111,6 +111,12 @@ pub struct Marks {
     pub path: Option<Bounds<Pixels>>,
     pub path_fan: Option<Bounds<Pixels>>,
     pub pills: Vec<(Seq, Bounds<Pixels>)>,
+    /// Where the processes and the path were drawn the frame before: what
+    /// a fan is placed by, since it is made before this frame draws them
+    /// (and records where they are) -- the bar does not move under a
+    /// pointer on it.
+    pub drawn_procs: Option<Bounds<Pixels>>,
+    pub drawn_path: Option<Bounds<Pixels>>,
 }
 
 /// What is fanned out.
@@ -331,7 +337,7 @@ impl Acme {
     /// only as far as it must to stay in the window (`width` across).
     fn procs_fan(&self, procs: &[(Seq, String)], width: Pixels, cx: &mut Context<Self>) -> AnyElement {
         let t = crate::theme::theme();
-        let at = self.title_marks.borrow().procs.map(|b| b.origin).unwrap_or_default();
+        let at = self.title_marks.borrow().drawn_procs.map(|b| b.origin).unwrap_or_default();
         let room = (width - at.x - px(FAN_MARGIN)).clamp(px(240.), px(720.));
         let marks = self.title_marks.clone();
         let card = div()
@@ -434,7 +440,7 @@ impl Acme {
         let strip = div().flex_shrink(1.).min_w_0().overflow_hidden().relative().flex().flex_row().items_center().child(short).when(fit != PathFit::Full, |d| d.child(mark(move |b| marks.borrow_mut().path = Some(b))));
         let fan = (fit != PathFit::Full && self.title_fan == Some(Fan::Path)).then(|| {
             let t = crate::theme::theme();
-            let at = self.title_marks.borrow().path.unwrap_or_default();
+            let at = self.title_marks.borrow().drawn_path.unwrap_or_default();
             let marks = self.title_marks.clone();
             let card = div()
                 .relative()
@@ -457,13 +463,16 @@ impl Acme {
     }
 }
 
-/// The bar's marks, cleared each frame before its parts record them.
+/// The bar's marks, cleared each frame before its parts record them (the
+/// last frame's kept for the fans, `Marks::drawn_procs`).
 pub fn new_marks() -> Rc<RefCell<Marks>> {
     Rc::new(RefCell::new(Marks::default()))
 }
 
 pub fn clear(m: &Rc<RefCell<Marks>>) {
     let mut m = m.borrow_mut();
+    m.drawn_procs = m.procs;
+    m.drawn_path = m.path;
     m.procs = None;
     m.procs_fan = None;
     m.path = None;
@@ -474,6 +483,21 @@ pub fn clear(m: &Rc<RefCell<Marks>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fan_is_placed_by_where_the_bar_was_drawn_last() {
+        // a frame clears the marks before the bar records them again, and
+        // the fans are made in between: they go by the last frame's
+        let m = new_marks();
+        let b = Bounds::new(point(px(400.), px(6.)), gpui::size(px(120.), px(20.)));
+        m.borrow_mut().procs = Some(b);
+        m.borrow_mut().path = Some(b);
+        clear(&m);
+        assert_eq!((m.borrow().procs, m.borrow().drawn_procs, m.borrow().drawn_path), (None, Some(b), Some(b)));
+        // a frame without them: nothing to place a fan by
+        clear(&m);
+        assert_eq!(m.borrow().drawn_procs, None);
+    }
 
     #[test]
     fn the_bar_gives_way_path_first_then_the_pills() {
