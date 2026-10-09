@@ -4479,6 +4479,12 @@ impl Acme {
     /// document is; one to the host's files, or its loopback (which only
     /// the host reaches, through Web's proxy), a window on it.
     fn follow_link(&mut self, url: String) {
+        // a file link with a line, or to a file a view does not show
+        // (source, text): the file in a text window, there
+        if let Some((path, line)) = apex_server::plane::host_file(&url).filter(|(p, line)| line.is_some() || !crate::web::shown_as_page(p)) {
+            self.goto(Loc { session: None, name: path, pos: line.map(Pos::Line).unwrap_or(Pos::Keep) });
+            return;
+        }
         if (url.starts_with("http://") || url.starts_with("https://")) && apex_server::plane::alias_loopback_url(&url) == url {
             if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&url).spawn() {
                 eprintln!("web: open {url}: {e}");

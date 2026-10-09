@@ -20,7 +20,7 @@ use std::time::Duration;
 use gpui::{Bounds, Pixels, Point, Window};
 
 use apex_core::WindowId;
-use apex_server::plane::{alias_loopback_url, mime_for, start_connect_proxy, unalias_url, IoPlane};
+use apex_server::plane::{alias_loopback_url, host_file, mime_for, start_connect_proxy, unalias_url, IoPlane};
 use apex_server::proto::{file_url_path, FileFrame, IoFrame};
 use apex_server::remote::{file_url, Wake};
 
@@ -1183,6 +1183,16 @@ impl Webs {
         };
         b = b
             .with_navigation_handler(move |u| {
+                // a page from a buffer (a preview) linking to a host file:
+                // where it goes is its owner's to say (another preview,
+                // the file plumbed), else as below (`Acme::follow_link`)
+                if from_buffer && host_file(&u).is_some() {
+                    let _ = tx1.send((w, WebEvent::Link(apex_url(&u))));
+                    if let Some(k) = &wake1 {
+                        k();
+                    }
+                    return false;
+                }
                 // a file link with a line, or to a file a view does not
                 // show (source, text): the file in a text window, there
                 if let Some((path, line)) = host_file(&u).filter(|(p, line)| line.is_some() || !shown_as_page(p)) {
@@ -2059,43 +2069,10 @@ fn file_link(url: &str) -> Option<(String, usize)> {
     Some((path, line?))
 }
 
-/// A link to a host file (`file://`, `apexfile://`, with a host of
-/// `localhost` or none, or the loopback alias): the file, and a line
-/// when the link says one -- `?line=N`, `#LN`, or `:N` (`:N:M`) after
-/// the path, as a compiler writes a place.
-fn host_file(url: &str) -> Option<(String, Option<usize>)> {
-    let rest = url.strip_prefix("file://").or_else(|| url.strip_prefix("apexfile://"))?;
-    let rest = rest.strip_prefix(&format!("localhost{}", apex_server::plane::HOST_ALIAS)).unwrap_or(rest);
-    let (before_frag, frag) = rest.split_once('#').map(|(a, b)| (a, Some(b))).unwrap_or((rest, None));
-    let (path_part, query) = before_frag.split_once('?').map(|(a, b)| (a, Some(b))).unwrap_or((before_frag, None));
-    let mut line = query
-        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("line=")).and_then(|v| v.parse().ok()))
-        .or_else(|| frag.and_then(|f| f.strip_prefix('L')).and_then(|v| v.split('-').next()).and_then(|v| v.parse().ok()));
-    // file.rs:64, file.rs:64:1: a place, the numbers off the path
-    let mut path_part = path_part;
-    if line.is_none() {
-        let mut nums: Vec<usize> = Vec::new();
-        while let Some((head, tail)) = path_part.rsplit_once(':') {
-            match tail.parse::<usize>() {
-                Ok(n) if !tail.is_empty() && !head.is_empty() => {
-                    nums.push(n);
-                    path_part = head;
-                }
-                _ => break,
-            }
-            if nums.len() == 2 {
-                break;
-            }
-        }
-        line = nums.last().copied();
-    }
-    let path = file_url_path(&format!("file://{path_part}"))?;
-    Some((path.display().to_string(), line))
-}
 
 /// What a web view shows as itself: a page, an image, a PDF. A link to
 /// any other host file (source, text) opens the file in a window.
-fn shown_as_page(path: &str) -> bool {
+pub(crate) fn shown_as_page(path: &str) -> bool {
     let ext = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     matches!(ext.as_str(), "html" | "htm" | "xhtml" | "svg" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "pdf")
 }

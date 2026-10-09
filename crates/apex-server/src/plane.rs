@@ -295,6 +295,40 @@ fn proxy_one(plane: IoPlane, mut c: TcpStream) {
     plane.close(stream);
 }
 
+/// A link to a host file (`file://`, `apexfile://`, with a host of
+/// `localhost` or none, or the loopback alias): the file, and a line
+/// when the link says one -- `?line=N`, `#LN`, or `:N` (`:N:M`) after
+/// the path, as a compiler writes a place.
+pub fn host_file(url: &str) -> Option<(String, Option<usize>)> {
+    let rest = url.strip_prefix("file://").or_else(|| url.strip_prefix("apexfile://"))?;
+    let rest = rest.strip_prefix(&format!("localhost{}", HOST_ALIAS)).unwrap_or(rest);
+    let (before_frag, frag) = rest.split_once('#').map(|(a, b)| (a, Some(b))).unwrap_or((rest, None));
+    let (path_part, query) = before_frag.split_once('?').map(|(a, b)| (a, Some(b))).unwrap_or((before_frag, None));
+    let mut line = query
+        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("line=")).and_then(|v| v.parse().ok()))
+        .or_else(|| frag.and_then(|f| f.strip_prefix('L')).and_then(|v| v.split('-').next()).and_then(|v| v.parse().ok()));
+    // file.rs:64, file.rs:64:1: a place, the numbers off the path
+    let mut path_part = path_part;
+    if line.is_none() {
+        let mut nums: Vec<usize> = Vec::new();
+        while let Some((head, tail)) = path_part.rsplit_once(':') {
+            match tail.parse::<usize>() {
+                Ok(n) if !tail.is_empty() && !head.is_empty() => {
+                    nums.push(n);
+                    path_part = head;
+                }
+                _ => break,
+            }
+            if nums.len() == 2 {
+                break;
+            }
+        }
+        line = nums.last().copied();
+    }
+    let path = crate::proto::file_url_path(&format!("file://{path_part}"))?;
+    Some((path.display().to_string(), line))
+}
+
 /// A content type from a path's extension, for what a web view fetches.
 pub fn mime_for(path: &str) -> &'static str {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();

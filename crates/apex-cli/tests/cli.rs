@@ -988,6 +988,53 @@ fn a_rule_starts_its_tool_when_none_is_attached() {
     assert!(at.elapsed() >= Duration::from_secs(9), "it waited for the start: {:?}", at.elapsed());
 }
 
+/// A preview's links are its tool's to answer: one to a file Preview
+/// converts opens that file's preview; one to any other file plumbs it.
+#[test]
+fn a_previews_links_open_previews_or_plumb_the_file() {
+    let sock = daemon();
+    let dir = std::env::temp_dir().join(format!("apex-cli-links-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b, c) = (dir.join("a.md"), dir.join("b.md"), dir.join("c.go"));
+    std::fs::write(&a, "# A\n\n[b](b.md) and [c](c.go)\n").unwrap();
+    std::fs::write(&b, "# B\n\none\ntwo\n").unwrap();
+    std::fs::write(&c, "package c\n").unwrap();
+    let (a, b, c) = (a.display().to_string(), b.display().to_string(), c.display().to_string());
+    let mut tool = Command::new(env!("CARGO_BIN_EXE_apex")).arg(format!("-socket={}", sock.display())).args(["-session=main", "tool", "preview", &a]).spawn().unwrap();
+    let mut ui = Remote::connect_as(&sock, "main", "clicker", AttachmentKind::Tool).unwrap();
+    let until = |r: &mut Remote, done: &dyn Fn(&Remote) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline && !done(r) {
+            let _ = r.step(Duration::from_millis(50));
+        }
+        done(r)
+    };
+    // the page, owned by the preview running it
+    assert!(until(&mut ui, &|r| r.node.window_of(&a, WinKind::Page).is_some_and(|w| r.node.window_owner(w).is_some())), "a's preview, owned");
+    let page = ui.node.window_of(&a, WinKind::Page).unwrap();
+    // a link to b.md, at a line: b's preview, its source at that line
+    let asked = ui.link.ask(apex_server::proto::Request::Navigate { window: page, url: format!("apexfile://{b}:3") });
+    assert!(until(&mut ui, &|r| r.node.window_of(&b, WinKind::Page).is_some()), "b's preview");
+    assert!(until(&mut ui, &|r| r.link.answered.iter().any(|(id, _)| *id == asked)));
+    let answer = ui.link.answered.iter().find(|(id, _)| *id == asked).and_then(|(_, a)| a.clone());
+    assert!(matches!(answer, Some(apex_server::proto::Answer::Navigate(apex_server::proto::NavAnswer::Handled))), "{answer:?}");
+    let src = ui.node.window_of(&b, WinKind::File).expect("b's source opened");
+    let line = |r: &Remote| r.node.selection(ViewId::Body(src)).ok().and_then(|(q0, _)| r.node.state.window(src).ok().and_then(|w| w.body_buffer()).and_then(|bb| r.node.state.buffer(bb).ok()).map(|x| x.text.line_of(q0) + 1));
+    assert_eq!(line(&ui), Some(3), "b's caret at the link's line");
+    // a link to c.go, which Preview does not convert: plumbed, so open
+    ui.link.ask(apex_server::proto::Request::Navigate { window: page, url: format!("file://{c}") });
+    assert!(until(&mut ui, &|r| r.node.window_of(&c, WinKind::File).is_some()), "c.go plumbed open");
+    assert!(ui.node.window_of(&c, WinKind::Page).is_none(), "and not previewed");
+    // a link off the host: the client's to follow
+    let web = ui.link.ask(apex_server::proto::Request::Navigate { window: page, url: "https://example.org/".into() });
+    assert!(until(&mut ui, &|r| r.link.answered.iter().any(|(id, _)| *id == web)));
+    let answer = ui.link.answered.iter().find(|(id, _)| *id == web).and_then(|(_, a)| a.clone());
+    assert!(matches!(answer, Some(apex_server::proto::Answer::Navigate(apex_server::proto::NavAnswer::Default))), "{answer:?}");
+    let _ = tool.kill();
+    let _ = tool.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn preview_is_a_live_pipe_through_a_converter() {
     let sock = daemon();

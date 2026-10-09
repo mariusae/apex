@@ -6,6 +6,11 @@
 //! page's scroll in the log (the converter marks its blocks with their
 //! source lines, `data-line`). The tool ends with either window.
 //!
+//! The page is the tool's, and so are its links: one to a file Preview
+//! converts opens that file's preview (at the link's line), one to any
+//! other file plumbs it, as B3 on its name would; others are the
+//! client's.
+//!
 //! Unprivileged: it attaches like anything else, reads the buffer from
 //! the entry stream, and writes the page through proposals.
 //!
@@ -23,7 +28,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use apex_core::*;
-use apex_server::proto::ServerMsg;
+use apex_server::proto::{Answer, ClientMsg, NavAnswer, Request, ServerMsg};
 use apex_server::remote::Remote;
 use apex_server::Proposal;
 
@@ -36,6 +41,11 @@ fn debug() -> bool {
 }
 
 pub fn run(socket: &Path, session: &str, file: &str) -> Result<(), String> {
+    run_at(socket, session, file, None)
+}
+
+/// `run`, the source's caret put at `line` (a link's place in it).
+pub fn run_at(socket: &Path, session: &str, file: &str, line: Option<usize>) -> Result<(), String> {
     let file = std::path::absolute(file).map_err(|e| format!("{file}: {e}"))?.display().to_string();
     if debug() {
         eprintln!("preview: {file}");
@@ -48,14 +58,23 @@ pub fn run(socket: &Path, session: &str, file: &str) -> Result<(), String> {
     let Some(converter) = converters::converter(&remote.node.state.meta, &ext) else {
         return Err(format!("Preview: no converter for .{ext} files: apex set Preview.{ext} CMD (a command reading the file on stdin, writing HTML)"));
     };
-    let mut t = Tool { remote, file, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None };
+    let mut t = Tool { remote, socket: socket.to_path_buf(), session: session.to_string(), file, line, converter, source: None, page: None, dirty: true, last_edit: Instant::now(), rendered: String::new(), followed: None, linked: Vec::new() };
     t.start()?;
-    t.main_loop()
+    let r = t.main_loop();
+    // the previews its links opened go on: this one is not done till they are
+    for h in std::mem::take(&mut t.linked) {
+        let _ = h.join();
+    }
+    r
 }
 
 struct Tool {
     remote: Remote,
+    socket: std::path::PathBuf,
+    session: String,
     file: String,
+    /// Where the source's caret goes when it opens (a link's line).
+    line: Option<usize>,
     converter: String,
     /// The source window and its buffer, once found.
     source: Option<(WindowId, BufferId)>,
@@ -67,6 +86,8 @@ struct Tool {
     rendered: String,
     /// The source line the page was last scrolled to.
     followed: Option<u32>,
+    /// The previews the page's links opened, on threads of their own.
+    linked: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl Tool {
@@ -128,11 +149,15 @@ impl Tool {
     /// The source (opened if need be), the page (found or made), the
     /// first render.
     fn start(&mut self) -> Result<(), String> {
-        // the file's window, opened when it is not
+        // the file's window, opened when it is not (at the line asked for)
+        let at = self.line.map(Pos::Line).unwrap_or(Pos::Keep);
+        if let (Some(_), Some(_)) = (self.line, self.window_named(&self.file)) {
+            let _ = self.propose(Proposal::Goto { loc: Loc { session: None, name: self.file.clone(), pos: at.clone() } }, TIMEOUT);
+        }
         let src = match self.window_named(&self.file) {
             Some(w) => w,
             None => {
-                let loc = Loc { session: None, name: self.file.clone(), pos: Pos::Keep };
+                let loc = Loc { session: None, name: self.file.clone(), pos: at };
                 let r = self.propose(Proposal::Goto { loc }, TIMEOUT);
                 if debug() {
                     eprintln!("preview: goto answered {r:?}");
@@ -171,8 +196,47 @@ impl Tool {
         self.rendered = self.remote.node.state.buffer(page_buf).map(|b| b.text.to_string()).unwrap_or_default();
         let me = self.remote.attachment();
         let _ = self.propose(Proposal::Live { window: page, by: Some(me) }, TIMEOUT);
+        // the page ours, and where its links go ours to say
+        let _ = self.propose(Proposal::Own { window: page, by: Some(me) }, TIMEOUT);
+        self.remote.link.answers_navigation = true;
         self.render_or_say();
         Ok(())
+    }
+
+    /// Where the page's links go: a file Preview converts, its preview,
+    /// on a thread of this process (the page's link a place in it: the
+    /// source's caret there, the preview following); any other file,
+    /// plumbed, as B3 on its name; anything else, the client's to follow.
+    fn answer_links(&mut self) {
+        let Some((page, _)) = self.page else { return };
+        for (id, request) in std::mem::take(&mut self.remote.link.asks) {
+            let Request::Navigate { window, url } = request else { continue };
+            let answer = match apex_server::plane::host_file(&url).filter(|_| window == page) {
+                Some((path, line)) => {
+                    let ext = Path::new(&path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    if converters::converter(&self.remote.node.state.meta, &ext).is_some() {
+                        let (socket, session) = (self.socket.clone(), self.session.clone());
+                        self.linked.push(std::thread::spawn(move || {
+                            if let Err(e) = run_at(&socket, &session, &path, line) {
+                                if e != "shown" {
+                                    eprintln!("preview: {path}: {e}");
+                                }
+                            }
+                        }));
+                    } else {
+                        let text = match line {
+                            Some(n) => format!("{path}:{n}"),
+                            None => path,
+                        };
+                        let dir = Path::new(&self.file).parent().map(|d| d.display().to_string());
+                        self.remote.send(&ClientMsg::Plumb { ctx: ExecCtx::Window(page), text, dir, edit_only: false, dry: false, at: None, sel: None, alt: None, reverse: false, verb: None });
+                    }
+                    NavAnswer::Handled
+                }
+                None => NavAnswer::Default,
+            };
+            self.remote.answer(id, Answer::Navigate(answer));
+        }
     }
 
     fn main_loop(&mut self) -> Result<(), String> {
@@ -197,6 +261,7 @@ impl Tool {
             if self.dirty && self.last_edit.elapsed() >= SETTLE {
                 self.render_or_say();
             }
+            self.answer_links();
             self.follow();
         }
     }
