@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apex User's Guide</title>
+<meta name="description" content="How to use Apex: the mouse, tags and commands, plumbing, terminals, pages, sessions and configuration.">
+<link rel="icon" type="image/png" href="space-bunny.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;700&display=swap">
+<style>
+  html { background: #fff; color: #000; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    max-width: 34em;
+    margin: 0 auto;
+    padding: 2em 1em 4em;
+  }
+  .bunny { display: block; margin: 1em auto 0.5em; width: 160px; max-width: 50%; height: auto; }
+  h1 { font-size: 1em; font-weight: bold; text-align: center; margin: 0 0 2em; }
+  h2 { font-size: 1em; font-weight: bold; margin: 2em 0 0.4em; }
+  h3 { font-size: 1em; font-weight: normal; font-style: italic; margin: 1.4em 0 0.3em; }
+  p, ul, ol, pre, table { margin: 0 0 0.8em; }
+  ul, ol { padding-left: 1.4em; }
+  pre, code { font-family: "Inconsolata", "Menlo", "Courier New", Courier, monospace; font-size: 0.88em; }
+  pre { padding-left: 1.4em; white-space: pre-wrap; }
+  table { border-collapse: collapse; margin-left: 1.4em; }
+  td { vertical-align: top; padding: 0.05em 1.2em 0.05em 0; }
+  td:first-child { white-space: nowrap; }
+  a { color: #00e; }
+  a:visited { color: #551a8b; }
+  figure { margin: 0 0 1em; }
+  figure img { display: block; max-width: 100%; height: auto; }
+  figure img + img { margin-top: 0.4em; }
+  figcaption { font-size: 0.9em; font-style: italic; margin-top: 0.3em; }
+  .contents { columns: 2; column-gap: 2em; }
+  footer { margin-top: 3em; font-size: 0.9em; text-align: center; }
+  @media (max-width: 30em) { .contents { columns: 1; } table { margin-left: 0; } }
+</style>
+</head>
+<body>
+
+<a href="index.html"><img class="bunny" src="space-bunny.png" alt="The Apex space bunny." width="160" height="160"></a>
+<h1>Apex User's Guide</h1>
+
+<p>This guide describes how to use <a href="index.html">Apex</a>. It
+assumes some familiarity with acme; Rob Pike's
+<a href="https://doc.cat-v.org/plan_9/4th_edition/papers/acme/">Acme: A User Interface for Programmers</a>
+is still the best introduction to the ideas, and nearly all of it applies
+here. Russ Cox's <a href="https://www.youtube.com/watch?v=dP1xVpMPn8M">tour of acme</a>
+shows them in use. What follows covers what Apex does the same, what it does
+differently, and what it adds.</p>
+
+<ul class="contents">
+<li><a href="#start">Getting started</a></li>
+<li><a href="#screen">The screen</a></li>
+<li><a href="#mouse">The mouse</a></li>
+<li><a href="#commands">Commands</a></li>
+<li><a href="#look">Looking and plumbing</a></li>
+<li><a href="#layout">Arranging windows</a></li>
+<li><a href="#keyboard">The keyboard</a></li>
+<li><a href="#finding">Finding things</a></li>
+<li><a href="#errors">Errors and notifications</a></li>
+<li><a href="#terminals">Terminals</a></li>
+<li><a href="#pages">Pages</a></li>
+<li><a href="#sessions">Sessions</a></li>
+<li><a href="#remote">Remote hosts</a></li>
+<li><a href="#config">Configuration</a></li>
+<li><a href="#tools">Language servers and agents</a></li>
+<li><a href="#scripting">Scripting</a></li>
+</ul>
+
+<h2 id="start">Getting started</h2>
+
+<p>Build the app as described on the <a href="index.html">front page</a>,
+and move <code>target/Apex.app</code> to wherever you keep
+applications. Then choose <i>Apex ▸ Install apex Command…</i>, so that the
+<code>apex</code> command is on your path; you will want it.</p>
+
+<p>When Apex starts, it attaches to the daemon on this machine, starting
+one if none is running, and reopens the sessions you had open last time.
+The first time, that is a single session called <code>default</code>.
+Quitting Apex leaves the daemon and its sessions running: start Apex again
+and everything is where you left it, including programs running in
+terminals.</p>
+
+<p>To make another session, press ⌘T, type a name, and pick
+<i>Create</i>. From a shell:</p>
+<pre>% apex new-session work ~/src/project
+% apex attach work</pre>
+
+<h2 id="screen">The screen</h2>
+
+<p>Apex's window is a set of columns, and each column a stack of
+windows, tiled as acme tiles them. Every window has a <em>tag</em>, a
+line of text above its <em>body</em>. Columns have tags too, and so does
+the whole window: its <em>top row</em> sits in the Mac's title bar. Tags
+are ordinary text: you can type in them, and anything in them can be
+executed.</p>
+
+<p>A window's tag begins with what the window is, drawn from its state
+rather than its text: the path (folders dim, the name strong), a label
+when it has one (a terminal's title, say), and a few of Apex's own
+commands drawn as icons (Del, Snarf, Undo, Put, and so on), faint until
+the pointer is on the tag. After that comes the tag's own text, which
+initially is just <code>Look </code>. A column's tag holds <code>New Cut
+Paste Snarf Sort Zerox Delcol</code>, and the top row <code>Newcol
+Newterm Win Web Kill Putall Exit End</code>.</p>
+
+<p>At the left of each tag is the window's <em>handle</em> (acme's layout
+box), drawn as a dot: hollow when the window is clean, filled when it has
+unsaved changes, gold when the file has changed on disk underneath it.
+A ring in the accent colour means a program is live in the window; a
+spinning arc means it is working. A window that wants your attention has
+its tag tinted.</p>
+
+<figure><img src="guide-tag-clean.png" alt="The tag of a clean window: a hollow dot, the path crates/apex-core/src/state.rs, icons for Del, Snarf and Redo, then Look." width="693" height="30"><img src="guide-tag-dirty.png" alt="The same tag with unsaved changes: a filled dot, and icons for Del, Snarf, Undo and Put." width="694" height="27"><img src="guide-tag-term.png" alt="A terminal's tag: a ringed dot, the directory, the label airy, and icons for Del, Snarf and Send." width="695" height="133"><figcaption>A clean file, the same file with unsaved changes (now offering Undo and Put), and a terminal with a live shell.</figcaption></figure>
+
+<p>Window bodies come in three kinds: text, terminals, and pages
+(HTML, drawn by a web view). They are tiled, moved, and closed in
+exactly the same way.</p>
+
+<figure><a href="guide-screen.png"><img src="guide-screen.png" alt="Apex with two columns. The title bar holds the session's name, its directory, pills for the running lsp, agent and preview tools, and the top row's commands. Each column has a tag of commands; the left window shows DESIGN.md, the right a Preview of it." width="1000" height="628"></a><figcaption>The title bar: the session, its directory, the running tools, and the top row. Below, two columns, each with its tag; on the left a file, on the right its Preview.</figcaption></figure>
+
+<p>The sidebar (⌃⌘S, or the button by the window's traffic lights) lists
+your sessions, grouped by host, and the windows of the one showing.</p>
+
+<h2 id="mouse">The mouse</h2>
+
+<p>As in acme, the three buttons have fixed meanings everywhere, in tags
+and bodies alike:</p>
+<table>
+<tr><td>B1</td><td>select text; drag to sweep</td></tr>
+<tr><td>B2</td><td>execute the text clicked or swept</td></tr>
+<tr><td>B3</td><td>look: open or find the text clicked or swept</td></tr>
+</table>
+
+<p>A click with B2 or B3 on unselected text expands to a word: for B2 the
+run of characters that can appear in a command, for B3 a file name with
+an optional address, such as <code>main.rs:120</code>. Clicking inside
+the selection takes the whole selection. B2 and B3 sweeps are drawn in
+their own colours (orange for B2, blue for B3), and what B2 ran blinks
+briefly so that you can see it.</p>
+
+<p>Chords work as in acme. While holding B1 after a sweep, click B2 to
+cut, or B3 to paste. While sweeping with B2, click B1 to run the
+command with the most recent selection as its argument.</p>
+
+<h3>On a laptop</h3>
+
+<p>Apex follows plan9port's mapping onto a single button:</p>
+<table>
+<tr><td>click</td><td>B1</td></tr>
+<tr><td>⌥-click</td><td>B2</td></tr>
+<tr><td>⌘-click</td><td>B3</td></tr>
+<tr><td>⇧-click</td><td>B4 (see below)</td></tr>
+<tr><td>force click</td><td>B3</td></tr>
+</table>
+<p>To chord while sweeping with B1, press ⌥ to cut or ⌘ to paste. Holding
+⌘ or ⌥ alone over text shows, on a small pill, exactly what a click would
+look at or run there.</p>
+
+<h3>B4 and B5</h3>
+
+<p>Apex adds a fourth button. B4 (or ⇧-click) on a window opens a menu of
+the commands that tools and plumbing rules offer for that window, such as
+<code>Preview</code> on a Markdown file or <code>Def</code> once a
+language server is running. The menu opens with the last choice under
+the pointer, so a plain B4 click repeats it. B4 on a handle minimizes the
+window or column instead. B5, a mouse's forward button, runs
+<code>Back</code>.</p>
+
+<h2 id="commands">Commands</h2>
+
+<p>B2 executes. If the text is one of Apex's built-in commands, Apex
+does it; if a tool or plumbing rule offers the word for this window, that
+tool does it; otherwise the text is run as a shell command in the
+window's directory, with acme's <code>$winid</code>, <code>$%</code> and
+<code>$samfile</code> set. Shell commands run through
+<a href="https://github.com/mariusae/rustrc">rc</a>, which is bundled.
+Their output goes to the directory's <code>+Errors</code> window.</p>
+
+<p>As in acme, a command may begin with <code>|</code>, <code>&lt;</code>
+or <code>&gt;</code>: <code>|cmd</code> pipes the selection through
+<code>cmd</code>, replacing it; <code>&lt;cmd</code> replaces it with
+<code>cmd</code>'s output; and <code>&gt;cmd</code> sends the selection
+to <code>cmd</code>, its output to <code>+Errors</code>.</p>
+
+<h3>Built-in commands</h3>
+<table>
+<tr><td>Cut Paste Snarf</td><td>the usual; snarf is the system clipboard</td></tr>
+<tr><td>Undo Redo</td><td>undo or redo in the window</td></tr>
+<tr><td>Put [file]</td><td>write the window's file; Putall writes every dirty file</td></tr>
+<tr><td>Get</td><td>reload the file (or reload a page)</td></tr>
+<tr><td>Del</td><td>close the window; warns once if unsaved. Delete does not warn</td></tr>
+<tr><td>New [name]</td><td>a new window, empty or on a file</td></tr>
+<tr><td>Newcol Delcol</td><td>add or remove a column</td></tr>
+<tr><td>Zerox</td><td>another window on the same text</td></tr>
+<tr><td>Sort</td><td>sort a column's windows by name</td></tr>
+<tr><td>Look [text]</td><td>search the body for text, or the selection</td></tr>
+<tr><td>Edit cmd</td><td>run a sam command (see below)</td></tr>
+<tr><td>Tab [n]</td><td>set or show the tab width</td></tr>
+<tr><td>Indent on|off</td><td>automatic indentation</td></tr>
+<tr><td>Font</td><td>toggle between the proportional and fixed fonts</td></tr>
+<tr><td>ID</td><td>print the window's id</td></tr>
+<tr><td>Send</td><td>append the selection (or snarf) to the body; in a terminal, type it</td></tr>
+<tr><td>Stash</td><td>put the window away (see <a href="#layout">Arranging windows</a>)</td></tr>
+<tr><td>Newterm [cmd]</td><td>a new terminal, running a shell or cmd</td></tr>
+<tr><td>Win [cmd]</td><td>acme's win: a shell in a text window</td></tr>
+<tr><td>Web [url]</td><td>a web page</td></tr>
+<tr><td>Kill name</td><td>kill running commands by name</td></tr>
+<tr><td>Exit</td><td>close Apex's window; the session keeps running</td></tr>
+<tr><td>End</td><td>end the session; warns once if anything is unsaved</td></tr>
+</table>
+
+<p><code>Edit</code> takes the sam command language, as in acme, with
+Plan 9 regular expressions: <code>Edit ,x/foo/c/bar/</code>. The file and
+pipe commands (<code>e</code>, <code>w</code>, <code>|</code>, and so on)
+are not supported yet; neither are <code>X</code> and <code>Y</code>.</p>
+
+<p>⌘⇧P opens a palette of every command you might run in the window
+under the pointer: the words in its tag, the commands its tools offer,
+Apex's built-ins, and what was run recently anywhere in the session.
+Return runs one there, as B2 would.</p>
+
+<h2 id="look">Looking and plumbing</h2>
+
+<p>B3 is acme's look, made programmable. The text clicked is offered to
+the session's <em>plumbing rules</em> in turn, and the first rule that
+takes it decides what happens. Out of the box:</p>
+<ul>
+<li>a file name opens the file, and <code>file:line</code> or
+<code>file:line:col</code> opens it there; a directory opens as a listing
+of its contents;</li>
+<li>a URL opens in your browser;</li>
+<li>anything else is searched for in the window's body, and the pointer
+moves to the match, so that clicking B3 again finds the next one. ⇧-B3
+searches backwards.</li>
+</ul>
+<p>⌘-B3 (⌃⌘-click on a laptop) asks for the definition of what was
+clicked, when a language server is running; ⇧⌘-B3 goes back. ⌘[ and ⌘]
+move back and forth through the places you've jumped from.</p>
+
+<h3>Look as you type</h3>
+
+<p>Typing in a tag's <code>Look</code> argument searches as you type if
+it is written with a slash: <code>Look/word</code>. A closing slash lets
+it contain spaces: <code>Look/two words/</code>. Each keystroke searches
+again from where you began; when nothing is found, the argument is struck
+through. Escape leaves the caret at the end of the match. ⌘F does all of
+this for you: it puts the caret in the window's Look argument, ready to
+type. ⌘G and ⌘⇧G find the next and previous matches. While a search is
+going on, every match in the window is faintly highlighted.</p>
+
+<figure><img src="guide-look.png" alt="A window whose tag reads Look/acme/ with the caret in the argument. In the body the first acme is selected, and the later ones are faintly highlighted." width="598" height="399"><figcaption>Typing <code>Look/acme/</code>: the match is selected, and the others are marked.</figcaption></figure>
+
+<p>Looking works in terminals and pages too, searching what they show
+(and a terminal's scrollback).</p>
+
+<h2 id="layout">Arranging windows</h2>
+
+<p>Windows and columns are arranged with their handles, as in acme:</p>
+<table>
+<tr><td>B1 click</td><td>grow the window a little; on a maximized window, restore the others</td></tr>
+<tr><td>B2 click</td><td>maximize: the column's other windows shrink to their tags</td></tr>
+<tr><td>B3 click</td><td>the window takes the whole column; the others hide behind it until B1 or B3 again</td></tr>
+<tr><td>⇧-click (B4)</td><td>minimize the window to its tag</td></tr>
+<tr><td>drag</td><td>move the window, within its column or to another</td></tr>
+</table>
+<p>Column handles do the same for columns across the row. A minimized
+column becomes a slim strip; click it to bring it back. Dragging a window
+to the outer edge of a column splits off a new column for it, and the
+line between two columns can be dragged to resize them. While you drag,
+where the window or column would land is shaded.</p>
+
+<p>The <em>stash</em> is a place to put windows away without closing them.
+⌘M (or the command <code>Stash</code>) stashes the window under the
+pointer. Stashed windows appear as a small hand of cards at the right of
+the title bar. Hover over them to fan them out and see one, live: you can
+work in it right there. Click a card to bring the window back where it was.
+Anything that goes to a stashed window, such as a look or a notification,
+brings it back as well.</p>
+
+<figure><img src="guide-stash.png" alt="Two stashed windows, Errors and rust-analyzer, as cards at the right of the title bar. Below them, the Errors window is shown live, with two lines selected." width="508" height="418"><figcaption>The stash fanned out: Errors and rust-analyzer's diagnostics, the first shown below the cards, live.</figcaption></figure>
+
+<h2 id="keyboard">The keyboard</h2>
+
+<p>As in acme, typing goes to the text under the pointer, not to a
+focused window. The caret that keys will go to is drawn in the accent
+colour and blinks; other carets are plain.</p>
+<table>
+<tr><td>^U ^W ^H</td><td>erase the line, word, or character before the caret</td></tr>
+<tr><td>^A ^E</td><td>start or end of line</td></tr>
+<tr><td>^F</td><td>complete the file name before the caret</td></tr>
+<tr><td>Escape</td><td>select what was just typed</td></tr>
+<tr><td>↑ ↓</td><td>scroll the body; in a tag, expand or collapse it</td></tr>
+<tr><td>Home End</td><td>return to where you were typing, or go to the top or end</td></tr>
+<tr><td>⌘Z ⌘⇧Z</td><td>undo, redo</td></tr>
+<tr><td>⌘X ⌘C ⌘V ⌘A</td><td>cut, copy, paste, select all</td></tr>
+</table>
+
+<p>Menu commands act on the window under the pointer:</p>
+<table>
+<tr><td>⌘S ⌘R ⌘W</td><td>Put, Get, Del</td></tr>
+<tr><td>⌘N</td><td>a new window</td></tr>
+<tr><td>⌘O</td><td>open a file or folder in the session's directory</td></tr>
+<tr><td>⌘P</td><td>go to an open window or recently closed file</td></tr>
+<tr><td>⌘⇧O</td><td>the same, across all sessions</td></tr>
+<tr><td>⌘⇧P</td><td>run a command</td></tr>
+<tr><td>⌘F ⌘G ⌘⇧G</td><td>look, look again forwards, backwards</td></tr>
+<tr><td>⌘[ ⌘]</td><td>back, forward</td></tr>
+<tr><td>⌘M</td><td>stash the window</td></tr>
+<tr><td>⌘J</td><td>go to the next notification</td></tr>
+<tr><td>⌘T ⌘⇧W</td><td>open a session, close this session's tab</td></tr>
+<tr><td>⌘1 … ⌘9</td><td>go to a session by position</td></tr>
+<tr><td>⌘⇧[ ⌘⇧]</td><td>previous, next session</td></tr>
+<tr><td>⌘⇧K</td><td>the session you were last in</td></tr>
+<tr><td>⌃Tab</td><td>walk sessions, most recent first</td></tr>
+<tr><td>⌘⇧\</td><td>show all sessions</td></tr>
+<tr><td>⌃⌘S</td><td>show or hide the sidebar</td></tr>
+<tr><td>⌘+ ⌘− ⌘0</td><td>bigger, smaller, actual size</td></tr>
+<tr><td>⌘,</td><td>edit your profile</td></tr>
+<tr><td>⌘⇧R</td><td>reconnect</td></tr>
+</table>
+
+<h2 id="finding">Finding things</h2>
+
+<p>⌘P, ⌘O and ⌘⇧P open palettes that match what you type fuzzily. ⌘O
+lists every file under the session's directory; the listing and the
+matching are done on the session's host, so it is fast on large trees
+and on remote machines alike.</p>
+
+<p>A window's path in its tag is a breadcrumb: click a folder, or the
+name, to list what is next to it, and type to narrow the list. Return
+opens the choice in a new window; ⌥Return opens it in place. Double-click
+the path to rename the window's file. Similarly, the session's directory
+is shown in the title bar; click it to change directory.</p>
+
+<p>^F completes the file name before the caret, listing the choices when
+there is more than one.</p>
+
+<h2 id="errors">Errors and notifications</h2>
+
+<p>A command's output and errors go to its directory's
+<code>+Errors</code> window, as in acme. In Apex, though, that window is
+created in the stash rather than over your work, and whatever is new in
+it appears briefly in a toast at the lower right. B3 on a
+<code>file:line</code> in the toast goes there; <i>Show All</i> shows the
+window. Language servers and other tools report the same way.</p>
+
+<figure><img src="guide-toast.png" alt="A toast headed Errors /Users/marius/, with Show All and a close button, listing file:line:col lines from a search." width="594" height="153"><figcaption>A toast with what is new in <code>+Errors</code>. Each <code>file:line</code> can be clicked with B3.</figcaption></figure>
+
+<p>A window can ask for your attention: an agent waiting for an answer,
+say, or a script running <code>apex notify</code>. Its tag is tinted,
+the Dock icon shows a count, and ⌘J takes you to the oldest such window,
+in whichever session it is. Other sessions wanting attention are marked
+in the sidebar and the session menu.</p>
+
+<p>The commands a session is running are shown as pills in the title bar.
+Hover to see the full command; click × to kill it, B1 on its name to see
+its output, B3 to go to the window it was run from. <code>apex ps</code>
+and <code>apex kill</code> do the same from a shell.</p>
+
+<h2 id="terminals">Terminals</h2>
+
+<p><code>Newterm</code> opens a terminal in a new window, running your
+shell in the directory it was run from; <code>Newterm cmd</code> runs a
+command instead. The terminal is a full emulator (built on
+<a href="https://ghostty.org">libghostty</a>), so anything that runs in
+Terminal runs here. It is also a window like any other: B1 selects, B2
+executes the text (or types a word nothing else takes into the
+program), B3 looks, so a <code>file:line</code> in a compiler's output
+opens the file.</p>
+<table>
+<tr><td>Send</td><td>type the snarf buffer into the terminal</td></tr>
+<tr><td>Snarfout</td><td>snarf the last command's output</td></tr>
+<tr><td>Clear</td><td>clear the scrollback</td></tr>
+<tr><td>⌘↑ ⌘↓</td><td>previous, next prompt</td></tr>
+<tr><td>⌘⇧C</td><td>copy the last command's output</td></tr>
+</table>
+<p>The prompt commands need shell integration. Add this to your
+<code>.zshrc</code> (or <code>bash</code> to your <code>.bashrc</code>):</p>
+<pre>eval "$(apex shell-integration zsh)"</pre>
+<p>A failed command is then also marked in the margin by its prompt.</p>
+
+<p>A terminal's window is named after its directory and title, as win
+names its window. Programs inside a session have <code>$EDITOR</code> set
+so that, for example, <code>git commit</code> opens the message in a
+window over the terminal; delete the window to finish. Programs that open
+a URL or file through <code>xdg-open</code> or <code>$BROWSER</code> have
+it plumbed into the session. And <code>apex</code> itself, run in a
+terminal, acts on the session it is in.</p>
+
+<p><code>Win</code> runs acme's win: a shell in an ordinary text window,
+which some still prefer.</p>
+
+<h2 id="pages">Pages</h2>
+
+<p>Page windows show HTML. They are fetched through the session's host,
+so a page on a remote session sees that machine's files and network.</p>
+
+<p><code>Preview</code>, offered in the B4 menu on Markdown, HTML and
+SVG files, opens a live rendering next to the file. It is redrawn as you
+type and follows the caret. Other formats can be added with a converter,
+a command that reads the file and writes HTML:</p>
+<pre>apex set Preview.rst 'pandoc -f rst -t html5'</pre>
+
+<p><code>Web url</code> opens a web page, with back and forward buttons
+and an address field in place of the tag. <code>apex diff</code> reads a
+unified diff and shows it side by side, each line a link into its
+file:</p>
+<pre>git diff | apex diff</pre>
+
+<h2 id="sessions">Sessions</h2>
+
+<p>A session is a whole workspace: its columns, windows, terminals, and
+the programs running in them. It lives in the daemon, not in the app. The
+app shows one session at a time, and keeps others open as tabs, listed
+in the sidebar. They stay attached in the background, so switching is
+instant. ⌘T opens the session picker, which lists the sessions on every
+host you know, lets you make new ones, and adds hosts.</p>
+
+<p>Click the session's name in the title bar to rename it. Closing a tab
+(⌘⇧W, or × in the sidebar) leaves the session running on its host;
+<code>End</code>, or <code>apex end-session</code>, ends it.</p>
+
+<p>Only one app leads a session at a time. If you attach to a session
+from another machine, the first app becomes a <em>watcher</em>: it still
+shows the session, live, but typing does nothing, and a banner offers to
+<i>Take over</i>. If the connection drops, the app reconnects by itself;
+the title bar says <i>stalled</i> or <i>offline</i> meanwhile.</p>
+
+<h2 id="remote">Remote hosts</h2>
+
+<p>A session can live on another machine. In the session picker, choose
+<i>Add a host…</i> and give it an ssh destination, such as
+<code>me@box</code>. Or from a shell:</p>
+<pre>% apex attach me@box/work</pre>
+<p>Apex copies its own <code>apex</code> and <code>rc</code> (built for
+Linux, and bundled in the app) to <code>~/.apex/bin</code> on the host
+when needed, starts the daemon there, and talks to it over ssh. Nothing
+else needs installing, and no files are synchronized: you are using
+Apex on that machine.</p>
+
+<p>Machines reached by something other than ssh use a <em>provider</em>,
+a program named <code>apex-remote-NAME</code> on your path that runs a
+command on the destination, as ssh does. Destinations are then written
+<code>NAME:dest</code>. The <code>providers</code> directory in the
+source has examples.</p>
+
+<h2 id="config">Configuration</h2>
+
+<p>The <i>View</i> menu chooses the theme (six palettes, each light and
+dark), the fonts, and a few preferences. Everything else is configured
+with scripts of <code>apex</code> commands, as acme is configured with
+shell scripts.</p>
+
+<p><code>~/.apex/profile</code>, on the session's host, is run (by rc)
+whenever a session is made, in the session's directory. Its environment
+when it finishes becomes the environment of everything in the session.
+⌘, opens it. A profile might look like this:</p>
+<pre>apex set Newterm.shell zsh
+apex set Preview.dot 'dot -Tsvg'
+apex plumb rule add -text='#(\d+)' -client=open -args='https://github.com/me/repo/issues/$1'
+apex tool lsp &amp;
+apex tool agent &amp;
+GOFLAGS=-mod=mod</pre>
+<p><code>examples/profile</code> in the source is a fuller example; among
+other things it names terminal windows after their directories for zsh,
+bash and fish.</p>
+
+<p><code>~/.apex/attach</code>, on the machine running the app, is run on
+the session's host each time the app attaches; settings it makes belong
+to that app alone.</p>
+
+<p><code>apex set KEY VALUE</code> makes a setting. These are the ones
+Apex reads:</p>
+<table>
+<tr><td>Newterm.shell</td><td>the shell terminals run</td></tr>
+<tr><td>Newterm.scrollback</td><td>lines of terminal history (10000)</td></tr>
+<tr><td>Preview.EXT</td><td>a converter to HTML for files ending .EXT</td></tr>
+<tr><td>lsp.LANG</td><td>the language server for go, rust, python, typescript or c</td></tr>
+<tr><td>lsp.root</td><td>a file marking a project's root, for language servers</td></tr>
+</table>
+
+<h3>Plumbing rules</h3>
+
+<p>The plumbing rules are the session's, and <code>apex plumb rule</code>
+adds, lists and removes them. A rule matches text (anchored at both ends),
+and optionally the window it is in: by file name, kind, or owning tool.
+It then opens a file (<code>-edit</code>), runs a command
+(<code>-run</code>), or asks a tool (<code>-tool</code>). The groups of
+its pattern are <code>$1</code>, <code>$2</code>, …; <code>$file</code>,
+<code>$dir</code> and <code>$win</code> describe the window. A rule with
+<code>-verb=Word</code> instead of matching B3 adds Word to the B4 menu
+of the windows it applies to:</p>
+<pre>apex plumb rule add -verb=Test -file='_test\.go$' -run='go test ./...'</pre>
+<p><code>apex plumb -dry-run text</code> shows which rules would take the
+text, and why the others didn't. <code>apex help plumb</code> describes
+every flag.</p>
+
+<h2 id="tools">Language servers and agents</h2>
+
+<p><code>apex tool lsp</code> runs language servers for the session:
+gopls, rust-analyzer, pyright, typescript-language-server and clangd by
+default, one per project root. Once a server is ready, files in its
+language get <code>Def</code>, <code>Type</code>, <code>Refs</code>,
+<code>Hov</code>, <code>Sig</code>, <code>Fmt</code> and <code>Rn
+name</code> in their B4 menus; ⌘-B3 is <code>Def</code>. Diagnostics go
+to a stashed window per server, and show up as toasts.</p>
+
+<p>Coding agents (Claude Code, Codex, and Muse) run in terminals like
+anything else. <code>apex tool agent</code> makes them easier to live
+with. Install its hooks once, then run it in a session (from its
+profile, say):</p>
+<pre>% apex tool agent install
+% apex tool agent</pre>
+<p>Each agent's terminal is then marked while it works, and notifies you
+when it needs an answer. Its B4 menu offers <code>Transcript</code>,
+<code>Preview</code> (its last answer as a page), <code>Changes</code>
+(a diff of what it changed), and <code>Allow</code>, <code>Deny</code>
+and <code>Ask</code> for permission requests.</p>
+
+<h2 id="scripting">Scripting</h2>
+
+<p>The <code>apex</code> command does everything the app does, and works
+whether or not the app is running. Inside a session it acts on that
+session; elsewhere, name one with <code>-session</code>. Windows are
+named by id, path, or label.</p>
+<table>
+<tr><td>apex open file…</td><td>open files</td></tr>
+<tr><td>apex new [path]</td><td>a new window, with stdin in it</td></tr>
+<tr><td>apex win list</td><td>list the windows</td></tr>
+<tr><td>apex text read win</td><td>print a window's text</td></tr>
+<tr><td>apex edit win cmd</td><td>run an Edit command</td></tr>
+<tr><td>apex exec win cmd</td><td>run a command, as B2 would</td></tr>
+<tr><td>apex term new|send|read</td><td>terminals</td></tr>
+<tr><td>apex plumb text</td><td>plumb text, as B3 would</td></tr>
+<tr><td>apex events</td><td>stream every change to the session</td></tr>
+<tr><td>apex ls</td><td>list sessions</td></tr>
+</table>
+<p>For example, to replace every TODO in a file and save it:</p>
+<pre>apex edit notes.md ',x/TODO/c/DONE/'
+apex exec notes.md Put</pre>
+<p><code>apex help</code> lists every command, and <code>apex help
+cmd</code> describes one. Programs can also attach to a session directly
+with the Rust or Go libraries, or through <code>apex tool bridge</code>,
+which speaks JSON; the <a href="wiki/html/index.html">wiki</a> describes
+how.</p>
+
+<footer><i>Apex is a work in progress, and so is this guide.</i><br>
+<a href="index.html">Apex</a></footer>
+
+</body>
+</html>
