@@ -1012,24 +1012,37 @@ fn a_previews_links_open_previews_or_plumb_the_file() {
     // the page, owned by the preview running it
     assert!(until(&mut ui, &|r| r.node.window_of(&a, WinKind::Page).is_some_and(|w| r.node.window_owner(w).is_some())), "a's preview, owned");
     let page = ui.node.window_of(&a, WinKind::Page).unwrap();
-    // a link to b.md, at a line: b's preview, its source at that line
+    // a link to b.md, at a line: b's preview at that line, and only that --
+    // b.md itself not opened
     let asked = ui.link.ask(apex_server::proto::Request::Navigate { window: page, url: format!("apexfile://{b}:3") });
-    assert!(until(&mut ui, &|r| r.node.window_of(&b, WinKind::Page).is_some()), "b's preview");
+    assert!(until(&mut ui, &|r| r.node.window_of(&b, WinKind::Page).is_some_and(|w| r.node.state.window(w).is_ok_and(|x| x.scroll == Some(apex_core::Scroll::Line(3))))), "b's preview, at line 3");
     assert!(until(&mut ui, &|r| r.link.answered.iter().any(|(id, _)| *id == asked)));
     let answer = ui.link.answered.iter().find(|(id, _)| *id == asked).and_then(|(_, a)| a.clone());
     assert!(matches!(answer, Some(apex_server::proto::Answer::Navigate(apex_server::proto::NavAnswer::Handled))), "{answer:?}");
-    let src = ui.node.window_of(&b, WinKind::File).expect("b's source opened");
-    let line = |r: &Remote| r.node.selection(ViewId::Body(src)).ok().and_then(|(q0, _)| r.node.state.window(src).ok().and_then(|w| w.body_buffer()).and_then(|bb| r.node.state.buffer(bb).ok()).map(|x| x.text.line_of(q0) + 1));
-    assert_eq!(line(&ui), Some(3), "b's caret at the link's line");
-    // the jump was from a's page; Back in b's page goes there, and b's page
-    // is what Fwd returns to
-    assert_eq!(ui.node.state.layout.nav_back.last().map(|l| l.name.clone()), Some(page.0.to_string()), "the jump from a's page");
     let pb = ui.node.window_of(&b, WinKind::Page).unwrap();
+    let text_of = |r: &Remote, w: WindowId| r.node.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|bb| r.node.state.buffer(bb).ok()).map(|x| x.text.to_string()).unwrap_or_default();
+    assert!(until(&mut ui, &|r| text_of(r, pb).contains("two")), "b rendered from the file: {}", text_of(&ui, pb));
+    assert!(ui.node.window_of(&b, WinKind::File).is_none(), "b.md not opened");
+    // the jump was from a's page to b's; Back in b's page goes to a's,
+    // and b's page is what Fwd returns to
+    assert_eq!(ui.node.state.layout.nav_back.last().map(|l| l.name.clone()), Some(page.0.to_string()), "the jump from a's page");
     assert!(until(&mut ui, &|r| apex_core::plumb::verbs_for(&r.node.state.meta.rules, &r.node.window_path(pb), WinKind::Page, Some(pb), r.node.window_owner(pb)).iter().any(|v| v == "Back")), "Back offered in b's preview");
     ui.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(pb), text: "Back".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut ui, &|r| r.node.state.layout.nav_forward.last().is_some_and(|l| l.name == pb.0.to_string())), "Back from b's page: {:?} / {:?}", ui.node.state.layout.nav_back, ui.node.state.layout.nav_forward);
     ui.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(page), text: "Fwd".into() }, Duration::from_secs(5)).unwrap();
     assert!(until(&mut ui, &|r| r.node.state.layout.nav_back.last().is_some_and(|l| l.name == page.0.to_string()) && r.node.state.layout.nav_forward.is_empty()), "Fwd from a's page");
+    // b changed on disk: its preview follows the file
+    std::fs::write(&b, "# B\n\none\nthree\n").unwrap();
+    assert!(until(&mut ui, &|r| text_of(r, pb).contains("three")), "b's preview after the file changed: {}", text_of(&ui, pb));
+    // Source in b's preview: b.md, plumbed open; the preview follows its
+    // window's text from then on, unsaved edits and all
+    ui.propose(apex_server::Proposal::Exec { ctx: ExecCtx::Window(pb), text: "Source".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut ui, &|r| r.node.window_of(&b, WinKind::File).is_some()), "Source opened b.md");
+    let src = ui.node.window_of(&b, WinKind::File).unwrap();
+    let sb = ui.node.state.window(src).unwrap().body_buffer().unwrap();
+    let version = ui.node.state.buffer(sb).unwrap().version;
+    ui.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: sb, version, q0: 0, q1: 0, text: "four\n\n".into() }, Duration::from_secs(5)).unwrap();
+    assert!(until(&mut ui, &|r| text_of(r, pb).contains("four")), "b's preview of the edited window: {}", text_of(&ui, pb));
     // a link to c.go, which Preview does not convert: plumbed, so open
     ui.link.ask(apex_server::proto::Request::Navigate { window: page, url: format!("file://{c}") });
     assert!(until(&mut ui, &|r| r.node.window_of(&c, WinKind::File).is_some()), "c.go plumbed open");

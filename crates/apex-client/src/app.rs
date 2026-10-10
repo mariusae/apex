@@ -4486,10 +4486,12 @@ impl Acme {
             return;
         }
         if (url.starts_with("http://") || url.starts_with("https://")) && apex_server::plane::alias_loopback_url(&url) == url {
+            crate::shell::log_line(&format!("link {url}: the system's browser"));
             if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&url).spawn() {
-                eprintln!("web: open {url}: {e}");
+                self.notice(&format!("open {url}: {e}\n"));
             }
         } else {
+            crate::shell::log_line(&format!("link {url}: a window on it"));
             self.goto(Loc { session: None, name: url, pos: Pos::Keep });
         }
     }
@@ -4525,6 +4527,7 @@ impl Acme {
     fn ask_owner(&mut self, w: WindowId, url: String) {
         let Backend::Remote(link) = &mut self.backend else { return };
         let id = link.ask(apex_server::proto::Request::Navigate { window: w, url: url.clone() });
+        crate::shell::log_line(&format!("link {url} in window {w}: its owner asked"));
         self.page_asks.insert(id, (w, url));
     }
 
@@ -4543,6 +4546,7 @@ impl Acme {
         let answered = std::mem::take(&mut link.answered);
         for (id, answer) in answered {
             let Some((w, url)) = self.page_asks.remove(&id) else { continue };
+            crate::shell::log_line(&format!("link {url} in window {w}: the owner answered {answer:?}"));
             let to = match answer {
                 Some(Answer::Navigate(NavAnswer::Handled)) => continue,
                 Some(Answer::Navigate(NavAnswer::Redirect(u))) => u,
@@ -4556,7 +4560,7 @@ impl Acme {
                 self.after();
             } else if self.node.is_url_page(w) {
                 if let Err(e) = std::process::Command::new("/usr/bin/open").arg(&to).spawn() {
-                    eprintln!("web: open {to}: {e}");
+                    self.notice(&format!("open {to}: {e}\n"));
                 }
             } else {
                 self.follow_link(to);
