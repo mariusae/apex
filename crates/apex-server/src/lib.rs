@@ -614,6 +614,7 @@ impl Server {
             ServerEvent::Term(id, ev) => {
                 let Some(h) = self.terms.get_mut(&id) else { return props };
                 let was = h.window_place();
+                let mut status_changed = false;
                 match ev {
                     // the screen changed; the publish below carries it
                     TermEvent::Wakeup | TermEvent::Bell => {}
@@ -631,7 +632,9 @@ impl Server {
                     // window's handle pulses while it is, as it does for
                     // a tool at work behind one
                     TermEvent::Working(on, at) => {
-                        if (h.working, h.progress) != (on, at) {
+                        // (not once its programs speak OSC 7501: theirs is
+                        // the word on it)
+                        if !h.status_heard && (h.working, h.progress) != (on, at) {
                             (h.working, h.progress) = (on, at);
                             // the terminal carries the bar, the window its
                             // handle -- turning, or filled as far as it says
@@ -641,8 +644,26 @@ impl Server {
                             }
                         }
                     }
+                    // OSC 7501: what its programs say they are doing, the
+                    // window's marks from it
+                    TermEvent::Status(report) => {
+                        h.status_heard = true;
+                        if h.status.apply(report) {
+                            status_changed = true;
+                        }
+                    }
+                    TermEvent::Reset => {
+                        h.status_heard = false;
+                        if h.status.reset() {
+                            status_changed = true;
+                        }
+                    }
                     TermEvent::Exit(status) => {
                         h.exited = true;
+                        // what was at work or waiting ends with the program
+                        if h.status.settle() {
+                            status_changed = true;
+                        }
                         self.procs.push(MetaOp::ProcExit { pid: h.pid, status: if status == 0 { String::new() } else { status.to_string() }, ended: now_secs() });
                         // a program that said it was at work and then
                         // ended is at work no longer, whatever it said
@@ -663,6 +684,11 @@ impl Server {
                         let before = h.marks.clone();
                         match kind {
                             b'A' => {
+                                // the shell prompts again: what was at work
+                                // or waiting is over
+                                if h.status.settle() {
+                                    status_changed = true;
+                                }
                                 if h.marks.last().is_none_or(|m| m.prompt != line) {
                                     h.marks.push(apex_core::PromptMark { prompt: line, output: None, end: None, exit: None });
                                 }
@@ -700,6 +726,10 @@ impl Server {
                             h.cwd = Some(p);
                         }
                     }
+                }
+                if status_changed {
+                    let w = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id);
+                    status_marks(&mut self.node, log, id, h, w, &mut props);
                 }
                 let now = h.window_place();
                 if now != was {
@@ -1893,6 +1923,49 @@ pub fn column_of(leader: &Node, ctx: ExecCtx) -> Result<ColumnId, String> {
         ExecCtx::Window(w) => leader.column_of(w).map_err(|e| e.to_string()),
         ExecCtx::Column(c) => Ok(c),
         ExecCtx::Top => leader.state.layout.cols.first().map(|c| c.id).ok_or_else(|| "no column".to_string()),
+    }
+}
+
+/// A terminal's records changed (OSC 7501): carried in its shard, and
+/// the window marked from them -- its handle at work (filled as far as
+/// a working record says, the terminal's bar with it) while one is at
+/// work; a notification when the most pressing becomes one wanting the
+/// user (blocked, failed, or done and not yet seen), lowered when none
+/// does.
+fn status_marks(node: &mut Node, log: &mut Log, id: TermId, h: &mut term::TermHost, w: Option<WindowId>, props: &mut Vec<Proposal>) {
+    use apex_core::status::State;
+    let records = h.status.sorted();
+    let summary = apex_core::status::summary(&records);
+    let _ = node.append(log, Shard::Term(id), Op::Term(TermOp::Status { records }));
+    let working = records_working(&summary);
+    if working != h.status_marked {
+        h.status_marked = working;
+        let _ = node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: working.0, at: working.1 }));
+        if let Some(w) = w {
+            props.push(Proposal::Working { window: w, by: working.0.then_some(SERVER), at: working.1 });
+        }
+    }
+    let asks = summary.map(|(s, _)| s).filter(|s| matches!(s, State::Blocked | State::Error | State::Done));
+    if asks != h.status_asked {
+        let Some(w) = w else { return };
+        match asks {
+            Some(_) => {
+                log.notify(SERVER, w);
+                props.push(Proposal::Notice { window: w });
+            }
+            None => {
+                log.unnotify(w);
+            }
+        }
+        h.status_asked = asks;
+    }
+}
+
+/// At work, and how far along, by a terminal's records' summary.
+fn records_working(summary: &Option<(apex_core::status::State, Option<u8>)>) -> (bool, Option<u8>) {
+    match summary {
+        Some((apex_core::status::State::Working, at)) => (true, *at),
+        _ => (false, None),
     }
 }
 

@@ -36,6 +36,10 @@ pub enum TermEvent {
     /// OSC 133: a prompt mark, the history line it was made on, and the
     /// status an end gave.
     Mark(u8, u64, Option<i32>),
+    /// OSC 7501: a program's status report, read (a bad one is dropped).
+    Status(apex_core::status::Report),
+    /// RIS: a full reset.
+    Reset,
 }
 
 /// The size of a cell as a program is told (`TIOCGWINSZ` pixels, and
@@ -232,6 +236,15 @@ pub struct TermHost {
     pub progress: Option<u8>,
     /// The commands the shell has marked (OSC 133), the latest last.
     pub marks: Vec<apex_core::PromptMark>,
+    /// What its programs have said they are doing (OSC 7501); once one
+    /// has, OSC 9;4 is no longer heard (until a full reset), the spec's
+    /// way, as a report of that would undo one of this.
+    pub status: apex_core::status::Records,
+    pub status_heard: bool,
+    /// What the window was last given for them: its handle at work (how
+    /// far along), and the state that last asked for the user.
+    pub status_marked: (bool, Option<u8>),
+    pub status_asked: Option<apex_core::status::State>,
 }
 
 struct Published {
@@ -295,6 +308,11 @@ impl TermHost {
                 Report::Label(Label::Name(s)) => TermEvent::Name(s),
                 Report::Label(Label::Cwd(s)) => TermEvent::Cwd(s),
                 Report::Label(Label::Mark(kind, exit)) => TermEvent::Mark(kind, 0, exit),
+                Report::Label(Label::Status(body)) => match apex_core::status::parse(&body) {
+                    Some(r) => TermEvent::Status(r),
+                    None => return,
+                },
+                Report::Label(Label::Reset) => TermEvent::Reset,
                 Report::Mark(kind, line, exit) => TermEvent::Mark(kind, line, exit),
                 Report::Title(t) => TermEvent::Title(t),
                 Report::Clipboard(t) => TermEvent::Clipboard(t),
@@ -310,7 +328,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), pty, report).map_err(|e| e.to_string())?;
         let notifier = event_loop.channel();
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new() })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new(), status: Default::default(), status_heard: false, status_marked: (false, None), status_asked: None })
     }
 
     pub fn write(&self, data: &[u8]) {

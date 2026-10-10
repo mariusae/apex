@@ -587,6 +587,72 @@ fn newterm_with_a_command_runs_it_instead_of_a_shell() {
     assert!(!node.window_live(w));
 }
 
+/// A program saying what it is doing (OSC 7501): its records in the
+/// terminal's state, its window at work while it is (as far along as it
+/// says), a notification when it waits on the user or is done, and what
+/// was at work gone with the program, what was done not.
+#[test]
+fn a_program_in_a_terminal_says_what_it_is_doing() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    let m = |s: &str| {
+        use std::fmt::Write;
+        let b = s.as_bytes();
+        let mut out = String::new();
+        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        for c in b.chunks(3) {
+            let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+            for i in 0..=c.len() {
+                let _ = write!(out, "{}", A[(n >> (18 - 6 * i)) as usize & 63] as char);
+            }
+        }
+        out
+    };
+    let say = |pairs: &str| format!("printf '\\033]7501;{pairs}\\033\\\\'");
+    let script = format!(
+        "{}; sleep 1; {}; sleep 1; {}; sleep 1",
+        say(&format!("state=working:app=brew:progress=40:msg={}", m("Installing"))),
+        say(&format!("state=blocked:kind=auth:app=brew:msg={}", m("Password"))),
+        say("state=done:app=brew"),
+    );
+    node.exec(&mut log, ExecCtx::Top, &format!("Newterm sh -c \"{script}\"")).unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    server.close_orphan_terms(&mut log, &node);
+    let records = |n: &Node| n.state.terms.get(&t).map(|x| x.status.clone()).unwrap_or_default();
+    use apex_core::status::{Kind, State};
+    // at work, 40% along: the record, the handle, the bar
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| records(n).first().is_some_and(|r| r.state == State::Working)), "{:?}", records(&node));
+    let r = &records(&node)[0];
+    assert_eq!((r.app.as_deref(), r.progress, r.msg.as_deref()), (Some("brew"), Some(40), Some("Installing")));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_working(w) && n.window_progress(w) == Some(40)));
+    assert!(node.state.terms[&t].working && node.state.terms[&t].progress == Some(40));
+    // waiting on the user: no longer at work, and a notification
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| records(n).first().is_some_and(|r| r.state == State::Blocked && r.kind == Some(Kind::Auth))));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_notified(w) && !n.window_working(w)), "notified: {}", node.window_notified(w));
+    // done; the program ends, and done stays (working would not have)
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|x| x.exit.is_some())), "exit");
+    assert_eq!(records(&node).iter().map(|r| r.state).collect::<Vec<_>>(), vec![State::Done]);
+    assert!(node.window_notified(w), "done, not yet seen");
+}
+
+/// The Program Status Protocol's query is answered, as the protocol has
+/// it: the same body back.
+#[test]
+fn a_terminal_says_it_hears_program_status() {
+    let (mut log, mut node, _col, mut server, mut rx) = session();
+    // (in single quotes: the shell that runs it expands nothing first)
+    let script = r#"stty raw -echo; printf "\033]7501;?\033\\\\"; r=$(dd bs=1 count=9 2>/dev/null | od -An -c | tr -d " \n"); stty sane; echo "got:$r"; sleep 1"#;
+    node.exec(&mut log, ExecCtx::Top, &format!("Newterm sh -c '{script}'")).unwrap();
+    poll(&mut server, &mut log, &mut node);
+    let w = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
+    let Body::Term(t) = node.state.window(w).unwrap().body else { unreachable!() };
+    server.close_orphan_terms(&mut log, &node);
+    let rows = |n: &Node| n.state.terms.get(&t).map(|t| t.grid.iter().map(|r| r.iter().map(|c| c.ch).collect::<String>()).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| rows(n).contains("got:")), "grid:\n{}", rows(&node));
+    assert!(rows(&node).contains("got:033]7501;?033"), "grid:\n{}", rows(&node));
+}
+
 /// Look in a terminal: found in its rows by the host, which has them,
 /// forwards and back from a place, wrapping round.
 #[test]

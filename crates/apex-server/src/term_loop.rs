@@ -32,6 +32,10 @@ pub enum Label {
     /// OSC 133 (a semantic prompt): `A` a prompt begins, `B` the command
     /// line begins, `C` its output begins, `D` it ended, with its status.
     Mark(u8, Option<i32>),
+    /// OSC 7501 (the Program Status Protocol): a report's body, or `?`.
+    Status(Vec<u8>),
+    /// RIS (`ESC c`), a full reset: what the programs said goes with it.
+    Reset,
 }
 
 /// Cut labels out of `new` (with what an earlier call held back in
@@ -53,6 +57,13 @@ pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<(usize, Label)>) {
         if i + 1 == data.len() {
             carry.push(0x1b); // a lone ESC: the rest is still to come
             break;
+        }
+        if data[i + 1] == b'c' {
+            // a full reset: noted, and the terminal resets as ever
+            labels.push((out.len(), Label::Reset));
+            out.extend_from_slice(&data[i..i + 2]);
+            i += 2;
+            continue;
         }
         if data[i + 1] != b']' {
             out.push(data[i]);
@@ -91,6 +102,8 @@ pub fn scan(carry: &mut Vec<u8>, new: &[u8]) -> (Vec<u8>, Vec<(usize, Label)>) {
                     labels.push((out.len(), Label::Name(lossy(t))));
                 } else if let Some(t) = body.strip_prefix(b"7;") {
                     labels.push((out.len(), Label::Cwd(lossy(t))));
+                } else if let Some(t) = body.strip_prefix(b"7501;") {
+                    labels.push((out.len(), Label::Status(t.to_vec())));
                 } else if let Some(t) = body.strip_prefix(b"133;") {
                     let mut parts = t.split(|&c| c == b';');
                     let kind = parts.next().and_then(|k| k.first().copied()).unwrap_or(0);
@@ -326,8 +339,13 @@ impl EventLoop {
             // cursor's there and then
             let mut events = Vec::new();
             let mut fed = 0;
+            // what the program asked answered, in the order it asked: the
+            // Program Status query's before the terminal's own (a DA asked
+            // after it says, by coming first, that there is none)
+            let mut answers: Vec<u8> = Vec::new();
             for (at, l) in labels {
                 match l {
+                    Label::Status(body) if apex_core::status::is_query(&body) => answers.extend_from_slice(b"\x1b]7501;?\x1b\\"),
                     Label::Mark(kind, exit) => {
                         let line = match self.terminal.lock() {
                             Ok(mut t) => {
@@ -351,7 +369,6 @@ impl EventLoop {
                 }
                 Err(_) => return false,
             }
-            let mut answers: Vec<u8> = Vec::new();
             for e in events {
                 match e {
                     VtEvent::WritePty(b) => answers.extend_from_slice(&b),
@@ -407,6 +424,15 @@ mod tests {
         let (out, labels) = run(&[b"\x1b]2;title\x07\x1b[31mred\x1b[0m\x1b"]);
         assert_eq!(out, b"\x1b]2;title\x07\x1b[31mred\x1b[0m\x1b");
         assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn program_status_leaves_the_stream_and_a_reset_is_noted() {
+        // OSC 7501 is the terminal's to read, the query too; RIS goes on to
+        // the terminal, and is noted
+        let (out, labels) = run(&[b"a\x1b]7501;state=working\x1b\\b\x1b]750", b"1;?\x07c\x1bcd"]);
+        assert_eq!(out, b"abc\x1bcd");
+        assert_eq!(labels, vec![Label::Status(b"state=working".to_vec()), Label::Status(b"?".to_vec()), Label::Reset]);
     }
 
     #[test]

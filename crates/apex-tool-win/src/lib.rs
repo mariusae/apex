@@ -522,8 +522,11 @@ impl Win {
                             self.cwd = Some(p);
                         }
                     }
-                    // win's text window has no prompts to mark
-                    Label::Mark(..) => {}
+                    // win's text window has no prompts to mark, and its
+                    // programs' status (OSC 7501) is not yet heard here:
+                    // taken out of the text, at least; a reset is the
+                    // terminal's, of which win has none
+                    Label::Mark(..) | Label::Status(_) | Label::Reset => {}
                 }
             }
             let now = self.window_place();
