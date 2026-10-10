@@ -335,6 +335,9 @@ pub enum TermOp {
     /// on the screen is the program's to redraw, as any input may have
     /// it do.
     Screen { alt: bool },
+    /// What the programs in it say they are doing (OSC 7501, the Program
+    /// Status Protocol): every record, as they now stand.
+    Status { records: Vec<crate::status::Record> },
 }
 
 /// A command as the shell marked it (OSC 133): the history line its

@@ -368,6 +368,9 @@ pub struct Term {
     /// A full-screen program has the alternate screen (`TermOp::Screen`).
     #[serde(default)]
     pub alt: bool,
+    /// What its programs say they are doing (OSC 7501, `TermOp::Status`).
+    #[serde(default)]
+    pub status: Vec<crate::status::Record>,
 }
 
 // ---- meta -------------------------------------------------------------------
@@ -748,6 +751,7 @@ impl State {
                         progress: None,
                         marks: Vec::new(),
                         alt: false,
+                        status: Vec::new(),
                     },
                 );
             }
@@ -786,6 +790,7 @@ impl State {
                         t.progress = *at;
                     }
                     TermOp::Marks { marks } => t.marks = marks.clone(),
+                    TermOp::Status { records } => t.status = records.clone(),
                     TermOp::Screen { alt } => t.alt = *alt,
                     TermOp::Create { .. } => unreachable!(),
                 }
