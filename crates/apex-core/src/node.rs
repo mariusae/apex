@@ -1865,7 +1865,8 @@ impl Node {
 
     /// The window a place names: by path, or by id as digits. A path
     /// several windows are at is the file's (or directory's) own window,
-    /// not its errors window or preview.
+    /// not its errors window or preview; a path only a preview is at
+    /// names no window (the file is to be opened).
     pub fn window_named(&self, name: &str) -> Option<WindowId> {
         if let Ok(n) = name.parse::<u64>() {
             let w = WindowId(n);
@@ -1874,7 +1875,11 @@ impl Node {
             }
         }
         let at: Vec<WindowId> = self.state.windows.keys().copied().filter(|w| self.window_path(*w) == name).collect();
-        at.iter().copied().find(|w| !matches!(self.window_kind(*w), WinKind::Errors | WinKind::Page)).or(at.first().copied())
+        // a path is its file's: a page with that name (the file's preview)
+        // is no window on it, and a page is found by its address, or its
+        // window (`page_loc`)
+        let path = name.starts_with('/');
+        at.iter().copied().find(|w| !matches!(self.window_kind(*w), WinKind::Errors | WinKind::Page)).or(at.iter().copied().find(|w| !path || self.window_kind(*w) != WinKind::Page))
     }
 
     pub fn take_gotos(&mut self) -> Vec<Loc> {
