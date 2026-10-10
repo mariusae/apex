@@ -1115,6 +1115,8 @@ fn preview_is_a_live_pipe_through_a_converter() {
     let page = find(&c, WinKind::Page).expect("a preview window");
     assert_eq!(text_of(&c, page), "<p>ONE</p>\n");
     assert!(matches!(c.node.state.window(page).unwrap().body, Body::Page(apex_core::Source::Buffer(_))));
+    // the client's to fetch for (what it fetches on the web, not the host)
+    assert_eq!(c.node.state.window(page).unwrap().via, apex_core::Via::Client);
     assert!(c.node.window_live(page), "the page is live while the tool runs");
     // the page follows the file's caret, by its scroll in the log (the
     // tool proposes it): the caret is on line 1

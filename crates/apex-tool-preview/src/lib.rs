@@ -203,7 +203,12 @@ impl Tool {
         let col = col.map(|c| c.id).ok_or("no column")?;
         let page = match self.preview_window() {
             Some(w) => w,
-            None => self.propose(Proposal::open_html(col, &self.file, "", None), TIMEOUT)?.ok_or("no preview window")?,
+            // the client's: what the page fetches on the web, the client
+            // fetches; the file's directory, and file:// links, the host's
+            None => {
+                let page = NewPage { content: NewContent::Html { name: self.file.clone(), text: String::new() }, via: Via::Client, base: String::new(), label: None };
+                self.propose(Proposal::OpenPage { col, page }, TIMEOUT)?.ok_or("no preview window")?
+            }
         };
         let page_buf = self.remote.node.state.window(page).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
         if debug() {

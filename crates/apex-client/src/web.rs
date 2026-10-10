@@ -1089,9 +1089,9 @@ impl Webs {
     /// Show a buffer's HTML (`version`) as window `w`'s page, relative
     /// links resolving in `dir` on the host: the page is patched in place
     /// when the version moves, so scroll and state in it survive.
-    pub fn place_html(&mut self, w: WindowId, html: &str, version: u64, dir: &str, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
+    pub fn place_html(&mut self, w: WindowId, html: &str, version: u64, dir: &str, client: bool, bounds: Bounds<Pixels>, window: &Window, visible: bool) {
         if !self.hosts.contains_key(&w) {
-            self.build(w, Page::Html { html, version, dir }, bounds, window, visible);
+            self.build(w, Page::Html { html, version, dir, client }, bounds, window, visible);
             return;
         }
         let rect = Self::rect(bounds);
@@ -1109,8 +1109,9 @@ impl Webs {
         let (tx1, tx2, tx3, tx4) = (self.tx.clone(), self.tx.clone(), self.tx.clone(), self.tx.clone());
         let (wake1, wake2, wake3, wake4) = (self.wake.clone(), self.wake.clone(), self.wake.clone(), self.wake.clone());
         let from_buffer = matches!(page, Page::Html { .. });
-        // fetched by this machine: not through the host's proxy
-        let own_network = matches!(page, Page::Url { client: true, .. });
+        // fetched by this machine: not through the host's proxy (a page
+        // from a buffer still has the host's files by apexfile://)
+        let own_network = matches!(page, Page::Url { client: true, .. } | Page::Html { client: true, .. });
         let mut b = wry::WebViewBuilder::new()
             .with_bounds(rect)
             .with_on_page_load_handler(move |ev, url| {
@@ -1839,7 +1840,10 @@ enum Page<'a> {
     /// At an address; fetched by this machine itself (`Via::Client`), or
     /// through the session's host, the proxy (`Via::Host`).
     Url { url: &'a str, client: bool },
-    Html { html: &'a str, version: u64, dir: &'a str },
+    /// Made from a buffer: its links and the host's files through apex's
+    /// scheme either way; the rest of what it fetches by this machine
+    /// (`Via::Client`, a preview's), or through the host.
+    Html { html: &'a str, version: u64, dir: &'a str, client: bool },
 }
 
 impl WebHost {

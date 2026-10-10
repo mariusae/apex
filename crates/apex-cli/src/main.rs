@@ -556,7 +556,9 @@ as a page beside it, live, and exits when no preview has been open for
 a minute. A link in a preview to a file Preview converts opens that
 file's preview alone (at the link's line), made from the file on disk
 until a window is open on it; to any other file, it plumbs it. Source
-in a preview plumbs the file it shows. Back and Fwd in a preview (cmd-[
+in a preview plumbs the file it shows. What a preview fetches on the web
+(http, https, localhost too) the client fetches itself; its file's
+directory and file:// links are the host's. Back and Fwd in a preview (cmd-[
 and cmd-]) walk the session's navigation stack, a link followed a jump
 from the page it was in to the next. apex tool preview FILE does that once, for FILE (apex preview
 FILE).

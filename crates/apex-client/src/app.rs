@@ -4304,7 +4304,7 @@ impl Acme {
                         None => std::path::Path::new(&name).parent().map(|d| d.display().to_string()).unwrap_or_default(),
                     }
                 };
-                self.webs.place_html(w, &text, version, &dir, bounds, window, visible);
+                self.webs.place_html(w, &text, version, &dir, win.via == apex_core::Via::Client, bounds, window, visible);
                 // scrolled where the log says (a preview following its
                 // file's caret: the preview tool proposes it)
                 if let Some(s) = win.scroll {
