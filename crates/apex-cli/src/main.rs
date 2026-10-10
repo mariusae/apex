@@ -580,7 +580,9 @@ in (uninstall takes them out), each one apex tool agent hook AGENT,
 which appends the event to ~/.apex/agent/SESSION.jsonl. While an agent
 runs, its terminal's tools menu has Transcript, Preview and Changes;
 while it asks something, Allow Deny Ask; when it wants you, its
-terminal raises a notification. -a adds the overview window, DIR/-agent;
+terminal raises a notification. An agent that says what it is doing
+itself (OSC 7501, the Program Status Protocol: Claude Code from 2.1.295
+does) has its terminal marked by apex from that, and none by the tool. -a adds the overview window, DIR/-agent;
 -all widens it to every agent on the machine. apex tool agent ls, wait
 ID and events [-all] are the logs as text, for scripts." },
     Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\

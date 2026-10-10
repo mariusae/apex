@@ -600,3 +600,65 @@ fn with_no_pane_a_ready_agent_raises_a_notification_at_its_own_window() {
     wait_flags(&mut c, |f| f.is_empty());
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// An agent that says what it is doing itself (OSC 7501, as Claude Code
+/// does) has its terminal marked by apex from that: the tool leaves the
+/// window be, raising no notification of its own as a turn ends, and
+/// putting no mark of its own on its handle.
+#[test]
+fn an_agent_saying_what_it_is_doing_is_left_to_apex() {
+    let sock = daemon();
+    let tmp = std::env::temp_dir().join(format!("apex-tool-agent-osc7501-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let logs = tmp.join("agent");
+    let proj = tmp.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let sid = c.node.state.meta.id.clone();
+    // the agent's terminal, its program saying it is at work, then idle
+    let say = r#"sh -c 'printf "\033]7501;state=working:app=claude\033\\\\"; sleep 30'"#;
+    c.propose(apex_server::Proposal::Exec { ctx: apex_core::ExecCtx::Top, text: format!("Newterm {say}") }, Duration::from_secs(5)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let term = |c: &Remote| c.node.state.windows.values().find(|w| matches!(w.body, apex_core::Body::Term(_))).map(|w| w.id);
+    let status = |c: &Remote, w: WindowId| match c.node.state.window(w).map(|x| x.body) {
+        Ok(apex_core::Body::Term(t)) => c.node.state.terms.get(&t).map(|x| x.status.len()).unwrap_or(0),
+        _ => 0,
+    };
+    while Instant::now() < deadline && !term(&c).is_some_and(|w| status(&c, w) > 0) {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    let tw = term(&c).expect("a terminal");
+    assert!(status(&c, tw) > 0, "the program said it");
+
+    let ev = |event: &str| Event {
+        ms: event::now_ms(),
+        agent: "claude".into(),
+        event: event.into(),
+        session: "0b1c1425-cccc".into(),
+        cwd: proj.display().to_string(),
+        apex: Some(sid.clone()),
+        win: Some(tw.0),
+        ..Event::default()
+    };
+    event::append(&logs, &Event { kind: Some("startup".into()), ..ev("SessionStart") }).unwrap();
+    event::append(&logs, &Event { text: Some("what is in hosts?".into()), ..ev("UserPromptSubmit") }).unwrap();
+    let t = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let pane = Pane::start(t, Opts { claude_home: tmp.join("claude-home"), codex_home: tmp.join("codex-home"), ..Opts::new(tmp.clone(), logs.clone()) }).unwrap();
+    std::thread::spawn(move || {
+        let mut pane = pane;
+        let _ = pane.serve();
+    });
+    // the hooks say the turn ended: the tool, which would have raised a
+    // notification, raises none -- the program's word is apex's to show
+    event::append(&logs, &Event { text: Some("It names localhost.".into()), ..ev("Stop") }).unwrap();
+    let until = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < until {
+        let _ = c.step(Duration::from_millis(20));
+    }
+    assert!(!flags(&c).iter().any(|(by, _)| by == "agent"), "{:?}", flags(&c));
+    // and its window's handle is apex's mark (the program at work), not
+    // the tool's
+    let by = c.node.state.window(tw).unwrap().working;
+    assert_eq!(by, Some(apex_core::SERVER), "the handle's mark is the program's word, through apex");
+}

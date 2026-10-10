@@ -478,7 +478,9 @@ impl Pane {
     /// The notifications are this tool's, so it dying leaves none
     /// waiting. One the user has taken, or whose window they used, is
     /// not raised again until the agent has been back to work, which is
-    /// what `dismissed` remembers.
+    /// what `dismissed` remembers. An agent that says what it is doing
+    /// itself (OSC 7501: Claude Code does) has its window marked by apex
+    /// from that, and none of this.
     fn sync_flags(&mut self) {
         if self.session.is_empty() {
             return;
@@ -487,6 +489,9 @@ impl Pane {
         let want: Vec<(String, WindowId)> = current_in_windows(&self.agents, &self.session, &windows, self.w)
             .into_iter()
             .filter(|(_, a)| matches!(a.state, State::Idle | State::Asking | State::Failed))
+            // an agent saying what it is doing itself (OSC 7501): apex
+            // marks its window from that
+            .filter(|(w, _)| self.t.term_status(*w).is_empty())
             .map(|(w, a)| (a.session.clone(), w))
             .collect();
         // back at work, gone, or moved: the notification goes
@@ -516,7 +521,8 @@ impl Pane {
     /// handle turning -- and, when its plan says how far along it is
     /// (steps done of the plan's), the handle's circle filled that far;
     /// back to idle, or asking, or gone, the mark goes. The mark is this
-    /// tool's, so it dying leaves none behind.
+    /// tool's, so it dying leaves none behind. (Not for an agent saying
+    /// it itself, OSC 7501, whose window apex marks.)
     fn sync_busy(&mut self) {
         if self.session.is_empty() {
             return;
@@ -525,12 +531,16 @@ impl Pane {
         let want: HashMap<WindowId, Option<u8>> = current_in_windows(&self.agents, &self.session, &windows, self.w)
             .into_iter()
             .filter(|(_, a)| a.state == State::Working)
+            .filter(|(w, _)| self.t.term_status(*w).is_empty())
             .map(|(w, a)| (w, a.plan.map(|(done, of)| (done * 100 / of.max(1)).min(100) as u8)))
             .collect();
         let gone: Vec<WindowId> = self.busy.keys().copied().filter(|w| !want.contains_key(w)).collect();
         for w in gone {
             self.busy.remove(&w);
-            let _ = self.t.set_working(w, false);
+            // (an agent now saying it itself: its mark apex's, left be)
+            if self.t.term_status(w).is_empty() {
+                let _ = self.t.set_working(w, false);
+            }
         }
         for (w, at) in want {
             if self.busy.get(&w) == Some(&at) {

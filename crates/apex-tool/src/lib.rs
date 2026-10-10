@@ -681,6 +681,19 @@ impl Tool {
         self.remote.node.state.window(w).ok().and_then(|x| x.owner)
     }
 
+    /// What the programs in window `w`'s terminal say they are doing
+    /// (OSC 7501, `apex_core::status`): its records, by id; none for a
+    /// window not a terminal's, or a terminal whose programs say nothing.
+    /// A terminal that has them is marked by apex from them (its handle,
+    /// its notification): a tool need not mark it too.
+    pub fn term_status(&self, w: WindowId) -> Vec<apex_core::status::Record> {
+        let node = &self.remote.node;
+        match node.state.window(w).map(|x| x.body) {
+            Ok(apex_core::Body::Term(t)) => node.state.terms.get(&t).map(|x| x.status.clone()).unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
     /// A page at an address (ARCHITECTURE.md §5), fetched through the
     /// session's host: in window `near`'s column, else the last. The tool
     /// owns it: its links come to it (`handle_pages`), and its tag's

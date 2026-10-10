@@ -48,7 +48,7 @@ pub struct Live {
 /// Where a Look in a window is done when it has no buffer to look in.
 enum Elsewhere {
     Page,
-    Term(TermId),
+    Term,
 }
 
 impl Acme {
@@ -81,7 +81,7 @@ impl Acme {
                 false
             }
             // what it finds comes back (`term_found`), and says then
-            Some(Elsewhere::Term(_)) => {
+            Some(Elsewhere::Term) => {
                 if !arg.is_empty() {
                     self.term_look(w, &arg, false, term_at);
                 }
@@ -97,7 +97,7 @@ impl Acme {
     /// A window with no buffer to look in, and what is looked in instead.
     fn elsewhere(&self, w: WindowId) -> Option<Elsewhere> {
         match self.node.state.window(w).ok()?.body {
-            Body::Term(t) => Some(Elsewhere::Term(t)),
+            Body::Term(_) => Some(Elsewhere::Term),
             _ if self.node.state.window(w).ok()?.is_page() => Some(Elsewhere::Page),
             _ => None,
         }
@@ -231,7 +231,7 @@ impl Acme {
                 cx.notify();
                 return;
             }
-            Some(Elsewhere::Term(_)) => {
+            Some(Elsewhere::Term) => {
                 let mut arg = self.node.look_arg(w).map(|a| a.arg).unwrap_or_default();
                 if arg.is_empty() {
                     let sel = self.term_sel.filter(|(sw, _, _)| *sw == w).map(|(_, a, b)| if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) });
