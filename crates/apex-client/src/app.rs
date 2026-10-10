@@ -5090,7 +5090,7 @@ impl Acme {
         }
         let ctx = match self.window_at_pointer(window) {
             Some(w) => ExecCtx::Window(w),
-            None if text == "New" || text.starts_with("New ") || text == "Back" || text == "Fwd" => ExecCtx::Top,
+            None if text == "New" || text.starts_with("New ") || ["Back", "Fwd", "Win", "Newterm"].contains(&text) => ExecCtx::Top,
             None => return,
         };
         self.execute(ctx, text, cx);

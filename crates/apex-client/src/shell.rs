@@ -20,7 +20,7 @@ use apex_server::remote::{list_sessions, new_session};
 
 use crate::app::Acme;
 
-actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontLucida, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
+actions!(apex, [Quit, HideApp, About, InstallCli, NewFile, NewWin, NewTerm, CloseWindow, NewTab, CloseTab, PreviousSession, Profile, Tab1, Tab2, Tab3, Tab4, Tab5, Tab6, Tab7, Tab8, Tab9, PrevTab, NextTab, Goto, GotoAll, NextNotification, Find, FindNext, FindPrevious, NavBack, NavFwd, Reconnect, ToggleFullScreen, Put, Get, Del, Undo, Redo, Cut, Copy, Paste, SelectAll, ThemeLight, ThemeDark, ThemeSystem, ToggleContrast, ToggleBlink, ToggleSmoothCaret, ToggleLayoutAnimations, ToggleSidebar, FontSystem, FontClassic, FontGo, FontMona, FontNova, FontHco, FontInter, FontGeist, FontStyrene, FontLucida, FontBigger, FontSmaller, FontActual, PaletteAlabaster, PaletteXcode, PaletteClassic, PaletteGitHub, PaletteNova, PaletteRsms, StashWindow, ShowOverview, RestartServer, Commands, OpenPath]);
 
 /// View ▸ Theme ▸ a palette chosen: kept, and everything in its colours
 /// again, as a change of appearance does.
@@ -146,6 +146,8 @@ pub fn menus() -> Vec<Menu> {
             disabled: false,
             items: vec![
                 MenuItem::action("New", NewFile),
+                MenuItem::action("New Win", NewWin),
+                MenuItem::action("New Terminal", NewTerm),
                 MenuItem::action("Open…", OpenPath),
                 MenuItem::action("New Tab", NewTab),
                 MenuItem::action("Close Tab", CloseTab),
@@ -261,6 +263,10 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-h", HideApp, None),
         // acme's commands on the text under the pointer, the Mac way
         KeyBinding::new("cmd-n", NewFile, None),
+        // acme's win, and a terminal: in the directory of the window
+        // under the pointer
+        KeyBinding::new("cmd-shift-n", NewWin, None),
+        KeyBinding::new("cmd-alt-n", NewTerm, None),
         KeyBinding::new("cmd-o", OpenPath, None),
         KeyBinding::new("cmd-s", Put, None),
         KeyBinding::new("cmd-t", NewTab, None),

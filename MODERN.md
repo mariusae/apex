@@ -278,7 +278,7 @@ windows put away out of the tiling, which is the core's
   scroll, until it lands.
 - **Empty columns** say what to do there, faintly, in the middle of
   them (where there is room): ⌘P to go to a file, ⌘N for a new window,
-  B2 on Newterm for a shell, ⌘⇧P for every command. Drawing only: the
+  ⌥⌘N for a terminal (Newterm), ⇧⌘N for win, ⌘⇧P for every command. Drawing only: the
   column's ground takes the buttons as ever.
 - **Errors as toasts** (`toasts.rs`): a command's errors still go to its
   errors window, but that window is made in the stash (as every

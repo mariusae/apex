@@ -145,6 +145,8 @@ impl Render for Acme {
             .on_action(cx.listener(|this, _: &shell::Get, window, cx| this.menu_command("Get", window, cx)))
             .on_action(cx.listener(|this, _: &shell::Del, window, cx| this.menu_command("Del", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewFile, window, cx| this.menu_command("New", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::NewWin, window, cx| this.menu_command("Win", window, cx)))
+            .on_action(cx.listener(|this, _: &shell::NewTerm, window, cx| this.menu_command("Newterm", window, cx)))
             .on_action(cx.listener(|this, _: &shell::NewTab, _, cx| this.open_selector(cx)))
             .on_action(cx.listener(|this, _: &shell::CloseTab, window, cx| this.close_current_session(window, cx)))
             .on_action(cx.listener(|this, _: &shell::PreviousSession, window, cx| this.previous_session(window, cx)))
@@ -1157,7 +1159,8 @@ fn empty_column(t: &theme::Theme, bunny: bool) -> gpui::AnyElement {
                 .text_size(px(12.5))
                 .child(row("⌘P", "go to a file"))
                 .child(row("⌘N", "a new window"))
-                .child(row("B2 Newterm", "a shell"))
+                .child(row("⌥⌘N", "a terminal"))
+                .child(row("⇧⌘N", "win, acme's shell"))
                 .child(row("⌘⇧P", "every command")),
         )
         .into_any_element()
