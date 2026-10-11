@@ -2,7 +2,7 @@
 
 Three bundled programs show HTML in apex's Page windows. None of them gets special treatment. Each attaches to a session as a tool, reads state from its own replica and changes it through [proposals](proposals.md), just as a third-party tool built on the [apex-tool SDK](tool-sdk.md) would:
 
-- **`apex tool preview`** pipes a file's buffer through a converter and writes the HTML into a page beside the file. It re-renders as the buffer changes and scrolls the page to follow the file's caret. The converter for an extension is named by a `Preview.EXT` setting; Markdown uses `apex md` by default.
+- **`apex tool preview`** pipes a file's buffer through a converter and writes the HTML into a page beside the file. It re-renders as the buffer changes and scrolls the page to follow the file's caret. It also owns the page's links, so a link to another convertible file opens that file's preview, and it answers `Back`, `Fwd` and `Source` in its pages. The converter for an extension is named by a `Preview.EXT` setting; Markdown uses `apex md` by default.
 - **`apex tool web`** answers the `Web` and `Newweb` verbs by opening pages at URLs. It owns those pages and keeps each one's Back/Fwd history itself, because the log only records where a page currently is.
 - **apex-diff** is a library. It lays out a unified diff side by side, and every line number links into the file. It is reached through `apex diff`, the SDK's `Tool::diff` and the JSON bridge's `diff` command.
 
@@ -31,11 +31,11 @@ flowchart LR
 | `Web` | — | — | yes | `web` |
 | `Newweb` | — | — | yes | `web` |
 
-([crates/apex-server/src/lib.rs:1298-1322](crates/apex-server/src/lib.rs#L1298-L1322), [lib.rs:101-104](crates/apex-server/src/lib.rs#L101-L104)). "Unlisted" means `Web` and `Newweb` work anywhere they are B2'd, but they do not clutter every window's B4 tools menu.
+([crates/apex-server/src/lib.rs:1368-1392](crates/apex-server/src/lib.rs#L1368-L1392), [lib.rs:104](crates/apex-server/src/lib.rs#L104)). "Unlisted" means `Web` and `Newweb` work anywhere they are B2'd, but they do not clutter every window's B4 tools menu.
 
-When the plumb walk reaches a `RuleAction::Tool` rule, the daemon looks for a connection whose attachment has that tool's name. If there is none and the rule has a `start`, it calls `hold`. The plumb is queued under `(session, tool)`, and on the first queued item the daemon runs `Server::start_tool` and arms a timer of `START_WAIT` (10 s). `start_tool` replaces a leading `apex ` with the daemon's own `apex` executable. It then runs the command as a session process named after the tool, in the session's directory, with errors going to the `+Errors` window ([daemon.rs:1467-1486](crates/apex-server/src/daemon.rs#L1467-L1486), [daemon.rs:1393-1408](crates/apex-server/src/daemon.rs#L1393-L1408), [lib.rs:1181-1191](crates/apex-server/src/lib.rs#L1181-L1191)).
+When the plumb walk reaches a `RuleAction::Tool` rule, the daemon looks for a connection whose attachment has that tool's name. If there is none and the rule has a `start`, it calls `hold` ([daemon.rs:1480](crates/apex-server/src/daemon.rs#L1480)). The plumb is queued under `(session, tool)`, and on the first queued item the daemon runs `Server::start_tool` and arms a timer of `START_WAIT` (10 s). `start_tool` replaces a leading `apex ` with the daemon's own `apex` executable. It then runs the command as a session process named after the tool, in the session's directory, with errors going to the `+Errors` window ([daemon.rs:1390-1408](crates/apex-server/src/daemon.rs#L1390-L1408), [lib.rs:1251-1261](crates/apex-server/src/lib.rs#L1251-L1261)).
 
-When an attachment with that name sends its Hello, the daemon replays everything held for it, in order ([daemon.rs:626-634](crates/apex-server/src/daemon.rs#L626-L634)). If the timer fires first, `start_failed` lets each held plumb walk on to the next rule ("tool … did not start"). Held I/O streams get a 503 instead ([daemon.rs:1410-1425](crates/apex-server/src/daemon.rs#L1410-L1425)). Requests for `tool://` pages use the same mechanism through `io_relay` ([daemon.rs:1254-1267](crates/apex-server/src/daemon.rs#L1254-L1267)).
+When an attachment with that name sends its Hello, the daemon replays everything held for it, in order ([daemon.rs:626-634](crates/apex-server/src/daemon.rs#L626-L634)). If the timer fires first, `start_failed` lets each held plumb walk on to the next rule ("tool … did not start"). Held I/O streams get a 503 instead ([daemon.rs:1410-1425](crates/apex-server/src/daemon.rs#L1410-L1425)). Requests for `tool://` pages use the same mechanism through `io_relay` ([daemon.rs:1254-1262](crates/apex-server/src/daemon.rs#L1254-L1262)).
 
 Both tools exit on their own using the same idle-timer pattern. The resident Preview counts the previews it has open in an `AtomicUsize`, and Web watches its `pages` map. When the count reaches zero, `idle_since` is set. Once it is older than `IDLE` (60 s), the loop returns. Any activity clears the timer. The rule is still in the session's table, so the next use starts the tool again.
 
@@ -50,21 +50,21 @@ stateDiagram-v2
   Idle --> NotRunning: "IDLE (60 s) passes, tool exits"
 ```
 
-Sources: [crates/apex-server/src/lib.rs:1298-1322](crates/apex-server/src/lib.rs#L1298-L1322), [crates/apex-server/src/lib.rs:1181-1191](crates/apex-server/src/lib.rs#L1181-L1191), [crates/apex-server/src/daemon.rs:169](crates/apex-server/src/daemon.rs#L169), [crates/apex-server/src/daemon.rs:1393-1425](crates/apex-server/src/daemon.rs#L1393-L1425), [crates/apex-tool-preview/src/lib.rs:336-348](crates/apex-tool-preview/src/lib.rs#L336-L348), [crates/apex-tool-web/src/lib.rs:116-146](crates/apex-tool-web/src/lib.rs#L116-L146)
+Sources: [crates/apex-server/src/lib.rs:104](crates/apex-server/src/lib.rs#L104), [crates/apex-server/src/lib.rs:1251-1261](crates/apex-server/src/lib.rs#L1251-L1261), [crates/apex-server/src/lib.rs:1368-1392](crates/apex-server/src/lib.rs#L1368-L1392), [crates/apex-server/src/daemon.rs:169](crates/apex-server/src/daemon.rs#L169), [crates/apex-server/src/daemon.rs:1390-1425](crates/apex-server/src/daemon.rs#L1390-L1425), [crates/apex-tool-preview/src/lib.rs:519-563](crates/apex-tool-preview/src/lib.rs#L519-L563), [crates/apex-tool-web/src/lib.rs:94-146](crates/apex-tool-web/src/lib.rs#L94-L146)
 
 ## Preview
 
-### Two entry points
+### Entry points
 
-`apex tool preview` has two modes, chosen in `tool_cmd` ([crates/apex-cli/src/main.rs:1066-1073](crates/apex-cli/src/main.rs#L1066-L1073)):
+`apex tool preview` has two modes, chosen in `tool_cmd` ([crates/apex-cli/src/main.rs:1107-1114](crates/apex-cli/src/main.rs#L1107-L1114)):
 
 | Command | Function | What it does |
 |---|---|---|
 | `apex tool preview` | `run_resident` | The resident tool the default rule starts. It attaches as `preview`, answers `Preview` plumbs and runs one file preview per use, each on its own thread. |
-| `apex tool preview FILE` | `run` | Previews one file. It attaches as `preview-file`, announces itself as `preview`, and lives as long as both windows do. |
-| `apex preview FILE` | `preview_cmd` | Makes the path absolute and proposes `Exec` of `apex tool preview FILE` in the top row, so the preview runs on the host as a session command ([main.rs:1080-1089](crates/apex-cli/src/main.rs#L1080-L1089)). |
+| `apex tool preview FILE` | `run` (which calls `run_at`) | Previews one file. It attaches as `preview-file`, announces itself as `preview`, and ends with the window it was made from. |
+| `apex preview FILE` | `preview_cmd` | Makes the path absolute and proposes `Exec` of `apex tool preview FILE` in the top row, so the preview runs on the host as a session command ([main.rs:1123-1130](crates/apex-cli/src/main.rs#L1123-L1130)). |
 
-The resident tool gets a `Plumb` event and finds the path of the window it came from. It declines the plumb (`answer(&p, false)`, so the next rule is tried) when there is no path or `converters::converter` finds nothing for the extension. Otherwise it accepts the plumb and spawns a thread that calls `run(socket, session, file)`. The single-file run uses its own attachment name for a reason. The Preview rules route to the attachment named `preview`, and a plumb has to reach that one alone ([lib.rs:44-46](crates/apex-tool-preview/src/lib.rs#L44-L46), [lib.rs:304-345](crates/apex-tool-preview/src/lib.rs#L304-L345)).
+The resident tool gets a `Plumb` event and finds the path of the window it came from. It declines the plumb (`answer(&p, false)`, so the next rule is tried) when there is no path or `converters::converter` finds nothing for the extension. Otherwise it accepts the plumb and spawns a thread that calls `run(socket, session, file)`. The single-file run uses its own attachment name for a reason. The Preview rules route to the attachment named `preview`, and a plumb has to reach that one alone ([lib.rs:63-66](crates/apex-tool-preview/src/lib.rs#L63-L66), [lib.rs:519-560](crates/apex-tool-preview/src/lib.rs#L519-L560)). The CLI and the resident thread both treat the error `"shown"` as success.
 
 ### Converters and `Preview.EXT`
 
@@ -85,33 +85,40 @@ pub const DEFAULTS: &[(&str, &str)] = &[("md", "apex md"), ("markdown", "apex md
 
 ### Lasting rules for extra extensions
 
-The default rule only matches `PREVIEWED`. Before each event, the resident tool calls `lasting_rules` to cover any other extension a setting adds. For each wanted extension that is not in `DEFAULTS`, it checks whether a Preview rule already exists. It recovers each existing rule's extension from its `file` pattern with `ext_of_pattern`, which only understands the exact form `pattern_of_ext` writes, `(?i)\.EXT$`.
+The default rule only matches `PREVIEWED`. On each pass of its loop, the resident tool calls `lasting_rules` to cover any other extension a setting adds. For each wanted extension that is not in `DEFAULTS`, it checks whether a Preview rule already exists (a `Tool("preview")` rule with a `start`). It recovers each existing rule's extension from its `file` pattern with `ext_of_pattern`, which only understands the exact form `pattern_of_ext` writes, `(?i)\.EXT$`.
 
-If no rule exists, it installs one with `offer_lasting`: `Rule::verb("Preview").file(pattern).kind(File).priority(-10).start("apex tool preview")`. `offer_lasting` makes the rule the **session's** rather than the tool's ([crates/apex-tool/src/lib.rs:1081-1086](crates/apex-tool/src/lib.rs#L1081-L1086)). That gives two properties:
+If no rule exists, it installs one with `offer_lasting`: `Rule::verb("Preview").file(pattern).kind(File).priority(-10).start("apex tool preview")`. `offer_lasting` makes the rule the **session's** rather than the tool's ([crates/apex-tool/src/lib.rs:1132-1137](crates/apex-tool/src/lib.rs#L1132-L1137)). That gives two properties:
 
 - The rule survives the tool's idle exit, so it can start the tool again.
 - The rule also survives removal of the setting. In that case Preview simply declines the file. Removing the rule is left to `apex plumb rule rm`, because no tool removes a rule it does not own.
 
-The `offered` set prevents asking twice before the log has caught up ([lib.rs:350-383](crates/apex-tool-preview/src/lib.rs#L350-L383), [converters.rs:39-75](crates/apex-tool-preview/src/converters.rs#L39-L75)).
+The `offered` set prevents asking twice before the log has caught up ([lib.rs:565-598](crates/apex-tool-preview/src/lib.rs#L565-L598), [converters.rs:39-75](crates/apex-tool-preview/src/converters.rs#L39-L75)).
 
 ### Setting up a preview
 
-`run` works out the converter first. If there is none, it fails with a message that tells the user how to set one: `apex set Preview.EXT CMD`. `Tool::start` then does the following ([lib.rs:130-176](crates/apex-tool-preview/src/lib.rs#L130-L176)):
+`run_at` works out the converter first. If there is none, it fails with a message that tells the user how to set one: `apex set Preview.EXT CMD`. `Tool::start` then does the following ([lib.rs:167-253](crates/apex-tool-preview/src/lib.rs#L167-L253)):
 
-1. **Find the source window.** It looks for a window at the file's path whose kind is not `Page`. If none is open, it proposes `Goto` and waits up to `TIMEOUT` (10 s) for the window to appear in the replica.
-2. **Defer to a live preview.** If a Page window already exists at that path and is `live` (another tool process is behind it), it proposes `Goto` to show that page and returns `Err("shown")`. Both the CLI and the resident thread treat that error as success.
-3. **Open the page beside the source.** It uses the column after the source's column, or the source's own column if it is the last. The page comes from `Proposal::open_html(col, &file, "", None)`, a Page window whose document is an HTML buffer named after the file. A dead preview left from an earlier run is reused.
-4. **Mark the page live.** It proposes `Live { window: page, by: Some(me) }`, then does the first render.
+1. **Defer to a live preview.** If a Page window already exists at the file's path and is `live` (another tool process is behind it), it proposes `Goto` (or `Follow`, for a link's preview) to show that page and returns `Err("shown")`.
+2. **Find the source window.** For a preview made from a file (no `via`), it looks for a window at the file's path whose kind is not `Page`. If none is open, it proposes `Goto` and waits up to `TIMEOUT` (10 s) for the window to appear in the replica. The preview is then `tied` to that window. A link's preview takes the file's window only if one is already open.
+3. **Open the page beside the source.** It uses the column after the source's column, or the source's own column if it is the last; a link's preview uses the column of the page the link was in. The page is a `Proposal::OpenPage` with `NewContent::Html { name: file, text: "" }` and `Via::Client`: whatever the page fetches on the web, the client fetches, while the file's directory and `file://` links go to the host. A page left from an earlier run is reused.
+4. **Mark the page live and owned.** It proposes `Live { window: page, by: Some(me) }` and `Own { window: page, by: Some(me) }`, and sets `answers_navigation` so followed links come to it.
+5. **Put `Source` in the tag.** Unless the page's tag already has a `Source` word (a reused page, or a tag the user wrote), it inserts `Source ` at the start of the tag with a `ReplaceRange`.
+6. **Add per-page rules.** For `Back`, `Fwd` and `Source` it adds a rule with `win: Some(page)` and `RuleAction::Tool("preview-file")` through `rule_add`, so those words in the page's tag reach the preview attachment.
+7. **Render, and for a link's preview, jump.** It does the first render. If it was opened by a link in page `via`, it proposes `Follow { loc, from: via }` (a jump on the session's navigation stack) and, if the link had a line, a `PageScroll` to that line. It then records the source's caret line as already followed.
 
 ### The main loop: render on settle, follow the caret
 
-`step` takes one server message and passes it through `before` before `Remote::handle` applies it. `before` notices `Entries` for the source buffer's shard and sets `dirty` and `last_edit` ([lib.rs:83-93](crates/apex-tool-preview/src/lib.rs#L83-L93), [lib.rs:218-227](crates/apex-tool-preview/src/lib.rs#L218-L227)).
+`step` takes one server message and passes it through `before` before `Remote::handle` applies it. `before` notices `Entries` for the source buffer's shard and sets `dirty` and `last_edit` ([lib.rs:120-130](crates/apex-tool-preview/src/lib.rs#L120-L130), [lib.rs:430-438](crates/apex-tool-preview/src/lib.rs#L430-L438)).
 
-The text comes from the replicated buffer, not the file, so unsaved edits show in the preview. Each pass of `main_loop` does the following ([lib.rs:178-202](crates/apex-tool-preview/src/lib.rs#L178-L202)):
+The text comes from the replicated buffer, not the file, so unsaved edits show in the preview. Each pass of `main_loop` does the following ([lib.rs:350-399](crates/apex-tool-preview/src/lib.rs#L350-L399)):
 
-- If either window is gone, it clears the page's `Live` mark (if the page is still there) and returns.
+- If the page is gone, or the source window is gone and the preview is `tied`, it clears the page's `Live` mark (if the page is still there) and returns. If an untied preview's source window closes, it falls back to the file on disk.
+- With no source window, it looks for one that has appeared (for example via `Source`) and takes it; otherwise `watch_disk` checks the file's modification time twice a second and marks it dirty when it changes. A preview with no window on its file is thus of the file on disk, and once a window is on the file, of that window's text.
+- If a plumb it sent (a link's file, or `Source`) was refused by every rule, it says so in the errors window.
 - If the source is dirty and has been quiet for `SETTLE` (250 ms), it renders.
-- It calls `follow`, which reads the source body's selection, converts `q0` to a 1-based line and proposes `PageScroll { scroll: Some(Scroll::Line(line)) }` when the line has changed. The scroll is a proposal, so every client showing the page scrolls with it. The page finds the line through the `data-line` markers the converter writes ([lib.rs:204-216](crates/apex-tool-preview/src/lib.rs#L204-L216)).
+- It calls `answer_links` and `answer_verbs`, then `follow`.
+
+`follow` reads the source body's selection, converts `q0` to a 1-based line (`caret_line`) and proposes `PageScroll { scroll: Some(Scroll::Line(line)) }` when the line has changed. The scroll is a proposal, so every client showing the page scrolls with it. The page finds the line through the `data-line` markers the converter writes ([lib.rs:264-269](crates/apex-tool-preview/src/lib.rs#L264-L269), [lib.rs:404-412](crates/apex-tool-preview/src/lib.rs#L404-L412)).
 
 ```mermaid
 sequenceDiagram
@@ -128,21 +135,31 @@ sequenceDiagram
   P->>L: "PageScroll(Line(n)) when caret line changes"
 ```
 
+### Links, Back, Fwd and Source
+
+The preview owns its page, so links followed in it arrive as `Request::Navigate` asks, which `answer_links` handles ([lib.rs:318-348](crates/apex-tool-preview/src/lib.rs#L318-L348)):
+
+- A link to a host file (`plane::host_file` gives the path and optional line) whose extension has a converter starts another preview of that file on a new thread, `run_at(.., line, Some(page))`. The file itself is not opened. The answer is `NavAnswer::Handled`. Those threads are kept in `linked`, and the first preview does not finish until they have.
+- A link to any other host file is sent as a `Plumb` (`path` or `path:line`, in the file's directory), as B3 on the name would, and is `Handled`.
+- Anything else gets `NavAnswer::Default`, left to the client.
+
+`answer_verbs` answers the per-page rules ([lib.rs:283-312](crates/apex-tool-preview/src/lib.rs#L283-L312)). `Back` and `Fwd` propose `Proposal::Nav { back, from }`, walking the session's navigation stack from the page, so they move from preview to preview. `Source` plumbs the file the page shows, which opens its window; it takes the file from the page the verb was asked in, so any preview can answer it. Any other verb is refused. Errors from `Nav` go to the errors window.
+
 ### Rendering as a minimal edit
 
-`convert` runs the converter through `apex_server::command_shell() -c CONVERTER`, in the file's directory. The text is written to stdin on a separate thread so that a large document cannot deadlock against stdout. A non-zero exit becomes an error carrying the converter's stderr ([lib.rs:274-298](crates/apex-tool-preview/src/lib.rs#L274-L298)).
+`convert` runs the converter through `apex_server::command_shell() -c CONVERTER`, in the file's directory. The text is written to stdin on a separate thread so that a large document cannot deadlock against stdout. A non-zero exit becomes an error carrying the converter's stderr ([lib.rs:491-513](crates/apex-tool-preview/src/lib.rs#L491-L513)).
 
-`render` compares the new HTML with `rendered`, the last HTML it wrote. If the two are equal, it does nothing. Otherwise it computes the common prefix and suffix in chars and proposes a single `ReplaceRange` of the changed middle, against the page buffer's current `version`. If that proposal is refused, it assumes someone else edited the page and replaces the whole buffer instead. It makes up to five attempts before giving up ([lib.rs:240-271](crates/apex-tool-preview/src/lib.rs#L240-L271)).
+`render` compares the new HTML with `rendered`, the last HTML it wrote. If the two are equal, it does nothing. Otherwise it computes the common prefix and suffix in chars and proposes a single `ReplaceRange` of the changed middle, against the page buffer's current `version`. If that proposal is refused, it assumes someone else edited the page and replaces the whole buffer instead. It makes up to five attempts before giving up ([lib.rs:452-486](crates/apex-tool-preview/src/lib.rs#L452-L486)).
 
-Errors never stop the preview. `render_or_say` reports a failure through `Proposal::Errors` into the errors window for the file's directory, which is diagnostic and shows as a toast. The page keeps its last good render, and the next edit triggers another try ([lib.rs:229-238](crates/apex-tool-preview/src/lib.rs#L229-L238)).
+Errors never stop the preview. `render_or_say` reports a failure through `Proposal::Errors` into the errors window for the file's directory, which is diagnostic and shows as a toast. The page keeps its last good render, and the next edit triggers another try ([lib.rs:443-449](crates/apex-tool-preview/src/lib.rs#L443-L449)).
 
 Setting the environment variable `APEX_PREVIEW_DEBUG` traces start-up to stderr.
 
-Sources: [crates/apex-tool-preview/src/lib.rs:1-383](crates/apex-tool-preview/src/lib.rs#L1-L383), [crates/apex-tool-preview/src/converters.rs:1-75](crates/apex-tool-preview/src/converters.rs#L1-L75), [crates/apex-cli/src/main.rs:1055-1089](crates/apex-cli/src/main.rs#L1055-L1089), [crates/apex-server/src/proposal.rs:51-55](crates/apex-server/src/proposal.rs#L51-L55), [crates/apex-server/src/proposal.rs:104-106](crates/apex-server/src/proposal.rs#L104-L106)
+Sources: [crates/apex-tool-preview/src/lib.rs:1-598](crates/apex-tool-preview/src/lib.rs#L1-L598), [crates/apex-tool-preview/src/converters.rs:1-75](crates/apex-tool-preview/src/converters.rs#L1-L75), [crates/apex-cli/src/main.rs:1096-1130](crates/apex-cli/src/main.rs#L1096-L1130), [crates/apex-server/src/proposal.rs:45-55](crates/apex-server/src/proposal.rs#L45-L55), [crates/apex-server/src/proposal.rs:108-111](crates/apex-server/src/proposal.rs#L108-L111), [crates/apex-server/src/proposal.rs:129-140](crates/apex-server/src/proposal.rs#L129-L140), [crates/apex-core/src/entry.rs:84-103](crates/apex-core/src/entry.rs#L84-L103)
 
 ## `apex md`: the Markdown converter
 
-`apex md` reads Markdown on stdin and writes `markdown::markdown_page(text)` on stdout ([main.rs:1112-1118](crates/apex-cli/src/main.rs#L1112-L1118)). `markdown_page` uses pulldown-cmark with tables, footnotes, strikethrough, task lists and heading attributes enabled. It then rewrites the event stream in three ways ([markdown.rs:33-76](crates/apex-tool-preview/src/markdown.rs#L33-L76)):
+`apex md` reads Markdown on stdin and writes `markdown::markdown_page(text)` on stdout ([main.rs:1154-1159](crates/apex-cli/src/main.rs#L1154-L1159)). `markdown_page` uses pulldown-cmark with tables, footnotes, strikethrough, task lists and heading attributes enabled. It then rewrites the event stream in three ways ([markdown.rs:33-76](crates/apex-tool-preview/src/markdown.rs#L33-L76)):
 
 - **Line markers.** Before the start of every paragraph, heading, block quote, code block, list item, table or HTML block, it inserts `<span class="apex-line" data-line="N"></span>`. `N` is the 1-based source line. The source offset is mapped to a line by binary search over a table of line starts. Preview's caret following depends on these markers.
 - **Front matter.** `front_matter_len` measures a leading `---` (YAML) or `+++` (TOML) block, and parsing starts after it. The skipped length is added back when lines are numbered, so the markers still match the file. An unclosed block, or a fence line with text after it, is not front matter ([markdown.rs:8-30](crates/apex-tool-preview/src/markdown.rs#L8-L30)).
@@ -152,13 +169,13 @@ Sources: [crates/apex-tool-preview/src/lib.rs:1-383](crates/apex-tool-preview/sr
 
 The page embeds `apex-markdown.css`, the editor's own look. Colours are `--apex-*` custom properties with acme's light palette as fallbacks (`--apex-bg: #FFFFEA`, and so on). The client overrides them with the theme ([Themes, Fonts and Colour](themes-and-fonts.md)). Fonts come from `--apex-font` and `--apex-mono`, falling back to Lucida Grande and Menlo. Links are drawn as pale rounded chips, and those leading off the host (`http:`, `https:`) get a link glyph through a CSS mask ([apex-markdown.css:1-40](crates/apex-tool-preview/src/apex-markdown.css#L1-L40)).
 
-Sources: [crates/apex-tool-preview/src/markdown.rs:1-158](crates/apex-tool-preview/src/markdown.rs#L1-L158), [crates/apex-tool-preview/src/apex-markdown.css:1-40](crates/apex-tool-preview/src/apex-markdown.css#L1-L40), [crates/apex-cli/src/main.rs:1112-1118](crates/apex-cli/src/main.rs#L1112-L1118)
+Sources: [crates/apex-tool-preview/src/markdown.rs:1-158](crates/apex-tool-preview/src/markdown.rs#L1-L158), [crates/apex-tool-preview/src/apex-markdown.css:1-40](crates/apex-tool-preview/src/apex-markdown.css#L1-L40), [crates/apex-cli/src/main.rs:1154-1159](crates/apex-cli/src/main.rs#L1154-L1159)
 
 ## Web
 
 ### Rules and ownership
 
-`apex_tool_web::run` attaches as `web` and calls `handle_pages`. That sets `answers_navigation` and `wants_window_events` on the link, so links followed in the pages it owns come to it as `Event::Navigate`, and page events come as `Event::Page` ([crates/apex-tool/src/lib.rs:561-568](crates/apex-tool/src/lib.rs#L561-L568)). It then offers these rules:
+`apex_tool_web::run` attaches as `web` and calls `handle_pages`. That sets `answers_navigation` and `wants_window_events` on the link, so links followed in the pages it owns come to it as `Event::Navigate`, and page events come as `Event::Page` ([crates/apex-tool/src/lib.rs:594-601](crates/apex-tool/src/lib.rs#L594-L601)). It then offers these rules:
 
 | Verb | Rule | Answered by |
 |---|---|---|
@@ -183,7 +200,7 @@ For `Web`, the target is the argument text. If there is no argument, it is the s
 - an absolute path becomes `apexfile://PATH`;
 - a relative path is resolved against the plumb's `dir`.
 
-`Tool::new_web_page` proposes `open_url` in the column of the originating window (else the last column), takes ownership of the page and remembers it ([crates/apex-tool/src/lib.rs:684-695](crates/apex-tool/src/lib.rs#L684-L695)).
+`Tool::new_web_page` proposes `open_url` (a `Via::Host` page) in the column of the originating window (else the last column), takes ownership of the page and remembers it ([crates/apex-tool/src/lib.rs:730-741](crates/apex-tool/src/lib.rs#L730-L741)).
 
 ### History
 
@@ -217,24 +234,24 @@ The unit tests cover `History`, `web_url` and `where_to` ([lib.rs:209-245](crate
 
 ([crates/apex-tool-web/tests/web.rs:56-110](crates/apex-tool-web/tests/web.rs#L56-L110))
 
-Sources: [crates/apex-tool-web/src/lib.rs:1-245](crates/apex-tool-web/src/lib.rs#L1-L245), [crates/apex-tool-web/tests/web.rs:1-110](crates/apex-tool-web/tests/web.rs#L1-L110), [crates/apex-tool/src/lib.rs:561-589](crates/apex-tool/src/lib.rs#L561-L589), [crates/apex-tool/src/lib.rs:684-707](crates/apex-tool/src/lib.rs#L684-L707)
+Sources: [crates/apex-tool-web/src/lib.rs:1-245](crates/apex-tool-web/src/lib.rs#L1-L245), [crates/apex-tool-web/tests/web.rs:1-110](crates/apex-tool-web/tests/web.rs#L1-L110), [crates/apex-tool/src/lib.rs:594-601](crates/apex-tool/src/lib.rs#L594-L601), [crates/apex-tool/src/lib.rs:730-753](crates/apex-tool/src/lib.rs#L730-L753)
 
 ## apex-diff: unified diffs side by side
 
-apex-diff is a pure library and never touches the filesystem. Paths are resolved against a base directory the caller provides. The entry point is `render(text, base) = page(&parse(text), base)` ([crates/apex-diff/src/lib.rs:522-525](crates/apex-diff/src/lib.rs#L522-L525)).
+apex-diff is a pure library and never touches the filesystem. Paths are resolved against a base directory the caller provides. The entry point is `render(text, base) = page(&parse(text), base)` ([crates/apex-diff/src/lib.rs:637-640](crates/apex-diff/src/lib.rs#L637-L640)).
 
 ### Where it is used
 
-`apex_tool::Tool::diff(text, dir)` renders the diff with `dir` as the base, defaulting to the tool's working directory. It then looks for an existing Page window whose path is `DIR/` and whose label is `Diff`:
+`apex_tool::Tool::diff(text, dir)` renders the diff with `dir` as the base (made absolute), defaulting to the tool's working directory. It then looks for an existing Page window whose path is `DIR/` and whose label is `Diff`:
 
 - If one exists, it overwrites the page's text and proposes `Show` to bring it into view.
-- Otherwise it makes a new page with `new_page`.
+- Otherwise it makes a new page with `new_page`, which uses `Proposal::open_html` in the last column.
 
-Either way, if the tag lacks `Next`, it writes `Prev Next` at the front of the tag, keeping whatever the user wrote after it ([crates/apex-tool/src/lib.rs:709-737](crates/apex-tool/src/lib.rs#L709-L737)).
+Either way, if the tag lacks `Next`, it writes `Prev Next` at the front of the tag, keeping whatever the user wrote after it ([crates/apex-tool/src/lib.rs:763-783](crates/apex-tool/src/lib.rs#L763-L783)).
 
 `Tool::diff` has two callers:
 
-- `apex diff [FILE|-] [-C DIR]` reads the diff from the file or stdin, attaches as `diff` and calls it ([main.rs:1091-1110](crates/apex-cli/src/main.rs#L1091-L1110)).
+- `apex diff [FILE|-] [-C DIR]` reads the diff from the file or stdin (no argument, or `-`), attaches as `diff` and calls it. `-C` gives the base directory ([main.rs:1133-1151](crates/apex-cli/src/main.rs#L1133-L1151)).
 - The JSON bridge's `diff` command takes `text` and `dir` and calls it ([crates/apex-tool-bridge/src/lib.rs:235-239](crates/apex-tool-bridge/src/lib.rs#L235-L239)). See [JSON Bridge and Go SDK](bridge-and-go.md).
 
 ### Parsing
@@ -272,17 +289,19 @@ classDiagram
   Hunk ..> Row : "rows()"
 ```
 
-`parse` walks the diff line by line ([lib.rs:79-192](crates/apex-diff/src/lib.rs#L79-L192)):
+`parse` first strips terminal colour (`uncoloured` removes every `ESC [ … final-byte` sequence), then walks the diff line by line ([lib.rs:87-247](crates/apex-diff/src/lib.rs#L87-L247)). It reads git's output however git was set up to write it:
 
 - **Hunk length.** A hunk header `@@ -a,b +c,d @@ section` sets counters for the old-side and new-side lines still to come. A missing length counts as 1 (`hunk_header`). Until both counters reach zero, each line is a hunk line: ` ` (or an empty line, which is context whose leading space an editor stripped), `-`, `+` or `\`. Because of this, a removed line that happens to read `--- x` is never mistaken for the next file's header. Any other line ends the hunk early.
-- **File start.** A `diff --git` line starts a git file. It provides fallback names (`split_git_names` splits at ` b/`) for entries that have no `---`/`+++`, such as mode changes, renames and binary files. Outside git, a `---` line immediately followed by a `+++` line starts a file.
-- **Name cleaning.** `clean` drops a tab-separated timestamp, undoes git's C-style quoting (`unquote` handles `\n`, `\t` and octal UTF-8 bytes), strips `a/` and `b/` in git diffs, and maps `/dev/null` to `None`.
-- **Notes.** Before a file's first hunk, lines such as `new file mode`, `deleted file mode`, `rename from/to`, `similarity index` and `Binary files` are recorded as notes. `new file mode` clears `old`, and `deleted file mode` clears `new`.
+- **File start.** A `diff --git` line starts a git file. It provides fallback names (`split_git_names`) for entries that have no `---`/`+++`, such as mode changes, renames and binary files. Outside git, a `---` line immediately followed by a `+++` line starts a file.
+- **Prefixes.** `git_prefix` knows `a/` and `b/`, the `diff.mnemonicPrefix` set (`c/`, `i/`, `w/`, `o/`) and `1/` and `2/`. `split_git_names` also copes with `--no-prefix` output, where the two names are equal (`x x`). `clean` removes a prefix only when the file's names were found to have them, so with no prefixes a directory called `b` stays part of the name.
+- **Name cleaning.** `clean` drops a tab-separated timestamp, undoes git's C-style quoting (`unquote` handles `\n`, `\t` and octal UTF-8 bytes) and maps `/dev/null` to `None`.
+- **Combined diffs.** `diff --cc` and `diff --combined` start a file, and a hunk header with more than two `@` (`@@@ -a,b -c,d +e,f @@@`) gives one line-tag column per parent. The first column, ours, decides each line: `-` is a removal, `+` an addition, and a line that only the other parents removed is on neither side. A merge is thus shown as its result against its first parent.
+- **Notes.** Before a file's first hunk, lines such as `new file mode`, `deleted file mode`, `rename from/to`, `copy from/to`, `similarity index` and `Binary files` are recorded as notes. `new file mode` clears `old`, and `deleted file mode` clears `new`; a rename's names are taken as written.
 - **Skipped text.** Anything before the first file, such as a commit message or `git show`'s header, is ignored.
 
 ### Pairing rows
 
-`rows(hunk)` builds the side-by-side table ([lib.rs:293-341](crates/apex-diff/src/lib.rs#L293-L341)):
+`rows(hunk)` builds the side-by-side table ([lib.rs:411-456](crates/apex-diff/src/lib.rs#L411-L456)):
 
 - A context line becomes a `Same` row, numbered on both sides.
 - A run of `Del` lines followed by a run of `Add` lines is paired off row by row as `Changed`. Whichever run is longer leaves the rest of its lines as `Removed` or `Added`, against an empty side.
@@ -290,28 +309,29 @@ classDiagram
 
 ### The page
 
-`page(files, base)` produces a self-contained HTML document ([lib.rs:376-444](crates/apex-diff/src/lib.rs#L376-L444)). It starts with a summary of files changed and lines added and removed. Each file then gets:
+`page(files, base)` produces a self-contained HTML document ([lib.rs:495-559](crates/apex-diff/src/lib.rs#L495-L559)). It starts with a summary of files changed and lines added and removed, or "No differences." when there are none. Each file then gets:
 
 - a sticky `<h2>` heading with the name, `from OLD` for a rename, its +/− counts and any notes;
 - two tables built from the same `Cells`: `split`, with old and new side by side (`split_rows`), and `inline`, with removed lines then added lines as `diff -u` shows them (`inline_rows`).
 
 The tables share their cells, and CSS picks which one to show. Below 1100 px of page width, `split` is hidden and `inline` is shown, so a page narrowed by its column switches layout without a re-render.
 
-Every line number, and each file name (at the file's first hunk), links to `file_url(base, path, line)`, which has the form `apexfile://localhost/ABS/PATH?line=N`. Bytes outside `[A-Za-z0-9/-._~]` are percent-encoded. The scheme is `apexfile://` and not `file://` because WebKit refuses navigation from a buffer page to a `file:` URL before apex ever sees it ([lib.rs:343-360](crates/apex-diff/src/lib.rs#L343-L360)). Deleted files have no links. The code text itself is not a link, so clicking in it places nothing and dragging selects text.
+Every line number, and each file name (at the file's first hunk), links to `file_url(base, path, line)`, which has the form `apexfile://localhost/ABS/PATH?line=N`. Bytes outside `[A-Za-z0-9/-._~]` are percent-encoded. The scheme is `apexfile://` and not `file://` because WebKit refuses navigation from a buffer page to a `file:` URL before apex ever sees it ([lib.rs:458-475](crates/apex-diff/src/lib.rs#L458-L475)). Deleted files have no links. The code text itself is not a link, so clicking in it places nothing and dragging selects text.
 
-The stylesheet (`STYLE`) uses `--apex-*` theme variables, falling back to acme's light colours. Added lines get a pale green tint (`#D8F0DC`) and removed lines a pale orange (`#FFECC8`). Orange was chosen over Gerrit's red because red and green run together under deuteranopia ([lib.rs:1-18](crates/apex-diff/src/lib.rs#L1-L18), [lib.rs:527-573](crates/apex-diff/src/lib.rs#L527-L573)).
+The stylesheet (`STYLE`) uses `--apex-*` theme variables, falling back to acme's light colours. Added lines get a pale green tint (`#D8F0DC`) and removed lines a pale orange (`#FFECC8`). Orange was chosen over Gerrit's red because red and green run together under deuteranopia ([lib.rs:1-18](crates/apex-diff/src/lib.rs#L1-L18), [lib.rs:647-688](crates/apex-diff/src/lib.rs#L647-L688)).
 
 ### Prev and Next
 
 The page declares `<meta name="apex-verbs" content="Prev Next">` and defines `window.apexVerb`. B2 on Prev or Next in the tag therefore runs in the page's script. A "chunk" is a run of consecutive visible `tr.chg` rows.
 
-Each step normally moves on from the chunk the previous step landed on. If the user has scrolled that chunk out of view, Next goes to the first chunk at or below the top of the view, and Prev goes to the last chunk above it. `land` marks the chunk with a `cursor` bar and scrolls it to just below the file's sticky header, leaving up to ten lines of lead-in (or a third of the window) above it. A chunk already in that band is not scrolled ([lib.rs:575-642](crates/apex-diff/src/lib.rs#L575-L642)).
+Each step normally moves on from the chunk the previous step landed on. If the user has scrolled that chunk out of view, Next goes to the first chunk at or below the top of the view, and Prev goes to the last chunk above it. `land` marks the chunk with a `cursor` bar and scrolls it to just below the file's sticky header, leaving up to ten lines of lead-in (or a third of the window) above it. A chunk already in that band is not scrolled ([lib.rs:701-757](crates/apex-diff/src/lib.rs#L701-L757)).
 
 ### Tests
 
 The unit tests check:
 
 - parsing a git diff that includes a commit message, a new file and a deleted file with `\ No newline`;
+- git's other forms: mnemonic prefixes, `--no-prefix`, a rename under mnemonic prefixes, `--color` output (which must parse the same as plain), and a merge's combined diff;
 - plain `diff -u` with timestamps, and a `--- x` line inside a hunk;
 - row pairing and `at` values;
 - tint classes on each kind of row;
@@ -319,19 +339,19 @@ The unit tests check:
 - the Prev/Next markers;
 - link targets, HTML escaping and URL encoding.
 
-([lib.rs:644-801](crates/apex-diff/src/lib.rs#L644-L801))
+([lib.rs:759-950](crates/apex-diff/src/lib.rs#L759-L950))
 
-Sources: [crates/apex-diff/src/lib.rs:1-801](crates/apex-diff/src/lib.rs#L1-L801), [crates/apex-tool/src/lib.rs:709-737](crates/apex-tool/src/lib.rs#L709-L737), [crates/apex-cli/src/main.rs:1091-1110](crates/apex-cli/src/main.rs#L1091-L1110), [crates/apex-tool-bridge/src/lib.rs:235-239](crates/apex-tool-bridge/src/lib.rs#L235-L239)
+Sources: [crates/apex-diff/src/lib.rs:1-950](crates/apex-diff/src/lib.rs#L1-L950), [crates/apex-tool/src/lib.rs:755-783](crates/apex-tool/src/lib.rs#L755-L783), [crates/apex-cli/src/main.rs:1133-1151](crates/apex-cli/src/main.rs#L1133-L1151), [crates/apex-tool-bridge/src/lib.rs:235-239](crates/apex-tool-bridge/src/lib.rs#L235-L239)
 
 ## How the three compare
 
 | | Preview | Web | Diff |
 |---|---|---|---|
-| Page source | buffer of HTML (`open_html`) named after the file | URL (`open_url`) fetched through the host | buffer of HTML (`new_page`) at `DIR/`, labelled `Diff` |
+| Page source | buffer of HTML (`OpenPage` with `NewContent::Html`, `Via::Client`) named after the file | URL (`open_url`, `Via::Host`) fetched through the host | buffer of HTML (`new_page`) at `DIR/`, labelled `Diff` |
 | Process | resident `preview`, plus a `preview-file` attachment per preview | resident `web` | none: whoever calls `Tool::diff` |
 | Started by | default rule `start`, or lasting rules for extra extensions | default rule `start` | the caller |
-| Keeps state | last HTML, followed line | per-page `History` | none (later diffs overwrite the page) |
-| Page's own words | — | `Back`, `Fwd`, `Get` (tool rules) | `Prev`, `Next` (`apexVerb` in the page script) |
-| Ends | when the source or page window goes; resident after 60 s idle | after 60 s with no pages | — |
+| Keeps state | last HTML, followed line, previews its links opened | per-page `History` | none (later diffs overwrite the page) |
+| Page's own words | `Source`, `Back`, `Fwd` (per-page tool rules); links answered by the tool | `Back`, `Fwd`, `Get` (tool rules) | `Prev`, `Next` (`apexVerb` in the page script) |
+| Ends | when the page goes, or the window it was made from; resident after 60 s idle | after 60 s with no pages | — |
 
-Sources: [crates/apex-tool-preview/src/lib.rs:130-176](crates/apex-tool-preview/src/lib.rs#L130-L176), [crates/apex-tool-web/src/lib.rs:94-146](crates/apex-tool-web/src/lib.rs#L94-L146), [crates/apex-tool/src/lib.rs:684-737](crates/apex-tool/src/lib.rs#L684-L737), [crates/apex-diff/src/lib.rs:380-444](crates/apex-diff/src/lib.rs#L380-L444)
+Sources: [crates/apex-tool-preview/src/lib.rs:167-253](crates/apex-tool-preview/src/lib.rs#L167-L253), [crates/apex-tool-web/src/lib.rs:94-146](crates/apex-tool-web/src/lib.rs#L94-L146), [crates/apex-tool/src/lib.rs:699-783](crates/apex-tool/src/lib.rs#L699-L783), [crates/apex-diff/src/lib.rs:495-559](crates/apex-diff/src/lib.rs#L495-L559)

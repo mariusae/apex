@@ -11,12 +11,12 @@ There are three ways a daemon process starts. All of them end in `Daemon::run(so
 | Entry point | Where | Notes |
 |---|---|---|
 | `apexd [--socket PATH] [--session NAME]` | `crates/apex-server/src/bin/apexd.rs` | Standalone binary. The session defaults to `default` and the socket to `default_socket()`. Unknown arguments exit with status 2. |
-| `apex server` | `crates/apex-cli/src/main.rs:881-887` | The same call from the CLI, using the CLI's `-socket` / `-session` (see [The apex Command](cli.md)). |
+| `apex server` | `crates/apex-cli/src/main.rs:922-928` | The same call from the CLI, using the CLI's `-socket` / `-session` (see [The apex Command](cli.md)). It creates the socket's parent directory and prints `apex server: session … on …` to stderr first. |
 | `spawn_server(exe, socket, session)` | `daemon.rs:29-62` | Used by the CLI's `ensure_server` and by the UI. It runs `exe -socket=… -session=… server` detached and waits up to 5 s for the socket to answer. |
 
-`spawn_server` makes the child independent of whoever asked for it. In `pre_exec` it calls `setsid()`, so the end of an ssh session or a bridge's process group does not take the daemon with it. It also resets signal dispositions. Stdin and stdout are null, the working directory is `$HOME`, and stderr is appended to `apexd.log` beside the socket (`daemon_log`, `daemon.rs:1594-1598`). Everything the daemon `eprintln!`s, such as "session X made" or a connection's framing error, ends up there.
+`spawn_server` makes the child independent of whoever asked for it. In `pre_exec` it calls `setsid()` and then `default_signals()`, so the end of an ssh session or a bridge's process group does not take the daemon with it, and it does not inherit an ignored `SIGTERM`. Stdin and stdout are null, the working directory is `$HOME`, and stderr is appended to `apexd.log` beside the socket (`daemon_log`, `daemon.rs:1601`). Everything the daemon `eprintln!`s, such as "session X made" or a connection's framing error, ends up there.
 
-`default_socket()` returns `$APEX_SOCKET` if that is set. Otherwise it returns `$TMPDIR/apex-$USER/main.sock`. When neither `USER` nor `LOGNAME` is set, as in many container `exec`s, the numeric uid takes the user's place (`daemon.rs:64-79`).
+`default_socket()` returns `$APEX_SOCKET` if that is set. Otherwise it returns `$TMPDIR/apex-$USER/main.sock`. When neither `USER` nor `LOGNAME` is set, as in many container `exec`s, the numeric uid takes the user's place (`daemon.rs:67-79`).
 
 `Daemon::run_with` does some process-wide setup before it binds:
 
@@ -24,9 +24,9 @@ There are three ways a daemon process starts. All of them end in `Daemon::run(so
 - It ignores `SIGHUP`, so the daemon survives the terminal or ssh session that started it.
 - It removes a stale socket file, binds a `UnixListener`, and spawns an accept thread.
 
-`run` gives `~/.apex/profile` as the host profile. `run_with` takes the profile as a parameter so tests can pass `None` and keep the profile out of `$HOME`. The doc comment on the `host_profile` field still says `~/.apex/init`, but the code uses `~/.apex/profile`. The socket file is removed again when the loop ends.
+`run` gives `~/.apex/profile` as the host profile. `run_with` takes the profile as a parameter so tests can pass `None` and keep the profile out of `$HOME`. The doc comments on `run_with` and on the `host_profile` field still say "init file" (`~/.apex/init`), but the code uses `~/.apex/profile`. The socket file is removed again when the loop ends.
 
-Sources: [crates/apex-server/src/bin/apexd.rs:1-29](crates/apex-server/src/bin/apexd.rs#L1-L29), [crates/apex-server/src/daemon.rs:25-99](crates/apex-server/src/daemon.rs#L25-L99), [crates/apex-server/src/daemon.rs:237-311](crates/apex-server/src/daemon.rs#L237-L311), [crates/apex-server/src/daemon.rs:1594-1598](crates/apex-server/src/daemon.rs#L1594-L1598), [crates/apex-cli/src/main.rs:879-900](crates/apex-cli/src/main.rs#L879-L900)
+Sources: [crates/apex-server/src/bin/apexd.rs:1-29](crates/apex-server/src/bin/apexd.rs#L1-L29), [crates/apex-server/src/daemon.rs:25-99](crates/apex-server/src/daemon.rs#L25-L99), [crates/apex-server/src/daemon.rs:237-311](crates/apex-server/src/daemon.rs#L237-L311), [crates/apex-server/src/daemon.rs:1600-1604](crates/apex-server/src/daemon.rs#L1600-L1604), [crates/apex-cli/src/main.rs:922-928](crates/apex-cli/src/main.rs#L922-L928)
 
 ## Threads and the event loop
 
@@ -44,7 +44,7 @@ flowchart LR
     W --> SOCK["Unix socket"]
 ```
 
-The `Event` enum lists every input to the main loop:
+The `Event` enum (`daemon.rs:101-115`) lists every input to the main loop:
 
 | Event | Sent by | Main loop action |
 |---|---|---|
@@ -61,9 +61,9 @@ The `Event` enum lists every input to the main loop:
 
 `Daemon::send(id, msg)` only pushes onto that connection's channel; it never blocks on I/O. To cut a connection off, the daemon removes its `Conn` and so drops the sender. That is how `end_session` disconnects members and how `Stop` ends every connection.
 
-The per-session `Server` produces its own events (pty output, finished shell commands, file-watch hits, periodic rescans) on a `futures` unbounded channel returned by `Server::new`. `new_session_in` spawns a thread that blocks on that stream and re-posts each item as `Event::Server(sid, ev)`. Terminal events reach the main thread the same way.
+The per-session `Server` produces its own events (pty output, finished shell commands, file-watch hits, periodic rescans) on a `futures` unbounded channel returned by `Server::new` (`lib.rs:165`). `new_session_in` spawns a thread that blocks on that stream and re-posts each item as `Event::Server(sid, ev)`. Terminal events reach the main thread the same way.
 
-Sources: [crates/apex-server/src/daemon.rs:1-11](crates/apex-server/src/daemon.rs#L1-L11), [crates/apex-server/src/daemon.rs:101-126](crates/apex-server/src/daemon.rs#L101-L126), [crates/apex-server/src/daemon.rs:267-308](crates/apex-server/src/daemon.rs#L267-L308), [crates/apex-server/src/daemon.rs:372-384](crates/apex-server/src/daemon.rs#L372-L384), [crates/apex-server/src/daemon.rs:456-516](crates/apex-server/src/daemon.rs#L456-L516), [crates/apex-server/src/lib.rs:159-224](crates/apex-server/src/lib.rs#L159-L224)
+Sources: [crates/apex-server/src/daemon.rs:1-11](crates/apex-server/src/daemon.rs#L1-L11), [crates/apex-server/src/daemon.rs:101-126](crates/apex-server/src/daemon.rs#L101-L126), [crates/apex-server/src/daemon.rs:267-308](crates/apex-server/src/daemon.rs#L267-L308), [crates/apex-server/src/daemon.rs:372-384](crates/apex-server/src/daemon.rs#L372-L384), [crates/apex-server/src/daemon.rs:456-516](crates/apex-server/src/daemon.rs#L456-L516), [crates/apex-server/src/lib.rs:165](crates/apex-server/src/lib.rs#L165)
 
 ## Key types
 
@@ -80,16 +80,16 @@ struct Session {
 
 | Type | Role |
 |---|---|
-| `Daemon` | All state: `sessions: BTreeMap<String, Session>` keyed by the session's identity string, `conns: HashMap<u64, Conn>`, and the in-flight tables `pending`, `tool_plumbs`, `asks`, `held` and `finds`, plus the channel ends. |
+| `Daemon` | All state: `sessions: BTreeMap<String, Session>` keyed by the session's identity string, `conns: HashMap<u64, Conn>`, and the in-flight tables `pending`, `tool_plumbs`, `asks`, `held` and `finds`, plus the channel ends (`daemon.rs:211-235`). |
 | `Session` | One session, as above. The map key is the log's identity (`log.id()`). `id` is a small internal number that events and connections use because it does not change on a rename. |
-| `Conn` | One client connection: the session and `AttachmentId` it attached as, its `AttachmentKind`, its outbound `Sender<ServerMsg>`, `sent` (how far each shard has been forwarded to it), its open I/O-plane `streams`, and the pids of programs it `adopted` through `Named`. |
+| `Conn` | One client connection: the session and `AttachmentId` it attached as, its `AttachmentKind`, its outbound `Sender<ServerMsg>`, `sent` (how far each shard has been forwarded to it), its open I/O-plane `streams`, and the pids of programs it `adopted` through `Named` (`daemon.rs:128-141`). |
 | `Pending` | Something waiting for the leader's `Applied`: either a tool's proposal (connection and the tool's own id) or a step of a plumb walk. |
 | `Held` | Work waiting for a tool that a rule's `start` command is launching: a plumb, or a `tool://` page request. |
-| `IoStream` | An open stream on the I/O plane: `Watch`, `Put`, `Tunnel`, `Fetch` or `Relay`. See [The I/O Plane and Pages](io-plane-and-pages.md). |
+| `IoStream` | An open stream on the I/O plane: `Watch`, `Put`, `Tunnel`, `Fetch` or `Relay` (`daemon.rs:144-158`). See [The I/O Plane and Pages](io-plane-and-pages.md). |
 
-Each session has two replicas. `Session::view` is a `Node` running as the `SERVER` attachment that follows every shard, and it is what the daemon reads and leads with. `Server::node` is the server's own replica, which leads only the pinned terminal shards (`lib.rs:97-106`). Log compaction takes both into account (see below).
+Each session has two replicas. `Session::view` is a `Node` running as the `SERVER` attachment that follows every shard, and it is what the daemon reads and leads with. `Server::node` is the server's own replica, which leads only the pinned terminal shards (`lib.rs:97-107`). Log compaction takes both into account (see below).
 
-Sources: [crates/apex-server/src/daemon.rs:128-235](crates/apex-server/src/daemon.rs#L128-L235), [crates/apex-server/src/lib.rs:97-156](crates/apex-server/src/lib.rs#L97-L156)
+Sources: [crates/apex-server/src/daemon.rs:128-235](crates/apex-server/src/daemon.rs#L128-L235), [crates/apex-server/src/lib.rs:97-107](crates/apex-server/src/lib.rs#L97-L107)
 
 ## Sessions: the registry
 
@@ -107,10 +107,10 @@ A daemon holds many sessions. The `sessions` map is the registry, and `resolve(s
 
 1. Makes a fresh `Log`, takes its identity as the key, and sets the label.
 2. Makes the `Server`. If `dir` is given, it `cd`s there first; a path that is not a directory is an error and nothing is made.
-3. Sets the session environment: `apexsession` (the identity), `apexsessionlabel`, `APEX_SOCKET`, `EDITOR`, and `BROWSER` when the `xdg-open` link exists. `EDITOR` is `apex-editor`, a symlink to the binary made beside it so that `$EDITOR file` works as a single word under zsh and rc. If the link cannot be made, it falls back to `PATH/apex editor` (`daemon.rs:1600-1628`). `link_beside` only makes links next to a binary named `apex`, so test binaries leave their directory alone.
+3. Sets the session environment: `apexsession` (the identity), `apexsessionlabel`, `APEX_SOCKET`, `EDITOR`, and `BROWSER` when the `xdg-open` link exists. `EDITOR` is `apex-editor`, a symlink to the binary made beside it so that `$EDITOR file` works as a single word under zsh and rc. If the link cannot be made, it falls back to `PATH/apex editor` (`daemon.rs:1606-1634`). `link_beside` only makes links next to a binary named `apex`, so test binaries leave their directory alone.
 4. Spawns the server-event forwarding thread.
-5. Calls `server.install_default_rules(&mut log)` to install the session's low-priority plumbing rules (see [Plumbing](plumbing.md)).
-6. Makes the follower `Node::new(SERVER)`, catches it up, and calls `view.init_session(&mut log)` to lay out the top row and two columns, so a tool can work before any UI attaches.
+5. Calls `server.install_default_rules(&mut log)` (`lib.rs:1329`) to install the session's low-priority plumbing rules (see [Plumbing](plumbing.md)).
+6. Makes the follower `Node::new(SERVER)` (`node.rs:268`), catches it up, and calls `view.init_session(&mut log)` (`node.rs:425`) to lay out the top row and two columns, so a tool can work before any UI attaches.
 7. Records where the session is (`MetaOp::Cwd` from `server.place()`: host and directory) and catches up again.
 8. Inserts the session and calls `server.run_profile(&view, host_profile)` to start the host profile.
 9. Calls `after` to forward and settle.
@@ -123,26 +123,28 @@ A daemon holds many sessions. The `sessions` map is the registry, and `resolve(s
 
 `ClientMsg::Stop` (`apex stop`) is handled in the run loop itself, not in `handle`: it clears all connections and leaves the loop, so every session ends together with the daemon (`daemon.rs:277-281`).
 
-Sources: [crates/apex-server/src/daemon.rs:313-454](crates/apex-server/src/daemon.rs#L313-L454), [crates/apex-server/src/daemon.rs:555-586](crates/apex-server/src/daemon.rs#L555-L586), [crates/apex-server/src/daemon.rs:1600-1628](crates/apex-server/src/daemon.rs#L1600-L1628), [crates/apex-server/src/lib.rs:1811-1827](crates/apex-server/src/lib.rs#L1811-L1827)
+Sources: [crates/apex-server/src/daemon.rs:313-454](crates/apex-server/src/daemon.rs#L313-L454), [crates/apex-server/src/daemon.rs:555-586](crates/apex-server/src/daemon.rs#L555-L586), [crates/apex-server/src/daemon.rs:1606-1634](crates/apex-server/src/daemon.rs#L1606-L1634), [crates/apex-server/src/lib.rs:1885](crates/apex-server/src/lib.rs#L1885), [crates/apex-server/src/lib.rs:1329](crates/apex-server/src/lib.rs#L1329), [crates/apex-core/src/node.rs:268](crates/apex-core/src/node.rs#L268), [crates/apex-core/src/node.rs:425](crates/apex-core/src/node.rs#L425)
 
 ## Profile and attach scripts
 
 There is no configuration file. Two shell scripts run as commands of the session, and their output goes to `+Errors` like any command's (see [Configuration](configuration.md)):
 
-- **Profile.** When a session is made, `Server::run_profile` sources the host's `~/.apex/profile` in one shell, named `profile` in the top row and run in the session's directory. It installs an exit hook (rc's `fn sigexit`, or `trap … EXIT` for other shells) that runs `apex env -import`. That sends the shell's final environment back as `ClientMsg::EnvImport`, and `Server::import_env` applies whatever changed relative to what the profile was given, unsetting anything the profile removed (`lib.rs:1159-1212`).
-- **Attach.** A `Hello` may carry an `attach: Option<Script>`, the client's own `~/.apex/attach` text. After `Welcome` is sent, `Server::run_attach` runs it on this host with `apexattachment` (the new attachment's id) and `apexclient` set, so `apex set` inside it applies to that attachment (`lib.rs:1214-1230`). An empty script is skipped.
+- **Profile.** When a session is made, `Server::run_profile` sources the host's `~/.apex/profile` in one shell, named `profile` in the top row and run in the session's directory. It installs an exit hook (rc's `fn sigexit`, or `trap … EXIT` for other shells) that runs `apex env -import`. That sends the shell's final environment back as `ClientMsg::EnvImport`, and `Server::import_env` applies whatever changed relative to what the profile was given, unsetting anything the profile removed and ignoring the shell's own bookkeeping variables (`lib.rs:1232-1282`).
+- **Attach.** A `Hello` may carry an `attach: Option<Script>`, the client's own `~/.apex/attach` text. After `Welcome` is sent, `Server::run_attach` runs it on this host, as a shell named `attach`, with `apexattachment` (the new attachment's id) and `apexclient` set, so `apex set` inside it applies to that attachment (`lib.rs:1284-1300`). An empty script is skipped.
+
+A rule's `start` command is launched by `Server::start_tool`, which runs it as a process named after the tool; a leading `apex ` is replaced by this daemon's own `apex` command (`lib.rs:1251-1261`).
 
 `ClientMsg::Env { set }` sets variables, and both `Env` and `EnvImport` reply with the full `ServerMsg::Env { vars }`. `ClientMsg::Cd` changes the session's directory and appends the new `Cwd` to the metalog.
 
-Sources: [crates/apex-server/src/daemon.rs:396-399](crates/apex-server/src/daemon.rs#L396-L399), [crates/apex-server/src/daemon.rs:635-639](crates/apex-server/src/daemon.rs#L635-L639), [crates/apex-server/src/daemon.rs:716-727](crates/apex-server/src/daemon.rs#L716-L727), [crates/apex-server/src/daemon.rs:903-912](crates/apex-server/src/daemon.rs#L903-L912), [crates/apex-server/src/lib.rs:1159-1230](crates/apex-server/src/lib.rs#L1159-L1230)
+Sources: [crates/apex-server/src/daemon.rs:396-399](crates/apex-server/src/daemon.rs#L396-L399), [crates/apex-server/src/daemon.rs:635-639](crates/apex-server/src/daemon.rs#L635-L639), [crates/apex-server/src/daemon.rs:716-727](crates/apex-server/src/daemon.rs#L716-L727), [crates/apex-server/src/daemon.rs:903-912](crates/apex-server/src/daemon.rs#L903-L912), [crates/apex-server/src/lib.rs:1229-1300](crates/apex-server/src/lib.rs#L1229-L1300)
 
 ## Attaching, leading and handing back
 
 `hello(id, session, name, kind, attach)` (`daemon.rs:588-642`) attaches a connection to a session:
 
 1. Resolve the session, or reply `Error "no session …"`.
-2. `log.attach(kind, name)` registers the attachment in the metalog and returns its `AttachmentId`.
-3. If the kind is `Ui`, take leadership in single-player mode. For every shard that is not pinned: if a holder other than `SERVER` still holds the lease and has not released it, `reclaim` it, which fences the previous UI. Then `grant` the lease to the new attachment and set `Session::leader = Some(conn)`. The previous UI stays connected but its appends are now refused.
+2. `log.attach(kind, name)` (`log.rs:276`) registers the attachment in the metalog and returns its `AttachmentId`.
+3. If the kind is `Ui`, take leadership in single-player mode. For every shard that is not pinned: if a holder other than `SERVER` still holds the lease and has not released it, `reclaim` it (`log.rs:369`), which fences the previous UI. Then `grant` the lease (`log.rs:349`) to the new attachment and set `Session::leader = Some(conn)`. The previous UI stays connected but its appends are now refused.
 4. Catch up `view`, take a postcard snapshot of its state, and set the connection's `sent` marks to the log's last sequence numbers, because the snapshot already covers those entries.
 5. Reply `Welcome { attachment, snapshot }`.
 6. If work is `held` for a tool of this name (it was just started for that work), deliver it now, in order.
@@ -186,24 +188,25 @@ There is one special case. A non-UI connection's `Proposal::Snarf` is also sent 
 
 ### Appends from the leader
 
-`ClientMsg::Append { shard, entries }` appends each entry with `log.append_entry`, which checks fences and sequence numbers, and stops at the first failure, replying with an `Error` that names the shard and sequence. The connection's `sent` mark for the shard is moved to the log's end, because the appender already has its own entries. The highest accepted sequence is acknowledged with `Ack`. The daemon then polls the server for execs addressed to it (`poll_execs`) and starts any verb walks those produced (`daemon.rs:650-678`). `CreateShard` and `DeleteShard` are applied directly; a created shard's `sent` mark starts at 0.
+`ClientMsg::Append { shard, entries }` appends each entry with `log.append_entry` (`log.rs:130`), which checks fences and sequence numbers, and stops at the first failure, replying with an `Error` that names the shard and sequence. The connection's `sent` mark for the shard is moved to the log's end, because the appender already has its own entries. The highest accepted sequence is acknowledged with `Ack`. The daemon then polls the server for execs addressed to it (`poll_execs`, `lib.rs:1029`) and starts any verb walks those produced (`daemon.rs:650-678`). `CreateShard` and `DeleteShard` are applied directly; a created shard's `sent` mark starts at 0.
 
-Sources: [crates/apex-server/src/daemon.rs:518-553](crates/apex-server/src/daemon.rs#L518-L553), [crates/apex-server/src/daemon.rs:588-694](crates/apex-server/src/daemon.rs#L588-L694), [crates/apex-server/src/daemon.rs:932-979](crates/apex-server/src/daemon.rs#L932-L979), [crates/apex-server/src/daemon.rs:1354-1366](crates/apex-server/src/daemon.rs#L1354-L1366), [crates/apex-server/tests/socket.rs:131-177](crates/apex-server/tests/socket.rs#L131-L177)
+Sources: [crates/apex-server/src/daemon.rs:518-553](crates/apex-server/src/daemon.rs#L518-L553), [crates/apex-server/src/daemon.rs:588-694](crates/apex-server/src/daemon.rs#L588-L694), [crates/apex-server/src/daemon.rs:932-979](crates/apex-server/src/daemon.rs#L932-L979), [crates/apex-server/src/lib.rs:1029](crates/apex-server/src/lib.rs#L1029), [crates/apex-core/src/log.rs:130-381](crates/apex-core/src/log.rs#L130-L381), [crates/apex-server/tests/socket.rs:131-177](crates/apex-server/tests/socket.rs#L131-L177)
 
 ## `after`: settle, forward, compact
 
-Nearly every handler ends with `after(name, props)` (`daemon.rs:1513-1591`). It is the one place where the session's state is brought to rest and shipped out:
+Nearly every handler ends with `after(name, props)` (`daemon.rs:1513-1597`). It is the one place where the session's state is brought to rest and shipped out:
 
 1. **Server bookkeeping.** `flush_procs` writes process starts, renames and exits into the metalog. `close_orphan_terms` starts shells whose windows have appeared and closes terminals whose windows are gone. `sync_watches` keeps the directory watches in step with the open files. Then `view.catch_up`.
-2. **Leading while headless.** If `leader` is `None`, the server's proposals are applied here. The loop also opens and lands on any `take_gotos()` locations whose windows are not open: a URL becomes a web window, anything else is opened as a file in the first column. It then polls execs again, because what the daemon just did may have handed the server more work. The loop repeats until there are no proposals left.
-3. **Forwarding.** For each connection on the session and each shard, the entries after the connection's `sent` mark are sent as `ServerMsg::Entries`. The metalog goes first, because it announces shards before their entries.
-4. **Compaction.** For each shard, the daemon computes the lowest of: the log's last sequence, what `view` has applied, what `server.node` has applied, and every member connection's `sent` mark. It then calls `log.compact(shard, low)`. A log grows with what is outstanding, not with how long the session has existed.
-5. **Proposals to a UI leader.** If a UI leads, the server's proposals are sent to it with `id: 0`, so no answer is expected.
-6. **Verbs.** If `poll_execs` queued plumb starts for verbs, `start_verbs` begins those walks.
+2. **Leading while headless.** If `leader` is `None`, the server's proposals are applied here. The loop also opens and lands on any `take_gotos()` locations whose windows are not open: a URL becomes a web window, anything else is opened as a file in the first column. It then polls execs again, because what the daemon just did may have handed the server more work, and adds the proposals from `status_flags` (below). The loop repeats until there are no proposals left.
+3. **Notifications follow statuses.** `Server::status_flags` (`lib.rs:584-608`) looks at each window's program status (see [Program Status Protocol (OSC 7501)](program-status.md)). When a window's status comes to be `Done`, `Blocked` or `Error`, it raises a notification in the name of whoever reported the status and returns a `Proposal::Notice` so the leader shows the window. Another of the three states counts as news again; the same state with other words does not. When the status no longer asks for the user, a notification still up is lowered. The first call after the daemon starts only records the statuses that already stood, so none of them is raised. This runs in both branches: with a UI leading, the resulting proposals are sent to it with the others.
+4. **Forwarding.** For each connection on the session and each shard, the entries after the connection's `sent` mark are sent as `ServerMsg::Entries`. The metalog goes first, because it announces shards before their entries.
+5. **Compaction.** For each shard, the daemon computes the lowest of: the log's last sequence, what `view` has applied, what `server.node` has applied, and every member connection's `sent` mark. It then calls `log.compact(shard, low)`. A log grows with what is outstanding, not with how long the session has existed.
+6. **Proposals to a UI leader.** If a UI leads, the server's proposals are sent to it with `id: 0`, so no answer is expected.
+7. **Verbs.** If the server has queued plumb starts for verbs (`peek_plumb_starts`), `start_verbs` begins those walks.
 
-`Event::Server` runs `Server::pump` and then `after` with the returned proposals. It also streams changed files to watch subscribers (`file_changed`) and sends each OSC 52 clipboard text to every UI connection on the session (`daemon.rs:285-303`).
+`Event::Server` runs `Server::pump` (`lib.rs:635`) and then `after` with the returned proposals. It also streams changed files to watch subscribers (`file_changed`) and sends each OSC 52 clipboard text to every UI connection on the session (`daemon.rs:285-303`).
 
-Sources: [crates/apex-server/src/daemon.rs:285-303](crates/apex-server/src/daemon.rs#L285-L303), [crates/apex-server/src/daemon.rs:1510-1591](crates/apex-server/src/daemon.rs#L1510-L1591), [crates/apex-server/src/lib.rs:567-589](crates/apex-server/src/lib.rs#L567-L589)
+Sources: [crates/apex-server/src/daemon.rs:285-303](crates/apex-server/src/daemon.rs#L285-L303), [crates/apex-server/src/daemon.rs:1510-1597](crates/apex-server/src/daemon.rs#L1510-L1597), [crates/apex-server/src/lib.rs:576-608](crates/apex-server/src/lib.rs#L576-L608), [crates/apex-server/src/lib.rs:635](crates/apex-server/src/lib.rs#L635)
 
 ## Other in-session messages
 
@@ -238,7 +241,7 @@ A plumb walk is a `Server`-side state machine. The daemon's `drive` (`daemon.rs:
 
 Timeouts are handled by spawning a thread that sleeps for the deadline and then posts an event. The main loop discards the event if the entry has already been removed.
 
-Sources: [crates/apex-server/src/daemon.rs:160-209](crates/apex-server/src/daemon.rs#L160-L209), [crates/apex-server/src/daemon.rs:644-963](crates/apex-server/src/daemon.rs#L644-L963), [crates/apex-server/src/daemon.rs:1368-1508](crates/apex-server/src/daemon.rs#L1368-L1508), [crates/apex-server/src/lib.rs:1181-1191](crates/apex-server/src/lib.rs#L1181-L1191)
+Sources: [crates/apex-server/src/daemon.rs:160-209](crates/apex-server/src/daemon.rs#L160-L209), [crates/apex-server/src/daemon.rs:644-963](crates/apex-server/src/daemon.rs#L644-L963), [crates/apex-server/src/daemon.rs:1355-1508](crates/apex-server/src/daemon.rs#L1355-L1508), [crates/apex-server/src/lib.rs:1251-1261](crates/apex-server/src/lib.rs#L1251-L1261)
 
 ## Error handling and edge cases
 
@@ -249,7 +252,7 @@ Sources: [crates/apex-server/src/daemon.rs:160-209](crates/apex-server/src/daemo
 - **Sessions go away under pending work.** Handlers look the session up by its internal id with `name_of` and return quietly if it is gone. `plumbed` and `ask_over` check that the asker is still connected.
 - **The listener thread** stops when the event channel closes. `run` returns an error only if binding fails.
 
-Sources: [crates/apex-server/src/daemon.rs:466-483](crates/apex-server/src/daemon.rs#L466-L483), [crates/apex-server/src/daemon.rs:650-678](crates/apex-server/src/daemon.rs#L650-L678), [crates/apex-server/src/daemon.rs:1427-1497](crates/apex-server/src/daemon.rs#L1427-L1497)
+Sources: [crates/apex-server/src/daemon.rs:466-483](crates/apex-server/src/daemon.rs#L466-L483), [crates/apex-server/src/daemon.rs:650-678](crates/apex-server/src/daemon.rs#L650-L678), [crates/apex-server/src/daemon.rs:952-956](crates/apex-server/src/daemon.rs#L952-L956), [crates/apex-server/src/daemon.rs:1429-1497](crates/apex-server/src/daemon.rs#L1429-L1497)
 
 ## Tests
 
@@ -270,7 +273,7 @@ Sources: [crates/apex-server/tests/socket.rs:12-313](crates/apex-server/tests/so
 
 ## apex-bench measurements
 
-`apex-bench [--socket PATH] [--via CMD]` measures the attach protocol. Without `--socket` it starts `Daemon::run` on a thread of its own process. With `--via CMD` it attaches through a command's stdin and stdout, for example `apex attach --stdio`, which stands in for the ssh path without the network. It measures, in order (`apex_bench.rs:52-170`):
+`apex-bench [--socket PATH] [--via CMD]` measures the attach protocol. Without `--socket` it starts `Daemon::run` on a thread of its own process (`apex_bench.rs:33`). With `--via CMD` it attaches through a command's stdin and stdout, for example `apex attach --stdio`, which stands in for the ssh path without the network. It measures, in order (`apex_bench.rs:52-170`):
 
 1. 2000 `Ping` / `Pong` round trips.
 2. 5000 single-keystroke round trips: a local insert, `flush`, then waiting for the server's `Ack`.
@@ -289,6 +292,6 @@ It reports p50, p90, p99 and max for each. The README records a run on an M-seri
 | attach, 11.5 M runes (11.9 MB snapshot) | 34 ms | |
 | terminal key → rows on the client | 180 µs | 570 µs |
 
-The README draws two conclusions. The transport is not where time goes. The snapshot is several times larger than the text because it carries the undo history, so compacting or excluding undo would make a large session's attach cost about what its text costs. Through the stdio bridge, the numbers rise only slightly (ping 26 µs, attach +4.5 ms). The README's remark that terminal latency is dominated by "alacritty's parser" and that "the whole grid is published as `Rows` entries per wakeup" predates the current code. Terminals now use libghostty-vt (see [Terminals](terminals.md)), and `Server::publish_term` publishes only the rows that changed (`lib.rs:418-437`). macOS limits socket paths to 104 bytes, which matters for `--socket`.
+The README draws two conclusions. The transport is not where time goes. The snapshot is several times larger than the text because it carries the undo history, so compacting or excluding undo would make a large session's attach cost about what its text costs. Through the stdio bridge, the numbers rise only slightly (ping 26 µs, attach +4.5 ms). The README's remark that terminal latency is dominated by "alacritty's parser" and that "the whole grid is published as `Rows` entries per wakeup" predates the current code. Terminals now use libghostty-vt (see [Terminals](terminals.md)), and `Server::publish_term` publishes only the rows that changed (`lib.rs:423-439`). macOS limits socket paths to 104 bytes, which matters for `--socket`.
 
-Sources: [crates/apex-server/src/bin/apex_bench.rs:1-194](crates/apex-server/src/bin/apex_bench.rs#L1-L194), [crates/apex-server/README.md:26-57](crates/apex-server/README.md#L26-L57), [crates/apex-server/src/lib.rs:418-437](crates/apex-server/src/lib.rs#L418-L437)
+Sources: [crates/apex-server/src/bin/apex_bench.rs:1-194](crates/apex-server/src/bin/apex_bench.rs#L1-L194), [crates/apex-server/README.md:26-57](crates/apex-server/README.md#L26-L57), [crates/apex-server/src/lib.rs:423-439](crates/apex-server/src/lib.rs#L423-L439)

@@ -15,22 +15,22 @@ pub fn read_frame<R: Read, T: for<'de> Deserialize<'de>>(r: &mut R) -> io::Resul
 
 `read_frame` returns `Ok(None)` when the stream ends cleanly before a length prefix, which is how both sides notice a hang-up. It refuses frames larger than 256 MiB with `InvalidData`. A frame that will not decode is also an `InvalidData` error. On the daemon, such an error ends the connection and is logged as `apexd: connection N: …`. One common cause is a peer built from another wire version.
 
-Nothing in the framing assumes a socket. `Link::over_streams` takes any `Box<dyn Read + Send>` and `Box<dyn Write + Send>`. The remote story depends on this. On the host, `apex attach -stdio` copies bytes in both directions between its stdin/stdout and the daemon's socket, and never looks at the frames ([main.rs:1202-1228](crates/apex-cli/src/main.rs#L1202-L1228)). On the client, `bridge_child` runs the bridge command (`ssh …`, or a provider's equivalent) in a process group of its own. It returns the child's pipes and a closer that `killpg`s the whole group, so no half-dead ssh is left holding the far end open. See [Remote Hosts and Providers](remote-hosts.md).
+Nothing in the framing assumes a socket. `Link::over_streams` takes any `Box<dyn Read + Send>` and `Box<dyn Write + Send>`. The remote story depends on this. On the host, `apex attach -stdio` makes sure a daemon is running (`ensure_server`), then `bridge` copies bytes in both directions between its stdin/stdout and the daemon's socket, and never looks at the frames ([main.rs:1215-1219](crates/apex-cli/src/main.rs#L1215-L1219), [main.rs:1240-1262](crates/apex-cli/src/main.rs#L1240-L1262)). On the client, `bridge_child` runs the bridge command (`ssh …`, or a provider's equivalent) in a process group of its own. It returns the child's pipes and a closer that `killpg`s the whole group, so no half-dead ssh is left holding the far end open. See [Remote Hosts and Providers](remote-hosts.md).
 
 Postcard is not self-describing: field names and variant names are not on the wire, only their order and types. The [Versioning](#versioning-protocol-and-the-build-id) section covers what follows from that.
 
-Sources: [proto.rs:1-23](crates/apex-server/src/proto.rs#L1-L23), [proto.rs:358-382](crates/apex-server/src/proto.rs#L358-L382), [remote.rs:191-204](crates/apex-server/src/remote.rs#L191-L204), [remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550), [daemon.rs:465-484](crates/apex-server/src/daemon.rs#L465-L484), [main.rs:1202-1228](crates/apex-cli/src/main.rs#L1202-L1228)
+Sources: [proto.rs:1-23](crates/apex-server/src/proto.rs#L1-L23), [proto.rs:358-382](crates/apex-server/src/proto.rs#L358-L382), [remote.rs:191-204](crates/apex-server/src/remote.rs#L191-L204), [remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550), [daemon.rs:465-484](crates/apex-server/src/daemon.rs#L465-L484), [main.rs:1215-1262](crates/apex-cli/src/main.rs#L1215-L1262)
 
 ## Versioning: PROTOCOL and the build id
 
-`PROTOCOL` is a single `u32` (currently 54) that covers *everything* the wire carries:
+`PROTOCOL` is a single `u32` (currently 57) that covers *everything* the wire carries:
 
 - the messages in `proto.rs`
 - the proposals
 - apex-core's entries, ops, state and ids, which travel inside `Entries`, `Append` and the `Welcome` snapshot
 - `TermKey` and `Running`
 
-The module doc puts the rule plainly: any change to any of these is a new protocol, so bump `PROTOCOL` with the change. The git history follows that rule (for example "Protocol 54: a plumbing rule is only its owner's to remove").
+The module doc puts the rule plainly: any change to any of these is a new protocol, so bump `PROTOCOL` with the change. The git history follows that rule (for example "A window's status, as OSC 7501 says a program's, in place of its working mark (protocol 57)").
 
 A second identifier says *which binary* is running. `build.rs` hashes every `.rs` file under `crates/` together with `Cargo.lock`, in sorted path order, using SHA-256. It exports the first 12 hex digits as `APEX_BUILD_ID`, and `lib.rs` exposes that as `apex_server::BUILD_ID`. The same sources give the same id on every target, so a client can compare itself with the linux binary it carries for remote hosts.
 
@@ -53,7 +53,7 @@ A connection exists before it is attached. The daemon gives each accepted socket
 
 All state lives on the one daemon thread that consumes the events.
 
-Some messages work without attaching: `NewSession`, `ListSessions`, `RenameSession` and `EndSession` (each answered with `Sessions`, or with `Error`), `Ping` (answered with `Pong`) and `Stop`. One-shot helpers in `remote.rs` use them: `list_sessions`, `new_session`, `rename_session`, `end_session` and `stop`. Each opens a socket, sends one frame, and reads until it gets its answer, checking any `Build` frame on the way. Any other message on an unattached connection gets `Error { text: "not attached" }`.
+Some messages work without attaching: `NewSession { name, dir }` (the optional absolute `dir` is where the session starts, else where the daemon is), `ListSessions`, `RenameSession` and `EndSession` (each answered with `Sessions`, or with `Error`), `Ping` (answered with `Pong`) and `Stop`. One-shot helpers in `remote.rs` use them: `list_sessions`, `new_session(path, name, dir)`, `rename_session`, `end_session` and `stop`. Each opens a socket, sends one frame, and reads until it gets its answer, checking any `Build` frame on the way. Any other message on an unattached connection gets `Error { text: "not attached" }` ([daemon.rs:557-581](crates/apex-server/src/daemon.rs#L557-L581)).
 
 ```mermaid
 sequenceDiagram
@@ -95,11 +95,11 @@ A connection ends in one of three ways:
 
 - **The client drops.** `Link`'s `Drop` runs its closer, which shuts down the socket or kills the bridge's process group. The daemon's reader sees EOF and sends `Gone`.
 - **The session ends.** Every member is sent `Ended { id, label }` and then cut off.
-- **The daemon stops.** `ClientMsg::Stop` makes the main loop clear all connections and exit.
+- **The daemon stops.** `ClientMsg::Stop` makes the main loop clear all connections and exit ([daemon.rs:278](crates/apex-server/src/daemon.rs#L278)).
 
 In `Daemon::gone`, the daemon removes the attachment's rules and adopted processes, appends `Detach`, and, if this connection led, reclaims its leases so that the daemon leads again. The test `a_tool_works_on_a_headless_session_and_a_ui_takes_over` checks the Layout lease returning to `SERVER` after the UI drops.
 
-Sources: [daemon.rs:128-141](crates/apex-server/src/daemon.rs#L128-L141), [daemon.rs:247-311](crates/apex-server/src/daemon.rs#L247-L311), [daemon.rs:313-329](crates/apex-server/src/daemon.rs#L313-L329), [daemon.rs:456-642](crates/apex-server/src/daemon.rs#L456-L642), [remote.rs:148-265](crates/apex-server/src/remote.rs#L148-L265), [remote.rs:508-522](crates/apex-server/src/remote.rs#L508-L522), [remote.rs:661-720](crates/apex-server/src/remote.rs#L661-L720)
+Sources: [daemon.rs:128-141](crates/apex-server/src/daemon.rs#L128-L141), [daemon.rs:247-311](crates/apex-server/src/daemon.rs#L247-L311), [daemon.rs:315](crates/apex-server/src/daemon.rs#L315), [daemon.rs:456-642](crates/apex-server/src/daemon.rs#L456-L642), [remote.rs:148-265](crates/apex-server/src/remote.rs#L148-L265), [remote.rs:508-522](crates/apex-server/src/remote.rs#L508-L522), [remote.rs:661-720](crates/apex-server/src/remote.rs#L661-L720), [proto.rs:56-73](crates/apex-server/src/proto.rs#L56-L73)
 
 ## The messages
 
@@ -127,7 +127,7 @@ Sources: [daemon.rs:128-141](crates/apex-server/src/daemon.rs#L128-L141), [daemo
 | `Plumbed { ok, why }` | S→C | A plumb this connection asked for is over. |
 | `Ask { id, request }` | both | S→C: a `Request::Plumb` (a rule of yours claimed this; do you take it?) or a `Request::Navigate` (where does this link in your page go?). C→S: a leading client's `Navigate` question for a window's owner. |
 | `Answer { id, answer }` / `Answered { id, answer }` | C→S / S→C | `Answer::Plumb { ok }` or `Answer::Navigate(NavAnswer)`. `Answered` carries `None` when nobody answered in time. |
-| `RuleAdd` / `RuleAdded`, `RuleRm` | C↔S | Install a rule (owned by this attachment if `mine`); remove one (only its owner may). |
+| `RuleAdd { rule, priority, mine }` / `RuleAdded`, `RuleRm { id, session }` | C↔S | Install a rule (owned by this attachment if `mine`, else by the session); remove one. Only a rule's owner may remove it: an attachment its own, and `session: true` for the session's (a rule's `start` among them), as `apex plumb rule rm` asks on the user's behalf. Another's is refused with an `Error`. `session` is `#[serde(default)]`. |
 | `WindowEvent`, `PostToPage` | both | Page events for a window's owner; messages from the owner to the page's script, delivered by the client that leads. |
 
 ### Terminals
@@ -136,7 +136,7 @@ The `Term*` messages carry what a client cannot express as log entries: keystrok
 
 `TermText` asks the server to snarf a range of a terminal; the answer comes back as a `Snarf` proposal. `TermRead` is answered with `TermLines`. `TermFind` (Look in a terminal) is answered with `TermFound`. `ClientConfig { term: TermColors }` tells the daemon the UI's ink, paper and 16 ANSI colours, so that programs asking with OSC 10, 11 or 4 learn the real background. Only a `Ui` connection's colours are taken. `TermColors::LIGHT` is what a session answers when no UI is attached.
 
-In the other direction, `Clipboard { text }` passes OSC 52 (and a tool's `Snarf`) to every UI on the session. The term shard itself is pinned and daemon-led: screen contents arrive as ordinary `Entries`. See [Terminals](terminals.md).
+In the other direction, `Clipboard { text }` passes OSC 52 (and a tool's `Snarf`) to every UI on the session. The term shard itself is pinned and daemon-led: screen contents arrive as ordinary `Entries`. So do the program status records of OSC 7501: the terminal loop (`status_marks`, [lib.rs:1975](crates/apex-server/src/lib.rs#L1975)) turns a report into a `TermOp::Status` entry on the term shard ([lib.rs:1984](crates/apex-server/src/lib.rs#L1984)) and, when the most pressing record changes, a `Proposal::SetStatus` for the window ([lib.rs:1995](crates/apex-server/src/lib.rs#L1995)). There is no message of its own for them. See [Terminals](terminals.md) and [Program Status Protocol (OSC 7501)](program-status.md).
 
 ### Everything else
 
@@ -155,7 +155,7 @@ In the other direction, `Clipboard { text }` passes OSC 52 (and a tool's `Snarf`
 
 Many of these are answered only to the connection that asked; a reply is never a log entry. The daemon's `in_session` makes this explicit with `return` before `after` for request/answer pairs such as `TermRead`, `Answer`, `Ask`, `Io` and `Find*`.
 
-Sources: [proto.rs:25-212](crates/apex-server/src/proto.rs#L25-L212), [proto.rs:214-246](crates/apex-server/src/proto.rs#L214-L246), [proto.rs:296-356](crates/apex-server/src/proto.rs#L296-L356), [proto.rs:402-455](crates/apex-server/src/proto.rs#L402-L455), [daemon.rs:644-963](crates/apex-server/src/daemon.rs#L644-L963)
+Sources: [proto.rs:25-212](crates/apex-server/src/proto.rs#L25-L212), [proto.rs:214-246](crates/apex-server/src/proto.rs#L214-L246), [proto.rs:296-356](crates/apex-server/src/proto.rs#L296-L356), [proto.rs:402-455](crates/apex-server/src/proto.rs#L402-L455), [daemon.rs:644-963](crates/apex-server/src/daemon.rs#L644-L963), [lib.rs:1960-2013](crates/apex-server/src/lib.rs#L1960-L2013)
 
 ## Replication over the wire
 
@@ -205,7 +205,7 @@ For `ServerMsg::Entries`, `Link::handle` does four things:
 3. **Calls `node.catch_up(log)`.**
 4. **Moves the shipping mark** past what arrived, unless this client leads the shard. Whatever the daemon handed over is the daemon's, and this step makes sure a follower never echoes it back in the next `flush`.
 
-The daemon side of this is `Daemon::after`, which runs after nearly every message. For each connection on the session, it sends the entries of each shard after that connection's mark. It sends **the metalog first**, because `ShardNew` and lease changes must arrive before the entries they announce.
+The daemon side of this is `Daemon::after` ([daemon.rs:1513](crates/apex-server/src/daemon.rs#L1513)), which runs after nearly every message. For each connection on the session, it sends the entries of each shard after that connection's mark. It sends **the metalog first**, because `ShardNew` and lease changes must arrive before the entries they announce.
 
 ### Compaction on both sides
 
@@ -218,15 +218,15 @@ Neither log keeps history. The daemon compacts each shard up to the minimum of f
 
 The mirror compacts in `compact_mirror`, run on `Entries` and on `Ack`. Its low-water mark is what the node has applied, further limited, for a shard this client leads, by what has been both sent and acked. A mirror therefore holds only what is still outstanding.
 
-Sources: [log.rs:40-58](crates/apex-core/src/log.rs#L40-L58), [log.rs:102-148](crates/apex-core/src/log.rs#L102-L148), [log.rs:213-251](crates/apex-core/src/log.rs#L213-L251), [log.rs:380-389](crates/apex-core/src/log.rs#L380-L389), [remote.rs:21-42](crates/apex-server/src/remote.rs#L21-L42), [remote.rs:314-372](crates/apex-server/src/remote.rs#L314-L372), [remote.rs:444-480](crates/apex-server/src/remote.rs#L444-L480), [daemon.rs:650-690](crates/apex-server/src/daemon.rs#L650-L690), [daemon.rs:1510-1591](crates/apex-server/src/daemon.rs#L1510-L1591)
+Sources: [log.rs:40-58](crates/apex-core/src/log.rs#L40-L58), [log.rs:102-148](crates/apex-core/src/log.rs#L102-L148), [log.rs:213-251](crates/apex-core/src/log.rs#L213-L251), [log.rs:380-389](crates/apex-core/src/log.rs#L380-L389), [remote.rs:21-42](crates/apex-server/src/remote.rs#L21-L42), [remote.rs:314-372](crates/apex-server/src/remote.rs#L314-L372), [remote.rs:444-480](crates/apex-server/src/remote.rs#L444-L480), [daemon.rs:650-690](crates/apex-server/src/daemon.rs#L650-L690), [daemon.rs:1513-1594](crates/apex-server/src/daemon.rs#L1513-L1594)
 
 ## Proposals and questions over the wire
 
 A tool does not lead, so it changes state by proposal. `Link::propose(p)` assigns the next id from the link's counter, sends `Propose { id, proposal }`, and returns the id. The answer later shows up in `link.applied`.
 
-At the daemon, each tool proposal gets a daemon-side id in `pending` that records the tool's connection and its id. `Daemon::propose` then routes the proposal:
+At the daemon, each tool proposal gets a daemon-side id in `pending` that records the tool's connection and its id. `Daemon::propose` ([daemon.rs:967](crates/apex-server/src/daemon.rs#L967)) then routes the proposal:
 
-- **A UI leads:** it is sent `ServerMsg::Propose { id: daemon_id, … }`. The UI's `Link::handle` applies it with `proposal::apply`, flushes the resulting entries, and replies `Applied { id }`. The daemon accepts `Applied` **only from the session's leader**, and maps it back through `pending` to `ServerMsg::Applied { id: tool_id }` on the tool's connection.
+- **A UI leads:** it is sent `ServerMsg::Propose { id: daemon_id, … }`. The UI's `Link::handle` applies it with `proposal::apply`, flushes the resulting entries, and replies `Applied { id }`. The daemon accepts `Applied` **only from the session's leader** ([daemon.rs:952](crates/apex-server/src/daemon.rs#L952)), and maps it back through `pending` to `ServerMsg::Applied { id: tool_id }` on the tool's connection.
 - **No UI is attached:** the daemon applies it to its own replica. It runs `after` *before* answering, so the tool's replica already has the window the proposal made by the time `Applied` arrives.
 
 The `Server`'s own proposals (a command's output, a file's new content) go to the leader with `id: 0`, and nobody waits for them.
@@ -260,16 +260,22 @@ When `Link::handle` applies a proposal, it also does some bookkeeping:
 
 Questions follow the same request-and-answer pattern with deadlines kept on the daemon:
 
-- **Plumbs handed to tools.** A `Request::Plumb` is sent to the tool attached under the rule's tool name. The tool has `B3_ANSWER` (1 s) to answer a B3 and `VERB_ANSWER` (10 s) to answer a verb. After that a `PlumbTimeout` event moves the walk on.
-- **Navigation questions.** A `Request::Navigate` from the leading client goes to the window's owner, with `ASK_ANSWER` (2 s) before `Answered { answer: None }`. A `Link` that has not set `answers_navigation` replies `NavAnswer::Default` immediately.
+- **Plumbs handed to tools.** A `Request::Plumb` is sent to the tool attached under the rule's tool name. The tool has `B3_ANSWER` (1 s) to answer a B3 and `VERB_ANSWER` (10 s) to answer a verb ([daemon.rs:200-206](crates/apex-server/src/daemon.rs#L200-L206), [daemon.rs:1473](crates/apex-server/src/daemon.rs#L1473)). After that a `PlumbTimeout` event moves the walk on.
+- **Navigation questions.** A `Request::Navigate` from the leading client goes to the window's owner, with `ASK_ANSWER` (2 s, [daemon.rs:209](crates/apex-server/src/daemon.rs#L209)) before `Answered { answer: None }`. A `Link` that has not set `answers_navigation` replies `NavAnswer::Default` immediately.
 
 Plumbing itself is described on [Plumbing Rules and Verbs](plumbing.md).
 
-Sources: [remote.rs:305-312](crates/apex-server/src/remote.rs#L305-L312), [remote.rs:373-430](crates/apex-server/src/remote.rs#L373-L430), [daemon.rs:190-209](crates/apex-server/src/daemon.rs#L190-L209), [daemon.rs:932-956](crates/apex-server/src/daemon.rs#L932-L956), [daemon.rs:965-979](crates/apex-server/src/daemon.rs#L965-L979), [daemon.rs:1354-1388](crates/apex-server/src/daemon.rs#L1354-L1388), [daemon.rs:1583-1587](crates/apex-server/src/daemon.rs#L1583-L1587)
+Sources: [remote.rs:305-312](crates/apex-server/src/remote.rs#L305-L312), [remote.rs:373-430](crates/apex-server/src/remote.rs#L373-L430), [daemon.rs:190-209](crates/apex-server/src/daemon.rs#L190-L209), [daemon.rs:932-957](crates/apex-server/src/daemon.rs#L932-L957), [daemon.rs:965-979](crates/apex-server/src/daemon.rs#L965-L979), [daemon.rs:1354-1388](crates/apex-server/src/daemon.rs#L1354-L1388), [daemon.rs:1473](crates/apex-server/src/daemon.rs#L1473)
 
 ## The client side: Link
 
-`Link` is the connection, not the replica. The owner keeps the `Log` and `Node` returned by `connect` and drives them. The UI holds them inside its app; a headless client holds them in `Remote`.
+`Link` is the connection, not the replica. The owner keeps the `Log` and `Node` returned by `connect` and drives them. The UI holds them inside its app, through three functions in [app.rs](crates/apex-client/src/app.rs):
+
+- `connect_link` ([app.rs:1440](crates/apex-client/src/app.rs#L1440)) makes sure a local daemon is running (`ensure_daemon`) and attaches over its Unix socket with `Link::over_streams_creating`, or, for a remote destination, deploys the provider and attaches through its bridge command.
+- `connect_existing_targeted` ([app.rs:1471](crates/apex-client/src/app.rs#L1471)) attaches to a session that must already exist (a tab of last time) with `Link::connect` or `Link::over_streams`, so nothing is made when it is gone. It returns a `WakeTarget` along with the link so the wake callback can be redirected later.
+- `connect_via_link` ([app.rs:1500](crates/apex-client/src/app.rs#L1500)) attaches through an arbitrary bridge command (`--via`), creating the session if need be.
+
+A headless client holds the same three in `Remote`.
 
 | Function | What it does |
 |---|---|
@@ -290,7 +296,7 @@ Stream ids handed out by `IoIds` are odd and increasing. The daemon numbers the 
 
 Most answers are stored in public fields for the owner to take: `applied`, `sessions`, `env`, `trace`, `plumbed`, `plumbs` (as `ToolPlumb`), `asks`, `answered`, `window_events` (kept only while `wants_window_events`), `page_posts`, `rule_added`, `io`, `term_lines`, `term_found`, `clips`, `candidates`, `found`, `last_pong`, `ended` and `error`. `handle` only records them; it does not act on them. That is why `handle` covers every `ServerMsg` variant with a single exhaustive `match`: adding a variant forces a decision here.
 
-Sources: [remote.rs:44-146](crates/apex-server/src/remote.rs#L44-L146), [remote.rs:266-312](crates/apex-server/src/remote.rs#L266-L312), [remote.rs:339-505](crates/apex-server/src/remote.rs#L339-L505), [remote.rs:1056-1082](crates/apex-server/src/remote.rs#L1056-L1082), [plane.rs:17-79](crates/apex-server/src/plane.rs#L17-L79), [daemon.rs:171-174](crates/apex-server/src/daemon.rs#L171-L174), [app.rs:1438-1492](crates/apex-client/src/app.rs#L1438-L1492)
+Sources: [remote.rs:44-146](crates/apex-server/src/remote.rs#L44-L146), [remote.rs:266-312](crates/apex-server/src/remote.rs#L266-L312), [remote.rs:339-505](crates/apex-server/src/remote.rs#L339-L505), [remote.rs:1056-1082](crates/apex-server/src/remote.rs#L1056-L1082), [plane.rs:17-79](crates/apex-server/src/plane.rs#L17-L79), [daemon.rs:171-174](crates/apex-server/src/daemon.rs#L171-L174), [app.rs:1440-1503](crates/apex-client/src/app.rs#L1440-L1503)
 
 ## Remote: headless clients
 
@@ -330,6 +336,6 @@ Sources: [remote.rs:722-1054](crates/apex-server/src/remote.rs#L722-L1054), [rem
 - `the_daemon_says_its_build_first_and_stops_when_told`: the first frame is `Build` with this `PROTOCOL` and `BUILD_ID`, and `stop` removes the daemon.
 - `sessions_are_listed_and_made`, terminals over the socket, plumbing, page owners' `Ask`/`WindowEvent`/`PostToPage` routing, and the file watcher.
 
-`remote.rs` has unit tests for `check_build` and for `stop_any`'s refusal to signal a process that is not an apex server. `crates/apex-cli/tests/cli.rs` attaches with `Link::over_streams` through `apex attach -stdio`, exercising the bridge path.
+`remote.rs` has unit tests for `check_build` and for `stop_any`'s refusal to signal a process that is not an apex server. `crates/apex-cli/tests/cli.rs` (`attach_stdio_bridges_the_socket`) runs `apex attach -stdio` against a test daemon and attaches with `Link::over_streams` over its pipes, exercising the bridge path ([cli.rs:150-166](crates/apex-cli/tests/cli.rs#L150-L166)); `crates/apex-cli/tests/ssh.rs` does the same through a faked ssh host.
 
-Sources: [socket.rs:1-313](crates/apex-server/tests/socket.rs#L1-L313), [socket.rs:484-532](crates/apex-server/tests/socket.rs#L484-L532), [remote.rs:1084-1127](crates/apex-server/src/remote.rs#L1084-L1127), [cli.rs:166](crates/apex-cli/tests/cli.rs#L166)
+Sources: [socket.rs:1-313](crates/apex-server/tests/socket.rs#L1-L313), [socket.rs:484-532](crates/apex-server/tests/socket.rs#L484-L532), [remote.rs:1084-1127](crates/apex-server/src/remote.rs#L1084-L1127), [cli.rs:150-166](crates/apex-cli/tests/cli.rs#L150-L166)

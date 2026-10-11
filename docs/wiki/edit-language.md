@@ -49,7 +49,7 @@ Sources: [crates/apex-edit/README.md:1-27](crates/apex-edit/README.md#L1-L27), [
 
 ## The `Edit::run` API
 
-`Edit` is the interpreter. Its only state is `last_pat`, the last regular expression seen. The empty pattern `//` refers to it, and it persists from one program to the next, as it does in acme. The node keeps one `Edit` per node for this reason ([crates/apex-edit/src/exec.rs:97-137](crates/apex-edit/src/exec.rs#L97-L137)).
+`Edit` is the interpreter. Its only state is `last_pat`, the last regular expression seen. The empty pattern `//` refers to it, and it persists from one program to the next, as it does in acme. The node keeps one `Edit` per node for this reason ([crates/apex-core/src/node.rs:252](crates/apex-core/src/node.rs#L252), [crates/apex-edit/src/exec.rs:97-137](crates/apex-edit/src/exec.rs#L97-L137)).
 
 ```rust
 pub fn run(&mut self, text: &dyn Text, dot: (usize, usize),
@@ -90,9 +90,9 @@ Commands with effects never act. They push an `Intent` ([crates/apex-edit/src/ex
 
 ### How the node uses a run
 
-`Node::run_edit` reads the body's buffer, dot and name and calls `run`. It then turns each change into an `edit_op` in a fresh undo group, appends a `Select` of the new dot, and carries out `Undo` intents itself by calling `undo` or `redo` `|n|` times. The remaining intents, the output string and the warnings go back to the caller ([crates/apex-core/src/node.rs:1758-1791](crates/apex-core/src/node.rs#L1758-L1791)). The [node page](node.md) covers what happens to them next. The CLI's `apex text read -addr A WIN` runs the program `Ap` with a fresh `Edit` and prints `output_string()` ([crates/apex-cli/src/main.rs:1459-1467](crates/apex-cli/src/main.rs#L1459-L1467)).
+`Node::run_edit` ends any typing in progress, reads the body's buffer name, dot and text, and calls `self.edit.run`. It then turns each change into an `edit_op` in a fresh undo group, appends a `Select` of the new dot, and carries out `Undo` intents itself by calling `undo` or `redo` `|n|` times. The remaining intents, the output string and the warnings go back to the caller as an `EditRun` ([crates/apex-core/src/node.rs:1780-1813](crates/apex-core/src/node.rs#L1780-L1813)). The [node page](node.md) covers what happens to them next. The CLI's `apex text read -addr A WIN` runs the program `Ap` with a fresh `Edit`, using the window's current selection as dot and its path as the name, and prints `output_string()` ([crates/apex-cli/src/main.rs:1499-1524](crates/apex-cli/src/main.rs#L1499-L1524)).
 
-Sources: [crates/apex-edit/src/exec.rs:28-137](crates/apex-edit/src/exec.rs#L28-L137), [crates/apex-edit/src/exec.rs:260-336](crates/apex-edit/src/exec.rs#L260-L336), [crates/apex-core/src/node.rs:1758-1791](crates/apex-core/src/node.rs#L1758-L1791), [crates/apex-cli/src/main.rs:1447-1474](crates/apex-cli/src/main.rs#L1447-L1474)
+Sources: [crates/apex-edit/src/exec.rs:28-137](crates/apex-edit/src/exec.rs#L28-L137), [crates/apex-edit/src/exec.rs:260-336](crates/apex-edit/src/exec.rs#L260-L336), [crates/apex-core/src/node.rs:1780-1813](crates/apex-core/src/node.rs#L1780-L1813), [crates/apex-cli/src/main.rs:1499-1524](crates/apex-cli/src/main.rs#L1499-L1524)
 
 ## Regular expressions (`regx.rs`)
 

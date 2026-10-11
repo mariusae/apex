@@ -15,13 +15,13 @@ pub struct Text(Rope);
 
 The API is small. `len`, `char_at` and `slice(q0, q1)` read the text. `replace(q0, nd, s)` is the only mutator: it removes `nd` runes at `q0` and inserts `s`, clamping both ends to the text, so an out-of-range edit cannot panic. The line helpers (`line_count`, `line_range`, `line`, `line_start`, `line_of`) follow ropey's line model, where a text ending in a newline has an empty last line. `line_range` leaves the newline out of the range it returns ([crates/apex-core/src/text.rs:9-99](crates/apex-core/src/text.rs#L9-L99)).
 
-Hashing feeds the rope to BLAKE3 chunk by chunk. `content_hash()` returns the hex digest. The file watcher, `Put`, `Get` and `open_file` hash the bytes on disk the same way ([crates/apex-server/src/lib.rs:302](crates/apex-server/src/lib.rs#L302)), so a buffer's text and a file on disk can be compared by hash alone.
+Hashing feeds the rope to BLAKE3 chunk by chunk. `content_hash()` returns the hex digest. The file watcher, `Put`, `Get` and `open_file` hash the bytes on disk the same way ([crates/apex-server/src/lib.rs:307](crates/apex-server/src/lib.rs#L307), [crates/apex-server/src/lib.rs:344](crates/apex-server/src/lib.rs#L344)), so a buffer's text and a file on disk can be compared by hash alone.
 
 The serde impls write a `Text` as a plain string and rebuild the rope when reading it back ([crates/apex-core/src/text.rs:119-130](crates/apex-core/src/text.rs#L119-L130)). Snapshots and `BufferOp::Create` therefore carry ordinary strings.
 
 ### The `apex_edit::Text` view
 
-`apex-edit` has no dependency on ropey. It defines its own read-only, rune-indexed trait ([crates/apex-edit/src/lib.rs:24-37](crates/apex-edit/src/lib.rs#L24-L37)), and `Text` implements it. The `read(q0, q1)` method is overridden to slice the rope rather than call `char_at` once per rune ([crates/apex-core/src/text.rs:107-117](crates/apex-core/src/text.rs#L107-L117)). When the node runs an Edit program, it clones the buffer's `Text` and passes it to `EditLang::run`. Every change the run returns becomes a `BufferOp::Edit`, and all of them share one new undo group ([crates/apex-core/src/node.rs:1766-1776](crates/apex-core/src/node.rs#L1766-L1776)).
+`apex-edit` has no dependency on ropey. It defines its own read-only, rune-indexed trait ([crates/apex-edit/src/lib.rs:24-37](crates/apex-edit/src/lib.rs#L24-L37)), and `Text` implements it. The `read(q0, q1)` method is overridden to slice the rope rather than call `char_at` once per rune ([crates/apex-core/src/text.rs:107-117](crates/apex-core/src/text.rs#L107-L117)). When the node runs an Edit program (`Node::run_edit`), it clones the buffer's `Text` and passes it to the edit language's `run`. Every change the run returns becomes a `BufferOp::Edit`, and all of them share one new undo group ([crates/apex-core/src/node.rs:1782-1798](crates/apex-core/src/node.rs#L1782-L1798)).
 
 ### Free functions on text
 
@@ -31,7 +31,9 @@ The serde impls write a `Text` as a plain string and rebuild the rope when readi
 | `find_match(text, needle, from, reverse)` | Literal search from `from`, wrapping round. With `reverse`, it finds the last match that starts before `from`. | Client Look (`look.rs`) and terminal search |
 | `find_all(text, needle)` | Every non-overlapping literal match, as rune ranges | Client Look highlighting |
 
-Sources: [crates/apex-core/src/text.rs:1-251](crates/apex-core/src/text.rs#L1-L251), [crates/apex-edit/src/lib.rs:24-37](crates/apex-edit/src/lib.rs#L24-L37), [crates/apex-core/src/node.rs:1766-1776](crates/apex-core/src/node.rs#L1766-L1776), [crates/apex-client/src/look.rs:30](crates/apex-client/src/look.rs#L30), [crates/apex-server/src/term.rs:410](crates/apex-server/src/term.rs#L410)
+Terminal search (`Term::find`) builds one string from every row of the terminal, history included, one row per line (newlines inside a row become spaces, so a match is found where it is drawn), and calls `find_match` on it. It then maps the hit back to a row and column, and scrolls the viewport to show it when it is out of view ([crates/apex-server/src/term.rs:407-439](crates/apex-server/src/term.rs#L407-L439)). The client's Look uses `find_match` to step to a hit and `find_all` to highlight them ([crates/apex-client/src/look.rs:185](crates/apex-client/src/look.rs#L185), [crates/apex-client/src/look.rs:281](crates/apex-client/src/look.rs#L281)).
+
+Sources: [crates/apex-core/src/text.rs:1-251](crates/apex-core/src/text.rs#L1-L251), [crates/apex-edit/src/lib.rs:24-37](crates/apex-edit/src/lib.rs#L24-L37), [crates/apex-core/src/node.rs:1782-1798](crates/apex-core/src/node.rs#L1782-L1798), [crates/apex-client/src/look.rs:30](crates/apex-client/src/look.rs#L30), [crates/apex-server/src/term.rs:407-439](crates/apex-server/src/term.rs#L407-L439)
 
 ## The buffer
 
@@ -89,7 +91,7 @@ The fields of `Buffer` ([crates/apex-core/src/buffer.rs:43-67](crates/apex-core/
 | `views` | One `View` per text showing the buffer, keyed by `ViewId`. |
 | `undo`, `redo` | Stacks of `Group`s. |
 
-`Version` is a `u64` alias described in the code as "the number of modifying entries applied" ([crates/apex-core/src/ids.rs:40-41](crates/apex-core/src/ids.rs#L40-L41)). `Edit`, `Undo` and `Redo` entries each carry the version they were made against. `apply_buffer` rejects any of them whose version differs from the buffer's with `ApplyError::Version` ([crates/apex-core/src/state.rs:582-602](crates/apex-core/src/state.rs#L582-L602)). Because a buffer has a single leader, this check should never fail on a follower; a failure means the replicas disagree. Proposals from other attachments carry a version too, and each proposal decides what to do when that version is out of date (see [Proposals](proposals.md)).
+`Version` is a `u64` alias described in the code as "the number of modifying entries applied" ([crates/apex-core/src/ids.rs:40-41](crates/apex-core/src/ids.rs#L40-L41)). `Edit`, `Undo` and `Redo` entries each carry the version they were made against. `apply_buffer` rejects any of them whose version differs from the buffer's with `ApplyError::Version` ([crates/apex-core/src/state.rs:609-629](crates/apex-core/src/state.rs#L609-L629)). Because a buffer has a single leader, this check should never fail on a follower; a failure means the replicas disagree. Proposals from other attachments carry a version too, and each proposal decides what to do when that version is out of date (see [Proposals](proposals.md)).
 
 ### Dirty, clean and stale
 
@@ -100,13 +102,13 @@ Hashing a large text on every `dirty()` call would be slow, so the hash at a giv
 Two entries change the flags:
 
 - `BufferOp::Clean { version, disk_hash }` sets `clean_version`, replaces `disk_hash` and clears `stale`.
-- `BufferOp::Stale { disk_hash }` sets `stale` and records the new disk hash ([crates/apex-core/src/state.rs:603-613](crates/apex-core/src/state.rs#L603-L613)).
+- `BufferOp::Stale { disk_hash }` sets `stale` and records the new disk hash ([crates/apex-core/src/state.rs:630-640](crates/apex-core/src/state.rs#L630-L640)).
 
-These entries come from the server's file handling. When a watched file changes and the hash is not one the server wrote itself, `content_changed` does one of three things. If the hash matches what the buffer already knows, it does nothing. If the buffer is clean, it proposes `SetContent` against the version it saw. If the buffer is dirty, it proposes `Stale` ([crates/apex-server/src/lib.rs:836-865](crates/apex-server/src/lib.rs#L836-L865)).
+These entries come from the server's file handling. When a watched file changes and the hash is not one the server wrote itself (`path_changed`), `content_changed` decides what to do. If the hash matches what the buffer already knows, or the buffer is clean and already holds that text, it does nothing. If the buffer is dirty, it proposes `Stale` (and proposes nothing if the buffer is already stale). If the buffer is clean, it proposes `SetContent` against the version it saw ([crates/apex-server/src/lib.rs:906-935](crates/apex-server/src/lib.rs#L906-L935)).
 
-The leader applies `SetContent` as a whole-buffer `Edit`, made by `Node::set_content` in a new undo group, followed by `Clean`. If the buffer has been typed into since the proposed version and is dirty, the leader appends `Stale` instead ([crates/apex-server/src/proposal.rs:219-231](crates/apex-server/src/proposal.rs#L219-L231)). Since a reload is an ordinary edit, `Undo` after a reload brings back the old text.
+The leader applies `SetContent` as a whole-buffer `Edit`, made by `Node::set_content` in a new undo group, followed by `Clean`. If a version was given, it no longer matches the buffer's, and the buffer is dirty (typed into since the proposal was made), the leader appends `Stale` instead, unless the buffer is stale already ([crates/apex-server/src/proposal.rs:239-251](crates/apex-server/src/proposal.rs#L239-L251), [crates/apex-core/src/node.rs:1115-1122](crates/apex-core/src/node.rs#L1115-L1122)). `Get` proposes `SetContent` with no version, so it always reloads ([crates/apex-server/src/lib.rs:354-360](crates/apex-server/src/lib.rs#L354-L360)); the dirty check for `Get` is a node built-in (see [The Node](node.md)). Since a reload is an ordinary edit, `Undo` after a reload brings back the old text.
 
-`Put` in an autoindent window writes the trimmed text and proposes `PutTrimmed`. The leader turns that into one undo group of deletions (`Node::delete_runs`) followed by `Clean`, so the first `Undo` after a `Put` restores all the blanks at once. If the buffer moved on while the file was being written, the leader skips the trim and the buffer stays dirty ([crates/apex-server/src/lib.rs:332-346](crates/apex-server/src/lib.rs#L332-L346), [crates/apex-server/src/proposal.rs:338-348](crates/apex-server/src/proposal.rs#L338-L348), [crates/apex-core/src/node.rs:1117-1127](crates/apex-core/src/node.rs#L1117-L1127)).
+`Put` refuses to write a scratch buffer, or any buffer whose kind is not a file, unless a name is given. The first `Put` of a stale buffer only warns "modified since last read"; a second one writes. In an autoindent window it writes the trimmed text and proposes `PutTrimmed` ([crates/apex-server/src/lib.rs:312-352](crates/apex-server/src/lib.rs#L312-L352)). The leader turns that into one undo group of deletions (`Node::delete_runs`) followed by `Clean`, so the first `Undo` after a `Put` restores all the blanks at once. If the buffer moved on while the file was being written, the leader skips the trim and the buffer stays dirty ([crates/apex-server/src/proposal.rs:362-372](crates/apex-server/src/proposal.rs#L362-L372), [crates/apex-core/src/node.rs:1136-1146](crates/apex-core/src/node.rs#L1136-L1146)).
 
 ### The buffer ops
 
@@ -121,7 +123,7 @@ The leader applies `SetContent` as a whole-buffer `Edit`, made by `Node::set_con
 | `Select { view, q0, q1 }` | `set_select`, clamped to the text, with `q1 >= q0` |
 | `Origin { view, origin }` | `set_origin`, clamped |
 
-Sources: [crates/apex-core/src/buffer.rs:1-265](crates/apex-core/src/buffer.rs#L1-L265), [crates/apex-core/src/entry.rs:115-142](crates/apex-core/src/entry.rs#L115-L142), [crates/apex-core/src/state.rs:508-631](crates/apex-core/src/state.rs#L508-L631), [crates/apex-server/src/lib.rs:307-355](crates/apex-server/src/lib.rs#L307-L355), [crates/apex-server/src/proposal.rs:219-235](crates/apex-server/src/proposal.rs#L219-L235)
+Sources: [crates/apex-core/src/buffer.rs:1-265](crates/apex-core/src/buffer.rs#L1-L265), [crates/apex-core/src/entry.rs:116-141](crates/apex-core/src/entry.rs#L116-L141), [crates/apex-core/src/state.rs:598-650](crates/apex-core/src/state.rs#L598-L650), [crates/apex-server/src/lib.rs:312-360](crates/apex-server/src/lib.rs#L312-L360), [crates/apex-server/src/lib.rs:906-935](crates/apex-server/src/lib.rs#L906-L935), [crates/apex-server/src/proposal.rs:239-251](crates/apex-server/src/proposal.rs#L239-L251)
 
 ## Views
 
@@ -149,17 +151,17 @@ if ni > 0 {
 }
 ```
 
-The comparisons are strict, as in acme. An insertion exactly at a view's `q0` (or `q1`, or `origin`) does not move it. So when you type at a caret, the edit alone leaves the caret before the new text, and the leader moves it with an explicit `Select` after the `Edit` ([crates/apex-core/src/node.rs:1428-1430](crates/apex-core/src/node.rs#L1428-L1430)). A deletion that overlaps a selection shrinks it. A deletion that covers the origin moves the origin to the start of the deletion. The tests `views_follow_edits_like_acme` and `origin_tracks_deletions` cover these cases ([crates/apex-core/src/buffer.rs:296-338](crates/apex-core/src/buffer.rs#L296-L338)).
+The comparisons are strict, as in acme. An insertion exactly at a view's `q0` (or `q1`, or `origin`) does not move it. So when you type at a caret, the edit alone leaves the caret before the new text, and the leader moves it with an explicit `Select` after the `Edit` ([crates/apex-core/src/node.rs:1450-1452](crates/apex-core/src/node.rs#L1450-L1452)). A deletion that overlaps a selection shrinks it. A deletion that covers the origin moves the origin to the start of the deletion. The tests `views_follow_edits_like_acme` and `origin_tracks_deletions` cover these cases ([crates/apex-core/src/buffer.rs:296-338](crates/apex-core/src/buffer.rs#L296-L338)).
 
-The node depends on views moving with the edit alone. `Node::insert_text` and `replace_text`, used by tools such as win to write a shell's output, append only the `Edit`. Every other view's selection stays wherever the shift rules put it ([crates/apex-core/src/node.rs:1105-1133](crates/apex-core/src/node.rs#L1105-L1133)).
+The node depends on views moving with the edit alone. `Node::insert_text` and `replace_text`, used by tools such as win to write a shell's output, append only the `Edit`, each in a group of its own (`replace_text`, like `set_content` and `delete_runs`, also ends any run of typing; `insert_text` does not). Every other view's selection stays wherever the shift rules put it ([crates/apex-core/src/node.rs:1125-1152](crates/apex-core/src/node.rs#L1125-L1152)).
 
 ### Zerox
 
-Because views are keyed per text inside the buffer, acme's `Zerox` (a second window on the same file) needs no extra machinery. `Node::zerox` opens a new window whose body is `Body::Text` of the same `BufferId`, placed in the window's column as acme's `coladd` would ([crates/apex-core/src/node.rs:1276-1284](crates/apex-core/src/node.rs#L1276-L1284)). The new window has its own tag buffer and adds a `ViewId::Body` view to the shared buffer. Every edit made in either window then adjusts both windows' selections and origins through `adjust_views`. The built-in refuses directories and writes "Zerox illegal" to the errors window ([crates/apex-core/src/node.rs:2241-2249](crates/apex-core/src/node.rs#L2241-L2249)).
+Because views are keyed per text inside the buffer, acme's `Zerox` (a second window on the same file) needs no extra machinery. `Node::zerox` opens a new window whose body is `Body::Text` of the same `BufferId`, placed in the window's column as acme's `coladd` would ([crates/apex-core/src/node.rs:1298-1306](crates/apex-core/src/node.rs#L1298-L1306)). The new window has its own tag buffer and adds a `ViewId::Body` view to the shared buffer. Every edit made in either window then adjusts both windows' selections and origins through `adjust_views`. The built-in refuses directories and writes "Zerox illegal" to the errors window ([crates/apex-core/src/node.rs:2288-2297](crates/apex-core/src/node.rs#L2288-L2297)).
 
-When a window is deleted, it appends `ViewDel` for its views. The body buffer's shard is deleted only once its `views` map is empty, that is, when the last window on the buffer goes ([crates/apex-core/src/node.rs:1290-1328](crates/apex-core/src/node.rs#L1290-L1328)).
+When a window is deleted, it appends `ViewDel` for its views. The body buffer's shard is deleted only once its `views` map is empty, that is, when the last window on the buffer goes ([crates/apex-core/src/node.rs:1312-1350](crates/apex-core/src/node.rs#L1312-L1350)).
 
-Sources: [crates/apex-core/src/buffer.rs:11-17](crates/apex-core/src/buffer.rs#L11-L17), [crates/apex-core/src/buffer.rs:148-232](crates/apex-core/src/buffer.rs#L148-L232), [crates/apex-core/src/ids.rs:83-100](crates/apex-core/src/ids.rs#L83-L100), [crates/apex-core/src/node.rs:521-534](crates/apex-core/src/node.rs#L521-L534), [crates/apex-core/src/node.rs:1276-1328](crates/apex-core/src/node.rs#L1276-L1328), [crates/apex-core/src/node.rs:2241-2249](crates/apex-core/src/node.rs#L2241-L2249)
+Sources: [crates/apex-core/src/buffer.rs:11-17](crates/apex-core/src/buffer.rs#L11-L17), [crates/apex-core/src/buffer.rs:148-232](crates/apex-core/src/buffer.rs#L148-L232), [crates/apex-core/src/ids.rs:83-100](crates/apex-core/src/ids.rs#L83-L100), [crates/apex-core/src/node.rs:521-534](crates/apex-core/src/node.rs#L521-L534), [crates/apex-core/src/node.rs:1298-1345](crates/apex-core/src/node.rs#L1298-L1345), [crates/apex-core/src/node.rs:2288-2297](crates/apex-core/src/node.rs#L2288-L2297)
 
 ## Undo and redo
 
@@ -167,10 +169,10 @@ Sources: [crates/apex-core/src/buffer.rs:11-17](crates/apex-core/src/buffer.rs#L
 
 `Buffer::edit` splices the text and records a `Rec { q0, deleted, inserted }`, which holds what was there before and what replaced it. The record goes into the group named by the entry's `GroupId`. If the top group on the undo stack has the same id, the record is appended to it. Otherwise a new group is pushed, and the oldest group is dropped once there are more than `MAX_UNDO` (1000). Every edit clears the redo stack and increments the version ([crates/apex-core/src/buffer.rs:93-146](crates/apex-core/src/buffer.rs#L93-L146)).
 
-So "consecutive edits with the same group undo together" ([crates/apex-core/src/entry.rs:123-125](crates/apex-core/src/entry.rs#L123-L125)). The group is chosen by the leader:
+So "consecutive edits with the same group undo together" ([crates/apex-core/src/entry.rs:124](crates/apex-core/src/entry.rs#L124)). The group is chosen by the leader:
 
-- `new_group` makes `GroupId((attachment << 40) | next_group)`. Leaders on different attachments can therefore create groups without coordinating, in the same way node ids are allocated ([crates/apex-core/src/node.rs:304-315](crates/apex-core/src/node.rs#L304-L315)).
-- A run of typing in one view reuses a single group (`typing_group`). Selecting, a command, cut, paste, undo and other actions call `end_typing`, so the next keystroke starts a new group ([crates/apex-core/src/node.rs:1367-1381](crates/apex-core/src/node.rs#L1367-L1381)).
+- `new_group` makes `GroupId((attachment << 40) | next_group)`. Leaders on different attachments can therefore create groups without coordinating, in the same way node ids are allocated ([crates/apex-core/src/node.rs:306-315](crates/apex-core/src/node.rs#L306-L315)).
+- A run of typing in one view reuses a single group (`typing_group`). Selecting, a command, cut, paste, undo and other actions call `end_typing`, so the next keystroke starts a new group ([crates/apex-core/src/node.rs:1389-1403](crates/apex-core/src/node.rs#L1389-L1403)).
 - A whole Edit program, a `SetContent` reload, or a `Put` trim each takes one fresh group.
 
 ### Inverses come from the history
@@ -184,7 +186,7 @@ Undo { version: Version },
 
 Every replica holds the same `undo` and `redo` stacks, because they are part of the state and included in `hash_into`. Each replica can therefore work out the inverse of an undo for itself, and the log never has to carry the restored text. `Buffer::undo` pops the top group and replays its records in reverse: each one replaces `inserted.len()` runes at `q0` with `deleted` and adjusts views as an ordinary edit would. It then pushes the group onto `redo` and increments the version. `redo` replays a group forwards and moves it back to `undo` ([crates/apex-core/src/buffer.rs:189-216](crates/apex-core/src/buffer.rs#L189-L216)).
 
-Both return the range of the last record they processed. For undo, that is the earliest edit of the group, restored. For redo, it is the group's latest edit. Acme selects this range. `State::apply` passes it out as `Applied::UndoRange`, and the leader's `Node::undo` and `Node::redo` follow up with a `Select` on the view that asked ([crates/apex-core/src/node.rs:1564-1590](crates/apex-core/src/node.rs#L1564-L1590)). Undo history belongs to the buffer, not to a view. Undo in either of two Zerox windows undoes the last group made in either one.
+Both return the range of the last record they processed. For undo, that is the earliest edit of the group, restored. For redo, it is the group's latest edit. Acme selects this range. `State::apply` passes it out as `Applied::UndoRange`, and the leader's `Node::undo` and `Node::redo` follow up with a `Select` on the view that asked. Both return `false` without appending anything when the stack is empty ([crates/apex-core/src/node.rs:1586-1612](crates/apex-core/src/node.rs#L1586-L1612)). Undo history belongs to the buffer, not to a view. Undo in either of two Zerox windows undoes the last group made in either one. The Edit language's own undo intent (`u` in a program) is carried out the same way, by `run_edit` calling `undo` or `redo` for each step ([crates/apex-core/src/node.rs:1802-1809](crates/apex-core/src/node.rs#L1802-L1809)).
 
 ```mermaid
 sequenceDiagram
@@ -205,7 +207,7 @@ sequenceDiagram
 
 Note what this design implies. The `Undo` entry is only meaningful against the exact history it was sequenced after, and that is why it carries a version. A redo is also an ordinary forward step: the version keeps rising, and `dirty()` relies on the disk hash rather than the version to notice that a buffer is back to its saved state. The test `undo_redo_round_trip` checks a two-record group, the ranges returned, and that the version reaches 4 after edit, edit, undo and redo ([crates/apex-core/src/buffer.rs:315-327](crates/apex-core/src/buffer.rs#L315-L327)).
 
-Sources: [crates/apex-core/src/buffer.rs:19-41](crates/apex-core/src/buffer.rs#L19-L41), [crates/apex-core/src/buffer.rs:93-216](crates/apex-core/src/buffer.rs#L93-L216), [crates/apex-core/src/entry.rs:123-129](crates/apex-core/src/entry.rs#L123-L129), [crates/apex-core/src/state.rs:589-602](crates/apex-core/src/state.rs#L589-L602), [crates/apex-core/src/ids.rs:33-34](crates/apex-core/src/ids.rs#L33-L34), [crates/apex-core/src/node.rs:304-315](crates/apex-core/src/node.rs#L304-L315), [crates/apex-core/src/node.rs:1367-1387](crates/apex-core/src/node.rs#L1367-L1387), [crates/apex-core/src/node.rs:1564-1590](crates/apex-core/src/node.rs#L1564-L1590)
+Sources: [crates/apex-core/src/buffer.rs:19-41](crates/apex-core/src/buffer.rs#L19-L41), [crates/apex-core/src/buffer.rs:93-216](crates/apex-core/src/buffer.rs#L93-L216), [crates/apex-core/src/entry.rs:124-127](crates/apex-core/src/entry.rs#L124-L127), [crates/apex-core/src/state.rs:616-629](crates/apex-core/src/state.rs#L616-L629), [crates/apex-core/src/ids.rs:33-34](crates/apex-core/src/ids.rs#L33-L34), [crates/apex-core/src/node.rs:306-315](crates/apex-core/src/node.rs#L306-L315), [crates/apex-core/src/node.rs:1389-1403](crates/apex-core/src/node.rs#L1389-L1403), [crates/apex-core/src/node.rs:1586-1612](crates/apex-core/src/node.rs#L1586-L1612)
 
 ## The edit path at a glance
 
@@ -235,7 +237,7 @@ pub struct Expansion {
 }
 ```
 
-The character classes are acme's: `isfilec` is alphanumeric (by `acme_isalnum`) or one of `.-+/:@`, plus `~` so that `~/x` and backup names like `x~` are names. `isaddrc` is `0-9+-/$.#,;?`. `isregexc` is alphanumeric or one of `^+-.*?#,;[]()$` ([crates/apex-core/src/expand.rs:9-24](crates/apex-core/src/expand.rs#L9-L24), [crates/apex-core/src/node.rs:148-156](crates/apex-core/src/node.rs#L148-L156)).
+The character classes are acme's: `isfilec` is alphanumeric (by `acme_isalnum`) or one of `.-+/:@`, plus `~` so that `~/x` and backup names like `x~` are names. `isaddrc` is `0-9+-/$.#,;?`. `isregexc` is alphanumeric or one of `^+-.*?#,;[]()$` ([crates/apex-core/src/expand.rs:9-24](crates/apex-core/src/expand.rs#L9-L24), [crates/apex-core/src/node.rs:145-156](crates/apex-core/src/node.rs#L145-L156)).
 
 `expandfile` runs first ([crates/apex-core/src/expand.rs:64-149](crates/apex-core/src/expand.rs#L64-L149)):
 
@@ -245,11 +247,11 @@ The character classes are acme's: `isfilec` is alphanumeric (by `acme_isalnum`) 
 
 If `expandfile` finds nothing, `expand` falls back to acme's word: a click extends over `acme_isalnum` characters on both sides, and a sweep is returned unchanged. If the result is empty (for example, a click on a blank), `expand` returns `None`.
 
-The function does not touch the file system itself. The server calls it from the plumbing walk with an `is_file` that accepts an empty name, any window's path, or a path that exists when resolved against the window's directory (with `~/` handled by `resolve`). It then binds the expanded text, selection and `(file, addr)` for the rules. Text with no place in a buffer, such as a terminal's text or `apex plumb`'s argument, is wrapped in a temporary `Text` and expanded as one selection ([crates/apex-server/src/lib.rs:1339-1382](crates/apex-server/src/lib.rs#L1339-L1382)). See [Plumbing Rules and Verbs](plumbing.md). The client has a separate, simpler `expand` helper in `app.rs` for highlighting under the pointer. It is not this function.
+The function does not touch the file system itself. The server calls it from the plumbing walk for the `plumb` verb with an `is_file` that accepts an empty name, any window's path, or a path that exists when resolved against the window's directory (with `~/` handled by `resolve`). It then binds the expanded text, selection and `(file, addr)` for the rules. Text with no place in a buffer, such as a terminal's text or `apex plumb`'s argument, is wrapped in a temporary `Text` and expanded as one selection, and only a non-empty file name from that counts ([crates/apex-server/src/lib.rs:1409-1452](crates/apex-server/src/lib.rs#L1409-L1452)). See [Plumbing Rules and Verbs](plumbing.md). The client has a separate, simpler `expand` helper in `app.rs` that grows a range outward over runes satisfying a predicate (such as `is_file_char`), for highlighting under the pointer ([crates/apex-client/src/app.rs:725-726](crates/apex-client/src/app.rs#L725-L726)). It is not this function.
 
 The tests show the behaviour that matters. A click anywhere in `plan9port/CHANGES:123:1` (on the directory, the file name or the number) yields the same file and the address `123:1`. With no such file, the click yields the word under the pointer. URLs lose a trailing period. `~/src/x/main.rs:1-130` is a name with a line range ([crates/apex-core/src/expand.rs:151-221](crates/apex-core/src/expand.rs#L151-L221)).
 
-Sources: [crates/apex-core/src/expand.rs:1-221](crates/apex-core/src/expand.rs#L1-L221), [crates/apex-core/src/node.rs:148-156](crates/apex-core/src/node.rs#L148-L156), [crates/apex-server/src/lib.rs:1339-1382](crates/apex-server/src/lib.rs#L1339-L1382)
+Sources: [crates/apex-core/src/expand.rs:1-221](crates/apex-core/src/expand.rs#L1-L221), [crates/apex-core/src/node.rs:145-156](crates/apex-core/src/node.rs#L145-L156), [crates/apex-server/src/lib.rs:1409-1452](crates/apex-server/src/lib.rs#L1409-L1452), [crates/apex-client/src/app.rs:725-726](crates/apex-client/src/app.rs#L725-L726)
 
 ## The fuzzy matcher (`fuzzy.rs`)
 
@@ -273,7 +275,7 @@ The matcher is built to run against a million paths per keystroke:
 
 `fuzzy::score(query, path)` is the one-off convenience wrapper. The test suite keeps the original recursive, memoised scorer as a reference and checks that the dynamic program agrees with it to within 1e-9 over a grid of paths and queries, including non-ASCII ones. It also checks that the quick filter never rejects a real match ([crates/apex-core/src/fuzzy.rs:159-241](crates/apex-core/src/fuzzy.rs#L159-L241)).
 
-There are two users. The host's ⌘O find job matches its index in parallel with `Query` and `Scorer` ([crates/apex-server/src/find.rs:12-31](crates/apex-server/src/find.rs#L12-L31)). The client's finder calls `fuzzy::score` ([crates/apex-client/src/finder.rs:134](crates/apex-client/src/finder.rs#L134)). See [Pickers and Overlays](client-overlays.md).
+There are two users. The host's ⌘O find job (`apex-server/src/find.rs`) walks the tree on one thread and matches the index on another, in parallel across cores with `Query` and `Scorer`, abandoning a match when a newer query arrives ([crates/apex-server/src/find.rs:1-31](crates/apex-server/src/find.rs#L1-L31)). The client's finder calls `fuzzy::score` ([crates/apex-client/src/finder.rs:134](crates/apex-client/src/finder.rs#L134)). See [Pickers and Overlays](client-overlays.md).
 
 Sources: [crates/apex-core/src/fuzzy.rs:1-241](crates/apex-core/src/fuzzy.rs#L1-L241), [crates/apex-server/src/find.rs:1-31](crates/apex-server/src/find.rs#L1-L31), [crates/apex-client/src/finder.rs:134](crates/apex-client/src/finder.rs#L134)
 
@@ -281,9 +283,9 @@ Sources: [crates/apex-core/src/fuzzy.rs:1-241](crates/apex-core/src/fuzzy.rs#L1-
 
 `transcript::last_output(text)` implements `Snarfout`: it finds the last command in a shell transcript (a terminal's text or a win window) and what that command printed. Nothing marks prompts, so it uses a heuristic. The last non-blank line is taken to be the prompt waiting for input. Its final non-space character is the prompt marker (`%`, `$` and so on), and its first word is the prompt's head. Working backwards, the first earlier line that starts with the same head and contains `marker + " "` (or ends with the marker) is the previous prompt, and the command is whatever follows the marker on that line.
 
-The result normalises the prompt to `$ `: it is `$ command` followed by the lines between that prompt and the current one. It returns `None` when no earlier prompt can be found, as with a lone `$ ` or an empty text. Blank rows after the prompt, as in a terminal grid, are skipped, and tabs in the output are kept ([crates/apex-core/src/transcript.rs:1-62](crates/apex-core/src/transcript.rs#L1-L62)). The client calls it for `Snarfout` and reports "no earlier prompt to tell the output by" when it returns `None` ([crates/apex-client/src/app.rs:1269](crates/apex-client/src/app.rs#L1269)). See [win and Language Servers](tool-win-and-lsp.md) and [Terminals](terminals.md).
+The result normalises the prompt to `$ `: it is `$ command` followed by the lines between that prompt and the current one. It returns `None` when no earlier prompt can be found, as with a lone `$ ` or an empty text. Blank rows after the prompt, as in a terminal grid, are skipped, and tabs in the output are kept ([crates/apex-core/src/transcript.rs:1-62](crates/apex-core/src/transcript.rs#L1-L62)). The client calls it for `Snarfout` and reports "Snarfout: no earlier prompt to tell the output by" when it returns `None` ([crates/apex-client/src/app.rs:1279](crates/apex-client/src/app.rs#L1279)). See [win and Language Servers](tool-win-and-lsp.md) and [Terminals](terminals.md).
 
-Sources: [crates/apex-core/src/transcript.rs:1-62](crates/apex-core/src/transcript.rs#L1-L62), [crates/apex-client/src/app.rs:1269](crates/apex-client/src/app.rs#L1269)
+Sources: [crates/apex-core/src/transcript.rs:1-62](crates/apex-core/src/transcript.rs#L1-L62), [crates/apex-client/src/app.rs:1279](crates/apex-client/src/app.rs#L1279)
 
 ## Working on this code
 
@@ -292,4 +294,4 @@ Sources: [crates/apex-core/src/transcript.rs:1-62](crates/apex-core/src/transcri
 - **New editing actions** should go through `Node::edit_op` with a deliberate choice of group. Reuse `typing_group` only for keystroke-like input. Call `end_typing` and `new_group` for anything a user would expect to undo as a unit.
 - **Text offsets are runes** everywhere in the core. Convert at the boundary: the client converts for display, and the LSP tool converts to UTF-16.
 
-Sources: [crates/apex-core/src/buffer.rs:63-91](crates/apex-core/src/buffer.rs#L63-L91), [crates/apex-core/src/buffer.rs:234-264](crates/apex-core/src/buffer.rs#L234-L264), [crates/apex-core/src/node.rs:1367-1387](crates/apex-core/src/node.rs#L1367-L1387)
+Sources: [crates/apex-core/src/buffer.rs:63-91](crates/apex-core/src/buffer.rs#L63-L91), [crates/apex-core/src/buffer.rs:234-264](crates/apex-core/src/buffer.rs#L234-L264), [crates/apex-core/src/node.rs:1389-1409](crates/apex-core/src/node.rs#L1389-L1409)

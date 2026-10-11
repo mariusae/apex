@@ -10,14 +10,14 @@ The UI client and the daemon both build nodes with `Node::new(attachment)`. Tool
 
 | Where | Attachment | Role |
 |---|---|---|
-| `apex-client` `Acme` ([app.rs:737](crates/apex-client/src/app.rs#L737), [app.rs:819](crates/apex-client/src/app.rs#L819)) | the UI's own | Leads buffers, windows and layout once it takes the leases; supplies real font metrics through `node.tiling` ([app.rs:2592](crates/apex-client/src/app.rs#L2592)) |
-| `apexd` session view ([daemon.rs:386](crates/apex-server/src/daemon.rs#L386)) | `SERVER` | Always a follower of UI-led shards; leads them itself while no UI is attached, applying proposals as a headless leader |
-| `Server` in `apex-server` ([lib.rs:178](crates/apex-server/src/lib.rs#L178)) | `SERVER` | The replica the server reads from |
+| `apex-client` `Acme` ([app.rs:747](crates/apex-client/src/app.rs#L747), [app.rs:829](crates/apex-client/src/app.rs#L829)) | the UI's own | Leads buffers, windows and layout once it takes the leases; supplies real font metrics by replacing `node.tiling` ([app.rs:2641](crates/apex-client/src/app.rs#L2641)) |
+| `apexd` session view ([daemon.rs:386](crates/apex-server/src/daemon.rs#L386)) | `SERVER` | Follows UI-led shards; leads them itself while no UI is attached, applying proposals as a headless leader |
+| `Server` in `apex-server` ([lib.rs:182](crates/apex-server/src/lib.rs#L182)) | `SERVER` | The replica the server reads from |
 | `Remote` for tools and the CLI ([remote.rs:257](crates/apex-server/src/remote.rs#L257)) | the tool's | Follower only; changes things by proposing |
 
-Many methods are written for any leader to call. A headless leader uses the default `tiling::Headless` metrics. Its effect queues (below) are drained by the daemon or simply capped.
+A headless leader uses the default `tiling::Headless` metrics ([node.rs:284](crates/apex-core/src/node.rs#L284)). When the daemon leads (`s.leader.is_none()`), it applies its own proposals in a loop, drains one of the effect queues below (`gotos`), opening files and landing on them itself, then polls the server for execs it must perform and for notification changes (`status_flags`) until nothing more is proposed. The other queues are left to fill or, for `client_finds`, capped.
 
-Sources: [crates/apex-core/src/node.rs:1-4](crates/apex-core/src/node.rs#L1-L4), [crates/apex-core/src/node.rs:267-288](crates/apex-core/src/node.rs#L267-L288), [crates/apex-server/src/daemon.rs:1522-1549](crates/apex-server/src/daemon.rs#L1522-L1549), [ARCHITECTURE.md:27-38](ARCHITECTURE.md#L27-L38)
+Sources: [crates/apex-core/src/node.rs:1-4](crates/apex-core/src/node.rs#L1-L4), [crates/apex-core/src/node.rs:267-288](crates/apex-core/src/node.rs#L267-L288), [crates/apex-server/src/daemon.rs:1522-1552](crates/apex-server/src/daemon.rs#L1522-L1552), [ARCHITECTURE.md:27-38](ARCHITECTURE.md#L27-L38)
 
 ## The Node struct
 
@@ -66,57 +66,62 @@ flowchart TD
     I --> J["refresh_leases: epochs = log.held_by(attachment)"]
 ```
 
-**Catching up.** `catch_up` applies, shard by shard, every entry the state has not yet seen. The metalog comes first, so shard creations and leases are known before the entries that depend on them ([node.rs:323-342](crates/apex-core/src/node.rs#L323-L342)). It then refreshes `epochs` from the log store rather than from state: "the log store is the fencing authority (a mirror knows the leases the server will honour)" ([node.rs:344-348](crates/apex-core/src/node.rs#L344-L348)).
+**Catching up.** `catch_up` applies, shard by shard, every entry the state has not yet seen. The metalog comes first, so shard creations and leases are known before the entries that depend on them ([node.rs:324-345](crates/apex-core/src/node.rs#L324-L345)). It then refreshes `epochs` from the log store rather than from state: the log store is the fencing authority, and a mirror knows the leases the server will honour.
 
-**Leading.** `leads(shard)` is just `epochs.contains_key(&shard)`. `append` looks up the epoch it holds for the shard, has the log sequence and fence the entry, and applies the result locally. It returns the entry's `Seq` and the `Applied` value from `State::apply`; `undo` uses that value to learn what range to select ([node.rs:350-356](crates/apex-core/src/node.rs#L350-L356)). Every leader operation on this page eventually goes through `append`.
+**Leading.** `leads(shard)` is just `epochs.contains_key(&shard)` ([node.rs:317](crates/apex-core/src/node.rs#L317)). `append` ([node.rs:351](crates/apex-core/src/node.rs#L351)) looks up the epoch it holds for the shard, has the log sequence and fence the entry, and applies the result locally. It returns the entry's `Seq` and the `Applied` value from `State::apply`; `undo` uses that value to learn what range to select. Every leader operation on this page eventually goes through `append`.
 
 **Shards and leases.**
-- `create_shard` catches up first, appends the metalog entries the log store makes, and applies them. On a mirror log (a client's copy, with a hook to the server) the server's metalog entry arrives later. Until then the node inserts the shard into `state.meta.shards` so entries for it can apply ([node.rs:358-372](crates/apex-core/src/node.rs#L358-L372)).
-- `delete_shard` does the mirror case the other way round. It applies a fake, unsequenced `ShardDel` through `State::apply_unsequenced` ([node.rs:374-385](crates/apex-core/src/node.rs#L374-L385), [state.rs:541-546](crates/apex-core/src/state.rs#L541-L546)).
-- `take_lease` and `release_lease` wrap the log's `grant` and `release` ([node.rs:387-403](crates/apex-core/src/node.rs#L387-L403)).
+- `create_shard` ([node.rs:360](crates/apex-core/src/node.rs#L360)) catches up first, appends the metalog entries the log store makes, and applies them. On a mirror log (a client's copy, with a hook to the server) the server's metalog entry arrives later; until then the node inserts the shard into `state.meta.shards` so entries for it can apply.
+- `delete_shard` ([node.rs:374](crates/apex-core/src/node.rs#L374)) does the mirror case the other way round, applying a fake, unsequenced `ShardDel` through `State::apply_unsequenced`.
+- `take_lease` and `release_lease` wrap the log's `grant` and `release` ([node.rs:388-403](crates/apex-core/src/node.rs#L388-L403)).
 
 **Ids without coordination.** `alloc` puts the attachment id in the top bits and a per-node counter in the low 40 bits. Undo groups are built the same way (`new_group`). Two leaders can therefore never mint the same `BufferId`, `WindowId`, `ColumnId` or `GroupId` ([node.rs:304-315](crates/apex-core/src/node.rs#L304-L315)).
 
-The tests rely on one property throughout: after any sequence of leader operations, a fresh follower that replays the log reaches the same `State::hash` ([tests/core.rs:17-21](crates/apex-core/tests/core.rs#L17-L21), [tests/core.rs:32-47](crates/apex-core/tests/core.rs#L32-L47)).
+The tests rely on one property throughout: after any sequence of leader operations, a fresh follower that replays the log reaches the same `State::hash` ([tests/core.rs:8-47](crates/apex-core/tests/core.rs#L8-L47)).
 
 Sources: [crates/apex-core/src/node.rs:290-403](crates/apex-core/src/node.rs#L290-L403), [crates/apex-core/src/log.rs:267-273](crates/apex-core/src/log.rs#L267-L273), [crates/apex-core/tests/core.rs:8-47](crates/apex-core/tests/core.rs#L8-L47)
 
 ## Making buffers, windows and columns
 
-A buffer is its own shard. `create_buffer_as` allocates a `BufferId`, creates `Shard::Buffer(id)` and appends `BufferOp::Create` with name, text, disk hash, `WinKind` and the scratch flag ([node.rs:412-418](crates/apex-core/src/node.rs#L412-L418)).
+A buffer is its own shard. `create_buffer_as` allocates a `BufferId`, creates `Shard::Buffer(id)` and appends `BufferOp::Create` with name, text, disk hash, `WinKind` and the scratch flag ([node.rs:413-418](crates/apex-core/src/node.rs#L413-L418)).
 
-`init_session` sets up a new session:
-1. It makes the top row's tag buffer, holding `TOP_TAG` (`"Newcol Newterm Win Web Kill Putall Exit End "`).
+`init_session` sets up a new session ([node.rs:425](crates/apex-core/src/node.rs#L425)):
+1. It makes the top row's tag buffer, holding `TOP_TAG` (`"Newcol Newterm Win Web Kill Putall Exit End "`), with the `ViewId::Top` view.
 2. It creates the layout shard with `LayoutOp::Init` and a guessed 1100×700 rectangle.
-3. It makes two columns, as acme's `-c 2` does, and returns the last one ([node.rs:420-432](crates/apex-core/src/node.rs#L420-L432)).
+3. It makes two columns with `new_column`, as acme's `-c 2` does, and returns the last one.
 
-Each column gets a tag buffer holding `COL_TAG` (`"New Cut Paste Snarf Sort Zerox Delcol "`).
+`new_column` ([node.rs:436](crates/apex-core/src/node.rs#L436)) gives each column a tag buffer holding `COL_TAG` (`"New Cut Paste Snarf Sort Zerox Delcol "`) and adds it with `tiling::rowadd`. If there is no room it deletes the tag's shard again and fails with "no room for a column". `arrange_dropping` ([node.rs:451](crates/apex-core/src/node.rs#L451)) is `arrange` plus deletion of the tags of any columns a drag left empty and so removed from the layout.
 
-A window is three things ([node.rs:518-534](crates/apex-core/src/node.rs#L518-L534)):
+A window is three things:
 - a tag buffer holding only `WIN_TAG` (`"Look "`);
 - a `Shard::Window` whose first entry is `WindowOp::Create { tag, body, path, label, via, base }`;
 - a view (`ViewAdd`) on the tag buffer and, for text or buffer-page bodies, on the body buffer.
 
-The rest of a tag (the path, the label and apex's own words) is not text in the tag. It is computed from state by `window_verbs`.
+`make_window_shards` ([node.rs:521](crates/apex-core/src/node.rs#L521)) does these three; the rest of a tag (the path, the label and apex's own words) is not text in the tag. It is computed from state by `window_verbs`.
 
-`place` then lays the window out with `tiling::coladd` and appends the whole new layout as one `LayoutOp::Arrange` ([node.rs:728-757](crates/apex-core/src/node.rs#L728-L757)). It redirects a window meant for a hidden or stripped column to the nearest open one, and puts a *diagnostic* window straight into the stash. Every layout change in the node works this way: clone `state.layout`, run a function from `tiling`, and `arrange` the result ([node.rs:290-294](crates/apex-core/src/node.rs#L290-L294)).
+`place` ([node.rs:747](crates/apex-core/src/node.rs#L747)) then lays the window out with `tiling::coladd` and appends the whole new layout as one `LayoutOp::Arrange`. It sends a window meant for a column hidden behind a maximised one, or put away as a strip, to the column that shows windows (`tiling::nearest_open`), and puts a *diagnostic* window straight into the stash with no warp. Every layout change in the node works this way: clone `state.layout`, run a function from `tiling`, and `arrange` the result ([node.rs:290-294](crates/apex-core/src/node.rs#L290-L294)).
 
 Other constructors follow the same pattern:
 
 | Function | What it makes |
 |---|---|
-| `new_window`, `new_window_as(spec)` | A window on a new buffer; `Spec` gives kind, scratch, label and diagnostic |
+| `new_window`, `new_window_as(spec)` | A window on a new buffer; `Spec` gives kind, scratch, label and diagnostic ([node.rs:68-85](crates/apex-core/src/node.rs#L68-L85)) |
 | `open_window`, `open_window_at` | A window on an existing buffer |
-| `make_window` | acme's `makenewwindow`: picks `activecol`, else the column of `seltext`, else of `from`, else a fallback; un-fulls the column; picks a y; grows the window if it has fewer than two lines |
+| `make_window` | acme's `makenewwindow` ([node.rs:587](crates/apex-core/src/node.rs#L587)): picks `activecol`, else the column of `seltext`, else of `from`, else a fallback; un-fulls the column; picks a y; grows the window if it has fewer than two lines |
 | `open_term_window` | A `Body::Term` window |
 | `open_page`, `open_web_window`, `open_html_window` | `Body::Page` windows (see [The I/O Plane and Pages](io-plane-and-pages.md)) |
 | `cover_window`, `swap_window`, `raise_window` | Window stacks: one window over another in the same place |
-| `zerox` | Another window on the same body buffer, keeping its label |
-| `delete_window` | Drops views, restacks, closes or unstashes, deletes the window and tag shards, and deletes the body shard with its last view |
+| `zerox` | Another window on the same body buffer, keeping its label ([node.rs:1300](crates/apex-core/src/node.rs#L1300)) |
+| `delete_window` | Drops views, restacks or closes or unstashes, deletes the window and tag shards, and deletes the body shard with its last view |
+| `delete_column` | Fails with "column not empty" if it has windows; otherwise `rowclose`, then deletes the tag shard |
 
-`delete_window` sets `warp` to `Warp::Closed { window, next }` so the client can move the pointer as acme's `colclose` does. It also clears `seltext` and `warned` for the window ([node.rs:1286-1334](crates/apex-core/src/node.rs#L1286-L1334)).
+Setters change a window's replicated description: `set_window_path` (renames the buffer of a text window, or sets `WindowOp::Path`), `set_window_label`, `set_window_status` (below), and `web_navigate`, which only moves a URL page's path ([node.rs:684-743](crates/apex-core/src/node.rs#L684-L743)).
 
-Sources: [crates/apex-core/src/node.rs:405-640](crates/apex-core/src/node.rs#L405-L640), [crates/apex-core/src/node.rs:726-757](crates/apex-core/src/node.rs#L726-L757), [crates/apex-core/src/node.rs:1276-1334](crates/apex-core/src/node.rs#L1276-L1334)
+Some layout helpers are used by many callers: `refit_window` re-fits a window whose tag changed shape, as acme's `winsettag` does; `uncover` brings out a column that hides a window the user is being taken to; `reveal` raises a covered window, unstashes a stashed one, un-fulls what hides it and grows a window that shows no lines. `notice` is described under [notifications](#window-flags-status-and-notifications).
+
+`delete_window` ([node.rs:1312](crates/apex-core/src/node.rs#L1312)) sets `warp` to `Warp::Closed { window, next }` so the client can move the pointer as acme's `colclose` does. It also clears `seltext` and `warned` for the window.
+
+Sources: [crates/apex-core/src/node.rs:405-640](crates/apex-core/src/node.rs#L405-L640), [crates/apex-core/src/node.rs:684-850](crates/apex-core/src/node.rs#L684-L850), [crates/apex-core/src/node.rs:1298-1356](crates/apex-core/src/node.rs#L1298-L1356)
 
 ## Editing as leader
 
@@ -130,9 +135,9 @@ fn edit_op(&mut self, log: &mut Log, buffer: BufferId, q0: usize, nd: usize, tex
 }
 ```
 
-Each edit carries the buffer's current version and an undo `GroupId`. Selections are separate `BufferOp::Select` entries, sequenced in the same shard so every replica agrees on where each view's dot is ([node.rs:1383-1396](crates/apex-core/src/node.rs#L1383-L1396)).
+Each edit carries the buffer's current version and an undo `GroupId` ([node.rs:1405](crates/apex-core/src/node.rs#L1405)). Selections are separate `BufferOp::Select` entries, sequenced in the same shard so every replica agrees on where each view's dot is.
 
-**Typing groups.** `typing` remembers the view being typed into and its group. `typing_group(view)` reuses that group for consecutive keystrokes in the same view, so a run of typing undoes as one step. A mouse selection, a command, `set_content`, `cut`, `undo` and the other non-typing operations call `end_typing()` to start a new group ([node.rs:1367-1381](crates/apex-core/src/node.rs#L1367-L1381)). The test `typing_undoes_as_one_group_until_a_mouse_action` checks exactly this ([tests/core.rs:101-117](crates/apex-core/tests/core.rs#L101-L117)).
+**Typing groups.** `typing` remembers the view being typed into and its group. `typing_group(view)` ([node.rs:1389](crates/apex-core/src/node.rs#L1389)) reuses that group for consecutive keystrokes in the same view, so a run of typing undoes as one step. A mouse selection, a command (`exec` calls `end_typing()` first), `set_content`, `cut`, `undo` and the other non-typing operations start a new group. The test `typing_undoes_as_one_group_until_a_mouse_action` checks exactly this ([tests/core.rs:101-117](crates/apex-core/tests/core.rs#L101-L117)).
 
 | Operation | What it appends |
 |---|---|
@@ -146,40 +151,46 @@ Each edit carries the buffer's current version and an undo `GroupId`. Selections
 | `insert_text`, `replace_text`, `delete_runs` | Edits at an address without touching dots beyond the shift (for tools, and Put's trim) |
 | `select`, `set_origin` | `Select` (also sets `seltext`), `Origin` |
 
-Sources: [crates/apex-core/src/node.rs:1096-1133](crates/apex-core/src/node.rs#L1096-L1133), [crates/apex-core/src/node.rs:1365-1590](crates/apex-core/src/node.rs#L1365-L1590), [crates/apex-core/tests/core.rs:77-117](crates/apex-core/tests/core.rs#L77-L117)
+Sources: [crates/apex-core/src/node.rs:1117-1153](crates/apex-core/src/node.rs#L1117-L1153), [crates/apex-core/src/node.rs:1389-1612](crates/apex-core/src/node.rs#L1389-L1612), [crates/apex-core/tests/core.rs:77-117](crates/apex-core/tests/core.rs#L77-L117)
 
 ## Look
 
-`look_dir(view, needle, reverse)` is acme's `search`: a literal search over the buffer's runes, with the hit becoming the view's selection.
+`look_dir(view, needle, reverse)` ([node.rs:1685](crates/apex-core/src/node.rs#L1685)) is acme's `search`: a literal search over the buffer's runes, with the hit becoming the view's selection and `seltext`. `look` is the forward form ([node.rs:1678](crates/apex-core/src/node.rs#L1678)).
 - **Forward**, it searches from the selection's end to the end of the text, then wraps from 0.
 - **Backward** (shift-B3), it takes the last match ending at or before the selection's start, then wraps from the end.
 
-It returns whether anything was found ([node.rs:1656-1696](crates/apex-core/src/node.rs#L1656-L1696), tested in [tests/core.rs:559-585](crates/apex-core/tests/core.rs#L559-L585)).
+It returns whether anything was found (tested in [tests/core.rs:559-588](crates/apex-core/tests/core.rs#L559-L588)).
 
 The tag's `Look` word has its own helpers:
-- `look_arg(w)` finds the first `Look` in a window's tag and parses its argument into a `LookArg`. The argument is the word after `Look`; `Look/word` marks it as *live* (searched for as it is typed); a closing slash lets it hold spaces, as in `Look/two words/` ([node.rs:1592-1618](crates/apex-core/src/node.rs#L1592-L1618)).
-- `set_look_arg` rewrites that argument as `/arg/` after a B3 look ([node.rs:1620-1637](crates/apex-core/src/node.rs#L1620-L1637)).
-- `make_look_live` adds the slashes ([node.rs:1639-1654](crates/apex-core/src/node.rs#L1639-L1654)).
-- `look_spaced` normalises `Look/x/` to `Look x` before commands are resolved ([node.rs:51-64](crates/apex-core/src/node.rs#L51-L64)).
+- `look_arg(w)` ([node.rs:1622](crates/apex-core/src/node.rs#L1622)) finds the first `Look` in a window's tag and parses its argument into a `LookArg` (position, argument, `live`, `closed`). The argument is the word after `Look`; `Look/word` marks it as *live* (searched for as it is typed); a closing slash lets it hold spaces, as in `Look/two words/`.
+- `set_look_arg` rewrites that argument as `/arg/` after a B3 look ([node.rs:1646](crates/apex-core/src/node.rs#L1646)).
+- `make_look_live` adds the slashes ([node.rs:1663](crates/apex-core/src/node.rs#L1663)).
+- `look_spaced` normalises `Look/x/` to `Look x` before commands are resolved ([node.rs:52](crates/apex-core/src/node.rs#L52)).
 
-Pages and terminals have no buffer to search. For these, `found_by_client(ctx)` returns the window, and the `Look` is queued with `find_in_client`, which keeps at most 8 because "a leader with no screen never takes them" ([node.rs:1884-1905](crates/apex-core/src/node.rs#L1884-L1905)). The B3 path is `Proposal::Look` in the server's `proposal::apply` ([proposal.rs:365-405](crates/apex-server/src/proposal.rs#L365-L405)). It calls `look_dir`, then `reveal`, sets `warp = Warp::Sel(v)`, and records the word with `set_look_arg`.
+Pages and terminals have no buffer to search. For these, `found_by_client(ctx)` returns the window, and the `Look` is queued with `find_in_client`, which keeps at most 8 because a leader with no screen never takes them ([node.rs:1914-1932](crates/apex-core/src/node.rs#L1914-L1932)). Both the `Look` built-in and the B3 path use it.
 
-`double_click` and `acme_isalnum` are acme's `textdoubleclick` and `isalnum`, also in this module ([node.rs:103-187](crates/apex-core/src/node.rs#L103-L187)).
+The B3 path is `Proposal::Look` in the server's `proposal::apply` ([proposal.rs:385-425](crates/apex-server/src/proposal.rs#L385-L425)). After the client-find check, it picks the view to search from the context:
+- B3 in a window searches that window's **body**, even when the click was in its tag, as acme's `look3` does. It does not use `seltext`, which a window never selected in would not own.
+- B3 in a column tag or the top row searches the last-selected text if that view still has a buffer; otherwise it searches the tag itself.
 
-Sources: [crates/apex-core/src/node.rs:17-64](crates/apex-core/src/node.rs#L17-L64), [crates/apex-core/src/node.rs:1592-1696](crates/apex-core/src/node.rs#L1592-L1696), [crates/apex-server/src/proposal.rs:365-405](crates/apex-server/src/proposal.rs#L365-L405)
+When `look_dir` finds something, it calls `reveal` on the window, unless that window is stashed, because a stashed window being looked at in the stash preview stays stashed. It then sets `warp = Warp::Sel(v)` and, if the look came from the same window, records the word with `set_look_arg`.
+
+`double_click` and `acme_isalnum` are acme's `textdoubleclick` and `isalnum`, also in this module ([node.rs:105-187](crates/apex-core/src/node.rs#L105-L187)). The `the_first_look_in_a_tag_has_the_word_looked_for` test covers the tag argument ([tests/core.rs:918-983](crates/apex-core/tests/core.rs#L918-L983)).
+
+Sources: [crates/apex-core/src/node.rs:17-64](crates/apex-core/src/node.rs#L17-L64), [crates/apex-core/src/node.rs:1614-1718](crates/apex-core/src/node.rs#L1614-L1718), [crates/apex-server/src/proposal.rs:385-425](crates/apex-server/src/proposal.rs#L385-L425)
 
 ## Lowering Edit programs
 
-`run_edit(window, program)` runs a sam-style Edit program against a snapshot of the body's text, dot and name, using the node's own `apex_edit::Edit` instance. That instance remembers the last regexp across programs. It then lowers the result ([node.rs:1758-1791](crates/apex-core/src/node.rs#L1758-L1791)):
+`run_edit(window, program)` ([node.rs:1782](crates/apex-core/src/node.rs#L1782)) runs a sam-style Edit program against a snapshot of the body's text, dot and name, using the node's own `apex_edit::Edit` instance. That instance remembers the last regexp across programs. It then lowers the result:
 
 1. Every change becomes an `edit_op` in **one** new undo group, so the whole program undoes at once.
 2. The resulting dot becomes a `Select`.
 3. `Intent::Undo { n }` is performed here as `n` undos, or `-n` redos.
-4. Every other intent, along with the output and warnings, is returned in `EditRun`.
+4. Every other intent, along with the output and warnings, is returned in `EditRun` ([node.rs:213-219](crates/apex-core/src/node.rs#L213-L219)).
 
-The `Edit` built-in appends the output and each warning to the window's +Errors. It then fails with "file and pipe commands are not supported here yet" if any intents remain ([node.rs:2155-2168](crates/apex-core/src/node.rs#L2155-L2168)). The changes are applied before that error is raised. Errors from the Edit language come back as `CoreError::Edit`. See [tests/core.rs:119-140](crates/apex-core/tests/core.rs#L119-L140).
+The `Edit` built-in appends the output and each warning to the window's +Errors. It then fails with "Edit: file and pipe commands are not supported here yet" if any intents remain ([node.rs:2202-2215](crates/apex-core/src/node.rs#L2202-L2215)). The changes are applied before that error is raised. Errors from the Edit language come back as `CoreError::Edit`. A server-side `Proposal::Edit` takes the same route, running `Edit {program}` through `exec` ([proposal.rs:445-448](crates/apex-server/src/proposal.rs#L445-L448)). See [tests/core.rs:119-140](crates/apex-core/tests/core.rs#L119-L140).
 
-Sources: [crates/apex-core/src/node.rs:213-219](crates/apex-core/src/node.rs#L213-L219), [crates/apex-core/src/node.rs:1758-1791](crates/apex-core/src/node.rs#L1758-L1791), [crates/apex-core/tests/core.rs:119-140](crates/apex-core/tests/core.rs#L119-L140)
+Sources: [crates/apex-core/src/node.rs:213-219](crates/apex-core/src/node.rs#L213-L219), [crates/apex-core/src/node.rs:1780-1813](crates/apex-core/src/node.rs#L1780-L1813), [crates/apex-core/tests/core.rs:119-140](crates/apex-core/tests/core.rs#L119-L140)
 
 ## Commands: exec entries, handlers and statuses
 
@@ -206,30 +217,30 @@ flowchart TD
 
 | Type | Defined in | Meaning |
 |---|---|---|
-| `ExecCtx` | [ids.rs:124-128](crates/apex-core/src/ids.rs#L124-L128) | Where B2 happened: `Window(w)`, `Column(c)`, or `Top` |
-| `Handler` | [entry.rs:146-155](crates/apex-core/src/entry.rs#L146-L155) | `Leader` (built-ins), `Server` (files, processes, terminals, the plumber), `Tool(name)` |
-| `ExecAt` | [entry.rs:157-164](crates/apex-core/src/entry.rs#L157-L164) | The target buffer, its version and the selection at the time, "so readers never guess at cross-shard order" |
-| `ExecOp` | [entry.rs:166-172](crates/apex-core/src/entry.rs#L166-L172) | `text`, `handler`, `at` |
-| `ExecStatusOp` | [entry.rs:174-181](crates/apex-core/src/entry.rs#L174-L181) | `Done`, `Failed(reason)`, `Unknown` (the performer died before reporting) |
+| `ExecCtx` | [ids.rs:124](crates/apex-core/src/ids.rs#L124) | Where B2 happened: `Window(w)`, `Column(c)`, or `Top` |
+| `Handler` | [entry.rs:148-155](crates/apex-core/src/entry.rs#L148-L155) | `Leader` (built-ins), `Server` (files, processes, terminals, the plumber), `Tool(name)` |
+| `ExecAt` | [entry.rs:159-164](crates/apex-core/src/entry.rs#L159-L164) | The target buffer, its version and the selection at the time, "so readers never guess at cross-shard order" |
+| `ExecOp` | [entry.rs:168-172](crates/apex-core/src/entry.rs#L168-L172) | `text`, `handler`, `at` |
+| `ExecStatusOp` | [entry.rs:176-181](crates/apex-core/src/entry.rs#L176-L181) | `Done`, `Failed(reason)`, `Unknown` (the performer died before reporting) |
 | `ExecRecord`, `ExecStatus` | [state.rs:15-44](crates/apex-core/src/state.rs#L15-L44) | The applied record; status starts `Pending` |
 | `Executed` | [node.rs:200-211](crates/apex-core/src/node.rs#L200-L211) | `Done(seq)`, `Deferred(seq)`, `Failed(seq, reason)`, `Quit(seq)` |
 
-A window's execs are stored in its window shard (`WindowOp::Exec` and `WindowOp::Status`), keyed by the exec entry's sequence number. Execs from a column tag or the top row go in the layout shard (`LayoutOp::Exec { ctx, op }` and `LayoutOp::Status`) ([node.rs:1995-2013](crates/apex-core/src/node.rs#L1995-L2013), [state.rs:660-685](crates/apex-core/src/state.rs#L660-L685)). `ExecAt` is filled from `edit_target(ctx)`. In a window, that is `seltext` if it is a non-empty selection in the same window, and otherwise the window's body. Elsewhere it is `seltext` ([node.rs:1971-1993](crates/apex-core/src/node.rs#L1971-L1993)).
+A window's execs are stored in its window shard (`WindowOp::Exec` and `WindowOp::Status`), keyed by the exec entry's sequence number. Execs from a column tag or the top row go in the layout shard (`LayoutOp::Exec { ctx, op }` and `LayoutOp::Status`) ([node.rs:2042-2060](crates/apex-core/src/node.rs#L2042-L2060), [state.rs:683-708](crates/apex-core/src/state.rs#L683-L708)). The performer reports an outcome with `append_status`. `ExecAt` is filled by `exec_at` from `edit_target(ctx)`. In a window, that is `seltext` if it is a non-empty selection in the same window, and otherwise the window's body. Elsewhere it is `seltext` ([node.rs:2019-2040](crates/apex-core/src/node.rs#L2019-L2040)).
 
 ### Resolution
 
-`Node::resolve(text)` is a static list ([node.rs:2015-2027](crates/apex-core/src/node.rs#L2015-L2027)):
+`Node::resolve(text)` is a static list ([node.rs:2063-2074](crates/apex-core/src/node.rs#L2063-L2074)):
 - Text starting with `|`, `<` or `>` goes to the server.
 - These first words are `Leader`: `Cut Paste Snarf Undo Redo Look Edit Newcol Delcol Del Delete Zerox Stash Swap Font Sort Exit Tab Indent ID Send`. So is `New` with no argument.
 - Everything else is `Server`, including `Get`, `Put`, `Kill`, `New name` and external commands.
 
-`resolve_in` asks the replicated rule table first. If a plumbing rule restricted to some windows claims the verb (`claimed`, which calls `plumb::claims_verb`), the handler is `Server`, and the server walks the rules ([node.rs:2029-2049](crates/apex-core/src/node.rs#L2029-L2049)). `Send` in a terminal window is also forced to `Server` so the shell receives it. If a claiming tool declines, the server sends `Proposal::Builtin`, which calls `run_builtin`. That runs apex's own meaning without appending another status, because the walk owns the exec entry ([node.rs:2107-2116](crates/apex-core/src/node.rs#L2107-L2116)).
+`resolve_in` asks the replicated rule table first. If a plumbing rule restricted to some windows claims the verb (`claimed`, which calls `plumb::claims_verb`), the handler is `Server`, and the server walks the rules ([node.rs:2081-2096](crates/apex-core/src/node.rs#L2081-L2096)). `Send` in a terminal window is also forced to `Server` so the shell receives it. If a claiming tool declines, the server sends `Proposal::Builtin` ([lib.rs:1106-1107](crates/apex-server/src/lib.rs#L1106-L1107)), which calls `run_builtin`. That runs apex's own meaning without appending another status, because the walk owns the exec entry ([node.rs:2154-2163](crates/apex-core/src/node.rs#L2154-L2163), [proposal.rs:373-376](crates/apex-server/src/proposal.rs#L373-L376)).
 
-Execs deferred to the server are picked up by `Server::poll_execs`. It scans every window's and the layout's execs for `Handler::Server` with status `Pending`, performs each one once, and answers with proposals that end in a `Proposal::Status` ([lib.rs:957-993](crates/apex-server/src/lib.rs#L957-L993)). See [The Server](server.md).
+Execs deferred to the server are picked up by `Server::poll_execs` ([lib.rs:1029](crates/apex-server/src/lib.rs#L1029)). It scans every window's and the layout's execs for `Handler::Server` with status `Pending` that it has not already performed, performs each one once, and answers with proposals that end in a `Proposal::Status`, which `proposal::apply` turns into `append_status` unless the window is gone ([proposal.rs:302-312](crates/apex-server/src/proposal.rs#L302-L312)). See [The Server](server.md).
 
 ### The built-ins
 
-`builtin` returns `Ok(true)` only for `Exit` ([node.rs:2118-2286](crates/apex-core/src/node.rs#L2118-L2286)). If a built-in returns `CoreError::Missing`, its message becomes the `Failed` reason.
+`builtin` returns `Ok(true)` only for `Exit` ([node.rs:2166-2333](crates/apex-core/src/node.rs#L2166-L2333)). If a built-in returns `CoreError::Missing`, its message becomes the `Failed` reason.
 
 | Command | Behaviour |
 |---|---|
@@ -239,102 +250,112 @@ Execs deferred to the server are picked up by `Server::poll_execs`. It scans eve
 | `New` | A new empty buffer in a window placed by `make_window`; makes a column if there are none; sets `seltext` to it |
 | `Newcol` | A new column with one empty window |
 | `Delcol` | `colclean` (warn once per dirty window), then deletes every window and the column |
-| `Del` / `Delete` | `Delete` forces. `Del` closes at once if another body view of the buffer remains, or `winclean` allows it |
+| `Del` / `Delete` | `Delete` forces. `Del` closes at once if another body view of the buffer remains (`window_last_view` is false), or `winclean` allows it |
 | `Stash`, `Swap` | `stash_window`, `swap_window` |
 | `Zerox` | `zerox`; on a directory, an error ("is a directory; Zerox illegal") |
 | `Tab n` / `Tab` | `WindowOp::Tab`; with no number, reports the tab stop in +Errors |
-| `Indent on/off` | `WindowOp::Indent` |
+| `Indent on/off` | `WindowOp::Indent`; anything else fails with "Indent on\|off" |
 | `ID` | The window id, written to +Errors |
 | `Send` | On a text window: the selection, or else the snarf buffer, appended to the body with a newline |
 | `Font` | Toggles `WindowOp::Font { mono }` |
 | `Sort` | `sort_column`, sorting windows by path |
 | `Exit` | Sets `quit_requested`; returns `Executed::Quit` |
 
-After a successful built-in, `exec` appends `Done` unless the window no longer exists. `Del` removes the window's log, and in that case "the metalog's ShardDel is the record" ([node.rs:2078-2090](crates/apex-core/src/node.rs#L2078-L2090)).
+After a successful built-in, `exec` appends `Done` unless the window no longer exists. `Del` removes the window's log, and in that case the metalog's `ShardDel` is the record ([node.rs:2125-2144](crates/apex-core/src/node.rs#L2125-L2144)). `Proposal::Exec` turns an `Executed::Failed` into an error for the proposer ([proposal.rs:430-441](crates/apex-server/src/proposal.rs#L430-L441)).
 
-Sources: [crates/apex-core/src/node.rs:1969-2286](crates/apex-core/src/node.rs#L1969-L2286), [crates/apex-core/src/entry.rs:146-181](crates/apex-core/src/entry.rs#L146-L181), [crates/apex-core/src/state.rs:15-44](crates/apex-core/src/state.rs#L15-L44), [crates/apex-server/src/lib.rs:957-993](crates/apex-server/src/lib.rs#L957-L993), [crates/apex-core/tests/core.rs:142-244](crates/apex-core/tests/core.rs#L142-L244)
+Sources: [crates/apex-core/src/node.rs:2016-2333](crates/apex-core/src/node.rs#L2016-L2333), [crates/apex-core/src/entry.rs:146-181](crates/apex-core/src/entry.rs#L146-L181), [crates/apex-core/src/state.rs:15-44](crates/apex-core/src/state.rs#L15-L44), [crates/apex-server/src/lib.rs:1029-1042](crates/apex-server/src/lib.rs#L1029-L1042), [crates/apex-server/src/lib.rs:1092-1108](crates/apex-server/src/lib.rs#L1092-L1108), [crates/apex-server/src/proposal.rs:373-376](crates/apex-server/src/proposal.rs#L373-L376), [crates/apex-core/tests/core.rs:142-244](crates/apex-core/tests/core.rs#L142-L244)
 
 ## Dirty checks: Del, Get, Delcol and End
 
-`window_unsaved(w)` decides whether a window holds edits a file has not had. It is false for scratch windows, directories, windows owned by a tool and live windows. Otherwise it is the body buffer's `dirty()` ([node.rs:2288-2299](crates/apex-core/src/node.rs#L2288-L2299)).
+`window_unsaved(w)` decides whether a window holds edits a file has not had. It is false for scratch windows, directories, windows owned by a tool and live windows. Otherwise it is the body buffer's `dirty()` ([node.rs:2341-2350](crates/apex-core/src/node.rs#L2341-L2350)).
 
-`winclean(w)` is acme's warn-once rule, with these cases ([node.rs:1698-1726](crates/apex-core/src/node.rs#L1698-L1726)):
-- If the window is unsaved, it writes `NAME modified` (or `unnamed file modified`) to the window's +Errors and returns `false`.
+`winclean(w)` is acme's warn-once rule, with these cases ([node.rs:1724-1748](crates/apex-core/src/node.rs#L1724-L1748)):
+- If the window is not unsaved, it returns `true` at once.
+- Otherwise it writes `NAME modified` (or `unnamed file modified`) to the window's +Errors and returns `false`.
 - It records the buffer's version in `warned`. Asked again at the same version, it returns `true`.
 - Any edit after the warning bumps the version, so the next request warns again.
 - An unnamed buffer shorter than 100 runes is never warned about.
 
 `winclean` is used by:
 - `Del`;
-- `Delcol` through `colclean`;
-- `End` through `session_clean`, which asks once per buffer rather than once per window ([node.rs:1728-1746](crates/apex-core/src/node.rs#L1728-L1746));
-- **`Get`'s dirty check**. Before resolving `Get` (when no rule claims it), `exec` calls `winclean` on a non-empty, non-directory window. If that refuses, it returns `Executed::Done(0)` without appending an exec entry, so the server never reloads over unsaved edits until the user asks a second time ([node.rs:2053-2062](crates/apex-core/src/node.rs#L2053-L2062)).
+- `Delcol` through `colclean` ([node.rs:1771](crates/apex-core/src/node.rs#L1771));
+- `End` through `session_clean`, which asks once per buffer rather than once per window ([node.rs:1757-1768](crates/apex-core/src/node.rs#L1757-L1768));
+- **`Get`'s dirty check**. Before resolving a bare `Get` (when no rule claims it), `exec` calls `winclean` on a non-empty, non-directory window. If that refuses, it returns `Executed::Done(0)` without appending an exec entry, so the server never reloads over unsaved edits until the user asks a second time ([node.rs:2101-2109](crates/apex-core/src/node.rs#L2101-L2109)).
 
-`window_verbs(w)` computes the words drawn before the tag's text, as acme's `winsettag1` does ([node.rs:1229-1274](crates/apex-core/src/node.rs#L1229-L1274)):
+`window_verbs(w)` computes the words drawn before the tag's text, as acme's `winsettag1` does ([node.rs:1251-1296](crates/apex-core/src/node.rs#L1251-L1296)):
 - always `Del` and `Snarf`;
-- for a file window with a file menu: `Undo` and `Redo` when their stacks are non-empty, `Put` when the buffer is dirty, named, not a directory and not live, and `Get` only when the buffer is stale;
+- for a window with a file menu (not owned by a tool, not scratch): `Undo` and `Redo` when their stacks are non-empty, `Put` when the buffer is dirty, named, not a directory and not live, and `Get` only when the buffer is stale;
 - `Swap` when the window covers another;
 - `Back Fwd Get` on URL pages;
 - `Send` on terminals.
 
-Sources: [crates/apex-core/src/node.rs:1229-1274](crates/apex-core/src/node.rs#L1229-L1274), [crates/apex-core/src/node.rs:1698-1756](crates/apex-core/src/node.rs#L1698-L1756), [crates/apex-core/src/node.rs:2053-2062](crates/apex-core/src/node.rs#L2053-L2062), [crates/apex-core/src/node.rs:2288-2312](crates/apex-core/src/node.rs#L2288-L2312), [crates/apex-core/tests/core.rs:174-216](crates/apex-core/tests/core.rs#L174-L216), [crates/apex-core/tests/core.rs:490-558](crates/apex-core/tests/core.rs#L490-L558)
+Sources: [crates/apex-core/src/node.rs:1251-1296](crates/apex-core/src/node.rs#L1251-L1296), [crates/apex-core/src/node.rs:1720-1778](crates/apex-core/src/node.rs#L1720-L1778), [crates/apex-core/src/node.rs:2101-2109](crates/apex-core/src/node.rs#L2101-L2109), [crates/apex-core/src/node.rs:2335-2350](crates/apex-core/src/node.rs#L2335-L2350), [crates/apex-core/tests/core.rs:174-216](crates/apex-core/tests/core.rs#L174-L216), [crates/apex-core/tests/core.rs:490-538](crates/apex-core/tests/core.rs#L490-L538)
 
 ## +Errors windows
 
-`error_dir(w)` is acme's `errorwin`: the directory a window's errors belong to ([node.rs:1793-1810](crates/apex-core/src/node.rs#L1793-L1810)):
+`error_dir(w)` is acme's `errorwin`: the directory a window's errors belong to ([node.rs:1818](crates/apex-core/src/node.rs#L1818)):
 - a file window's parent directory;
 - the path itself for a directory, an errors window or a terminal;
 - `None` for unnamed windows and URL pages, which use the session's errors window.
 
-`errors_path(dir)` turns the directory into the window's path, with a trailing slash, or the empty string for the session's own ([node.rs:2315-2322](crates/apex-core/src/node.rs#L2315-L2322)).
+`errors_path(dir)` turns the directory into the window's path, with a trailing slash, or the empty string for the session's own ([node.rs:2364-2369](crates/apex-core/src/node.rs#L2364-L2369)).
 
-`errors(dir, text)` is acme's `errorwin1` ([node.rs:1825-1850](crates/apex-core/src/node.rs#L1825-L1850)):
+`errors(dir, text)` is acme's `errorwin1` ([node.rs:1849-1872](crates/apex-core/src/node.rs#L1849-L1872)):
 1. It finds the `WinKind::Errors` window at that path, or makes one in the last column (creating a column if there is none). A new one is scratch and diagnostic, so `place` creates it already stashed.
 2. It appends the text at the end in its own undo group.
 3. It selects the new text.
 4. It pushes `(view, q0)` onto `shows` so the client can bring the start of the new text into view.
 
-The client does not show a diagnostic window it has not opened. It reports the news in a toast instead ([app.rs:1917-1926](crates/apex-client/src/app.rs#L1917-L1926)). Server-side command output reaches +Errors through `Proposal::Errors`.
+The client does not show a diagnostic window it has not opened. It reports the news in a toast instead (`diagnostic_news`), and skips the `show` for such a window ([app.rs:1929-1940](crates/apex-client/src/app.rs#L1929-L1940)). Server-side command output reaches +Errors through `Proposal::Errors` ([proposal.rs:294-297](crates/apex-server/src/proposal.rs#L294-L297)).
 
-Sources: [crates/apex-core/src/node.rs:1793-1850](crates/apex-core/src/node.rs#L1793-L1850), [crates/apex-core/src/node.rs:2315-2322](crates/apex-core/src/node.rs#L2315-L2322), [crates/apex-core/tests/core.rs:456-484](crates/apex-core/tests/core.rs#L456-L484)
+Sources: [crates/apex-core/src/node.rs:1815-1872](crates/apex-core/src/node.rs#L1815-L1872), [crates/apex-core/src/node.rs:2362-2369](crates/apex-core/src/node.rs#L2362-L2369), [crates/apex-core/tests/core.rs:456-488](crates/apex-core/tests/core.rs#L456-L488)
 
-## Window flags and notifications
+## Window flags, status and notifications
 
-The node provides read-only views over replicated window flags ([node.rs:1135-1227](crates/apex-core/src/node.rs#L1135-L1227)):
+The node provides read-only views over replicated window flags ([node.rs:1160-1249](crates/apex-core/src/node.rs#L1160-L1249)):
 
 | Function | Meaning |
 |---|---|
 | `window_owner(w)` | The owning tool's attachment name (`WindowOp::Own`), while that attachment is still attached |
 | `window_live(w)` | A terminal whose program has not exited, or a text window kept live (`WindowOp::Live`) by an attachment still here |
-| `window_working(w)`, `window_progress(w)` | `WindowOp::Working`, held while the attachment that set it remains. `SERVER` always counts as present. |
+| `window_status(w)` | The window's `WindowStatus`, while whoever said it is here: the session's own (`SERVER`) always counts as present, a tool's goes with its attachment |
+| `window_working(w)`, `window_progress(w)` | Derived from the status: its state is `Working`, and its percentage while it is |
 | `window_diagnostic(w)` | `WindowOp::Diagnostic` |
 | `window_kind`, `window_path`, `window_label`, `window_scratch` | What the window is, where, and whether a file is behind it |
 
-Notifications are metalog state (`MetaOp::Notify` and `Unnotify`, [entry.rs:536-543](crates/apex-core/src/entry.rs#L536-L543)). The metalog is pinned to the daemon, so a node never raises them itself. `notifications()` lists them oldest first, skipping any whose window is gone, and `window_notified(w)` asks about one window ([node.rs:1178-1188](crates/apex-core/src/node.rs#L1178-L1188)). The one leader-side policy is `notice(w)`, applied through `Proposal::Notice`. It rearranges the layout just enough that a notified window is not hidden behind a maximised column or window ([node.rs:832-866](crates/apex-core/src/node.rs#L832-L866)). Behaviour is covered by `notifications_are_a_windows_and_go_with_it` and `a_notified_window_is_not_left_hidden` ([tests/core.rs:606-658](crates/apex-core/tests/core.rs#L606-L658), [tests/core.rs:798](crates/apex-core/tests/core.rs#L798)).
+**Status.** A window's status replaced the older working flag. `set_window_status` ([node.rs:713](crates/apex-core/src/node.rs#L713)) appends `WindowOp::ProgramStatus { status }` ([entry.rs:216](crates/apex-core/src/entry.rs#L216)), and `State::apply` stores it in `Window.status` ([state.rs:675](crates/apex-core/src/state.rs#L675)). A `WindowStatus` carries `state`, `kind`, `progress`, `msg`, `by` and `since` ([state.rs:88-102](crates/apex-core/src/state.rs#L88-L102)). Before appending, the node trims the message and, if state, kind and message are the same as what is there, keeps the old `since`, so only the progress moves and the age is not reset. It appends nothing if nothing changed. Others reach it through `Proposal::SetStatus` ([proposal.rs:264-267](crates/apex-server/src/proposal.rs#L264-L267)). What the states mean, and where reports come from, is on [Program Status Protocol (OSC 7501)](program-status.md).
 
-Sources: [crates/apex-core/src/node.rs:832-866](crates/apex-core/src/node.rs#L832-L866), [crates/apex-core/src/node.rs:1135-1227](crates/apex-core/src/node.rs#L1135-L1227), [crates/apex-core/src/entry.rs:536-543](crates/apex-core/src/entry.rs#L536-L543), [crates/apex-core/tests/core.rs:606-658](crates/apex-core/tests/core.rs#L606-L658)
+**Notifications.** They are metalog state (`MetaOp::Notify` and `Unnotify`, [entry.rs:538-541](crates/apex-core/src/entry.rs#L538-L541); applied at [state.rs:883-887](crates/apex-core/src/state.rs#L883-L887)). The metalog is pinned to the daemon, so a node never raises them itself. `notifications()` lists them oldest first, skipping any whose window is gone, and `window_notified(w)` asks about one window ([node.rs:1194-1202](crates/apex-core/src/node.rs#L1194-L1202)). A window's notification follows its status: the server's `status_flags` ([lib.rs:576-596](crates/apex-server/src/lib.rs#L576-L596)) raises one, in the name of whoever set the status, when the status comes to ask for the user (done, blocked or error), and lowers it when the status no longer asks. The daemon calls it after each round of proposals, whether or not it leads ([daemon.rs:1548](crates/apex-server/src/daemon.rs#L1548), [daemon.rs:1556](crates/apex-server/src/daemon.rs#L1556)). The one leader-side policy is `notice(w)` ([node.rs:859](crates/apex-core/src/node.rs#L859)), applied through `Proposal::Notice` ([proposal.rs:455](crates/apex-server/src/proposal.rs#L455)). It rearranges the layout just enough that a notified window is not hidden behind a maximised column or window. Behaviour is covered by `notifications_are_a_windows_and_go_with_it`, `a_notified_window_is_not_left_hidden` and `a_diagnostic_window_is_made_stashed_and_says_how_far_along` ([tests/core.rs:606-660](crates/apex-core/tests/core.rs#L606-L660), [tests/core.rs:798-880](crates/apex-core/tests/core.rs#L798-L880)).
+
+Sources: [crates/apex-core/src/node.rs:710-727](crates/apex-core/src/node.rs#L710-L727), [crates/apex-core/src/node.rs:859-885](crates/apex-core/src/node.rs#L859-L885), [crates/apex-core/src/node.rs:1160-1249](crates/apex-core/src/node.rs#L1160-L1249), [crates/apex-core/src/state.rs:74-110](crates/apex-core/src/state.rs#L74-L110), [crates/apex-core/src/entry.rs:538-541](crates/apex-core/src/entry.rs#L538-L541), [crates/apex-server/src/lib.rs:576-596](crates/apex-server/src/lib.rs#L576-L596), [crates/apex-server/src/daemon.rs:1544-1557](crates/apex-server/src/daemon.rs#L1544-L1557)
 
 ## Navigation stacks
 
-The session's back and forward stacks are in the layout shard (`layout.nav_back` and `layout.nav_forward`), so a session re-attached elsewhere keeps its history. Their elements are `Loc { session, name, pos }`, where `Pos` is `Keep`, `Chars(q0, q1)`, `Line(n)` (1-based) or `LineCol(line, col)` (0-based, UTF-16 columns as language servers count them) ([entry.rs:418-444](crates/apex-core/src/entry.rs#L418-L444)).
+The session's back and forward stacks are in the layout shard (`layout.nav_back` and `layout.nav_forward`), so a session re-attached elsewhere keeps its history. Their elements are `Loc { session, name, pos }`, where `Pos` is `Keep`, `Chars(q0, q1)`, `Line(n)` (1-based) or `LineCol(line, col)` (0-based, UTF-16 columns as language servers count them) ([entry.rs:420-440](crates/apex-core/src/entry.rs#L420-L440)).
 
-Two entries change the stacks ([state.rs:705-723](crates/apex-core/src/state.rs#L705-L723)):
-- `LayoutOp::Visit { from, to }` pushes `from` onto the back stack and clears the forward stack. It skips duplicates and caps the stack at 50.
-- `LayoutOp::NavPop { back, at }` pops one stack and pushes `at` onto the other.
+Two entries change the stacks ([state.rs:728-746](crates/apex-core/src/state.rs#L728-L746)):
+- `LayoutOp::Visit { from, to }` pushes `from` (when there is one) onto the back stack and clears the forward stack. It skips duplicates and a `from` equal to `to`, and caps the stack at 50.
+- `LayoutOp::NavPop { back, at }` pops one stack and pushes `at` (when there is one) onto the other.
 
-The proposals `Goto` and `Nav` write them ([proposal.rs:304-337](crates/apex-server/src/proposal.rs#L304-L337)). They use these Node helpers:
+The proposals `Goto`, `Follow` and `Nav` write them ([proposal.rs:328-361](crates/apex-server/src/proposal.rs#L328-L361)):
+- `Goto` and `Follow` share `goto_from`: append `Visit`, then either queue the place on `switches` (another session) or `land` on it, falling back to `gotos` when its window is not open ([proposal.rs:162-174](crates/apex-server/src/proposal.rs#L162-L174)). `Goto` records `current_loc()` as the place left; `Follow` records the page's own place, `page_loc(from)`, when the link was followed from a page.
+- `Nav` fails with "nothing to go back to" or "nothing to go forward to" on an empty stack. Otherwise it appends `NavPop`, fails if the place was a page that has since closed (`gone_page`), and goes there the same way.
+- `Switch` simply queues a `Loc` on `switches`.
+
+They use these Node helpers:
 
 | Helper | Role |
 |---|---|
-| `current_loc()` | Where the user is: `seltext`'s window and its dot, with the session id |
+| `current_loc()` | Where the user is: `seltext`'s window and its dot, with the session id; `None` for an unnamed window |
+| `page_loc(w)` | A page's place: its window id as the name, `Pos::Keep` |
 | `elsewhere(loc)` | Whether the place names another session (by id, id prefix or label) |
 | `window_named(name)` | A window by numeric id or by path, preferring the file's own window over its errors window or page |
 | `loc_range(w, pos)` | A `Pos` resolved to a rune range; a `Line` includes its newline, as acme's address does |
-| `land(loc)` | Select, `reveal`, set `seltext` and `warp = Warp::Sel` |
+| `land(loc)` | For a page, just `reveal`. Otherwise select, `reveal`, set `seltext` and `warp = Warp::Sel` |
 
-`web_navigate` deliberately does not touch these stacks. A page's link history belongs to its tool ([node.rs:710-724](crates/apex-core/src/node.rs#L710-L724)).
+`web_navigate` deliberately does not touch these stacks. A page's link history belongs to its tool ([node.rs:739-741](crates/apex-core/src/node.rs#L739-L741)).
 
-Sources: [crates/apex-core/src/node.rs:1852-1960](crates/apex-core/src/node.rs#L1852-L1960), [crates/apex-core/src/state.rs:705-723](crates/apex-core/src/state.rs#L705-L723), [crates/apex-core/src/entry.rs:281-286](crates/apex-core/src/entry.rs#L281-L286), [crates/apex-server/src/proposal.rs:304-337](crates/apex-server/src/proposal.rs#L304-L337)
+Sources: [crates/apex-core/src/node.rs:1874-2007](crates/apex-core/src/node.rs#L1874-L2007), [crates/apex-core/src/state.rs:728-746](crates/apex-core/src/state.rs#L728-L746), [crates/apex-core/src/entry.rs:420-440](crates/apex-core/src/entry.rs#L420-L440), [crates/apex-server/src/proposal.rs:162-174](crates/apex-server/src/proposal.rs#L162-L174), [crates/apex-server/src/proposal.rs:328-361](crates/apex-server/src/proposal.rs#L328-L361)
 
 ## Effect queues for the client
 
@@ -342,14 +363,14 @@ Some consequences of a leader operation are not state but instructions to whoeve
 
 | Field / taker | Filled by | Drained by |
 |---|---|---|
-| `warp: Option<Warp>` | `place`, `delete_window`, `grow_window`, drags, `land`, Look | The client moves the pointer as acme would ([app.rs:2366](crates/apex-client/src/app.rs#L2366)); variants `NewWindow`, `WinButton`, `Closed`, `ColButton`, `Sel` ([tiling.rs:157-171](crates/apex-core/src/tiling.rs#L157-L171)) |
-| `shows` / `take_shows` | `errors`, `Proposal::Show` | The client scrolls the view to the position |
-| `gotos` / `take_gotos` | `Goto` and `Nav` whose window is not open | The client opens the file and lands; with no UI, the daemon opens and lands itself ([daemon.rs:1530-1542](crates/apex-server/src/daemon.rs#L1530-L1542)) |
-| `client_finds` / `take_client_finds` | Look in a page or terminal | The client finds in the web view or the terminal's history; capped at 8 |
-| `switches` / `take_switches` | Goto, Nav or `Switch` naming another session | The UI switches sessions |
-| `quit_requested` | `Exit` | The client closes its window after flushing ([app.rs:2768](crates/apex-client/src/app.rs#L2768)) |
+| `warp: Option<Warp>` | `place`, `delete_window`, `grow_window`, drags, `land`, Look | The client moves the pointer as acme would ([app.rs:2415](crates/apex-client/src/app.rs#L2415)); variants `NewWindow`, `WinButton`, `Closed`, `ColButton`, `Sel` ([tiling.rs:157-171](crates/apex-core/src/tiling.rs#L157-L171)) |
+| `shows` / `take_shows` | `errors`, `Proposal::Show` | The client scrolls the view to the position ([app.rs:1931](crates/apex-client/src/app.rs#L1931)) |
+| `gotos` / `take_gotos` | `Goto`, `Follow` and `Nav` whose window is not open | The client opens the file and lands ([app.rs:1957](crates/apex-client/src/app.rs#L1957)); with no UI, the daemon opens and lands itself ([daemon.rs:1530-1542](crates/apex-server/src/daemon.rs#L1530-L1542)) |
+| `client_finds` / `take_client_finds` | Look in a page or terminal | The client finds in the web view or the terminal's history ([app.rs:1943](crates/apex-client/src/app.rs#L1943)); capped at 8 |
+| `switches` / `take_switches` | Goto, Follow, Nav or `Switch` naming another session | The UI switches sessions ([app.rs:1961](crates/apex-client/src/app.rs#L1961), [app.rs:2758](crates/apex-client/src/app.rs#L2758)) |
+| `quit_requested` | `Exit` | The client closes its window after flushing ([app.rs:2817](crates/apex-client/src/app.rs#L2817)) |
 
-The client's `sync` drains these after catching up ([app.rs:1917-1949](crates/apex-client/src/app.rs#L1917-L1949)).
+The client's `sync` drains these after catching up ([app.rs:1916-1969](crates/apex-client/src/app.rs#L1916-L1969)).
 
 ```mermaid
 sequenceDiagram
@@ -365,7 +386,7 @@ sequenceDiagram
     C->>C: open file, scroll, move pointer
 ```
 
-Sources: [crates/apex-core/src/node.rs:228-260](crates/apex-core/src/node.rs#L228-L260), [crates/apex-core/src/tiling.rs:157-171](crates/apex-core/src/tiling.rs#L157-L171), [crates/apex-client/src/app.rs:1917-1949](crates/apex-client/src/app.rs#L1917-L1949), [crates/apex-server/src/daemon.rs:1522-1549](crates/apex-server/src/daemon.rs#L1522-L1549)
+Sources: [crates/apex-core/src/node.rs:228-260](crates/apex-core/src/node.rs#L228-L260), [crates/apex-core/src/tiling.rs:157-171](crates/apex-core/src/tiling.rs#L157-L171), [crates/apex-client/src/app.rs:1916-1969](crates/apex-client/src/app.rs#L1916-L1969), [crates/apex-server/src/daemon.rs:1522-1552](crates/apex-server/src/daemon.rs#L1522-L1552)
 
 ## Errors
 
@@ -379,9 +400,9 @@ Node operations return `Result<T, CoreError>` ([node.rs:87-101](crates/apex-core
 | `Missing(String)` | A user-level failure: "column not empty", "Del needs a window", "x: not a built-in", and similar |
 | `Edit(apex_edit::Error)` | The Edit program fails |
 
-`exec` turns `Missing` and `Edit` into a `Failed` status and `Executed::Failed`. All other errors propagate. `fencing_rejects_a_stale_leader` shows a node whose lease was taken failing to append ([tests/core.rs:246](crates/apex-core/tests/core.rs#L246)).
+`exec` turns `Missing` and `Edit` into a `Failed` status and `Executed::Failed`. All other errors propagate ([node.rs:2138-2143](crates/apex-core/src/node.rs#L2138-L2143)). `fencing_rejects_a_stale_leader` shows a node whose lease was taken failing to append ([tests/core.rs:246-272](crates/apex-core/tests/core.rs#L246-L272)).
 
-Sources: [crates/apex-core/src/node.rs:87-101](crates/apex-core/src/node.rs#L87-L101), [crates/apex-core/src/node.rs:2078-2096](crates/apex-core/src/node.rs#L2078-L2096)
+Sources: [crates/apex-core/src/node.rs:87-101](crates/apex-core/src/node.rs#L87-L101), [crates/apex-core/src/node.rs:2125-2144](crates/apex-core/src/node.rs#L2125-L2144)
 
 ## The review's view
 
@@ -395,4 +416,4 @@ ARCHITECTURE.md §2, "UI in the core", criticises `node.rs`:
 
 Some details of the review predate the current code. It names `page_finds` and `find_in_page`, which are now `client_finds` and `find_in_client`. It mentions a `Web` built-in in the core, but `Web` is no longer in `Node::resolve`. It says `web_navigate` pushes onto the back stack, but the code now says it does not. Its line numbers are also stale.
 
-Sources: [ARCHITECTURE.md:335-415](ARCHITECTURE.md#L335-L415), [crates/apex-core/src/node.rs:2015-2027](crates/apex-core/src/node.rs#L2015-L2027), [crates/apex-core/src/node.rs:710-724](crates/apex-core/src/node.rs#L710-L724)
+Sources: [ARCHITECTURE.md:335-415](ARCHITECTURE.md#L335-L415), [crates/apex-core/src/node.rs:2063-2074](crates/apex-core/src/node.rs#L2063-L2074), [crates/apex-core/src/node.rs:729-743](crates/apex-core/src/node.rs#L729-L743)

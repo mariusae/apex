@@ -2,7 +2,7 @@
 
 A terminal window in apex is a window whose body is `Body::Term`. Its contents are a grid of cells kept in a **term shard**. The shell runs on the host that owns the session, on a pseudoterminal that the server opens itself. Ghostty's VT library (libghostty-vt) parses the program's output into a screen. A loop then turns that screen into `TermOp` entries, which the daemon appends to the term shard as its leader. Every client replays those entries like any other shard (see [Sessions, Shards and Leadership](sessions-and-replication.md)) and paints the grid straight from core state. Keystrokes go the other way, as messages to the daemon. The daemon encodes them for the program, because the encoding depends on terminal modes that only the server knows.
 
-The pipeline has four layers. `pty.rs` owns the pty and the child process. `ghostty-vt-sys` is the FFI crate and C shim over libghostty-vt. `term_loop.rs` and `term.rs` hold the pty thread and the `TermHost`. On the client, `term_element.rs` draws the grid and `contrast.rs` corrects colours. This page follows the bytes through each layer. The `win` tool, which runs a shell in an editable *text* window instead of a grid, is covered in [win and Language Servers](tool-win-and-lsp.md). The surrounding `Server` and daemon are covered in [The Server](server.md) and [The Daemon](daemon.md).
+The pipeline has four layers. `pty.rs` owns the pty and the child process. `ghostty-vt-sys` is the FFI crate and C shim over libghostty-vt. `term_loop.rs` and `term.rs` hold the pty thread and the `TermHost`. On the client, `term_element.rs` draws the grid and `contrast.rs` corrects colours. This page follows the bytes through each layer. What programs say about themselves with OSC 7501 is covered in [Program Status Protocol (OSC 7501)](program-status.md); this page shows only where those reports enter the terminal plumbing. The `win` tool, which runs a shell in an editable *text* window instead of a grid, is covered in [win and Language Servers](tool-win-and-lsp.md). The surrounding `Server` and daemon are covered in [The Server](server.md) and [The Daemon](daemon.md).
 
 ## Architecture at a glance
 
@@ -13,17 +13,17 @@ flowchart LR
         Loop -->|"scan: labels cut out"| VT["Terminal (libghostty-vt via shim.c)"]
         VT -->|"events: WritePty, Title, Clipboard, Bell, Progress"| Loop
         Loop -->|"Report to TermEvent"| Srv["Server::pump"]
-        Srv -->|"changed_ops"| Shard["term shard (TermOp entries)"]
-        Srv -->|"SetPath, SetLabel, Snarf, Working"| Props["Proposals"]
+        Srv -->|"changed_ops"| Shard["term shard (TermOps)"]
+        Srv -->|"SetPath, SetLabel, Snarf, SetStatus"| Props["Proposals"]
     end
     Shard -->|"Entries over the attach protocol"| Client["apex-ui Node state.terms"]
     Client --> Paint["TermElement paints the grid"]
     Client -->|"TermKey, TermResize, TermScroll, ..."| Srv
 ```
 
-Each terminal has three threads of control. The **pty thread** (`EventLoop::run`) reads the master fd and feeds the parser. The `Server`'s forwarding thread moves `(TermId, TermEvent)` pairs into the single server event channel ([crates/apex-server/src/lib.rs:161-177](crates/apex-server/src/lib.rs#L161-L177)). The **daemon's state thread** calls `Server::pump`, which reads the screen under the `Terminal` mutex and appends ops. The `Terminal` is shared between the pty thread and the server as `Arc<Mutex<Terminal>>`. The pty thread holds the lock while it writes bytes into the parser, and the server holds it while it snapshots.
+Each terminal has three threads of control. The **pty thread** (`EventLoop::run`) reads the master fd and feeds the parser. A forwarding thread started in `Server::new` moves `(TermId, TermEvent)` pairs into the single server event channel as `ServerEvent::Term` ([crates/apex-server/src/lib.rs:165-181](crates/apex-server/src/lib.rs#L165-L181)). The **daemon's state thread** calls `Server::pump`, which reads the screen under the `Terminal` mutex and appends ops. The `Terminal` is shared between the pty thread and the server as `Arc<Mutex<Terminal>>`. The pty thread holds the lock while it writes bytes into the parser, and the server holds it while it snapshots.
 
-Sources: [crates/apex-server/src/term.rs:1-15](crates/apex-server/src/term.rs#L1-L15), [crates/apex-server/src/term_loop.rs:1-9](crates/apex-server/src/term_loop.rs#L1-L9), [crates/apex-server/src/lib.rs:161-177](crates/apex-server/src/lib.rs#L161-L177), [crates/apex-server/src/daemon.rs:285-303](crates/apex-server/src/daemon.rs#L285-L303)
+Sources: [crates/apex-server/src/term.rs:1-43](crates/apex-server/src/term.rs#L1-L43), [crates/apex-server/src/term_loop.rs:1-9](crates/apex-server/src/term_loop.rs#L1-L9), [crates/apex-server/src/lib.rs:165-181](crates/apex-server/src/lib.rs#L165-L181), [crates/apex-server/src/daemon.rs:695-715](crates/apex-server/src/daemon.rs#L695-L715)
 
 ## The pty and the child (`pty.rs`)
 
@@ -115,7 +115,7 @@ The library's callbacks push to a linked list of `ApexEvent`s:
 
 `apex_vt_next_event` hands out each event's bytes borrowed until the next call. It keeps the last event in a thread-local and frees it on the following call. `Terminal::events` copies the bytes out immediately.
 
-Sources: [crates/ghostty-vt-sys/src/lib.rs:1-273](crates/ghostty-vt-sys/src/lib.rs#L1-L273), [crates/ghostty-vt-sys/src/shim.c:1-142](crates/ghostty-vt-sys/src/shim.c#L1-L142), [crates/ghostty-vt-sys/src/shim.c:146-196](crates/ghostty-vt-sys/src/shim.c#L146-L196), [crates/ghostty-vt-sys/src/shim.c:215-415](crates/ghostty-vt-sys/src/shim.c#L215-L415), [crates/ghostty-vt-sys/src/shim.c:427-502](crates/ghostty-vt-sys/src/shim.c#L427-L502), [crates/apex-core/src/entry.rs:294-309](crates/apex-core/src/entry.rs#L294-L309)
+Sources: [crates/ghostty-vt-sys/src/lib.rs:1-273](crates/ghostty-vt-sys/src/lib.rs#L1-L273), [crates/ghostty-vt-sys/src/shim.c:1-142](crates/ghostty-vt-sys/src/shim.c#L1-L142), [crates/ghostty-vt-sys/src/shim.c:146-196](crates/ghostty-vt-sys/src/shim.c#L146-L196), [crates/ghostty-vt-sys/src/shim.c:215-415](crates/ghostty-vt-sys/src/shim.c#L215-L415), [crates/ghostty-vt-sys/src/shim.c:427-502](crates/ghostty-vt-sys/src/shim.c#L427-L502), [crates/apex-core/src/entry.rs:287-304](crates/apex-core/src/entry.rs#L287-L304)
 
 ### Building the library
 
@@ -151,11 +151,11 @@ sequenceDiagram
     L->>P: flush pending input (as much as the pty takes)
     L->>L: poll(pty POLLIN or POLLOUT, waker, 1s)
     P-->>L: bytes
-    L->>L: scan() cuts out OSC ;label, OSC 7, OSC 133
+    L->>L: scan() cuts out OSC ;label, 7, 7501, 133 and notes RIS
     L->>T: write(bytes), events()
     T-->>L: WritePty answers, Title, Clipboard, Bell, Progress
     L->>P: answers written back
-    L-->>S: Report as TermEvent (Label, Mark, Title, ..., Wakeup)
+    L-->>S: Report as TermEvent (Name, Cwd, Mark, Status, Reset, Title, ..., Wakeup)
     S->>T: changed_ops() snapshot and diff
     S->>S: append TermOps to the term shard
 ```
@@ -164,31 +164,36 @@ Each turn of `run` does the following. It drains messages: `Resize` resizes the 
 
 ### The label scan
 
-plan9port's `win` watches its shell's output for `ESC ] ; label BEL`, which is what its `label` and `awd` commands emit. apex does the same, and also takes OSC 7 (the working directory) and OSC 133 (semantic prompt marks). These sequences are for apex, not for the parser, so `scan` removes them from the stream before Ghostty sees it:
+plan9port's `win` watches its shell's output for `ESC ] ; label BEL`, which is what its `label` and `awd` commands emit. apex does the same, and also takes OSC 7 (the working directory), OSC 133 (semantic prompt marks) and OSC 7501 (the Program Status Protocol). These sequences are for apex, not for the parser, so `scan` removes them from the stream before Ghostty sees it. It returns the bytes for the parser and a list of `(offset, Label)`:
 
-- `ESC ] ; text` is a `Label::Name`.
-- `ESC ] 7; url` is a `Label::Cwd`.
-- `ESC ] 133; K[;status]` is a `Label::Mark(K, status)`.
-- Every other OSC passes through untouched.
+| Sequence | `Label` |
+|---|---|
+| `ESC ] ; text` | `Name(text)` |
+| `ESC ] 7; url` | `Cwd(url)` |
+| `ESC ] 7501; body` | `Status(body)`, the raw body, parsed later |
+| `ESC ] 133; K[;status]` | `Mark(K, status)` |
+| `ESC c` (RIS) | `Reset`; the two bytes still go on to the parser, so the terminal resets as ever |
 
-An OSC ends at BEL or `ESC \`, and an ESC followed by anything else aborts it. An unterminated OSC of up to `MAX_LABEL` (4096) bytes is held in `carry`, so a label split across reads is still one label. A lone trailing ESC is also carried. Each label records the offset where it fell in the output.
+Every other OSC passes through untouched. An OSC ends at BEL or `ESC \`, and an ESC followed by anything else aborts it. An unterminated OSC of up to `MAX_LABEL` (4096) bytes is held in `carry`, so a label split across reads is still one label. A lone trailing ESC is also carried. Each label records the offset where it fell in the output.
 
 `read` uses those offsets for OSC 133. It writes bytes into the terminal only up to each mark, then records the cursor's history line at that moment (`scrollback + cursor.y`) in `Report::Mark`. That way a mark refers to the line where the prompt actually is. Parser events are collected; `WritePty` answers are written back to the pty, and the rest become reports. A `Wakeup` follows any read that returned data.
 
-Sources: [crates/apex-server/src/term_loop.rs:20-115](crates/apex-server/src/term_loop.rs#L20-L115), [crates/apex-server/src/term_loop.rs:117-375](crates/apex-server/src/term_loop.rs#L117-L375)
+OSC 7501 has a query form (`?`). When `read` sees a `Status` label that `apex_core::status::is_query` accepts, it adds `ESC ] 7501 ; ? ESC \` to the answers. It does so in the order the program asked, ahead of the terminal's own answers, so a device-attributes query sent after it tells the program, by coming first, that the protocol is there. Other `Status` labels, and `Name`, `Cwd` and `Reset`, are reported as `Report::Label`.
+
+Sources: [crates/apex-server/src/term_loop.rs:20-128](crates/apex-server/src/term_loop.rs#L20-L128), [crates/apex-server/src/term_loop.rs:131-161](crates/apex-server/src/term_loop.rs#L131-L161), [crates/apex-server/src/term_loop.rs:250-392](crates/apex-server/src/term_loop.rs#L250-L392)
 
 ## `TermHost`: one hosted terminal (`term.rs`)
 
-`TermHost::spawn` sets up one terminal:
+`TermHost::spawn` ([crates/apex-server/src/term.rs:276-335](crates/apex-server/src/term.rs#L276-L335)) sets up one terminal:
 
 - It starts the shell as a **login shell**: `-l`, or `-l -c CMD` for `Newterm cmd`.
 - The environment holds the `TERM*` variables listed above plus `extra`, which is the session environment and `winid`.
 - It creates a `Terminal` with `scrollback` lines; the `Newterm.scrollback` setting defaults to 10000.
 - Its `report` closure maps each `Report` to a `TermEvent` and sends it on the server's channel.
 
-A `Progress` report becomes `Working(true, …)` only for the states `At` and `Unknown`. Failed, paused or removed all mean "no longer working".
+The mapping is mostly one to one: `Name`, `Cwd`, `Mark`, `Title`, `Clipboard`, `Bell`, `Wakeup` and `Exit` keep their meaning, and `Label::Reset` becomes `TermEvent::Reset`. A `Label::Status` body is parsed with `apex_core::status::parse`, and a body that does not parse is dropped here, so only a `TermEvent::Status(report)` reaches the server. A `Progress` report becomes `Working(true, …)` only for the states `At` and `Unknown`. Failed, paused or removed all mean "no longer working".
 
-The host also records what it needs for `ps`/`kill`: the pid, the name (the command's or the shell's), the command line and the start time. It keeps `dir` (where B2/B3 resolve names; updated from OSC 7 only when the path is a directory), `cwd` and `title` as reported, `initial_dir` and `label`, the working/progress state, and the prompt marks.
+The host also records what it needs for `ps`/`kill`: the pid, the name (the command's or the shell's), the command line and the start time. It keeps `dir` (where B2/B3 resolve names; updated from OSC 7 only when the path is a directory), `cwd` and `title` as reported, `initial_dir` and `label`, the working/progress state, the prompt marks, and the Program Status state: `status` (the `Records`), `status_heard`, `status_marked` and `status_said`.
 
 | Method | Behaviour |
 |---|---|
@@ -209,13 +214,13 @@ The host also records what it needs for `ps`/`kill`: the pid, the name (the comm
 
 `encode_key` produces xterm sequences with **Option as Meta**: ESC followed by the unmodified key, so opt-b sends `ESC b` and not the `∫` the macOS option layer composes. Opt-left/right send `ESC b`/`ESC f`, Terminal.app's defaults and what shells bind, instead of xterm's modified arrows. Other modified cursor and editing keys use xterm's `CSI 1;m X` or `CSI n;m ~` forms, where `m = 1 + shift + 2·alt + 4·ctrl`. Unmodified arrows honour application cursor mode (`ESC O A`). Control letters map to `c & 0x1f`, and the usual punctuation aliases cover `^[ ^\ ^] ^^ ^_ ^? ^@`. Shift-Tab is `ESC[Z` and F1–F4 are SS3. The unit tests in `key_tests` pin these down.
 
-Sources: [crates/apex-server/src/term.rs:17-53](crates/apex-server/src/term.rs#L17-L53), [crates/apex-server/src/term.rs:180-521](crates/apex-server/src/term.rs#L180-L521), [crates/apex-server/src/term.rs:523-669](crates/apex-server/src/term.rs#L523-L669)
+Sources: [crates/apex-server/src/term.rs:17-43](crates/apex-server/src/term.rs#L17-L43), [crates/apex-server/src/term.rs:197-335](crates/apex-server/src/term.rs#L197-L335), [crates/apex-server/src/term.rs:337-658](crates/apex-server/src/term.rs#L337-L658)
 
 ## From screen to the term shard
 
 ### The ops and the state
 
-A terminal's shard is **pinned to the daemon**, which is the only replica that can see the pty. `Server::new_term` creates `Shard::Term(id)`, appends `TermOp::Create { cols: 80, rows: 24 }`, and proposes a `TermWindow` for a leader to open (`Node::open_term_window`). The shell itself is not started yet. It is recorded as a `PendingTerm`, and `spawn_pending` starts it once the window appears in the state, with `winid` set in its environment as acme's win does. If the client sends a size before then, the size is stored in the pending entry and the shell starts at that size. If spawning fails, the server appends `Exit { status: 1 }` and writes the error to `+Errors`.
+A terminal's shard is **pinned to the daemon**, which is the only replica that can see the pty. `Server::new_term` creates `Shard::Term(id)`, appends `TermOp::Create { cols: 80, rows: 24 }`, and proposes a `TermWindow` for a leader to open (`Node::open_term_window`). The shell itself is not started yet. It is recorded as a `PendingTerm`, and `spawn_pending` starts it once the window appears in the state, with `winid` set in its environment as acme's win does. When it starts, the server also queues a `MetaOp::ProcStart` for the shell (kind `ProcKind::Term`, origin the window), which is how it shows in `ps` and can be killed; the matching `ProcExit` is queued when the terminal reports `Exit`. If the client sends a size before the shell starts, the size is stored in the pending entry and the shell starts at that size (a `Resize` op follows if it is not 80×24). If spawning fails, the server appends `Exit { status: 1 }` and writes the error to `+Errors`.
 
 | `TermOp` | Applied to `state::Term` |
 |---|---|
@@ -225,22 +230,23 @@ A terminal's shard is **pinned to the daemon**, which is the only replica that c
 | `Cursor { col, row, visible }` | Cursor position and visibility |
 | `Resize { cols, rows }` | Grid resized, padded with blanks |
 | `View { top, total }` | History line of the viewport's first row; rows in history plus screen |
-| `Progress { going, at }` | OSC 9;4 state |
+| `Progress { going, at }` | Whether the program's work goes on, and how far |
 | `Marks { marks }` | All OSC 133 `PromptMark`s (prompt, output, end, exit) |
 | `Screen { alt }` | Whether the alternate screen is active |
+| `Status { records }` | Every OSC 7501 record, as they now stand (`Term::status`) |
 | `Exit { status }` | The program ended |
 
 ### Publishing only what changed
 
-The pty wakes often, so the shard must grow with the output, not with the number of wakeups. `publish_term` calls `TermHost::changed_ops`. That function takes a full `snapshot_ops` (`View`, `Links`, all `Rows`, `Cursor`, `Screen`) and compares it with the last `Published` snapshot. If the shape is the same, it emits only a `View` if top or total moved, `Links` if they differ, one `Rows` op per **run of consecutive differing rows**, `Cursor` if it moved, and `Screen` if alt changed. On the first publish, or after a resize, it emits everything. Nothing is appended when nothing changed.
+The pty wakes often, so the shard must grow with the output, not with the number of wakeups. `publish_term` calls `TermHost::changed_ops`. That function takes a full `snapshot_ops` (`View`, `Links`, all `Rows`, `Cursor`, `Screen`) and compares it with the last `Published` snapshot. If the shape is the same, it emits only a `View` if top or total moved, `Links` if they differ, one `Rows` op per **run of consecutive differing rows**, `Cursor` if it moved, and `Screen` if alt changed. On the first publish, or after a resize, it emits everything. Nothing is appended when nothing changed. `Progress`, `Marks` and `Status` are not part of the snapshot: `pump` appends them itself when the events that carry them change something.
 
 ### Resizing while scrolled back
 
 `term_resize` resizes immediately only when the terminal is at the bottom. If the user has scrolled back into the history, the new size is kept in `held_size` and applied by the next `publish_term` after the view returns to the bottom. The reason is that a resize makes a program redraw, and a coding agent's redraw can clear the scrollback, which would move the text the user is reading. Keys, typing and pastes call `scroll_to_bottom` first, so input always goes to the live screen.
 
-Sources: [crates/apex-server/src/lib.rs:357-470](crates/apex-server/src/lib.rs#L357-L470), [crates/apex-server/src/lib.rs:492-589](crates/apex-server/src/lib.rs#L492-L589), [crates/apex-server/src/term.rs:671-783](crates/apex-server/src/term.rs#L671-L783), [crates/apex-core/src/entry.rs:311-350](crates/apex-core/src/entry.rs#L311-L350), [crates/apex-core/src/state.rs:346-371](crates/apex-core/src/state.rs#L346-L371), [crates/apex-core/src/state.rs:728-795](crates/apex-core/src/state.rs#L728-L795), [crates/apex-core/src/node.rs:616-618](crates/apex-core/src/node.rs#L616-L618)
+Sources: [crates/apex-server/src/lib.rs:364-442](crates/apex-server/src/lib.rs#L364-L442), [crates/apex-server/src/lib.rs:444-519](crates/apex-server/src/lib.rs#L444-L519), [crates/apex-server/src/term.rs:692-800](crates/apex-server/src/term.rs#L692-L800), [crates/apex-core/src/entry.rs:306-336](crates/apex-core/src/entry.rs#L306-L336), [crates/apex-core/src/state.rs:751](crates/apex-core/src/state.rs#L751), [crates/apex-core/src/node.rs:616](crates/apex-core/src/node.rs#L616)
 
-## What the program says: titles, directories, clipboard, progress
+## What the program says: titles, directories, clipboard, progress, status
 
 `Server::pump` handles each `TermEvent`, and then always calls `publish_term`. It also gives every terminal the current client colours on each pump; it does this first.
 
@@ -250,9 +256,24 @@ Sources: [crates/apex-server/src/lib.rs:357-470](crates/apex-server/src/lib.rs#L
 | `Title(t)` (OSC 0/2) and `Name(t)` (`ESC ] ; t BEL`) | `h.title = Some(t)` |
 | `Cwd(s)` (OSC 7) | `cwd_path` parses a `file://host/path` URL (percent-decoded) or a bare path, expanding `~` and `~/` to `$HOME`; sets `cwd`, and also `dir` if the path is a directory |
 | `Clipboard(text)` (OSC 52) | Non-empty text goes into the snarf buffer via `Proposal::Snarf`, and into `clips`, which the daemon sends as `ServerMsg::Clipboard` to every UI on the session |
-| `Working(on, at)` (OSC 9;4) | On change: append `TermOp::Progress`, and propose `Working` on the window so its handle pulses |
-| `Mark(kind, line, exit)` (OSC 133) | `A` starts a mark (the list is capped at the latest 1000), `C` sets its output line, `D` sets its end and exit once; append `Marks` when the list changed |
-| `Exit(status)` | Record the process exit, clear any working state, append `TermOp::Exit` |
+| `Working(on, at)` (OSC 9;4) | Only while no OSC 7501 report has been heard (`!status_heard`). On change: append `TermOp::Progress`, and propose `SetStatus` on the window: a `Working` status with that progress, or, when work stops, none (taken away only if it is the server's own) |
+| `Status(report)` (OSC 7501) | Sets `status_heard`, applies the report to the host's `Records`, and if anything changed publishes the records and updates the window (below) |
+| `Reset` (RIS) | Clears `status_heard`, so OSC 9;4 is heard again, and empties the records |
+| `Mark(kind, line, exit)` (OSC 133) | `A` settles the records (working and blocked ones go) and starts a mark (the list is capped at the latest 1000), `C` sets its output line, `D` sets its end and exit once; append `Marks` when the list changed |
+| `Exit(status)` | Settle the records, queue the process exit for `ps`, clear any working state (and the window's status if it was the server's), append `TermOp::Exit` |
+
+OSC 7501 takes over from OSC 9;4. Once a program in the terminal has spoken the Program Status Protocol, the terminal stops listening to progress reports, because the spec says a report of that kind would undo one of this. A full reset puts that back. The protocol's records, limits and life rules are in `crates/apex-core/src/status.rs` and described on [Program Status Protocol (OSC 7501)](program-status.md).
+
+### The window's status from status records
+
+A window carries an optional `WindowStatus` (state, kind, progress, message, who said it, and since when), set in the log by `Proposal::SetStatus` ([crates/apex-core/src/state.rs:95-110](crates/apex-core/src/state.rs#L95-L110), [crates/apex-server/src/proposal.rs:264-267](crates/apex-server/src/proposal.rs#L264-L267)). A terminal's status is stamped `by: SERVER`, so it lasts as long as the session. A tool's status on the same window is not taken away by the terminal (`terms_status` only clears a status whose `by` is `SERVER`).
+
+When the records change, `status_marks` ([crates/apex-server/src/lib.rs:1975-1999](crates/apex-server/src/lib.rs#L1975-L1999)) appends `TermOp::Status { records }` to the shard (the records sorted by id), so every client can see them in `state.terms[id].status`. It then reduces them with `apex_core::status::summary` and `top`, ranking blocked, error, done, working, idle. Two things follow:
+
+- If the "at work" flag or the progress changed (`status_marked`), it appends `TermOp::Progress`, so the terminal's bar fills as far as the program says.
+- If the most pressing record's state, kind, progress or message (`status::said`, the first line of its message or title) differs from the last one (`status_said`), it proposes `SetStatus` on the window. The window's pill and sidebar line show it (see [Sessions, Tabs and Window Chrome](client-chrome.md)).
+
+`status_marks` does not raise notifications itself. A window's notification follows its status, whoever set it: `Server::status_flags` ([crates/apex-server/src/lib.rs:576-610](crates/apex-server/src/lib.rs#L576-L610)) watches every window whose status is `Done`, `Blocked` or `Error`, and when a window comes to one of those (or changes from one to another) it raises a notification in the name of whoever said the status (`log.notify`, with `Proposal::Notice`). When the status no longer asks for the user, it lowers the notification (`log.unnotify`). A terminal's `SERVER` status is handled the same way as a tool's.
 
 ### Window naming: `DIR/-TITLE`
 
@@ -268,7 +289,7 @@ The **path** is the OSC 7 directory once one has been reported, and after that n
 
 `crates/apex-cli/README.md` says that with no directory reported the name is `-TITLE`. The code instead falls back to the starting directory, as the `name_tests` test checks.
 
-Sources: [crates/apex-server/src/lib.rs:596-716](crates/apex-server/src/lib.rs#L596-L716), [crates/apex-server/src/term.rs:55-139](crates/apex-server/src/term.rs#L55-L139), [crates/apex-server/src/term.rs:867-882](crates/apex-server/src/term.rs#L867-L882), [crates/apex-cli/README.md:58-70](crates/apex-cli/README.md#L58-L70), [crates/apex-server/src/daemon.rs:285-303](crates/apex-server/src/daemon.rs#L285-L303)
+Sources: [crates/apex-server/src/lib.rs:576-610](crates/apex-server/src/lib.rs#L576-L610), [crates/apex-server/src/lib.rs:635-786](crates/apex-server/src/lib.rs#L635-L786), [crates/apex-server/src/lib.rs:1969-2014](crates/apex-server/src/lib.rs#L1969-L2014), [crates/apex-core/src/status.rs:331-369](crates/apex-core/src/status.rs#L331-L369), [crates/apex-core/src/state.rs:95-110](crates/apex-core/src/state.rs#L95-L110), [crates/apex-server/src/term.rs:59-143](crates/apex-server/src/term.rs#L59-L143), [crates/apex-cli/README.md:58-70](crates/apex-cli/README.md#L58-L70)
 
 ## Client messages
 
@@ -285,7 +306,7 @@ The client never writes to a term shard. It sends these `ClientMsg`s, which the 
 | `TermFocus`, `TermClear` | Focus reports; `Clear` drops the scrollback and the marks |
 | `ClientConfig { term: TermColors }` | From a UI only: the ink, paper and 16 ANSI colours that OSC 4/10/11 queries are answered from |
 
-Sources: [crates/apex-server/src/proto.rs:25-37](crates/apex-server/src/proto.rs#L25-L37), [crates/apex-server/src/proto.rs:79-113](crates/apex-server/src/proto.rs#L79-L113), [crates/apex-server/src/daemon.rs:695-715](crates/apex-server/src/daemon.rs#L695-L715), [crates/apex-server/src/daemon.rs:810-815](crates/apex-server/src/daemon.rs#L810-L815)
+Sources: [crates/apex-server/src/proto.rs:28-37](crates/apex-server/src/proto.rs#L28-L37), [crates/apex-server/src/proto.rs:79-113](crates/apex-server/src/proto.rs#L79-L113), [crates/apex-server/src/proto.rs:338-340](crates/apex-server/src/proto.rs#L338-L340), [crates/apex-server/src/daemon.rs:695-715](crates/apex-server/src/daemon.rs#L695-L715)
 
 ## Painting the grid (`term_element.rs`)
 
@@ -307,9 +328,11 @@ On top of the text the element draws:
 - the cursor: the accent caret, blinking and optionally gliding, when keys go to this terminal; a thin dark caret otherwise; a hollow box once the program has exited;
 - the overlay scroller, which measures `top` and `rows` against `total`.
 
+The element does not read the OSC 7501 records. Their effect on the screen comes through the progress bar, which the server keeps in step with them, and through the window's status pill, handle and notification (see [Sessions, Tabs and Window Chrome](client-chrome.md)).
+
 Finally it stores a `TermLayout` (bounds, origin, cell width, line height, row text) in `acme.term_layouts`. Mouse handling uses that layout to map points to cells (`cell_at`), as described in [Mouse, Keyboard and Look](client-input.md).
 
-Sources: [crates/apex-client/src/term_element.rs:15-238](crates/apex-client/src/term_element.rs#L15-L238), [crates/apex-client/src/term_element.rs:240-362](crates/apex-client/src/term_element.rs#L240-L362)
+Sources: [crates/apex-client/src/term_element.rs:15-238](crates/apex-client/src/term_element.rs#L15-L238), [crates/apex-client/src/term_element.rs:240-362](crates/apex-client/src/term_element.rs#L240-L362), [crates/apex-client/src/theme.rs:496-499](crates/apex-client/src/theme.rs#L496-L499)
 
 ## Contrast correction (`contrast.rs`)
 
@@ -337,17 +360,17 @@ Details of the algorithm:
 - Each ink is **mirrored** about the edge instead of being placed on it (`MIRROR = 0.5`). Shades a program uses to tell things apart therefore stay apart, and a dark theme's bright red becomes a light theme's deeper red.
 - Results are cached in a thread-local `HashMap` keyed by `(fg, bg, dark)` and capped at 8192 entries. The cache is cleared when full, so a cell costs one lookup.
 
-The theme's own ink on the theme's own paper skips the check entirely. Correction is a View-menu setting, on by default and saved in the `contrast` state file.
+The theme's own ink on the theme's own paper skips the check entirely. Correction is a View-menu setting, on by default and saved in the `contrast` state file (`theme::contrast` and `set_contrast`). The same theme supplies the colours the daemon answers OSC 4/10/11 from: `theme::term_colors()` packs the text colour, body background and `ansi` palette into the `TermColors` that `ClientConfig` carries.
 
-Sources: [crates/apex-client/src/contrast.rs:1-235](crates/apex-client/src/contrast.rs#L1-L235), [crates/apex-client/src/theme.rs:578-596](crates/apex-client/src/theme.rs#L578-L596), [crates/apex-client/src/term_element.rs:186-192](crates/apex-client/src/term_element.rs#L186-L192)
+Sources: [crates/apex-client/src/contrast.rs:1-235](crates/apex-client/src/contrast.rs#L1-L235), [crates/apex-client/src/theme.rs:496-499](crates/apex-client/src/theme.rs#L496-L499), [crates/apex-client/src/theme.rs:584-602](crates/apex-client/src/theme.rs#L584-L602), [crates/apex-client/src/term_element.rs:186-192](crates/apex-client/src/term_element.rs#L186-L192)
 
 ## Tests and edge cases
 
 - `ghostty-vt-sys` tests cover how the shard sees the screen: colour packing, background-only erased cells, scrollback and viewport movement, `text` from anywhere in the history, the seven modes, query answers, OSC 52, OSC 9;4 states, and link interning.
-- `term_loop` tests check that labels leave the stream, that other OSCs pass through, that a label split across reads stays one label, and that an aborting ESC lets the whole sequence through.
-- `term.rs` tests cover `cwd_path`, `place`, key encoding, and `scrolled_back_does_not_follow_output`, which spawns a real `sh` and checks that a scrolled-back view stays put while output continues.
+- `term_loop` tests check that labels leave the stream, that other OSCs pass through, that OSC 7501 (the query form too, and when split across reads) leaves the stream while RIS is noted and still goes on to the terminal, that a label split across reads stays one label, and that an aborting ESC lets the whole sequence through.
+- `term.rs` tests cover `cwd_path`, `expand_tilde`, `place`, key encoding, and `scrolled_back_does_not_follow_output`, which spawns a real `sh` and checks that a scrolled-back view stays put while output continues.
 - `contrast.rs` tests check, over a grid of RGB colours, papers and both themes, that every answer reads to both viewers or is pure black or white. They also check hue preservation and that distinguishable shades stay distinguishable.
 
-One edge case is visible in the code. The `Report::Label(Label::Mark …)` arm in `TermHost::spawn` maps to line 0, but `EventLoop::read` always turns marks into `Report::Mark` with the real line, so that arm is not reached in practice.
+One edge case is visible in the code. The `Report::Label(Label::Mark …)` arm in `TermHost::spawn` maps to line 0, but `EventLoop::read` always turns marks into `Report::Mark` with the real line, so that arm is not reached in practice ([crates/apex-server/src/term.rs:313](crates/apex-server/src/term.rs#L313)).
 
-Sources: [crates/ghostty-vt-sys/src/lib.rs:275-424](crates/ghostty-vt-sys/src/lib.rs#L275-L424), [crates/apex-server/src/term_loop.rs:378-422](crates/apex-server/src/term_loop.rs#L378-L422), [crates/apex-server/src/term.rs:141-173](crates/apex-server/src/term.rs#L141-L173), [crates/apex-server/src/term.rs:837-865](crates/apex-server/src/term.rs#L837-L865), [crates/apex-server/src/term.rs:293-309](crates/apex-server/src/term.rs#L293-L309), [crates/apex-client/src/contrast.rs:237-397](crates/apex-client/src/contrast.rs#L237-L397)
+Sources: [crates/ghostty-vt-sys/src/lib.rs:275-424](crates/ghostty-vt-sys/src/lib.rs#L275-L424), [crates/apex-server/src/term_loop.rs:395-448](crates/apex-server/src/term_loop.rs#L395-L448), [crates/apex-server/src/term.rs:146-177](crates/apex-server/src/term.rs#L146-L177), [crates/apex-server/src/term.rs:659-900](crates/apex-server/src/term.rs#L659-L900), [crates/apex-client/src/contrast.rs:237-397](crates/apex-client/src/contrast.rs#L237-L397)

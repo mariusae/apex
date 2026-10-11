@@ -1,0 +1,4 @@
+Parse error on line 7:
+... / tools    Prog->>Loop: ESC ] 7501 ; s
+----------------------^
+Expecting '+', '-', 'ACTOR', got 'loop'

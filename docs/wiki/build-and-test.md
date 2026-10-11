@@ -34,7 +34,7 @@ Debug builds compile the workspace's own crates at `opt-level = 1`, which keeps 
 
 The Go SDK under `go/` is not part of the Cargo build. It has its own `go.mod`, and its integration test runs only against a live session (see below).
 
-Sources: [Cargo.toml:1-26](Cargo.toml#L1-L26), [crates/apex-core/Cargo.toml:12](crates/apex-core/Cargo.toml#L12), [crates/apex-server/Cargo.toml:21-30](crates/apex-server/Cargo.toml#L21-L30), [crates/apex-client/Cargo.toml:7-28](crates/apex-client/Cargo.toml#L7-L28)
+Sources: [Cargo.toml:1-26](Cargo.toml#L1-L26), [crates/apex-core/Cargo.toml:12](crates/apex-core/Cargo.toml#L12), [crates/apex-server/Cargo.toml:21-30](crates/apex-server/Cargo.toml#L21-L30), [crates/apex-client/Cargo.toml:7-29](crates/apex-client/Cargo.toml#L7-L29)
 
 ## The patched pathfinder_simd
 
@@ -42,7 +42,7 @@ gpui pulls in `pathfinder_simd` through pathfinder's geometry crate. The upstrea
 
 apex vendors version 0.5.6 under `third_party/pathfinder_simd` (the published `Cargo.toml.orig` is kept beside the normalised manifest) and points `[patch.crates-io]` at it. In the vendored `lib.rs`, the `arm` module itself is compiled only when all three of nightly, aarch64 and the absence of `pf-no-simd` hold. On aarch64, `apex-client` depends on the crate directly with `features = ["pf-no-simd"]`, with the comment "Avoid pathfinder_simd's broken nightly-only aarch64 SIMD backend". Together these mean an Apple Silicon build uses the scalar backend whatever toolchain compiles it.
 
-Sources: [third_party/pathfinder_simd/src/lib.rs:11-40](third_party/pathfinder_simd/src/lib.rs#L11-L40), [third_party/pathfinder_simd/build.rs:15-28](third_party/pathfinder_simd/build.rs#L15-L28), [third_party/pathfinder_simd/Cargo.toml:12-39](third_party/pathfinder_simd/Cargo.toml#L12-L39), [crates/apex-client/Cargo.toml:26-28](crates/apex-client/Cargo.toml#L26-L28)
+Sources: [third_party/pathfinder_simd/src/lib.rs:11-40](third_party/pathfinder_simd/src/lib.rs#L11-L40), [third_party/pathfinder_simd/build.rs:15-28](third_party/pathfinder_simd/build.rs#L15-L28), [third_party/pathfinder_simd/Cargo.toml:12-39](third_party/pathfinder_simd/Cargo.toml#L12-L39), [crates/apex-client/Cargo.toml:27-29](crates/apex-client/Cargo.toml#L27-L29)
 
 ## libghostty-vt: the Zig-built terminal library
 
@@ -100,11 +100,11 @@ The id surfaces in a few places:
 | `apex_server::BUILD_ID` ([lib.rs:12](crates/apex-server/src/lib.rs#L12)) | the constant everything reads |
 | `ServerMsg::Build { protocol, id }` ([daemon.rs:459](crates/apex-server/src/daemon.rs#L459)) | sent by the daemon on each connection, before the welcome |
 | `check_build` ([remote.rs:571-583](crates/apex-server/src/remote.rs#L571-L583)) | rejects only a different `PROTOCOL`; another build with the same protocol is accepted. The error names both builds and tells the user to `apex stop` the old daemon |
-| `apex version` ([main.rs:1050-1053](crates/apex-cli/src/main.rs#L1050-L1053)) | prints `apex build ID protocol N` |
+| `apex version` ([main.rs:1091](crates/apex-cli/src/main.rs#L1091)) | prints `apex build ID protocol N`; its help text calls the id "a hash of the sources it was built from" ([main.rs:633](crates/apex-cli/src/main.rs#L633)) |
 
 Deciding whether a remote host needs a new binary does not use the build id. `providers::deploy` compares the SHA-256 of the carried file with the one in `~/.apex/bin` on the host (see below and [Remote Hosts and Providers](remote-hosts.md)). The handshake is on [The Attach Protocol](attach-protocol.md).
 
-Sources: [crates/apex-server/build.rs:1-41](crates/apex-server/build.rs#L1-L41), [crates/apex-server/src/lib.rs:12](crates/apex-server/src/lib.rs#L12), [crates/apex-server/src/remote.rs:568-583](crates/apex-server/src/remote.rs#L568-L583), [crates/apex-cli/src/main.rs:1050-1053](crates/apex-cli/src/main.rs#L1050-L1053)
+Sources: [crates/apex-server/build.rs:1-41](crates/apex-server/build.rs#L1-L41), [crates/apex-server/src/lib.rs:12](crates/apex-server/src/lib.rs#L12), [crates/apex-server/src/daemon.rs:459](crates/apex-server/src/daemon.rs#L459), [crates/apex-server/src/remote.rs:571-583](crates/apex-server/src/remote.rs#L571-L583), [crates/apex-cli/src/main.rs:633](crates/apex-cli/src/main.rs#L633), [crates/apex-cli/src/main.rs:1091-1092](crates/apex-cli/src/main.rs#L1091-L1092)
 
 ## Cross-compiling for Linux hosts
 
@@ -131,7 +131,7 @@ Sources: [.cargo/config.toml:1-10](.cargo/config.toml#L1-L10), [mac/zig-cc:1-15]
 
 ## Packaging Apex.app with mac/build-app.sh
 
-`mac/build-app.sh [--debug]` builds everything the app needs and assembles `target/Apex.app`. The client and command are built with the release profile unless `--debug` is given. The Linux command is always a release build.
+`mac/build-app.sh [--debug]` builds everything the app needs and assembles `target/Apex.app`. The client and command are built with the release profile unless `--debug` is given. The Linux command is always a release build. The README and the docs site give this script as the way to build the app ("This produces `target/Apex.app`"); once the app is running, its *Apex ▸ Install apex Command…* menu item puts `apex` on the user's path.
 
 ```mermaid
 flowchart LR
@@ -171,7 +171,7 @@ The script's steps, in order:
 
 ### How the packaged binaries are found at runtime
 
-The bundle layout matches what the server code looks for. `command_shell` runs B2 commands with `$acmeshell` if that is set. Otherwise it uses the first `rc` it finds: beside the running executable (`Contents/MacOS/rc`), then a dev tree's `target/rc-host/bin/rc` one to three directories up, then `~/.apex/bin/rc`, then any on the PATH. Failing all of those it uses `sh`.
+The bundle layout matches what the server code looks for. `command_shell` runs B2 commands with `$acmeshell` if that is set. Otherwise it uses the first `rc` it finds: beside the running executable (`Contents/MacOS/rc`), then a dev tree's `rc-host/bin/rc` in each of the one to three directories above the executable's (so `target/rc-host/bin/rc`), then `~/.apex/bin/rc`, then any on the PATH. Failing all of those it uses `sh`.
 
 For other machines, `providers::bundled(target, name)` looks for `apex` and `rc` in these places, in order:
 
@@ -183,7 +183,7 @@ For other machines, `providers::bundled(target, name)` looks for `apex` and `rc`
 
 A dev tree built by `build-app.sh` can therefore attach to Linux hosts without the app bundle. `deploy` copies a carried binary to `~/.apex/bin` on the host only when its SHA-256 differs. It writes the file beside the old one and then moves it into place, so a running daemon keeps its own binary.
 
-Sources: [mac/build-app.sh:1-60](mac/build-app.sh#L1-L60), [mac/Info.plist:1-28](mac/Info.plist#L1-L28), [crates/apex-server/src/lib.rs:1926-1955](crates/apex-server/src/lib.rs#L1926-L1955), [crates/apex-server/src/providers.rs:167-250](crates/apex-server/src/providers.rs#L167-L250)
+Sources: [mac/build-app.sh:1-60](mac/build-app.sh#L1-L60), [mac/Info.plist:1-28](mac/Info.plist#L1-L28), [README.md:18-27](README.md#L18-L27), [crates/apex-server/src/lib.rs:2051-2090](crates/apex-server/src/lib.rs#L2051-L2090), [crates/apex-server/src/providers.rs:172-250](crates/apex-server/src/providers.rs#L172-L250)
 
 ## Tests and benchmarks
 
@@ -223,7 +223,7 @@ Benchmarks use criterion with `harness = false`:
 
 `go/apex/apex_test.go` is an integration test that skips unless `APEX_SOCKET` is set. It attaches as a tool (using `apex` from the PATH or `$APEX_BIN`) and exercises windows, ownership, tags and labels against that live session. See [JSON Bridge and Go SDK](bridge-and-go.md).
 
-Sources: [crates/apex-core/tests/core.rs:1-3](crates/apex-core/tests/core.rs#L1-L3), [crates/apex-core/tests/core.rs:275-303](crates/apex-core/tests/core.rs#L275-L303), [crates/apex-core/tests/core.rs:346-401](crates/apex-core/tests/core.rs#L346-L401), [crates/apex-edit/tests/common/mod.rs:1-74](crates/apex-edit/tests/common/mod.rs#L1-L74), [crates/apex-edit/tests/sam_diff.rs:1-21](crates/apex-edit/tests/sam_diff.rs#L1-L21), [crates/apex-edit/tests/debug_one.rs:1-10](crates/apex-edit/tests/debug_one.rs#L1-L10), [crates/apex-cli/tests/ssh.rs:1-80](crates/apex-cli/tests/ssh.rs#L1-L80), [crates/apex-tool-lsp/tests/lsp.rs:59-62](crates/apex-tool-lsp/tests/lsp.rs#L59-L62), [crates/apex-server/src/bin/apex_bench.rs:1-29](crates/apex-server/src/bin/apex_bench.rs#L1-L29), [crates/apex-edit/Cargo.toml:10-16](crates/apex-edit/Cargo.toml#L10-L16), [crates/apex-core/Cargo.toml:17-23](crates/apex-core/Cargo.toml#L17-L23), [go/apex/apex_test.go:11-22](go/apex/apex_test.go#L11-L22)
+Sources: [crates/apex-core/tests/core.rs:1-3](crates/apex-core/tests/core.rs#L1-L3), [crates/apex-core/tests/core.rs:275](crates/apex-core/tests/core.rs#L275), [crates/apex-core/tests/core.rs:346](crates/apex-core/tests/core.rs#L346), [crates/apex-edit/tests/common/mod.rs:1-74](crates/apex-edit/tests/common/mod.rs#L1-L74), [crates/apex-edit/tests/sam_diff.rs:1-21](crates/apex-edit/tests/sam_diff.rs#L1-L21), [crates/apex-edit/tests/debug_one.rs:1-10](crates/apex-edit/tests/debug_one.rs#L1-L10), [crates/apex-cli/tests/ssh.rs:1-80](crates/apex-cli/tests/ssh.rs#L1-L80), [crates/apex-tool-lsp/tests/lsp.rs:59-62](crates/apex-tool-lsp/tests/lsp.rs#L59-L62), [crates/apex-server/src/bin/apex_bench.rs:1-29](crates/apex-server/src/bin/apex_bench.rs#L1-L29), [crates/apex-edit/Cargo.toml:10-16](crates/apex-edit/Cargo.toml#L10-L16), [crates/apex-core/Cargo.toml:17-23](crates/apex-core/Cargo.toml#L17-L23), [go/apex/apex_test.go:11-22](go/apex/apex_test.go#L11-L22)
 
 ## Continuous integration
 
@@ -233,9 +233,11 @@ Sources: [.github/workflows/rust.yml:1-22](.github/workflows/rust.yml#L1-L22)
 
 ## The docs site
 
-`docs/` holds a static, single-page site: `index.html`, a screenshot, the space-bunny image and a `.nojekyll` marker, which tells GitHub Pages to serve the files as they are. Its "Developing and building Apex" section gives the short version of this page: clone, `cd apex`, run `mac/build-app.sh`, and you get `target/Apex.app`. It notes that the app runs on macOS while the daemon and `apex` also run on Linux. It links to DESIGN.md, MODERN.md and the DeepWiki overview.
+`docs/` holds a static site served by GitHub Pages: `index.html` (what Apex is and how it differs from acme), `userguide.html` (how to use it) with its `guide-*.png` figures, a screenshot, the space-bunny image and a `.nojekyll` marker, which tells GitHub Pages to serve the files as they are. Both pages link to a "design and implementation wiki" at `wiki/html/index.html`. The wiki's sources are Markdown pages in `docs/wiki/` with generated HTML under `docs/wiki/html/`.
 
-Sources: [docs/index.html:105-121](docs/index.html#L105-L121)
+The "Developing and building Apex" section of `index.html` gives the short version of this page: clone, `cd apex`, run `mac/build-app.sh`, and you get `target/Apex.app`. It notes that the app runs on macOS while the daemon and `apex` also run on Linux, where the app attaches over ssh. Its "Documentation" list links to the user's guide, the wiki, the GitHub source, DESIGN.md and MODERN.md. The README repeats the build instructions and links the same guide and wiki, then lists DESIGN.md, MODERN.md, WEB.md and ARCHITECTURE.md under "Further reading".
+
+Sources: [docs/index.html:105-123](docs/index.html#L105-L123), [README.md:12-34](README.md#L12-L34)
 
 ## Practical notes
 

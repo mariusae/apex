@@ -17,9 +17,9 @@ None of these overlays is replicated state. Each is an `Option<…>` field on th
 | Tag path picker | click on a folder or name in the tag | `picker: Option<tagedit::Picker>` | associated windows plus `candidates` folder listing | `apex_core::fuzzy` | goto window or entry; ⌥↩ replaces in place |
 | cwd picker | click on a title-bar crumb | `cwd_picker: Option<CwdPicker>` | `candidates` listing, folders only | `apex_core::fuzzy` | `Acme::cd` |
 
-The key bindings are in `shell::bindings`: `cmd-p` → `Goto`, `cmd-shift-o` → `GotoAll`, `cmd-o` → `OpenPath`, `cmd-shift-p` → `Commands` ([shell.rs:258-314](crates/apex-client/src/shell.rs#L258-L314)). `main.rs` connects these actions to `open_finder(false)`, `open_finder(true)`, `open_quick` and `open_commands` ([main.rs:164-173](crates/apex-client/src/main.rs#L164-L173)). The module comment at the top of `finder.rs` still calls the all-tabs finder ⌘⇧P. That comment is out of date: the binding is ⌘⇧O, and ⌘⇧P opens the command palette.
+The key bindings are in `shell::bindings`: `cmd-o` → `OpenPath`, `cmd-p` → `Goto`, `cmd-shift-o` → `GotoAll`, `cmd-shift-p` → `Commands` ([shell.rs:270](crates/apex-client/src/shell.rs#L270), [shell.rs:307-309](crates/apex-client/src/shell.rs#L307-L309)). `main.rs` connects these actions to `open_finder(false)`, `open_quick`, `open_finder(true)` and `open_commands` ([main.rs:167-176](crates/apex-client/src/main.rs#L167-L176)). The module comment at the top of `finder.rs` still calls the all-tabs finder ⌘⇧P ([finder.rs:14](crates/apex-client/src/finder.rs#L14)). That comment is out of date: the binding is ⌘⇧O, and ⌘⇧P opens the command palette.
 
-Sources: [shell.rs:258-314](crates/apex-client/src/shell.rs#L258-L314), [main.rs:164-173](crates/apex-client/src/main.rs#L164-L173), [finder.rs:1-18](crates/apex-client/src/finder.rs#L1-L18), [app.rs:4371-4375](crates/apex-client/src/app.rs#L4371-L4375)
+Sources: [shell.rs:270](crates/apex-client/src/shell.rs#L270), [shell.rs:307-309](crates/apex-client/src/shell.rs#L307-L309), [main.rs:167-176](crates/apex-client/src/main.rs#L167-L176), [finder.rs:1-18](crates/apex-client/src/finder.rs#L1-L18)
 
 ## Shared building blocks
 
@@ -67,21 +67,21 @@ It returns `Changed`, `Moved` or `No` ([field.rs:202-312](crates/apex-client/src
 
 ### The palette look and the "chosen" row
 
-Three overlays (the finder, quick open and the command palette) plus the session selector are drawn as a palette in the style of Manifold's. `palette_place` puts the panel across a translucent scrim (`veil()`), 30% of the way down the window. `palette_panel` is a 560 px card with 12 px rounded corners. `palette_field` is a 48 px search row with a magnifying glass. `palette_row` is a 34 px row ([shell.rs:699-797](crates/apex-client/src/shell.rs#L699-L797)).
+Three overlays (the finder, quick open and the command palette) plus the session selector are drawn as a palette in the style of Manifold's. `palette_place` puts the panel across a translucent scrim (`veil()`), 30% of the way down the window. `palette_panel` is a 560 px card with 12 px rounded corners. `palette_field` is a 48 px search row with a magnifying glass. `palette_row` is a 34 px row ([shell.rs:708-790](crates/apex-client/src/shell.rs#L708-L790)).
 
-The anchored pickers (tag path, cwd and ^F) build their own panels, but all of them use `shell::chosen` to mark the selected row. `chosen` colours the row by the mouse button whose action it stands for. `Act::Exec` uses B2's sweep colours and is used by the command palette and the B4 menu. `Act::Look` uses B3's and is used by the finder, quick open and the pickers. In both cases a small bar is drawn at the row's left ([shell.rs:745-785](crates/apex-client/src/shell.rs#L745-L785)).
+The anchored pickers (tag path, cwd and ^F) build their own panels, but all of them use `shell::chosen` to mark the selected row. `chosen` colours the row by the mouse button whose action it stands for. `Act::Exec` uses B2's sweep colours and is used by the command palette and the B4 menu. `Act::Look` uses B3's and is used by the finder, quick open and the pickers. In both cases a small bar is drawn at the row's left ([shell.rs:765-790](crates/apex-client/src/shell.rs#L765-L790)).
 
-Every panel also adds `self.overlay_mark()`. This is a zero-size canvas that records the panel's bounds in `overlay_bounds` for the current frame ([app.rs:1131-1154](crates/apex-client/src/app.rs#L1131-L1154)). Those bounds are used for two things: cutting holes in the native web views so the overlay shows above a page, and `over_overlay`, which makes the pointer over a panel count as being on no text. Keys then go to `kept_target` instead of to whatever is under the panel ([app.rs:3140-3156](crates/apex-client/src/app.rs#L3140-L3156)).
+Every panel also adds `self.overlay_mark()`. This is a zero-size canvas that records the panel's bounds, with a margin for its shadow, in `overlay_bounds` for the current frame (`overlay_mark_by` takes the margin; the default is 18 px; [app.rs:1144-1164](crates/apex-client/src/app.rs#L1144-L1164)). Those bounds are used for two things: cutting holes in the native web views so the overlay shows above a page, and `over_overlay`, which makes the pointer over a panel count as being on no text ([app.rs:3195](crates/apex-client/src/app.rs#L3195)). Keys then go to `kept_target` instead of to whatever is under the panel ([app.rs:5047-5053](crates/apex-client/src/app.rs#L5047-L5053)).
 
 ### Blinking
 
-Each overlay runs its own blink. The finder and the selector spawn a loop on `shell::BLINK` (500 ms). Quick open polls every 40 ms and redraws when the caret changes phase. The tag and cwd pickers loop at 530 ms. `Commands::caret_on` calculates a 530 ms phase but spawns no timer of its own, so its caret only blinks when something else causes a redraw ([finder.rs:234-257](crates/apex-client/src/finder.rs#L234-L257), [quickopen.rs:101-122](crates/apex-client/src/quickopen.rs#L101-L122), [tagedit.rs:116-118](crates/apex-client/src/tagedit.rs#L116-L118), [commands.rs:95-97](crates/apex-client/src/commands.rs#L95-L97)).
+Each overlay runs its own blink. The finder and the selector spawn a loop on `shell::BLINK` (500 ms, [shell.rs:126](crates/apex-client/src/shell.rs#L126)). Quick open polls every 40 ms and redraws when the caret changes phase. The tag and cwd pickers loop at 530 ms. `Commands::caret_on` calculates a 530 ms phase but spawns no timer of its own, so its caret only blinks when something else causes a redraw ([finder.rs:234-257](crates/apex-client/src/finder.rs#L234-L257), [quickopen.rs:101-122](crates/apex-client/src/quickopen.rs#L101-L122), [tagedit.rs:116-118](crates/apex-client/src/tagedit.rs#L116-L118), [commands.rs:95-97](crates/apex-client/src/commands.rs#L95-L97)).
 
-Sources: [field.rs:1-349](crates/apex-client/src/field.rs#L1-L349), [shell.rs:699-797](crates/apex-client/src/shell.rs#L699-L797), [app.rs:1131-1154](crates/apex-client/src/app.rs#L1131-L1154), [app.rs:3140-3156](crates/apex-client/src/app.rs#L3140-L3156)
+Sources: [field.rs:1-349](crates/apex-client/src/field.rs#L1-L349), [shell.rs:708-790](crates/apex-client/src/shell.rs#L708-L790), [app.rs:1144-1164](crates/apex-client/src/app.rs#L1144-L1164), [app.rs:3195](crates/apex-client/src/app.rs#L3195), [app.rs:5047-5053](crates/apex-client/src/app.rs#L5047-L5053)
 
 ## Routing keys, clicks and the Edit menu
 
-The overlays have no common type. `Acme`'s key handler checks them one at a time, in a fixed order, and gives the key to the first one that is up ([app.rs:4918-4972](crates/apex-client/src/app.rs#L4918-L4972)):
+The overlays have no common type. `Acme::key_down` first gives the key to the overview (if up) and the ctrl-tab switcher, and returns when either takes it. After that it checks the overlays one at a time, in a fixed order, and gives the key to the first one that is up ([app.rs:4961-5040](crates/apex-client/src/app.rs#L4961-L5040)):
 
 1. `completion`, but only for keys without ⌘, and only if `completion_key` returns true;
 2. `finder`;
@@ -94,17 +94,17 @@ The overlays have no common type. `Acme`'s key handler checks them one at a time
 9. `commands`;
 10. `selector`.
 
-Any key that reaches the text afterwards is followed by `completion_follow` ([app.rs:5045](crates/apex-client/src/app.rs#L5045)).
+A key that reaches no overlay is sent to the page under the pointer, or to the text, terminal or `kept_target`. Any key that reaches the text afterwards is followed by `completion_follow` ([app.rs:5113](crates/apex-client/src/app.rs#L5113)).
 
-A mouse press anywhere closes them, again in a fixed order. `url_edit`, `tag_edit`, `picker`, `cwd_picker` and `completion` are dropped and the press goes on as usual. A press that closes `commands`, `finder`, `quick` or `selector` is used up by the close and does nothing else ([app.rs:3301-3335](crates/apex-client/src/app.rs#L3301-L3335)). Clicks on rows still work because each panel calls `stop_propagation` on its own mouse-down, so the press never reaches `mouse_down`.
+A mouse press anywhere closes them, again in a fixed order ([app.rs:3339-3387](crates/apex-client/src/app.rs#L3339-L3387)). `url_edit`, `session_edit`, `session_menu`, `tag_edit`, `picker`, `cwd_picker` and `completion` are dropped and the press goes on as usual. A press that closes `commands`, `finder`, `quick` or `selector` is used up by the close and does nothing else. Clicks on rows still work because each panel calls `stop_propagation` on its own mouse-down, so the press never reaches `mouse_down`.
 
-The Edit menu's actions (⌘X ⌘C ⌘V ⌘A ⌘Z) arrive as actions before any key event. `menu_edit` sends them to `overlay_edit` when the selector, finder, url field, palette or quick open is up ([app.rs:5109-5115](crates/apex-client/src/app.rs#L5109-L5115)). `overlay_edit` asks `overlay_field()` for the field that has the keyboard. It checks the selector (or its new-host form), then `url_edit`, `commands`, `finder` and `quick`, and applies paste (first line of the clipboard, trimmed), select-all, copy, cut or undo to that field. If the text changed, it calls `overlay_changed`, which resets the list ([shell.rs:1412-1494](crates/apex-client/src/shell.rs#L1412-L1494)). The tag field and the two folder pickers are missing from both checks, which the review below points out.
+The Edit menu's actions (⌘X ⌘C ⌘V ⌘A ⌘Z) arrive as actions before any key event. `menu_edit` sends them to `overlay_edit` when the selector, finder, url field, palette or quick open is up ([app.rs:5177-5183](crates/apex-client/src/app.rs#L5177-L5183)). `overlay_edit` asks `overlay_field()` for the field that has the keyboard. It checks the selector (or its new-host form), then `url_edit`, `commands`, `finder` and `quick`, and applies paste (first line of the clipboard, trimmed), select-all, copy, cut or undo to that field. If the text changed, it calls `overlay_changed`, which resets the list ([shell.rs:1420-1500](crates/apex-client/src/shell.rs#L1420-L1500)). The tag field and the two folder pickers are missing from both checks, which the review below points out. `overlay_up`, the test used to keep pages from taking keys while something is up, does list them (and `quick`), but not `completion` ([app.rs:4427-4431](crates/apex-client/src/app.rs#L4427-L4431)).
 
-Sources: [app.rs:4918-5047](crates/apex-client/src/app.rs#L4918-L5047), [app.rs:3287-3335](crates/apex-client/src/app.rs#L3287-L3335), [app.rs:5063-5115](crates/apex-client/src/app.rs#L5063-L5115), [shell.rs:1412-1494](crates/apex-client/src/shell.rs#L1412-L1494)
+Sources: [app.rs:4961-5115](crates/apex-client/src/app.rs#L4961-L5115), [app.rs:3339-3387](crates/apex-client/src/app.rs#L3339-L3387), [app.rs:5177-5183](crates/apex-client/src/app.rs#L5177-L5183), [app.rs:4427-4431](crates/apex-client/src/app.rs#L4427-L4431), [shell.rs:1420-1500](crates/apex-client/src/shell.rs#L1420-L1500)
 
 ## ⌘P: the finder
 
-`Finder` holds a `LineEdit` filter, a cursor, its `entries`, the `all` flag and `here`, the tab the window shows ([finder.rs:76-86](crates/apex-client/src/finder.rs#L76-L86)). Entries are gathered once, when the finder opens, by `session_entries` ([finder.rs:172-204](crates/apex-client/src/finder.rs#L172-L204)):
+`Finder` holds a `LineEdit` filter, a cursor, its `entries`, the `all` flag and `here`, the tab the window shows ([finder.rs:76-86](crates/apex-client/src/finder.rs#L76-L86)). Entries are gathered once, when the finder opens, by `session_entries` ([finder.rs:175-204](crates/apex-client/src/finder.rs#L175-L204)):
 
 - The open windows come in layout order. Within each column, `tiling::stash_order` puts stashed windows where they stood, and stashed windows whose column is gone ("orphans") follow. Each window is followed by the windows it covers (`layout.stack(w)`), so picking a covered window brings it up.
 - Each window gets a `label`: its own label, or `"Errors"` for an Errors window, or `"Preview"` for a page fed from a buffer. Windows with neither a name nor a label are skipped.
@@ -114,26 +114,26 @@ With `all` set, `finder_entries` does the same for every tab in `Pool::tabs`. It
 
 ### Ranking
 
-`Finder::picks` ([finder.rs:93-114](crates/apex-client/src/finder.rs#L93-L114)):
+`Finder::picks` ([finder.rs:96-114](crates/apex-client/src/finder.rs#L96-L114)):
 
 - With nothing typed, it shows only open windows, in gathered order. Closed files are there to be found by name, not scrolled through.
-- With a query, every entry is scored by `Entry::score`. That is the best of three scores: the path alone, the label alone, and `"path label"` together, so a query like `rust-analyzer` finds a window by its label ([finder.rs:50-57](crates/apex-client/src/finder.rs#L50-L57)). Results are sorted by score, then open before closed, then this tab before others, then gathered order.
+- With a query, every entry is scored by `Entry::score`. That is the best of three scores: the path alone, the label alone, and `"path label"` together, so a query like `rust-analyzer` finds a window by its label ([finder.rs:53-57](crates/apex-client/src/finder.rs#L53-L57)). Results are sorted by score, then open before closed, then this tab before others, then gathered order.
 
 `finder::score` passes through to `apex_core::fuzzy::score`, the Zed-style scorer that the host's ⌘O listing also uses. Every query character must appear in order. Each scores 1.0 at the start of the file name or when it continues the previous match, 0.9 after `/`, 0.8 at a word start, and 0.55 otherwise. A case mismatch halves the score, and matches inside the file name get a bonus ([fuzzy.rs:1-14](crates/apex-core/src/fuzzy.rs#L1-L14), [finder.rs:125-135](crates/apex-client/src/finder.rs#L125-L135)).
 
-↑ and ↓ wrap around (`rem_euclid`). Typing resets the cursor to 0 ([finder.rs:116-122](crates/apex-client/src/finder.rs#L116-L122), [finder.rs:264-293](crates/apex-client/src/finder.rs#L264-L293)).
+↑ and ↓ wrap around (`rem_euclid`). Typing resets the cursor to 0 ([finder.rs:116-122](crates/apex-client/src/finder.rs#L116-L122), [finder.rs:265-293](crates/apex-client/src/finder.rs#L265-L293)).
 
 ### Picking
 
-`Acme::pick` goes to an open window **by its id**, not its path, because a file and its preview share a path. If the entry is in another tab, it calls `switch_to` first. If that tab is still attaching, the `Loc` is kept in `pending_goto` and used once the tab arrives. Otherwise it applies `Proposal::Goto { loc }` through `apex_server::proposal::apply`, which records the origin on the back stack, as a jump should ([finder.rs:295-323](crates/apex-client/src/finder.rs#L295-L323); see [Proposals](proposals.md)).
+`Acme::pick` goes to an open window **by its id**, not its path, because a file and its preview share a path. It builds a `Loc` and hands it to `go_in_tab` with the entry's tab ([finder.rs:299-307](crates/apex-client/src/finder.rs#L299-L307)). If the entry is in another tab, `go_in_tab` calls `switch_to` first. If that tab is still attaching (not connected, or its session id is empty), the `Loc` is kept in `pending_goto` and used once the tab arrives. Otherwise it applies `Proposal::Goto { loc }` through `apex_server::proposal::apply`, which records the origin on the back stack, as a jump should ([finder.rs:311-329](crates/apex-client/src/finder.rs#L311-L329); see [Proposals](proposals.md)).
 
 ### Recently closed files
 
-`track_closed` runs on every `sync`. It compares the file windows (not scratch ones) with those seen last time. When an absolute, non-directory file window has disappeared, it calls `note_closed`. It resets its baseline whenever the window's session URL changes, so switching tabs does not count as closing ([finder.rs:325-349](crates/apex-client/src/finder.rs#L325-L349)). `note_closed` keeps the 50 most recent paths per session, newest first and without duplicates, in `~/Library/Application Support/apex/recent-files`, one `url<TAB>path` per line. That makes the list per machine, not per replica ([finder.rs:137-168](crates/apex-client/src/finder.rs#L137-L168)).
+`track_closed` runs on every `sync` ([app.rs:1918](crates/apex-client/src/app.rs#L1918)). It compares the file windows (not scratch ones) with those seen last time. When an absolute, non-directory file window has disappeared, it calls `note_closed`. It resets its baseline whenever the window's session URL changes, so switching tabs does not count as closing ([finder.rs:334-355](crates/apex-client/src/finder.rs#L334-L355)). `note_closed` keeps the 50 most recent paths per session, newest first and without duplicates, in `~/Library/Application Support/apex/recent-files`, one `url<TAB>path` per line. That makes the list per machine, not per replica ([finder.rs:137-168](crates/apex-client/src/finder.rs#L137-L168)).
 
-The panel marks each row: ▶ for an open terminal, ● for another open window, ○ for a closed file. It shows the label as a chip, the folder in the dim ink, "closed" for closed files, and a tab badge reading "· here" for the current tab. At most 24 rows are drawn ([finder.rs:351-433](crates/apex-client/src/finder.rs#L351-L433)).
+The panel marks each row: ▶ for an open terminal, ● for another open window, ○ for a closed file. It shows the label as a chip, the folder in the dim ink, "closed" for closed files, and a tab badge reading "· here" for the current tab. The list scrolls within about ten rows' height, and at most 24 rows are built ([finder.rs:357-439](crates/apex-client/src/finder.rs#L357-L439)).
 
-Sources: [finder.rs:1-433](crates/apex-client/src/finder.rs#L1-L433), [fuzzy.rs:1-14](crates/apex-core/src/fuzzy.rs#L1-L14)
+Sources: [finder.rs:1-439](crates/apex-client/src/finder.rs#L1-L439), [fuzzy.rs:1-14](crates/apex-core/src/fuzzy.rs#L1-L14), [app.rs:1918](crates/apex-client/src/app.rs#L1918)
 
 ## ⌘O: quick open, backed by the host's find job
 
@@ -167,7 +167,7 @@ sequenceDiagram
 - With `Backend::Remote`, it clears `link.found` and sends `ClientMsg::FindStart`.
 - With `Backend::Local`, it starts `apex_server::find::Job` in-process, with a sink that pushes into an `Arc<Mutex<Vec<ServerMsg>>>`.
 
-It then sends the first query and spawns a 40 ms poll that calls `quick_take` and redraws when something arrived or the caret blinked ([quickopen.rs:69-124](crates/apex-client/src/quickopen.rs#L69-L124)). The daemon handles `FindStart` by starting a job whose sink writes straight to the asking connection, `FindQuery` by calling `job.query`, and `FindStop` by dropping the job ([daemon.rs:885-902](crates/apex-server/src/daemon.rs#L885-L902)).
+It then sends the first query and spawns a 40 ms poll that calls `quick_take` and redraws when something arrived or the caret blinked ([quickopen.rs:69-124](crates/apex-client/src/quickopen.rs#L69-L124)). The messages are `FindStart { id, dir }`, `FindQuery { id, gen, query, limit }` and `FindStop { id }` ([proto.rs:193-198](crates/apex-server/src/proto.rs#L193-L198)). The daemon handles `FindStart` by starting a job whose sink writes straight to the asking connection, `FindQuery` by calling `job.query`, and `FindStop` by dropping the job ([daemon.rs:885-902](crates/apex-server/src/daemon.rs#L885-L902)).
 
 On the host, the job walks breadth-first. It skips dot-directories, `node_modules`, `__pycache__` and `buck-out`, and does not follow directory links. It stops at `CAP` = 1,000,000 entries and reports that it did. Queries are matched with `apex_core::fuzzy` across cores, rematched as the walk adds entries, and abandoned partway through when a newer query arrives ([find.rs:1-45](crates/apex-server/src/find.rs#L1-L45)).
 
@@ -181,7 +181,7 @@ Each query carries a generation, `gen`. `quick_query(fresh)` increments `gen`. A
 
 `quick_pick` closes the overlay and calls `Acme::goto` with `root + rel`, adding a trailing `/` for a folder so it opens as a directory window ([quickopen.rs:231-240](crates/apex-client/src/quickopen.rs#L231-L240)). `close_quick` sends `FindStop` for a remote job; an in-process job ends when it is dropped. The footer shows "Indexing… N" or "N entries", the match count, and a note when the walk was capped ([quickopen.rs:283-306](crates/apex-client/src/quickopen.rs#L283-L306)).
 
-Sources: [quickopen.rs:1-315](crates/apex-client/src/quickopen.rs#L1-L315), [daemon.rs:885-902](crates/apex-server/src/daemon.rs#L885-L902), [find.rs:1-45](crates/apex-server/src/find.rs#L1-L45), [remote.rs:442-443](crates/apex-server/src/remote.rs#L442-L443)
+Sources: [quickopen.rs:1-315](crates/apex-client/src/quickopen.rs#L1-L315), [proto.rs:193-198](crates/apex-server/src/proto.rs#L193-L198), [daemon.rs:885-902](crates/apex-server/src/daemon.rs#L885-L902), [find.rs:1-45](crates/apex-server/src/find.rs#L1-L45)
 
 ## ⌘⇧P: the command palette
 
@@ -196,17 +196,17 @@ Sources: [quickopen.rs:1-315](crates/apex-client/src/quickopen.rs#L1-L315), [dae
 
 `commands::score(text, q)` is a separate, simpler matcher. It matches a case-insensitive subsequence and scores +1 per character, +8 at index 0, +4 after a non-alphanumeric, and +5 for a run. The total is multiplied by 10 and reduced by `len/4` ([commands.rs:57-83](crates/apex-client/src/commands.rs#L57-L83)). `matches()` sorts by score, keeps gathering order for ties, and returns at most 12 items.
 
-Return runs the selected item, or the typed text if nothing matches, through `Acme::execute(ctx, text)`, the same path B2 uses ([commands.rs:155-184](crates/apex-client/src/commands.rs#L155-L184)). `ctx` is `ExecCtx::Window(w)`, or `ExecCtx::Top` if there was no target. Rows are drawn with `Act::Exec` colours, and the panel has a higher deferred priority (2) than the finder's (1).
+Return runs the selected item, or the typed text if nothing matches, through `Acme::execute(ctx, text)`, the same path B2 uses ([commands.rs:155-184](crates/apex-client/src/commands.rs#L155-L184)). `ctx` is `ExecCtx::Window(w)`, or `ExecCtx::Top` if there was no target. Rows are drawn with `Act::Exec` colours, and the panel has a higher deferred priority (2) than the finder's (1; [finder.rs:438](crates/apex-client/src/finder.rs#L438)).
 
-Sources: [commands.rs:1-233](crates/apex-client/src/commands.rs#L1-L233)
+Sources: [commands.rs:1-233](crates/apex-client/src/commands.rs#L1-L233), [finder.rs:438](crates/apex-client/src/finder.rs#L438)
 
 ## ^F: inline completion
 
-^F, or the Insert key, in a text view calls `Acme::complete(v, q0)` ([app.rs:5216-5220](crates/apex-client/src/app.rs#L5216-L5220)). This is acme's `textcomplete`. It walks back from the caret over file-name characters to find the fragment, then asks the server for candidates in the view's directory. A local backend calls `server.candidates` directly and queues the answer. A remote one sends `ClientMsg::Candidates { view, ctx, at: q0, prefix }`, and the daemon replies to that connection only ([app.rs:4760-4780](crates/apex-client/src/app.rs#L4760-L4780), [daemon.rs:925-929](crates/apex-server/src/daemon.rs#L925-L929)). `Server::candidates` lists the fragment's directory and returns names that start with the fragment's last part, sorted, each with a flag saying whether it is a directory, or an error string ([lib.rs:1235-1246](crates/apex-server/src/lib.rs#L1235-L1246)).
+^F, or the Insert key, in a text view calls `Acme::complete(v, q0)` ([app.rs:5285-5286](crates/apex-client/src/app.rs#L5285-L5286)). This is acme's `textcomplete`. It walks back from the caret over file-name characters to find the fragment, then asks the server for candidates in the view's directory. A local backend calls `server.candidates` directly and queues the answer. A remote one sends `ClientMsg::Candidates { view, ctx, at: q0, prefix }`, and the daemon replies to that connection only ([app.rs:4831-4848](crates/apex-client/src/app.rs#L4831-L4848), [proto.rs:211](crates/apex-server/src/proto.rs#L211), [daemon.rs:925-929](crates/apex-server/src/daemon.rs#L925-L929)). `Server::candidates` splits the fragment at its last `/`, lists that directory, and returns the names that start with the last part, sorted, each with a flag saying whether it is a directory, or an error string. Dot files are listed only when the last part itself begins with a `.` ([lib.rs:1308-1324](crates/apex-server/src/lib.rs#L1308-L1324)).
 
 ### Routing listings by `at`
 
-The folder pickers use the same `Candidates` request and reply. To tell the replies apart, they put a sentinel in the `at` field. On each `sync`, the client routes replies as follows ([app.rs:1905-1914](crates/apex-client/src/app.rs#L1905-L1914)):
+The folder pickers use the same `Candidates` request and reply. To tell the replies apart, they put a sentinel in the `at` field. On each `sync`, the client routes replies as follows ([app.rs:1920-1928](crates/apex-client/src/app.rs#L1920-L1928)):
 
 ```rust
 if c.at == crate::tagedit::LISTING {          // usize::MAX
@@ -232,7 +232,7 @@ While the list is up, typing still goes into the text. `completion_follow` runs 
 
 The list is anchored at the screen position of the name's start, taken from the previous frame's layout. `completion_anchor` retries for up to `UNPLACED` (4) frames before giving up ([completion.rs:196-222](crates/apex-client/src/completion.rs#L196-L222)). The panel uses the window's own font (mono or proportional), shows at most 8 rows around the cursor, and draws the already-typed part of each name dimmed ([completion.rs:224-298](crates/apex-client/src/completion.rs#L224-L298)).
 
-Sources: [completion.rs:1-299](crates/apex-client/src/completion.rs#L1-L299), [app.rs:1905-1914](crates/apex-client/src/app.rs#L1905-L1914), [app.rs:4760-4780](crates/apex-client/src/app.rs#L4760-L4780), [daemon.rs:925-929](crates/apex-server/src/daemon.rs#L925-L929), [lib.rs:1235-1246](crates/apex-server/src/lib.rs#L1235-L1246)
+Sources: [completion.rs:1-299](crates/apex-client/src/completion.rs#L1-L299), [app.rs:1920-1928](crates/apex-client/src/app.rs#L1920-L1928), [app.rs:4831-4848](crates/apex-client/src/app.rs#L4831-L4848), [app.rs:5285-5286](crates/apex-client/src/app.rs#L5285-L5286), [daemon.rs:925-929](crates/apex-server/src/daemon.rs#L925-L929), [lib.rs:1308-1324](crates/apex-server/src/lib.rs#L1308-L1324), [proto.rs:211](crates/apex-server/src/proto.rs#L211)
 
 ## The tag head: path and label fields, and the path picker
 
@@ -259,7 +259,7 @@ When Return is pressed, `tag_edit_key` calls `apex_server::perform` with either 
 
 A single click on a folder or the name opens a picker under it, modelled on VS Code's breadcrumbs. `folder_of(path, atom)` gives the folder to list and the entry the path passes through, so the cursor starts on that entry ([tagedit.rs:148-164](crates/apex-client/src/tagedit.rs#L148-L164)). `open_path_picker` does nothing on URL pages. It works out how many rows fit below the tag (between 3 and 12), positions the panel so its names line up with the path text, and asks the host for the listing with `list_folder_as(ViewId::Tag(w), ExecCtx::Window(w), LISTING, dir)` ([tagedit.rs:307-363](crates/apex-client/src/tagedit.rs#L307-L363)).
 
-The picker's query is typed into the tag itself. `Head::picking` draws the folder followed by the typed text and its caret ([text_element.rs:978-985](crates/apex-client/src/text_element.rs#L978-L985)). `picker_anchor` moves the panel to follow the `Typed` atom as the user goes into or out of folders ([tagedit.rs:519-532](crates/apex-client/src/tagedit.rs#L519-L532)).
+The picker's query is typed into the tag itself. `Head::picking_in` draws the folder (relative to a base folder when the path is inside it, `./` for the base itself), followed by the typed text and its caret, and marks the typed text as the `Typed` atom; `Head::picking` is a test-only wrapper around it ([text_element.rs:1016-1044](crates/apex-client/src/text_element.rs#L1016-L1044)). `picker_anchor` moves the panel to follow the `Typed` atom as the user goes into or out of folders ([tagedit.rs:519-532](crates/apex-client/src/tagedit.rs#L519-L532)).
 
 `Picker::picks` lists `Choice::Window` rows first, then `Choice::Entry` rows ([tagedit.rs:120-146](crates/apex-client/src/tagedit.rs#L120-L146)). The window rows come from `associated(dir, except)`: the windows open on that folder, or on a file directly in it, that are not a plain file or folder window. That means Errors, previews, terminals and tool panes, ranked Errors first, then previews, then the rest ([tagedit.rs:450-483](crates/apex-client/src/tagedit.rs#L450-L483)). With nothing typed, entries are sorted folders first and then case-insensitively. With a query, both groups are fuzzy-scored with `finder::score` and sorted best first.
 
@@ -270,7 +270,7 @@ Keys in `picker_key` ([tagedit.rs:376-406](crates/apex-client/src/tagedit.rs#L37
 - ← or Backspace with nothing typed goes up a folder (`picker_up`), with the cursor on the folder just left.
 - Return picks. A window row is reached with `Proposal::Goto` by id. An entry is opened in a window of its own with `Acme::goto`. **⌥Return** replaces this window's contents instead: it applies `SetPath` and then `Get`, but only when the window shows the same kind of thing (a file for a file, a folder for a folder) and is not scratch or live. On an unsaved window, the first ⌥Return only sets `warned` and the footer asks for a second press ([tagedit.rs:408-448](crates/apex-client/src/tagedit.rs#L408-L448)).
 
-Sources: [tagedit.rs:1-676](crates/apex-client/src/tagedit.rs#L1-L676), [app.rs:3404-3413](crates/apex-client/src/app.rs#L3404-L3413), [text_element.rs:978-985](crates/apex-client/src/text_element.rs#L978-L985)
+Sources: [tagedit.rs:1-676](crates/apex-client/src/tagedit.rs#L1-L676), [app.rs:3363-3365](crates/apex-client/src/app.rs#L3363-L3365), [text_element.rs:1016-1044](crates/apex-client/src/text_element.rs#L1016-L1044)
 
 ## The cwd picker in the title bar
 
@@ -286,11 +286,11 @@ Sources: [cwdbar.rs:1-392](crates/apex-client/src/cwdbar.rs#L1-L392)
 
 - **Stale answers are dropped.** ^F checks that the caret is still at `at`. The folder pickers check `p.dir == c.prefix` (and, for the tag picker, also the view). Quick open checks the request id and the generation window.
 - **Goto by id.** The finder and the path picker go to open windows by `WindowId`, written as a string, because two windows can share a path (a file and its preview).
-- **Two navigation paths.** The finder and the window rows of the path picker use `Proposal::Goto`, which pushes onto the back stack. Quick open and the path picker's entries use `Acme::goto` → `node.land`, which does not ([app.rs:4238-4248](crates/apex-client/src/app.rs#L4238-L4248)). So ⌘[ cannot go back from a ⌘O pick.
+- **Two navigation paths.** The finder (through `go_in_tab`) and the window rows of the path picker use `Proposal::Goto`, which pushes onto the back stack. Quick open and the path picker's entries use `Acme::goto` → `node.land`, which does not ([app.rs:4296-4301](crates/apex-client/src/app.rs#L4296-L4301)). So ⌘[ cannot go back from a ⌘O pick. When the place belongs to another tab, `goto` parks it in `pending_switch` instead.
 - **Cursor behaviour differs.** The finder and ^F wrap at the ends. The palette, quick open and both folder pickers clamp. Most overlays reset the cursor to 0 on `Edited::Changed`.
 - **Closing only some overlays.** `open_quick` closes the finder and palette, `open_finder` closes the selector, and `open_cwd_picker` closes the tag picker and tag field. No single function closes all of them.
 
-Sources: [completion.rs:67-71](crates/apex-client/src/completion.rs#L67-L71), [tagedit.rs:365-374](crates/apex-client/src/tagedit.rs#L365-L374), [quickopen.rs:153-157](crates/apex-client/src/quickopen.rs#L153-L157), [app.rs:4238-4248](crates/apex-client/src/app.rs#L4238-L4248)
+Sources: [completion.rs:67-71](crates/apex-client/src/completion.rs#L67-L71), [tagedit.rs:365-374](crates/apex-client/src/tagedit.rs#L365-L374), [quickopen.rs:153-157](crates/apex-client/src/quickopen.rs#L153-L157), [app.rs:4296-4323](crates/apex-client/src/app.rs#L4296-L4323), [finder.rs:311-329](crates/apex-client/src/finder.rs#L311-L329)
 
 ## The review: one ListPicker, one overlay state
 
@@ -314,4 +314,4 @@ The review also counts 14 separate `Option` overlay fields, each with hand-writt
 
 The proposed fix is one `Option<Overlay>`, or a small stack of them, behind a trait with `key`, `field`, `edit`, `render` and `bounds`. Together with "one blink clock" and "one navigation path", this is part of the planned client cleanups ([ARCHITECTURE.md:303-324](ARCHITECTURE.md#L303-L324), [ARCHITECTURE.md:928-935](ARCHITECTURE.md#L928-L935)).
 
-Sources: [ARCHITECTURE.md:279-324](ARCHITECTURE.md#L279-L324), [ARCHITECTURE.md:928-935](ARCHITECTURE.md#L928-L935), [shell.rs:1412-1439](crates/apex-client/src/shell.rs#L1412-L1439), [app.rs:5109-5115](crates/apex-client/src/app.rs#L5109-L5115)
+Sources: [ARCHITECTURE.md:279-324](ARCHITECTURE.md#L279-L324), [ARCHITECTURE.md:928-935](ARCHITECTURE.md#L928-L935), [shell.rs:1420-1445](crates/apex-client/src/shell.rs#L1420-L1445), [app.rs:5177-5183](crates/apex-client/src/app.rs#L5177-L5183)

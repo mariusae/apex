@@ -6,7 +6,7 @@ The tiling is part of the replicated state. Whichever node leads the layout shar
 
 ## The layout as data
 
-The layout shard's state is `state::Layout`. Every coordinate in it is an integer pixel in the row's coordinate space, as in acme. The row has a rectangle `r`, and its first line is the top tag. Each column has a rectangle, and its first line is the column tag. A window's place in a column is a `Slot`, which records acme's per-window frame measurements along with apex's extra bookkeeping.
+The layout shard's state is `state::Layout`. Every coordinate in it is an integer pixel in the row's coordinate space, as in acme. The row has a rectangle `r`, and its first line is the top tag. Each column has a rectangle, and its first line is the column tag. A window's place in a column is a `Slot`, which records acme's per-window frame measurements along with apex's extra bookkeeping. (`Layout` also carries the top tag buffer, the snarf text, the layout-level execs and the navigation stacks; those are not tiling and are covered in [Entries, State and Apply](core-state.md).)
 
 ```mermaid
 classDiagram
@@ -69,14 +69,14 @@ classDiagram
 | `Slot::premax` | The share the window had before B2 maximized a window in its column. B1 restores it. |
 | `Column::full` | The window grown to the whole column with B3, with its previous rectangle, share and the column's rectangle at that time. |
 | `Column::restore` | The width the column had when it last became a strip, kept as a share of the row so it survives a window resize. |
-| `Column::stashed`, `after` | A column put away at the row's right by an older apex. No current code sets `stashed`, but `rowbringback` and `back_at` still handle it. |
+| `Column::stashed`, `after` | A column put away as a strip at the row's right, with `after` naming the column it stood beside. Nothing in the crates sets `stashed` to true any more (`tiling.rs` only clears it, when a strip comes back), but `rowbringback`, `rowrestore_all` and `back_at` still handle it, and the client still branches on it: `main.rs` draws a stashed strip with `strip_element` and a minimized one with `minimized_element`, and `strips.rs` hit-tests only stashed strips. |
 | `Layout::full` | The column given the whole row with B3. The other columns' rectangles go stale while it is set. |
 | `Layout::stash` | Windows put away (⌘M, `Stash`), in the order they went. |
 | `Layout::covers` | Window stacks: a window opened over another (for example, `apex editor` from a terminal). |
 
-`Layout` has helpers that the tiling and the node rely on: `shows`, `full_index`, `column_of`, `stashed_of`, `stack_top`/`stack`, `place_of` and `slot` ([state.rs:254-327](crates/apex-core/src/state.rs#L254-L327)). Note that `rowwhichcol` ignores columns that are hidden behind a full column, because their stale rectangles may lie under the full one ([tiling.rs:1124-1128](crates/apex-core/src/tiling.rs#L1124-L1128)).
+`Layout` has helpers that the tiling and the node rely on: `shows`, `full_index`, `column_of` (which also answers for a stashed window, via the column it came from), `stashed_of`, `is_stashed`, `under`/`over`, `stack_top`/`stack`, `place_of` and `slot`. `Column::hides` and `Column::hiding` say whether a window is concealed behind a full window. Note that `rowwhichcol` ignores columns that are hidden behind a full column, because their stale rectangles may lie under the full one ([tiling.rs:1125-1129](crates/apex-core/src/tiling.rs#L1125-L1129)).
 
-Sources: [crates/apex-core/src/state.rs:102-252](crates/apex-core/src/state.rs#L102-L252), [crates/apex-core/src/tiling.rs:1-63](crates/apex-core/src/tiling.rs#L1-L63)
+Sources: [crates/apex-core/src/state.rs:126-327](crates/apex-core/src/state.rs#L126-L327), [crates/apex-core/src/tiling.rs:1-63](crates/apex-core/src/tiling.rs#L1-L63), [crates/apex-core/src/tiling.rs:1427](crates/apex-core/src/tiling.rs#L1427), [crates/apex-client/src/main.rs:352-372](crates/apex-client/src/main.rs#L352-L372), [crates/apex-client/src/strips.rs:1-33](crates/apex-client/src/strips.rs#L1-L33)
 
 ## How a layout change is replicated
 
@@ -94,7 +94,7 @@ fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
 }
 ```
 
-`State::apply_layout` checks that no window appears twice across the columns, the stash and the covered windows, and rejects the entry with `ApplyError::Exists` if one does. Otherwise it replaces `r`, `cols`, `stash` and `covers` wholesale and keeps `full` only if that column still exists. `LayoutOp::Init` sets the top tag buffer and the starting rectangle; `init_session` uses 1100×700 and then adds two columns, as acme's `-c 2` does.
+`State::apply_layout` checks that no window appears twice across the columns, the stash and the covered windows (`covers` contributes each entry's `under`), and rejects the entry with `ApplyError::Exists` if one does. Otherwise it replaces `r`, `cols`, `stash` and `covers` wholesale and keeps `full` only if that column still exists. `LayoutOp::Init` sets the top tag buffer and the starting rectangle; `init_session` uses 1100×700 and then adds two columns, as acme's `-c 2` does.
 
 ```mermaid
 sequenceDiagram
@@ -114,9 +114,9 @@ sequenceDiagram
     F->>F: apply Arrange, no recomputation
 ```
 
-`arrange_dropping` is used after drags. It also deletes the tag buffer shards of any columns that disappeared, such as a column left empty by dragging its last window out. The test `arrange_entries_replay_identically` checks that a follower replaying the log ends with the same `State::hash` and the same layout as the leader.
+`arrange_dropping` is used after drags. It also deletes the tag buffer shards of any columns that disappeared, such as a column left empty by dragging its last window out, and clears `activecol` if it named one. The test `arrange_entries_replay_identically` checks that a follower replaying the log ends with the same `State::hash` and the same layout as the leader; the hash covers each column's `r`, `full`, `restore`, `stashed` and `after`.
 
-Sources: [crates/apex-core/src/node.rs:290-294](crates/apex-core/src/node.rs#L290-L294), [crates/apex-core/src/node.rs:425-461](crates/apex-core/src/node.rs#L425-L461), [crates/apex-core/src/entry.rs:256-278](crates/apex-core/src/entry.rs#L256-L278), [crates/apex-core/src/state.rs:676-703](crates/apex-core/src/state.rs#L676-L703), [crates/apex-core/tests/tiling.rs:534-552](crates/apex-core/tests/tiling.rs#L534-L552)
+Sources: [crates/apex-core/src/node.rs:290-294](crates/apex-core/src/node.rs#L290-L294), [crates/apex-core/src/node.rs:451-461](crates/apex-core/src/node.rs#L451-L461), [crates/apex-core/src/entry.rs:253-273](crates/apex-core/src/entry.rs#L253-L273), [crates/apex-core/src/state.rs:709-726](crates/apex-core/src/state.rs#L709-L726), [crates/apex-core/src/state.rs:981](crates/apex-core/src/state.rs#L981), [crates/apex-core/tests/tiling.rs:535-552](crates/apex-core/tests/tiling.rs#L535-L552)
 
 ## The `Info` trait: what the tiling asks about text
 
@@ -139,11 +139,11 @@ There are two implementations:
 | Implementation | Where | Behaviour |
 |---|---|---|
 | `Headless` | [tiling.rs:86-113](crates/apex-core/src/tiling.rs#L86-L113) | The default in `Node::new`, used by a daemon leading with no screen. Tag and body fonts are both 17 pixels, every tag is one line, and every body is full (`body_nlines` returns `maxlines`). |
-| `ClientInfo` | [app.rs:114-152](crates/apex-client/src/app.rs#L114-L152) | Built by the UI's `measure` each frame from the last frame's layouts. It records the tag line height, the row height, proportional and mono line heights, each tag's wrapped line count and trailing newline, and each body's line count from its origin. Terminal bodies are always full. |
+| `ClientInfo` | [app.rs:114-152](crates/apex-client/src/app.rs#L114-L152) | Built by the UI's `measure` each frame from the last frame's layouts. It holds the tag line height (`font`), the tag row height (`row`), the proportional and mono line heights, each tag's wrapped line count and trailing newline, and for each body whether it is mono, how many lines of text there are from its origin, and whether it is a terminal. A window with no entry gets one tag line and a full body; terminal bodies are always full. |
 
-`App::measure` installs a new `ClientInfo` into `node.tiling` on every frame. It then calls `resize_layout` if the OS window's size changed. The row's `y0` is set to `-(font + BORDER)`, so the top tag's line lies above the drawn area, where the title bar draws it instead. Finally, `measure` calls `refit_window` for each visible window whose tag now wraps to a different number of lines than its slot allows. This is acme's `winsettag` → `winresize`.
+`App::measure` installs a new `ClientInfo` into `node.tiling` on every frame. The tag height comes from `text_element::tag_line_height()` and the row from `tag_row_height()`. For a window whose body is a URL page (`Body::Page(Source::Url)`), or whose `tagexpand` is off (acme's Up in the tag), it records a one-line tag instead of the measured wrap; otherwise it uses the wrap count the last frame measured (`tag_need`). Body line counts come from the last frame's layout (`total_lines − first_line`), or from the buffer's line count if the body has not been laid out yet. It then calls `resize_layout` if the OS window's size changed. The row's `y0` is set to `-(font + BORDER)`, so the top tag's line lies above the drawn area, where the title bar draws it instead. Finally, `measure` calls `refit_window` for each window not hidden behind a full window whose measured tag wraps to a different number of lines than its slot allows, and then moves the mouse as acme's `winresize` does: up as a tag closes under it, down as one expands over it. `refit_window` does nothing for a stashed window, which has no place to refit in.
 
-Sources: [crates/apex-core/src/tiling.rs:65-153](crates/apex-core/src/tiling.rs#L65-L153), [crates/apex-core/src/node.rs:252-260](crates/apex-core/src/node.rs#L252-L260), [crates/apex-client/src/app.rs:2565-2620](crates/apex-client/src/app.rs#L2565-L2620), [crates/apex-core/src/node.rs:759-785](crates/apex-core/src/node.rs#L759-L785)
+Sources: [crates/apex-core/src/tiling.rs:65-153](crates/apex-core/src/tiling.rs#L65-L153), [crates/apex-core/src/node.rs:268-288](crates/apex-core/src/node.rs#L268-L288), [crates/apex-client/src/app.rs:114-152](crates/apex-client/src/app.rs#L114-L152), [crates/apex-client/src/app.rs:2617-2690](crates/apex-client/src/app.rs#L2617-L2690), [crates/apex-core/src/node.rs:780-807](crates/apex-core/src/node.rs#L780-L807)
 
 ## Window geometry: `winresize`, whole lines and shares
 
@@ -151,7 +151,7 @@ Sources: [crates/apex-core/src/tiling.rs:65-153](crates/apex-core/src/tiling.rs#
 
 The public `winresize` also clears `Slot::share`. Every caller except `colresize` is acting for the user, so shares are read again from the rectangles at the next resize. `colresize` calls the internal `winresize_in` instead and leaves the shares alone. This fixes a drift problem in acme's own `colresize`. acme scales each window's last height and trims it to whole lines, so the remainders were passed down the column on every resize, and dragging a window back and forth slowly gave the bottom window the whole column. apex sizes each window by its share of `space = column height − column tag − n × BORDER`, gives the last window whatever is left, and computes shares from `r.dy() + extra` in `sync_shares`. The test `resizing_back_and_forth_keeps_the_windows_proportions` resizes 200 times and checks that every window stays within one line of its starting height.
 
-Sources: [crates/apex-core/src/tiling.rs:173-265](crates/apex-core/src/tiling.rs#L173-L265), [crates/apex-core/src/tiling.rs:397-439](crates/apex-core/src/tiling.rs#L397-L439), [DESIGN.md:1904-1915](DESIGN.md#L1904-L1915), [crates/apex-core/tests/tiling.rs:597-615](crates/apex-core/tests/tiling.rs#L597-L615)
+Sources: [crates/apex-core/src/tiling.rs:173-265](crates/apex-core/src/tiling.rs#L173-L265), [crates/apex-core/src/tiling.rs:397-439](crates/apex-core/src/tiling.rs#L397-L439), [crates/apex-core/src/state.rs:126-165](crates/apex-core/src/state.rs#L126-L165), [DESIGN.md:1904-1915](DESIGN.md#L1904-L1915), [crates/apex-core/tests/tiling.rs:598-615](crates/apex-core/tests/tiling.rs#L598-L615)
 
 ## Column operations (acme's `cols.c`)
 
@@ -173,9 +173,9 @@ A click on a window's box dispatches the same way in `coldragwin` and in `Node::
 - **B1** undoes the previous action when there is one: `unfull` if a window is full, `colunmaximize` if this is the maximized window (it restores the `premax` shares). Otherwise it calls `colgrow(…,1)`.
 - **Shift-B1** reaches `colminimize` through `Node::minimize_window`. The window shrinks to its tag where it stands. The window below takes its body space, or, if it was the last window, its tag moves to the column's foot and the window above extends down to it.
 
-Any operation that changes the column first calls `unfull`, so no algorithm ever works on stale rectangles. If the column was resized while one window was full, `unfull` rebuilds the shares with `whole_shares` and runs `colresize`. Otherwise every window returns to exactly the rectangle it had.
+`Node::grow_window` on a stashed window brings it back instead (`unstash_window`). Any operation that changes the column first calls `unfull`, so no algorithm ever works on stale rectangles. If the column was resized while one window was full, `unfull` rebuilds the shares with `whole_shares` and runs `colresize`. Otherwise every window returns to exactly the rectangle it had.
 
-Sources: [crates/apex-core/src/tiling.rs:267-734](crates/apex-core/src/tiling.rs#L267-L734), [crates/apex-core/src/tiling.rs:877-903](crates/apex-core/src/tiling.rs#L877-L903), [crates/apex-core/src/tiling.rs:987-1120](crates/apex-core/src/tiling.rs#L987-L1120), [crates/apex-core/src/node.rs:868-949](crates/apex-core/src/node.rs#L868-L949), [crates/apex-core/tests/tiling.rs:117-143](crates/apex-core/tests/tiling.rs#L117-L143)
+Sources: [crates/apex-core/src/tiling.rs:267-734](crates/apex-core/src/tiling.rs#L267-L734), [crates/apex-core/src/tiling.rs:877-903](crates/apex-core/src/tiling.rs#L877-L903), [crates/apex-core/src/tiling.rs:987-1120](crates/apex-core/src/tiling.rs#L987-L1120), [crates/apex-core/src/node.rs:887-968](crates/apex-core/src/node.rs#L887-L968), [crates/apex-core/tests/tiling.rs:117-143](crates/apex-core/tests/tiling.rs#L117-L143)
 
 ## Row operations (acme's `rows.c`, and columns that grow)
 
@@ -188,12 +188,12 @@ Sources: [crates/apex-core/src/tiling.rs:267-734](crates/apex-core/src/tiling.rs
 | `rowmovecol` | Moves the line between column `ci` and its left neighbour. Each side keeps at least `MINCOL` (80 + `SCROLLWID`) pixels. A drag past half of that minimizes the side to a strip and remembers its width. |
 | `rowgrow` | `colgrow` turned on its side; acme has no equivalent. Button 1 widens the column by a fifth of its width or a twelfth of the row, whichever is more, with each neighbour giving at most a third of what it has beyond a strip. On a strip, button 1 brings the column back instead. Button 2 calls `rowmaximize`, button 3 calls `rowfull`, and button 4 does nothing. |
 | `rowmaximize` / `rowunmaximize` | Make every other column a strip while remembering widths, and restore them (`rowrestore_all`). |
-| `rowminimize` | Shift-B1 on a column's box. The column becomes a strip where it stands, and its width goes to the nearest column with room, looking right first. The last column with room cannot be minimized. |
+| `rowminimize` | Shift-B1 on a column's box (`Node::minimize_column`). The column becomes a strip where it stands, and its width goes to the nearest column with room, looking right first. The last column with room cannot be minimized. |
 | `rowfull` / `reveal` | B3 gives one column the whole row by setting `Layout::full`. `reveal` lays the row out again with each column where it stood. Every other row operation calls it first. |
 | `rowbringback`, `restore_one` | Return a strip to its remembered width (`natural`, or a fifth of the row if none), taking width from the nearest columns with room. Columns that are holding a strip's width give theirs back first. |
-| `uncover` | Makes column `ci` visible because the user is being taken to a window in it: reveals a hidden row and brings back a strip. |
+| `uncover` | Makes column `ci` visible because the user is being taken to a window in it: reveals a hidden row and brings back a strip. `Node::uncover` calls it, after `unfull` if the window is hidden behind a full window. |
 
-A **strip** is a column `STRIP = SCROLLWID + BORDER = 14` pixels wide (`is_strip`): a squeezed window's tag turned on its side. The client draws no text, body, terminal or page inside one. A click on the box of a window in a strip only brings the column back; the next click grows the window. `nearest_open` exists so that `Node::place` never puts a new window into a strip: the window goes to the nearest column with room instead.
+A **strip** is a column `STRIP = SCROLLWID + BORDER = 14` pixels wide (`is_strip`): a squeezed window's tag turned on its side. The client draws no text, body, terminal or page inside one. A click on the box of a window in a strip only brings the column back; the next click grows the window. `nearest_open` exists so that `Node::place` never puts a new window into a strip: the window goes to the nearest column with room instead (and, while a column holds the whole row, into that column).
 
 `rowpack` is the shared final step for most row operations. It lays columns out left to right at given widths and gives any leftover to the last column with room. `settle` clears `restore` on the columns with room after a manual change, so they no longer hold width for a strip.
 
@@ -210,7 +210,7 @@ stateDiagram-v2
     Hidden --> Open: "reveal"
 ```
 
-Sources: [crates/apex-core/src/tiling.rs:1122-1797](crates/apex-core/src/tiling.rs#L1122-L1797), [crates/apex-core/src/tiling.rs:20-40](crates/apex-core/src/tiling.rs#L20-L40), [crates/apex-core/src/node.rs:726-757](crates/apex-core/src/node.rs#L726-L757), [DESIGN.md:1833-1898](DESIGN.md#L1833-L1898), [crates/apex-core/tests/tiling.rs:806-812](crates/apex-core/tests/tiling.rs#L806-L812)
+Sources: [crates/apex-core/src/tiling.rs:1122-1797](crates/apex-core/src/tiling.rs#L1122-L1797), [crates/apex-core/src/tiling.rs:20-40](crates/apex-core/src/tiling.rs#L20-L40), [crates/apex-core/src/node.rs:747-866](crates/apex-core/src/node.rs#L747-L866), [crates/apex-core/src/node.rs:899-909](crates/apex-core/src/node.rs#L899-L909), [DESIGN.md:1833-1898](DESIGN.md#L1833-L1898), [crates/apex-core/tests/tiling.rs:807-812](crates/apex-core/tests/tiling.rs#L807-L812)
 
 ## Splitting a column by dropping a window at its edge
 
@@ -220,21 +220,21 @@ Sources: [crates/apex-core/src/tiling.rs:1122-1797](crates/apex-core/src/tiling.
 - At its own column's right edge, the pointer has to have moved more than 30 pixels to the right.
 - A column narrower than 200 pixels, a strip, or the window's own column when it is the only window there, is never split.
 
-`coldragsplit` halves the target column with `rowadd` and swaps the two halves for a left drop. It then moves the window into the new column and closes the column the window came from if the drag left it empty (`close_if_left_empty`). A column made empty with Newcol stays. `Node::drag_window` allocates the new column's id and tag buffer, and deletes the tag buffer again if the split fails.
+`coldragsplit` halves the target column with `rowadd` and swaps the two halves for a left drop. It then moves the window into the new column and closes the column the window came from if the drag left it empty (`close_if_left_empty`). A column made empty with Newcol stays. `Node::drag_window` allocates the new column's id and tag buffer (adding the `ColTag` view), and deletes the tag buffer again if the split fails.
 
-`Node::dragged` runs the same code with placeholder ids (`u64::MAX`). This is how `drag_window_preview`, `drag_column_preview`, `column_edge_preview` and `window_edge_preview` show where a drop would land without appending anything to the log.
+`Node::dragged` runs the same code with placeholder ids (`u64::MAX`). This is how `drag_window_preview`, `drag_column_preview`, `column_edge_preview` and `window_edge_preview` show where a drop would land without appending anything to the log. The edges themselves are moved by `move_column_edge` (`rowmovecol`) and `move_window_edge` (`colmovewin`), and a column's box by `drag_column`.
 
-Sources: [crates/apex-core/src/tiling.rs:909-985](crates/apex-core/src/tiling.rs#L909-L985), [crates/apex-core/src/node.rs:951-1061](crates/apex-core/src/node.rs#L951-L1061)
+Sources: [crates/apex-core/src/tiling.rs:909-985](crates/apex-core/src/tiling.rs#L909-L985), [crates/apex-core/src/node.rs:970-1095](crates/apex-core/src/node.rs#L970-L1095)
 
 ## The stash and covered windows
 
-The stash belongs to the session, not to a column. `stash` removes a window with `colclose` and pushes a `Stashed` record holding its slot (with a fresh share), its column, and `above`, the window just above it in the column's order. `stash_order` reconstructs a column's full order with stashed windows put back into it. `recall` returns a stashed window under the nearest laid-out window above it, following the `above` chain through other stashed windows. If the window's column is gone, it goes to the foot of the column `or`. The window gets back its old share, and the other windows give up space in proportion. A window with fewer than `FEW_LINES` (5) lines gets at least an even share; this applies to `+Errors` windows, which start out stashed. `left` passes a departing window's `above` on to the windows stashed beneath it. `restash` moves a record to the end of the stash so it shows first among the stash's cards, and `unstash` removes a record permanently when its window is closed.
+The stash belongs to the session, not to a column. `stash` removes a window with `colclose` and pushes a `Stashed` record holding its slot (with a fresh share), its column, and `above`, the window just above it in the column's order. `stash_order` reconstructs a column's full order with stashed windows put back into it. `recall` returns a stashed window under the nearest laid-out window above it, following the `above` chain through other stashed windows. If the window's column is gone, it goes to the foot of the column `or`; `Node::unstash_window` passes the active column, or the last one, and makes the recalled window's column active. The window gets back its old share, and the other windows give up space in proportion. A window with fewer than `FEW_LINES` (5) lines gets at least an even share; this applies to `+Errors` windows, which start out stashed. `left` passes a departing window's `above` on to the windows stashed beneath it. `restash` (`Node::restash_window`) moves a record to the end of the stash so it shows first among the stash's cards, and `unstash` removes a record permanently when its window is closed.
 
-Diagnostic windows are placed and stashed in a single `Arrange` (`Node::place`). `Node::reveal` and `grow_window` on a stashed window call `unstash_window`, so going to a stashed window always brings it back.
+Diagnostic windows are placed and stashed in a single `Arrange` (`Node::place`: `coladd` then `stash`, when `window_diagnostic` is true). `Node::reveal` and `grow_window` on a stashed window call `unstash_window`, so going to a stashed window always brings it back. `Node::notice` leaves a stashed window alone, since its card in the stash already shows it.
 
-Covered windows are a separate mechanism. `restack(l, top, stack, info)` puts `stack[0]` into `top`'s slot in its column or in the stash, refits it with `colgrow(…,-1)`, hands on stash `above` links, and rewrites `covers` as consecutive pairs. `cover_window`, `swap_window`, `raise_window` and `delete_window` in the node all use it.
+Covered windows are a separate mechanism. `restack(l, top, stack, info)` puts `stack[0]` into `top`'s slot in its column or in the stash, refits it with `colgrow(…,-1)`, hands on stash `above` links, and rewrites `covers` as consecutive pairs. `cover_window`, `swap_window`, `raise_window` and `delete_window` in the node all use it; `reveal` raises a covered window first, and `notice` acts on the stack's top.
 
-Sources: [crates/apex-core/src/tiling.rs:648-674](crates/apex-core/src/tiling.rs#L648-L674), [crates/apex-core/src/tiling.rs:736-875](crates/apex-core/src/tiling.rs#L736-L875), [crates/apex-core/src/node.rs:536-582](crates/apex-core/src/node.rs#L536-L582), [crates/apex-core/src/node.rs:892-924](crates/apex-core/src/node.rs#L892-L924), [crates/apex-core/src/node.rs:1286-1322](crates/apex-core/src/node.rs#L1286-L1322)
+Sources: [crates/apex-core/src/tiling.rs:648-674](crates/apex-core/src/tiling.rs#L648-L674), [crates/apex-core/src/tiling.rs:736-875](crates/apex-core/src/tiling.rs#L736-L875), [crates/apex-core/src/node.rs:539-585](crates/apex-core/src/node.rs#L539-L585), [crates/apex-core/src/node.rs:911-943](crates/apex-core/src/node.rs#L911-L943), [crates/apex-core/src/node.rs:1312](crates/apex-core/src/node.rs#L1312), [crates/apex-core/src/state.rs:167-191](crates/apex-core/src/state.rs#L167-L191)
 
 ## Mouse warps and node-level policy
 
@@ -252,11 +252,11 @@ A click that turns a column into a strip returns no warp, because warping onto t
 
 The node adds placement policy on top of the tiling:
 
-- **`make_window`** picks the column. It uses `activecol` first, then the column holding the last selected text, then the column of `from`. It also calls `unfull` on a column with a full window, so the new window lands among the others.
+- **`make_window`** picks the column. It uses `activecol` first, then the column holding the last selected text, then the column of `from`, then the fallback. It also calls `unfull` on a column with a full window, so the new window lands among the others, and grows the new window once with button 1 if it shows fewer than two lines.
 - **`notice`** handles a window that raises a notification while it is hidden. It turns the B3 that hides it into a B2, so the window shows as a tag or strip.
 - **`reveal`** grows a window that shows no lines.
 
-Sources: [crates/apex-core/src/tiling.rs:155-171](crates/apex-core/src/tiling.rs#L155-L171), [crates/apex-core/src/tiling.rs:1707-1748](crates/apex-core/src/tiling.rs#L1707-L1748), [crates/apex-core/src/node.rs:584-612](crates/apex-core/src/node.rs#L584-L612), [crates/apex-core/src/node.rs:787-866](crates/apex-core/src/node.rs#L787-L866)
+Sources: [crates/apex-core/src/tiling.rs:155-171](crates/apex-core/src/tiling.rs#L155-L171), [crates/apex-core/src/tiling.rs:1707-1748](crates/apex-core/src/tiling.rs#L1707-L1748), [crates/apex-core/src/node.rs:587-612](crates/apex-core/src/node.rs#L587-L612), [crates/apex-core/src/node.rs:825-885](crates/apex-core/src/node.rs#L825-L885)
 
 ## Pixels in the log: the choice and the critique
 
@@ -292,4 +292,4 @@ The tests cover:
 - Tag padding (`Padded`) and sparse bodies (`Sparse`) through custom `Info` implementations.
 - Replay of `Arrange` entries.
 
-Sources: [crates/apex-core/tests/tiling.rs:1-28](crates/apex-core/tests/tiling.rs#L1-L28), [crates/apex-core/tests/tiling.rs:648-662](crates/apex-core/tests/tiling.rs#L648-L662), [crates/apex-core/tests/tiling.rs:1125-1160](crates/apex-core/tests/tiling.rs#L1125-L1160), [crates/apex-core/tests/tiling.rs:1162-1199](crates/apex-core/tests/tiling.rs#L1162-L1199)
+Sources: [crates/apex-core/tests/tiling.rs:1-28](crates/apex-core/tests/tiling.rs#L1-L28), [crates/apex-core/tests/tiling.rs:620-662](crates/apex-core/tests/tiling.rs#L620-L662), [crates/apex-core/tests/tiling.rs:1125-1160](crates/apex-core/tests/tiling.rs#L1125-L1160), [crates/apex-core/tests/tiling.rs:510-552](crates/apex-core/tests/tiling.rs#L510-L552)

@@ -30,11 +30,11 @@ A destination is written `provider:name`, or a bare `name` for ssh (`user@host`)
 
 So an `apex-remote-ssh` on the PATH overrides the real `ssh`. The tests use the environment variables to point at a fake host script.
 
-`available()` lists the providers a session can be reached through. It returns `local` and `ssh` first, then every `apex-remote-NAME` file in the `PATH` directories, without duplicates. The client's "Remote…" form in the session selector (`Connect::new` in [shell.rs:968-986](crates/apex-client/src/shell.rs#L968-L986)) offers this list, minus `local` ([providers.rs:85-104](crates/apex-server/src/providers.rs#L85-L104)).
+`available()` lists the providers a session can be reached through. It returns `local` and `ssh` first, then every `apex-remote-NAME` file in the `PATH` directories, without duplicates. The client's "Remote…" form in the session selector (`Connect::new` in [shell.rs:984-988](crates/apex-client/src/shell.rs#L984-L988)) offers this list, minus `local` ([providers.rs:85-109](crates/apex-server/src/providers.rs#L85-L109)).
 
 ### Running a command: `run`
 
-`run(spec, cmd, stdin)` is the single primitive everything else is built from. It spawns `program DESTINATION CMD`. When `stdin` is given it pipes those bytes to the child and closes the pipe; otherwise stdin is `/dev/null`. It collects stdout. On a non-zero exit it returns an error carrying the trimmed stderr, or `"{host}: {cmd}: {status}"` if stderr was empty ([providers.rs:111-133](crates/apex-server/src/providers.rs#L111-L133)).
+`run(spec, cmd, stdin)` is the single primitive everything else is built from. It spawns `program DESTINATION CMD`. When `stdin` is given it pipes those bytes to the child and closes the pipe; otherwise stdin is `/dev/null`. It collects stdout. On a non-zero exit it returns an error carrying the trimmed stderr (prefixed with the host), or `"{host}: {cmd}: {status}"` if stderr was empty ([providers.rs:111-133](crates/apex-server/src/providers.rs#L111-L133)).
 
 ### The example providers
 
@@ -47,7 +47,7 @@ The `providers/` directory has two example scripts. Neither is installed automat
 
 Both show the general recipe: a tool that takes an argv vector must run `$2` through a shell on the far side ([providers/apex-remote-sprite:1-9](providers/apex-remote-sprite#L1-L9), [providers/apex-remote-devserver:1-33](providers/apex-remote-devserver#L1-L33)).
 
-Sources: [crates/apex-server/src/providers.rs:1-133](crates/apex-server/src/providers.rs#L1-L133), [providers/README.md:1-31](providers/README.md#L1-L31), [providers/apex-remote-sprite:1-9](providers/apex-remote-sprite#L1-L9), [providers/apex-remote-devserver:1-33](providers/apex-remote-devserver#L1-L33), [crates/apex-client/src/shell.rs:968-986](crates/apex-client/src/shell.rs#L968-L986)
+Sources: [crates/apex-server/src/providers.rs:1-133](crates/apex-server/src/providers.rs#L1-L133), [providers/README.md:1-31](providers/README.md#L1-L31), [providers/apex-remote-sprite:1-9](providers/apex-remote-sprite#L1-L9), [providers/apex-remote-devserver:1-33](providers/apex-remote-devserver#L1-L33), [crates/apex-client/src/shell.rs:984-988](crates/apex-client/src/shell.rs#L984-L988)
 
 ## Session URLs
 
@@ -75,7 +75,7 @@ Equality is by identity when both sides know it, and by label otherwise. Provide
 
 Session labels are checked by `valid_label`. A label starts with a lowercase letter, continues with lowercase letters, digits and `-`, and does not end in `-`. Because a label starts with a letter, it is never mistaken for a prefix of a UUID. `DEFAULT_SESSION` is `"default"` ([providers.rs:288-304](crates/apex-server/src/providers.rs#L288-L304)).
 
-Sources: [crates/apex-server/src/providers.rs:278-449](crates/apex-server/src/providers.rs#L278-L449), [crates/apex-server/src/providers.rs:478-528](crates/apex-server/src/providers.rs#L478-L528)
+Sources: [crates/apex-server/src/providers.rs:278-449](crates/apex-server/src/providers.rs#L278-L449), [crates/apex-server/src/providers.rs:459-528](crates/apex-server/src/providers.rs#L459-L528)
 
 ## Putting apex on the destination
 
@@ -91,7 +91,7 @@ apex carries two programs for other machines, `CARRIED = ["apex", "rc"]`. `bundl
 4. In a dev tree, under `target/`: `<triple>/release/<name>` for `linux-amd64` (`x86_64-unknown-linux-musl`) and `linux-arm64` (`aarch64-unknown-linux-musl`), and `rc-<target>/bin/<name>`
 5. For this machine's own kind only: `target/rc-host/bin/<name>`, then the executable's own directory
 
-`mac/build-app.sh` fills case 2. It cross-builds `apex` for `x86_64-unknown-linux-musl`, installs `rc` for that target into `target/rc-linux-amd64`, and copies both into `Contents/Resources/remote/linux-amd64/` ([mac/build-app.sh:17-29](mac/build-app.sh#L17-L29)). A Mac destination can use the app's own `apex` via case 5. See [Building, Testing and Packaging](build-and-test.md).
+`mac/build-app.sh` fills case 2. It cross-builds `apex` for `x86_64-unknown-linux-musl`, installs `rc` for that target into `target/rc-linux-amd64`, and copies both into `Contents/Resources/remote/linux-amd64/` ([mac/build-app.sh:10-29](mac/build-app.sh#L10-L29)). A Mac destination can use the app's own `apex` via case 5. See [Building, Testing and Packaging](build-and-test.md).
 
 ### `deploy`
 
@@ -118,7 +118,7 @@ flowchart TD
     C -->|done| H["(REMOTE_BIN, installed)"]
 ```
 
-Sources: [crates/apex-server/src/providers.rs:135-250](crates/apex-server/src/providers.rs#L135-L250), [mac/build-app.sh:17-29](mac/build-app.sh#L17-L29), [DESIGN.md:737-768](DESIGN.md#L737-L768)
+Sources: [crates/apex-server/src/providers.rs:135-250](crates/apex-server/src/providers.rs#L135-L250), [mac/build-app.sh:10-29](mac/build-app.sh#L10-L29), [DESIGN.md:737-768](DESIGN.md#L737-L768)
 
 ## Attaching: `apex attach -stdio` and the bridge
 
@@ -134,13 +134,13 @@ The program and the destination name pass through `shell_quote`, which leaves st
 
 ### The far end: `attach -stdio`
 
-On the destination, `apex attach -stdio` calls `ensure_server` and then `bridge` ([apex-cli main.rs:1174-1177](crates/apex-cli/src/main.rs#L1174-L1177)). `ensure_server` tries to connect to the socket. If nothing answers, it spawns a daemon whose first session is the requested label, or `default` when what was asked for is not a valid label (an id from a daemon that is gone) ([main.rs:889-900](crates/apex-cli/src/main.rs#L889-L900)). `bridge` connects to the Unix socket and copies bytes both ways. One thread copies stdin to the socket and then shuts down the socket's write half. The main thread copies the socket to stdout in 64 KiB reads, flushing each one. The bridge returns when the socket side closes, even if stdin is still open. It never looks at frames: "this is the whole remote story on the server side" ([main.rs:1199-1228](crates/apex-cli/src/main.rs#L1199-L1228)).
+On the destination, `apex attach -stdio` (the `-stdio` switch of the `attach` command) calls `ensure_server` and then `bridge` ([apex-cli main.rs:1215-1219](crates/apex-cli/src/main.rs#L1215-L1219)). `ensure_server` tries to connect to the socket. If nothing answers, it spawns a daemon whose first session is the requested label, or `default` when what was asked for is not a valid label (an id from a daemon that is gone) ([main.rs:930-941](crates/apex-cli/src/main.rs#L930-L941)). `bridge` connects to the Unix socket and copies bytes both ways. One thread copies stdin to the socket and then shuts down the socket's write half. The main thread copies the socket to stdout in 64 KiB reads, flushing each one. The bridge returns when the socket side closes, even if stdin is still open. It never looks at frames: "this is the whole remote story on the server side" ([main.rs:1240-1269](crates/apex-cli/src/main.rs#L1240-L1269)).
 
-Listing sessions on a host does not attach. `providers::list_sessions(host)` runs `$HOME/.apex/bin/apex -ensure-server ls`. The global `-ensure-server` flag starts the daemon first ([main.rs:758-762](crates/apex-cli/src/main.rs#L758-L762)). The function parses each `label<TAB>id` line into a `SessionInfo`, and accepts a bare label from an older apex ([providers.rs:263-276](crates/apex-server/src/providers.rs#L263-L276), [main.rs:902-907](crates/apex-cli/src/main.rs#L902-L907)).
+Listing sessions on a host does not attach. `providers::list_sessions(host)` runs `$HOME/.apex/bin/apex -ensure-server ls`. The global `-ensure-server` switch starts the daemon first ([main.rs:799-803](crates/apex-cli/src/main.rs#L799-L803)). The function parses each `label<TAB>id` line (as `ls` prints them, [main.rs:943-948](crates/apex-cli/src/main.rs#L943-L948)) into a `SessionInfo`, and accepts a bare label from an older apex ([providers.rs:263-276](crates/apex-server/src/providers.rs#L263-L276)).
 
 ### The near end: `bridge_child`
 
-`remote::bridge_child(cmd)` runs `sh -c cmd` with piped stdin and stdout, in a process group of its own (`process_group(0)`). It returns the two pipes and a closer. The closer sends `SIGTERM` to the whole group, then kills and reaps the child. The group matters because a bridge left behind keeps the far end open, and some providers only tear down cleanly when it goes ([remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550)). The pipes are handed to `Link::over_streams`, or `over_streams_creating`, which makes the session if the daemon answers "no session". From then on, the link behaves exactly as it does over a socket ([remote.rs:225-254](crates/apex-server/src/remote.rs#L225-L254)). Headless clients use `Remote::via(cmd, session, name, kind)` ([remote.rs:739-745](crates/apex-server/src/remote.rs#L739-L745)).
+`remote::bridge_child(cmd)` runs `sh -c cmd` with piped stdin and stdout, in a process group of its own (`process_group(0)`). It returns the two pipes and a closer. The closer sends `SIGTERM` to the whole group, then kills and reaps the child. The group matters because a bridge left behind keeps the far end open, and some providers only tear down cleanly when it goes ([remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550)). The pipes are handed to `Link::over_streams`, or `over_streams_creating`, which makes the session if the daemon answers "no session". The link waits up to a minute for the daemon's `Welcome`, checking the `Build` frame on the way. From then on, the link behaves exactly as it does over a socket ([remote.rs:172-259](crates/apex-server/src/remote.rs#L172-L259)). Headless clients use `Remote::via(cmd, session, name, kind)` ([remote.rs:739-745](crates/apex-server/src/remote.rs#L739-L745)).
 
 ```mermaid
 sequenceDiagram
@@ -164,26 +164,27 @@ sequenceDiagram
 
 | Caller | What it does |
 |---|---|
-| `Acme::connect_link` ([app.rs:1430-1457](crates/apex-client/src/app.rs#L1430-L1457)) | For a URL with a `dest()`: `deploy`, then `attach_command` with `session_ref()`, then `connect_via_link` (creating the session if missing) |
-| `Acme::connect_existing_targeted` ([app.rs:1461-1479](crates/apex-client/src/app.rs#L1461-L1479)) | Same, for a tab from last time, with `Link::over_streams` so nothing is created |
-| `Acme::attach_via` ([app.rs:1496-1510](crates/apex-client/src/app.rs#L1496-L1510)) | `--via CMD`: any command at all, recorded with provider `via` |
-| `ask_host` in the session selector ([shell.rs:1362-1380](crates/apex-client/src/shell.rs#L1362-L1380)) | `list_sessions`; if that fails, `deploy` and try again (a newly added host has no apex yet) |
-| `restart_daemon` ([restart.rs:95-132](crates/apex-client/src/restart.rs#L95-L132)) | `deploy`, then run `$HOME/.apex/bin/apex stop` on the host, then reattach every tab on that destination |
-| Ending and renaming remote sessions ([app.rs:870](crates/apex-client/src/app.rs#L870), [shell.rs:1288](crates/apex-client/src/shell.rs#L1288), [shell.rs:1588](crates/apex-client/src/shell.rs#L1588)) | `providers::run` with `REMOTE_BIN end-session …` or `rename-session …` |
+| `Acme::connect_link` ([app.rs:1440-1467](crates/apex-client/src/app.rs#L1440-L1467)) | For a URL with a `dest()`: `deploy`, then `attach_command` with `session_ref()`, then `connect_via_link` (creating the session if missing). A local URL goes through `shell::ensure_daemon` and connects to the default socket instead |
+| `Acme::connect_existing_targeted` ([app.rs:1471-1489](crates/apex-client/src/app.rs#L1471-L1489)) | Same, for a tab from last time, with `bridge_child` and `Link::over_streams` so nothing is created |
+| `Acme::attach_via` ([app.rs:1505-1520](crates/apex-client/src/app.rs#L1505-L1520)) | `--via CMD`: any command at all, recorded with provider `via` |
+| `ask_host` in the session selector ([shell.rs:1370-1386](crates/apex-client/src/shell.rs#L1370-L1386)) | `list_sessions`; if that fails, `deploy` and try again (a newly added host has no apex yet), reporting the first error if the deploy fails too |
+| The sidebar's host list ([sidebar.rs:806-815](crates/apex-client/src/sidebar.rs#L806-L815)) | `list_sessions` for each non-local host, off the UI thread (`remote::list_sessions` on the socket for the local one) |
+| `restart_daemon` ([restart.rs:101-132](crates/apex-client/src/restart.rs#L101-L132)) | `deploy`, then run `$HOME/.apex/bin/apex stop` on the host, then reattach every tab on that destination |
+| Ending and renaming remote sessions ([app.rs:867-882](crates/apex-client/src/app.rs#L867-L882), [shell.rs:1294](crates/apex-client/src/shell.rs#L1294), [shell.rs:1594](crates/apex-client/src/shell.rs#L1594)) | `providers::run` with `REMOTE_BIN end-session …` (with `-f` when forced) or `rename-session …` |
 
-On the command line, `apex attach [DEST/]SESSION | URL` normalises a URL to `dest/session`. For a remote target it launches `apex-ui --remote HOST --session SESS`, and the UI turns that into a `SessionUrl` ([main.rs:1165-1197](crates/apex-cli/src/main.rs#L1165-L1197), [apex-client main.rs:804-818](crates/apex-client/src/main.rs#L804-L818)). For a remote session, the client opens the window first and attaches afterwards ([apex-client main.rs:845-849](crates/apex-client/src/main.rs#L845-L849)).
+On the command line, `apex attach [DEST/]SESSION | URL` normalises a URL to `dest/session` (a local URL becomes its bare session name). For a remote target (`split_spec` finds a destination) it launches `apex-ui --remote HOST --session SESS`; for a local one it ensures the server and launches `apex-ui --attach SOCKET --session NAME` ([main.rs:1206-1238](crates/apex-cli/src/main.rs#L1206-L1238)). In the UI, `--remote` (also spelled `--ssh`) is parsed into a `Dest` and becomes a `SessionUrl` for the `default` session unless `--session` says otherwise ([apex-client main.rs:723](crates/apex-client/src/main.rs#L723), [main.rs:840-842](crates/apex-client/src/main.rs#L840-L842)). `--via CMD` attaches through CMD's stdin and stdout, and `--url` takes a full session URL; a URL that does not parse exits with status 2 ([main.rs:830-839](crates/apex-client/src/main.rs#L830-L839)). For a non-local URL, the client opens the window first and attaches afterwards through the pool, so the link that lands has a window to land in ([main.rs:869-887](crates/apex-client/src/main.rs#L869-L887)).
 
-Sources: [crates/apex-server/src/providers.rs:252-276](crates/apex-server/src/providers.rs#L252-L276), [crates/apex-cli/src/main.rs:208-218](crates/apex-cli/src/main.rs#L208-L218), [crates/apex-cli/src/main.rs:889-907](crates/apex-cli/src/main.rs#L889-L907), [crates/apex-cli/src/main.rs:1165-1228](crates/apex-cli/src/main.rs#L1165-L1228), [crates/apex-server/src/remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550), [crates/apex-server/src/remote.rs:739-745](crates/apex-server/src/remote.rs#L739-L745), [crates/apex-client/src/app.rs:1430-1510](crates/apex-client/src/app.rs#L1430-L1510), [crates/apex-client/src/restart.rs:95-132](crates/apex-client/src/restart.rs#L95-L132)
+Sources: [crates/apex-server/src/providers.rs:252-276](crates/apex-server/src/providers.rs#L252-L276), [crates/apex-cli/src/main.rs:799-803](crates/apex-cli/src/main.rs#L799-L803), [crates/apex-cli/src/main.rs:930-948](crates/apex-cli/src/main.rs#L930-L948), [crates/apex-cli/src/main.rs:1206-1269](crates/apex-cli/src/main.rs#L1206-L1269), [crates/apex-server/src/remote.rs:172-259](crates/apex-server/src/remote.rs#L172-L259), [crates/apex-server/src/remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550), [crates/apex-server/src/remote.rs:739-745](crates/apex-server/src/remote.rs#L739-L745), [crates/apex-client/src/app.rs:867-882](crates/apex-client/src/app.rs#L867-L882), [crates/apex-client/src/app.rs:1440-1520](crates/apex-client/src/app.rs#L1440-L1520), [crates/apex-client/src/sidebar.rs:806-815](crates/apex-client/src/sidebar.rs#L806-L815), [crates/apex-client/src/main.rs:722-724](crates/apex-client/src/main.rs#L722-L724), [crates/apex-client/src/main.rs:826-887](crates/apex-client/src/main.rs#L826-L887), [crates/apex-client/src/restart.rs:101-132](crates/apex-client/src/restart.rs#L101-L132)
 
 ## The build id and version mismatches
 
-`apex-server/build.rs` computes the build id. It walks every `.rs` file under `crates/`, adds `Cargo.lock`, and sorts the list. It hashes each file's workspace-relative path and contents, each followed by a NUL, with SHA-256. The first 12 hex digits become `APEX_BUILD_ID`, exposed as `apex_server::BUILD_ID` ([build.rs:1-41](crates/apex-server/build.rs#L1-L41), [lib.rs:12](crates/apex-server/src/lib.rs#L12)). The hash depends only on the sources, so the macOS binary and the cross-built `linux-amd64` binary in the same app get the same id. `apex version` prints it with the protocol number ([main.rs:1050-1053](crates/apex-cli/src/main.rs#L1050-L1053)).
+`apex-server/build.rs` computes the build id. It walks every `.rs` file under `crates/`, adds `Cargo.lock`, and sorts the list. It hashes each file's workspace-relative path and contents, each followed by a NUL, with SHA-256. The first 12 hex digits become `APEX_BUILD_ID`, exposed as `apex_server::BUILD_ID` ([build.rs:1-41](crates/apex-server/build.rs#L1-L41), [lib.rs:12](crates/apex-server/src/lib.rs#L12)). The hash depends only on the sources, so the macOS binary and the cross-built `linux-amd64` binary in the same app get the same id. `apex version` prints it with the protocol number ([main.rs:1092](crates/apex-cli/src/main.rs#L1092)).
 
-The daemon sends `ServerMsg::Build { protocol, id }` first on every connection ([daemon.rs:459](crates/apex-server/src/daemon.rs#L459)). Over a bridge, this frame comes from the *remote* daemon. `check_build` refuses only on a **protocol** mismatch, returning an `Unsupported` error that tells the user to stop the old daemon. A different build id with the same protocol is accepted ([remote.rs:568-583](crates/apex-server/src/remote.rs#L568-L583)). Note that `apex help version` says that a client of another build "refuses to go on", which is stricter than what the code does.
+The daemon sends `ServerMsg::Build { protocol, id }` first on every connection ([daemon.rs:459](crates/apex-server/src/daemon.rs#L459)). Over a bridge, this frame comes from the *remote* daemon. `check_build` refuses only on a **protocol** mismatch, returning an `Unsupported` error that tells the user to stop the old daemon. A different build id with the same protocol is accepted ([remote.rs:568-583](crates/apex-server/src/remote.rs#L568-L583)). The `apex help version` and `apex help sessions` texts say that a client of another build stops or "refuses to go on" ([main.rs:632-635](crates/apex-cli/src/main.rs#L632-L635), [main.rs:654-656](crates/apex-cli/src/main.rs#L654-L656)), which is stricter than what the code does.
 
-Two things therefore keep a remote host current. `deploy`'s sha256 comparison replaces the binary on disk whenever the local build differs. A daemon already running the old binary keeps running it, though. If it speaks another protocol, the attach fails with `Unsupported`, and the client offers "Restart Daemon" for that host. That runs `deploy` and then `apex stop` there, and attaching again starts a fresh daemon from the new binary ([restart.rs:76-132](crates/apex-client/src/restart.rs#L76-L132)).
+Two things therefore keep a remote host current. `deploy`'s sha256 comparison replaces the binary on disk whenever the local build differs. A daemon already running the old binary keeps running it, though. If it speaks another protocol, the attach fails with `Unsupported`, and the client offers "Restart Daemon" for that host. That asks first, since every session on the daemon ends with it, then runs `deploy` and `apex stop` there, and attaching again starts a fresh daemon from the new binary ([restart.rs:79-132](crates/apex-client/src/restart.rs#L79-L132)). When the local daemon is the one that is stale at startup, the window opens anyway, says so and offers the same restart ([apex-client main.rs:848-850](crates/apex-client/src/main.rs#L848-L850), [main.rs:880-882](crates/apex-client/src/main.rs#L880-L882)).
 
-Sources: [crates/apex-server/build.rs:1-41](crates/apex-server/build.rs#L1-L41), [crates/apex-server/src/lib.rs:12](crates/apex-server/src/lib.rs#L12), [crates/apex-server/src/remote.rs:568-583](crates/apex-server/src/remote.rs#L568-L583), [crates/apex-server/src/daemon.rs:459](crates/apex-server/src/daemon.rs#L459), [crates/apex-cli/src/main.rs:591-594](crates/apex-cli/src/main.rs#L591-L594), [crates/apex-client/src/restart.rs:76-132](crates/apex-client/src/restart.rs#L76-L132)
+Sources: [crates/apex-server/build.rs:1-41](crates/apex-server/build.rs#L1-L41), [crates/apex-server/src/lib.rs:12](crates/apex-server/src/lib.rs#L12), [crates/apex-server/src/remote.rs:568-583](crates/apex-server/src/remote.rs#L568-L583), [crates/apex-server/src/daemon.rs:459](crates/apex-server/src/daemon.rs#L459), [crates/apex-cli/src/main.rs:632-656](crates/apex-cli/src/main.rs#L632-L656), [crates/apex-cli/src/main.rs:1092](crates/apex-cli/src/main.rs#L1092), [crates/apex-client/src/restart.rs:79-132](crates/apex-client/src/restart.rs#L79-L132), [crates/apex-client/src/main.rs:848-882](crates/apex-client/src/main.rs#L848-L882)
 
 ## The ssh test: a fake host
 
@@ -198,7 +199,7 @@ export APEX_SOCKET=<scratch>.sock
 exec sh -c "$*"
 ```
 
-`binaries()` builds an `APEX_REMOTE_BINARIES` tree for `local_target()`. It holds a copy of the test's own `apex` (`CARGO_BIN_EXE_apex`) and a trivial `rc` script. Every test changes process-wide environment variables, so all of them hold the `ONE_AT_A_TIME` mutex. `stop_host` kills the daemon by its unique `-socket=` argument with `pkill -f` ([ssh.rs:13-55](crates/apex-cli/tests/ssh.rs#L13-L55)).
+`binaries()` builds an `APEX_REMOTE_BINARIES` tree for `local_target()`. It holds a copy of the test's own `apex` (`CARGO_BIN_EXE_apex`) and a trivial `rc` script. Every test changes process-wide environment variables, so all of them hold the `ONE_AT_A_TIME` mutex. `stop_host` kills the daemon by its unique `-socket=` argument with `pkill -f` ([ssh.rs:14-55](crates/apex-cli/tests/ssh.rs#L14-L55)).
 
 | Test | Checks |
 |---|---|
@@ -209,7 +210,7 @@ exec sh -c "$*"
 
 The unit tests in `providers.rs` cover `available()` with an `apex-remote-zed` put on the PATH, `describe()`, identity-based equality, and label validation ([providers.rs:459-528](crates/apex-server/src/providers.rs#L459-L528)).
 
-Sources: [crates/apex-cli/tests/ssh.rs:1-166](crates/apex-cli/tests/ssh.rs#L1-L166), [crates/apex-server/src/providers.rs:459-528](crates/apex-server/src/providers.rs#L459-L528)
+Sources: [crates/apex-cli/tests/ssh.rs:14-166](crates/apex-cli/tests/ssh.rs#L14-L166), [crates/apex-server/src/providers.rs:459-528](crates/apex-server/src/providers.rs#L459-L528)
 
 ## Edge cases and errors
 
@@ -218,6 +219,7 @@ Sources: [crates/apex-cli/tests/ssh.rs:1-166](crates/apex-cli/tests/ssh.rs#L1-L1
 - **First contact.** The session selector deploys and retries when `list_sessions` fails. If the deploy also fails, it reports the *first* error.
 - **Hash probe failures.** These are treated as "different", so the binary is reinstalled rather than the attach failing.
 - **Stray bridges.** The closer from `bridge_child` kills the whole process group, so a provider's helper processes don't keep the remote end alive.
+- **Silent daemon.** `over_streams_inner` gives up with `TimedOut` if no `Welcome` arrives within a minute.
 - **`$HOME`.** Remote paths are always written with a literal `$HOME` inside single quotes, so they expand on the destination.
 
-Sources: [crates/apex-server/src/providers.rs:135-261](crates/apex-server/src/providers.rs#L135-L261), [crates/apex-server/src/remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550), [crates/apex-client/src/shell.rs:1362-1380](crates/apex-client/src/shell.rs#L1362-L1380)
+Sources: [crates/apex-server/src/providers.rs:135-261](crates/apex-server/src/providers.rs#L135-L261), [crates/apex-server/src/remote.rs:235-242](crates/apex-server/src/remote.rs#L235-L242), [crates/apex-server/src/remote.rs:524-550](crates/apex-server/src/remote.rs#L524-L550), [crates/apex-client/src/shell.rs:1370-1386](crates/apex-client/src/shell.rs#L1370-L1386)
