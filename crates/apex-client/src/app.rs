@@ -667,6 +667,8 @@ pub struct Acme {
     /// The scroller lane the pointer is in: a text's, or a terminal's or
     /// page's (by its window's body).
     lane_hover: Option<ViewId>,
+    /// A page's outline out beside its scrollbar (`outline`).
+    pub outline: crate::outline::Outline,
     /// Each scroller's last position and when it last moved: its thumb
     /// shows while it moves and fades after.
     scroll_pos: HashMap<ViewId, u64>,
@@ -1885,6 +1887,7 @@ impl Acme {
             hint: None,
             hover_view: None,
             lane_hover: None,
+            outline: Default::default(),
             scroll_pos: HashMap::new(),
             scrolled_at: HashMap::new(),
             mouse: Mouse::default(),
@@ -3611,6 +3614,10 @@ impl Acme {
             self.lane_hover = lane;
             cx.notify();
         }
+        // a page's outline out while the pointer is in its bar, or on it
+        if self.outline_hover(pos) {
+            cx.notify();
+        }
         // the tag under the pointer: its commands come up
         let over = match self.locate(pos) {
             Some((Target::View(v @ (ViewId::Tag(_) | ViewId::ColTag(_) | ViewId::Top)), _)) => Some(v),
@@ -4458,6 +4465,8 @@ impl Acme {
                 WebEvent::Mermaid => self.webs.give_mermaid(w),
                 // where the page is scrolled, for its scrollbar
                 WebEvent::Scroll { top, height, view } => self.webs.set_scroll(w, top, height, view),
+                // its outline, for the scrollbar
+                WebEvent::Toc(text) => self.webs.set_toc(w, &text),
                 // the page's cursor: set now, if the pointer is on that page
                 WebEvent::Cursor(css) => {
                     self.webs.set_cursor(w, &css);

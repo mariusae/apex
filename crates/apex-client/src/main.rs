@@ -28,6 +28,7 @@ mod completion;
 mod cwdbar;
 mod glide;
 mod look;
+mod outline;
 mod miniature;
 mod restart;
 mod strips;
@@ -452,11 +453,18 @@ impl Render for Acme {
                                     me_bar.update(cx, |acme, _| {
                                         acme.web_bars.insert(w, bounds);
                                         let (t0, t1) = acme.webs.thumb(w);
-                                        (t0, t1, acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64))
+                                        // the page's outline down it (`outline`)
+                                        let scroll = acme.webs.page_scroll(w);
+                                        let ticks = acme.webs.toc(w).map(|(toc, current)| ((0..toc.heads.len()).map(|i| (toc.at(i, scroll), toc.heads[i].level)).collect::<Vec<_>>(), current));
+                                        let open = acme.outline.open == Some(w);
+                                        (t0, t1, acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64), ticks, open)
                                     })
                                 },
-                                move |bounds, (t0, t1, (shows, fading)), window, _| {
+                                move |bounds, (t0, t1, (shows, fading), ticks, open), window, _| {
                                     window.paint_quad(gpui::fill(bounds, gpui::rgb(bar_bg)));
+                                    if let Some((ticks, current)) = &ticks {
+                                        outline::paint_ticks(window, bounds, ticks, *current, open);
+                                    }
                                     // an overlay scroller, as a text's is
                                     if shows > 0. {
                                         text_element::paint_scroller(window, bounds, t0 as f32, t1 as f32, text_element::rgb(thumb).opacity(shows));
@@ -631,6 +639,8 @@ impl Render for Acme {
         let root = root.children(self.tag_overlays(cx));
         // a process's card, under its pill
         let root = root.children(self.proc_card());
+        // a page's outline, out beside its scrollbar
+        let root = root.children(self.outline_panel(cx));
         // the title bar's crumbs' folders
         let root = root.children(self.cwd_panel(cx));
         // the overview (⌘⇧\), over everything

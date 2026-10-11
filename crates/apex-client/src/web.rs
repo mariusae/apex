@@ -63,6 +63,8 @@ pub enum WebEvent {
     /// how far down (`top`), how long the page is, and how much shows,
     /// in CSS pixels.
     Scroll { top: f64, height: f64, view: f64 },
+    /// The page's outline, as `TOC_SCRIPT` says it.
+    Toc(String),
 }
 
 /// The theme, as a page rendered from a buffer sees it: the editor's
@@ -282,191 +284,47 @@ const FILE_SCRIPT: &str = r#"(function () {
   }, true);
 })();"#;
 
+/// A page's outline, for the scrollbar beside it (`Toc`): its headings
+/// (h1 to h4, a diff's files among them), each line `level TAB top TAB
+/// p-for-a-path TAB title` after the page's height, said to the client
+/// whenever it changes; and `__apexTocGo(i)`, the page scrolled to
+/// heading `i`. Nothing of it is drawn in the page.
 const TOC_SCRIPT: &str = r#"(function () {
   if (window.__apexToc) return;
   window.__apexToc = true;
   function start() {
-    const sheet = new CSSStyleSheet();
-    sheet.replaceSync(
-      '#apex-toc{position:fixed;top:50%;height:min(50vh,calc(100vh - 28px));transform:translateY(-50%);left:10px;width:22px;z-index:2147483000;font:12.5px/1.35 var(--apex-font,-apple-system,sans-serif);user-select:none;-webkit-user-select:none}' +
-      '#apex-toc[hidden]{display:none}' +
-      '#apex-toc .rail{position:absolute;inset:0;cursor:pointer}' +
-      '#apex-toc .tick{position:absolute;left:5px;height:2px;margin-top:-1px;border-radius:1px;background:var(--apex-dim);opacity:.5;transition:opacity .12s,background-color .12s}' +
-      '#apex-toc .rail:hover .tick{opacity:.8}' +
-      '#apex-toc .tick.on{background:var(--apex-accent);opacity:1}' +
-      '#apex-toc .band{position:absolute;left:2px;width:18px;border-radius:4px;background:var(--apex-fg);opacity:.06;pointer-events:none}' +
-      '#apex-toc .rail:hover .band{opacity:.1}' +
-      '#apex-toc .panel{position:absolute;left:28px;top:50%;max-height:calc(100vh - 28px);overflow-y:auto;min-width:170px;max-width:300px;padding:6px;box-sizing:border-box;border-radius:10px;background:var(--apex-bg);border:1px solid var(--apex-border);box-shadow:0 8px 28px rgba(0,0,0,.16);opacity:0;transform:translate(-6px,-50%);pointer-events:none;transition:opacity .12s,transform .12s}' +
-      '#apex-toc.open .panel{opacity:1;transform:translate(0,-50%);pointer-events:auto}' +
-      '#apex-toc .item{padding:3px 8px;border-radius:6px;color:var(--apex-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;opacity:.72}' +
-      '#apex-toc .item:hover,#apex-toc .item.near{background:var(--apex-tag-bg);opacity:1}' +
-      '#apex-toc .item.on{color:var(--apex-accent);opacity:1;font-weight:600}' +
-      '#apex-toc .item.path{direction:rtl;text-align:left}' +
-      '#apex-toc .l1{font-weight:600;opacity:.9}#apex-toc .l2{padding-left:18px}#apex-toc .l3{padding-left:30px}#apex-toc .l4{padding-left:42px}');
-    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-    const root = document.createElement('div');
-    root.id = 'apex-toc';
-    root.hidden = true;
-    const rail = document.createElement('div');
-    rail.className = 'rail';
-    const band = document.createElement('div');
-    band.className = 'band';
-    const panel = document.createElement('div');
-    panel.className = 'panel';
-    rail.appendChild(band);
-    root.append(rail, panel);
-    document.documentElement.appendChild(root);
     const view = () => document.scrollingElement || document.documentElement;
     const at = (h) => h.getBoundingClientRect().top + view().scrollTop;
-    let heads = [], ticks = [], items = [], current = -1;
-    // room for the rail left of the page's content: the page moved over
-    // as much as it lacks (on the root, which a morph leaves be), and on
-    // a view too narrow to spare it, no rail
-    // the rail 10 in from the edge, 22 wide, as much air after it
-    const RAIL = 44, NARROW = 420;
-    let pad = 0;
-    function room(show) {
-      const el = document.querySelector('article') || document.body;
-      let want = 0;
-      if (show && el) {
-        const lead = el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft || '0') - pad;
-        want = Math.max(0, Math.ceil(RAIL - lead));
-      }
-      if (want !== pad) {
-        pad = want;
-        document.documentElement.style.paddingLeft = pad ? pad + 'px' : '';
-      }
-    }
+    let heads = [], last = '';
     function build() {
       heads = Array.from(document.body ? document.body.querySelectorAll('h1,h2,h3,h4') : []).filter((h) => h.textContent.trim());
-      root.hidden = heads.length < 2 || innerWidth < NARROW;
-      room(!root.hidden);
-      ticks.forEach((t) => t.remove());
-      panel.textContent = '';
-      const H = rail.clientHeight, total = Math.max(1, view().scrollHeight);
-      ticks = heads.map(function (h) {
-        const t = document.createElement('div');
-        t.className = 'tick';
-        t.style.width = [0, 14, 10, 7, 5][+h.tagName[1]] + 'px';
-        t.style.top = (at(h) / total) * H + 'px';
-        rail.appendChild(t);
-        return t;
-      });
-      items = heads.map(function (h) {
-        const a = document.createElement('div');
-        a.className = 'item l' + h.tagName[1];
-        // a diff's file: its name alone, cut from the left when it is too
-        // long (the end of a path says most), the whole of it on hover
+      const lines = [String(Math.round(view().scrollHeight))];
+      for (const h of heads) {
+        // a diff's file: its name alone
         const name = h.querySelector('.name');
-        const label = (name || h).textContent.trim();
-        a.title = label;
-        if (h.closest('section.file')) {
-          a.classList.add('path');
-          const b = document.createElement('bdi');
-          b.dir = 'ltr';
-          b.textContent = label;
-          a.appendChild(b);
-        } else {
-          a.textContent = label;
-        }
-        a.addEventListener('mousedown', function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          view().scrollTo({ top: Math.max(0, at(h) - 12), behavior: 'smooth' });
-        });
-        panel.appendChild(a);
-        return a;
-      });
-      current = -1;
-      spy();
-    }
-    function spy() {
-      const s = view(), H = rail.clientHeight, total = Math.max(1, s.scrollHeight);
-      band.style.top = (s.scrollTop / total) * H + 'px';
-      band.style.height = Math.max(8, (s.clientHeight / total) * H) + 'px';
-      let c = -1;
-      const line = s.scrollTop + s.clientHeight * 0.25;
-      for (let i = 0; i < heads.length; i++) {
-        if (at(heads[i]) <= line) c = i;
-        else break;
+        const label = (name || h).textContent.trim().replace(/\s+/g, ' ');
+        lines.push(h.tagName[1] + '\t' + Math.round(at(h)) + '\t' + (h.closest('section.file') ? 'p' : '') + '\t' + label);
       }
-      if (heads.length && s.scrollTop + s.clientHeight >= total - 2) c = heads.length - 1;
-      if (c === current) return;
-      if (current >= 0 && ticks[current]) { ticks[current].classList.remove('on'); items[current].classList.remove('on'); }
-      current = c;
-      if (c >= 0) {
-        ticks[c].classList.add('on');
-        items[c].classList.add('on');
-        if (root.classList.contains('open')) items[c].scrollIntoView({ block: 'nearest' });
+      const now = lines.join('\n');
+      if (now !== last) {
+        last = now;
+        try { window.ipc.postMessage('toc:' + now); } catch (e) {}
       }
     }
-    // laid out again when the page changes, once a frame at most
+    window.__apexTocGo = function (i) {
+      const h = heads[i];
+      if (h) view().scrollTo({ top: Math.max(0, at(h) - 12), behavior: 'smooth' });
+    };
+    // again when the page changes, once a frame at most
     let queued = false;
     function later() {
       if (queued) return;
       queued = true;
       requestAnimationFrame(function () { queued = false; build(); });
     }
-    let spying = false;
-    addEventListener('scroll', function () {
-      if (spying) return;
-      spying = true;
-      requestAnimationFrame(function () { spying = false; spy(); });
-    }, { passive: true });
     addEventListener('resize', later);
     addEventListener('load', later, true);
-    new MutationObserver(function (records) {
-      if (records.some((r) => !root.contains(r.target))) later();
-    }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-    // a press on the rail goes there; a drag scrubs
-    let scrubbing = false;
-    function scrub(e) {
-      const r = rail.getBoundingClientRect(), s = view();
-      const f = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
-      s.scrollTop = f * s.scrollHeight - s.clientHeight / 2;
-    }
-    rail.addEventListener('mousedown', function (e) {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      e.stopPropagation();
-      scrubbing = true;
-      scrub(e);
-    });
-    addEventListener('mousemove', function (e) { if (scrubbing) scrub(e); }, true);
-    addEventListener('mouseup', function () { scrubbing = false; }, true);
-    // the contents beside the rail while the pointer is on either
-    let closing = null;
-    root.addEventListener('mouseenter', function () {
-      clearTimeout(closing);
-      root.classList.add('open');
-      if (current >= 0 && items[current]) items[current].scrollIntoView({ block: 'nearest' });
-    });
-    root.addEventListener('mouseleave', function () {
-      closing = setTimeout(function () { if (!scrubbing) root.classList.remove('open'); }, 200);
-      near(-1);
-    });
-    // the pointer on the rail: the heading of the tick nearest it marked
-    // in the list, and brought into its view
-    let marked = -1;
-    function near(i) {
-      if (i === marked) return;
-      if (marked >= 0 && items[marked]) items[marked].classList.remove('near');
-      marked = i;
-      if (i >= 0 && items[i]) {
-        items[i].classList.add('near');
-        items[i].scrollIntoView({ block: 'nearest' });
-      }
-    }
-    rail.addEventListener('mousemove', function (e) {
-      const r = rail.getBoundingClientRect();
-      const y = e.clientY - r.top;
-      let best = -1, dist = Infinity;
-      ticks.forEach(function (t, i) {
-        const d = Math.abs(parseFloat(t.style.top) - y);
-        if (d < dist) { dist = d; best = i; }
-      });
-      near(best);
-    });
+    new MutationObserver(later).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     build();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
@@ -573,6 +431,8 @@ pub struct WebHost {
     /// to, and when -- the place a next load keeps while this one has not
     /// got there yet.
     restoring: Option<(f64, std::time::Instant)>,
+    /// Its outline, as it last said (a page from a buffer's).
+    toc: Option<Toc>,
     /// The veil laid over the page while a dialog has the window (`set_veil`):
     /// its colour, and the layer that draws it.
     veil: Option<(u32, VeilLayer)>,
@@ -612,6 +472,61 @@ impl Drop for WebHost {
 /// The thumb for a page scrolled `top` down a page `height` long with
 /// `view` of it showing: the part of the bar, 0 to 1, the view covers.
 /// All of the bar before the page has said, or when it all shows.
+/// A page's outline: its headings, where they are, and how long the
+/// page is, in CSS pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Toc {
+    pub height: f64,
+    pub heads: Vec<TocHead>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TocHead {
+    /// 1 to 4: h1 to h4.
+    pub level: u8,
+    pub title: String,
+    /// Where it is, from the page's top.
+    pub top: f64,
+    /// A path (a diff's file): its end says most.
+    pub path: bool,
+}
+
+impl Toc {
+    /// What `TOC_SCRIPT` says: the height, then a line a heading.
+    pub fn parse(text: &str) -> Option<Toc> {
+        let mut lines = text.lines();
+        let height = lines.next()?.trim().parse().ok()?;
+        let heads = lines
+            .filter_map(|l| {
+                let mut f = l.splitn(4, '\t');
+                let level = f.next()?.parse().ok()?;
+                let top = f.next()?.parse().ok()?;
+                let path = f.next()? == "p";
+                Some(TocHead { level, top, path, title: f.next()?.to_string() })
+            })
+            .collect();
+        Some(Toc { height, heads })
+    }
+
+    /// Where heading `i` is down the page, 0 to 1, the page as long as the
+    /// scroll says it is now (it may have grown since the outline was said).
+    pub fn at(&self, i: usize, scroll: Option<(f64, f64, f64)>) -> f32 {
+        let height = scroll.map_or(self.height, |s| s.1.max(self.height)).max(1.);
+        (self.heads[i].top / height).clamp(0., 1.) as f32
+    }
+
+    /// The heading the view is in: the last above a quarter of the way
+    /// down it; at the page's foot, the last of all.
+    pub fn current(&self, scroll: Option<(f64, f64, f64)>) -> Option<usize> {
+        let (top, height, view) = scroll?;
+        if top + view >= height - 2. {
+            return self.heads.len().checked_sub(1);
+        }
+        let line = top + view * 0.25;
+        self.heads.iter().rposition(|h| h.top <= line)
+    }
+}
+
 fn thumb_of(scroll: Option<(f64, f64, f64)>) -> (f32, f32) {
     match scroll {
         Some((top, height, view)) if height > view && height > 0. => {
@@ -1179,6 +1094,11 @@ impl Webs {
                             k();
                         }
                     }
+                } else if let Some(t) = req.body().strip_prefix("toc:") {
+                    let _ = tx4.send((w, WebEvent::Toc(t.to_string())));
+                    if let Some(k) = &wake4 {
+                        k();
+                    }
                 } else if let Some(c) = req.body().strip_prefix("cursor:") {
                     let _ = tx4.send((w, WebEvent::Cursor(c.to_string())));
                     if let Some(k) = &wake4 {
@@ -1302,7 +1222,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1427,6 +1347,33 @@ impl Webs {
     pub fn set_scroll(&mut self, w: WindowId, top: f64, height: f64, view: f64) {
         if let Some(h) = self.hosts.get_mut(&w) {
             h.scroll = Some((top, height, view));
+        }
+    }
+
+    /// Where the page is scrolled, as it last said: top, length, view.
+    pub fn page_scroll(&self, w: WindowId) -> Option<(f64, f64, f64)> {
+        self.hosts.get(&w).and_then(|h| h.scroll)
+    }
+
+    /// The page's outline, as it said it (`TOC_SCRIPT`).
+    pub fn set_toc(&mut self, w: WindowId, text: &str) {
+        if let Some(h) = self.hosts.get_mut(&w) {
+            h.toc = Toc::parse(text);
+        }
+    }
+
+    /// Its outline, when it has one worth the name (two headings or more),
+    /// and the heading the view is in.
+    pub fn toc(&self, w: WindowId) -> Option<(&Toc, Option<usize>)> {
+        let h = self.hosts.get(&w)?;
+        let toc = h.toc.as_ref().filter(|t| t.heads.len() >= 2)?;
+        Some((toc, toc.current(h.scroll)))
+    }
+
+    /// The page scrolled to its heading `i`.
+    pub fn toc_go(&self, w: WindowId, i: usize) {
+        if let Some(h) = self.hosts.get(&w) {
+            let _ = h.view.evaluate_script(&format!("window.__apexTocGo && window.__apexTocGo({i});"));
         }
     }
 
@@ -2216,6 +2163,23 @@ mod tests {
         assert_eq!(file_to_apexfile(html), html);
         assert_eq!(file_to_apexfile("<img src=\"file:///é/ü.png\">"), "<img src=\"apexfile://localhost/é/ü.png\">");
         assert!(dress("<html><head></head><body><a href=\"file://aéééééé\">é</a></body></html>", "/tmp").contains("aéééééé"));
+    }
+
+    #[test]
+    fn a_pages_outline_is_read_and_placed_down_its_bar() {
+        let toc = Toc::parse("4000\n1\t0\t\tapex\n2\t1000\t\tWhat changed\n2\t3000\tp\tcrates/apex-client/src/a.rs\nbad line").unwrap();
+        assert_eq!(toc.height, 4000.);
+        assert_eq!(toc.heads.iter().map(|h| (h.level, h.top, h.path, h.title.as_str())).collect::<Vec<_>>(), vec![(1, 0., false, "apex"), (2, 1000., false, "What changed"), (2, 3000., true, "crates/apex-client/src/a.rs")]);
+        // down the bar as the page is long now
+        assert_eq!(toc.at(1, Some((0., 4000., 1000.))), 0.25);
+        assert_eq!(toc.at(1, Some((0., 8000., 1000.))), 0.125, "grown since");
+        // the heading the view is in: the last a quarter of the way down
+        // it, at the foot the last of all
+        assert_eq!(toc.current(Some((0., 4000., 1000.))), Some(0));
+        assert_eq!(toc.current(Some((800., 4000., 1000.))), Some(1));
+        assert_eq!(toc.current(Some((3000., 4000., 1000.))), Some(2));
+        assert_eq!(toc.current(None), None);
+        assert_eq!(Toc::parse("x"), None);
     }
 
     #[test]

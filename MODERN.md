@@ -311,21 +311,17 @@ windows put away out of the tiling, which is the core's
   slash, a file with a space after, as acme's ^F does. A completion done
   is done: the next list (a directory's names, say) comes only with the
   next ^F. No more lists in the errors window.
-- **A preview's contents as a scrubber** (`web.rs`, `TOC_SCRIPT`): down
-  the left edge (the scrollbar is at the right) of a page rendered from a buffer (a Markdown preview,
-  apex diff), each heading a tick where it stands in the page, longer
-  the higher it is, a faint band for the part in view, and the heading
-  of the part being read in the accent (a scrollspy). A press on the
-  rail goes to that place, a drag scrubs through the page; the pointer
-  on it brings the headings out beside it as a list, and a click on one
-  goes there (a diff's files by their names alone, cut from the left
-  when too long, since a path's end says most); the pointer on a tick
-  marks its heading in the list, brought into view. The rail is at most
-  half the view's height, in its middle. Where the page's content comes
-  too near the left edge the page moves over to make room, and a view
-  narrower than 420 has no rail. Only with two headings or more; it hangs off the page's
-  root, so the live morph leaves it be, and is laid out again as the
-  page changes.
+- **A page's outline in its scrollbar** (`outline.rs`; the page says
+  it, `web.rs`'s `TOC_SCRIPT`): the scrollbar beside a page rendered
+  from a buffer (a Markdown preview, apex diff) is acme's, B1 B2 B3 as
+  a text's, and carries the page's headings as ticks down it, each where
+  it stands in the page, longer the higher it is, the heading of the
+  part being read in the accent (a scrollspy). The pointer in the bar
+  brings the headings out beside it as a list, the one whose tick is
+  nearest the pointer marked, the one being read in the accent; a click
+  on one goes there (a diff's files by their names, cut from the left
+  when too long, since a path's end says most). Only with two headings
+  or more; nothing of it is drawn in the page, which keeps all its width.
 - **A tag is what the window is, then your words.** The head is drawn
   from the window's state (DESIGN.md, *Windows are what they are*), none
   of it in the tag's text: the path, its folders dim and its name
