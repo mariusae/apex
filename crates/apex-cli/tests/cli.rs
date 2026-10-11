@@ -1117,6 +1117,13 @@ fn preview_is_a_live_pipe_through_a_converter() {
     assert!(matches!(c.node.state.window(page).unwrap().body, Body::Page(apex_core::Source::Buffer(_))));
     // the client's to fetch for (what it fetches on the web, not the host)
     assert_eq!(c.node.state.window(page).unwrap().via, apex_core::Via::Client);
+    // Source in its tag, once
+    let tag = |c: &Remote| c.node.state.window(page).ok().and_then(|x| c.node.state.buffer(x.tag).ok()).map(|b| b.text.to_string()).unwrap_or_default();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && !tag(&c).contains("Source") {
+        let _ = c.step(Duration::from_millis(50));
+    }
+    assert_eq!(tag(&c).split_whitespace().filter(|w| *w == "Source").count(), 1, "{:?}", tag(&c));
     assert!(c.node.window_live(page), "the page is live while the tool runs");
     // the page follows the file's caret, by its scroll in the log (the
     // tool proposes it): the caret is on line 1

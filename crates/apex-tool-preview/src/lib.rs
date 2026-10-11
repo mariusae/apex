@@ -221,6 +221,16 @@ impl Tool {
         // the page ours, and where its links go ours to say
         let _ = self.propose(Proposal::Own { window: page, by: Some(me) }, TIMEOUT);
         self.remote.link.answers_navigation = true;
+        // Source in its tag, first, unless it is there already (a page
+        // taken up again, a tag the user has written)
+        if let Ok(tag) = self.remote.node.state.window(page).map(|x| x.tag) {
+            let text = self.remote.node.state.buffer(tag).map(|b| b.text.to_string()).unwrap_or_default();
+            if !text.split_whitespace().any(|w| w == "Source") {
+                if let Some(version) = self.remote.node.state.buffer(tag).ok().map(|b| b.version) {
+                    let _ = self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: tag, version, q0: 0, q1: 0, text: "Source ".into() }, TIMEOUT);
+                }
+            }
+        }
         // and Back and Fwd in it, the session's stack, from the page; and
         // Source, its file
         for verb in ["Back", "Fwd", "Source"] {
