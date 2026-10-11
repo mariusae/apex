@@ -492,6 +492,9 @@ const MERMAID_SCRIPT: &str = r#"(function () {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5;
   }
   window.__apexMermaid = function () {
+    // a page with scripts of its own (its own diagram library, it may be)
+    // draws its own: apex's would draw over them
+    if (document.querySelector('script:not([data-apex])')) return;
     const blocks = Array.from(document.querySelectorAll('pre.mermaid'));
     if (!blocks.length) return;
     if (!window.mermaid) {
@@ -566,6 +569,10 @@ pub struct WebHost {
     /// Where the page last said it was scrolled: top, length, and how much
     /// shows, for the scrollbar beside it.
     scroll: Option<(f64, f64, f64)>,
+    /// A page loaded afresh (`scripted`): where it is being scrolled back
+    /// to, and when -- the place a next load keeps while this one has not
+    /// got there yet.
+    restoring: Option<(f64, std::time::Instant)>,
     /// The veil laid over the page while a dialog has the window (`set_veil`):
     /// its colour, and the layer that draws it.
     veil: Option<(u32, VeilLayer)>,
@@ -1106,7 +1113,20 @@ impl Webs {
         let h = self.hosts.get_mut(&w).unwrap();
         if h.html.as_ref().is_some_and(|(v, _)| *v != version) {
             h.html = Some((version, dir.to_string()));
-            let _ = h.view.evaluate_script(&morph_script(&dress(html, dir)));
+            if scripted(html) {
+                // a page with scripts of its own (a library drawing its
+                // diagrams): they run only in a document loaded as one, so
+                // it is loaded afresh, and scrolled back to where it was
+                let top = match h.restoring {
+                    Some((top, at)) if at.elapsed() < Duration::from_millis(1500) => top,
+                    _ => h.scroll.map_or(0., |s| s.0),
+                };
+                h.restoring = Some((top, std::time::Instant::now()));
+                let _ = h.view.load_html(&scrolled_to(&dress(html, dir), top));
+            } else {
+                // patched in place: its scroll and state kept
+                let _ = h.view.evaluate_script(&morph_script(&dress(html, dir)));
+            }
         }
         h.settle_view(rect, bounds, visible);
     }
@@ -1282,7 +1302,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, veil: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1959,6 +1979,27 @@ fn with_base(html: &str, dir: &str) -> String {
     }
 }
 
+/// A page with scripts of its own, which a patch in place would never
+/// run: a `<script>` parsed apart from the page (`morph_script`'s) is not
+/// run when it is put in it.
+fn scripted(html: &str) -> bool {
+    html.to_ascii_lowercase().contains("<script")
+}
+
+/// A page loaded afresh, scrolled to `top` (CSS pixels) once it has
+/// loaded, and again a moment later, after what its scripts draw.
+fn scrolled_to(html: &str, top: f64) -> String {
+    if top <= 0. {
+        return html.to_string();
+    }
+    let script = format!("<script data-apex>(function(){{var go=function(){{scrollTo(0,{top})}};addEventListener('load',function(){{go();setTimeout(go,300)}})}})()</script>");
+    let lower = html.to_ascii_lowercase();
+    match lower.rfind("</body>") {
+        Some(i) => format!("{}{}{}", &html[..i], script, &html[i..]),
+        None => format!("{html}{script}"),
+    }
+}
+
 /// A script that patches the document into `html` in place (a small
 /// morphdom): nodes are matched by position and name, attributes and
 /// text updated, so scroll position and page state survive re-renders.
@@ -2175,6 +2216,19 @@ mod tests {
         assert_eq!(file_to_apexfile(html), html);
         assert_eq!(file_to_apexfile("<img src=\"file:///é/ü.png\">"), "<img src=\"apexfile://localhost/é/ü.png\">");
         assert!(dress("<html><head></head><body><a href=\"file://aéééééé\">é</a></body></html>", "/tmp").contains("aéééééé"));
+    }
+
+    #[test]
+    fn a_page_with_scripts_is_loaded_afresh_and_scrolled_back() {
+        // its own scripts (a diagram library) would not run patched in
+        assert!(scripted("<html><SCRIPT src=\"https://cdn/mermaid.js\"></SCRIPT><div class=\"mermaid\">a-->b</div>"));
+        assert!(!scripted("<h1>notes</h1><pre class=\"mermaid\">a-->b</pre>"), "apex md's: its diagrams are apex's to draw");
+        // loaded at the top: as it is; further down, scrolled back there
+        // once loaded (in the body, the page's own last)
+        assert_eq!(scrolled_to("<body>x</body>", 0.), "<body>x</body>");
+        let out = scrolled_to("<body>x</body></html>", 420.);
+        assert!(out.starts_with("<body>x<script data-apex>") && out.ends_with("</script></body></html>") && out.contains("scrollTo(0,420)"), "{out}");
+        assert!(scrolled_to("<p>x", 10.).starts_with("<p>x<script data-apex>"));
     }
 
     #[test]
