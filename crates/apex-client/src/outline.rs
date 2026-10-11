@@ -20,17 +20,21 @@ use crate::web::Toc;
 /// A row of the outline's list.
 const ROW: f32 = 23.;
 
+/// The list's padding, its border's included.
+const PAD: f32 = 7.;
+
 /// How far a tick reaches across the bar, by its heading's level.
 const TICK: [f32; 5] = [0., 9., 7., 5., 3.];
 
 /// The outline's state in the app: which page's is out, its bar (as the
 /// pointer last found it: the bars are laid out after the panel is made),
-/// the heading near the pointer, where the panel was drawn, and its
-/// list's scroll.
+/// the panel's top, the heading near the pointer, where the panel was
+/// drawn, and its list's scroll.
 #[derive(Default)]
 pub struct Outline {
     pub open: Option<WindowId>,
     pub bar: Option<Bounds<Pixels>>,
+    pub top: Pixels,
     pub near: Option<usize>,
     pub panel_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     pub scroll: gpui::ScrollHandle,
@@ -51,6 +55,13 @@ pub fn ticks(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>,
         .collect()
 }
 
+/// How tall the panel of `n` headings is by `bar`: as its rows, no
+/// taller than the bar; a list that scrolls has no height of its own it
+/// would take from its rows.
+fn tall(n: usize, bar: Bounds<Pixels>) -> Pixels {
+    px(ROW * n as f32 + 2. * PAD).min(bar.size.height - px(16.))
+}
+
 /// The heading whose tick is nearest `y` in `bar`.
 pub fn nearest(toc: &Toc, scroll: Option<(f64, f64, f64)>, bar: Bounds<Pixels>, y: Pixels) -> Option<usize> {
     let at = ((y - bar.top()) / bar.size.height).clamp(0., 1.);
@@ -59,27 +70,35 @@ pub fn nearest(toc: &Toc, scroll: Option<(f64, f64, f64)>, bar: Bounds<Pixels>, 
 
 impl Acme {
     /// The pointer moved: the outline out while it is in a page's bar
-    /// (one with an outline), or on the outline itself; the heading near
-    /// it marked. Whether anything changed.
+    /// (one with an outline), or on the outline itself. In the bar, the
+    /// outline follows it, the heading nearest it marked and level with
+    /// it (the list scrolled to it where the panel can go no higher); on
+    /// the outline, the outline stays where it is, to be chosen from.
+    /// Whether anything changed.
     pub fn outline_hover(&mut self, pos: Point<Pixels>) -> bool {
         let in_bar = self.web_bars.iter().find(|(w, b)| b.contains(&pos) && self.webs.toc(**w).is_some()).map(|(w, b)| (*w, *b));
         let on_panel = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
+        let mut moved = false;
         let (open, near) = match in_bar {
             Some((w, bar)) => {
                 self.outline.bar = Some(bar);
                 let (toc, _) = self.webs.toc(w).unwrap();
-                (Some(w), nearest(toc, self.webs.page_scroll(w), bar, pos.y))
+                let near = nearest(toc, self.webs.page_scroll(w), bar, pos.y);
+                let (n, tall) = (toc.heads.len(), tall(toc.heads.len(), bar));
+                let row = px(PAD + ROW * (near.unwrap_or(0) as f32 + 0.5));
+                let top = (pos.y - row).min(bar.bottom() - px(8.) - tall).max(bar.top() + px(8.));
+                let off = (top + row - pos.y).max(px(0.)).min(px(ROW * n as f32 + 2. * PAD) - tall);
+                if top != self.outline.top || off != -self.outline.scroll.offset().y {
+                    self.outline.top = top;
+                    self.outline.scroll.set_offset(point(px(0.), -off));
+                    moved = true;
+                }
+                (Some(w), near)
             }
-            None if on_panel => (self.outline.open, self.outline.near),
+            None if on_panel => (self.outline.open, None),
             None => (None, None),
         };
-        let changed = open != self.outline.open || near != self.outline.near;
-        if open.is_some() && open != self.outline.open {
-            // out afresh: its list where the view is
-            if let Some((_, Some(c))) = open.and_then(|w| self.webs.toc(w)) {
-                self.outline.scroll.scroll_to_item(c);
-            }
-        }
+        let changed = moved || open != self.outline.open || near != self.outline.near;
         if open.is_none() {
             self.outline.panel_at.set(None);
         }
@@ -87,9 +106,9 @@ impl Acme {
         changed
     }
 
-    /// The outline beside the bar of the page whose it is: a heading a
-    /// row, indented by level, the view's in the accent, the pointer's
-    /// nearest washed; B1 on one, the page there.
+    /// The outline beside the bar of the page whose it is, by the
+    /// pointer: a heading a row, indented by level, the view's in the
+    /// accent, the pointer's nearest washed; B1 on one, the page there.
     pub fn outline_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let w = self.outline.open?;
         let bar = self.outline.bar?;
@@ -133,9 +152,7 @@ impl Acme {
                     }),
                 )
         });
-        // a height of its own, as tall as its rows and no taller than the
-        // bar: a list that scrolls has none it would take from its rows
-        let tall = (px(ROW * toc.heads.len() as f32 + 14.)).min(bar.size.height - px(16.));
+        let tall = tall(toc.heads.len(), bar);
         let panel = div()
             .id("toc-panel")
             .relative()
@@ -146,7 +163,7 @@ impl Acme {
             .h(tall)
             .overflow_y_scroll()
             .track_scroll(&self.outline.scroll)
-            .p(px(6.))
+            .p(px(PAD - 1.))
             .rounded(px(10.))
             .bg(rgb(t.panel_bg))
             .border_1()
@@ -157,8 +174,6 @@ impl Acme {
             .child(self.overlay_mark_by(px(0.)))
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
             .children(rows);
-        // left of the bar, in the middle of it, as the rail's was
-        let top = (bar.top() + (bar.size.height - tall) / 2.).max(bar.top() + px(8.));
-        Some(deferred(anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(4.), top)).child(panel)).with_priority(2).into_any_element())
+        Some(deferred(anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
     }
 }
