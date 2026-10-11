@@ -253,6 +253,7 @@ dependencies = [
  "apex-core",
  "apex-edit",
  "apex-server",
+ "block2 0.6.2",
  "core-text",
  "flate2",
  "futures",

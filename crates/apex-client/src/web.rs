@@ -1354,6 +1354,12 @@ impl Webs {
         for (w, h) in self.hosts.iter() {
             if !alive(*w) {
                 let _ = h.view.focus_parent();
+                #[cfg(target_os = "macos")]
+                {
+                    use wry::WebViewExtMacOS;
+                    let wk = h.view.webview();
+                    hit::forget(&*wk as *const _ as *mut objc::runtime::Object);
+                }
             }
         }
         self.hosts.retain(|w, _| alive(*w));
@@ -1475,11 +1481,7 @@ impl Webs {
     /// The page's outline, as it said it (`TOC_SCRIPT`).
     pub fn set_toc(&mut self, w: WindowId, text: &str) {
         if let Some(h) = self.hosts.get_mut(&w) {
-            let toc = Toc::parse(text);
-            if h.toc.is_none() {
-                crate::shell::log_line(&format!("page {w}: its outline, {} headings", toc.as_ref().map_or(0, |t| t.heads.len())));
-            }
-            h.toc = toc;
+            h.toc = Toc::parse(text);
         }
     }
 
@@ -2382,18 +2384,18 @@ mod tests {
 
 /// A page's holes to the pointer: AppKit gives a click to the view under
 /// it, and a page's view lies over gpui's whatever is drawn in its holes
-/// (they are its layer's mask, drawing only). So the page's view is
-/// taught to answer no to a point in one of its holes (`hitTest:`), and
-/// the click falls through to gpui's view beneath: a toast, a menu, a
-/// palette over a page takes its own clicks.
+/// (they are its layer's mask, drawing only). So the app's mouse events
+/// are looked at before AppKit sends them on (a local monitor): a press
+/// or a wheel in one of a page's holes goes to gpui's view, the page's
+/// parent, and so does what follows a press until its button is up -- a
+/// toast, a menu, a page's outline over a page takes its own clicks.
 #[cfg(target_os = "macos")]
 mod hit {
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Mutex, Once};
 
-    use objc::runtime::{class_addMethod, class_getInstanceMethod, method_getImplementation, method_setImplementation, object_getClass, Class, Imp, Method, Object, Sel};
-    use objc::{msg_send, sel, sel_impl};
+    use objc::runtime::{Object, Sel};
+    use objc::{class, msg_send, sel, sel_impl};
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -2408,73 +2410,116 @@ mod hit {
         size: P,
     }
 
-    /// Each page's view's holes, in its own coordinates from its top left.
+    /// Each page's view (retained while it is here) and its holes, in its
+    /// own coordinates from its top left.
     static HOLES: Mutex<Option<HashMap<usize, Vec<[f64; 4]>>>> = Mutex::new(None);
-    /// The view class's own `hitTest:`, called for every other point.
-    static ORIGINAL: AtomicUsize = AtomicUsize::new(0);
-    static TAUGHT: Once = Once::new();
+    /// The view a press in a hole went to, which has the events after it
+    /// until its button is up.
+    static PRESSED: Mutex<Option<usize>> = Mutex::new(None);
+    static WATCHING: Once = Once::new();
 
-    /// Page view `view`'s holes now (none: its clicks all its own).
+    /// Page view `view`'s holes now (none: its events all its own).
     pub fn set(view: *mut Object, holes: Vec<[f64; 4]>) {
-        teach(view);
+        watch();
         let mut m = HOLES.lock().unwrap();
         let m = m.get_or_insert_with(HashMap::new);
-        if holes.is_empty() {
-            m.remove(&(view as usize));
-        } else {
-            m.insert(view as usize, holes);
+        let key = view as usize;
+        // SAFETY: retained while it is a key here, released when it is not
+        unsafe {
+            if holes.is_empty() {
+                if m.remove(&key).is_some() {
+                    let _: () = msg_send![view, release];
+                }
+            } else if m.insert(key, holes).is_none() {
+                let _: () = msg_send![view, retain];
+            }
         }
     }
 
-    /// The page views' class taught to pass a point in a hole on: added to
-    /// the class as its own (wry's WKWebView subclass), or, where it has
-    /// one of its own already, put in its place -- the old one called for
-    /// every point that is not in a hole.
-    fn teach(view: *mut Object) {
-        TAUGHT.call_once(|| {
-            // SAFETY: the Objective-C runtime on the main thread, on the
-            // page view's own class; the method keeps `hitTest:`'s type
+    /// Page view `view` is going: its holes with it.
+    pub fn forget(view: *mut Object) {
+        set(view, Vec::new());
+    }
+
+    /// The app's mouse events looked at before they are sent on.
+    fn watch() {
+        WATCHING.call_once(|| {
+            // presses, releases and drags of each button, and the wheel
+            const TYPES: [u64; 10] = [1, 2, 3, 4, 6, 7, 22, 25, 26, 27];
+            let mask: u64 = TYPES.iter().map(|t| 1u64 << t).sum();
+            let block = block2::RcBlock::new(|e: *mut std::ffi::c_void| -> *mut std::ffi::c_void { route(e as *mut Object) as *mut std::ffi::c_void });
+            // SAFETY: AppKit on the main thread; the monitor and its block
+            // are kept for the life of the app
             unsafe {
-                let cls = object_getClass(view as *const Object) as *mut Class;
-                let sel = sel!(hitTest:);
-                let m = class_getInstanceMethod(cls, sel);
-                if m.is_null() {
-                    return;
+                let handler = &*block as *const _ as *const std::ffi::c_void;
+                let monitor: *mut Object = msg_send![class!(NSEvent), addLocalMonitorForEventsMatchingMask: mask handler: handler];
+                let _: *mut Object = msg_send![monitor, retain];
+            }
+            std::mem::forget(block);
+        });
+    }
+
+    /// Mouse event `e` sent on as AppKit would, or to gpui's view instead
+    /// (and nothing sent on) when it is in a hole, or follows a press that
+    /// was.
+    fn route(e: *mut Object) -> *mut Object {
+        // SAFETY: AppKit's event, on the main thread
+        let t: u64 = unsafe { msg_send![e, type] };
+        let to = match t {
+            1 | 3 | 25 | 22 => in_hole(e),
+            _ => *PRESSED.lock().unwrap(),
+        };
+        let Some(to) = to else { return e };
+        match t {
+            1 | 3 | 25 => *PRESSED.lock().unwrap() = Some(to),
+            2 | 4 | 26 => *PRESSED.lock().unwrap() = None,
+            _ => {}
+        }
+        let sel: Sel = match t {
+            1 => sel!(mouseDown:),
+            2 => sel!(mouseUp:),
+            3 => sel!(rightMouseDown:),
+            4 => sel!(rightMouseUp:),
+            6 => sel!(mouseDragged:),
+            7 => sel!(rightMouseDragged:),
+            22 => sel!(scrollWheel:),
+            25 => sel!(otherMouseDown:),
+            26 => sel!(otherMouseUp:),
+            _ => sel!(otherMouseDragged:),
+        };
+        // SAFETY: gpui's view, alive while a page in it is; the locks are
+        // let go first, since gpui may cut the holes again as it answers
+        unsafe {
+            let _: *mut Object = msg_send![to as *mut Object, performSelector: sel withObject: e];
+        }
+        std::ptr::null_mut()
+    }
+
+    /// The view beneath the page whose hole `e` is in, if it is in one.
+    fn in_hole(e: *mut Object) -> Option<usize> {
+        let m = HOLES.lock().unwrap();
+        // SAFETY: plain AppKit geometry on retained views, main thread
+        unsafe {
+            let win: *mut Object = msg_send![e, window];
+            let at: P = msg_send![e, locationInWindow];
+            for (&key, holes) in m.as_ref()? {
+                let view = key as *mut Object;
+                let w: *mut Object = msg_send![view, window];
+                let hidden: bool = msg_send![view, isHiddenOrHasHiddenAncestor];
+                if win.is_null() || w != win || hidden {
+                    continue;
                 }
-                ORIGINAL.store(method_getImplementation(m) as usize, Ordering::SeqCst);
-                let imp: Imp = std::mem::transmute(hit_test as extern "C" fn(&Object, Sel, P) -> *mut Object);
-                let types = b"@32@0:8{CGPoint=dd}16\0";
-                if class_addMethod(cls, sel, imp, types.as_ptr() as *const _) == objc::runtime::NO {
-                    // the class's own: replaced (it is not a superclass's)
-                    method_setImplementation(m as *mut Method, imp);
+                let nil: *mut Object = std::ptr::null_mut();
+                let local: P = msg_send![view, convertPoint: at fromView: nil];
+                let flipped: bool = msg_send![view, isFlipped];
+                let b: R = msg_send![view, bounds];
+                let (x, y) = (local.x, if flipped { local.y } else { b.size.y - local.y });
+                if holes.iter().any(|h| x >= h[0] && x < h[0] + h[2] && y >= h[1] && y < h[1] + h[3]) {
+                    let sup: *mut Object = msg_send![view, superview];
+                    return (!sup.is_null()).then_some(sup as usize);
                 }
             }
-        });
-    }
-
-    extern "C" fn hit_test(this: &Object, cmd: Sel, point: P) -> *mut Object {
-        let key = this as *const Object as usize;
-        let inside = HOLES.lock().ok().and_then(|m| {
-            let holes = m.as_ref()?.get(&key)?.clone();
-            // SAFETY: plain AppKit geometry on the view being asked
-            let (x, y) = unsafe {
-                let sup: *mut Object = msg_send![this, superview];
-                let local: P = msg_send![this, convertPoint: point fromView: sup];
-                let flipped: bool = msg_send![this, isFlipped];
-                let b: R = msg_send![this, bounds];
-                (local.x, if flipped { local.y } else { b.size.y - local.y })
-            };
-            Some(holes.iter().any(|h| x >= h[0] && x < h[0] + h[2] && y >= h[1] && y < h[1] + h[3]))
-        });
-        if inside == Some(true) {
-            return std::ptr::null_mut();
         }
-        let original = ORIGINAL.load(Ordering::SeqCst);
-        if original == 0 {
-            return std::ptr::null_mut();
-        }
-        // SAFETY: the class's own `hitTest:` as it was, with its own type
-        let f: extern "C" fn(&Object, Sel, P) -> *mut Object = unsafe { std::mem::transmute(original) };
-        f(this, cmd, point)
+        None
     }
 }
