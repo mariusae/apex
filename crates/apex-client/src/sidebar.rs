@@ -444,8 +444,9 @@ impl Acme {
             .gap(px(8.))
             .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(l.label))
             .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(l.dir));
-        let status = l.status.map(|(text, since, asks)| {
-            // one that asks for the user in the stale gold, as its pill is
+        let status = l.status.map(|(text, since, asks, icon)| {
+            // one that asks for the user in the stale gold, as its pill is,
+            // its state's icon before it
             let ink = if asks { crate::text_element::mix(t.stale, t.text, 0.45) } else { t.text_dim };
             div()
                 .flex()
@@ -454,7 +455,17 @@ impl Acme {
                 .text_size(px(11.))
                 .line_height(px(14.))
                 .text_color(rgb(t.text_dim))
-                .child(div().flex_1().min_w_0().truncate().text_color(rgb(ink)).child(text))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .text_color(rgb(ink))
+                        .children(icon.map(|i| icon_element(i, 11., ink)))
+                        .child(div().flex_1().min_w_0().truncate().child(text)),
+                )
                 .child(div().flex_none().child(age(since, now)))
         });
         let said = status.is_some();
@@ -498,14 +509,15 @@ struct WinLine {
     w: WindowId,
     label: String,
     dir: String,
-    /// What it says, since when, and whether it asks for the user.
-    status: Option<(String, u64, bool)>,
+    /// What it says, since when, whether it asks for the user, and its
+    /// state's icon.
+    status: Option<(String, u64, bool, Option<usize>)>,
     dot: Dot,
 }
 
 fn win_line(node: &Node, w: WindowId, dot: Dot) -> WinLine {
     let (label, dir) = names(node, w);
-    let status = node.window_status(w).and_then(|s| Some((shortened(&s.text()?, 120), s.since, asks(s.state))));
+    let status = node.window_status(w).and_then(|s| Some((shortened(&s.text()?, 120), s.since, asks(s.state), crate::text_element::status_icon(s.state, s.kind))));
     WinLine { w, label, dir, status, dot }
 }
 
@@ -607,6 +619,19 @@ pub(crate) fn split_name(name: &str) -> (String, String) {
     };
     let label = if last.is_empty() { name.to_string() } else { format!("{last}{slash}") };
     (label, dir.to_string())
+}
+
+/// Icon `i` of `VERB_ICONS`, `side` across, in `ink`.
+pub(crate) fn icon_element(i: usize, side: f32, ink: u32) -> impl IntoElement {
+    gpui::canvas(
+        |_, _, _| {},
+        move |b, _, window, cx| {
+            let name: gpui::SharedString = format!("apex-verb-{i}.svg").into();
+            let _ = window.paint_svg(b, name, Some(crate::text_element::verb_svg(i)), gpui::TransformationMatrix::unit(), rgb(ink).into(), cx);
+        },
+    )
+    .flex_none()
+    .size(px(side))
 }
 
 /// The handle's dot as a row draws it: the same marks, at a row's size.

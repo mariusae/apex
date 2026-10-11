@@ -125,6 +125,16 @@ pub const VERB_ICONS: &[(&str, &str)] = &[
     // the session's directory itself, `./` drawn: a middle dot, and a
     // slash a little apart from it
     (HERE, r#"<circle cx="7.4" cy="12" r="2" fill="black" stroke="none"/><path d="M11 19.5L17 4.5"/>"#),
+    // not verbs: a window's status's state (`status_icon`), as SF
+    // Symbols says them -- ellipsis, checkmark.circle, hand.raised,
+    // questionmark.circle, lock, exclamationmark.triangle -- drawn as
+    // these are (after Lucide's)
+    ("status:working", r#"<circle cx="5" cy="12" r="1.6" fill="black" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="black" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="black" stroke="none"/>"#),
+    ("status:done", r#"<circle cx="12" cy="12" r="9.5"/><path d="M8 12.5l2.7 2.7L16.5 9.5"/>"#),
+    ("status:hand", r#"<path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>"#),
+    ("status:question", r#"<circle cx="12" cy="12" r="9.5"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-2.9 3-2.9 3M12 17h.01"/>"#),
+    ("status:lock", r#"<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>"#),
+    ("status:error", r#"<path d="M21.7 18l-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3M12 9v4M12 17h.01"/>"#),
     // not a verb: the session's directory, where a path is drawn from
     // when it is inside it (`Head::here`), and the title bar's crumbs'
 ];
@@ -144,6 +154,31 @@ pub fn verb_command(i: usize) -> &'static str {
         DEL_STACKED => "Del",
         v => v,
     }
+}
+
+/// The icon a status in `state` is drawn with (none for idle), as an
+/// index in `VERB_ICONS`.
+pub fn status_icon(state: apex_core::status::State, kind: Option<apex_core::status::Kind>) -> Option<usize> {
+    use apex_core::status::{Kind, State};
+    let name = match (state, kind) {
+        (State::Idle, _) => return None,
+        (State::Working, _) => "status:working",
+        (State::Done, _) => "status:done",
+        (State::Blocked, Some(Kind::Question)) => "status:question",
+        (State::Blocked, Some(Kind::Auth)) => "status:lock",
+        (State::Blocked, _) => "status:hand",
+        (State::Error, _) => "status:error",
+    };
+    Some(icon_index(name))
+}
+
+/// A window's status as its tag draws it: what it says, whether it asks
+/// for the user, and its state's icon.
+#[derive(Clone, Copy, Debug)]
+pub struct StatusChip<'a> {
+    pub text: &'a str,
+    pub asks: bool,
+    pub icon: Option<usize>,
 }
 
 /// Where an icon is in `VERB_ICONS`.
@@ -968,7 +1003,7 @@ impl Head {
     /// so: the parts are still the whole path's (`Atom::Dir`'s length is
     /// the whole path's), so a click on one lists where it really is.
     #[allow(clippy::too_many_arguments)]
-    pub fn build_in(path: &str, label: Option<&str>, status: Option<(&str, bool)>, verbs: &[&str], split: bool, untitled: bool, base: &str) -> Head {
+    pub fn build_in(path: &str, label: Option<&str>, status: Option<StatusChip>, verbs: &[&str], split: bool, untitled: bool, base: &str) -> Head {
         let mut h = Head::default();
         h.path(path, split, untitled, base);
         h.rest(label, status, verbs);
@@ -986,7 +1021,7 @@ impl Head {
     /// `picking`, the folder drawn relative to `base` when it is in it (as
     /// `build_in` draws a path), `./` when it is `base`.
     #[allow(clippy::too_many_arguments)]
-    pub fn picking_in(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, status: Option<(&str, bool)>, verbs: &[&str], base: &str) -> Head {
+    pub fn picking_in(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, status: Option<StatusChip>, verbs: &[&str], base: &str) -> Head {
         let mut h = Head::default();
         // every part a folder: the name is being typed
         let start = inside(dir, base);
@@ -1129,8 +1164,8 @@ impl Head {
 
     /// After the path: a gap, the label, the status, the verbs, the
     /// divider.
-    fn rest(&mut self, label: Option<&str>, status: Option<(&str, bool)>, verbs: &[&str]) {
-        let (label, status) = (label.filter(|l| !l.is_empty()), status.filter(|s| !s.0.is_empty()));
+    fn rest(&mut self, label: Option<&str>, status: Option<StatusChip>, verbs: &[&str]) {
+        let (label, status) = (label.filter(|l| !l.is_empty()), status.filter(|s| !s.text.is_empty()));
         // after the path, the gap a label's chip has before the × after
         // it: a space and a hair before a chip, as drawn, and one space
         // before an icon (whose inset in its cell makes up the rest)
@@ -1138,12 +1173,22 @@ impl Head {
             let chip = label.is_some() || status.is_some();
             self.push(if chip { " \u{200a}" } else { " " }, None);
         }
-        // each on its chip, with its chip's room inside it
-        for (said, atom) in [(label, Atom::Label), (status.map(|s| s.0), Atom::Status(status.is_some_and(|s| s.1)))] {
-            if let Some(s) = said {
-                self.push(&format!(" {s} "), Some(atom));
-                self.push(" ", None);
+        // each on its chip, with its chip's room inside it; the status's
+        // state's icon on a cell of its own at its start
+        if let Some(l) = label {
+            self.push(&format!(" {l} "), Some(Atom::Label));
+            self.push(" ", None);
+        }
+        if let Some(s) = status {
+            let a = self.text.len();
+            match s.icon {
+                Some(i) => {
+                    self.glyphs.push((a + 1, i));
+                    self.push(&format!(" {ICON_CELL}{} ", s.text), Some(Atom::Status(s.asks)));
+                }
+                None => self.push(&format!(" {} ", s.text), Some(Atom::Status(s.asks))),
             }
+            self.push(" ", None);
         }
         for v in verbs {
             if let Some(i) = VERB_ICONS.iter().position(|(n, _)| n == v) {
@@ -2372,11 +2417,18 @@ mod head_tests {
         assert_eq!(parts, vec![("/", Atom::Dir(1)), ("a/", Atom::Dir(3)), ("b/", Atom::Dir(5)), ("notes.md", Atom::Name), (" mine ", Atom::Label), (&*ICON_CELL.to_string(), Atom::Verb(0)), (&*ICON_CELL.to_string(), Atom::Verb(4))]);
         assert_eq!(&h.text[h.bar.unwrap()..], "| ");
         // a status on a chip after the label's, or after the path alone
-        let s = Head::build_in("/a/b/notes.md", Some("mine"), Some(("Working", false)), &["Del"], true, true, "");
+        let chip = |text, icon| Some(super::StatusChip { text, asks: false, icon });
+        let s = Head::build_in("/a/b/notes.md", Some("mine"), chip("Working", None), &["Del"], true, true, "");
         let parts: Vec<(&str, Atom)> = s.atoms.iter().map(|&(a, b, x)| (&s.text[a..b], x)).filter(|p| matches!(p.1, Atom::Label | Atom::Status(_))).collect();
         assert_eq!(parts, vec![(" mine ", Atom::Label), (" Working ", Atom::Status(false))]);
-        let alone = Head::build_in("/a/b/notes.md", None, Some(("Working", false)), &[], true, true, "");
+        let alone = Head::build_in("/a/b/notes.md", None, chip("Working", None), &[], true, true, "");
         assert!(alone.text.starts_with("/a/b/notes.md \u{200a} Working  "), "{:?}", alone.text);
+        // its state's icon on a cell at the chip's start, in the chip
+        let working = super::status_icon(apex_core::status::State::Working, None);
+        let i = Head::build_in("/a/x", None, chip("Building", working), &[], true, true, "");
+        let &(a, b, _) = i.atoms.iter().find(|x| matches!(x.2, Atom::Status(_))).unwrap();
+        assert_eq!(&i.text[a..b], format!(" {ICON_CELL}Building "));
+        assert_eq!(i.glyphs, vec![(a + 1, working.unwrap())]);
         // a directory's name is its last folder; a URL is whole; no path
         // is Untitled
         let d = Head::build("/a/b/", None, &[], true, true);

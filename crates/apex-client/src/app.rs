@@ -3062,13 +3062,14 @@ impl Acme {
             _ => None,
         });
         // its status after it, cut short: the sidebar has room for more
-        let status = n.window_status(w).and_then(|s| Some((crate::sidebar::shortened(&s.text()?, 48), crate::sidebar::asks(s.state))));
+        let status = n.window_status(w).and_then(|s| Some((crate::sidebar::shortened(&s.text()?, 48), crate::sidebar::asks(s.state), crate::text_element::status_icon(s.state, s.kind))));
+        let chip = status.as_ref().map(|(text, asks, icon)| crate::text_element::StatusChip { text, asks: *asks, icon: *icon });
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
-            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), status.as_ref().map(|(s, a)| (s.as_str(), *a)), &verbs, &n.state.meta.cwd);
+            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), chip, &verbs, &n.state.meta.cwd);
         }
         // a path in the session's directory from there on (only drawn so)
-        Head::build_in(&n.window_path(w), label.as_deref(), status.as_ref().map(|(s, a)| (s.as_str(), *a)), &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
+        Head::build_in(&n.window_path(w), label.as_deref(), chip, &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
     }
 
     pub fn view_text(&self, view: ViewId) -> String {
