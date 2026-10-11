@@ -139,10 +139,8 @@ impl Acme {
                     cx.stop_propagation();
                 }),
             );
-        // another session wants the user: pjw on the chevron, as a badge
-        // (pjw is only ever for another session, never this one)
-        let others = Pool::tabs(cx).into_iter().any(|tab| tab.id != self.tab && self.tab_notified(tab.id, cx));
-        let chevron = chevron.when(others, |d| d.child(div().absolute().top(px(-6.)).right(px(-6.)).child(crate::shell::pjw(12., t.accent))));
+        // (another session wanting the user is the sidebar button's badge
+        // to say: `sidebar_badge`)
         let menu = open.then(|| self.session_menu_panel(h, cx));
         div()
             .relative()
