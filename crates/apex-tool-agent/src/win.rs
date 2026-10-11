@@ -209,15 +209,16 @@ struct Target {
     asking: Vec<RuleId>,
 }
 
-/// The notification raised for one agent, on its window.
+/// The notification apex raised for one agent's status, on its window,
+/// as the user has dealt with it.
 struct Flag {
     window: WindowId,
+    /// What the agent wanted when it was raised.
+    state: State,
     /// It has been seen raised: until then, not seeing it is the daemon
     /// not having said so yet, and not the user having taken it.
     raised: bool,
-    /// The user has taken it, or used the window. It is not raised again
-    /// until the agent has gone back to work and come to want something
-    /// afresh.
+    /// The user has taken it, or used the window: the agent is seen.
     dismissed: bool,
 }
 
@@ -490,53 +491,36 @@ impl Pane {
 
     // ---- the notifications ----
 
-    /// A notification for each agent that wants you -- its turn over and
-    /// the next prompt yours, a question of its own to answer, or a turn
-    /// that failed -- on the window the agent runs in, so that its handle
-    /// and the session's square say someone is waiting and clicking the
-    /// square takes you to them, one agent a click. Lowered as soon as
-    /// the agent leaves that state: back at work, or gone. An agent with
-    /// no window here (one elsewhere, with `-all`) has none.
-    ///
-    /// The notifications are this tool's, so it dying leaves none
-    /// waiting. One the user has taken, or whose window they used, is
-    /// not raised again until the agent has been back to work, which is
-    /// what `dismissed` remembers. An agent that says what it is doing
-    /// itself (OSC 7501: Claude Code does) has its window marked by apex
-    /// from that, and none of this.
+    /// Whether the user has seen each agent that wants them -- its turn
+    /// over and the next prompt theirs, a question of its own to answer,
+    /// or a turn that failed. Its window's status says so (`status_of`),
+    /// and apex raises the window's notification from that, and lowers
+    /// it when the agent is back at work or gone. Taken, or the window
+    /// used, the agent is seen (`dismissed`): its done turn idle, until
+    /// it wants something afresh. An agent with no window here (one
+    /// elsewhere, with `-all`) has none; one that says what it is doing
+    /// itself (OSC 7501: Claude Code does) has its window's status, and
+    /// so its notification, from that, and none of this.
     fn sync_flags(&mut self) {
         if self.session.is_empty() {
             return;
         }
         let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
-        let want: Vec<(String, WindowId)> = current_in_windows(&self.agents, &self.session, &windows, self.w)
+        let want: Vec<(String, WindowId, State)> = current_in_windows(&self.agents, &self.session, &windows, self.w)
             .into_iter()
             .filter(|(_, a)| matches!(a.state, State::Idle | State::Asking | State::Failed))
             // an agent saying what it is doing itself (OSC 7501): apex
-            // marks its window from that
+            // has its window's status from that
             .filter(|(w, _)| self.t.term_status(*w).is_empty())
-            .map(|(w, a)| (a.session.clone(), w))
+            .map(|(w, a)| (a.session.clone(), w, a.state))
             .collect();
-        // back at work, gone, or moved: the notification goes
-        let stale: Vec<String> = self.flags.iter().filter(|(s, f)| !want.iter().any(|(k, w)| k == *s && *w == f.window)).map(|(s, _)| s.clone()).collect();
-        for s in stale {
-            if let Some(f) = self.flags.remove(&s) {
-                let _ = self.t.unnotify(f.window);
-            }
-        }
-        for (key, w) in want {
-            match self.flags.get_mut(&key) {
-                Some(f) if f.dismissed => {}
-                Some(f) => {
-                    let on = self.t.notified(w);
-                    f.dismissed = f.raised && !on;
-                    f.raised |= on;
-                }
-                None => {
-                    let _ = self.t.notify(w);
-                    self.flags.insert(key, Flag { window: w, raised: false, dismissed: false });
-                }
-            }
+        // back at work, gone, moved, or wanting something else: forgotten
+        self.flags.retain(|s, f| want.iter().any(|(k, w, st)| k == s && *w == f.window && *st == f.state));
+        for (key, w, state) in want {
+            let on = self.t.notified(w);
+            let f = self.flags.entry(key).or_insert(Flag { window: w, state, raised: false, dismissed: false });
+            f.dismissed |= f.raised && !on;
+            f.raised |= on;
         }
     }
 

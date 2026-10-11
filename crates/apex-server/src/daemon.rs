@@ -1544,10 +1544,16 @@ impl Daemon {
                 props = s.server.poll_execs(&mut s.log, &s.view);
                 s.server.close_orphan_terms(&mut s.log, &s.view);
                 let _ = s.view.catch_up(&s.log);
+                // and the notifications follow the statuses as they now are
+                props.extend(s.server.status_flags(&mut s.log, &mut s.view));
                 if props.is_empty() {
                     break;
                 }
             }
+        } else {
+            // the notifications follow the statuses as the leader left
+            // them; what is to be shown, the leader shows
+            props.extend(s.server.status_flags(&mut s.log, &mut s.view));
         }
         let verbs = !s.server.peek_plumb_starts().is_empty();
         // the metalog first: it announces shards before their entries

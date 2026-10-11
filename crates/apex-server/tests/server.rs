@@ -35,6 +35,9 @@ fn pump_until(log: &mut Log, node: &mut Node, server: &mut Server, rx: &mut Unbo
             Ok(ev) => {
                 let props = server.pump(log, node, ev);
                 perform(node, log, props);
+                // the notifications follow the statuses, as the daemon has them
+                let props = server.status_flags(log, node);
+                perform(node, log, props);
             }
             Err(_) => std::thread::sleep(Duration::from_millis(10)),
         }
@@ -636,6 +639,12 @@ fn a_program_in_a_terminal_says_what_it_is_doing() {
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_notified(w) && !n.window_working(w)), "notified: {}", node.window_notified(w));
     assert_eq!(status(&node).as_deref(), Some("Password"));
     assert_eq!(node.window_status(w).map(|s| (s.state, s.kind)), Some((State::Blocked, Some(Kind::Auth))));
+    // the user takes it: lowered, the status as it was; done is news again
+    log.unnotify(w);
+    node.catch_up(&log).unwrap();
+    assert!(!node.window_notified(w) && node.window_status(w).is_some_and(|s| s.state == State::Blocked));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_status(w).is_some_and(|s| s.state == State::Done)));
+    assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_notified(w)), "done: raised again");
     // done; the program ends, and done stays (working would not have)
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|x| x.exit.is_some())), "exit");
     assert_eq!(records(&node).iter().map(|r| r.state).collect::<Vec<_>>(), vec![State::Done]);

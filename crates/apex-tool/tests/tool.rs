@@ -259,6 +259,43 @@ fn work_behind_a_window_shows_while_the_tool_is_there() {
     assert_eq!(other.node.window_status(w), None, "and so does what it said");
 }
 
+/// A window's notification follows its status: raised when it comes to
+/// ask for the user, lowered when it no longer does, or by the user
+/// (the status left as it was); and it goes with the tool that said it.
+#[test]
+fn a_status_that_asks_for_the_user_raises_the_windows_notification() {
+    use apex_tool::{Kind, State, Status};
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "asker").unwrap();
+    let w = t.new_window("/tmp/asking-notes").unwrap();
+    let mut ui = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let until = |ui: &mut Remote, want: bool| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while ui.node.window_notified(w) != want && Instant::now() < deadline {
+            let _ = ui.step(Duration::from_millis(20));
+        }
+        ui.node.window_notified(w)
+    };
+    t.set_status(w, Some(Status::new(State::Working))).unwrap();
+    assert!(!until(&mut ui, false), "at work: nothing to ask");
+    t.set_status(w, Some(Status::new(State::Blocked).kind(Some(Kind::Question)).msg("which?"))).unwrap();
+    assert!(until(&mut ui, true), "blocked: raised");
+    t.set_status(w, Some(Status::new(State::Working))).unwrap();
+    assert!(!until(&mut ui, false), "back at work: lowered");
+    t.set_status(w, Some(Status::new(State::Done))).unwrap();
+    assert!(until(&mut ui, true), "done: raised");
+    // lowered, as the user taking it would (the raiser may too)
+    t.unnotify(w).unwrap();
+    assert!(!until(&mut ui, false), "taken");
+    t.set_status(w, Some(Status::new(State::Done).msg("all of it"))).unwrap();
+    assert!(!until(&mut ui, false), "the same state again, other words: not news");
+    assert_eq!(t.window(w).and_then(|i| i.status).map(|s| s.state), Some(State::Done), "and the status stands");
+    t.set_status(w, Some(Status::new(State::Error))).unwrap();
+    assert!(until(&mut ui, true), "another that asks: news");
+    drop(t);
+    assert!(!until(&mut ui, false), "and it goes with the tool");
+}
+
 #[test]
 fn a_tool_takes_a_word_apex_knows_and_can_hand_it_back() {
     let sock = daemon();

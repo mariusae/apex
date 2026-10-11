@@ -241,10 +241,9 @@ pub struct TermHost {
     /// way, as a report of that would undo one of this.
     pub status: apex_core::status::Records,
     pub status_heard: bool,
-    /// What the window was last given for them: its handle at work (how
-    /// far along), and the state that last asked for the user.
+    /// What the terminal was last given for them: at work, and how far
+    /// along (its bar).
     pub status_marked: (bool, Option<u8>),
-    pub status_asked: Option<apex_core::status::State>,
     /// The window's status as the records last said it: the most
     /// pressing one's state, what it waits on, how far along, and its
     /// message.
@@ -332,7 +331,7 @@ impl TermHost {
         let event_loop = EventLoop::new(term.clone(), pty, report).map_err(|e| e.to_string())?;
         let notifier = event_loop.channel();
         let _ = event_loop.spawn();
-        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new(), status: Default::default(), status_heard: false, status_marked: (false, None), status_asked: None, status_said: None })
+        Ok(TermHost { term, notifier, cols, rows, held_size: None, exited: false, dir: dir.to_path_buf(), label, pid, name, cmd: cmdline, started, last: None, cwd: None, title: None, initial_dir: dir.to_path_buf(), colors: None, working: false, progress: None, marks: Vec::new(), status: Default::default(), status_heard: false, status_marked: (false, None), status_said: None })
     }
 
     pub fn write(&self, data: &[u8]) {

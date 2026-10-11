@@ -153,6 +153,10 @@ pub struct Server {
     stamps: HashMap<PathBuf, Option<(Option<std::time::SystemTime>, u64)>>,
     /// Subscribed files that changed, for the host to report.
     changed: BTreeSet<PathBuf>,
+    /// The windows whose status asks for the user (done, blocked,
+    /// error), in which state, as `status_flags` last saw them; none
+    /// before it first looked.
+    asking: Option<HashMap<WindowId, apex_core::status::State>>,
 }
 
 impl Server {
@@ -219,6 +223,7 @@ impl Server {
             subscribed: BTreeSet::new(),
             stamps: HashMap::new(),
             changed: BTreeSet::new(),
+            asking: None,
         };
         (server, rx)
     }
@@ -568,6 +573,40 @@ impl Server {
     /// windows that have appeared (`spawn_pending`), terminals closed
     /// whose windows are gone. A terminal whose window has not appeared
     /// yet (the proposal is in flight) is left alone.
+    /// A window's notification follows its status: raised when the
+    /// status comes to ask for the user (done, blocked, error) -- in the
+    /// name of whoever said it, so a tool's goes with the tool -- and
+    /// the window shown; raised already, no matter; lowered when the
+    /// status no longer asks. Between, the user may take it, and the
+    /// status stays. Another of the three is news again (blocked, then
+    /// done); the same one with other words is not. Statuses that stood
+    /// when the daemon came up are where they were: their flags too.
+    pub fn status_flags(&mut self, log: &mut Log, view: &mut Node) -> Vec<Proposal> {
+        use apex_core::status::State;
+        let now: HashMap<WindowId, (State, AttachmentId)> = view
+            .state
+            .windows
+            .keys()
+            .filter_map(|&w| view.window_status(w).filter(|s| matches!(s.state, State::Done | State::Blocked | State::Error)).map(|s| (w, (s.state, s.by))))
+            .collect();
+        let Some(was) = self.asking.replace(now.iter().map(|(w, (s, _))| (*w, *s)).collect()) else { return Vec::new() };
+        let mut out = Vec::new();
+        for (&w, &(state, by)) in &now {
+            if was.get(&w) != Some(&state) {
+                let e = log.notify(by, w);
+                let _ = view.state.apply(Shard::Meta, &e);
+                out.push(Proposal::Notice { window: w });
+            }
+        }
+        for &w in was.keys().filter(|w| !now.contains_key(w)) {
+            if view.window_notified(w) {
+                let e = log.unnotify(w);
+                let _ = view.state.apply(Shard::Meta, &e);
+            }
+        }
+        out
+    }
+
     pub fn close_orphan_terms(&mut self, log: &mut Log, view: &Node) {
         self.spawn_pending(log, view);
         let live: BTreeSet<TermId> = view
@@ -1956,20 +1995,6 @@ fn status_marks(node: &mut Node, log: &mut Log, id: TermId, h: &mut term::TermHo
             props.push(Proposal::SetStatus { window: w, status });
         }
         h.status_said = said;
-    }
-    let asks = summary.map(|(s, _)| s).filter(|s| matches!(s, State::Blocked | State::Error | State::Done));
-    if asks != h.status_asked {
-        let Some(w) = w else { return };
-        match asks {
-            Some(_) => {
-                log.notify(SERVER, w);
-                props.push(Proposal::Notice { window: w });
-            }
-            None => {
-                log.unnotify(w);
-            }
-        }
-        h.status_asked = asks;
     }
 }
 
