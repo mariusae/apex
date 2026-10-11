@@ -112,6 +112,7 @@ impl Render for Acme {
         self.layouts.clear();
         self.term_layouts.clear();
         self.web_bars.clear();
+        self.status_pills.borrow_mut().clear();
         self.shelf.preview_at.set(None);
         self.shelf.stack_at.set(None);
         let me = cx.entity();

@@ -1978,6 +1978,8 @@ impl Element for TextElement {
         let pal = palette(pp.kind);
         let lh = pp.fontspec.line_height;
         let lift = ink_lift(window, &pp.fontspec);
+        // where a status's pill is drawn, for a click on it to find
+        let pills = self.acme.read(cx).status_pills.clone();
         // a tag's lines centred in its card, as much room over them as
         // under (a tag's card is a pixel taller than its line, for its
         // border); a folded window's card is a little shorter than the
@@ -2229,6 +2231,9 @@ impl Element for TextElement {
                         let sy = ly + (lh - tall) / 2.;
                         let r = Bounds::from_corners(point(x0, sy), point(x1, sy + tall));
                         window.paint_quad(fill(r, rgb(mix(p.hue, th.tag_bg, 0.74))).corner_radii(tall / 2.));
+                        if let ViewId::Tag(w) = self.view {
+                            pills.borrow_mut().insert(w, r);
+                        }
                         let mut x = x0 + px(PILL_PAD);
                         if let Some(i) = p.icon {
                             let side = pp.fontspec.size.min(tall - px(2.));

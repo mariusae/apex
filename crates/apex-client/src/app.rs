@@ -663,6 +663,9 @@ pub struct Acme {
     pub term_layouts: HashMap<WindowId, TermLayout>,
     /// Where each page's scrollbar was drawn this frame, beside its view.
     pub web_bars: HashMap<WindowId, Bounds<Pixels>>,
+    /// Where each window's status's pill was drawn this frame: a click on
+    /// it clears the status (`clear_status`).
+    pub status_pills: std::rc::Rc<std::cell::RefCell<HashMap<WindowId, Bounds<Pixels>>>>,
     /// The native views of web windows (WEB.md §2).
     pub webs: Webs,
     pub hl: Option<(ViewId, usize, usize, HlKind)>,
@@ -1892,6 +1895,7 @@ impl Acme {
             layouts: HashMap::new(),
             term_layouts: HashMap::new(),
             web_bars: HashMap::new(),
+            status_pills: Default::default(),
             webs: Webs::new(None, None),
             hl: None,
             ran: None,
@@ -2003,6 +2007,17 @@ impl Acme {
             return self.notification_head().is_some();
         }
         Pool::notified(cx, id)
+    }
+
+    /// Window `w`'s status cleared, as the user does by clicking its pill:
+    /// idle, with nothing to say (and so its notification lowered). The
+    /// next status said for it, by its program or its tool, is shown
+    /// again.
+    pub fn clear_status(&mut self, w: WindowId) {
+        let since = crate::sidebar::now_secs();
+        let status = apex_core::WindowStatus { state: apex_core::status::State::Idle, kind: None, progress: None, msg: None, by: apex_core::SERVER, since };
+        apex_server::perform(&mut self.node, &mut self.log, vec![apex_server::Proposal::SetStatus { window: w, status: Some(status) }]);
+        self.after();
     }
 
     /// Every tick: the strip as it would be drawn now -- the tabs, which
@@ -3337,6 +3352,15 @@ impl Acme {
     }
 
     pub fn mouse_down(&mut self, e: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // B1 on a window's status's pill: the status cleared
+        if e.button == MouseButton::Left {
+            let on = self.status_pills.borrow().iter().find(|(_, b)| b.contains(&e.position)).map(|(w, _)| *w);
+            if let Some(w) = on {
+                self.clear_status(w);
+                cx.notify();
+                return;
+            }
+        }
         self.flash_watching(cx);
         self.standing_card = false;
         // a click: the caret solid again, wherever it lands
