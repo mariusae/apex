@@ -447,6 +447,8 @@ pub struct Acme {
     /// The sidebar's session row under the pointer: its × shows, and a
     /// preview of the session beside it.
     pub sidebar_hover: Option<crate::pool::TabId>,
+    /// The sidebar's host row under the pointer (its place in the list).
+    pub host_hover: Option<usize>,
     /// Where each session's row was drawn in the sidebar.
     pub sidebar_rows: std::rc::Rc<std::cell::RefCell<HashMap<crate::pool::TabId, gpui::Bounds<Pixels>>>>,
     /// Errors just written, shown as toasts by their columns.
@@ -1830,6 +1832,7 @@ impl Acme {
             diag_seen: Default::default(),
             diag_primed: false,
             sidebar_hover: None,
+            host_hover: None,
             sidebar_rows: Default::default(),
             url_asked: std::collections::HashSet::new(),
             tag_need: HashMap::new(),

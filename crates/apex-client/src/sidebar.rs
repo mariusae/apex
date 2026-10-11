@@ -52,15 +52,41 @@ impl Acme {
             let (i, tab) = match entry {
                 // a host's name over its sessions (when there is more than
                 // one host), and whether it could be asked
-                Entry::Host(k, name, down) => {
+                Entry::Host(k, name, down, forget) => {
                     if headed {
+                        // the pointer on a host with nothing open here: an ×
+                        // at the right to forget it
+                        let forget = forget.filter(|_| self.host_hover == Some(k)).map(|h| {
+                            div()
+                                .id(("host-forget", k))
+                                .flex_none()
+                                .size(px(16.))
+                                .rounded(px(4.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(13.))
+                                .font_weight(crate::fonts::weight(FontWeight::NORMAL))
+                                .text_color(rgb(t.text_dim))
+                                .hover(move |s| s.bg(rgb(theme::step(t.strip, 2))).text_color(rgb(t.text)))
+                                .child("×")
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.forget_host(&h);
+                                        cx.notify();
+                                        cx.stop_propagation();
+                                    }),
+                                )
+                        });
                         list = list.child(
                             div()
                                 .id(("host", k))
                                 .flex_none()
+                                .h(px(16. + if k == 0 { 2. } else { 10. } + 2.))
                                 .flex()
                                 .flex_row()
-                                .items_center()
+                                .items_end()
                                 .gap(px(6.))
                                 .px(px(8.))
                                 .pt(px(if k == 0 { 2. } else { 10. }))
@@ -68,8 +94,18 @@ impl Acme {
                                 .text_size(px(11.))
                                 .font_weight(crate::fonts::weight(FontWeight::MEDIUM))
                                 .text_color(rgb(t.text_dim))
-                                .child(name)
-                                .when(down, |d| d.child(div().font_weight(crate::fonts::weight(FontWeight::NORMAL)).child("unreachable"))),
+                                .child(div().h(px(16.)).flex().items_center().child(name))
+                                .when(down, |d| d.child(div().h(px(16.)).flex().items_center().font_weight(crate::fonts::weight(FontWeight::NORMAL)).child("unreachable")))
+                                .child(div().flex_1())
+                                .children(forget)
+                                .on_hover(cx.listener(move |this, over: &bool, _, cx| {
+                                    if *over {
+                                        this.host_hover = Some(k);
+                                    } else if this.host_hover == Some(k) {
+                                        this.host_hover = None;
+                                    }
+                                    cx.notify();
+                                })),
                         );
                     }
                     continue;
@@ -740,8 +776,10 @@ mod tests {
 
 /// A row of the sidebar's list.
 enum Entry {
-    /// A host's name (its place in the list, the name, whether it failed to answer).
-    Host(usize, String, bool),
+    /// A host's name (its place in the list, the name, whether it failed
+    /// to answer), and the host when it may be forgotten (not this Mac,
+    /// and none of its sessions open here).
+    Host(usize, String, bool, Option<Host>),
     /// One of the app's tabs (its place among them).
     Tab(usize, Tab),
     /// A host's session not open in the app.
@@ -770,7 +808,8 @@ impl Acme {
         for (hi, h) in hosts.iter().enumerate() {
             let loading = self.sidebar_hosts.iter().find(|(x, _)| x == h).map(|(_, l)| l);
             let name = if h.is_local() { "This Mac".to_string() } else { h.arg.clone() };
-            out.push(Entry::Host(hi, name, matches!(loading, Some(Loading::Failed(..)))));
+            let open = tabs.iter().any(|t| Host::of(&t.url) == *h);
+            out.push(Entry::Host(hi, name, matches!(loading, Some(Loading::Failed(..))), (!h.is_local() && !open).then(|| h.clone())));
             for (i, t) in tabs.iter().enumerate().filter(|(_, t)| Host::of(&t.url) == *h) {
                 out.push(Entry::Tab(i, t.clone()));
             }
@@ -783,6 +822,14 @@ impl Acme {
             }
         }
         out
+    }
+
+    /// Host `h` forgotten (the × on its row): out of the known hosts and
+    /// the recent sessions, and off the sidebar.
+    fn forget_host(&mut self, h: &Host) {
+        crate::shell::forget_host(h);
+        self.sidebar_hosts.retain(|(x, _)| x != h);
+        self.host_hover = None;
     }
 
     /// Every known host asked for its sessions, in the background: what
