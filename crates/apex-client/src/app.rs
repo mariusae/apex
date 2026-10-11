@@ -588,6 +588,9 @@ pub struct Acme {
     /// The tabs as the strip last drew them -- which they are, which
     /// want the user, and what each is doing (`tabs_tick`).
     tabs_shown: Vec<(TabId, String, bool, Option<String>)>,
+    /// The sessions' windows' statuses as the sidebar last drew them, and
+    /// the minute it was then (their ages counted in minutes).
+    statuses_shown: (u64, Vec<(TabId, WindowId, String)>),
     /// Bodies scrolled by the trackpad, as a native view scrolls: by the
     /// pixel between whole lines, and past either end. Only this client's;
     /// the origin line is what the session has.
@@ -1864,6 +1867,7 @@ impl Acme {
             menu_opened: None,
             menu_closing: None,
             tabs_shown: Vec::new(),
+            statuses_shown: (0, Vec::new()),
             smooth: HashMap::new(),
             wheel_at: HashMap::new(),
             springing: false,
@@ -2002,10 +2006,19 @@ impl Acme {
     pub fn tabs_tick(&mut self, cx: &gpui::App) -> bool {
         let now: Vec<(TabId, String, bool, Option<String>)> =
             Pool::tabs(cx).into_iter().map(|t| (t.id, t.url.to_string(), self.tab_notified(t.id, cx), self.tab_word(&t, cx))).collect();
-        if now == self.tabs_shown {
+        // and the windows' statuses, every session's, and their ages
+        let mut statuses: Vec<(TabId, WindowId, String)> = Vec::new();
+        let nodes = Pool::parked_nodes(cx).into_iter().filter(|(id, _, _)| *id != self.tab).map(|(id, _, n)| (id, n));
+        for (id, node) in std::iter::once((self.tab, &self.node)).chain(nodes) {
+            statuses.extend(crate::sidebar::status_windows(node).into_iter().map(|w| (id, w, node.window_status(w).and_then(|s| s.text()).unwrap_or_default())));
+        }
+        let minute = if statuses.is_empty() { 0 } else { crate::sidebar::now_secs() / 60 };
+        let statuses = (minute, statuses);
+        if now == self.tabs_shown && statuses == self.statuses_shown {
             return false;
         }
         self.tabs_shown = now;
+        self.statuses_shown = statuses;
         true
     }
 
@@ -3048,12 +3061,14 @@ impl Acme {
             WinKind::Page if n.is_buffer_page(w) => Some("Preview".into()),
             _ => None,
         });
+        // its status after it, cut short: the sidebar has room for more
+        let status = n.window_status(w).and_then(|s| Some((crate::sidebar::shortened(&s.text()?, 48), crate::sidebar::asks(s.state))));
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
-            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), &verbs, &n.state.meta.cwd);
+            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), status.as_ref().map(|(s, a)| (s.as_str(), *a)), &verbs, &n.state.meta.cwd);
         }
         // a path in the session's directory from there on (only drawn so)
-        Head::build_in(&n.window_path(w), label.as_deref(), &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
+        Head::build_in(&n.window_path(w), label.as_deref(), status.as_ref().map(|(s, a)| (s.as_str(), *a)), &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
     }
 
     pub fn view_text(&self, view: ViewId) -> String {

@@ -111,9 +111,7 @@ impl Acme {
 
     /// Window `w`'s handle as its tag shows it.
     pub(crate) fn window_dot(&self, w: apex_core::WindowId) -> crate::text_element::Dot {
-        let t = crate::theme::theme();
-        let live = self.node.window_live(w) || self.node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Page(apex_core::Source::Url));
-        crate::text_element::dot(&t, false, self.node.window_unsaved(w), live, self.node.window_working(w), self.note_age(w)).at(self.node.window_progress(w))
+        dot_in(&self.node, w, self.note_age(w))
     }
 
     /// Minimized column `ci`'s drawing: a slim card on its side, where it
@@ -210,4 +208,12 @@ impl Acme {
             );
         Some(slice.into_any_element())
     }
+}
+
+/// Window `w`'s handle as its tag in `node`'s session shows it, its
+/// notification `note` seconds old.
+pub(crate) fn dot_in(node: &apex_core::Node, w: apex_core::WindowId, note: Option<f32>) -> crate::text_element::Dot {
+    let t = crate::theme::theme();
+    let live = node.window_live(w) || node.state.window(w).is_ok_and(|x| x.body == apex_core::Body::Page(apex_core::Source::Url));
+    crate::text_element::dot(&t, false, node.window_unsaved(w), live, node.window_working(w), note).at(node.window_progress(w))
 }

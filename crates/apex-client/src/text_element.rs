@@ -915,6 +915,9 @@ pub enum Atom {
     /// A window with no path yet.
     Untitled,
     Label,
+    /// The window's status, after its label: how its work stands; and
+    /// whether it asks for the user (done, blocked, failed).
+    Status(bool),
     /// A verb of `VERB_ICONS`.
     Verb(usize),
     /// What is typed after a folder while the path's picker is down: the
@@ -935,7 +938,7 @@ fn inside(path: &str, base: &str) -> Option<usize> {
 }
 
 /// The head of a window's tag, laid out before its text on its first
-/// line: the path, a gap, the label, the verbs, the divider.
+/// line: the path, a gap, the label, the status, the verbs, the divider.
 #[derive(Clone, Default, Debug)]
 pub struct Head {
     pub text: String,
@@ -957,17 +960,18 @@ impl Head {
     /// as Untitled (a window that could have one), else as nothing.
     #[cfg(test)]
     pub fn build(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool) -> Head {
-        Head::build_in(path, label, verbs, split, untitled, "")
+        Head::build_in(path, label, None, verbs, split, untitled, "")
     }
 
     /// `build`, a path inside `base` (the session's directory, with its
     /// slash) drawn from there on, and `base` itself as `./`. Only drawn
     /// so: the parts are still the whole path's (`Atom::Dir`'s length is
     /// the whole path's), so a click on one lists where it really is.
-    pub fn build_in(path: &str, label: Option<&str>, verbs: &[&str], split: bool, untitled: bool, base: &str) -> Head {
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_in(path: &str, label: Option<&str>, status: Option<(&str, bool)>, verbs: &[&str], split: bool, untitled: bool, base: &str) -> Head {
         let mut h = Head::default();
         h.path(path, split, untitled, base);
-        h.rest(label, verbs);
+        h.rest(label, status, verbs);
         h
     }
 
@@ -976,13 +980,13 @@ impl Head {
     /// when `caret`), then the rest as ever.
     #[cfg(test)]
     pub fn picking(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, verbs: &[&str]) -> Head {
-        Head::picking_in(dir, typed, cursor, caret, label, verbs, "")
+        Head::picking_in(dir, typed, cursor, caret, label, None, verbs, "")
     }
 
     /// `picking`, the folder drawn relative to `base` when it is in it (as
     /// `build_in` draws a path), `./` when it is `base`.
     #[allow(clippy::too_many_arguments)]
-    pub fn picking_in(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, verbs: &[&str], base: &str) -> Head {
+    pub fn picking_in(dir: &str, typed: &str, cursor: usize, caret: bool, label: Option<&str>, status: Option<(&str, bool)>, verbs: &[&str], base: &str) -> Head {
         let mut h = Head::default();
         // every part a folder: the name is being typed
         let start = inside(dir, base);
@@ -1003,7 +1007,7 @@ impl Head {
         if caret {
             h.caret = Some(a + typed.char_indices().nth(cursor).map_or(typed.len(), |(i, _)| i));
         }
-        h.rest(label, verbs);
+        h.rest(label, status, verbs);
         h
     }
 
@@ -1123,19 +1127,23 @@ impl Head {
         }
     }
 
-    /// After the path: a gap, the label, the verbs, the divider.
-    fn rest(&mut self, label: Option<&str>, verbs: &[&str]) {
+    /// After the path: a gap, the label, the status, the verbs, the
+    /// divider.
+    fn rest(&mut self, label: Option<&str>, status: Option<(&str, bool)>, verbs: &[&str]) {
+        let (label, status) = (label.filter(|l| !l.is_empty()), status.filter(|s| !s.0.is_empty()));
         // after the path, the gap a label's chip has before the × after
         // it: a space and a hair before a chip, as drawn, and one space
         // before an icon (whose inset in its cell makes up the rest)
         if !self.text.is_empty() {
-            let chip = label.is_some_and(|l| !l.is_empty());
+            let chip = label.is_some() || status.is_some();
             self.push(if chip { " \u{200a}" } else { " " }, None);
         }
-        if let Some(l) = label.filter(|l| !l.is_empty()) {
-            // its chip's room inside it
-            self.push(&format!(" {l} "), Some(Atom::Label));
-            self.push(" ", None);
+        // each on its chip, with its chip's room inside it
+        for (said, atom) in [(label, Atom::Label), (status.map(|s| s.0), Atom::Status(status.is_some_and(|s| s.1)))] {
+            if let Some(s) = said {
+                self.push(&format!(" {s} "), Some(atom));
+                self.push(" ", None);
+            }
         }
         for v in verbs {
             if let Some(i) = VERB_ICONS.iter().position(|(n, _)| n == v) {
@@ -1437,6 +1445,12 @@ fn shape(
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
     let dimmed = rgb(crate::theme::theme().text_dim);
+    // a status in the accent (in the stale gold when it asks for the
+    // user), deepened toward the text to read on its tint
+    let status_ink = |asks: bool| {
+        let th = crate::theme::theme();
+        rgb(mix(if asks { th.stale } else { th.accent }, th.text, if asks { 0.5 } else { 0.35 }))
+    };
     // a tag's name is set a weight heavier than the words after it, as a
     // title is over a toolbar's
     let strong = Font { weight: crate::fonts::weight(gpui::FontWeight::MEDIUM), ..fontspec.font.clone() };
@@ -1526,6 +1540,7 @@ fn shape(
                 // its × as faint as the verbs
                 Some(Atom::Verb(_) | Atom::ProcKill(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
                 Some(Atom::Dir(_) | Atom::Untitled | Atom::Label | Atom::Proc(_)) => dimmed,
+                Some(Atom::Status(asks)) => status_ink(asks),
             }
         } else {
             tint.map(|t| t.text).unwrap_or(black)
@@ -2115,10 +2130,13 @@ impl Element for TextElement {
                         let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
                         chip(window, a, b, px(3.), rgb(mix(th.text_dim, under, 0.9)));
                     }
-                    // the label on a chip of its own
+                    // the label on a chip of its own, and the status on one
+                    // in the accent's tint
                     for &(a, b, atom) in &line.atoms {
-                        if atom == Atom::Label {
-                            chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
+                        match atom {
+                            Atom::Label => chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86))),
+                            Atom::Status(asks) => chip(window, a, b, px(0.), rgb(mix(if asks { th.stale } else { th.accent }, th.tag_bg, 0.74))),
+                            _ => {}
                         }
                     }
                     paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
@@ -2353,6 +2371,12 @@ mod head_tests {
         let parts: Vec<(&str, Atom)> = h.atoms.iter().map(|&(a, b, x)| (&h.text[a..b], x)).collect();
         assert_eq!(parts, vec![("/", Atom::Dir(1)), ("a/", Atom::Dir(3)), ("b/", Atom::Dir(5)), ("notes.md", Atom::Name), (" mine ", Atom::Label), (&*ICON_CELL.to_string(), Atom::Verb(0)), (&*ICON_CELL.to_string(), Atom::Verb(4))]);
         assert_eq!(&h.text[h.bar.unwrap()..], "| ");
+        // a status on a chip after the label's, or after the path alone
+        let s = Head::build_in("/a/b/notes.md", Some("mine"), Some(("Working", false)), &["Del"], true, true, "");
+        let parts: Vec<(&str, Atom)> = s.atoms.iter().map(|&(a, b, x)| (&s.text[a..b], x)).filter(|p| matches!(p.1, Atom::Label | Atom::Status(_))).collect();
+        assert_eq!(parts, vec![(" mine ", Atom::Label), (" Working ", Atom::Status(false))]);
+        let alone = Head::build_in("/a/b/notes.md", None, Some(("Working", false)), &[], true, true, "");
+        assert!(alone.text.starts_with("/a/b/notes.md \u{200a} Working  "), "{:?}", alone.text);
         // a directory's name is its last folder; a URL is whole; no path
         // is Untitled
         let d = Head::build("/a/b/", None, &[], true, true);
@@ -2368,20 +2392,20 @@ mod head_tests {
         // the session's errors window: its label alone
         // inside the session's directory: from there on, unmarked -- the
         // parts still the whole path's
-        let r = Head::build_in("/a/b/src/x.rs", None, &[], true, true, "/a/b/");
+        let r = Head::build_in("/a/b/src/x.rs", None, None, &[], true, true, "/a/b/");
         let parts: Vec<(&str, Atom)> = r.atoms.iter().map(|&(a, b, x)| (&r.text[a..b], x)).collect();
         assert_eq!(&parts[..2], &[("src/", Atom::Dir(9)), ("x.rs", Atom::Name)]);
         assert!(r.glyphs.iter().all(|&(_, i)| i != icon_index(HERE)));
         // the directory itself: ./ drawn, the name
-        let d = Head::build_in("/a/b/", None, &[], true, true, "/a/b/");
+        let d = Head::build_in("/a/b/", None, None, &[], true, true, "/a/b/");
         assert_eq!(d.atoms[0].2, Atom::Name);
         assert_eq!(d.glyphs[0], (0, icon_index(HERE)));
         let here = d.text[d.atoms[0].0..d.atoms[0].1].to_string();
-        let out = Head::build_in("/a/c/x.rs", None, &[], true, true, "/a/b/");
+        let out = Head::build_in("/a/c/x.rs", None, None, &[], true, true, "/a/b/");
         assert!(out.text.starts_with("/a/c/x.rs"), "{:?}", out.text);
-        let p = Head::picking_in("/a/b/", "s", 1, false, None, &[], "/a/b/");
+        let p = Head::picking_in("/a/b/", "s", 1, false, None, None, &[], "/a/b/");
         assert!(p.text.starts_with(&format!("{here}s")), "{:?}", p.text);
-        let p = Head::picking_in("/a/b/src/", "", 0, false, None, &[], "/a/b/");
+        let p = Head::picking_in("/a/b/src/", "", 0, false, None, None, &[], "/a/b/");
         assert!(p.text.starts_with("src/"), "{:?}", p.text);
         // shortened to a suffix: the first folders behind `⋯/`, itself the
         // last of them put away (B1 lists it, B3 plumbs it); the rest, the

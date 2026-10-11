@@ -303,7 +303,13 @@ impl Acme {
         // file's and its preview's)
         let name = open.map(|w| w.0.to_string()).unwrap_or(name);
         let loc = Loc { session: None, name, pos: Pos::Keep };
-        if let Some((id, _)) = tab.filter(|(id, _)| *id != self.tab) {
+        self.go_in_tab(tab.map(|(id, _)| id), loc, window, cx);
+    }
+
+    /// Go to `loc` in tab `tab` (none, this one): that tab first, when it
+    /// is another, and there once it is shown.
+    pub fn go_in_tab(&mut self, tab: Option<crate::pool::TabId>, loc: Loc, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        if let Some(id) = tab.filter(|id| *id != self.tab) {
             self.switch_to(id, window, cx);
             // a parked tab is here at once, and the pick is made in it as
             // in any; one still attaching lands there once its window is

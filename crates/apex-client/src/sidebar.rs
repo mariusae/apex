@@ -8,12 +8,17 @@
 //! with its handle's dot: a click on one reveals it and lands on it, as
 //! taking a notification does. Nothing here is new to apex but the way
 //! in: the rows are the tabs the strip had, and a window row is acme's
-//! `show`.
+//! `show`. A window with a status says it under its name, with how long
+//! it has stood (as Rex's activity has it); and those windows of the
+//! other sessions here come out from under them, the rest staying in.
 
 use gpui::{div, prelude::*, px, rgb, BoxShadow, Context, FontWeight, MouseButton};
 
+use apex_core::{Node, WindowId};
+
 use crate::app::Acme;
-use crate::pool::{Pool, Tab};
+use crate::pool::{Pool, Tab, TabId};
+use crate::text_element::Dot;
 use crate::shell::{Host, Loading};
 use crate::shell::pjw;
 use crate::theme;
@@ -35,6 +40,13 @@ impl Acme {
         let avatar_idle = if dark { 0x58585C } else { 0xB8B8BC };
         let mut list = div().id("sessions").flex_1().min_h_0().overflow_y_scroll().flex().flex_col().gap(px(2.)).px(px(6.));
         let entries = self.sidebar_entries(cx);
+        // the other sessions' windows that say how their work stands
+        let now = now_secs();
+        let others: std::collections::HashMap<TabId, Vec<WinLine>> = Pool::parked_nodes(cx)
+            .into_iter()
+            .filter(|(id, _, _)| *id != self.tab)
+            .map(|(id, _, node)| (id, status_windows(node).into_iter().map(|w| win_line(node, w, crate::strips::dot_in(node, w, None))).collect()))
+            .collect();
         let headed = entries.iter().filter(|e| matches!(e, Entry::Host(..))).count() > 1;
         for entry in entries {
             let (i, tab) = match entry {
@@ -230,6 +242,11 @@ impl Acme {
             if current && self.waiting.is_none() {
                 list = list.child(self.window_rows(cx));
             }
+            if !current {
+                for l in others.get(&id).into_iter().flatten() {
+                    list = list.child(self.win_row(l.clone(), Some(id), false, now, cx));
+                }
+            }
         }
         // one more row: a session not here yet, as the strip's + was
         let new = div()
@@ -406,17 +423,49 @@ impl Acme {
             )
     }
 
-    /// Window `w`'s row: a click on a laid-out one reveals it and lands
-    /// on it; on a stashed one, brings it back.
-    fn window_row(&self, w: apex_core::WindowId, stashed: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Window `w`'s row, in the shown session.
+    fn window_row(&self, w: WindowId, stashed: bool, cx: &mut Context<Self>) -> impl IntoElement {
+        self.win_row(win_line(&self.node, w, self.window_dot(w)), None, stashed, now_secs(), cx)
+    }
+
+    /// A window's row, in the shown session (`tab` none) or another: its
+    /// handle's dot, its name and where it is, and under them its status
+    /// and how long that has stood. A click on a laid-out one reveals it
+    /// and lands on it (in another session, once that is shown); on a
+    /// stashed one, brings it back.
+    fn win_row(&self, l: WinLine, tab: Option<TabId>, stashed: bool, now: u64, cx: &mut Context<Self>) -> impl IntoElement {
         let t = theme::theme();
         let hover = theme::step(t.strip, 1);
-        let (label, dir) = names(&self.node, w);
-        let d = self.window_dot(w);
+        let w = l.w;
+        let line = div()
+            .h(px(18.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(l.label))
+            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(l.dir));
+        let status = l.status.map(|(text, since, asks)| {
+            // one that asks for the user in the stale gold, as its pill is
+            let ink = if asks { crate::text_element::mix(t.stale, t.text, 0.45) } else { t.text_dim };
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .text_size(px(11.))
+                .line_height(px(14.))
+                .text_color(rgb(t.text_dim))
+                .child(div().flex_1().min_w_0().truncate().text_color(rgb(ink)).child(text))
+                .child(div().flex_none().child(age(since, now)))
+        });
+        let said = status.is_some();
         div()
-            .id(("win", w.0))
+            .id(match tab {
+                None => gpui::ElementId::from(("win", w.0)),
+                Some(id) => gpui::ElementId::from(gpui::SharedString::from(format!("win-{}-{}", id.0, w.0))),
+            })
             .flex_none()
-            .h(px(WIN_ROW_H))
+            .min_h(px(WIN_ROW_H))
+            .when(said, |d| d.py(px(3.)))
             .pl(px(14.))
             .pr(px(8.))
             .rounded(px(6.))
@@ -425,21 +474,78 @@ impl Acme {
             .gap(px(8.))
             .cursor_default()
             .hover(move |s| s.bg(rgb(hover)))
-            .child(dot_element(&d))
-            .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(label))
-            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(dir))
+            // the dot by the name, whether a status follows or not
+            .child(div().flex_none().h(px(18.)).flex().items_center().child(dot_element(&l.dot)))
+            .when(said, |d| d.items_start())
+            .child(div().flex_1().min_w_0().flex().flex_col().child(line).children(status))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |this, _, _, cx| {
-                    if stashed {
-                        this.unstash(w, cx);
-                    } else {
-                        this.reveal_window(w, cx);
+                cx.listener(move |this, _, window, cx| {
+                    match tab {
+                        Some(id) => this.go_in_tab(Some(id), apex_core::Loc { session: None, name: w.0.to_string(), pos: apex_core::Pos::Keep }, window, cx),
+                        None if stashed => this.unstash(w, cx),
+                        None => this.reveal_window(w, cx),
                     }
                     cx.stop_propagation();
                 }),
             )
     }
+}
+
+/// A window as its row has it, from whichever session's replica it is.
+#[derive(Clone)]
+struct WinLine {
+    w: WindowId,
+    label: String,
+    dir: String,
+    /// What it says, since when, and whether it asks for the user.
+    status: Option<(String, u64, bool)>,
+    dot: Dot,
+}
+
+fn win_line(node: &Node, w: WindowId, dot: Dot) -> WinLine {
+    let (label, dir) = names(node, w);
+    let status = node.window_status(w).and_then(|s| Some((shortened(&s.text()?, 120), s.since, asks(s.state))));
+    WinLine { w, label, dir, status, dot }
+}
+
+/// Does a status in this state ask for the user: done, blocked, failed?
+pub(crate) fn asks(state: apex_core::status::State) -> bool {
+    use apex_core::status::State;
+    matches!(state, State::Done | State::Blocked | State::Error)
+}
+
+/// A session's windows that have a status with something to say: laid out, column by column,
+/// then stashed, the latest put away first.
+pub(crate) fn status_windows(node: &Node) -> Vec<WindowId> {
+    let l = &node.state.layout;
+    let laid = l.cols.iter().flat_map(|c| c.wins.iter().map(|s| s.window));
+    let stashed = l.stash.iter().rev().map(|s| s.slot.window);
+    laid.chain(stashed).filter(|w| node.window_status(*w).is_some_and(|s| s.text().is_some())).collect()
+}
+
+/// How long a status has stood, as a row says it: now, then minutes,
+/// hours, days.
+pub(crate) fn age(since: u64, now: u64) -> String {
+    let s = now.saturating_sub(since);
+    match s {
+        0..60 => "now".into(),
+        60..3600 => format!("{}m", s / 60),
+        3600..86400 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86400),
+    }
+}
+
+pub(crate) fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `text` no longer than `n` characters, an ellipsis ending it when cut.
+pub(crate) fn shortened(text: &str, n: usize) -> String {
+    if text.chars().count() <= n {
+        return text.to_string();
+    }
+    format!("{}…", text.chars().take(n.saturating_sub(1)).collect::<String>().trim_end())
 }
 
 /// A window as a row or a card names it: what it is (its label, else
@@ -553,7 +659,16 @@ pub fn sidebar_glyph(ink: u32) -> impl IntoElement {
 
 #[cfg(test)]
 mod tests {
-    use super::{shown, split_name};
+    use super::{age, shortened, shown, split_name};
+
+    #[test]
+    fn a_status_says_how_long_it_has_stood_and_is_cut_short_when_long() {
+        let t = 1_000_000;
+        assert_eq!([0, 59, 60, 3599, 3600, 86399, 86400 * 3].map(|s| age(t - s, t)), ["now", "now", "1m", "59m", "1h", "23h", "3d"]);
+        assert_eq!(age(t + 5, t), "now", "a clock behind the status's");
+        assert_eq!(shortened("Working", 7), "Working");
+        assert_eq!(shortened("Checking local tools", 10), "Checking…");
+    }
 
     #[test]
     fn a_window_row_names_the_last_part_and_its_folder() {
