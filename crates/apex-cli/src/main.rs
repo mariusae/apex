@@ -462,7 +462,9 @@ Kill preview); it ends with either window. Relative links in the page
 resolve in the file's directory (apexfile://)." },
     Cmd { name: "diff", usage: "apex diff [-C DIR] [FILE]", short: "show a diff as a page, side by side, every line a link into its file", flags: &[flag("C", "the directory the diff's paths are under (default the current one)")], run: diff_cmd, long: "\
 Diff shows a unified diff -- what diff -u or git diff writes, read from
-FILE or from stdin (git diff | apex diff) -- as a page in the window
+FILE or from stdin (git diff | apex diff); git's however it is set to
+write it, in colour, with other prefixes or none, and a merge's
+conflicts, shown against ours -- as a page in the window
 DIR/+Diff: side by side, the old file on the left and the new on the
 right, when the window is wide enough for that, and one above the other
 when it is not (it switches as the window is resized), each file under a

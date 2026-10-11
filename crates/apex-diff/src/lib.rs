@@ -80,12 +80,22 @@ pub enum Line {
 /// (a commit message, `git show`'s header) and lines no diff writes are
 /// passed over; a hunk ends when it has as many lines as its header
 /// says, so a `--- ` starting the next file is never taken for a removal.
+/// git's diffs as git writes them for a terminal too: in colour, with
+/// its other prefixes (`diff.mnemonicPrefix`'s `i/` and `w/`) or none,
+/// and a merge's combined diff (`diff --cc`), which is read as the
+/// merge's result against its first parent, ours.
 pub fn parse(text: &str) -> Vec<File> {
+    let text = uncoloured(text);
     let mut files: Vec<File> = Vec::new();
-    // this file's diff --git line said it was git's: a/ and b/ go
+    // this file's diff --git line said it was git's
     let mut git = false;
+    // and that its names have git's prefixes (a/ and b/, or others), to go
+    let mut prefixed = false;
     // lines of the open hunk still to come, old side and new
     let (mut old_left, mut new_left) = (0usize, 0usize);
+    // the columns a line of the open hunk starts with: one, or a combined
+    // diff's one for each parent
+    let mut cols = 1;
     let lines: Vec<&str> = text.lines().collect();
     let mut i = 0;
     while i < lines.len() {
@@ -97,6 +107,33 @@ pub fn parse(text: &str) -> Vec<File> {
                 new_left = 0;
                 continue;
             };
+            if cols > 1 && !line.starts_with('\\') {
+                // ours is the first column; a line the others alone have
+                // is neither ours nor the result's
+                let tags: Vec<char> = line.chars().take(cols).collect();
+                if tags.len() == cols && tags.iter().all(|c| matches!(c, ' ' | '-' | '+')) || line.is_empty() {
+                    let rest: String = line.chars().skip(cols).collect();
+                    match tags.first().copied().unwrap_or(' ') {
+                        '-' => {
+                            h.lines.push(Line::Del(rest));
+                            old_left = old_left.saturating_sub(1);
+                        }
+                        '+' => {
+                            h.lines.push(Line::Add(rest));
+                            new_left = new_left.saturating_sub(1);
+                        }
+                        _ if tags.contains(&'-') => {}
+                        _ => {
+                            h.lines.push(Line::Same(rest));
+                            old_left = old_left.saturating_sub(1);
+                            new_left = new_left.saturating_sub(1);
+                        }
+                    }
+                    continue;
+                }
+                old_left = 0;
+                new_left = 0;
+            }
             // a blank context line whose space an editor took is still one
             let (tag, rest) = match line.chars().next() {
                 Some(c) => (c, &line[c.len_utf8()..]),
@@ -130,6 +167,9 @@ pub fn parse(text: &str) -> Vec<File> {
                 }
             }
         }
+        if cols > 1 && old_left == 0 && new_left == 0 {
+            cols = 1;
+        }
         // said of the last line, which ended its hunk
         if line.starts_with("\\ ") {
             if let Some(h) = files.last_mut().and_then(|f| f.hunks.last_mut()) {
@@ -142,11 +182,18 @@ pub fn parse(text: &str) -> Vec<File> {
             let mut f = File::default();
             // the names, for a diff with no --- and +++ (a mode change,
             // a rename, a binary file): "a/x b/x", unquoted
-            if let Some((a, b)) = split_git_names(rest) {
-                f.old = clean(&a, true);
-                f.new = clean(&b, true);
-            }
+            let (a, b, with) = split_git_names(rest);
+            prefixed = with;
+            f.old = clean(&a, prefixed);
+            f.new = clean(&b, prefixed);
             files.push(f);
+            continue;
+        }
+        if let Some(name) = line.strip_prefix("diff --cc ").or_else(|| line.strip_prefix("diff --combined ")) {
+            // a merge's: the one name, and a/ and b/ on its --- and +++
+            (git, prefixed) = (true, true);
+            let name = clean(name, false);
+            files.push(File { old: name.clone(), new: name, ..File::default() });
             continue;
         }
         if line.starts_with("--- ") && lines.get(i).is_some_and(|n| n.starts_with("+++ ")) {
@@ -159,7 +206,7 @@ pub fn parse(text: &str) -> Vec<File> {
                 git = false;
                 files.push(File::default());
             }
-            let git_names = git || (old.starts_with("a/") && new.starts_with("b/"));
+            let git_names = if git { prefixed } else { old.starts_with("a/") && new.starts_with("b/") };
             let f = files.last_mut().unwrap();
             f.old = clean(old, git_names);
             f.new = clean(new, git_names);
@@ -169,6 +216,7 @@ pub fn parse(text: &str) -> Vec<File> {
             if let Some(f) = files.last_mut() {
                 old_left = h.1;
                 new_left = h.3;
+                cols = h.5;
                 f.hunks.push(Hunk { old_start: h.0, new_start: h.2, section: h.4, lines: Vec::new() });
             }
             continue;
@@ -184,6 +232,13 @@ pub fn parse(text: &str) -> Vec<File> {
                 if note.starts_with("deleted file mode") {
                     f.new = None;
                 }
+                // a rename's names as they are, whatever the prefixes
+                if let Some(n) = note.strip_prefix("rename from ").or_else(|| note.strip_prefix("copy from ")) {
+                    f.old = clean(n, false);
+                }
+                if let Some(n) = note.strip_prefix("rename to ").or_else(|| note.strip_prefix("copy to ")) {
+                    f.new = clean(n, false);
+                }
                 f.notes.push(note.to_string());
             }
         }
@@ -192,11 +247,19 @@ pub fn parse(text: &str) -> Vec<File> {
 }
 
 /// `@@ -a,b +c,d @@ section`: the starts, the lengths (1 when a length
-/// is not written), and what follows.
-fn hunk_header(line: &str) -> Option<(usize, usize, usize, usize, String)> {
-    let rest = line.strip_prefix("@@ -")?;
-    let (ranges, section) = rest.split_once(" @@").unwrap_or((rest, ""));
-    let (old, new) = ranges.split_once(" +")?;
+/// is not written), what follows, and the columns its lines start with.
+/// A combined diff's, `@@@ -a,b -c,d +e,f @@@`, has a column and an old
+/// range for each parent: the first parent's is the one given.
+fn hunk_header(line: &str) -> Option<(usize, usize, usize, usize, String, usize)> {
+    let ats = line.chars().take_while(|c| *c == '@').count();
+    if ats < 2 {
+        return None;
+    }
+    let mark = "@".repeat(ats);
+    let rest = line.strip_prefix(&format!("{mark} -"))?;
+    let (ranges, section) = rest.split_once(&format!(" {mark}")).unwrap_or((rest, ""));
+    let (olds, new) = ranges.split_once(" +")?;
+    let old = olds.split(" -").next()?;
     let range = |r: &str| -> Option<(usize, usize)> {
         match r.split_once(',') {
             Some((s, n)) => Some((s.parse().ok()?, n.parse().ok()?)),
@@ -205,31 +268,83 @@ fn hunk_header(line: &str) -> Option<(usize, usize, usize, usize, String)> {
     };
     let (a, b) = range(old)?;
     let (c, d) = range(new)?;
-    Some((a, b, c, d, section.trim().to_string()))
+    Some((a, b, c, d, section.trim().to_string(), ats - 1))
 }
 
-/// `a/x b/x` as a diff --git line writes two unquoted names: split where
-/// the second name starts, which is where ` b/` does.
-fn split_git_names(s: &str) -> Option<(String, String)> {
-    let at = s.find(" b/")?;
-    Some((s[..at].to_string(), s[at + 1..].to_string()))
+/// git's prefixes for a name: `a/` and `b/`, `diff.mnemonicPrefix`'s
+/// `c/`, `i/`, `w/` and `o/`, and `1/` and `2/` for two files outside a
+/// tree.
+fn git_prefix(name: &str) -> Option<&str> {
+    let mut c = name.chars();
+    match (c.next(), c.next()) {
+        (Some('a' | 'b' | 'c' | 'i' | 'w' | 'o' | '1' | '2'), Some('/')) => Some(&name[2..]),
+        _ => None,
+    }
+}
+
+/// The two unquoted names a diff --git line writes, and whether they
+/// have git's prefixes: split where the two are one name (with
+/// prefixes, `a/x b/x`, or without, `x x`); else, the names differing (a
+/// rename), where the second's prefix is.
+fn split_git_names(s: &str) -> (String, String, bool) {
+    let spaces = s.char_indices().filter(|(_, c)| *c == ' ').map(|(i, _)| i);
+    for at in spaces.clone() {
+        let (a, b) = (&s[..at], &s[at + 1..]);
+        if a == b {
+            return (a.to_string(), b.to_string(), false);
+        }
+        if git_prefix(a).is_some() && git_prefix(a) == git_prefix(b) {
+            return (a.to_string(), b.to_string(), true);
+        }
+    }
+    for at in spaces {
+        let (a, b) = (&s[..at], &s[at + 1..]);
+        if git_prefix(a).is_some() && git_prefix(b).is_some() {
+            return (a.to_string(), b.to_string(), true);
+        }
+    }
+    (s.to_string(), String::new(), false)
 }
 
 /// A name as a diff line gives it: the timestamp after a tab dropped,
-/// git's quoting undone, `a/` or `b/` taken off a git diff's, and
-/// `/dev/null` (a file made or deleted) as none.
-fn clean(name: &str, git: bool) -> Option<String> {
+/// git's quoting undone, git's prefix taken off a name that has one,
+/// and `/dev/null` (a file made or deleted) as none.
+fn clean(name: &str, prefixed: bool) -> Option<String> {
     let name = name.split('\t').next().unwrap_or("").trim_end();
     let name = unquote(name);
     if name == "/dev/null" || name.is_empty() {
         return None;
     }
-    if git {
-        if let Some(rest) = name.strip_prefix("a/").or_else(|| name.strip_prefix("b/")) {
+    if prefixed {
+        if let Some(rest) = git_prefix(&name) {
             return Some(rest.to_string());
         }
     }
     Some(name)
+}
+
+/// The text without a terminal's colours (`git diff --color`): each
+/// escape `ESC [ ... m`, and any other CSI, taken out.
+fn uncoloured(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('\x1b') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut c = text.chars().peekable();
+    while let Some(ch) = c.next() {
+        if ch == '\x1b' && c.peek() == Some(&'[') {
+            c.next();
+            // parameters and intermediates, to the final byte
+            while let Some(x) = c.next() {
+                if ('@'..='~').contains(&x) {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 /// git's C-style quoting of an odd name ("a/with\ttab"), undone.
@@ -694,6 +809,41 @@ deleted file mode 100644
         assert!(files[1].notes.iter().any(|n| n.starts_with("new file mode")));
         assert_eq!(files[2].new, None, "a deleted file is nothing after");
         assert_eq!(files[2].hunks[0].lines, vec![Line::Del("bye".into()), Line::NoNewline]);
+    }
+
+    #[test]
+    fn git_diff_as_git_writes_it_otherwise_is_the_same_files() {
+        // diff.mnemonicPrefix's names, git diff --no-prefix's, and a
+        // rename under mnemonic prefixes, its names its own
+        let mnemonic = "diff --git i/f.txt w/f.txt\nindex 4dc8328..f04eb26 100644\n--- i/f.txt\n+++ w/f.txt\n@@ -1,3 +1,3 @@\n one\n-TWO main\n+2\n three\n";
+        let none = "diff --git f.txt f.txt\nindex 4dc8328..f04eb26 100644\n--- f.txt\n+++ f.txt\n@@ -1,3 +1,3 @@\n one\n-TWO main\n+2\n three\n";
+        let unprefixed_dir = "diff --git b/c.txt b/c.txt\n--- b/c.txt\n+++ b/c.txt\n@@ -1 +1 @@\n-x\n+y\n";
+        for text in [mnemonic, none] {
+            let f = parse(text);
+            assert_eq!((f.len(), f[0].old.as_deref(), f[0].new.as_deref(), f[0].counts()), (1, Some("f.txt"), Some("f.txt"), (1, 1)), "{text}");
+        }
+        assert_eq!(parse(unprefixed_dir)[0].name(), "b/c.txt", "with no prefixes, a directory b is the name's");
+        let renamed = parse("diff --git c/old.txt i/new.txt\nsimilarity index 100%\nrename from old.txt\nrename to new.txt\n");
+        assert_eq!((renamed[0].old.as_deref(), renamed[0].new.as_deref()), (Some("old.txt"), Some("new.txt")));
+        // git diff --color: the same, its colours gone
+        let coloured = "\x1b[1mdiff --git a/f.txt b/f.txt\x1b[m\n\x1b[1mindex 4dc8328..f04eb26 100644\x1b[m\n\x1b[1m--- a/f.txt\x1b[m\n\x1b[1m+++ b/f.txt\x1b[m\n\x1b[36m@@ -1,3 +1,3 @@\x1b[m\n one\x1b[m\n\x1b[31m-TWO main\x1b[m\n\x1b[32m+\x1b[m\x1b[32m2\x1b[m\n three\x1b[m\n";
+        assert_eq!(parse(coloured), parse(&mnemonic.replace("i/", "a/").replace("w/", "b/")));
+    }
+
+    #[test]
+    fn a_merges_combined_diff_is_its_result_against_ours() {
+        // git diff with a conflict in the tree
+        let cc = "diff --cc f.txt\nindex 4dc8328,2339517..0000000\n--- a/f.txt\n+++ b/f.txt\n@@@ -1,3 -1,3 +1,7 @@@\n  one\n++<<<<<<< HEAD\n +TWO main\n++=======\n+ TWO side\n++>>>>>>> side\n  three\n";
+        let f = parse(cc);
+        assert_eq!((f.len(), f[0].old.as_deref(), f[0].new.as_deref()), (1, Some("f.txt"), Some("f.txt")));
+        let h = &f[0].hunks[0];
+        assert_eq!((h.old_start, h.new_start), (1, 1));
+        let add = |s: &str| Line::Add(s.into());
+        let same = |s: &str| Line::Same(s.into());
+        assert_eq!(h.lines, vec![same("one"), add("<<<<<<< HEAD"), same("TWO main"), add("======="), add("TWO side"), add(">>>>>>> side"), same("three")]);
+        // a line theirs alone had is on neither side; ours alone, removed
+        let theirs = parse("diff --cc g\n--- a/g\n+++ b/g\n@@@ -1,2 -1,2 +1,2 @@@\n  a\n -theirs alone\n- ours alone\n++new\n");
+        assert_eq!(theirs[0].hunks[0].lines, vec![same("a"), Line::Del("ours alone".into()), add("new")]);
     }
 
     #[test]
