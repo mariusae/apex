@@ -436,9 +436,34 @@ pub struct WebHost {
     /// The veil laid over the page while a dialog has the window (`set_veil`):
     /// its colour, and the layer that draws it.
     veil: Option<(u32, VeilLayer)>,
+    /// The scrollbar drawn over the page (`set_bar`): how it looks, and
+    /// its layer.
+    bar: Option<(BarLook, VeilLayer)>,
+    /// How wide a strip at the page's right the pointer is apex's in (the
+    /// bar's), whatever else is over the page.
+    bar_pass: Option<f32>,
 }
 
 /// A CALayer over a page, retained while it is there.
+/// How a page's scrollbar looks now, drawn over the page as a text's
+/// is over its text (`Webs::set_bar`): colours `0xRRGGBB` with an alpha,
+/// places from the page's top and right in points, or along the lane
+/// (0 to 1).
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct BarLook {
+    /// How wide a strip at the page's right the pointer is apex's: the
+    /// lane once it is open, a few points while it is shut.
+    pub pass: f32,
+    /// The lane: how far its left is in from the page's right, and how
+    /// wide it is.
+    pub lane: (f32, f32),
+    pub gutter: Option<(u32, f32)>,
+    /// The thumb: its top and bottom along the lane, and colour.
+    pub thumb: Option<(f32, f32, u32, f32)>,
+    /// The outline's ticks: where along the lane, how long, and colour.
+    pub ticks: Vec<(f32, f32, u32, f32)>,
+}
+
 pub struct VeilLayer(*mut objc::runtime::Object);
 
 impl Drop for VeilLayer {
@@ -805,6 +830,12 @@ impl Webs {
                         let y1 = (o.origin.y + o.size.height).min(vb.origin.y + vb.size.height);
                         (x1 > x0 && y1 > y0).then(|| [f64::from(f32::from(x0 - vb.origin.x)), f64::from(f32::from(y0 - vb.origin.y)), f64::from(f32::from(x1 - x0)), f64::from(f32::from(y1 - y0))])
                     })
+                    // the scrollbar's strip at its right: apex's, drawn
+                    // over the page, not cut out of it
+                    .chain(h.bar_pass.map(|p| {
+                        let (w, hh) = (f64::from(f32::from(vb.size.width)), f64::from(f32::from(vb.size.height)));
+                        [w - f64::from(p), 0., f64::from(p), hh]
+                    }))
                     .collect();
                 hit::set(view, hits);
             }
@@ -925,6 +956,92 @@ impl Webs {
 
     #[cfg(not(target_os = "macos"))]
     pub fn set_veil(&mut self, _rgba: Option<u32>) {}
+
+    /// Page `w`'s scrollbar drawn over it as `look` says (none: none), as
+    /// a text's is over its text: a layer of the page's own, above what
+    /// the page draws, made again only when the look changes. The pointer
+    /// in its strip is apex's (`set_holes` passes it on).
+    #[cfg(target_os = "macos")]
+    pub fn set_bar(&mut self, w: WindowId, look: Option<BarLook>) {
+        use objc::runtime::Object;
+        use objc::{class, msg_send, sel, sel_impl};
+        use wry::WebViewExtMacOS;
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGColorCreateSRGB(r: f64, g: f64, b: f64, a: f64) -> *mut std::ffi::c_void;
+            fn CGColorRelease(c: *mut std::ffi::c_void);
+        }
+        const SIZABLE: u32 = 2 | 16;
+        let Some(h) = self.hosts.get_mut(&w) else { return };
+        if h.bar.as_ref().map(|(l, _)| l) == look.as_ref() {
+            return;
+        }
+        h.bar = None; // the old one comes off
+        h.bar_pass = look.as_ref().map(|l| l.pass);
+        let Some(look) = look else { return };
+        let wk = h.view.webview();
+        let view = &*wk as *const _ as *mut Object;
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct Rect {
+            x: f64,
+            y: f64,
+            w: f64,
+            h: f64,
+        }
+        // SAFETY: the WKWebView is alive while its host is; CoreAnimation
+        // and CoreGraphics calls on the main thread; the layer is retained
+        // by `VeilLayer` and released when it is dropped.
+        unsafe {
+            let host: *mut Object = msg_send![view, layer];
+            if host.is_null() {
+                return;
+            }
+            let bounds: Rect = msg_send![host, bounds];
+            let flipped: bool = msg_send![host, isGeometryFlipped];
+            let bar: *mut Object = msg_send![class!(CALayer), layer];
+            let bar: *mut Object = msg_send![bar, retain];
+            let _: () = msg_send![bar, setFrame: bounds];
+            let _: () = msg_send![bar, setAutoresizingMask: SIZABLE];
+            // its own sublayers from the top down, whatever the page's way
+            let _: () = msg_send![bar, setGeometryFlipped: !flipped];
+            // over the page's own layers, under the veil
+            let _: () = msg_send![bar, setZPosition: 1.0e6_f64 - 1.];
+            let add = |r: Rect, rgb: u32, alpha: f32, radius: f64| {
+                let comp = |shift: u32| f64::from((rgb >> shift) & 0xff) / 255.;
+                let l: *mut Object = msg_send![class!(CALayer), layer];
+                let _: () = msg_send![l, setFrame: r];
+                let color = CGColorCreateSRGB(comp(16), comp(8), comp(0), f64::from(alpha));
+                let _: () = msg_send![l, setBackgroundColor: color];
+                CGColorRelease(color);
+                let _: () = msg_send![l, setCornerRadius: radius];
+                let _: () = msg_send![bar, addSublayer: l];
+            };
+            let (from_right, lane_w) = (f64::from(look.lane.0), f64::from(look.lane.1));
+            let x = bounds.w - from_right;
+            if let Some((rgb, alpha)) = look.gutter {
+                add(Rect { x, y: 0., w: lane_w, h: bounds.h }, rgb, alpha, 0.);
+            }
+            for &(at, len, rgb, alpha) in &look.ticks {
+                let y = bounds.h * f64::from(at);
+                add(Rect { x: x + 2., y: y - 1., w: f64::from(len), h: 2. }, rgb, alpha, 1.);
+            }
+            if let Some((s0, s1, rgb, alpha)) = look.thumb {
+                // as a text's: 5 wide in the middle of the lane, 3 in from
+                // its ends, no shorter than 14
+                let hh = bounds.h - 6.;
+                let (t0, t1) = (hh * f64::from(s0.clamp(0., 1.)), hh * f64::from(s1.clamp(0., 1.)));
+                let len = (t1 - t0).max(14.).min(hh);
+                let top = (3. + t0).min(bounds.h - 3. - len);
+                add(Rect { x: x + (lane_w - 5.) / 2., y: top, w: 5., h: len }, rgb, alpha, 2.5);
+            }
+            let _: () = msg_send![host, addSublayer: bar];
+            h.bar = Some((look, VeilLayer(bar)));
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn set_bar(&mut self, _w: WindowId, _look: Option<BarLook>) {}
 
     /// The theme changed: every page from a buffer takes the new colours
     /// in place (its `#apex-theme` style rewritten; nothing reloads).
@@ -1222,7 +1339,7 @@ impl Webs {
                 let _ = view.set_visible(visible);
                 round_foot(&view);
                 let loading = if from_buffer { None } else { Some(std::time::Instant::now()) };
-                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None });
+                self.hosts.insert(w, WebHost { view, url, bounds: Some(bounds), shown: visible, holes: Vec::new(), html, followed: None, reloads: None, owned: None, loading, watches, plane: self.plane.clone(), scroll: None, restoring: None, toc: None, veil: None, bar: None, bar_pass: None });
             }
             Err(e) => eprintln!("web: {w}: {e}"),
         }
@@ -1358,7 +1475,11 @@ impl Webs {
     /// The page's outline, as it said it (`TOC_SCRIPT`).
     pub fn set_toc(&mut self, w: WindowId, text: &str) {
         if let Some(h) = self.hosts.get_mut(&w) {
-            h.toc = Toc::parse(text);
+            let toc = Toc::parse(text);
+            if h.toc.is_none() {
+                crate::shell::log_line(&format!("page {w}: its outline, {} headings", toc.as_ref().map_or(0, |t| t.heads.len())));
+            }
+            h.toc = toc;
         }
     }
 

@@ -1,5 +1,5 @@
-//! A page's outline in its scrollbar: the scrollbar beside a page from a
-//! buffer (a preview, a diff) is acme's, as a text's, and carries the
+//! A page's outline in its scrollbar: the scrollbar over a page from a
+//! buffer's right edge (a preview, a diff) is acme's, as a text's, and carries the
 //! page's headings (`web::Toc`) as ticks down it -- the heading the view
 //! is in in the accent, the others faint, longer the higher the heading.
 //! The pointer in the bar brings the outline out beside it, the heading
@@ -10,12 +10,15 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Bounds, Context, MouseButton, Pixels, Point, Window};
+use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Bounds, Context, MouseButton, Pixels, Point};
 
 use apex_core::WindowId;
 
 use crate::app::Acme;
 use crate::web::Toc;
+
+/// A row of the outline's list.
+const ROW: f32 = 23.;
 
 /// How far a tick reaches across the bar, by its heading's level.
 const TICK: [f32; 5] = [0., 9., 7., 5., 3.];
@@ -30,19 +33,19 @@ pub struct Outline {
     pub scroll: gpui::ScrollHandle,
 }
 
-/// The ticks, painted down `bar`: each heading where it is in the page
-/// (`toc.at`), the current one in the accent.
-pub fn paint_ticks(window: &mut Window, bar: Bounds<Pixels>, ticks: &[(f32, u8)], current: Option<usize>, open: bool) {
+/// The ticks down the bar: each heading where it is in the page
+/// (`toc.at`), as long as its level says, the current one in the accent,
+/// the others faint (less so with the lane open); as `web::BarLook` has
+/// them.
+pub fn ticks(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>, open: bool) -> Vec<(f32, f32, u32, f32)> {
     let t = crate::theme::theme();
-    let faint = crate::text_element::rgb(t.text_dim).opacity(if open { 0.75 } else { 0.4 });
-    let on = crate::text_element::rgb(t.accent);
-    for (i, &(at, level)) in ticks.iter().enumerate() {
-        let w = TICK[level.min(4) as usize];
-        let y = bar.top() + bar.size.height * at;
-        // from the bar's left, where the text is, out towards its edge
-        let r = Bounds::new(point(bar.left() + px(2.), y - px(1.)), gpui::size(px(w), px(2.)));
-        window.paint_quad(gpui::fill(r, if current == Some(i) { on } else { faint }).corner_radii(px(1.)));
-    }
+    (0..toc.heads.len())
+        .map(|i| {
+            let len = TICK[toc.heads[i].level.min(4) as usize];
+            let (rgb, alpha) = if current == Some(i) { (t.accent, 1.) } else { (t.text_dim, if open { 0.75 } else { 0.4 }) };
+            (toc.at(i, scroll), len, rgb, alpha)
+        })
+        .collect()
 }
 
 /// The heading whose tick is nearest `y` in `bar`.
@@ -67,6 +70,9 @@ impl Acme {
             None => (None, None),
         };
         let changed = open != self.outline.open || near != self.outline.near;
+        if open != self.outline.open {
+            crate::shell::log_line(&format!("outline: {}", open.map_or("in".to_string(), |w| format!("out on page {w}"))));
+        }
         if open.is_some() && open != self.outline.open {
             // out afresh: its list where the view is
             if let Some((_, Some(c))) = open.and_then(|w| self.webs.toc(w)) {
@@ -101,8 +107,11 @@ impl Acme {
             let near = self.outline.near == Some(i);
             div()
                 .id(("toc", i))
+                .flex_none()
+                .h(px(ROW))
+                .flex()
+                .items_center()
                 .px(px(8.))
-                .py(px(3.))
                 .pl(px(8. + 12. * (h.level.saturating_sub(1)) as f32))
                 .rounded(px(6.))
                 .whitespace_nowrap()
@@ -123,12 +132,17 @@ impl Acme {
                     }),
                 )
         });
+        // a height of its own, as tall as its rows and no taller than the
+        // bar: a list that scrolls has none it would take from its rows
+        let tall = (px(ROW * toc.heads.len() as f32 + 14.)).min(bar.size.height - px(16.));
         let panel = div()
             .id("toc-panel")
             .relative()
+            .flex()
+            .flex_col()
             .min_w(px(170.))
             .max_w(px(320.))
-            .max_h(bar.size.height - px(16.))
+            .h(tall)
             .overflow_y_scroll()
             .track_scroll(&self.outline.scroll)
             .p(px(6.))
@@ -142,7 +156,8 @@ impl Acme {
             .child(self.overlay_mark_by(px(0.)))
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
             .children(rows);
-        // left of the bar, its top level with the bar's, a little in
-        Some(deferred(anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(4.), bar.top() + px(8.))).child(panel)).with_priority(2).into_any_element())
+        // left of the bar, in the middle of it, as the rail's was
+        let top = (bar.top() + (bar.size.height - tall) / 2.).max(bar.top() + px(8.));
+        Some(deferred(anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(4.), top)).child(panel)).with_priority(2).into_any_element())
     }
 }

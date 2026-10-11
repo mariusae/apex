@@ -442,49 +442,61 @@ impl Render for Acme {
                             // menu) has the native view hidden, else the
                             // root's black would
                             let paper = if matches!(win.body, Body::Page(apex_core::Source::Buffer(_))) { t.body_bg } else { t.column };
-                            // acme's scrollbar, where a text window has it and
-                            // as wide, drawn as it draws one: the page's own is
-                            // hidden, and this one moves the page (WEB.md §2.2)
+                            // acme's scrollbar over the page's right edge, as a
+                            // text's is over its text: drawn on the page, a
+                            // layer of its own (`Webs::set_bar`), the pointer
+                            // in its strip apex's (WEB.md §2.2); this element
+                            // is where it is, and works out how it looks
                             let me_bar = me.clone();
-                            let (bar_bg, thumb) = (paper, t.body_border);
                             let sw = crate::text_element::SCROLLWID;
                             let bar = canvas(
                                 move |bounds, _, cx| {
                                     me_bar.update(cx, |acme, _| {
                                         acme.web_bars.insert(w, bounds);
                                         let (t0, t1) = acme.webs.thumb(w);
+                                        let (shows, fading) = acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64);
+                                        let open = acme.lane_open(ViewId::Body(w)) || acme.outline.open == Some(w);
+                                        let th = theme::theme();
+                                        let thumb = if t0 <= 0. && t1 >= 1. {
+                                            None
+                                        } else if open {
+                                            Some((t0, t1, th.text_dim, 0.75))
+                                        } else {
+                                            (shows > 0.).then_some((t0, t1, th.text_dim, 0.55 * shows))
+                                        };
                                         // the page's outline down it (`outline`)
                                         let scroll = acme.webs.page_scroll(w);
-                                        let ticks = acme.webs.toc(w).map(|(toc, current)| ((0..toc.heads.len()).map(|i| (toc.at(i, scroll), toc.heads[i].level)).collect::<Vec<_>>(), current));
-                                        let open = acme.outline.open == Some(w);
-                                        (t0, t1, acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64), ticks, open)
+                                        let ticks = acme.webs.toc(w).map(|(toc, current)| outline::ticks(toc, scroll, current, open)).unwrap_or_default();
+                                        let look = crate::web::BarLook {
+                                            pass: if open { sw + 1. } else { crate::text_element::LANE_HIT },
+                                            lane: (sw + 1., sw),
+                                            gutter: open.then(|| (crate::text_element::mix(th.body_bg, th.body_border, 0.45), 1.)),
+                                            thumb,
+                                            ticks,
+                                        };
+                                        acme.webs.set_bar(w, Some(look));
+                                        fading
                                     })
                                 },
-                                move |bounds, (t0, t1, (shows, fading), ticks, open), window, _| {
-                                    window.paint_quad(gpui::fill(bounds, gpui::rgb(bar_bg)));
-                                    if let Some((ticks, current)) = &ticks {
-                                        outline::paint_ticks(window, bounds, ticks, *current, open);
-                                    }
-                                    // an overlay scroller, as a text's is
-                                    if shows > 0. {
-                                        text_element::paint_scroller(window, bounds, t0 as f32, t1 as f32, text_element::rgb(thumb).opacity(shows));
-                                    }
+                                move |_, fading, window, _| {
                                     if fading {
                                         window.request_animation_frame();
                                     }
                                 },
                             )
+                            .absolute()
+                            .top(px(0.))
+                            .right(px(1.))
                             .w(px(sw))
                             .h_full();
                             div()
                                 .size_full()
-                                .flex()
-                                .flex_row()
+                                .relative()
                                 .bg(gpui::rgb(paper))
                                 // in by the key ring's width at the left and
                                 // foot, which the native view would cover
                                 .child(
-                                    div().flex_1().h_full().pl(px(crate::web::PAGE_INSET)).pb(px(crate::web::PAGE_INSET)).cursor(cursor::NATIVE_CURSOR).child(
+                                    div().size_full().pl(px(crate::web::PAGE_INSET)).pb(px(crate::web::PAGE_INSET)).cursor(cursor::NATIVE_CURSOR).child(
                                         canvas(
                                             move |bounds, window, cx| {
                                                 me2.update(cx, |acme, _| acme.web_place(w, bounds, window));
@@ -494,7 +506,7 @@ impl Render for Acme {
                                         .size_full(),
                                     ),
                                 )
-                                // the scrollbar at its right, as a text's
+                                // the scrollbar over its right edge
                                 .child(bar)
                                 .into_any_element()
                         }

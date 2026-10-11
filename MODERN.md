@@ -312,9 +312,13 @@ windows put away out of the tiling, which is the core's
   is done: the next list (a directory's names, say) comes only with the
   next ^F. No more lists in the errors window.
 - **A page's outline in its scrollbar** (`outline.rs`; the page says
-  it, `web.rs`'s `TOC_SCRIPT`): the scrollbar beside a page rendered
-  from a buffer (a Markdown preview, apex diff) is acme's, B1 B2 B3 as
-  a text's, and carries the page's headings as ticks down it, each where
+  it, `web.rs`'s `TOC_SCRIPT`): a page's scrollbar lies over its right
+  edge as a text's does over its text -- the thumb alone while the page
+  moves, the lane's gutter once the pointer is in it -- drawn as a layer
+  of the page's own (`Webs::set_bar`; apex draws nothing over a native
+  view otherwise), the pointer in its strip apex's. It is acme's, B1 B2
+  B3 as a text's, and on a page rendered from a buffer (a Markdown
+  preview, apex diff) carries the page's headings as ticks down it, each where
   it stands in the page, longer the higher it is, the heading of the
   part being read in the accent (a scrollspy). The pointer in the bar
   brings the headings out beside it as a list, the one whose tick is
