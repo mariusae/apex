@@ -66,8 +66,16 @@ pub enum WebEvent {
 }
 
 /// The theme, as a page rendered from a buffer sees it: the editor's
-/// colours as CSS variables, and the copy handle on code blocks.
+/// colours as CSS variables, and the copy handle on code blocks. The
+/// variables are set on `:root:root`, which outweighs a page's own
+/// `:root` wherever it is (`apex md`'s stylesheet keeps acme's colours
+/// there, for the page shown elsewhere); the paper, `html`'s, is outweighed
+/// by any rule of the page's for its own background (`dress`).
 fn theme_css() -> String {
+    theme_rules().replace(":root{", ":root:root{")
+}
+
+fn theme_rules() -> String {
     let t = crate::theme::theme();
     let hex = |c: u32| format!("#{c:06X}");
     let (code_bg, rule, dim) = if crate::theme::is_dark() { (0x2A2A2C, 0x3A3A3C, t.text_dim) } else { (0xF0F0EE, 0xDCDCD9, t.text_dim) };
@@ -2177,6 +2185,14 @@ mod tests {
         let (theme, own) = (out.find("id=\"apex-theme\"").unwrap(), out.find("background: #fff").unwrap());
         assert!(theme < own, "{out}");
         assert!(out.starts_with("<!doctype html><html lang=\"en\"><head><style id=\"apex-theme\">"), "{out}");
+        // the theme's colours outweigh a page's own defaults for them (apex
+        // md's acme cream), wherever those are: theirs on :root, apex's on
+        // :root:root; and none of apex's left on a bare :root
+        let md = "<html><head><style>:root{--apex-bg:#FFFFEA}</style></head><body></body></html>";
+        let out = dress(md, "");
+        let theme = &out[out.find("id=\"apex-theme\"").unwrap()..out.find(":root{--apex-bg:#FFFFEA}").unwrap()];
+        assert!(theme.contains(":root:root{") && theme.contains("--apex-bg:"), "{theme}");
+        assert!(!theme.replace(":root:root{", "").contains(":root{"), "{theme}");
         // no head: after the html tag, or the doctype; a header is no head
         assert_eq!(head_start("<!DOCTYPE html><p>x"), 15);
         assert_eq!(head_start("<html><body><header>"), 6);
