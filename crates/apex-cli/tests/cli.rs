@@ -1352,7 +1352,7 @@ fn the_bridge_speaks_json_for_tools() {
     assert_eq!(r["ok"], true, "{r}");
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 52, "cmd": "window", "window": w }));
     assert_eq!((r["window"]["id"].as_u64(), r["window"]["label"].as_str()), (Some(w), Some("notes for t")), "{r}");
-    assert!(ok(&sock, &["win", "list"]).lines().any(|l| l.ends_with("\t/tmp/bridge-notes\tnotes for t")), "{}", ok(&sock, &["win", "list"]));
+    assert!(ok(&sock, &["win", "list"]).lines().any(|l| l.ends_with("\t/tmp/bridge-notes\tnotes for t\t")), "{}", ok(&sock, &["win", "list"]));
     // a verb offered in that window: B2 on it comes back as a plumb event
     let r = call(&mut stdin, &mut out, serde_json::json!({ "id": 6, "cmd": "rule", "verb": "Shout", "window": w }));
     assert_eq!(r["ok"], true, "{r}");

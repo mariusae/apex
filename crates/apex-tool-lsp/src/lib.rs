@@ -820,9 +820,10 @@ impl Tool {
         let _ = self.propose(Proposal::SetContent { buffer, version: None, text, hash }, TIMEOUT);
     }
 
-    /// The server's work on its window: working from its start until it
-    /// is ready, and while any of its `$/progress` goes on, as far along
-    /// as the least far that says.
+    /// The server's work on its window, as its status: working from its
+    /// start ("Starting") until it is ready, and while any of its
+    /// `$/progress` goes on, as far along as the least far that says;
+    /// else nothing to say.
     fn say_progress(&mut self, key: &(String, PathBuf)) {
         let Some(s) = self.servers.get(key) else { return };
         let working = !s.initialized || !s.progress.is_empty();
@@ -830,9 +831,11 @@ impl Tool {
         if s.said == Some((working, at)) {
             return;
         }
+        let msg = (!s.initialized).then(|| "Starting".to_string());
         let Some(w) = self.server_window(key) else { return };
-        let by = working.then(|| self.remote.attachment());
-        if self.propose(Proposal::Working { window: w, by, at }, TIMEOUT).is_ok() {
+        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let status = working.then(|| apex_core::WindowStatus { state: apex_core::status::State::Working, kind: None, progress: at, msg, by: self.remote.attachment(), since });
+        if self.propose(Proposal::SetStatus { window: w, status }, TIMEOUT).is_ok() {
             if let Some(s) = self.servers.get_mut(key) {
                 s.said = Some((working, at));
             }

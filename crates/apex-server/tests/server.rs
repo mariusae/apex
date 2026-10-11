@@ -589,8 +589,9 @@ fn newterm_with_a_command_runs_it_instead_of_a_shell() {
 
 /// A program saying what it is doing (OSC 7501): its records in the
 /// terminal's state, its window at work while it is (as far along as it
-/// says), a notification when it waits on the user or is done, and what
-/// was at work gone with the program, what was done not.
+/// says), a notification when it waits on the user or is done, its
+/// window's status what the most pressing record says, and what was at
+/// work gone with the program, what was done not.
 #[test]
 fn a_program_in_a_terminal_says_what_it_is_doing() {
     let (mut log, mut node, _col, mut server, mut rx) = session();
@@ -627,12 +628,18 @@ fn a_program_in_a_terminal_says_what_it_is_doing() {
     assert_eq!((r.app.as_deref(), r.progress, r.msg.as_deref()), (Some("brew"), Some(40), Some("Installing")));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_working(w) && n.window_progress(w) == Some(40)));
     assert!(node.state.terms[&t].working && node.state.terms[&t].progress == Some(40));
+    let status = |n: &Node| n.window_status(w).and_then(|s| s.text());
+    assert_eq!(status(&node).as_deref(), Some("Installing"), "the status, the record's message");
+    assert!(node.window_status(w).is_some_and(|s| s.state == State::Working && s.progress == Some(40) && s.since > 0), "its state, how far along, and when it was said");
     // waiting on the user: no longer at work, and a notification
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| records(n).first().is_some_and(|r| r.state == State::Blocked && r.kind == Some(Kind::Auth))));
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.window_notified(w) && !n.window_working(w)), "notified: {}", node.window_notified(w));
+    assert_eq!(status(&node).as_deref(), Some("Password"));
+    assert_eq!(node.window_status(w).map(|s| (s.state, s.kind)), Some((State::Blocked, Some(Kind::Auth))));
     // done; the program ends, and done stays (working would not have)
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| n.state.terms.get(&t).is_some_and(|x| x.exit.is_some())), "exit");
     assert_eq!(records(&node).iter().map(|r| r.state).collect::<Vec<_>>(), vec![State::Done]);
+    assert_eq!(status(&node).as_deref(), Some("Done"), "no message: the state's word");
     assert!(node.window_notified(w), "done, not yet seen");
 }
 

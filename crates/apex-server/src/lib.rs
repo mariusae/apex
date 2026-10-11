@@ -640,7 +640,8 @@ impl Server {
                             // handle -- turning, or filled as far as it says
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: on, at }));
                             if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                                props.push(Proposal::Working { window: w, by: on.then_some(SERVER), at: if on { at } else { None } });
+                                let status = on.then(|| term_status(apex_core::status::State::Working, None, at, None));
+                                props.extend(terms_status(view, w, status));
                             }
                         }
                     }
@@ -671,7 +672,7 @@ impl Server {
                             h.progress = None;
                             let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: false, at: None }));
                             if let Some(w) = view.state.windows.values().find(|w| w.body == Body::Term(id)).map(|w| w.id) {
-                                props.push(Proposal::Working { window: w, by: None, at: None });
+                                props.extend(terms_status(view, w, None));
                             }
                         }
                         let _ = self.node.append(log, Shard::Term(id), Op::Term(TermOp::Exit { status }));
@@ -1936,14 +1937,25 @@ fn status_marks(node: &mut Node, log: &mut Log, id: TermId, h: &mut term::TermHo
     use apex_core::status::State;
     let records = h.status.sorted();
     let summary = apex_core::status::summary(&records);
+    let said = apex_core::status::top(&records).map(|r| {
+        // a working one's progress the root's first, as the handle's
+        let progress = if r.state == State::Working { summary.and_then(|s| s.1) } else { None };
+        (r.state, r.kind, progress, apex_core::status::said(r))
+    });
     let _ = node.append(log, Shard::Term(id), Op::Term(TermOp::Status { records }));
     let working = records_working(&summary);
     if working != h.status_marked {
         h.status_marked = working;
         let _ = node.append(log, Shard::Term(id), Op::Term(TermOp::Progress { going: working.0, at: working.1 }));
+    }
+    // the window's status: the most pressing record's, as it changes --
+    // its state, what it waits on, how far along, its message
+    if said != h.status_said {
         if let Some(w) = w {
-            props.push(Proposal::Working { window: w, by: working.0.then_some(SERVER), at: working.1 });
+            let status = said.clone().map(|(state, kind, progress, msg)| term_status(state, kind, progress, msg));
+            props.push(Proposal::SetStatus { window: w, status });
         }
+        h.status_said = said;
     }
     let asks = summary.map(|(s, _)| s).filter(|s| matches!(s, State::Blocked | State::Error | State::Done));
     if asks != h.status_asked {
@@ -1959,6 +1971,21 @@ fn status_marks(node: &mut Node, log: &mut Log, id: TermId, h: &mut term::TermHo
         }
         h.status_asked = asks;
     }
+}
+
+/// A terminal's window's status, as the session says it (`SERVER`'s:
+/// here as long as the session is), from now.
+fn term_status(state: apex_core::status::State, kind: Option<apex_core::status::Kind>, progress: Option<u8>, msg: Option<String>) -> apex_core::WindowStatus {
+    apex_core::WindowStatus { state, kind, progress, msg, by: SERVER, since: now_secs() }
+}
+
+/// A terminal's window's status set to `status` -- or, none, taken away
+/// when it was the terminal's to take (a tool's is the tool's).
+fn terms_status(view: &Node, w: WindowId, status: Option<apex_core::WindowStatus>) -> Option<Proposal> {
+    if status.is_none() && !view.window_status(w).is_some_and(|s| s.by == SERVER) {
+        return None;
+    }
+    Some(Proposal::SetStatus { window: w, status })
 }
 
 /// At work, and how far along, by a terminal's records' summary.

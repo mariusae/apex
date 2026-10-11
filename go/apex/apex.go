@@ -249,6 +249,8 @@ type WindowInfo struct {
 	// Words beside the path (a terminal's title, a tool's name for its
 	// pane); nil for none.
 	Label *string `json:"label"`
+	// How the work behind it stands; nil for none.
+	Status *Status `json:"status"`
 	// file, dir, term, errors, web or preview.
 	Kind string `json:"kind"`
 	// Never saved and never dirty (an errors window, a tool's pane).
@@ -301,7 +303,7 @@ func (t *Tool) NewScratch(path, label string) (*Window, error) {
 // NewDiagnostic makes a new diagnostic window at path, labelled: the
 // tool's report on how things stand (its errors, a server's diagnostics
 // and state), a scratch window made stashed as an +Errors window is,
-// what is new in it said in a toast, its progress (SetProgress) shown on
+// what is new in it said in a toast, its progress (SetStatus) shown on
 // its card in the stash.
 func (t *Tool) NewDiagnostic(path, label string) (*Window, error) {
 	args := map[string]any{"path": path, "scratch": true, "diagnostic": true}
@@ -530,22 +532,43 @@ func (w *Window) SetTag(text string) error {
 	return w.t.call("settag", map[string]any{"window": w.ID, "text": text}, nil)
 }
 
-// SetWorking says the tool is working on something behind the window:
-// its handle pulses until it is turned off, or until the tool detaches.
-func (w *Window) SetWorking(on bool) error {
-	return w.t.call("working", map[string]any{"window": w.ID, "on": on}, nil)
+// Status is how the work behind a window stands, as a program says its
+// own in the Program Status Protocol (OSC 7501).
+type Status struct {
+	// idle, working, done, blocked or error.
+	State string `json:"state"`
+	// What a blocked one waits on: permission, question or auth; "" for
+	// none.
+	Kind string `json:"kind,omitempty"`
+	// How far along, in percent, when working or blocked; nil when it
+	// does not say.
+	Progress *int `json:"progress,omitempty"`
+	// What it says beside the window's label and in the sidebar.
+	Msg string `json:"msg,omitempty"`
 }
 
-// SetProgress says the tool is working behind the window and how far
-// along, in percent (0 to 100): the circle round the window's handle is
-// filled that far (where it turns while the work does not say). A
-// negative at says the work is done.
-func (w *Window) SetProgress(at int) error {
-	args := map[string]any{"window": w.ID}
-	if at >= 0 {
-		args["at"] = min(at, 100)
+// SetStatus says how the work behind the window stands: working, its
+// handle turning (its circle filled as far as Progress says); done,
+// blocked or error, asking for the user; its Msg beside the label and
+// in the sidebar, with how long it has stood. It holds while the tool is
+// attached.
+func (w *Window) SetStatus(s Status) error {
+	args := map[string]any{"window": w.ID, "state": s.State}
+	if s.Kind != "" {
+		args["kind"] = s.Kind
 	}
-	return w.t.call("progress", args, nil)
+	if s.Progress != nil {
+		args["progress"] = min(max(*s.Progress, 0), 100)
+	}
+	if s.Msg != "" {
+		args["msg"] = s.Msg
+	}
+	return w.t.call("status", args, nil)
+}
+
+// ClearStatus takes the window's status away: it says nothing.
+func (w *Window) ClearStatus() error {
+	return w.t.call("status", map[string]any{"window": w.ID}, nil)
 }
 
 // Notify asks for the user's attention about the window: its handle shows
@@ -590,7 +613,7 @@ func (w *Window) SetLive(on bool) error {
 // and Del asks nothing, as acme does for as long as a program holds a
 // window's event file. A rule may name the owner (Rule.Owner) to speak
 // to one tool's windows and no others. The claim ends when the tool
-// detaches, or with false. It is not SetLive or SetWorking, which come
+// detaches, or with false. It is not SetLive or SetStatus, which come
 // and go with the work: a window is owned for as long as its tool is
 // there.
 func (w *Window) SetOwner(on bool) error {

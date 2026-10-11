@@ -78,6 +78,37 @@ use apex_server::Proposal;
 
 pub use apex_core::entry::WinKind;
 pub use apex_core::ids::{RuleId, WindowId};
+pub use apex_core::status::{Kind, State};
+
+/// How the work behind a window stands, as a program says its own in
+/// the Program Status Protocol (OSC 7501): its state; what it waits on,
+/// when blocked; how far along, in percent, when working or blocked; and
+/// a message, said beside the window's label and in the sidebar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub state: State,
+    pub kind: Option<Kind>,
+    pub progress: Option<u8>,
+    pub msg: Option<String>,
+}
+
+impl Status {
+    pub fn new(state: State) -> Status {
+        Status { state, kind: None, progress: None, msg: None }
+    }
+
+    pub fn msg(self, msg: impl Into<String>) -> Status {
+        Status { msg: Some(msg.into()), ..self }
+    }
+
+    pub fn progress(self, at: Option<u8>) -> Status {
+        Status { progress: at.map(|p| p.min(100)), ..self }
+    }
+
+    pub fn kind(self, kind: Option<Kind>) -> Status {
+        Status { kind, ..self }
+    }
+}
 
 /// What went wrong, in words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +163,8 @@ pub struct WindowInfo {
     pub path: String,
     /// The label beside the path: a terminal's title, a tool's window's.
     pub label: Option<String>,
+    /// How the work behind it stands.
+    pub status: Option<Status>,
     pub kind: WinKind,
     /// No file behind it (errors, a preview, a transcript, a terminal).
     pub scratch: bool,
@@ -619,7 +652,7 @@ impl Tool {
 
     fn window_info(&self, w: WindowId) -> WindowInfo {
         let node = &self.remote.node;
-        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w) }
+        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w) }
     }
 
     /// A window, if it exists: its path, label, kind and so on.
@@ -645,8 +678,8 @@ impl Tool {
     /// A new diagnostic window (scratch, at `path`, labelled): the
     /// tool's report on how things stand -- its errors, a server's
     /// diagnostics and state -- made stashed, as an +Errors window is,
-    /// what is new in it said in a toast; its progress
-    /// (`set_progress`) shown on its card in the stash.
+    /// what is new in it said in a toast; its progress (`set_status`)
+    /// shown on its card in the stash.
     pub fn new_diagnostic(&mut self, path: &str, label: Option<&str>) -> Result<WindowId> {
         self.new_window_as(path, label, true, true)
     }
@@ -935,6 +968,30 @@ impl Tool {
         Ok(())
     }
 
+    /// Say how the work behind the window stands (none: it says
+    /// nothing): working, its handle turning (its circle filled as far
+    /// as the progress says); done, blocked or failed, asking for the
+    /// user; its message beside the label and in the sidebar, with how
+    /// long it has stood, which the same state and message said again do
+    /// not change. It holds while the tool is attached.
+    pub fn set_status(&mut self, w: WindowId, status: Option<Status>) -> Result<()> {
+        self.tag_of(w)?;
+        let by = self.remote.attachment();
+        let now = self.remote.node.window_status(w);
+        let same = match (&now, &status) {
+            (None, None) => true,
+            (Some(n), Some(s)) => n.by == by && (n.state, n.kind, n.progress, &n.msg) == (s.state, s.kind, s.progress, &s.msg),
+            _ => false,
+        };
+        if same {
+            return Ok(());
+        }
+        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let status = status.map(|s| apex_core::WindowStatus { state: s.state, kind: s.kind, progress: s.progress.map(|p| p.min(100)), msg: s.msg, by, since });
+        self.propose(Proposal::SetStatus { window: w, status })?;
+        Ok(())
+    }
+
     /// Ask for the user's attention about a window: an agent ready for
     /// more, a build done. The window is notified, which its handle shows;
     /// while any window is, the session's handle (the square at the top
@@ -968,25 +1025,6 @@ impl Tool {
     /// notification -- asks this.
     pub fn alive(&mut self) -> bool {
         self.drain()
-    }
-
-    /// Say that the tool is working on something behind the window: its
-    /// handle pulses until this is turned off, or until the tool
-    /// detaches. For work with nothing to show while it lasts (an agent
-    /// thinking, a build running), so the window says it is not idle.
-    pub fn set_working(&mut self, w: WindowId, on: bool) -> Result<()> {
-        let by = on.then_some(self.remote.attachment());
-        self.propose(Proposal::Working { window: w, by, at: None })?;
-        Ok(())
-    }
-
-    /// Working, and how far along, in percent (`Some`), or not working
-    /// (`None`): the circle round the window's handle filled that far
-    /// (where `set_working`'s turns), wherever the handle is drawn.
-    pub fn set_progress(&mut self, w: WindowId, at: Option<u8>) -> Result<()> {
-        let by = at.map(|_| self.remote.attachment());
-        self.propose(Proposal::Working { window: w, by, at: at.map(|p| p.min(100)) })?;
-        Ok(())
     }
 
     /// Claim the window as this tool's: it made it and writes it, so

@@ -27,12 +27,44 @@ pub enum State {
     Error,
 }
 
+impl State {
+    /// As the protocol writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            State::Idle => "idle",
+            State::Working => "working",
+            State::Done => "done",
+            State::Blocked => "blocked",
+            State::Error => "error",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<State> {
+        [State::Idle, State::Working, State::Done, State::Blocked, State::Error].into_iter().find(|x| x.name() == s)
+    }
+}
+
 /// What a blocked program waits on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Kind {
     Permission,
     Question,
     Auth,
+}
+
+impl Kind {
+    /// As the protocol writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Permission => "permission",
+            Kind::Question => "question",
+            Kind::Auth => "auth",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Kind> {
+        [Kind::Permission, Kind::Question, Kind::Auth].into_iter().find(|x| x.name() == s)
+    }
 }
 
 /// One record: what the last report naming its id said.
@@ -133,6 +165,49 @@ pub fn parse(body: &[u8]) -> Option<Report> {
     let title = text("title", MAX_TITLE)?;
     let msg = text("msg", MAX_MSG)?;
     Some(Report::Set(Record { id: id.unwrap_or_default(), state, kind, progress, app, title, msg }))
+}
+
+/// A report's body (what follows `7501;`) as a program writes it: the
+/// inverse of `parse`. `None` for the records cleared (an id and all
+/// under it; none, every one).
+pub fn encode(r: Option<&Record>, clear: Option<&str>) -> String {
+    let Some(r) = r else {
+        return match clear {
+            Some(id) => format!("state=clear:id={id}"),
+            None => "state=clear".to_string(),
+        };
+    };
+    let mut out = format!("state={}", r.state.name());
+    if !r.id.is_empty() {
+        out += &format!(":id={}", r.id);
+    }
+    if let Some(k) = r.kind {
+        out += &format!(":kind={}", k.name());
+    }
+    if let Some(p) = r.progress {
+        out += &format!(":progress={p}");
+    }
+    if let Some(a) = &r.app {
+        out += &format!(":app={a}");
+    }
+    for (key, v) in [("title", &r.title), ("msg", &r.msg)] {
+        if let Some(v) = v {
+            out += &format!(":{key}={}", base64_encode(v.as_bytes()));
+        }
+    }
+    out
+}
+
+fn base64_encode(b: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            out.push(if i <= c.len() { A[(n >> (18 - 6 * i)) as usize & 63] as char } else { '=' });
+        }
+    }
+    out
 }
 
 fn value_char(c: u8) -> bool {
@@ -254,6 +329,14 @@ pub fn app_of<'a>(records: &'a [Record], id: &str) -> Option<&'a str> {
 /// record's state (blocked, then error, then done, then working, then
 /// idle), and the progress of a working one (the root's first).
 pub fn summary(records: &[Record]) -> Option<(State, Option<u8>)> {
+    let top = top(records)?;
+    let working = records.iter().filter(|r| r.state == State::Working).max_by_key(|r| r.id.is_empty());
+    Some((top.state, working.and_then(|r| r.progress)))
+}
+
+/// The most pressing record: blocked, then error, then done, then
+/// working, then idle; of those alike, the root.
+pub fn top(records: &[Record]) -> Option<&Record> {
     let rank = |s: State| match s {
         State::Blocked => 4,
         State::Error => 3,
@@ -261,9 +344,28 @@ pub fn summary(records: &[Record]) -> Option<(State, Option<u8>)> {
         State::Working => 1,
         State::Idle => 0,
     };
-    let top = records.iter().max_by_key(|r| (rank(r.state), r.id.is_empty()))?;
-    let working = records.iter().filter(|r| r.state == State::Working).max_by_key(|r| r.id.is_empty());
-    Some((top.state, working.and_then(|r| r.progress)))
+    records.iter().max_by_key(|r| (rank(r.state), r.id.is_empty()))
+}
+
+/// A state said in a word, where a status has no message of its own
+/// (none for idle: at rest, nothing to say).
+pub fn word(state: State, kind: Option<Kind>) -> Option<&'static str> {
+    Some(match (state, kind) {
+        (State::Idle, _) => return None,
+        (State::Working, _) => "Working",
+        (State::Done, _) => "Done",
+        (State::Error, _) => "Failed",
+        (State::Blocked, Some(Kind::Permission)) => "Needs permission",
+        (State::Blocked, Some(Kind::Question)) => "Has a question",
+        (State::Blocked, Some(Kind::Auth)) => "Needs signing in",
+        (State::Blocked, None) => "Blocked",
+    })
+}
+
+/// What a record says beside a window's label: its message's first
+/// line, else its title's.
+pub fn said(r: &Record) -> Option<String> {
+    [&r.msg, &r.title].into_iter().flatten().map(|s| s.lines().next().unwrap_or("").trim()).find(|s| !s.is_empty()).map(str::to_string)
 }
 
 #[cfg(test)]
@@ -287,6 +389,28 @@ mod tests {
             Some(Report::Set(r)) => r,
             other => panic!("{body}: {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_report_written_is_read_back_as_it_was() {
+        let r = Record { id: "build/test".into(), state: State::Blocked, kind: Some(Kind::Permission), progress: Some(40), app: Some("make".into()), title: Some("Tests".into()), msg: Some("Allow ünïcode? y/n".into()) };
+        assert_eq!(parse(encode(Some(&r), None).as_bytes()), Some(Report::Set(r)));
+        let idle = Record { id: String::new(), state: State::Idle, kind: None, progress: None, app: None, title: None, msg: Some("ab".into()) };
+        assert_eq!(parse(encode(Some(&idle), None).as_bytes()), Some(Report::Set(idle)));
+        assert_eq!(parse(encode(None, Some("build")).as_bytes()), Some(Report::Clear(Some("build".into()))));
+        assert_eq!(parse(encode(None, None).as_bytes()), Some(Report::Clear(None)));
+    }
+
+    #[test]
+    fn the_most_pressing_record_and_what_it_says() {
+        let rec = |id: &str, state: State, msg: Option<&str>| Record { id: id.into(), state, kind: None, progress: None, app: None, title: None, msg: msg.map(str::to_string) };
+        assert_eq!(top(&[]), None);
+        let blocked = Record { kind: Some(Kind::Question), ..rec("build", State::Blocked, None) };
+        let all = [rec("", State::Working, Some("Building")), blocked.clone()];
+        assert_eq!(top(&all), Some(&blocked), "blocked before working");
+        assert_eq!(said(&rec("", State::Working, Some("Reading files\nand more"))).as_deref(), Some("Reading files"));
+        assert_eq!(said(&Record { title: Some("Tests".into()), ..rec("", State::Done, Some(" ")) }).as_deref(), Some("Tests"), "no message: the title");
+        assert_eq!((word(State::Idle, None), word(State::Blocked, Some(Kind::Question))), (None, Some("Has a question")));
     }
 
     #[test]

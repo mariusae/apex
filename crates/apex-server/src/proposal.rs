@@ -67,6 +67,11 @@ pub enum Proposal {
     /// A window's label, set (a terminal's title, a tool's window's name;
     /// none to take it away).
     SetLabel { window: WindowId, label: Option<String> },
+    /// How the work behind a window stands (a tool's word, a terminal
+    /// program's), as OSC 7501 says a program's: at work, its handle
+    /// turning; done, blocked or failed; its message beside the label.
+    /// None to take it away.
+    SetStatus { window: WindowId, status: Option<apex_core::WindowStatus> },
     /// A range replaced, valid at `version`: pipe output (`select`, as
     /// acme's `|` leaves the output selected), or a tool's write, which
     /// leaves dot alone as a write to acme's `data` file does.
@@ -104,15 +109,6 @@ pub enum Proposal {
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
-    /// Work is going on behind a window: its handle pulses while it is
-    /// so. `by` is the attachment that keeps it (`None` ends it).
-    Working {
-        window: WindowId,
-        by: Option<AttachmentId>,
-        /// How far along, in percent, when the work says.
-        #[serde(default)]
-        at: Option<u8>,
-    },
     /// Put in an autoindent window (acme's `trimspaces`): the file on
     /// disk is the buffer at `version` without the blanks at the ends of
     /// its lines. The leader deletes those `runs` (from the end backwards)
@@ -265,6 +261,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.set_window_label(log, window, label.as_deref())?;
             Ok(None)
         }
+        Proposal::SetStatus { window, status } => {
+            node.set_window_status(log, window, status)?;
+            Ok(None)
+        }
         Proposal::ReplaceRange { select, dir, buffer, version, q0, q1, text } => {
             let ok = node.state.buffer(buffer).map(|b| b.version == version).unwrap_or(false);
             if ok {
@@ -372,10 +372,6 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         }
         Proposal::Builtin { ctx, text } => {
             node.run_builtin(log, ctx, &text)?;
-            Ok(None)
-        }
-        Proposal::Working { window, by, at } => {
-            node.append(log, Shard::Window(window), Op::Window(WindowOp::Working { by, at }))?;
             Ok(None)
         }
         Proposal::Own { window, by } => {

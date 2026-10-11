@@ -208,6 +208,12 @@ pub enum WindowOp {
     PageScroll { scroll: Option<Scroll> },
     /// The window's label (a terminal's title, a tool's window's name).
     Label { label: Option<String> },
+    /// How the work behind the window stands, as a program says its own
+    /// (OSC 7501): its state (at work, its handle turning, as far along
+    /// as it says; done, blocked, failed), and what it says beside the
+    /// window's label; who says so, and since when. None: it says
+    /// nothing.
+    ProgramStatus { status: Option<crate::state::WindowStatus> },
     /// Toggle the alternate (monospace) font.
     Font { mono: bool },
     /// acme's `Tab n`: the body's tab stop.
@@ -231,17 +237,6 @@ pub enum WindowOp {
     /// state beside clean and dirty. `by` is the attachment that keeps
     /// it so; the state ends with that attachment, or with `None`.
     Live { by: Option<AttachmentId> },
-    /// Work is going on behind this window (a tool waiting on something
-    /// slow: an agent thinking, a build running): the handle pulses
-    /// while it lasts. `by` is the attachment that keeps it so; the
-    /// state ends with that attachment, or with `None`. Beside live,
-    /// not instead of it: a window can be both. `at`: how far along, in
-    /// percent, when the work says (an LSP server indexing).
-    Working {
-        by: Option<AttachmentId>,
-        #[serde(default)]
-        at: Option<u8>,
-    },
     /// The window is a diagnostic one, as an +Errors window is: a tool's
     /// report on how things stand (its errors, a language server's
     /// diagnostics and state), made stashed, its news said in toasts.

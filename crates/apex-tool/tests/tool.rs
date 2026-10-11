@@ -155,10 +155,24 @@ fn a_tool_works_a_window_and_answers_its_verb() {
     other.propose(apex_server::Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: END.min(16), q1: 16, text: "typed\n".into() }, Duration::from_secs(5)).unwrap();
     let ev = t.next_event(Some(Duration::from_secs(5))).unwrap().expect("an edit");
     assert_eq!(ev, Event::Edit(apex_tool::Edit { window: w, q0: 16, nd: 0, text: "typed\n".into() }));
-    // our own rename and label are not events, as our edits are not
+    // our own rename, label and status are not events, as our edits are not
     t.rename(w, "/tmp/shout-mine").unwrap();
     t.set_label(w, Some("shouted")).unwrap();
+    t.set_status(w, Some(apex_tool::Status::new(apex_tool::State::Done).msg(" Shouting "))).unwrap();
     assert_eq!(t.next_event(Some(Duration::from_millis(200))).unwrap(), None);
+    // the status, seen by everyone, with when it was said; the same
+    // state and message again keep that
+    let seen = |other: &mut Remote| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while other.node.window_status(w).and_then(|s| s.text()).as_deref() != Some("Shouting") && Instant::now() < deadline {
+            let _ = other.step(Duration::from_millis(20));
+        }
+        other.node.window_status(w)
+    };
+    let said = seen(&mut other).expect("the status");
+    assert!(said.since > 0 && said.state == apex_tool::State::Done);
+    t.set_status(w, Some(apex_tool::Status::new(apex_tool::State::Done).msg("Shouting"))).unwrap();
+    assert_eq!(seen(&mut other), Some(said));
     // someone else's rename and relabel, and a deletion, are (live, so
     // Del does not ask)
     t.set_live(w, true).unwrap();
@@ -232,15 +246,17 @@ fn work_behind_a_window_shows_while_the_tool_is_there() {
         other.node.window_working(w)
     };
     assert!(!settle(&mut other, false), "idle to begin with");
-    t.set_working(w, true).unwrap();
+    let working = || Some(apex_tool::Status::new(apex_tool::State::Working));
+    t.set_status(w, working()).unwrap();
     assert!(settle(&mut other, true), "the handle pulses while the tool works");
-    t.set_working(w, false).unwrap();
+    t.set_status(w, None).unwrap();
     assert!(!settle(&mut other, false), "and stops when the work is done");
     // a tool that goes while it works leaves no window pulsing forever
-    t.set_working(w, true).unwrap();
+    t.set_status(w, working()).unwrap();
     assert!(settle(&mut other, true));
     drop(t);
     assert!(!settle(&mut other, false), "the work ends with the tool");
+    assert_eq!(other.node.window_status(w), None, "and so does what it said");
 }
 
 #[test]

@@ -62,10 +62,6 @@ pub struct Window {
     pub owner: Option<AttachmentId>,
     /// The attachment whose process is behind this window (`WindowOp::Live`).
     pub live: Option<AttachmentId>,
-    /// The attachment working behind this window (`WindowOp::Working`),
-    /// and how far along it said it is, in percent.
-    pub working: Option<AttachmentId>,
-    pub progress: Option<u8>,
     /// A diagnostic window (`WindowOp::Diagnostic`): made stashed, its
     /// news said in toasts, as an +Errors window's are.
     pub diagnostic: bool,
@@ -75,6 +71,10 @@ pub struct Window {
     pub path: String,
     /// A name beside the path: a terminal's title, a tool's window's.
     pub label: Option<String>,
+    /// How the work behind the window stands (`WindowOp::ProgramStatus`):
+    /// a tool's word, or a terminal program's (OSC 7501's).
+    #[serde(default)]
+    pub status: Option<WindowStatus>,
     /// A page's: how it fetches what it loads, and where its relative
     /// addresses resolve (ARCHITECTURE.md §5).
     pub via: Via,
@@ -83,6 +83,30 @@ pub struct Window {
     /// fetches anew when the count moves), and a buffer page's scroll.
     pub reload: u64,
     pub scroll: Option<Scroll>,
+}
+
+/// A window's status (`WindowOp::ProgramStatus`), as the Program Status
+/// Protocol (OSC 7501) has a program's: its state, what it waits on when
+/// blocked, how far along (in percent) when working or blocked, and a
+/// message; who said it, which it holds only while that attachment is
+/// here (the session's own, `SERVER`, always); and since when, in
+/// seconds since the epoch, for its age.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct WindowStatus {
+    pub state: crate::status::State,
+    pub kind: Option<crate::status::Kind>,
+    pub progress: Option<u8>,
+    pub msg: Option<String>,
+    pub by: AttachmentId,
+    pub since: u64,
+}
+
+impl WindowStatus {
+    /// What it says in a word or a line: its message, else its state's
+    /// word (`status::word`); an idle one with no message, nothing.
+    pub fn text(&self) -> Option<String> {
+        self.msg.clone().filter(|m| !m.trim().is_empty()).or_else(|| crate::status::word(self.state, self.kind).map(str::to_string))
+    }
 }
 
 impl Window {
@@ -641,24 +665,20 @@ impl State {
                 }
                 self.windows.insert(
                     id,
-                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, working: None, progress: None, diagnostic: false, path: path.clone(), label: label.clone(), via: via.clone(), base: base.clone(), reload: 0, scroll: None },
+                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, diagnostic: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None },
                 );
             }
             WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
             WindowOp::Reload => self.window_mut(id)?.reload += 1,
             WindowOp::PageScroll { scroll } => self.window_mut(id)?.scroll = *scroll,
             WindowOp::Label { label } => self.window_mut(id)?.label = label.clone(),
+            WindowOp::ProgramStatus { status } => self.window_mut(id)?.status = status.clone(),
             WindowOp::Font { mono } => self.window_mut(id)?.mono = *mono,
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),
             WindowOp::Indent { on } => self.window_mut(id)?.autoindent = *on,
             WindowOp::TagExpand { on } => self.window_mut(id)?.tagexpand = *on,
             WindowOp::Own { by } => self.window_mut(id)?.owner = *by,
             WindowOp::Live { by } => self.window_mut(id)?.live = *by,
-            WindowOp::Working { by, at } => {
-                let w = self.window_mut(id)?;
-                w.working = *by;
-                w.progress = if by.is_some() { *at } else { None };
-            }
             WindowOp::Diagnostic { on } => self.window_mut(id)?.diagnostic = *on,
             WindowOp::Exec(x) => {
                 self.window_mut(id)?.execs.insert(seq, ExecRecord::new(x));
@@ -941,9 +961,10 @@ impl State {
             h.update(&[0]);
             h.update(w.label.as_deref().unwrap_or("").as_bytes());
             h.update(&[w.label.is_some() as u8]);
-            // who owns it, keeps it live, works behind it, and how far;
-            // whether it is diagnostic: replicated, so compared
-            h.update(&postcard::to_stdvec(&(w.owner, w.live, w.working, w.progress, w.diagnostic)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&w.status).unwrap_or_default());
+            // who owns it, keeps it live; whether it is diagnostic:
+            // replicated, so compared (its status above)
+            h.update(&postcard::to_stdvec(&(w.owner, w.live, w.diagnostic)).unwrap_or_default());
             for (seq, e) in &w.execs {
                 h.update(&seq.to_le_bytes());
                 h.update(e.text.as_bytes());

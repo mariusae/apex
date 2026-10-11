@@ -283,6 +283,20 @@ impl Bridge {
                 self.tool.set_label(window(v)?, v["label"].as_str()).map_err(e)?;
                 Ok(json!({}))
             }
+            "status" => {
+                // a record's keys, as OSC 7501 has them; no state, none
+                let status = match v["state"].as_str() {
+                    None => None,
+                    Some(s) => {
+                        let state = apex_tool::State::from_name(s).ok_or_else(|| format!("{s}: not a state"))?;
+                        let kind = v["kind"].as_str().map(|k| apex_tool::Kind::from_name(k).ok_or_else(|| format!("{k}: not a kind"))).transpose()?;
+                        let progress = v["progress"].as_u64().map(|p| p.min(100) as u8);
+                        Some(apex_tool::Status { state, kind, progress, msg: v["msg"].as_str().map(str::to_string) })
+                    }
+                };
+                self.tool.set_status(window(v)?, status).map_err(e)?;
+                Ok(json!({}))
+            }
             "tag" => Ok(json!({ "text": self.tool.tag(window(v)?).map_err(e)? })),
             "settag" => {
                 self.tool.set_tag(window(v)?, v["text"].as_str().ok_or("text")?).map_err(e)?;
@@ -297,14 +311,6 @@ impl Bridge {
                 Ok(json!({}))
             }
             "notified" => Ok(json!({ "on": self.tool.notified(window(v)?) })),
-            "working" => {
-                self.tool.set_working(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
-                Ok(json!({}))
-            }
-            "progress" => {
-                self.tool.set_progress(window(v)?, v["at"].as_u64().map(|p| p.min(100) as u8)).map_err(e)?;
-                Ok(json!({}))
-            }
             "live" => {
                 self.tool.set_live(window(v)?, v["on"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
@@ -454,7 +460,7 @@ fn plumb_json(p: &Plumb) -> Value {
 /// A window as the bridge speaks of it: its id, path, label, kind, and
 /// whether it is scratch and live.
 fn window_json(w: &apex_tool::WindowInfo) -> Value {
-    json!({ "id": w.id.0, "path": w.path, "label": w.label, "kind": w.kind.name(), "scratch": w.scratch, "live": w.live })
+    json!({ "id": w.id.0, "path": w.path, "label": w.label, "status": w.status.as_ref().map(|s| json!({ "state": s.state.name(), "kind": s.kind.map(|k| k.name()), "progress": s.progress, "msg": s.msg })), "kind": w.kind.name(), "scratch": w.scratch, "live": w.live })
 }
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

@@ -1740,7 +1740,7 @@ impl Win {
         let want = self.busy() && self.pending.is_empty();
         if want != self.pulsing {
             self.pulsing = want;
-            let _ = self.t.set_working(self.w, want);
+            let _ = self.t.set_status(self.w, want.then(|| apex_tool::Status::new(apex_tool::State::Working)));
             let _ = self.t.set_live(self.w, want);
             self.settled = false;
         }
@@ -1861,7 +1861,7 @@ impl Win {
         if want != self.running {
             self.running = want;
             if let Some(w) = self.run {
-                let _ = self.t.set_working(w, want);
+                let _ = self.t.set_status(w, want.then(|| apex_tool::Status::new(apex_tool::State::Working)));
             }
         }
     }

@@ -174,9 +174,32 @@ pub struct Pane {
     /// The notification raised for each agent that wants you, by the
     /// agent's session.
     flags: HashMap<String, Flag>,
-    /// The windows marked working for an agent at work in them, and how
-    /// far along its plan said it was when marked.
-    busy: HashMap<WindowId, Option<u8>>,
+    /// The windows given a status for the agent in them, and what it said.
+    said: HashMap<WindowId, apex_tool::Status>,
+}
+
+/// How an agent stands, as its window's status (OSC 7501's states): at
+/// work, as far along as its plan is done, the call it runs; blocked on
+/// the call it asks to run, or a question; its turn over, done until the
+/// user has `seen` it and idle after; failed, and why; once it has
+/// ended, nothing.
+fn status_of(a: &agent::Agent, seen: bool) -> Option<apex_tool::Status> {
+    use crate::transcript::brief;
+    use apex_tool::{Kind, State as S, Status};
+    Some(match a.state {
+        State::Working => Status::new(S::Working).progress(a.plan.map(|(done, of)| (done * 100 / of.max(1)).min(100) as u8)).msg(a.running.last().map(|(_, t)| brief(t)).unwrap_or_default()),
+        State::Starting => Status::new(S::Working).msg("Starting"),
+        State::Asking => match &a.asked {
+            Some(call) => Status::new(S::Blocked).kind(Some(Kind::Permission)).msg(brief(call)),
+            None => Status::new(S::Blocked).kind(Some(Kind::Question)),
+        },
+        State::Idle if seen => Status::new(S::Idle),
+        State::Idle => Status::new(S::Done),
+        State::Failed => Status::new(S::Error).msg(a.why.as_deref().map(brief).unwrap_or_default()),
+        State::Ended => return None,
+    })
+    // (an empty message is none)
+    .map(|s| Status { msg: s.msg.filter(|m| !m.is_empty()), ..s })
 }
 
 /// An agent's terminal in this session, and what is offered on it.
@@ -280,7 +303,7 @@ impl Pane {
         let presence = event::panes_dir(&opts.dir).join(std::process::id().to_string());
         let _ = std::fs::write(&presence, b"");
         let (session, _) = t.session();
-        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), busy: HashMap::new() };
+        let mut pane = Pane { t, w, opts, agents: Agents::default(), logs: HashMap::new(), header: String::new(), blocks: Vec::new(), starts: Vec::new(), footer: String::new(), details: HashMap::new(), pages: HashMap::new(), diffs: HashMap::new(), hist: None, past: HashMap::new(), verbs, look, look_any, pulsing: false, dirty: false, last_slow: Instant::now(), last_render: Instant::now(), home, watcher, woken, watched: BTreeMap::new(), presence, session, targets: HashMap::new(), copy, flags: HashMap::new(), said: HashMap::new() };
         let dir = pane.opts.dir.clone();
         pane.watch(&dir);
         pane.look()?;
@@ -311,7 +334,7 @@ impl Pane {
                 self.render()?;
                 self.sync_targets()?;
                 self.sync_flags();
-                self.sync_busy();
+                self.sync_status();
             } else if self.last_render.elapsed() >= MINUTES {
                 self.render()?;
             }
@@ -517,40 +540,40 @@ impl Pane {
         }
     }
 
-    /// Each agent at work has the window it runs in marked working -- its
-    /// handle turning -- and, when its plan says how far along it is
-    /// (steps done of the plan's), the handle's circle filled that far;
-    /// back to idle, or asking, or gone, the mark goes. The mark is this
-    /// tool's, so it dying leaves none behind. (Not for an agent saying
-    /// it itself, OSC 7501, whose window apex marks.)
-    fn sync_busy(&mut self) {
+    /// Each agent's window says how the agent stands, as a program
+    /// speaking OSC 7501 would (`status_of`): at work, its handle turning
+    /// (filled as far as its plan is done), the call it runs beside its
+    /// label and in the sidebar; asking; its turn done, not yet seen;
+    /// failed. The agent gone, the window says nothing. The status is
+    /// this tool's, so it dying leaves none behind. Not for an agent
+    /// saying it itself (OSC 7501), whose window's status apex takes
+    /// from that.
+    fn sync_status(&mut self) {
         if self.session.is_empty() {
             return;
         }
         let windows: Vec<WindowId> = self.t.windows().iter().map(|x| x.id).collect();
-        let want: HashMap<WindowId, Option<u8>> = current_in_windows(&self.agents, &self.session, &windows, self.w)
+        let want: HashMap<WindowId, apex_tool::Status> = current_in_windows(&self.agents, &self.session, &windows, self.w)
             .into_iter()
-            .filter(|(_, a)| a.state == State::Working)
             .filter(|(w, _)| self.t.term_status(*w).is_empty())
-            .map(|(w, a)| (w, a.plan.map(|(done, of)| (done * 100 / of.max(1)).min(100) as u8)))
+            .filter_map(|(w, a)| {
+                // done until the user has seen it (taken its notification)
+                let seen = self.flags.get(&a.session).is_none_or(|f| f.dismissed);
+                status_of(a, seen).map(|s| (w, s))
+            })
             .collect();
-        let gone: Vec<WindowId> = self.busy.keys().copied().filter(|w| !want.contains_key(w)).collect();
+        let gone: Vec<WindowId> = self.said.keys().copied().filter(|w| !want.contains_key(w)).collect();
         for w in gone {
-            self.busy.remove(&w);
-            // (an agent now saying it itself: its mark apex's, left be)
+            self.said.remove(&w);
             if self.t.term_status(w).is_empty() {
-                let _ = self.t.set_working(w, false);
+                let _ = self.t.set_status(w, None);
             }
         }
-        for (w, at) in want {
-            if self.busy.get(&w) == Some(&at) {
-                continue;
+        for (w, s) in want {
+            if self.said.get(&w) != Some(&s) {
+                let _ = self.t.set_status(w, Some(s.clone()));
+                self.said.insert(w, s);
             }
-            let _ = match at {
-                Some(p) => self.t.set_progress(w, Some(p)),
-                None => self.t.set_working(w, true),
-            };
-            self.busy.insert(w, at);
         }
     }
 
@@ -679,7 +702,7 @@ impl Pane {
             }
             if d.pulsing {
                 d.pulsing = false;
-                let _ = self.t.set_working(d.w, false);
+                let _ = self.t.set_status(d.w, None);
             }
         }
         Ok(())
@@ -744,7 +767,7 @@ impl Pane {
             }
         }
         for (w, on) in pulse {
-            let _ = self.t.set_working(w, on);
+            let _ = self.t.set_status(w, on.then(|| apex_tool::Status::new(apex_tool::State::Working)));
         }
         Ok(())
     }
@@ -784,7 +807,7 @@ impl Pane {
         let working = self.agents.working();
         if working != self.pulsing {
             self.pulsing = working;
-            let _ = self.t.set_working(w, working);
+            let _ = self.t.set_status(w, working.then(|| apex_tool::Status::new(apex_tool::State::Working)));
         }
         // and is clean while none does: what it says is whole, and
         // nothing is going on behind it. Written while agents work, it
@@ -1405,6 +1428,27 @@ mod tests {
     use crate::agent::Agents;
     use crate::event::Event;
     use apex_tool::WindowId;
+
+    #[test]
+    fn an_agents_window_says_how_it_stands_as_osc_7501_would() {
+        use crate::agent::{Agent, State};
+        use apex_tool::{Kind, State as S};
+        let mut a = Agent::new("s");
+        let said = |a: &Agent, seen: bool| super::status_of(a, seen).map(|s| (s.state, s.kind, s.progress, s.msg));
+        a.state = State::Working;
+        assert_eq!(said(&a, false), Some((S::Working, None, None, None)));
+        a.running.push(("1".into(), "cargo test\nmore".into()));
+        a.plan = Some((1, 4));
+        assert_eq!(said(&a, false), Some((S::Working, None, Some(25), Some("cargo test…".into()))), "as far as its plan, the call going");
+        a.state = State::Asking;
+        a.asked = Some("rm -rf target".into());
+        assert_eq!(said(&a, false), Some((S::Blocked, Some(Kind::Permission), None, Some("rm -rf target".into()))));
+        a.state = State::Idle;
+        assert_eq!(said(&a, false).map(|s| s.0), Some(S::Done), "its turn over, not yet seen");
+        assert_eq!(said(&a, true).map(|s| s.0), Some(S::Idle), "and seen");
+        a.state = State::Ended;
+        assert_eq!(said(&a, false), None, "gone: nothing");
+    }
 
     #[test]
     fn a_selection_goes_with_where_it_is_and_fenced() {

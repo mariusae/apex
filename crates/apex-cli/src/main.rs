@@ -235,20 +235,24 @@ For a script's report on how things stand." },
 Open opens each FILE (relative to the current directory) in the first
 column, as B2 on `New FILE` would, and prints the id and name of each
 window. A file already open gets no second window." },
-    Cmd { name: "win", usage: "apex win list [-json] | del WIN | rename WIN PATH | label WIN [TEXT] | tag WIN [TEXT]", short: "list windows; delete, rename, label or tag one", flags: &[], run: win, long: "\
+    Cmd { name: "win", usage: "apex win list [-json] | del WIN | rename WIN PATH | label WIN [TEXT] | status WIN STATE [kind=K] [progress=N] [MSG] | tag WIN [TEXT]", short: "list windows; delete, rename, label, status or tag one", flags: &[], run: win, long: "\
 Win list prints every window, column by column, a line each, the
 fields separated by tabs: its id, its kind (file, dir, term, errors,
 web, preview), its marks (* for unsaved text; > for a live window, a
 process behind it, a terminal's or a win's, which is neither clean nor
 dirty; + for a scratch window, which is never saved; - for none), its
-path, and its label. With -json, each line is instead a JSON object
-with the fields id, kind, path, label, scratch, live and dirty.
+path, its label, and its status (its state, and its message). With
+-json, each line is instead a JSON object with the fields id, kind,
+path, label, status (state, kind, progress and msg, or null), scratch,
+live and dirty.
 
 Win del WIN deletes a window as Del would: a dirty window is warned
 once, and deleted the second time. Win rename WIN PATH moves the
 window to another file (relative to the current directory); nothing is
 written until Put. Win label WIN TEXT sets the window's label, the
-words shown beside its path; no TEXT clears it. Win tag WIN prints the
+words shown beside its path; no TEXT clears it. Win status WIN STATE
+sets its status, how the work behind it stands, as apex status says a
+terminal's (which see), and win status WIN clear takes it away. Win tag WIN prints the
 user's text in the tag, the words after the path, label and verbs; with
 TEXT, it replaces them.
 
@@ -582,9 +586,12 @@ in (uninstall takes them out), each one apex tool agent hook AGENT,
 which appends the event to ~/.apex/agent/SESSION.jsonl. While an agent
 runs, its terminal's tools menu has Transcript, Preview and Changes;
 while it asks something, Allow Deny Ask; when it wants you, its
-terminal raises a notification. An agent that says what it is doing
+terminal raises a notification; and its terminal's status says how it
+stands, as apex status has it (working on the call it runs, as far
+along as its plan; blocked on what it asks; done; failed), beside the
+window's label and in the sidebar. An agent that says what it is doing
 itself (OSC 7501, the Program Status Protocol: Claude Code from 2.1.295
-does) has its terminal marked by apex from that, and none by the tool. -a adds the overview window, DIR/-agent;
+does) has its terminal's status and marks from that, and none from the tool. -a adds the overview window, DIR/-agent;
 -all widens it to every agent on the machine. apex tool agent ls, wait
 ID and events [-all] are the logs as text, for scripts." },
     Cmd { name: "label", usage: "apex label TEXT", short: "title this terminal's window", flags: &[], run: label_cmd, long: "\
@@ -594,6 +601,29 @@ terminal's window is named DIR/-TITLE, DIR being the directory the shell
 last reported (OSC 7; apex awd reports it) and TITLE its title (a label,
 or an xterm title); with no directory ever reported the name is -TITLE,
 and before either it is where the shell started and the host." },
+    Cmd { name: "status", usage: "apex status [-id=ID] STATE [kind=K] [progress=N] [MSG] | clear", short: "say how this terminal's work stands", flags: &[flag("id", "the record, for a part of the work (build/test); the whole by default")], run: status_cmd, long: "\
+Status reports how the work in the terminal it runs in stands, through
+the Program Status Protocol (OSC 7501), as a program that speaks it
+would. STATE is one of the protocol's:
+
+  idle     at rest, waiting for the user's next instruction
+  working  running, perhaps progress=N percent along
+  done     finished, the result ready and not yet seen
+  blocked  unable to go on until the user does something:
+           kind=permission, question or auth says what, MSG why
+  error    failed and stopped
+
+and MSG says more. The window's status is the most pressing of the
+terminal's reports (blocked, then error, done, working, idle): its
+state, and its MSG (or its state's word) beside the label and in the
+sidebar. Working turns the window's handle, filled as far as its
+progress says; done, blocked and error ask for the user. Working and
+blocked end at the shell's next prompt; idle and done stand until
+cleared. Clear clears the record (with no ID, every one).
+
+  apex status working progress=40 compiling
+  apex status -id=deploy blocked kind=question which region?
+  apex status clear" },
     Cmd { name: "awd", usage: "apex awd [LABEL]", short: "name this terminal's window after its directory", flags: &[], run: awd, long: "\
 Awd reports the terminal's working directory (OSC 7) and titles the
 window LABEL (the host's name unless given), so the window is named
@@ -1401,13 +1431,14 @@ fn win(ctx: &Ctx, p: &Parsed) -> R {
                 let n = &c.node;
                 let dirty = n.state.window(w).ok().and_then(|x| x.body_buffer()).and_then(|b| n.state.buffer(b).ok()).is_some_and(|b| b.dirty());
                 let (kind, path, label, scratch, live) = (n.window_kind(w), n.window_path(w), n.window_label(w), n.window_scratch(w), n.window_live(w));
+                let status = n.window_status(w);
                 let dirty = dirty && !scratch && !live;
                 if json {
-                    let v = serde_json::json!({"id": w.0, "kind": kind.name(), "path": path, "label": label, "scratch": scratch, "live": live, "dirty": dirty});
+                    let v = serde_json::json!({"id": w.0, "kind": kind.name(), "path": path, "label": label, "status": status.as_ref().map(|s| serde_json::json!({"state": s.state.name(), "kind": s.kind.map(|k| k.name()), "progress": s.progress, "msg": s.msg})), "scratch": scratch, "live": live, "dirty": dirty});
                     println!("{v}");
                 } else {
                     let marks: String = [(dirty, '*'), (live, '>'), (scratch, '+')].iter().filter(|(on, _)| *on).map(|(_, c)| *c).collect();
-                    println!("{}\t{}\t{}\t{}\t{}", w.0, kind.name(), if marks.is_empty() { "-" } else { &marks }, path, label.unwrap_or_default());
+                    println!("{}\t{}\t{}\t{}\t{}\t{}", w.0, kind.name(), if marks.is_empty() { "-" } else { &marks }, path, label.unwrap_or_default(), status.map(|s| format!("{} {}", s.state.name(), s.msg.unwrap_or_default()).trim_end().to_string()).unwrap_or_default());
                 }
             }
             Ok(())
@@ -1426,6 +1457,16 @@ fn win(ctx: &Ctx, p: &Parsed) -> R {
             };
             let w = find_window(&c, spec)?;
             c.propose(Proposal::SetLabel { window: w, label }, TIMEOUT)?;
+            Ok(())
+        }
+        Some("status") => {
+            let [_, spec, rest @ ..] = p.args.as_slice() else { return Err("usage".into()) };
+            let w = find_window(&c, spec)?;
+            let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            // the session's own word, not this command's: it stands when
+            // the command is gone, until it is cleared
+            let status = status_args(rest)?.map(|r| apex_core::WindowStatus { state: r.state, kind: r.kind, progress: r.progress, msg: r.msg, by: apex_core::SERVER, since });
+            c.propose(Proposal::SetStatus { window: w, status }, TIMEOUT)?;
             Ok(())
         }
         Some("tag") => {
@@ -1883,6 +1924,40 @@ fn to_terminal(seq: &str) -> R {
     Ok(())
 }
 
+fn status_cmd(_: &Ctx, p: &Parsed) -> R {
+    use apex_core::status::encode;
+    let id = p.get("id").unwrap_or("").to_string();
+    let body = match status_args(&p.args)? {
+        Some(r) => encode(Some(&apex_core::status::Record { id, ..r }), None),
+        None => encode(None, Some(id.as_str()).filter(|i| !i.is_empty())),
+    };
+    to_terminal(&format!("\x1b]7501;{body}\x07"))
+}
+
+/// A status as apex status and win status take it: STATE (or clear,
+/// none), then kind=K and progress=N, then the message.
+fn status_args(args: &[String]) -> Result<Option<apex_core::status::Record>, String> {
+    use apex_core::status::{Kind, Record, State};
+    let Some((first, mut rest)) = args.split_first() else { return Err("usage".into()) };
+    if first == "clear" {
+        return Ok(None);
+    }
+    let state = State::from_name(first).ok_or_else(|| format!("{first}: not a state (idle, working, done, blocked, error, clear)"))?;
+    let mut r = Record { id: String::new(), state, kind: None, progress: None, app: None, title: None, msg: None };
+    while let Some((w, more)) = rest.split_first() {
+        if let Some(k) = w.strip_prefix("kind=") {
+            r.kind = Some(Kind::from_name(k).ok_or_else(|| format!("{k}: not a kind (permission, question, auth)"))?);
+        } else if let Some(n) = w.strip_prefix("progress=") {
+            r.progress = Some(n.parse::<u8>().ok().filter(|n| *n <= 100).ok_or_else(|| format!("{n}: not a percentage"))?);
+        } else {
+            break;
+        }
+        rest = more;
+    }
+    r.msg = Some(rest.join(" ")).filter(|m| !m.trim().is_empty());
+    Ok(Some(r))
+}
+
 fn label_cmd(_: &Ctx, p: &Parsed) -> R {
     if p.args.is_empty() {
         return Err("usage".into());
@@ -2080,6 +2155,27 @@ fn cat(ctx: &Ctx, p: &Parsed) -> R {
     Ok(())
 }
 
+
+#[cfg(test)]
+mod status_tests {
+    use super::status_args;
+    use apex_core::status::{Kind, State};
+
+    fn said(s: &[&str]) -> Result<Option<(State, Option<Kind>, Option<u8>, Option<String>)>, String> {
+        status_args(&s.iter().map(|x| x.to_string()).collect::<Vec<_>>()).map(|r| r.map(|r| (r.state, r.kind, r.progress, r.msg)))
+    }
+
+    #[test]
+    fn a_status_is_its_state_then_its_keys_then_its_message() {
+        assert_eq!(said(&["working", "progress=40", "compiling", "it", "all"]), Ok(Some((State::Working, None, Some(40), Some("compiling it all".into())))));
+        assert_eq!(said(&["blocked", "kind=question", "which", "region?"]), Ok(Some((State::Blocked, Some(Kind::Question), None, Some("which region?".into())))));
+        assert_eq!(said(&["done"]), Ok(Some((State::Done, None, None, None))));
+        assert_eq!(said(&["idle", "kind=x"]).unwrap_err(), "x: not a kind (permission, question, auth)");
+        assert!(said(&["working", "progress=140"]).is_err());
+        assert_eq!(said(&["clear"]), Ok(None));
+        assert!(said(&["busy"]).is_err() && said(&[]).is_err(), "the state is not optional");
+    }
+}
 
 #[cfg(test)]
 mod flag_tests {

@@ -707,6 +707,25 @@ impl Node {
         Ok(())
     }
 
+    /// Window `w`'s status, set (none: it says nothing). The same state,
+    /// kind and message as it stands keeps the time it was first said:
+    /// only its progress has moved.
+    pub fn set_window_status(&mut self, log: &mut Log, w: WindowId, status: Option<crate::state::WindowStatus>) -> Result<()> {
+        self.state.window(w)?;
+        let was = self.window_status(w);
+        let status = status.map(|mut s| {
+            s.msg = s.msg.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+            if let Some(o) = was.as_ref().filter(|o| (o.state, o.kind, &o.msg) == (s.state, s.kind, &s.msg)) {
+                s.since = o.since;
+            }
+            s
+        });
+        if status != was || self.state.window(w)?.status != status {
+            self.append(log, Shard::Window(w), Op::Window(WindowOp::ProgramStatus { status }))?;
+        }
+        Ok(())
+    }
+
     /// A page at an address went somewhere: its path follows it.
     pub fn web_navigate(&mut self, log: &mut Log, w: WindowId, url: &str) -> Result<()> {
         let win = self.state.window(w)?;
@@ -1154,20 +1173,15 @@ impl Node {
         }
     }
 
-    /// Is a tool working behind this window? Like `live`, it holds only
-    /// while the attachment that said so is still here -- except the
-    /// session's own (`SERVER`, a program in a terminal saying its work
-    /// goes on), which is here as long as the session is and is in no
-    /// attachment table.
+    /// Is work going on behind this window: its status, working?
     pub fn window_working(&self, w: WindowId) -> bool {
-        let Ok(win) = self.state.window(w) else { return false };
-        win.working.is_some_and(|a| a == SERVER || self.state.meta.attachments.contains_key(&a))
+        self.window_status(w).is_some_and(|s| s.state == crate::status::State::Working)
     }
 
     /// How far along the work behind the window says it is, in percent,
     /// while it is working and says.
     pub fn window_progress(&self, w: WindowId) -> Option<u8> {
-        self.window_working(w).then(|| self.state.window(w).ok().and_then(|x| x.progress)).flatten()
+        self.window_status(w).filter(|s| s.state == crate::status::State::Working).and_then(|s| s.progress)
     }
 
     /// Is it a diagnostic window (`WindowOp::Diagnostic`)?
@@ -1214,6 +1228,14 @@ impl Node {
     /// window's name.
     pub fn window_label(&self, window: WindowId) -> Option<String> {
         self.state.window(window).ok()?.label.clone()
+    }
+
+    /// How the work behind a window stands, while whoever said so is
+    /// here: a tool's status goes with the tool, the session's own (a
+    /// program in a terminal saying it) is here as long as the session is.
+    pub fn window_status(&self, window: WindowId) -> Option<crate::state::WindowStatus> {
+        let s = self.state.window(window).ok()?.status.clone()?;
+        (s.by == SERVER || self.state.meta.attachments.contains_key(&s.by)).then_some(s)
     }
 
     /// Is a window scratch: no file behind it (a transcript, a tool's

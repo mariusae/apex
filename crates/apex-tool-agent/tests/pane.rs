@@ -657,8 +657,8 @@ fn an_agent_saying_what_it_is_doing_is_left_to_apex() {
         let _ = c.step(Duration::from_millis(20));
     }
     assert!(!flags(&c).iter().any(|(by, _)| by == "agent"), "{:?}", flags(&c));
-    // and its window's handle is apex's mark (the program at work), not
-    // the tool's
-    let by = c.node.state.window(tw).unwrap().working;
-    assert_eq!(by, Some(apex_core::SERVER), "the handle's mark is the program's word, through apex");
+    // and its window's status is apex's (the program at work), not the
+    // tool's
+    let by = c.node.window_status(tw).map(|s| (s.by, s.state));
+    assert_eq!(by, Some((apex_core::SERVER, apex_core::status::State::Working)), "the window's status is the program's word, through apex");
 }

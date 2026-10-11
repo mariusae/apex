@@ -859,11 +859,22 @@ fn a_diagnostic_window_is_made_stashed_and_says_how_far_along() {
     let e = node.errors(&mut log, Some("/tmp"), "oops\n").unwrap();
     assert!(node.window_diagnostic(e) && node.state.layout.is_stashed(e));
     // working, and how far along; done, none
-    node.append(&mut log, Shard::Window(d), Op::Window(WindowOp::Working { by: Some(SERVER), at: Some(40) })).unwrap();
+    use apex_core::status::State;
+    let status = |state: State, progress: Option<u8>, msg: Option<&str>, since: u64| apex_core::WindowStatus { state, kind: None, progress, msg: msg.map(str::to_string), by: SERVER, since };
+    node.set_window_status(&mut log, d, Some(status(State::Working, Some(40), Some("Indexing"), 10))).unwrap();
+    assert!(node.window_working(d));
     assert_eq!(node.window_progress(d), Some(40));
-    node.append(&mut log, Shard::Window(d), Op::Window(WindowOp::Working { by: None, at: Some(40) })).unwrap();
+    // further along: the same status, said when it first was
+    node.set_window_status(&mut log, d, Some(status(State::Working, Some(60), Some("Indexing"), 20))).unwrap();
+    assert_eq!(node.window_status(d).map(|s| (s.progress, s.since)), Some((Some(60), 10)));
+    node.set_window_status(&mut log, d, Some(status(State::Done, Some(60), None, 30))).unwrap();
+    assert_eq!(node.window_status(d).map(|s| (s.text(), s.since)), Some((Some("Done".into()), 30)), "another state: news");
     assert_eq!(node.window_progress(d), None);
     assert!(!node.window_working(d));
+    // a tool's goes with the tool
+    let gone = apex_core::AttachmentId(4242);
+    node.set_window_status(&mut log, d, Some(apex_core::WindowStatus { by: gone, ..status(State::Working, None, None, 40) })).unwrap();
+    assert_eq!(node.window_status(d), None, "said by no one here");
     // and a replica sees the same
     let r = follower(&log);
     assert!(r.window_diagnostic(d) && r.state.layout.is_stashed(d));
@@ -981,7 +992,7 @@ fn the_hash_sees_every_replicated_window_flag_and_the_stacks() {
         assert_ne!(h, last, "{what} left the hash as it was");
         last = h;
     };
-    for op in [WindowOp::Own { by: Some(SERVER) }, WindowOp::Live { by: Some(SERVER) }, WindowOp::Working { by: Some(SERVER), at: Some(10) }, WindowOp::Diagnostic { on: true }] {
+    for op in [WindowOp::Own { by: Some(SERVER) }, WindowOp::Live { by: Some(SERVER) }, WindowOp::Diagnostic { on: true }, WindowOp::ProgramStatus { status: Some(apex_core::WindowStatus { state: apex_core::status::State::Working, kind: None, progress: Some(10), msg: None, by: SERVER, since: 1 }) }] {
         let what = format!("{op:?}");
         node.append(&mut log, Shard::Window(w), Op::Window(op)).unwrap();
         changed(&node, &what);
