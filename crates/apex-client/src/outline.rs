@@ -153,17 +153,26 @@ impl Acme {
                 )
         });
         let tall = tall(toc.heads.len(), bar);
-        let panel = div()
+        // the list scrolls in the panel; what marks where the panel is
+        // (its hole in the page, `panel_at`) is the panel's, and stays
+        let list = div()
             .id("toc-panel")
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h(px(0.))
+            .overflow_y_scroll()
+            .track_scroll(&self.outline.scroll)
+            .p(px(PAD - 1.))
+            .children(rows);
+        let panel = div()
             .relative()
             .flex()
             .flex_col()
             .min_w(px(170.))
             .max_w(px(320.))
             .h(tall)
-            .overflow_y_scroll()
-            .track_scroll(&self.outline.scroll)
-            .p(px(PAD - 1.))
+            .overflow_hidden()
             .rounded(px(10.))
             .bg(rgb(t.panel_bg))
             .border_1()
@@ -173,7 +182,7 @@ impl Acme {
             .text_size(px(12.5))
             .child(self.overlay_mark_by(px(0.)))
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
-            .children(rows);
+            .child(list);
         Some(deferred(anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
     }
 }
