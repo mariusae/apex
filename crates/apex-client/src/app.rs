@@ -591,6 +591,11 @@ pub struct Acme {
     /// The sessions' windows' statuses as the sidebar last drew them, and
     /// the minute it was then (their ages counted in minutes).
     statuses_shown: (u64, Vec<(TabId, WindowId, String)>),
+    /// The other sessions' notifications, as this window first saw each
+    /// (their entries' order is their own session's, not across them).
+    others_noted: HashMap<(TabId, WindowId, apex_core::Seq), std::time::Instant>,
+    /// The sidebar button's badge as last drawn (`other_badge`).
+    pub badge_shown: Option<(TabId, WindowId, Option<usize>)>,
     /// Bodies scrolled by the trackpad, as a native view scrolls: by the
     /// pixel between whole lines, and past either end. Only this client's;
     /// the origin line is what the session has.
@@ -1868,6 +1873,8 @@ impl Acme {
             menu_closing: None,
             tabs_shown: Vec::new(),
             statuses_shown: (0, Vec::new()),
+            others_noted: HashMap::new(),
+            badge_shown: None,
             smooth: HashMap::new(),
             wheel_at: HashMap::new(),
             springing: false,
@@ -2014,12 +2021,38 @@ impl Acme {
         }
         let minute = if statuses.is_empty() { 0 } else { crate::sidebar::now_secs() / 60 };
         let statuses = (minute, statuses);
-        if now == self.tabs_shown && statuses == self.statuses_shown {
+        // and the other sessions' latest notification, the sidebar
+        // button's badge
+        let mut here = std::collections::HashSet::new();
+        for (tab, ns) in Pool::notifications(cx).into_iter().filter(|(t, _)| *t != self.tab) {
+            for (w, seq) in ns {
+                here.insert((tab, w, seq));
+                self.others_noted.entry((tab, w, seq)).or_insert_with(std::time::Instant::now);
+            }
+        }
+        self.others_noted.retain(|k, _| here.contains(k));
+        let badge = self.other_badge(cx);
+        if now == self.tabs_shown && statuses == self.statuses_shown && badge == self.badge_shown {
             return false;
         }
         self.tabs_shown = now;
         self.statuses_shown = statuses;
+        self.badge_shown = badge;
         true
+    }
+
+    /// Another session's latest notification, for the sidebar button's
+    /// badge: its tab, its window, and the icon of the status that asks
+    /// for the user there (done, blocked, error), if it is that.
+    pub fn other_badge(&self, cx: &gpui::App) -> Option<(TabId, WindowId, Option<usize>)> {
+        let (&(tab, w, _), _) = self.others_noted.iter().filter(|((t, _, _), _)| *t != self.tab).max_by_key(|((_, _, seq), at)| (**at, *seq))?;
+        let icon = Pool::parked_nodes(cx)
+            .into_iter()
+            .find(|(id, _, _)| *id == tab)
+            .and_then(|(_, _, node)| node.window_status(w))
+            .filter(|s| crate::sidebar::asks(s.state))
+            .and_then(|s| crate::text_element::status_icon(s.state, s.kind));
+        Some((tab, w, icon))
     }
 
     /// The word after a tab's name: what it is doing, when that is

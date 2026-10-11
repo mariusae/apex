@@ -1300,7 +1300,9 @@ impl app::Acme {
             .justify_center()
             .cursor_default()
             .hover(move |s| s.bg(gpui::rgb(theme::step(under, 1))))
+            .relative()
             .child(sidebar::sidebar_glyph(t.text_dim))
+            .children(sidebar::sidebar_badge(self.badge_shown.map(|b| b.2), under))
             .on_mouse_down(MouseButton::Left, |_, _, cx| {
                 shell::toggle_sidebar(cx);
                 cx.stop_propagation();
@@ -1368,7 +1370,9 @@ impl app::Acme {
                 .justify_center()
                 .cursor_default()
                 .hover(move |s| s.bg(gpui::rgb(theme::step(under, 1))))
+                .relative()
                 .child(sidebar::sidebar_glyph(t.text_dim))
+                .children(sidebar::sidebar_badge(self.badge_shown.map(|b| b.2), under))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| {
                     shell::toggle_sidebar(cx);
                     cx.stop_propagation();

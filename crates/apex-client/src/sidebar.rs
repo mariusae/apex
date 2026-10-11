@@ -670,6 +670,30 @@ pub(crate) fn dot_element(d: &crate::text_element::Dot) -> impl IntoElement {
     div().flex_none().relative().size(px(9.)).children(note).child(el).children(spin)
 }
 
+/// The sidebar button's badge, over its glyph's corner: another
+/// session's latest notification -- its status's icon, in the gold of a
+/// status that asks for the user, or, the notification saying no more,
+/// a blue dot. `under` is the button's ground, ringing it apart.
+pub fn sidebar_badge(badge: Option<Option<usize>>, under: u32) -> Option<gpui::AnyElement> {
+    let t = theme::theme();
+    let el = match badge? {
+        Some(i) => div()
+            .absolute()
+            .top(px(-1.))
+            .right(px(-2.))
+            .size(px(13.))
+            .rounded_full()
+            .bg(rgb(under))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(icon_element(i, 10., crate::text_element::mix(t.stale, t.text, 0.5)))
+            .into_any_element(),
+        None => div().absolute().top(px(2.)).right(px(2.)).size(px(8.)).rounded_full().bg(rgb(t.accent)).border(px(1.5)).border_color(rgb(under)).into_any_element(),
+    };
+    Some(el)
+}
+
 /// The sidebar button's glyph: a window with a panel down its left.
 pub fn sidebar_glyph(ink: u32) -> impl IntoElement {
     div()
