@@ -23,11 +23,14 @@ const ROW: f32 = 23.;
 /// How far a tick reaches across the bar, by its heading's level.
 const TICK: [f32; 5] = [0., 9., 7., 5., 3.];
 
-/// The outline's state in the app: which page's is out, the heading near
-/// the pointer, where the panel was drawn, and its list's scroll.
+/// The outline's state in the app: which page's is out, its bar (as the
+/// pointer last found it: the bars are laid out after the panel is made),
+/// the heading near the pointer, where the panel was drawn, and its
+/// list's scroll.
 #[derive(Default)]
 pub struct Outline {
     pub open: Option<WindowId>,
+    pub bar: Option<Bounds<Pixels>>,
     pub near: Option<usize>,
     pub panel_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     pub scroll: gpui::ScrollHandle,
@@ -63,6 +66,7 @@ impl Acme {
         let on_panel = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
         let (open, near) = match in_bar {
             Some((w, bar)) => {
+                self.outline.bar = Some(bar);
                 let (toc, _) = self.webs.toc(w).unwrap();
                 (Some(w), nearest(toc, self.webs.page_scroll(w), bar, pos.y))
             }
@@ -70,9 +74,6 @@ impl Acme {
             None => (None, None),
         };
         let changed = open != self.outline.open || near != self.outline.near;
-        if open != self.outline.open {
-            crate::shell::log_line(&format!("outline: {}", open.map_or("in".to_string(), |w| format!("out on page {w}"))));
-        }
         if open.is_some() && open != self.outline.open {
             // out afresh: its list where the view is
             if let Some((_, Some(c))) = open.and_then(|w| self.webs.toc(w)) {
@@ -91,7 +92,7 @@ impl Acme {
     /// nearest washed; B1 on one, the page there.
     pub fn outline_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let w = self.outline.open?;
-        let bar = *self.web_bars.get(&w)?;
+        let bar = self.outline.bar?;
         let (toc, current) = self.webs.toc(w)?;
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();
