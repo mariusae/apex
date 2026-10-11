@@ -3061,9 +3061,9 @@ impl Acme {
             WinKind::Page if n.is_buffer_page(w) => Some("Preview".into()),
             _ => None,
         });
-        // its status after it, cut short: the sidebar has room for more
-        let status = n.window_status(w).and_then(|s| Some((crate::sidebar::shortened(&s.text()?, 48), crate::sidebar::asks(s.state), crate::text_element::status_icon(s.state, s.kind))));
-        let chip = status.as_ref().map(|(text, asks, icon)| crate::text_element::StatusChip { text, asks: *asks, icon: *icon });
+        // its status, for its pill at the row's right (cut short there
+        // as the room it has asks)
+        let chip = n.window_status(w).and_then(|s| Some(crate::text_element::StatusChip { text: s.text()?, asks: crate::sidebar::asks(s.state), icon: crate::text_element::status_icon(s.state, s.kind) }));
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
             return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), chip, &verbs, &n.state.meta.cwd);

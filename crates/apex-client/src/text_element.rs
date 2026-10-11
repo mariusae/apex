@@ -172,11 +172,12 @@ pub fn status_icon(state: apex_core::status::State, kind: Option<apex_core::stat
     Some(icon_index(name))
 }
 
-/// A window's status as its tag draws it: what it says, whether it asks
-/// for the user, and its state's icon.
-#[derive(Clone, Copy, Debug)]
-pub struct StatusChip<'a> {
-    pub text: &'a str,
+/// A window's status as its tag draws it, on a pill at the right of its
+/// first row: what it says, whether it asks for the user, and its
+/// state's icon.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StatusChip {
+    pub text: String,
     pub asks: bool,
     pub icon: Option<usize>,
 }
@@ -950,9 +951,6 @@ pub enum Atom {
     /// A window with no path yet.
     Untitled,
     Label,
-    /// The window's status, after its label: how its work stands; and
-    /// whether it asks for the user (done, blocked, failed).
-    Status(bool),
     /// A verb of `VERB_ICONS`.
     Verb(usize),
     /// What is typed after a folder while the path's picker is down: the
@@ -973,7 +971,8 @@ fn inside(path: &str, base: &str) -> Option<usize> {
 }
 
 /// The head of a window's tag, laid out before its text on its first
-/// line: the path, a gap, the label, the status, the verbs, the divider.
+/// line: the path, a gap, the label, the verbs, the divider (and, apart
+/// from them at the row's right, the status).
 #[derive(Clone, Default, Debug)]
 pub struct Head {
     pub text: String,
@@ -987,6 +986,10 @@ pub struct Head {
     /// Icons drawn in the path, not a verb's: where each one's cell is,
     /// and which (the chevron that marks the session's directory).
     pub glyphs: Vec<(usize, usize)>,
+    /// The window's status: not in the head's text, but on a pill of its
+    /// own at the right of the tag's first row, the text wrapping short
+    /// of it.
+    pub status: Option<StatusChip>,
 }
 
 impl Head {
@@ -1123,7 +1126,7 @@ impl Head {
         // the midline ellipsis: centred on the line, as the text's ink is
         const ELLIPSIS: &str = "⋯/";
         let at = |p: usize| if p >= end { p + start + ELLIPSIS.len() - end } else { p };
-        let mut h = Head { text: format!("{}{ELLIPSIS}{}", &self.text[..start], &self.text[end..]), ..Head::default() };
+        let mut h = Head { text: format!("{}{ELLIPSIS}{}", &self.text[..start], &self.text[end..]), status: self.status.clone(), ..Head::default() };
         h.atoms.push((start, start + ELLIPSIS.len(), hidden));
         h.atoms.extend(self.atoms.iter().filter(|a| a.1 <= start || a.0 >= end).map(|&(a, b, x)| (at(a), at(b), x)));
         h.atoms.sort_by_key(|a| a.0);
@@ -1162,32 +1165,20 @@ impl Head {
         }
     }
 
-    /// After the path: a gap, the label, the status, the verbs, the
-    /// divider.
+    /// After the path: a gap, the label, the verbs, the divider; the
+    /// status kept for its pill.
     fn rest(&mut self, label: Option<&str>, status: Option<StatusChip>, verbs: &[&str]) {
-        let (label, status) = (label.filter(|l| !l.is_empty()), status.filter(|s| !s.text.is_empty()));
+        let label = label.filter(|l| !l.is_empty());
+        self.status = status.filter(|s| !s.text.is_empty());
         // after the path, the gap a label's chip has before the × after
         // it: a space and a hair before a chip, as drawn, and one space
         // before an icon (whose inset in its cell makes up the rest)
         if !self.text.is_empty() {
-            let chip = label.is_some() || status.is_some();
-            self.push(if chip { " \u{200a}" } else { " " }, None);
+            self.push(if label.is_some() { " \u{200a}" } else { " " }, None);
         }
-        // each on its chip, with its chip's room inside it; the status's
-        // state's icon on a cell of its own at its start
+        // on its chip, with its chip's room inside it
         if let Some(l) = label {
             self.push(&format!(" {l} "), Some(Atom::Label));
-            self.push(" ", None);
-        }
-        if let Some(s) = status {
-            let a = self.text.len();
-            match s.icon {
-                Some(i) => {
-                    self.glyphs.push((a + 1, i));
-                    self.push(&format!(" {ICON_CELL}{} ", s.text), Some(Atom::Status(s.asks)));
-                }
-                None => self.push(&format!(" {} ", s.text), Some(Atom::Status(s.asks))),
-            }
             self.push(" ", None);
         }
         for v in verbs {
@@ -1307,6 +1298,8 @@ pub struct TextElement {
 }
 
 pub struct Prepaint {
+    /// A window tag's status's pill, at the right of its first row.
+    pill: Option<Pill>,
     /// How far a line that does not wrap is scrolled across, and whether
     /// text is hidden past its start and past its end: faded out there.
     hscroll: Pixels,
@@ -1422,6 +1415,50 @@ pub struct Tint {
     pub sel: (usize, usize),
 }
 
+/// A status's pill as a tag lays it out: its words shaped, its icon, the
+/// gap between them (half a space), its tint and its ink, and how wide
+/// it all is with its padding.
+struct Pill {
+    line: gpui::ShapedLine,
+    icon: Option<usize>,
+    gap: Pixels,
+    hue: u32,
+    ink: Hsla,
+    width: Pixels,
+}
+
+/// Padding inside a status's pill, each side; room left of it before the
+/// tag's text, and right of it to the tag's edge.
+const PILL_PAD: f32 = 6.;
+const PILL_GAP: f32 = 8.;
+const PILL_RIGHT: f32 = 4.;
+
+/// Status `s`'s pill in `fontspec`, no wider than `most` (its words cut
+/// short, an ellipsis ending them, until it is).
+fn pill(window: &Window, fontspec: &FontSpec, s: &StatusChip, most: Pixels) -> Option<Pill> {
+    let th = crate::theme::theme();
+    let hue = if s.asks { th.stale } else { th.accent };
+    let ink: Hsla = rgb(mix(hue, th.text, if s.asks { 0.5 } else { 0.35 })).into();
+    let ts = window.text_system();
+    let shaped = |t: &str| {
+        let run = TextRun { len: t.len(), font: fontspec.font.clone(), color: ink, background_color: None, underline: None, strikethrough: None };
+        ts.shape_line(SharedString::from(t.to_string()), fontspec.size, &[run], None)
+    };
+    // half a space between the icon and the words
+    let gap = shaped(" ").width / 2.;
+    let side = if s.icon.is_some() { fontspec.size + gap } else { px(0.) };
+    let mut words: Vec<char> = s.text.chars().collect();
+    loop {
+        let text: String = if words.len() < s.text.chars().count() { format!("{}…", words.iter().collect::<String>().trim_end()) } else { s.text.clone() };
+        let line = shaped(&text);
+        let width = px(PILL_PAD * 2.) + side + line.width;
+        if width <= most || words.len() <= 1 {
+            return (width <= most).then_some(Pill { line, icon: s.icon, gap, hue, ink, width });
+        }
+        words.pop();
+    }
+}
+
 /// A window tag's head with its path shortened to a suffix, when the
 /// path is long -- more than half the tag's width -- and is what makes the
 /// tag wrap: the fewest of its leading folders put away (`Head::elided`)
@@ -1490,12 +1527,6 @@ fn shape(
     let disp: SharedString = disp.into();
     let black = rgb(crate::theme::theme().text);
     let dimmed = rgb(crate::theme::theme().text_dim);
-    // a status in the accent (in the stale gold when it asks for the
-    // user), deepened toward the text to read on its tint
-    let status_ink = |asks: bool| {
-        let th = crate::theme::theme();
-        rgb(mix(if asks { th.stale } else { th.accent }, th.text, if asks { 0.5 } else { 0.35 }))
-    };
     // a tag's name is set a weight heavier than the words after it, as a
     // title is over a toolbar's
     let strong = Font { weight: crate::fonts::weight(gpui::FontWeight::MEDIUM), ..fontspec.font.clone() };
@@ -1585,7 +1616,6 @@ fn shape(
                 // its × as faint as the verbs
                 Some(Atom::Verb(_) | Atom::ProcKill(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),
                 Some(Atom::Dir(_) | Atom::Untitled | Atom::Label | Atom::Proc(_)) => dimmed,
-                Some(Atom::Status(asks)) => status_ink(asks),
             }
         } else {
             tint.map(|t| t.text).unwrap_or(black)
@@ -1744,6 +1774,7 @@ impl Element for TextElement {
             let mut rows = Vec::new();
             let (mut rows_end, mut shown) = (true, (0, text_len));
             let mut first = 0;
+            let mut tag_pill = None;
             if kind != Kind::Body {
                 // what acme's wintaglines asks: how many lines the tag wraps to
                 let mut y = px(0.);
@@ -1759,6 +1790,13 @@ impl Element for TextElement {
                 // the user's words in a window's tag: a step above apex's
                 let tint = Some(Tint { rest, text: if kind == Kind::WinTag { rgb(th.text_dim) } else { rest }, sel: src.sel });
                 let head = src.head.as_ref().filter(|_| matches!(kind, Kind::WinTag | Kind::Top));
+                // the status on its pill at the right of the first row, no
+                // wider than near half the tag: the text wraps short of it
+                tag_pill = head.and_then(|h| h.status.as_ref()).filter(|_| kind == Kind::WinTag).and_then(|s| pill(window, &fontspec, s, wrap.map_or(px(240.), |w| w * 0.45)));
+                let wrap = match &tag_pill {
+                    Some(p) => wrap.map(|w| (w - p.width - px(PILL_GAP)).max(px(40.))),
+                    None => wrap,
+                };
                 // a window's path shortened when it is what makes the tag
                 // wrap (`shortened`); a tag of more lines than one is long
                 // anyway, and keeps it whole
@@ -1886,6 +1924,7 @@ impl Element for TextElement {
             let widest = lines.iter().map(|l| l.layout.unwrapped_layout.width).fold(px(0.), |a, b| a.max(b));
             let overflow = if across { (hscroll > px(0.5), widest - hscroll > room + px(0.5)) } else { (false, false) };
             Some(Prepaint {
+                pill: tag_pill,
                 hscroll,
                 overflow,
                 kind,
@@ -2175,14 +2214,30 @@ impl Element for TextElement {
                         let under = if pp.kind == Kind::WinTag { th.tag_bg } else { ground(&th) };
                         chip(window, a, b, px(3.), rgb(mix(th.text_dim, under, 0.9)));
                     }
-                    // the label on a chip of its own, and the status on one
-                    // in the accent's tint
+                    // the label on a chip of its own
                     for &(a, b, atom) in &line.atoms {
-                        match atom {
-                            Atom::Label => chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86))),
-                            Atom::Status(asks) => chip(window, a, b, px(0.), rgb(mix(if asks { th.stale } else { th.accent }, th.tag_bg, 0.74))),
-                            _ => {}
+                        if atom == Atom::Label {
+                            chip(window, a, b, px(0.), rgb(mix(th.text_dim, th.tag_bg, 0.86)));
                         }
+                    }
+                    // the status on its pill at the right of the first row,
+                    // in the accent's tint (the stale gold's, when it asks
+                    // for the user): its state's icon, half a space, its words
+                    if let Some(p) = pp.pill.as_ref().filter(|_| line.head > 0) {
+                        let x1 = right - px(PILL_RIGHT);
+                        let x0 = x1 - p.width;
+                        let sy = ly + (lh - tall) / 2.;
+                        let r = Bounds::from_corners(point(x0, sy), point(x1, sy + tall));
+                        window.paint_quad(fill(r, rgb(mix(p.hue, th.tag_bg, 0.74))).corner_radii(tall / 2.));
+                        let mut x = x0 + px(PILL_PAD);
+                        if let Some(i) = p.icon {
+                            let side = pp.fontspec.size.min(tall - px(2.));
+                            let c = point(x + side / 2., ly + lh / 2.);
+                            let name: SharedString = format!("apex-verb-{i}.svg").into();
+                            let _ = window.paint_svg(Bounds::new(point(c.x - side / 2., c.y - side / 2.), size(side, side)), name, Some(verb_svg(i)), gpui::TransformationMatrix::unit(), p.ink, cx);
+                            x += side + p.gap;
+                        }
+                        let _ = p.line.paint(point(x, ly - lift), lh, gpui::TextAlign::Left, None, window, cx);
                     }
                     paint_glyphs(window, &line.layout.unwrapped_layout, &line.subs, point(origin.x, ly), lh, &line.colors, lift);
                     // a Look's argument that found nothing: struck through
@@ -2416,19 +2471,16 @@ mod head_tests {
         let parts: Vec<(&str, Atom)> = h.atoms.iter().map(|&(a, b, x)| (&h.text[a..b], x)).collect();
         assert_eq!(parts, vec![("/", Atom::Dir(1)), ("a/", Atom::Dir(3)), ("b/", Atom::Dir(5)), ("notes.md", Atom::Name), (" mine ", Atom::Label), (&*ICON_CELL.to_string(), Atom::Verb(0)), (&*ICON_CELL.to_string(), Atom::Verb(4))]);
         assert_eq!(&h.text[h.bar.unwrap()..], "| ");
-        // a status on a chip after the label's, or after the path alone
-        let chip = |text, icon| Some(super::StatusChip { text, asks: false, icon });
-        let s = Head::build_in("/a/b/notes.md", Some("mine"), chip("Working", None), &["Del"], true, true, "");
-        let parts: Vec<(&str, Atom)> = s.atoms.iter().map(|&(a, b, x)| (&s.text[a..b], x)).filter(|p| matches!(p.1, Atom::Label | Atom::Status(_))).collect();
-        assert_eq!(parts, vec![(" mine ", Atom::Label), (" Working ", Atom::Status(false))]);
-        let alone = Head::build_in("/a/b/notes.md", None, chip("Working", None), &[], true, true, "");
-        assert!(alone.text.starts_with("/a/b/notes.md \u{200a} Working  "), "{:?}", alone.text);
-        // its state's icon on a cell at the chip's start, in the chip
+        // a status is not in the head's text but kept for its pill, at
+        // the row's right; a path shortened keeps it
         let working = super::status_icon(apex_core::status::State::Working, None);
-        let i = Head::build_in("/a/x", None, chip("Building", working), &[], true, true, "");
-        let &(a, b, _) = i.atoms.iter().find(|x| matches!(x.2, Atom::Status(_))).unwrap();
-        assert_eq!(&i.text[a..b], format!(" {ICON_CELL}Building "));
-        assert_eq!(i.glyphs, vec![(a + 1, working.unwrap())]);
+        let chip = super::StatusChip { text: "Building".into(), asks: false, icon: working };
+        let s = Head::build_in("/a/b/notes.md", Some("mine"), Some(chip.clone()), &["Del", "Nothing", "Put"], true, true, "");
+        assert_eq!(s.text, h.text, "the same head as without it");
+        assert_eq!(s.status.as_ref(), Some(&chip));
+        assert_eq!(s.elided(1).status, Some(chip));
+        let empty = super::StatusChip { text: String::new(), asks: false, icon: None };
+        assert_eq!(Head::build_in("/a/b/notes.md", None, Some(empty), &[], true, true, "").status, None, "nothing to say, no pill");
         // a directory's name is its last folder; a URL is whole; no path
         // is Untitled
         let d = Head::build("/a/b/", None, &[], true, true);
