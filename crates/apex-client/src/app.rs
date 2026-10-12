@@ -2008,14 +2008,12 @@ impl Acme {
         Pool::notified(cx, id)
     }
 
-    /// Window `w`'s status cleared, as the user does by clicking its pill:
-    /// idle, with nothing to say (and so its notification lowered). The
-    /// next status said for it, by its program or its tool, is shown
-    /// again.
+    /// Window `w`'s status cleared, as the user does by clicking its pill,
+    /// and as apex status clear does: none at all (and so its
+    /// notification lowered). The next status said for it, by its program
+    /// or its tool, is shown again.
     pub fn clear_status(&mut self, w: WindowId) {
-        let since = crate::sidebar::now_secs();
-        let status = apex_core::WindowStatus { state: apex_core::status::State::Idle, kind: None, progress: None, msg: None, by: apex_core::SERVER, since };
-        apex_server::perform(&mut self.node, &mut self.log, vec![apex_server::Proposal::SetStatus { window: w, status: Some(status) }]);
+        apex_server::perform(&mut self.node, &mut self.log, vec![apex_server::Proposal::SetStatus { window: w, status: None }]);
         self.after();
     }
 
