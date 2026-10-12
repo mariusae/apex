@@ -1,7 +1,9 @@
 //! The notifications the app is carrying, across every session it has
 //! open -- shown in a window or parked in a tab -- and what the Dock
 //! says about them: its icon bounces when one comes while no window of
-//! the app's is in front, and carries how many are waiting.
+//! the app's is in front, and carries the latest, as the sidebar
+//! button's badge does another session's: the symbol of the status that
+//! asks for the user (done, blocked, failed), or a blue dot.
 //!
 //! A session's own notifications are in the order they were raised, but
 //! the entry that raised each (`Notification::at`) is a sequence in that
@@ -47,12 +49,41 @@ pub fn tick(cx: &mut App) {
     cx.default_global::<Looked>().0 = now.iter().map(|(id, _)| *id).collect();
     let queue = cx.default_global::<Queue>();
     let came = advance(&mut queue.0, &looked, &now);
-    let waiting = queue.0.len();
-    badge(waiting);
+    let latest = queue.0.last().copied();
+    let mark = latest.map(|n| mark_of(cx, n));
+    if cx.default_global::<Shown>().0 != Some(mark) {
+        cx.default_global::<Shown>().0 = Some(mark);
+        badge(mark);
+    }
     if came && !active {
         bounce();
     }
 }
+
+/// What a notification shows: the state and kind of its window's status,
+/// when that is what asks for the user; none, a notification saying no
+/// more.
+pub type Mark = Option<(apex_core::status::State, Option<apex_core::status::Kind>)>;
+
+/// Notification `n`'s mark, from its session as it is now: shown in a
+/// window, or parked.
+pub fn mark_of(cx: &App, (tab, w, _): Note) -> Mark {
+    let asks = |node: &apex_core::Node| node.window_status(w).filter(|s| crate::sidebar::asks(s.state)).map(|s| (s.state, s.kind));
+    for h in cx.windows().into_iter().filter_map(|w| w.downcast::<Acme>()) {
+        if let Ok(a) = h.read(cx) {
+            if a.tab == tab {
+                return asks(&a.node);
+            }
+        }
+    }
+    Pool::parked_nodes(cx).into_iter().find(|(id, _, _)| *id == tab).and_then(|(_, _, node)| asks(node))
+}
+
+/// The Dock icon's mark as last drawn: none before the first.
+#[derive(Default)]
+struct Shown(Option<Option<Mark>>);
+
+impl Global for Shown {}
 
 /// The queue against what the sessions hold now: what has gone is
 /// dropped, what has come is put at the end -- each session's in its own
@@ -117,34 +148,124 @@ fn bounce() {
     }
 }
 
-/// How many are waiting, on the Dock icon; nothing while none is.
-fn badge(n: usize) {
-    use objc::runtime::{BOOL, YES};
-    // SAFETY: AppKit on the main thread; the string is autoreleased.
+/// The SF Symbol a status's mark is drawn with on the Dock icon, on its
+/// disc: as the app's own icons say it in a tag (`status_icon`).
+fn symbol(state: apex_core::status::State, kind: Option<apex_core::status::Kind>) -> &'static str {
+    use apex_core::status::{Kind, State};
+    match (state, kind) {
+        (State::Done, _) => "checkmark",
+        (State::Blocked, Some(Kind::Question)) => "questionmark",
+        (State::Blocked, Some(Kind::Auth)) => "lock.fill",
+        (State::Error, _) => "exclamationmark",
+        _ => "hand.raised.fill",
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Rect {
+    origin: Point,
+    size: Point,
+}
+
+/// The latest notification on the Dock icon (`None`: none waiting, the
+/// icon as it is): over the bunny's top right, on a disc ringed in white,
+/// a blue dot -- or, its status asking for the user, its symbol, white
+/// on the stale gold.
+fn badge(mark: Option<Mark>) {
+    let Some(mark) = mark else {
+        dock_icon();
+        return;
+    };
+    let t = crate::theme::theme();
+    let img = marked(mark, t.accent, t.stale);
+    if img.is_null() {
+        return;
+    }
+    // SAFETY: AppKit on the main thread; the image is ours to release
     unsafe {
         let app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        let _: () = msg_send![app, setApplicationIconImage: img];
+        let _: () = msg_send![img, release];
+        // and no count over it, as there was
         let tile: *mut Object = msg_send![app, dockTile];
-        if tile.is_null() {
-            return;
+        if !tile.is_null() {
+            let nil: *mut Object = std::ptr::null_mut();
+            let _: () = msg_send![tile, setBadgeLabel: nil];
         }
-        let label: *mut Object = if n == 0 {
-            std::ptr::null_mut()
-        } else {
-            let s = std::ffi::CString::new(n.to_string()).unwrap_or_else(|_| std::ffi::CString::new("!").unwrap());
-            msg_send![class!(NSString), stringWithUTF8String: s.as_ptr()]
-        };
-        let was: *mut Object = msg_send![tile, badgeLabel];
-        // the same label again would redraw the icon for nothing
-        let same: bool = if was.is_null() || label.is_null() {
-            was.is_null() && label.is_null()
-        } else {
-            let eq: BOOL = msg_send![was, isEqualToString: label];
-            eq == YES
-        };
-        if same {
-            return;
+    }
+}
+
+/// The Dock icon with `mark` over it (`badge`), in the theme's `accent`
+/// and `stale`: an image of the caller's to release, or nil.
+fn marked(mark: Mark, accent: u32, stale: u32) -> *mut Object {
+    let color = |rgb: u32| -> *mut Object {
+        let c = |s: u32| f64::from((rgb >> s) & 0xff) / 255.;
+        // SAFETY: a plain AppKit class method; the colour is autoreleased
+        unsafe { msg_send![class!(NSColor), colorWithSRGBRed: c(16) green: c(8) blue: c(0) alpha: 1.0f64] }
+    };
+    const SIDE: f64 = 1024.;
+    // SAFETY: AppKit on the main thread, drawing into an image of our
+    // own; everything made here is autoreleased or released.
+    unsafe {
+        let data: *mut Object = msg_send![class!(NSData), dataWithBytes: ICON.as_ptr() length: ICON.len()];
+        let base: *mut Object = msg_send![class!(NSImage), alloc];
+        let base: *mut Object = msg_send![base, initWithData: data];
+        if base.is_null() {
+            return std::ptr::null_mut();
         }
-        let _: () = msg_send![tile, setBadgeLabel: label];
+        let img: *mut Object = msg_send![class!(NSImage), alloc];
+        let img: *mut Object = msg_send![img, initWithSize: Point { x: SIDE, y: SIDE }];
+        let _: () = msg_send![img, lockFocus];
+        let whole = Rect { origin: Point { x: 0., y: 0. }, size: Point { x: SIDE, y: SIDE } };
+        let zero = Rect { origin: Point { x: 0., y: 0. }, size: Point { x: 0., y: 0. } };
+        // NSCompositingOperationSourceOver
+        let _: () = msg_send![base, drawInRect: whole fromRect: zero operation: 2usize fraction: 1.0f64];
+        let disc = |d: f64, inset: f64, ink: *mut Object| {
+            let r = Rect { origin: Point { x: SIDE - d - inset, y: SIDE - d - inset }, size: Point { x: d, y: d } };
+            let path: *mut Object = msg_send![class!(NSBezierPath), bezierPathWithOvalInRect: r];
+            let _: () = msg_send![ink, set];
+            let _: () = msg_send![path, fill];
+            r
+        };
+        let white = color(0xFFFFFF);
+        match mark {
+            None => {
+                disc(300., 40., white);
+                disc(252., 64., color(accent));
+            }
+            Some((state, kind)) => {
+                disc(400., 16., white);
+                let r = disc(352., 40., color(stale));
+                let name = std::ffi::CString::new(symbol(state, kind)).unwrap();
+                let name: *mut Object = msg_send![class!(NSString), stringWithUTF8String: name.as_ptr()];
+                let nil: *mut Object = std::ptr::null_mut();
+                let sym: *mut Object = msg_send![class!(NSImage), imageWithSystemSymbolName: name accessibilityDescription: nil];
+                if !sym.is_null() {
+                    // NSFontWeightBold, in white
+                    let size: *mut Object = msg_send![class!(NSImageSymbolConfiguration), configurationWithPointSize: 190.0f64 weight: 0.4f64];
+                    let colors: *mut Object = msg_send![class!(NSArray), arrayWithObject: white];
+                    let paint: *mut Object = msg_send![class!(NSImageSymbolConfiguration), configurationWithPaletteColors: colors];
+                    let conf: *mut Object = msg_send![size, configurationByApplyingConfiguration: paint];
+                    let sym: *mut Object = msg_send![sym, imageWithSymbolConfiguration: conf];
+                    if !sym.is_null() {
+                        let s: Point = msg_send![sym, size];
+                        let at = Rect { origin: Point { x: r.origin.x + (r.size.x - s.x) / 2., y: r.origin.y + (r.size.y - s.y) / 2. }, size: s };
+                        let _: () = msg_send![sym, drawInRect: at fromRect: zero operation: 2usize fraction: 1.0f64];
+                    }
+                }
+            }
+        }
+        let _: () = msg_send![img, unlockFocus];
+        let _: () = msg_send![base, release];
+        img
     }
 }
 
@@ -165,6 +286,31 @@ mod tests {
 
     fn tab(n: u64) -> TabId {
         TabId(n)
+    }
+
+    /// The Dock icon with each mark, written as PNGs to $APEX_DOCK_OUT,
+    /// to be looked at.
+    #[test]
+    #[ignore]
+    fn the_dock_icons_marks_drawn() {
+        use apex_core::status::{Kind, State};
+        let Ok(out) = std::env::var("APEX_DOCK_OUT") else { return };
+        let marks: [(&str, Mark); 6] = [("dot", None), ("done", Some((State::Done, None))), ("hand", Some((State::Blocked, Some(Kind::Permission)))), ("question", Some((State::Blocked, Some(Kind::Question)))), ("lock", Some((State::Blocked, Some(Kind::Auth)))), ("error", Some((State::Error, None)))];
+        for (name, m) in marks {
+            let img = marked(m, 0x007D9C, 0xC79A00);
+            assert!(!img.is_null());
+            // SAFETY: AppKit, our image
+            unsafe {
+                let tiff: *mut Object = msg_send![img, TIFFRepresentation];
+                let rep: *mut Object = msg_send![class!(NSBitmapImageRep), imageRepWithData: tiff];
+                let props: *mut Object = msg_send![class!(NSDictionary), dictionary];
+                // NSBitmapImageFileTypePNG
+                let png: *mut Object = msg_send![rep, representationUsingType: 4usize properties: props];
+                let len: usize = msg_send![png, length];
+                let bytes: *const u8 = msg_send![png, bytes];
+                std::fs::write(format!("{out}/{name}.png"), std::slice::from_raw_parts(bytes, len)).unwrap();
+            }
+        }
     }
 
     #[test]
