@@ -103,6 +103,14 @@ fn scripts_drive_a_headless_session() {
     }
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "pear\napple\nkiwi\n");
 
+    // a window's status, said by apex status (as from in it, with
+    // $winid), shown by win list, cleared
+    let status = |sock: &PathBuf| ok(sock, &["win", "list"]).lines().find(|l| l.contains("notes.txt")).map(|l| l.rsplit('\t').next().unwrap_or("").to_string()).unwrap_or_default();
+    ok(&sock, &["status", "-win=notes.txt", "blocked", "kind=question", "which", "fruit?"]);
+    assert_eq!(status(&sock), "blocked which fruit?");
+    ok(&sock, &["status", "-win=notes.txt", "clear"]);
+    assert_eq!(status(&sock), "");
+
     // selections
     ok(&sock, &["sel", "notes.txt", "5", "10"]);
     assert_eq!(ok(&sock, &["sel", "notes.txt"]), "5 10\n");

@@ -601,10 +601,11 @@ terminal's window is named DIR/-TITLE, DIR being the directory the shell
 last reported (OSC 7; apex awd reports it) and TITLE its title (a label,
 or an xterm title); with no directory ever reported the name is -TITLE,
 and before either it is where the shell started and the host." },
-    Cmd { name: "status", usage: "apex status [-id=ID] STATE [kind=K] [progress=N] [MSG] | clear", short: "say how this terminal's work stands", flags: &[flag("id", "the record, for a part of the work (build/test); the whole by default")], run: status_cmd, long: "\
-Status reports how the work in the terminal it runs in stands, through
-the Program Status Protocol (OSC 7501), as a program that speaks it
-would. STATE is one of the protocol's:
+    Cmd { name: "status", usage: "apex status [-win=WIN | -id=ID] STATE [kind=K] [progress=N] [MSG] | clear", short: "say how this window's work stands", flags: &[flag("win", "the window (an id, or a name); $winid by default"), flag("id", "a record of the terminal's, for a part of the work (build/test), said through OSC 7501")], run: status_cmd, long: "\
+Status says how the work in the window it runs in stands -- a
+terminal's, a win's, any window apex started it in ($winid), or WIN --
+as the Program Status Protocol (OSC 7501) has a program say it. STATE is
+one of the protocol's:
 
   idle     at rest, waiting for the user's next instruction
   working  running, perhaps progress=N percent along
@@ -613,16 +614,22 @@ would. STATE is one of the protocol's:
            kind=permission, question or auth says what, MSG why
   error    failed and stopped
 
-and MSG says more. The window's status is the most pressing of the
-terminal's reports (blocked, then error, done, working, idle): its
-state, and its MSG (or its state's word) beside the label and in the
-sidebar. Working turns the window's handle, filled as far as its
-progress says; done, blocked and error ask for the user. Working and
-blocked end at the shell's next prompt; idle and done stand until
-cleared. Clear clears the record (with no ID, every one).
+and MSG says more: the window's status, its state and its MSG (or its
+state's word), beside its label and in the sidebar. Working turns the
+window's handle, filled as far as its progress says; done, blocked and
+error raise its notification. It stands until the next is said, until
+clear, or until a click on its pill clears it.
+
+With -id, or with no window known (a shell over ssh), it is said to the
+terminal instead, as a program would (OSC 7501): one record of the
+terminal's, by ID, its window's status being the most pressing of them
+(blocked, then error, done, working, idle). A terminal's working and
+blocked records end at the shell's next prompt; idle and done stand
+until cleared. Clear clears the record (with no ID, every one).
 
   apex status working progress=40 compiling
-  apex status -id=deploy blocked kind=question which region?
+  apex status blocked kind=question which region?
+  apex status -id=deploy working deploying
   apex status clear" },
     Cmd { name: "awd", usage: "apex awd [LABEL]", short: "name this terminal's window after its directory", flags: &[], run: awd, long: "\
 Awd reports the terminal's working directory (OSC 7) and titles the
@@ -1924,10 +1931,24 @@ fn to_terminal(seq: &str) -> R {
     Ok(())
 }
 
-fn status_cmd(_: &Ctx, p: &Parsed) -> R {
+fn status_cmd(ctx: &Ctx, p: &Parsed) -> R {
     use apex_core::status::encode;
+    let said = status_args(&p.args)?;
     let id = p.get("id").unwrap_or("").to_string();
-    let body = match status_args(&p.args)? {
+    // the window's own, through the session: a terminal's, a win's, any
+    // window apex started this in
+    let win = p.get("win").map(str::to_string).or_else(|| std::env::var("winid").ok().filter(|w| !w.is_empty() && w != "0"));
+    if let Some(spec) = win.filter(|_| id.is_empty()) {
+        let mut c = tool(ctx)?;
+        let w = find_window(&c, &spec)?;
+        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let status = said.map(|r| apex_core::WindowStatus { state: r.state, kind: r.kind, progress: r.progress, msg: r.msg, by: apex_core::SERVER, since });
+        c.propose(Proposal::SetStatus { window: w, status }, TIMEOUT)?;
+        return Ok(());
+    }
+    // a record of the terminal's (-id), or no window known: said to the
+    // terminal, as a program would (OSC 7501)
+    let body = match said {
         Some(r) => encode(Some(&apex_core::status::Record { id, ..r }), None),
         None => encode(None, Some(id.as_str()).filter(|i| !i.is_empty())),
     };
