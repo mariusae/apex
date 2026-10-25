@@ -1,6 +1,7 @@
-//! The hook itself: `apex tool agent hook claude` (or `codex`, or
-//! `muse`), which the agent runs at every event with the event's JSON
-//! on its standard input. It says what happened in one line of the
+//! The hook itself: `apex tool agent hook claude` (or `codex`, `muse`
+//! or `pi`), which the agent runs at every event with the event's JSON
+//! on its standard input -- pi by way of the extension `install` gives
+//! it, which says pi's events as Claude Code's hooks say theirs. It says what happened in one line of the
 //! session's log and exits 0 whatever else: a hook that fails or
 //! dawdles is the agent's problem, and this one must never be.
 

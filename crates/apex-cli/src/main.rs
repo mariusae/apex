@@ -580,9 +580,9 @@ by hand, it offers Web and Newweb itself where no rule of the
 session's does.
 
 apex tool agent attaches as the tool named agent and serves the
-session's terminals that run coding agents (Claude Code, Codex, Muse),
-fed by the hooks those agents offer: apex tool agent install puts them
-in (uninstall takes them out), each one apex tool agent hook AGENT,
+session's terminals that run coding agents (Claude Code, Codex, Muse,
+pi), fed by the hooks those agents offer: apex tool agent install puts
+them in (uninstall takes them out), each one apex tool agent hook AGENT,
 which appends the event to ~/.apex/agent/SESSION.jsonl. While an agent
 runs, its terminal's tools menu has Transcript, Preview and Changes;
 while it asks something, Allow Deny Ask; when it wants you, its

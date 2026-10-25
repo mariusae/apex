@@ -6,6 +6,12 @@
 //! install over an install changes nothing, an install of a moved
 //! binary replaces the old path, and `uninstall` takes ours away and
 //! leaves everything else as it was.
+//!
+//! pi has no hooks of that kind, only extensions: TypeScript it loads
+//! from `~/.pi/agent/extensions/`. Ours is one file there, `apex.ts`,
+//! which runs the same hook at each of pi's events with the event said
+//! as Claude Code's hooks say theirs; it is ours by what it runs, and is
+//! written whole, or taken away whole.
 
 use std::path::{Path, PathBuf};
 
@@ -66,7 +72,7 @@ pub const MUSE_EVENTS: [&str; 14] = [
     "PostCompact",
 ];
 
-pub const AGENTS: [&str; 3] = ["claude", "codex", "muse"];
+pub const AGENTS: [&str; 4] = ["claude", "codex", "muse", "pi"];
 
 /// Where Muse reads its configuration: `$XDG_CONFIG_HOME`, else
 /// `~/.config`, as Muse itself has it.
@@ -77,11 +83,25 @@ pub fn config_dir(home: &Path) -> PathBuf {
     }
 }
 
+/// Where pi keeps what is its own: `$PI_CODING_AGENT_DIR`, else
+/// `~/.pi/agent`, as pi itself has it.
+pub fn pi_dir(home: &Path) -> PathBuf {
+    match std::env::var("PI_CODING_AGENT_DIR").ok().filter(|d| !d.trim().is_empty()) {
+        Some(d) if d == "~" => home.to_path_buf(),
+        Some(d) => match d.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None => PathBuf::from(d),
+        },
+        None => home.join(".pi").join("agent"),
+    }
+}
+
 /// Where an agent keeps its hooks, under `home`.
 pub fn hooks_file(home: &Path, agent: &str) -> PathBuf {
     match agent {
         "claude" => home.join(".claude").join("settings.json"),
         "muse" => config_dir(home).join("muse").join("settings.json"),
+        "pi" => pi_dir(home).join("extensions").join("apex.ts"),
         _ => home.join(".codex").join("hooks.json"),
     }
 }
@@ -187,12 +207,110 @@ fn settle(file: &Path, events: &[&str], cmd: Option<&str>) -> Result<bool, Strin
     Ok(true)
 }
 
+/// pi's extension: its events, said as Claude Code's hooks say theirs,
+/// handed to the hook one at a time and each waited for, so the log has
+/// them in the order they happened. pi asks no permissions, so there is
+/// no question for the pane to answer; and a hook that fails is let be.
+const PI_EXTENSION: &str = r#"// apex tool agent's hooks for pi: each event of pi's that the pane
+// cares about, said as Claude Code's hooks say theirs, handed to
+// `apex tool agent hook pi`. Written by `apex tool agent install pi`;
+// `apex tool agent uninstall pi` takes it away.
+import { spawn } from "node:child_process";
+
+const APEX = @APEX@;
+
+function hook(ctx: any, ev: Record<string, unknown>): Promise<void> {
+  const sm = ctx.sessionManager;
+  const body = { session_id: sm.getSessionId(), transcript_path: sm.getSessionFile() ?? null, cwd: ctx.cwd, ...ev };
+  return new Promise((resolve) => {
+    let child: any;
+    try {
+      child = spawn(APEX, ["tool", "agent", "hook", "pi"], { stdio: ["pipe", "ignore", "ignore"] });
+    } catch {
+      return resolve();
+    }
+    const timer = setTimeout(() => child.kill(), 5000);
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    child.on("error", done);
+    child.on("close", done);
+    child.stdin.on("error", () => {});
+    child.stdin.end(JSON.stringify(body));
+  });
+}
+
+function text(content: any): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n");
+}
+
+export default function (pi: any) {
+  pi.on("session_start", (e: any, ctx: any) => hook(ctx, { hook_event_name: "SessionStart", source: e.reason }));
+  pi.on("session_shutdown", (e: any, ctx: any) => {
+    // a reload is the same session going on
+    if (e.reason === "reload") return;
+    return hook(ctx, { hook_event_name: "SessionEnd", reason: e.reason });
+  });
+  pi.on("before_agent_start", (e: any, ctx: any) => hook(ctx, { hook_event_name: "UserPromptSubmit", prompt: e.prompt }));
+  pi.on("tool_execution_start", (e: any, ctx: any) =>
+    hook(ctx, { hook_event_name: "PreToolUse", tool_name: e.toolName, tool_input: e.args, tool_use_id: e.toolCallId }));
+  pi.on("tool_execution_end", (e: any, ctx: any) =>
+    hook(ctx, { hook_event_name: e.isError ? "PostToolUseFailure" : "PostToolUse", tool_name: e.toolName, tool_use_id: e.toolCallId }));
+  pi.on("agent_end", (e: any, ctx: any) => {
+    const last = [...(e.messages ?? [])].reverse().find((m: any) => m?.role === "assistant");
+    if (last?.stopReason === "error") return hook(ctx, { hook_event_name: "StopFailure", message: last.errorMessage ?? "error" });
+    if (last?.stopReason === "aborted") return hook(ctx, { hook_event_name: "Interrupt" });
+    return hook(ctx, { hook_event_name: "Stop", last_assistant_message: text(last?.content) });
+  });
+  pi.on("session_before_compact", (_e: any, ctx: any) => hook(ctx, { hook_event_name: "PreCompact" }));
+  pi.on("session_compact", (_e: any, ctx: any) => hook(ctx, { hook_event_name: "PostCompact" }));
+}
+"#;
+
+/// pi's extension, running apex from `exe`.
+fn pi_extension(exe: &Path) -> String {
+    PI_EXTENSION.replace("@APEX@", &Value::String(exe.display().to_string()).to_string())
+}
+
+/// Put our extension in pi's (or take it out, with none). A file there
+/// that is not ours is not touched. Says whether anything changed.
+fn settle_pi(file: &Path, ext: Option<&str>) -> Result<bool, String> {
+    let before = match std::fs::read_to_string(file) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("{}: {e}", file.display())),
+    };
+    if before.as_deref().is_some_and(|b| !b.contains(r#""tool", "agent", "hook", "pi""#)) {
+        return Err(format!("{}: there already, and not ours", file.display()));
+    }
+    match ext {
+        Some(ext) if before.as_deref() == Some(ext) => Ok(false),
+        Some(ext) => {
+            if let Some(dir) = file.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            let tmp = file.with_extension("ts.apex-tool-agent");
+            std::fs::write(&tmp, ext).map_err(|e| format!("{}: {e}", tmp.display()))?;
+            std::fs::rename(&tmp, file).map_err(|e| format!("{}: {e}", file.display()))?;
+            Ok(true)
+        }
+        None if before.is_none() => Ok(false),
+        None => std::fs::remove_file(file).map(|_| true).map_err(|e| format!("{}: {e}", file.display())),
+    }
+}
+
 /// Install for each agent named; what was done, a line each.
 pub fn install(home: &Path, exe: &Path, agents: &[&str]) -> Result<Vec<String>, String> {
     let mut said = Vec::new();
     for a in agents {
         let file = hooks_file(home, a);
-        let changed = settle(&file, events_of(a), Some(&command(exe, a)))?;
+        let changed = match *a {
+            "pi" => settle_pi(&file, Some(&pi_extension(exe)))?,
+            _ => settle(&file, events_of(a), Some(&command(exe, a)))?,
+        };
         said.push(format!("{a}: {} {}", if changed { "hooks written to" } else { "hooks already in" }, file.display()));
         if *a == "codex" {
             said.push("codex: hooks are on by default in current versions; an older one wants `[features]` `codex_hooks = true` in ~/.codex/config.toml".to_string());
@@ -205,7 +323,10 @@ pub fn uninstall(home: &Path, agents: &[&str]) -> Result<Vec<String>, String> {
     let mut said = Vec::new();
     for a in agents {
         let file = hooks_file(home, a);
-        let changed = settle(&file, events_of(a), None)?;
+        let changed = match *a {
+            "pi" => settle_pi(&file, None)?,
+            _ => settle(&file, events_of(a), None)?,
+        };
         said.push(format!("{a}: {} {}", if changed { "hooks taken out of" } else { "no hooks of ours in" }, file.display()));
     }
     Ok(said)
@@ -315,6 +436,41 @@ mod tests {
         match prev {
             Some(p) => std::env::set_var("XDG_CONFIG_HOME", p),
             None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn pis_hooks_are_an_extension_of_ours_and_only_ours() {
+        let home = home();
+        let prev = std::env::var_os("PI_CODING_AGENT_DIR");
+        std::env::remove_var("PI_CODING_AGENT_DIR");
+        let file = hooks_file(&home, "pi");
+        assert_eq!(file, home.join(".pi/agent/extensions/apex.ts"));
+        let said = install(&home, Path::new("/opt/apex app/apex"), &["pi"]).unwrap();
+        assert!(said[0].contains("written"), "{said:?}");
+        let ext = std::fs::read_to_string(&file).unwrap();
+        assert!(ext.contains("const APEX = \"/opt/apex app/apex\";"), "{ext}");
+        assert!(!ext.contains("@APEX@"));
+        // again: nothing more; from elsewhere: the path is replaced
+        assert!(install(&home, Path::new("/opt/apex app/apex"), &["pi"]).unwrap()[0].contains("already"));
+        install(&home, Path::new("/bin/apex"), &["pi"]).unwrap();
+        assert!(std::fs::read_to_string(&file).unwrap().contains("const APEX = \"/bin/apex\";"));
+        // out, and out again is nothing
+        assert!(uninstall(&home, &["pi"]).unwrap()[0].contains("taken out"));
+        assert!(!file.exists());
+        assert!(uninstall(&home, &["pi"]).unwrap()[0].contains("no hooks"));
+        // a file of that name that is not ours is left alone
+        std::fs::write(&file, "export default function () {}\n").unwrap();
+        assert!(install(&home, Path::new("/bin/apex"), &["pi"]).is_err());
+        assert!(uninstall(&home, &["pi"]).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "export default function () {}\n");
+        // wherever pi is told its directory is
+        std::env::set_var("PI_CODING_AGENT_DIR", "~/elsewhere");
+        assert_eq!(hooks_file(&home, "pi"), home.join("elsewhere/extensions/apex.ts"));
+        match prev {
+            Some(p) => std::env::set_var("PI_CODING_AGENT_DIR", p),
+            None => std::env::remove_var("PI_CODING_AGENT_DIR"),
         }
         let _ = std::fs::remove_dir_all(&home);
     }

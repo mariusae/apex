@@ -10,9 +10,9 @@ use crate::{hook, install, win};
 
 fn usage() -> ! {
     eprintln!("usage: apex tool agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]");
-    eprintln!("       apex tool agent install|uninstall [claude|codex|muse]...");
+    eprintln!("       apex tool agent install|uninstall [claude|codex|muse|pi]...");
     eprintln!("       apex tool agent ls | wait ID | events [-all]");
-    eprintln!("       apex tool agent hook claude|codex|muse");
+    eprintln!("       apex tool agent hook claude|codex|muse|pi");
     std::process::exit(2);
 }
 
@@ -28,7 +28,7 @@ pub fn run(socket: &Path, session: &str, args: &[String]) -> Result<(), String> 
             let which: Vec<&str> = if args.len() > 1 { args[1..].iter().map(String::as_str).collect() } else { install::AGENTS.to_vec() };
             for a in &which {
                 if !install::AGENTS.contains(a) {
-                    return Err(format!("{a}: not an agent I know; claude, codex or muse"));
+                    return Err(format!("{a}: not an agent I know; claude, codex, muse or pi"));
                 }
             }
             let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| usage()));

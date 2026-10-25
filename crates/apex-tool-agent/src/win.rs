@@ -60,16 +60,17 @@ pub struct Opts {
     /// No notes in +Errors when an agent asks or fails.
     pub quiet: bool,
     /// Where the agents keep their sessions: `~/.claude`, `~/.codex`,
-    /// `~/.local/share/muse`.
+    /// `~/.local/share/muse`, `~/.pi/agent`.
     pub claude_home: PathBuf,
     pub codex_home: PathBuf,
     pub muse_home: PathBuf,
+    pub pi_home: PathBuf,
 }
 
 impl Opts {
     pub fn new(cwd: PathBuf, dir: PathBuf) -> Opts {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".into()));
-        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home() }
+        Opts { cwd, dir, thoughts: false, pane: false, all: false, quiet: false, claude_home: home.join(".claude"), codex_home: home.join(".codex"), muse_home: history::muse_home(), pi_home: history::pi_home() }
     }
 }
 
@@ -945,7 +946,7 @@ impl Pane {
 
     // ---- starting and sending ----
 
-    /// `Start [claude|codex|muse] [DIR]`: the agent in a new terminal
+    /// `Start [claude|codex|muse|pi] [DIR]`: the agent in a new terminal
     /// beside the pane, in the pane's directory or the one named, which
     /// the hooks then pick up. `Newterm` is what apex starts terminals
     /// with, so that is what this is.
@@ -958,7 +959,7 @@ impl Pane {
             [a, d] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
             [d, a] if crate::install::AGENTS.contains(a) => (*a, Some(*d)),
             _ => {
-                self.t.errors(None, "Start: usage: Start [claude|codex|muse] [DIR]\n")?;
+                self.t.errors(None, "Start: usage: Start [claude|codex|muse|pi] [DIR]\n")?;
                 return Ok(true);
             }
         };
@@ -981,6 +982,7 @@ impl Pane {
         let (kind, cwd, id) = (p.kind.clone(), p.cwd.clone(), p.id.clone());
         let extra = match kind.as_str() {
             "codex" | "muse" => format!("resume {id}"),
+            "pi" => format!("--session {id}"),
             _ => format!("--resume {id}"),
         };
         self.start_agent(&kind, Some(&cwd), &extra)
@@ -1202,7 +1204,7 @@ impl Pane {
             return Ok(true);
         }
         let dir = self.opts.cwd.display().to_string();
-        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &self.opts.muse_home, &dir);
+        let past = history::sessions(&self.opts.claude_home, &self.opts.codex_home, &self.opts.muse_home, &self.opts.pi_home, &dir);
         let text = history::listing(&dir, &past, history::now());
         self.past = past.into_iter().map(|p| (p.id.clone(), p)).collect();
         let w = self.t.new_scratch(&format!("{}/", dir.trim_end_matches('/')), Some("agent history"))?;

@@ -1,17 +1,18 @@
 //! `apex tool agent`: what every agent in the session is
-//! doing -- every Claude Code, Codex and Muse started in one of its
-//! terminals -- fed by the hooks those agents offer, and for any of
+//! doing -- every Claude Code, Codex, Muse and pi started in one of its
+//! terminals -- fed by the hooks those agents offer (pi's, an extension
+//! of ours that runs them), and for any of
 //! them its transcript, its last answer as a page, its changes as a
 //! diff.
 //!
 //! ```text
 //! apex tool agent [-cwd DIR] [-a] [-all] [-thoughts] [-quiet]
-//! apex tool agent install [claude|codex|muse]...  put the hooks in (all, by default)
-//! apex tool agent uninstall [claude|codex|muse]...
-//! apex tool agent ls                     every agent, as text
-//! apex tool agent wait ID                until the agent's turn ends; the exit status is its state
-//! apex tool agent events [-all]          the events as they come, a line each
-//! apex tool agent hook claude|codex|muse what the agents run; not for typing
+//! apex tool agent install [claude|codex|muse|pi]...  put the hooks in (all, by default)
+//! apex tool agent uninstall [claude|codex|muse|pi]...
+//! apex tool agent ls                        every agent, as text
+//! apex tool agent wait ID                   until the agent's turn ends; the exit status is its state
+//! apex tool agent events [-all]             the events as they come, a line each
+//! apex tool agent hook claude|codex|muse|pi what the agents run; not for typing
 //! ```
 //!
 //! The hook is this same program: each event the agent has is one line

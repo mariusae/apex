@@ -4,8 +4,8 @@
 //! the agent speaks, a line a tool call with its status ticked off in
 //! place, the files it touched as `path:line` for B3, an edit as its
 //! diff, a result cut to a dozen lines. Claude Code keeps a JSONL of
-//! its own shape, Codex another, and Muse a third; each is read into
-//! the same items, and one writer renders them.
+//! its own shape, Codex another, Muse a third and pi a fourth; each is
+//! read into the same items, and one writer renders them.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -54,14 +54,14 @@ pub fn call_title(tool: &str, input: &Value, cwd: &str) -> String {
     let path = |k: &str| s(k).map(|p| shown(p, cwd));
     let words = match tool {
         "Bash" | "bash" => s("description").map(String::from).or_else(|| s("command").map(String::from)),
-        "Edit" | "Write" | "Read" | "NotebookEdit" | "MultiEdit" | "edit_file" | "write_file" | "read_file" => {
+        "Edit" | "Write" | "Read" | "NotebookEdit" | "MultiEdit" | "edit_file" | "write_file" | "read_file" | "edit" | "write" | "read" | "ls" => {
             path("file_path").or_else(|| path("notebook_path")).or_else(|| path("path"))
         }
-        "Glob" => s("pattern").map(|p| match path("path") {
+        "Glob" | "find" => s("pattern").map(|p| match path("path") {
             Some(d) => format!("{p} in {d}"),
             None => p.to_string(),
         }),
-        "Grep" | "search" => s("pattern").map(|p| match path("path").or_else(|| paths_of(input)) {
+        "Grep" | "search" | "grep" => s("pattern").map(|p| match path("path").or_else(|| paths_of(input)) {
             Some(d) => format!("{p} in {d}"),
             None => p.to_string(),
         }),
@@ -137,7 +137,24 @@ pub fn call_detail(tool: &str, input: &Value, cwd: &str) -> Vec<String> {
                 out.push(format!("… {cut} more lines"));
             }
         }
-        "Write" | "write_file" => {
+        // pi's: a list of them, one file
+        "edit" => {
+            let edits = input.get("edits").and_then(Value::as_array).cloned().unwrap_or_else(|| vec![input.clone()]);
+            let (mut lines, mut cut) = (Vec::new(), 0);
+            for e in &edits {
+                let t = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("");
+                let (l, c) = hunk(t("oldText"), t("newText"));
+                lines.extend(l);
+                cut += c;
+            }
+            let (minus, plus) = (lines.iter().filter(|l| l.starts_with('-')).count(), lines.iter().filter(|l| l.starts_with('+')).count());
+            out.push(format!("+{plus} -{minus}"));
+            out.extend(lines);
+            if cut > 0 {
+                out.push(format!("… {cut} more lines"));
+            }
+        }
+        "Write" | "write_file" | "write" => {
             let n = s("content").map(|c| c.lines().count()).unwrap_or(0);
             out.push(format!("+{n} lines"));
         }
@@ -419,6 +436,7 @@ pub fn parser(kind: &str, cwd: &str, thoughts: bool) -> Box<dyn Parser> {
     match kind {
         "codex" => Box::new(Codex { cwd: cwd.to_string(), thoughts }),
         "muse" => Box::new(Muse { cwd: cwd.to_string(), thoughts }),
+        "pi" => Box::new(Pi { cwd: cwd.to_string(), thoughts }),
         _ => Box::new(Claude { cwd: cwd.to_string(), thoughts }),
     }
 }
@@ -716,6 +734,79 @@ impl Parser for Muse {
     }
 }
 
+/// pi's `~/.pi/agent/sessions/--DIR--/TIME_ID.jsonl`: a line an entry,
+/// the first the session's header. The conversation is the `message`
+/// entries, each an `AgentMessage`: the user's, the assistant's (text,
+/// thinking, tool calls), a tool's result, or a command the user ran
+/// with `!`. The rest -- a model changed, a label, an extension's own
+/// state -- is pi's bookkeeping. The entries are a tree, and a branch
+/// taken with `/tree` is read as it was written, after what it left.
+pub struct Pi {
+    cwd: String,
+    thoughts: bool,
+}
+
+impl Parser for Pi {
+    fn line(&mut self, line: &str) -> Vec<Item> {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { return Vec::new() };
+        let mut out = Vec::new();
+        if v.get("type").and_then(Value::as_str) != Some("message") {
+            return out;
+        }
+        let Some(m) = v.get("message") else { return out };
+        let s = |k: &str| m.get(k).and_then(Value::as_str);
+        match s("role") {
+            Some("user") => {
+                let t = blocks_text(m.get("content"));
+                if !t.trim().is_empty() {
+                    out.push(Item::User(t.trim().to_string()));
+                }
+            }
+            Some("assistant") => {
+                for b in m.get("content").and_then(Value::as_array).into_iter().flatten() {
+                    let bs = |k: &str| b.get(k).and_then(Value::as_str);
+                    match bs("type") {
+                        Some("text") => {
+                            if let Some(t) = bs("text").filter(|t| !t.trim().is_empty()) {
+                                out.push(Item::Agent(t.to_string()));
+                            }
+                        }
+                        Some("thinking") if self.thoughts => {
+                            if let Some(t) = bs("thinking").filter(|t| !t.trim().is_empty()) {
+                                out.push(Item::Thought(t.to_string()));
+                            }
+                        }
+                        Some("toolCall") => {
+                            let name = bs("name").unwrap_or("tool");
+                            let args = b.get("arguments").cloned().unwrap_or(Value::Null);
+                            out.push(Item::Call { id: bs("id").unwrap_or("").to_string(), title: call_title(name, &args, &self.cwd), detail: call_detail(name, &args, &self.cwd) });
+                        }
+                        _ => {}
+                    }
+                }
+                if s("stopReason") == Some("error") {
+                    out.push(Item::Note(format!("error: {}", s("errorMessage").unwrap_or("API error"))));
+                }
+            }
+            Some("toolResult") => {
+                let ok = m.get("isError").and_then(Value::as_bool) != Some(true);
+                out.push(Item::Result { id: s("toolCallId").unwrap_or("").to_string(), ok, text: blocks_text(m.get("content")) });
+            }
+            // the user's own `!`: a call and its result, made by nobody
+            Some("bashExecution") => {
+                let id = v.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                let cmd = s("command").unwrap_or("");
+                let args = serde_json::json!({ "command": cmd });
+                out.push(Item::Call { id: id.clone(), title: format!("! {}", cmd.lines().next().unwrap_or("").trim()), detail: call_detail("bash", &args, &self.cwd) });
+                let ok = m.get("exitCode").and_then(Value::as_i64).map_or(true, |c| c == 0) && m.get("cancelled").and_then(Value::as_bool) != Some(true);
+                out.push(Item::Result { id, ok, text: s("output").unwrap_or("").to_string() });
+            }
+            _ => {}
+        }
+        out
+    }
+}
+
 /// A result as shown: a tool's envelope -- a shell's, with the output
 /// in it -- is unwrapped to what it said.
 fn result_text(text: &str) -> String {
@@ -909,6 +1000,41 @@ mod tests {
         // without thoughts the thinking is not shown
         let items = p.line(r#"{"payload_type":"runtime.session","payload":{"event":{"kind":"reasoning_committed","text":"hmm"}}}"#);
         assert!(items.is_empty());
+    }
+
+    #[test]
+    fn a_pi_session_reads_as_the_conversation() {
+        let mut p = Pi { cwd: "/home/me/proj".into(), thoughts: true };
+        let mut w = Writer::new();
+        let lines = [
+            r#"{"type":"session","version":3,"id":"7f3e9a10-1111","timestamp":"2026-10-24T10:00:00.000Z","cwd":"/home/me/proj"}"#,
+            r#"{"type":"model_change","id":"a0","parentId":null,"timestamp":"2026-10-24T10:00:00.000Z","provider":"anthropic","modelId":"claude-opus-5-5"}"#,
+            r#"{"type":"message","id":"a1","parentId":"a0","timestamp":"2026-10-24T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"fix the typo"}],"timestamp":1}}"#,
+            r#"{"type":"message","id":"a2","parentId":"a1","timestamp":"2026-10-24T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Find it first"},{"type":"toolCall","id":"call_1","name":"read","arguments":{"path":"/home/me/proj/README.md"}}],"stopReason":"toolUse","timestamp":2}}"#,
+            r#"{"type":"message","id":"a3","parentId":"a2","timestamp":"2026-10-24T10:00:03.000Z","message":{"role":"toolResult","toolCallId":"call_1","toolName":"read","content":[{"type":"text","text":"teh end"}],"isError":false,"timestamp":3}}"#,
+            r#"{"type":"message","id":"a4","parentId":"a3","timestamp":"2026-10-24T10:00:04.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_2","name":"edit","arguments":{"path":"README.md","edits":[{"oldText":"teh end","newText":"the end"}]}}],"stopReason":"toolUse","timestamp":4}}"#,
+            r#"{"type":"message","id":"a5","parentId":"a4","timestamp":"2026-10-24T10:00:05.000Z","message":{"role":"toolResult","toolCallId":"call_2","toolName":"edit","content":[{"type":"text","text":"no match"}],"isError":true,"timestamp":5}}"#,
+            r#"{"type":"message","id":"a6","parentId":"a5","timestamp":"2026-10-24T10:00:06.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Fixed."}],"stopReason":"stop","timestamp":6}}"#,
+            r#"{"type":"message","id":"a7","parentId":"a6","timestamp":"2026-10-24T10:00:07.000Z","message":{"role":"bashExecution","command":"git diff --stat","output":"1 file changed","exitCode":0,"cancelled":false,"truncated":false,"timestamp":7}}"#,
+            r#"{"type":"message","id":"a8","parentId":"a7","timestamp":"2026-10-24T10:00:08.000Z","message":{"role":"user","content":"and again"}}"#,
+            r#"{"type":"message","id":"a9","parentId":"a8","timestamp":"2026-10-24T10:00:09.000Z","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"overloaded","timestamp":9}}"#,
+        ];
+        for l in lines {
+            for it in p.line(l) {
+                w.item(&it);
+            }
+        }
+        assert_eq!(
+            w.text,
+            "~\n\nfix the typo\n\n  · Find it first\n✓ read: README.md\n    teh end\n✗ edit: README.md\n    +1 -1\n    -teh end\n    +the end\n    no match\n• Fixed.\n✓ ! git diff --stat\n    1 file changed\n\n~\n\nand again\n\n– error: overloaded\n"
+        );
+        // without thoughts the thinking is not shown
+        let mut p = Pi { cwd: "/x".into(), thoughts: false };
+        assert!(p.line(r#"{"type":"message","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm"}],"stopReason":"stop"}}"#).is_empty());
+        assert_eq!(call_title("grep", &serde_json::json!({"pattern": "fn main", "path": "/x/src"}), "/x"), "grep: fn main in src");
+        assert_eq!(call_title("find", &serde_json::json!({"pattern": "*.rs"}), "/x"), "find: *.rs");
+        assert_eq!(call_title("ls", &serde_json::json!({"path": "/x/src"}), "/x"), "ls: src");
+        assert_eq!(call_detail("write", &serde_json::json!({"path": "n", "content": "a\nb\n"}), "/x"), vec!["+2 lines"]);
     }
 
     #[test]

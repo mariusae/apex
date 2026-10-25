@@ -1,8 +1,9 @@
 //! The sessions a directory has had, as the agents keep them on disk:
 //! Claude Code's under `~/.claude/projects/DIR-AS-A-NAME/`, Codex's
 //! rollouts under `~/.codex/sessions/`, Muse's logs under
-//! `~/.local/share/muse/sessions/`, each saying which directory it
-//! was in. Listed as apex-acp's `Resume` lists them -- the id, when it
+//! `~/.local/share/muse/sessions/`, pi's under
+//! `~/.pi/agent/sessions/--DIR-AS-A-NAME--/`, each saying which
+//! directory it was in. Listed as apex-acp's `Resume` lists them -- the id, when it
 //! was last worked in, what it is about -- so B3 on an id opens the
 //! transcript and `Resume ID` takes the session up again.
 
@@ -24,11 +25,23 @@ pub fn muse_home() -> PathBuf {
     data_home().join("muse")
 }
 
+/// pi's own directory: its sessions, and its extensions.
+pub fn pi_home() -> PathBuf {
+    crate::install::pi_dir(Path::new(&std::env::var("HOME").unwrap_or_else(|_| "/".into())))
+}
+
+/// pi's name for a directory: the leading `/` gone, every other `/`
+/// (and `\`, and `:`) a `-`, between `--` and `--`.
+pub fn pi_project(cwd: &str) -> String {
+    let rest = cwd.strip_prefix(['/', '\\']).unwrap_or(cwd);
+    format!("--{}--", rest.replace(['/', '\\', ':'], "-"))
+}
+
 /// A session an agent has had here before.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Past {
     pub id: String,
-    /// `claude`, `codex`.
+    /// `claude`, `codex`, `muse`, `pi`.
     pub kind: String,
     /// Its transcript.
     pub path: PathBuf,
@@ -45,9 +58,10 @@ pub fn claude_project(cwd: &str) -> String {
 }
 
 /// The sessions had in `cwd`, newest first: Claude Code's from
-/// `claude_home` (`~/.claude`), Codex's from `codex_home` (`~/.codex`)
-/// and Muse's from `muse_home` (`~/.local/share/muse`).
-pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, cwd: &str) -> Vec<Past> {
+/// `claude_home` (`~/.claude`), Codex's from `codex_home` (`~/.codex`),
+/// Muse's from `muse_home` (`~/.local/share/muse`) and pi's from
+/// `pi_home` (`~/.pi/agent`).
+pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, pi_home: &Path, cwd: &str) -> Vec<Past> {
     let mut out = Vec::new();
     let dir = claude_home.join("projects").join(claude_project(cwd));
     if let Ok(rd) = std::fs::read_dir(&dir) {
@@ -70,6 +84,12 @@ pub fn sessions(claude_home: &Path, codex_home: &Path, muse_home: &Path, cwd: &s
     }
     for path in muse_logs(muse_home) {
         if let Some(p) = muse_meta(&path, cwd) {
+            out.push(p);
+        }
+    }
+    let dir = pi_home.join("sessions").join(pi_project(cwd));
+    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        if let Some(p) = pi_meta(&e.path(), cwd) {
             out.push(p);
         }
     }
@@ -254,6 +274,44 @@ fn muse_meta(path: &Path, cwd: &str) -> Option<Past> {
     Some(Past { id, kind: "muse".into(), path: path.to_path_buf(), cwd: cwd.to_string(), when: mtime(path), title })
 }
 
+/// A pi session's file, when it was had in `cwd`: its header says its
+/// id and directory, and its name (`/name`), or else the first thing
+/// asked, is the title. A file that asked nothing is no session.
+fn pi_meta(path: &Path, cwd: &str) -> Option<Past> {
+    use std::io::BufRead;
+    if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+        return None;
+    }
+    let f = std::fs::File::open(path).ok()?;
+    let mut lines = std::io::BufReader::new(f).lines().map_while(Result::ok);
+    let head: Value = serde_json::from_str(&lines.next()?).ok()?;
+    if head.get("type").and_then(Value::as_str) != Some("session") || head.get("cwd").and_then(Value::as_str) != Some(cwd) {
+        return None;
+    }
+    let id = head.get("id").and_then(Value::as_str)?.to_string();
+    let (mut name, mut first) = (None, None);
+    for line in lines {
+        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        match v.get("type").and_then(Value::as_str) {
+            Some("session_info") => name = v.get("name").and_then(Value::as_str).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()),
+            Some("message") if first.is_none() => {
+                let m = &v["message"];
+                if m.get("role").and_then(Value::as_str) == Some("user") {
+                    let t = match m.get("content") {
+                        Some(Value::String(s)) => s.clone(),
+                        Some(Value::Array(a)) => a.iter().find_map(|b| b.get("text").and_then(Value::as_str)).unwrap_or("").to_string(),
+                        _ => String::new(),
+                    };
+                    first = Some(t.trim().to_string()).filter(|t| !t.is_empty());
+                }
+            }
+            _ => {}
+        }
+    }
+    first.as_ref()?;
+    Some(Past { id, kind: "pi".into(), path: path.to_path_buf(), cwd: cwd.to_string(), when: mtime(path), title: name.or(first) })
+}
+
 /// The sessions as a listing, apex-acp's way: the id, when, and what
 /// it is about, a line each, with a first line of apex's own.
 pub fn listing(dir: &str, past: &[Past], now: i64) -> String {
@@ -307,6 +365,14 @@ mod tests {
         let claude = home.join(".claude");
         let codex = home.join(".codex");
         let muse = home.join("share").join("muse");
+        let pi = home.join(".pi").join("agent");
+        assert_eq!(pi_project("/work/proj"), "--work-proj--");
+        let pproj = pi.join("sessions").join(pi_project("/work/proj"));
+        std::fs::create_dir_all(&pproj).unwrap();
+        std::fs::write(pproj.join("2026-09-14T10-00-00-000Z_9999-a.jsonl"), "{\"type\":\"session\",\"version\":3,\"id\":\"9999-a\",\"cwd\":\"/work/proj\"}\n{\"type\":\"message\",\"id\":\"a1\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"tidy the docs\"}]}}\n").unwrap();
+        std::fs::write(pproj.join("2026-09-14T11-00-00-000Z_9999-b.jsonl"), "{\"type\":\"session\",\"version\":3,\"id\":\"9999-b\",\"cwd\":\"/work/proj\"}\n{\"type\":\"message\",\"id\":\"a1\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}\n{\"type\":\"session_info\",\"id\":\"a2\",\"name\":\"Named one\"}\n").unwrap();
+        // a header and nothing asked is no session
+        std::fs::write(pproj.join("2026-09-14T12-00-00-000Z_9999-c.jsonl"), "{\"type\":\"session\",\"version\":3,\"id\":\"9999-c\",\"cwd\":\"/work/proj\"}\n").unwrap();
         let proj = claude.join("projects").join(claude_project("/work/proj"));
         std::fs::create_dir_all(&proj).unwrap();
         std::fs::write(proj.join("aaaa-1.jsonl"), "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"fix the build\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"ai-title\",\"aiTitle\":\"Build fix\"}\n").unwrap();
@@ -322,15 +388,17 @@ mod tests {
         std::fs::create_dir_all(mday.join("gggg-7")).unwrap();
         std::fs::write(mday.join("ffff-6/session.jsonl"), "{\"payload_type\":\"runtime.session.metadata\",\"payload\":{\"record\":{\"workspace_root\":\"/work/proj\"}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"started\",\"prompt\":\"wire the widget\"}}}\n").unwrap();
         std::fs::write(mday.join("gggg-7/session.jsonl"), "{\"payload_type\":\"runtime.session.metadata\",\"payload\":{\"record\":{\"workspace_root\":\"/elsewhere\"}}}\n{\"payload_type\":\"runtime.session\",\"payload\":{\"kind\":\"run\",\"event\":{\"kind\":\"started\",\"prompt\":\"another thing\"}}}\n").unwrap();
-        let got = sessions(&claude, &codex, &muse, "/work/proj");
+        let got = sessions(&claude, &codex, &muse, &pi, "/work/proj");
         let ids: Vec<&str> = got.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(got.len(), 4, "{ids:?}");
+        assert_eq!(got.len(), 6, "{ids:?}");
         assert!(ids.contains(&"aaaa-1") && ids.contains(&"bbbb-2") && ids.contains(&"dddd-4") && ids.contains(&"ffff-6"), "{ids:?}");
         let by = |id: &str| got.iter().find(|p| p.id == id).unwrap();
         assert_eq!(by("aaaa-1").title.as_deref(), Some("Build fix"));
         assert_eq!(by("bbbb-2").title.as_deref(), Some("port the shell"));
         assert_eq!((by("dddd-4").kind.as_str(), by("dddd-4").title.as_deref()), ("codex", Some("run the tests")));
         assert_eq!((by("ffff-6").kind.as_str(), by("ffff-6").title.as_deref()), ("muse", Some("wire the widget")));
+        assert_eq!((by("9999-a").kind.as_str(), by("9999-a").title.as_deref()), ("pi", Some("tidy the docs")));
+        assert_eq!(by("9999-b").title.as_deref(), Some("Named one"));
         // a log is found by its session, whatever date it was had on,
         // and a subagent's parent by the child
         assert_eq!(muse_transcript(&muse, "ffff-6"), Some(mday.join("ffff-6/session.jsonl")));
