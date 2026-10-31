@@ -1,7 +1,7 @@
 //! The themes, as a Mac app of now dresses (the modern-mac branch's
-//! experiment; acme's tinted papers are on main): four palettes to live
-//! with and choose among (View ▸ Theme: Alabaster, Xcode, Classic, GitHub, Nova, rsms),
-//! each a light and a dark, and the appearance choosing between those
+//! experiment; acme's tinted papers are on main): palettes to live
+//! with and choose among (View ▸ Theme: Alabaster, Xcode, Classic, Acme,
+//! GitHub, Nova, rsms), each a light and a dark (Acme the same in both), and the appearance choosing between those
 //! (View: Light, Dark, System). Every palette lays out the same way: a
 //! paper for bodies and a header for the tags over them, hairlines where
 //! acme has black borders, one accent for what is going on. The choices
@@ -293,6 +293,29 @@ pub const CLASSIC_DARK: Theme = make(Keys {
     popover: 0x2B2D2F, hover: 0x333537, danger_hover: 0x4A2230, ansi: ANSI_DARK, diff_add: 0x16323D, diff_del: 0x3A2C1C,
 });
 
+/// Acme's own, as plan9port's acme.c (`iconinit`) and libdraw's
+/// `menuhit` allocate them, for a reader who needs its contrast
+/// (issue #5): the bodies DPaleyellow mixed with white (#ffffea),
+/// selected in DDarkyellow (#eeee9e), their scrollbars DYellowgreen
+/// (#99994c); the tags DPalebluegreen mixed with white (#eaffff),
+/// selected in DPalegreygreen (#9eeeee), bordered DPurpleblue (#8888cc);
+/// every text black, nothing faded; a modified window's box DMedblue
+/// (#000099); B2's sweep #aa0000 and B3's #006600; the menus
+/// DPalegreen mixed with white (#eaffea), chosen in DDarkgreen
+/// (#448844), bordered DMedgreen (#88cc88); white between the columns,
+/// and black lines where acme draws them, between windows and columns.
+/// Acme has no dark: the same in either appearance.
+pub const ACME: Theme = Theme {
+    border: 0x000000,
+    panel_border: 0x88CC88,
+    ..make(Keys {
+        paper: 0xFFFFEA, sel: 0xEEEE9E, thumb: 0x99994C, header: 0xEAFFFF, header_sel: 0x9EEEEE, line: 0x8888CC,
+        ink: 0x000000, dim: 0x000000, faint: 0x444444, accent: 0x000099, chosen: 0x448844, column: 0xFFFFFF, sidebar: 0xEAFFFF,
+        dirty: 0x000099, stale: 0xC79A00, fenced: 0xAA0000, exec: 0xAA0000, look: 0x006600,
+        popover: 0xEAFFEA, hover: 0xD9F3D9, danger_hover: 0xFBE3EA, ansi: ANSI_LIGHT, diff_add: 0xE1F3F8, diff_del: 0xFFF0DA,
+    })
+};
+
 /// Panic's Nova, its standard Bright: a white editor on a #ececec
 /// sidebar, #262626 ink, Nova's keyword blue (#255ab1) and red (#bc391c)
 /// for B3 and B2, its comment grey (#69727d) for what is secondary, and
@@ -359,12 +382,13 @@ pub enum Palette {
     Alabaster,
     Xcode,
     Classic,
+    Acme,
     GitHub,
     Nova,
     Rsms,
 }
 
-pub const PALETTES: [Palette; 6] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::GitHub, Palette::Nova, Palette::Rsms];
+pub const PALETTES: [Palette; 7] = [Palette::Alabaster, Palette::Xcode, Palette::Classic, Palette::Acme, Palette::GitHub, Palette::Nova, Palette::Rsms];
 
 /// The palette until one is chosen: Classic, acme's own (its place in
 /// `PALETTES`).
@@ -376,6 +400,7 @@ impl Palette {
             Palette::Alabaster => "Alabaster",
             Palette::Xcode => "Xcode",
             Palette::Classic => "Classic",
+            Palette::Acme => "Acme",
             Palette::GitHub => "GitHub",
             Palette::Nova => "Nova",
             Palette::Rsms => "rsms",
@@ -386,6 +411,7 @@ impl Palette {
             Palette::Alabaster => "alabaster",
             Palette::Xcode => "xcode",
             Palette::Classic => "classic",
+            Palette::Acme => "acme",
             Palette::GitHub => "github",
             Palette::Nova => "nova",
             Palette::Rsms => "rsms",
@@ -482,6 +508,8 @@ pub fn theme() -> &'static Theme {
         (Palette::Xcode, true) => &XCODE_DARK,
         (Palette::Classic, false) => &CLASSIC_LIGHT,
         (Palette::Classic, true) => &CLASSIC_DARK,
+        // acme has no dark
+        (Palette::Acme, _) => &ACME,
         (Palette::GitHub, false) => &LIGHT,
         (Palette::GitHub, true) => &DARK,
         (Palette::Nova, false) => &NOVA_LIGHT,

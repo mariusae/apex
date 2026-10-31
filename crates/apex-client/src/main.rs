@@ -756,6 +756,7 @@ fn main() {
         cx.on_action(|_: &shell::PaletteAlabaster, cx| shell::set_palette(theme::Palette::Alabaster, cx));
         cx.on_action(|_: &shell::PaletteXcode, cx| shell::set_palette(theme::Palette::Xcode, cx));
         cx.on_action(|_: &shell::PaletteClassic, cx| shell::set_palette(theme::Palette::Classic, cx));
+        cx.on_action(|_: &shell::PaletteAcme, cx| shell::set_palette(theme::Palette::Acme, cx));
         cx.on_action(|_: &shell::PaletteGitHub, cx| shell::set_palette(theme::Palette::GitHub, cx));
         cx.on_action(|_: &shell::PaletteNova, cx| shell::set_palette(theme::Palette::Nova, cx));
         cx.on_action(|_: &shell::PaletteRsms, cx| shell::set_palette(theme::Palette::Rsms, cx));
