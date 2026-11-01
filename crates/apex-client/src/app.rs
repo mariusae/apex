@@ -3451,13 +3451,17 @@ impl Acme {
                 return;
             }
         }
-        // the top row past its text, bare ground: B1 there moves the Mac
+        // the top row past its text, bare ground: B1 there puts the caret
+        // at the end, as in any tag, and a drag from there moves the Mac
         // window, as a title bar does
         if let (Target::View(ViewId::Top), Region::Text(q), MouseButton::Left) = (target, region, button) {
             let plain = !(e.modifiers.platform || e.modifiers.alt || e.modifiers.control || e.modifiers.shift);
             let at_end = self.text_of(ViewId::Top).is_some_and(|t| q >= t.len() || t.char_at(q) == '\n');
             let past = self.layouts.get(&ViewId::Top).and_then(|l| l.point_of(q)).is_some_and(|p| e.position.x > p.x + px(6.));
             if plain && e.click_count == 1 && at_end && past {
+                let _ = self.node.select(&mut self.log, ViewId::Top, q, q);
+                self.after();
+                cx.notify();
                 window.start_window_move();
                 return;
             }
