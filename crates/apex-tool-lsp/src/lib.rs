@@ -4,7 +4,10 @@
 //! and installs plumbing rules that name it. Servers come from settings
 //! (`lsp.go gopls`), with defaults for the usual languages; one runs per
 //! workspace root. `lsp.root` or `lsp.LANG.root` can name a marker that
-//! overrides the built-in workspace-root discovery.
+//! overrides the built-in workspace-root discovery. Any other language is
+//! its files' extensions and its server: `lsp.ocaml.ext 'ml mli'` and
+//! `lsp.ocaml ocamllsp` (an `.ext` of a known language's replaces its
+//! own).
 //!
 //! What it offers, through rules owned by its attachment: the verbs
 //! `Def Refs Type Hov Sig Fmt Rn` in the tools menu of source windows
@@ -46,25 +49,56 @@ pub const NAV_VERBS: [&str; 2] = ["Back", "Fwd"];
 
 /// A language the tool knows: how to recognise its files, what to run,
 /// and what marks a workspace root.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Language {
-    pub id: &'static str,
-    pub exts: &'static [&'static str],
-    pub default_server: &'static str,
-    pub roots: &'static [&'static str],
+    pub id: String,
+    pub exts: Vec<String>,
+    pub default_server: String,
+    pub roots: Vec<String>,
 }
 
-pub const LANGUAGES: &[Language] = &[
-    Language { id: "go", exts: &["go"], default_server: "gopls", roots: &["go.work", "go.mod"] },
-    Language { id: "rust", exts: &["rs"], default_server: "rust-analyzer", roots: &["Cargo.toml"] },
-    Language { id: "python", exts: &["py", "pyi"], default_server: "pyright-langserver --stdio", roots: &["pyproject.toml", "setup.py", "requirements.txt"] },
-    Language { id: "typescript", exts: &["ts", "tsx", "js", "jsx"], default_server: "typescript-language-server --stdio", roots: &["package.json"] },
-    Language { id: "c", exts: &["c", "h", "cc", "cpp", "cxx", "hh", "hpp", "hxx"], default_server: "clangd", roots: &["compile_commands.json", "Makefile"] },
+/// The languages known without settings: id, extensions, server, roots.
+const BUILTIN: &[(&str, &[&str], &str, &[&str])] = &[
+    ("go", &["go"], "gopls", &["go.work", "go.mod"]),
+    ("rust", &["rs"], "rust-analyzer", &["Cargo.toml"]),
+    ("python", &["py", "pyi"], "pyright-langserver --stdio", &["pyproject.toml", "setup.py", "requirements.txt"]),
+    ("typescript", &["ts", "tsx", "js", "jsx"], "typescript-language-server --stdio", &["package.json"]),
+    ("c", &["c", "h", "cc", "cpp", "cxx", "hh", "hpp", "hxx"], "clangd", &["compile_commands.json", "Makefile"]),
 ];
 
-pub fn language_of(path: &str) -> Option<&'static Language> {
+/// The languages there are, by the settings (`setting` one's value,
+/// `keys` all their names): the built-in ones, and any other an
+/// `lsp.ID.ext` names the files of (`lsp.ocaml.ext 'ml mli'`), whose
+/// server `lsp.ID` is -- one without a server is none. An `.ext` of a
+/// built-in one's replaces its extensions.
+pub fn languages(setting: impl Fn(&str) -> Option<String>, keys: impl IntoIterator<Item = String>) -> Vec<Language> {
+    let mut out: Vec<Language> = BUILTIN
+        .iter()
+        .map(|(id, exts, server, roots)| Language { id: id.to_string(), exts: exts.iter().map(|e| e.to_string()).collect(), default_server: server.to_string(), roots: roots.iter().map(|r| r.to_string()).collect() })
+        .collect();
+    let mut ids: Vec<String> = keys.into_iter().filter_map(|k| k.strip_prefix("lsp.").and_then(|k| k.strip_suffix(".ext")).filter(|id| !id.is_empty() && !id.contains('.')).map(String::from)).collect();
+    ids.sort();
+    ids.dedup();
+    for id in ids {
+        let exts: Vec<String> = setting(&format!("lsp.{id}.ext")).unwrap_or_default().split(|c: char| c.is_whitespace() || c == ',').map(|e| e.trim_start_matches('.').to_string()).filter(|e| !e.is_empty()).collect();
+        if exts.is_empty() {
+            continue;
+        }
+        match out.iter_mut().find(|l| l.id == id) {
+            Some(l) => l.exts = exts,
+            None => {
+                let Some(server) = setting(&format!("lsp.{id}")).filter(|s| !s.trim().is_empty()) else { continue };
+                out.push(Language { id, exts, default_server: server, roots: Vec::new() });
+            }
+        }
+    }
+    out
+}
+
+/// The language of the file at `path`, among `langs`, by its extension.
+pub fn language_of<'a>(path: &str, langs: &'a [Language]) -> Option<&'a Language> {
     let ext = Path::new(path).extension()?.to_str()?;
-    LANGUAGES.iter().find(|l| l.exts.contains(&ext))
+    langs.iter().find(|l| l.exts.iter().any(|e| e == ext))
 }
 
 /// The workspace root of `path` for `lang`: the nearest directory up
@@ -135,7 +169,8 @@ mod root_tests {
         std::fs::write(package.join("Cargo.toml"), "[package]\nname = \"nested\"\n").unwrap();
         let file = package.join("src/lib.rs");
 
-        let rust = LANGUAGES.iter().find(|lang| lang.id == "rust").unwrap();
+        let all = languages(|_| None, Vec::new());
+        let rust = all.iter().find(|lang| lang.id == "rust").unwrap();
         assert_eq!(root_of(&file, rust), package);
         assert_eq!(root_of_with_marker(&file, rust, Some(".hg")), root);
 
@@ -144,9 +179,21 @@ mod root_tests {
 
     #[test]
     fn recognizes_fblsp_file_extensions() {
+        let all = languages(|_| None, Vec::new());
         for (file, want) in [("types.pyi", "python"), ("impl.cxx", "c"), ("api.hh", "c"), ("more.hxx", "c")] {
-            assert_eq!(language_of(file).map(|lang| lang.id), Some(want), "{file}");
+            assert_eq!(language_of(file, &all).map(|lang| lang.id.as_str()), Some(want), "{file}");
         }
+    }
+
+    #[test]
+    fn any_language_is_its_extensions_and_its_server() {
+        let set: std::collections::HashMap<&str, &str> = [("lsp.ocaml.ext", "ml, .mli"), ("lsp.ocaml", "ocamllsp"), ("lsp.haskell.ext", "hs"), ("lsp.c.ext", "c h"), ("lsp.go", "gopls -remote=auto")].into_iter().collect();
+        let all = languages(|k| set.get(k).map(|v| v.to_string()), set.keys().map(|k| k.to_string()));
+        let ocaml = language_of("/src/main.mli", &all).expect("ocaml's");
+        assert_eq!((ocaml.id.as_str(), ocaml.default_server.as_str(), ocaml.exts.clone()), ("ocaml", "ocamllsp", vec!["ml".to_string(), "mli".to_string()]));
+        assert_eq!(language_of("/src/Main.hs", &all), None, "no server for it: none");
+        assert_eq!(language_of("/src/x.cpp", &all), None, "a known language's .ext replaces its own");
+        assert_eq!(language_of("/src/x.c", &all).map(|l| l.id.as_str()), Some("c"));
     }
 }
 
@@ -403,7 +450,7 @@ impl Tool {
         if self.rules.contains_key(lang) {
             return Ok(());
         }
-        let Some(l) = LANGUAGES.iter().find(|l| l.id == lang) else { return Ok(()) };
+        let Some(l) = self.languages().into_iter().find(|l| l.id == lang) else { return Ok(()) };
         let file = format!(r"\.({})$", l.exts.join("|"));
         let mut ids = Vec::new();
         for v in VERBS {
@@ -457,6 +504,14 @@ impl Tool {
     }
     fn setting(&self, key: &str) -> Option<String> {
         self.remote.node.state.meta.setting(self.remote.attachment(), key).map(String::from)
+    }
+
+    /// The languages there are, by the settings as they stand: the
+    /// session's and this tool's own.
+    fn languages(&self) -> Vec<Language> {
+        let meta = &self.remote.node.state.meta;
+        let keys: Vec<String> = [SERVER, self.remote.attachment()].iter().filter_map(|a| meta.settings.get(a)).flat_map(|m| m.keys().cloned()).collect();
+        languages(|k| self.setting(k), keys)
     }
 
     /// The rules that name us from the start: Back and Fwd, the
@@ -565,11 +620,12 @@ impl Tool {
     /// gone get `didClose`.
     fn sync_docs(&mut self) {
         let present: Vec<(BufferId, String)> = self.remote.node.state.buffers.values().filter(|b| b.name.starts_with('/')).map(|b| (b.id, b.name.clone())).collect();
+        let langs = self.languages();
         for (b, name) in &present {
             if self.docs.contains_key(b) {
                 continue;
             }
-            let Some(lang) = language_of(name) else { continue };
+            let Some(lang) = language_of(name, &langs) else { continue };
             let path = PathBuf::from(name);
             let root_marker = self.setting(&format!("lsp.{}.root", lang.id)).or_else(|| self.setting("lsp.root"));
             let root = root_of_with_marker(&path, lang, root_marker.as_deref());
