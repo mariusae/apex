@@ -1298,11 +1298,15 @@ impl Node {
     /// acme's `zeroxx`: `coladd(w->col, nil, w, -1)`, another window on
     /// the same buffer, splitting the column's last window.
     pub fn zerox(&mut self, log: &mut Log, window: WindowId) -> Result<WindowId> {
-        let w = self.state.window(window)?;
-        let body = w.body_buffer().ok_or_else(|| CoreError::Missing("no body buffer".into()))?;
-        let label = w.label.clone();
+        let w = self.state.window(window)?.clone();
         let col = self.column_of(window)?;
-        self.open_window_as(log, col, Body::Text(body), String::new(), label, None, false)
+        // a page's copy is the page again (a preview's, its document the
+        // same buffer, kept up as the preview is), not its HTML as text
+        if let Body::Page(_) = w.body {
+            return self.open_window_via(log, col, w.body, w.path, w.label, None, false, w.via, w.base);
+        }
+        let body = w.body_buffer().ok_or_else(|| CoreError::Missing("no body buffer".into()))?;
+        self.open_window_as(log, col, Body::Text(body), String::new(), w.label, None, false)
     }
 
     /// Close a window (acme's `colclose`). The body buffer's shard goes

@@ -1034,6 +1034,14 @@ fn a_pages_state_is_in_the_log() {
     assert!(node.scroll_page(&mut log, u, Some(Scroll::Fraction(0.5))).is_err());
     node.web_navigate(&mut log, u, "https://example.com/b").unwrap();
     assert_eq!(node.window_path(u), "https://example.com/b");
+    // a page's Zerox is the page again, not its HTML as text: the same
+    // document (a buffer page's buffer shared), fetched and based alike
+    for p in [w, u] {
+        let z = node.zerox(&mut log, p).unwrap();
+        let (a, b) = (node.state.window(p).unwrap(), node.state.window(z).unwrap());
+        assert_eq!((b.body, &b.path, &b.via, &b.base, &b.label), (a.body, &a.path, &a.via, &a.base, &a.label));
+    }
+    assert_eq!(f_hash(&log), node.state.hash());
     // the kinds pages were are read as a page's
     assert_eq!(WinKind::parse("preview"), Some(WinKind::Page));
     assert_eq!(WinKind::parse("web"), Some(WinKind::Page));
