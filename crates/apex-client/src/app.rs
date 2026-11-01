@@ -2221,10 +2221,14 @@ impl Acme {
         self.app_active
     }
 
-    /// The window with the keys' caret (its card ringed): a text's, or a
-    /// terminal's.
+    /// The window with the keys (its card ringed): a page that has them
+    /// (the pointer on it), else the caret's -- a text's, or a terminal's.
     pub fn key_window(&self) -> Option<WindowId> {
-        self.caret_view.and_then(|v| v.window()).or_else(|| self.caret_term.and_then(|t| self.node.state.windows.values().find(|w| w.body == apex_core::Body::Term(t)).map(|w| w.id)))
+        self.webs
+            .focused()
+            .filter(|_| self.app_active)
+            .or_else(|| self.caret_view.and_then(|v| v.window()))
+            .or_else(|| self.caret_term.and_then(|t| self.node.state.windows.values().find(|w| w.body == apex_core::Body::Term(t)).map(|w| w.id)))
     }
 
     /// The view the keys go to, as `key_down` finds it: the text under

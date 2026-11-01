@@ -1065,6 +1065,11 @@ impl Webs {
         };
     }
 
+    /// The page that has the keys, the pointer on it.
+    pub fn focused(&self) -> Option<WindowId> {
+        self.focused
+    }
+
     /// Keys go where the pointer is, as everywhere in acme: over a page
     /// the page has the keyboard (the window's first responder), over
     /// anything else gpui's view does. Called on a timer while pages
