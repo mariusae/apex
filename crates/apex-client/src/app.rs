@@ -4702,9 +4702,8 @@ impl Acme {
         changed
     }
 
-    /// Is the pointer in `key`'s scroller lane: its track out, the lines
-    /// it shows on pills by its thumb, and B1 B2 B3 acme's scrollbar
-    /// there.
+    /// Is the pointer in `key`'s scroller lane: its track out, and B1 B2
+    /// B3 acme's scrollbar there.
     pub fn lane_open(&self, key: ViewId) -> bool {
         self.lane_hover == Some(key)
     }

@@ -50,33 +50,6 @@ pub fn paint_lane(window: &mut Window, bounds: Bounds<Pixels>, ground: u32, s0: 
     }
 }
 
-/// The lines a body shows, on pills at its thumb's ends, out from its
-/// lane over the text: the first by the thumb's top, the last and of how
-/// many by its foot (`first`, `last`, `of`).
-pub fn paint_ruler(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, (first, last, of): (usize, usize, usize), cx: &mut App) {
-    if s0 <= 0. && s1 >= 1. {
-        return;
-    }
-    let th = crate::theme::theme();
-    let (top, len) = thumb_span(bounds.size.height, s0, s1);
-    let font = Font { weight: crate::fonts::weight(gpui::FontWeight::MEDIUM), ..font(crate::fonts::ui()) };
-    let size = px(10.5);
-    let ink: Hsla = rgb(th.text_dim).into();
-    let mut pill = |text: String, y: Pixels, below: bool| {
-        let run = TextRun { len: text.len(), font: font.clone(), color: ink, background_color: None, underline: None, strikethrough: None };
-        let line = window.text_system().shape_line(SharedString::from(text), size, &[run], None);
-        let (w, hh) = (line.width + px(10.), px(15.));
-        // by the thumb's end, inside the body (its top, if it is shorter
-        // than a pill)
-        let y = if below { y - hh } else { y }.min(bounds.bottom() - hh - px(1.)).max(bounds.top() + px(1.));
-        let b = Bounds::new(point(bounds.left() + px(LANE + 1.), y), gpui::size(w, hh));
-        window.paint_quad(fill(b, rgb(th.tag_bg)).corner_radii(hh / 2.).border_widths(px(1.)).border_color(rgb(th.body_border)));
-        let _ = line.paint(point(b.left() + px(5.), b.top() + (hh - size * 1.2) / 2.), size * 1.2, gpui::TextAlign::Left, None, window, cx);
-    };
-    pill(first.to_string(), bounds.top() + top, false);
-    pill(format!("{last} / {of}"), bounds.top() + top + len, true);
-}
-
 /// Where a thumb is down a lane `height` high, `s0` to `s1` of the way:
 /// its top from the lane's, and how long it is.
 fn thumb_span(height: Pixels, s0: f32, s1: f32) -> (Pixels, Pixels) {
@@ -1373,8 +1346,6 @@ pub struct Prepaint {
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
-    /// The lines `shown` covers, first and last (from 1), and the text's.
-    ruler: (usize, usize, usize),
     hiding: bool,
     key_caret: Option<bool>,
     bare: bool,
@@ -1994,7 +1965,6 @@ impl Element for TextElement {
                 round: src.round,
                 scroller: src.scroller,
                 lane: acme.lane_open(view),
-                ruler: (text.line_of(shown.0) + 1, text.line_of(shown.1.saturating_sub(1).max(shown.0)) + 1, text.line_of(text_len.saturating_sub(1)) + 1),
                 hiding: src.hiding,
                 key_caret: src.key_caret,
                 bare: src.bare,
@@ -2075,8 +2045,7 @@ impl Element for TextElement {
                     let total = pp.text_len.max(1) as f32;
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
                     // darker while the text moves or the pointer is in the
-                    // lane, fading after; drawn once the text is, the
-                    // ruler's pills over it
+                    // lane, fading after; drawn once the text is
                     let (shows, fading) = pp.scroller;
                     overlay = Some((s0, s1, shows));
                     if fading {
@@ -2398,13 +2367,9 @@ impl Element for TextElement {
                 }
             }
 
-            // a body's scroller, and with the pointer in its lane the
-            // lines it shows, over the text
+            // a body's scroller
             if let Some((s0, s1, shows)) = overlay {
                 paint_lane(window, bounds, crate::theme::theme().body_bg, s0, s1, shows, pp.lane, &[]);
-                if pp.lane {
-                    paint_ruler(window, bounds, s0, s1, pp.ruler, cx);
-                }
             }
             let layout = TextLayout {
                 bounds,

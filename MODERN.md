@@ -95,10 +95,7 @@ windows put away out of the tiling, which is the core's
   all of it, always there and faint, darker while the text moves, while
   the pointer is in the lane or dragging it, fading a second after
   (`Acme::scroller`). With the pointer in the lane, the track the thumb
-  runs in shows too, and the lines in view and of how many on pills at
-  the thumb's ends, over the text (`paint_ruler`); a page has no lines,
-  and its pills are its outline's. B1 B2 B3 in the lane are acme's
-  scrollbar.
+  runs in shows too. B1 B2 B3 in the lane are acme's scrollbar.
 - **Cards on a ground.** Each window is a card inset in its space, its
   outer corners rounded, on a ground a step below it that shows where
   acme drew black borders and under the column tags and the top row; no
@@ -319,8 +316,8 @@ windows put away out of the tiling, which is the core's
   stands in the page and bigger the higher it is, dark over the thumb as
   over the lane, the heading of the part being read in the accent (a
   scrollspy). The bar is for scrolling first: the pointer in it brings
-  out only a pill by the accent's stop naming the part being read, as a
-  text's bar has its lines on pills; the pointer onto the pill opens it
+  out only a pill by the accent's stop naming the part being read; the
+  pointer onto the pill opens it
   into the headings as a list, over the page, the one being read in the
   accent and level with where the pill was, and a click on one goes
   there (a diff's files by their names, cut from the left when too long,

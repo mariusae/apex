@@ -5,8 +5,7 @@
 //! heading the view is in in the accent, the others dark, bigger the
 //! higher the heading. The bar is for scrolling first: the pointer in it
 //! brings out only a pill by the accent's stop, naming the part being
-//! read, as a text's bar says its lines; the pointer onto the pill opens
-//! it into the whole outline, that heading level with where the pill
+//! read; the pointer onto the pill opens it into the whole outline, that heading level with where the pill
 //! was, and a heading chosen there is where the page goes. Back in the
 //! bar, it is a pill again. The bar's buttons are acme's as ever.
 
@@ -205,9 +204,8 @@ impl Acme {
         Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
     }
 
-    /// The outline's pill: the part being read, by its stop, as a text's
-    /// bar has its lines on pills by its thumb; the pointer onto it opens
-    /// the whole outline (`outline_hover`).
+    /// The outline's pill: the part being read, by its stop; the pointer
+    /// onto it opens the whole outline (`outline_hover`).
     fn outline_pill(&self, w: WindowId, bar: Bounds<Pixels>) -> Option<AnyElement> {
         let (toc, current) = self.webs.toc(w)?;
         let i = current.unwrap_or(0);
