@@ -1,10 +1,10 @@
 //! A page's outline in its scrollbar: the scrollbar down a page's left
 //! (a preview's, a diff's) is acme's, as a text's, and carries the
-//! page's headings (`web::Toc`) as ticks down it, out from under the
-//! thumb towards the page -- the heading the view is in in the accent,
-//! the others faint, longer the higher the heading. The pointer in the
-//! bar brings the outline out beside it, over the page, the heading
-//! whose tick is nearest the pointer marked; a heading chosen there is
+//! page's headings (`web::Toc`) as stops down it, dots on the thumb's
+//! axis where each heading is, holes in the thumb under it -- the heading
+//! the view is in in the accent, the others faint, bigger the higher the
+//! heading. The pointer in the bar brings the outline out beside it,
+//! over the page, the heading whose stop is nearest the pointer marked; a heading chosen there is
 //! where the page goes. The bar's buttons are acme's as ever.
 
 use std::cell::Cell;
@@ -24,10 +24,9 @@ const ROW: f32 = 23.;
 /// The list's padding, its border's included.
 const PAD: f32 = 7.;
 
-/// How far a tick reaches across the bar from the thumb's left, by its
-/// heading's level: past the thumb (5 wide) by as much again for a
-/// first, by a point for a fourth.
-const TICK: [f32; 5] = [0., 10., 8.5, 7., 6.];
+/// How big a stop is across, by its heading's level: a first as wide as
+/// the thumb (5), smaller down to a fourth.
+const STOP: [f32; 5] = [0., 4.5, 3.5, 2.5, 2.];
 
 /// The outline's state in the app: which page's is out, its bar (as the
 /// pointer last found it: the bars are laid out after the panel is made),
@@ -43,17 +42,17 @@ pub struct Outline {
     pub scroll: gpui::ScrollHandle,
 }
 
-/// The ticks down the bar: each heading where it is in the page
-/// (`toc.at`), as long as its level says, the current one in the accent,
+/// The stops down the bar: each heading where it is in the page
+/// (`toc.at`), as big as its level says, the current one in the accent,
 /// the others faint (less so with the lane open); as `paint_lane` has
 /// them.
-pub fn ticks(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>, open: bool) -> Vec<(f32, f32, u32, f32)> {
+pub fn stops(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>, open: bool) -> Vec<(f32, f32, u32, f32)> {
     let t = crate::theme::theme();
     (0..toc.heads.len())
         .map(|i| {
-            let len = TICK[toc.heads[i].level.min(4) as usize];
+            let d = STOP[toc.heads[i].level.min(4) as usize];
             let (rgb, alpha) = if current == Some(i) { (t.accent, 1.) } else { (t.text_dim, if open { 0.75 } else { 0.4 }) };
-            (toc.at(i, scroll), len, rgb, alpha)
+            (toc.at(i, scroll), d, rgb, alpha)
         })
         .collect()
 }
@@ -65,7 +64,7 @@ fn tall(n: usize, bar: Bounds<Pixels>) -> Pixels {
     px(ROW * n as f32 + 2. * PAD).min(bar.size.height - px(16.))
 }
 
-/// The heading whose tick is nearest `y` in `bar`.
+/// The heading whose stop is nearest `y` in `bar`.
 pub fn nearest(toc: &Toc, scroll: Option<(f64, f64, f64)>, bar: Bounds<Pixels>, y: Pixels) -> Option<usize> {
     let at = ((y - bar.top()) / bar.size.height).clamp(0., 1.);
     (0..toc.heads.len()).min_by(|a, b| (toc.at(*a, scroll) - at).abs().total_cmp(&(toc.at(*b, scroll) - at).abs()))

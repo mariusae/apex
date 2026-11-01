@@ -28,25 +28,30 @@ pub const LANE: f32 = SPINE * 2.;
 /// A body's scroller, in its lane down its left (`lane`, the body's
 /// bounds): the thumb always, faint at rest, darker while the text moves
 /// (`shows`); the pointer in the lane (`open`), the track it runs in
-/// too, and darker still. `ticks` are an outline's (`outline::ticks`),
-/// under the thumb and out past it.
-pub fn paint_lane(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, shows: f32, open: bool, ticks: &[(f32, f32, u32, f32)]) {
+/// too, and darker still. `stops` are an outline's (`outline::stops`):
+/// dots down the same axis, where each heading is and as big as it is
+/// high; under the thumb, holes in it, in the lane's `ground`; the one
+/// being read in its own colour over all.
+pub fn paint_lane(window: &mut Window, bounds: Bounds<Pixels>, ground: u32, s0: f32, s1: f32, shows: f32, open: bool, stops: &[(f32, f32, u32, f32)]) {
     let th = crate::theme::theme();
     let lane = Bounds::new(bounds.origin, size(px(LANE), bounds.size.height));
     let whole = s0 <= 0. && s1 >= 1.;
     if open && !whole {
         let track = Bounds::new(point(lane.left() + px(SPINE - 4.5), lane.top() + px(1.)), size(px(9.), lane.size.height - px(2.)));
-        window.paint_quad(fill(track, rgb(mix(th.body_bg, th.body_border, 0.45))).corner_radii(px(4.5)));
-    }
-    // as the bar is long: the thumb's 6 in from its ends, and from its left
-    let h = lane.size.height - px(6.);
-    for &(at, len, hue, alpha) in ticks {
-        let y = lane.top() + px(3.) + h * at.clamp(0., 1.);
-        let t = Bounds::new(point(lane.left() + px(SPINE - 2.5), y - px(1.)), size(px(len), px(2.)));
-        window.paint_quad(fill(t, rgb(hue).opacity(alpha)).corner_radii(px(1.)));
+        window.paint_quad(fill(track, rgb(mix(ground, th.body_border, 0.45))).corner_radii(px(4.5)));
     }
     let ink = if open { 0.8 } else { 0.3 + 0.3 * shows };
     paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(ink));
+    // as the bar is long: the thumb's 3 in from its ends
+    let (t0, len) = if whole { (px(0.), px(0.)) } else { thumb_span(lane.size.height, s0, s1) };
+    let under = |y: Pixels| !whole && y >= lane.top() + t0 && y <= lane.top() + t0 + len;
+    let h = lane.size.height - px(6.);
+    for &(at, d, hue, alpha) in stops {
+        let y = lane.top() + px(3.) + h * at.clamp(0., 1.);
+        let dot = Bounds::new(point(lane.left() + px(SPINE - d / 2.), y - px(d / 2.)), size(px(d), px(d)));
+        let ink = if hue == th.accent || !under(y) { rgb(hue).opacity(alpha) } else { rgb(ground).into() };
+        window.paint_quad(fill(dot, ink).corner_radii(px(d / 2.)));
+    }
 }
 
 /// The lines a body shows, on pills at its thumb's ends, out from its
@@ -65,8 +70,9 @@ pub fn paint_ruler(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32
         let run = TextRun { len: text.len(), font: font.clone(), color: ink, background_color: None, underline: None, strikethrough: None };
         let line = window.text_system().shape_line(SharedString::from(text), size, &[run], None);
         let (w, hh) = (line.width + px(10.), px(15.));
-        // by the thumb's end, inside the body
-        let y = if below { y - hh } else { y }.clamp(bounds.top() + px(1.), bounds.bottom() - hh - px(1.));
+        // by the thumb's end, inside the body (its top, if it is shorter
+        // than a pill)
+        let y = if below { y - hh } else { y }.min(bounds.bottom() - hh - px(1.)).max(bounds.top() + px(1.));
         let b = Bounds::new(point(bounds.left() + px(LANE + 1.), y), gpui::size(w, hh));
         window.paint_quad(fill(b, rgb(th.tag_bg)).corner_radii(hh / 2.).border_widths(px(1.)).border_color(rgb(th.body_border)));
         let _ = line.paint(point(b.left() + px(5.), b.top() + (hh - size * 1.2) / 2.), size * 1.2, gpui::TextAlign::Left, None, window, cx);
@@ -2399,7 +2405,7 @@ impl Element for TextElement {
             // a body's scroller, and with the pointer in its lane the
             // lines it shows, over the text
             if let Some((s0, s1, shows)) = overlay {
-                paint_lane(window, bounds, s0, s1, shows, pp.lane, &[]);
+                paint_lane(window, bounds, crate::theme::theme().body_bg, s0, s1, shows, pp.lane, &[]);
                 if pp.lane {
                     paint_ruler(window, bounds, s0, s1, pp.ruler, cx);
                 }

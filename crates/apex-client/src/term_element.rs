@@ -344,7 +344,7 @@ impl Element for TermElement {
             // the scroller, and with the pointer in its lane the rows it
             // shows of the history's, over the text
             let (s0, s1) = (top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32);
-            crate::text_element::paint_lane(window, bounds, s0, s1, shows, pp.lane, &[]);
+            crate::text_element::paint_lane(window, bounds, th.body_bg, s0, s1, shows, pp.lane, &[]);
             if pp.lane {
                 crate::text_element::paint_ruler(window, bounds, s0, s1, (top as usize + 1, (top + shown).min(total) as usize, total as usize), cx);
             }

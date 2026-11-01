@@ -445,7 +445,7 @@ impl Render for Acme {
                             let paper = if matches!(win.body, Body::Page(apex_core::Source::Buffer(_))) { t.body_bg } else { t.column };
                             // acme's scrollbar in a lane down the page's
                             // left, under the handle, as a text's is down
-                            // its text's (WEB.md §2.2): the outline's ticks
+                            // its text's (WEB.md §2.2): the outline's stops
                             // down it (`outline`)
                             let me_bar = me.clone();
                             let bar = canvas(
@@ -456,12 +456,12 @@ impl Render for Acme {
                                         let shows = acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64);
                                         let open = acme.lane_open(ViewId::Body(w)) || acme.outline.open == Some(w);
                                         let scroll = acme.webs.page_scroll(w);
-                                        let ticks = acme.webs.toc(w).map(|(toc, current)| outline::ticks(toc, scroll, current, open)).unwrap_or_default();
-                                        (t0, t1, shows, open, ticks)
+                                        let stops = acme.webs.toc(w).map(|(toc, current)| outline::stops(toc, scroll, current, open)).unwrap_or_default();
+                                        (t0, t1, shows, open, stops)
                                     })
                                 },
-                                move |bounds, (t0, t1, (shows, fading), open, ticks), window, _| {
-                                    text_element::paint_lane(window, bounds, t0, t1, shows, open, &ticks);
+                                move |bounds, (t0, t1, (shows, fading), open, stops), window, _| {
+                                    text_element::paint_lane(window, bounds, paper, t0, t1, shows, open, &stops);
                                     if fading {
                                         window.request_animation_frame();
                                     }
