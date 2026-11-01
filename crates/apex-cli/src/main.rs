@@ -1224,7 +1224,10 @@ fn attach(ctx: &Ctx, p: &Parsed) -> R {
         ensure_server(&ctx.socket, &ctx.session)?;
         return bridge(&ctx.socket);
     }
-    let ui = std::env::current_exe().map_err(|e| e.to_string())?.with_file_name("apex-ui");
+    // beside this apex itself, not the link to it it was run as
+    // (/usr/local/bin/apex, which Install apex Command makes)
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let ui = exe.canonicalize().unwrap_or(exe).with_file_name("apex-ui");
     let status = match apex_server::providers::split_spec(&target) {
         Some((host, sess)) => {
             // remote: the UI talks to `ssh host apex attach -stdio`,
