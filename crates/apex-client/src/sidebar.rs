@@ -473,13 +473,37 @@ impl Acme {
         let t = theme::theme();
         let hover = theme::step(t.strip, 1);
         let w = l.w;
+        // the pointer on a window of the shown session: an × that closes
+        // it, as Del in its tag would (a dirty one warned of once)
+        let close = (tab.is_none() && self.win_hover == Some(w)).then(|| {
+            div()
+                .id(("win-close", w.0))
+                .flex_none()
+                .size(px(16.))
+                .rounded(px(4.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(13.))
+                .text_color(rgb(t.text_dim))
+                .hover(move |s| s.bg(rgb(theme::step(t.strip, 2))).text_color(rgb(t.text)))
+                .child("×")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        this.execute(apex_core::ExecCtx::Window(w), "Del", cx);
+                        cx.stop_propagation();
+                    }),
+                )
+        });
         let line = div()
             .h(px(18.))
             .flex()
             .items_center()
             .gap(px(8.))
             .child(div().flex_none().max_w(px(120.)).truncate().text_size(px(12.5)).text_color(rgb(t.text)).child(l.label))
-            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(l.dir));
+            .child(div().flex_1().min_w_0().truncate().text_size(px(11.)).text_color(rgb(t.text_dim)).child(l.dir))
+            .children(close);
         let status = l.status.map(|(text, since, asks, icon)| {
             // one that asks for the user in the stale gold, as its pill is,
             // its state's icon before it
@@ -525,6 +549,16 @@ impl Acme {
             .child(div().flex_none().h(px(18.)).flex().items_center().child(dot_element(&l.dot)))
             .when(said, |d| d.items_start())
             .child(div().flex_1().min_w_0().flex().flex_col().child(line).children(status))
+            .when(tab.is_none(), |d| {
+                d.on_hover(cx.listener(move |this, over: &bool, _, cx| {
+                    if *over {
+                        this.win_hover = Some(w);
+                    } else if this.win_hover == Some(w) {
+                        this.win_hover = None;
+                    }
+                    cx.notify();
+                }))
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx| {

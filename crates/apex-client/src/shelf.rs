@@ -169,9 +169,10 @@ impl Acme {
     }
 
     /// Stashed window `w`'s card's name: its label or the last part of
-    /// its path, or what it is when it has neither.
-    fn shelf_label(&self, w: WindowId) -> String {
-        crate::sidebar::names(&self.node, w).0
+    /// its path, or what it is when it has neither; and where it is, to
+    /// tell two of a name apart (as the sidebar says them).
+    fn shelf_label(&self, w: WindowId) -> (String, String) {
+        crate::sidebar::names(&self.node, w)
     }
 
     #[allow(dead_code)]
@@ -188,7 +189,17 @@ impl Acme {
         let ts = cx.text_system();
         let id = ts.resolve_font(&gpui::font(crate::fonts::ui()));
         let width = |s: &str| s.chars().map(|c| ts.advance(id, px(CARD_TEXT), c).map(|a| f32::from(a.width)).unwrap_or(7.)).sum::<f32>();
-        let widest = self.node.state.layout.stash.iter().map(|s| width(&self.shelf_label(s.slot.window))).fold(0., f32::max);
+        let widest = self
+            .node
+            .state
+            .layout
+            .stash
+            .iter()
+            .map(|s| {
+                let (name, dir) = self.shelf_label(s.slot.window);
+                width(&name) + if dir.is_empty() { 0. } else { 6. + width(&dir) }
+            })
+            .fold(0., f32::max);
         (widest.ceil() + CARD_PAD).clamp(MIN_W, CARD_MAX)
     }
 
@@ -445,8 +456,31 @@ impl Acme {
         } else {
             t.tag_bg
         };
-        let label = self.shelf_label(w);
+        let (label, dir) = self.shelf_label(w);
         let d = self.window_dot(w);
+        // the card under the pointer: an × that closes the window, as Del
+        // in its tag would, without bringing it back
+        let close = picked.then(|| {
+            div()
+                .id(("shelf-card-close", i))
+                .flex_none()
+                .size(px(16.))
+                .rounded(px(4.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(px(13.))
+                .text_color(rgb(t.text_dim))
+                .hover(move |s| s.bg(rgb(crate::theme::step(bg, 2))).text_color(rgb(t.text)))
+                .child("×")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        this.execute(apex_core::ExecCtx::Window(w), "Del", cx);
+                        cx.stop_propagation();
+                    }),
+                )
+        });
         // one shadow for the hand, not one a card: the top card's drops
         // onto the bar; each under it shows only its edge, a hairline of
         // shade where it peeks out from under the one over it -- a card's
@@ -477,7 +511,9 @@ impl Acme {
             .text_color(rgb(t.text))
             .cursor_default()
             .child(crate::sidebar::dot_element(&d))
-            .child(div().flex_1().min_w_0().truncate().child(label))
+            .child(div().flex_none().max_w(px(150.)).truncate().child(label))
+            .child(div().flex_1().min_w_0().truncate().text_color(rgb(t.text_dim)).child(dir))
+            .children(close)
             .on_hover(cx.listener(move |this, on: &bool, _, cx| {
                 if *on {
                     this.shelf.pick = Some(w);
