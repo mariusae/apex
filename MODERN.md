@@ -86,19 +86,19 @@ windows put away out of the tiling, which is the core's
   insertion point, which is all the I-beam promises), the open hand over
   what drags (a window's handle, a column's box, the session's) and the
   closed hand everywhere while one is held; a page keeps its own.
-- **Scrollers.** acme's lane, drawn as a slim rounded thumb with no
-  track (`paint_scroller`), in text, terminal and page windows alike --
-  and, as macOS's overlay scrollers, only while its text moves, while the
-  pointer is in the lane or dragging it, fading a second after
-  (`Acme::scroller`). The lane works the same when the thumb is away.
-  It stands at the right, as macOS's and Ghostty's do. In text and
-  terminal windows it keeps no room of its own (`paint_overlay_scroller`):
-  the text starts 8 in (`BODY_MARGIN`), and the scroller lays over the
-  body's right edge. Shut, the lane is 6 wide to the pointer
-  (`LANE_HIT`), and the thumb shows over the text while it moves; with
-  the pointer in it, the lane opens to its full 12 with a gutter drawn
-  over what is there (which does not move), and B1 B2 B3 in it are
-  acme's scrollbar. A page keeps its bar beside it, at its right.
+- **Scrollers.** acme's lane, down a body's left under its handle (#13):
+  the handle's dot and the thumb on one axis (`SPINE`), so a window
+  opened a little by its box is a few points from its scrollbar, as in
+  acme. The lane is room of its own (`LANE`, the text 16 in), in text,
+  terminal and page windows alike. What shows in it is a slim rounded
+  thumb (`paint_lane`), as long as the part of the text in view is of
+  all of it, always there and faint, darker while the text moves, while
+  the pointer is in the lane or dragging it, fading a second after
+  (`Acme::scroller`). With the pointer in the lane, the track the thumb
+  runs in shows too, and the lines in view and of how many on pills at
+  the thumb's ends, over the text (`paint_ruler`); a page has no lines,
+  and its pills are its outline's. B1 B2 B3 in the lane are acme's
+  scrollbar.
 - **Cards on a ground.** Each window is a card inset in its space, its
   outer corners rounded, on a ground a step below it that shows where
   acme drew black borders and under the column tags and the top row; no
@@ -312,20 +312,18 @@ windows put away out of the tiling, which is the core's
   is done: the next list (a directory's names, say) comes only with the
   next ^F. No more lists in the errors window.
 - **A page's outline in its scrollbar** (`outline.rs`; the page says
-  it, `web.rs`'s `TOC_SCRIPT`): a page's scrollbar lies over its right
-  edge as a text's does over its text -- the thumb alone while the page
-  moves, the lane's gutter once the pointer is in it -- drawn as a layer
-  of the page's own (`Webs::set_bar`; apex draws nothing over a native
-  view otherwise), the pointer in its strip apex's. It is acme's, B1 B2
-  B3 as a text's, and on a page rendered from a buffer (a Markdown
-  preview, apex diff) carries the page's headings as ticks down it, each where
-  it stands in the page, longer the higher it is, the heading of the
-  part being read in the accent (a scrollspy). The pointer in the bar
-  brings the headings out beside it as a list, the one whose tick is
-  nearest the pointer marked, the one being read in the accent; a click
-  on one goes there (a diff's files by their names, cut from the left
-  when too long, since a path's end says most). Only with two headings
-  or more; nothing of it is drawn in the page, which keeps all its width.
+  it, `web.rs`'s `TOC_SCRIPT`): a page's scrollbar is a text's, in its
+  lane down the page's left, B1 B2 B3 acme's, and on a page rendered
+  from a buffer (a Markdown preview, apex diff) carries the page's
+  headings as ticks down it, each where it stands in the page, out from
+  under the thumb towards the page and longer the higher it is, the
+  heading of the part being read in the accent (a scrollspy). The
+  pointer in the bar brings the headings out beside it as a list, over
+  the page, the one whose tick is nearest the pointer marked, the one
+  being read in the accent; a click on one goes there (a diff's files by
+  their names, cut from the left when too long, since a path's end says
+  most). Only with two headings or more; nothing of it is drawn in the
+  page.
 - **A tag is what the window is, then your words.** The head is drawn
   from the window's state (DESIGN.md, *Windows are what they are*), none
   of it in the tag's text: the path, its folders dim and its name

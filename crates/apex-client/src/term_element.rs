@@ -10,7 +10,7 @@ use apex_core::{Cell, TermId, ViewId, WindowId};
 use apex_server::term::{FLAG_BOLD, FLAG_UNDERLINE};
 
 use crate::app::Acme;
-use crate::text_element::{font_for, rgb, FontSpec, BODY_MARGIN, LANE_HIT, SCROLLWID};
+use crate::text_element::{font_for, rgb, FontSpec, LANE, MARGIN};
 
 pub struct TermLayout {
     pub bounds: Bounds<Pixels>,
@@ -74,8 +74,8 @@ pub struct Prepaint {
     /// The rows on screen where a command the shell marked (OSC 133)
     /// has its prompt, having failed.
     failed: Vec<usize>,
-    /// How much of the scroller's thumb shows, and whether that is
-    /// changing (an overlay scroller, `Acme::scroller`).
+    /// How far the scroller's thumb is darkened, and whether that is
+    /// changing (`Acme::scroller`).
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
@@ -132,7 +132,7 @@ impl Element for TermElement {
         let run = move |len: usize, color: Hsla| TextRun { len, font: font.clone(), color, background_color: None, underline: None, strikethrough: None };
         let cell_w = window.text_system().shape_line("M".into(), fontspec.size, &[run(1, gpui::black())], None).width;
         let lh = fontspec.line_height;
-        let cols = (((bounds.size.width - px(BODY_MARGIN) - px(4.)) / cell_w).floor() as u16).max(2);
+        let cols = (((bounds.size.width - px(MARGIN) - px(4.)) / cell_w).floor() as u16).max(2);
         let rows_n = ((bounds.size.height / lh).floor() as u16).max(1);
         let term = self.term;
         let win = self.window;
@@ -249,21 +249,19 @@ impl Element for TermElement {
     ) {
         let Some(pp) = prepaint.take() else { return };
         let lh = pp.fontspec.line_height;
-        let origin = point(bounds.left() + px(BODY_MARGIN), bounds.top());
+        let origin = point(bounds.left() + px(MARGIN), bounds.top());
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             let th = crate::theme::theme();
             window.paint_quad(fill(bounds, rgb(th.body_bg)));
             // acme's scrollbar, as a text window draws one: the bar dark,
             // and the part of it the viewport takes of the whole screen
             // (the history and the viewport together) in the paper
-            // the lane to the pointer: the text's inset while shut, the
-            // whole lane once open (drawn over the text, after it)
-            let w = px(if pp.lane { SCROLLWID } else { LANE_HIT });
-            let sb = Bounds::new(point(bounds.right() - w, bounds.top()), size(w, bounds.size.height));
+            // down its left under the handle, as a text's
+            let sb = Bounds::new(bounds.origin, size(px(LANE), bounds.size.height));
             let (top, shown, total) = pp.view;
             let total = total.max(1);
-            // an overlay scroller: seen while the view moves or the pointer
-            // is in the lane, fading after
+            // darker while the view moves or the pointer is in the lane,
+            // fading after
             let (shows, fading) = pp.scroller;
             if fading {
                 window.request_animation_frame();
@@ -343,8 +341,13 @@ impl Element for TermElement {
                     }
                 }
             }
-            // the scroller, over the text
-            crate::text_element::paint_overlay_scroller(window, bounds, top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32, shows, pp.lane);
+            // the scroller, and with the pointer in its lane the rows it
+            // shows of the history's, over the text
+            let (s0, s1) = (top.min(total) as f32 / total as f32, (top + shown).min(total) as f32 / total as f32);
+            crate::text_element::paint_lane(window, bounds, s0, s1, shows, pp.lane, &[]);
+            if pp.lane {
+                crate::text_element::paint_ruler(window, bounds, s0, s1, (top as usize + 1, (top + shown).min(total) as usize, total as usize), cx);
+            }
             let layout = TermLayout {
                 bounds,
                 text_origin: origin,

@@ -1,8 +1,9 @@
-//! A page's outline in its scrollbar: the scrollbar over a page from a
-//! buffer's right edge (a preview, a diff) is acme's, as a text's, and carries the
-//! page's headings (`web::Toc`) as ticks down it -- the heading the view
-//! is in in the accent, the others faint, longer the higher the heading.
-//! The pointer in the bar brings the outline out beside it, the heading
+//! A page's outline in its scrollbar: the scrollbar down a page's left
+//! (a preview's, a diff's) is acme's, as a text's, and carries the
+//! page's headings (`web::Toc`) as ticks down it, out from under the
+//! thumb towards the page -- the heading the view is in in the accent,
+//! the others faint, longer the higher the heading. The pointer in the
+//! bar brings the outline out beside it, over the page, the heading
 //! whose tick is nearest the pointer marked; a heading chosen there is
 //! where the page goes. The bar's buttons are acme's as ever.
 
@@ -23,8 +24,10 @@ const ROW: f32 = 23.;
 /// The list's padding, its border's included.
 const PAD: f32 = 7.;
 
-/// How far a tick reaches across the bar, by its heading's level.
-const TICK: [f32; 5] = [0., 9., 7., 5., 3.];
+/// How far a tick reaches across the bar from the thumb's left, by its
+/// heading's level: past the thumb (5 wide) by as much again for a
+/// first, by a point for a fourth.
+const TICK: [f32; 5] = [0., 10., 8.5, 7., 6.];
 
 /// The outline's state in the app: which page's is out, its bar (as the
 /// pointer last found it: the bars are laid out after the panel is made),
@@ -42,7 +45,7 @@ pub struct Outline {
 
 /// The ticks down the bar: each heading where it is in the page
 /// (`toc.at`), as long as its level says, the current one in the accent,
-/// the others faint (less so with the lane open); as `web::BarLook` has
+/// the others faint (less so with the lane open); as `paint_lane` has
 /// them.
 pub fn ticks(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>, open: bool) -> Vec<(f32, f32, u32, f32)> {
     let t = crate::theme::theme();
@@ -183,6 +186,6 @@ impl Acme {
             .child(self.overlay_mark_by(px(0.)))
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
             .child(list);
-        Some(deferred(anchored().anchor(gpui::Anchor::TopRight).position(point(bar.left() - px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
+        Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
     }
 }

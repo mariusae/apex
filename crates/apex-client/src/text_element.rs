@@ -16,31 +16,72 @@ use crate::app::{Acme, HlKind, Kind};
 
 pub const SCROLLWID: f32 = 12.;
 pub const MARGIN: f32 = 16.; // Scrollwid + Scrollgap
-/// A body's text (a text's, a terminal's) starts this far in. Its
-/// scroller keeps no lane of its own: it lays over the body's right edge,
-/// as macOS's overlay scrollers do (`LANE_HIT`, `SCROLLWID`).
-pub const BODY_MARGIN: f32 = 8.;
-/// How wide a body's scroller lane, at its right edge, is to the pointer
-/// while it is shut. Once the pointer is in it, the lane opens to
-/// `SCROLLWID`, its gutter drawn over what is there (which does not
-/// move), and B1 B2 B3 in it are acme's scrollbar.
-pub const LANE_HIT: f32 = 6.;
+/// How far in from a card's left its handle's dot is, and down its body
+/// the scroller's thumb: one axis, the handle over the bar, as acme has
+/// its box over its scrollbar.
+pub const SPINE: f32 = 7.5;
+/// A body's scroller's lane, down its left under the handle: the room
+/// before its text, short of it (`MARGIN`). B1 B2 B3 in it are acme's
+/// scrollbar.
+pub const LANE: f32 = SPINE * 2.;
 
-/// The body's scroller, at its right edge over its text: shut, the thumb
-/// alone while the text moves (`shows`); open (the pointer in the lane),
-/// a gutter the lane's width, drawn over what is there, and the thumb in
-/// it.
-pub fn paint_overlay_scroller(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, shows: f32, open: bool) {
+/// A body's scroller, in its lane down its left (`lane`, the body's
+/// bounds): the thumb always, faint at rest, darker while the text moves
+/// (`shows`); the pointer in the lane (`open`), the track it runs in
+/// too, and darker still. `ticks` are an outline's (`outline::ticks`),
+/// under the thumb and out past it.
+pub fn paint_lane(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, shows: f32, open: bool, ticks: &[(f32, f32, u32, f32)]) {
     let th = crate::theme::theme();
-    // a pixel in from the card's edge, where the key window's ring lies
-    // over it: centred in what shows of the gutter
-    let lane = Bounds::new(point(bounds.right() - px(SCROLLWID + 1.), bounds.top()), size(px(SCROLLWID), bounds.size.height));
-    if open {
-        window.paint_quad(fill(lane, rgb(mix(th.body_bg, th.body_border, 0.45))));
-        paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(0.75));
-    } else if shows > 0. {
-        paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(0.55 * shows));
+    let lane = Bounds::new(bounds.origin, size(px(LANE), bounds.size.height));
+    let whole = s0 <= 0. && s1 >= 1.;
+    if open && !whole {
+        let track = Bounds::new(point(lane.left() + px(SPINE - 4.5), lane.top() + px(1.)), size(px(9.), lane.size.height - px(2.)));
+        window.paint_quad(fill(track, rgb(mix(th.body_bg, th.body_border, 0.45))).corner_radii(px(4.5)));
     }
+    // as the bar is long: the thumb's 6 in from its ends, and from its left
+    let h = lane.size.height - px(6.);
+    for &(at, len, hue, alpha) in ticks {
+        let y = lane.top() + px(3.) + h * at.clamp(0., 1.);
+        let t = Bounds::new(point(lane.left() + px(SPINE - 2.5), y - px(1.)), size(px(len), px(2.)));
+        window.paint_quad(fill(t, rgb(hue).opacity(alpha)).corner_radii(px(1.)));
+    }
+    let ink = if open { 0.8 } else { 0.3 + 0.3 * shows };
+    paint_scroller(window, lane, s0, s1, rgb(th.text_dim).opacity(ink));
+}
+
+/// The lines a body shows, on pills at its thumb's ends, out from its
+/// lane over the text: the first by the thumb's top, the last and of how
+/// many by its foot (`first`, `last`, `of`).
+pub fn paint_ruler(window: &mut Window, bounds: Bounds<Pixels>, s0: f32, s1: f32, (first, last, of): (usize, usize, usize), cx: &mut App) {
+    if s0 <= 0. && s1 >= 1. {
+        return;
+    }
+    let th = crate::theme::theme();
+    let (top, len) = thumb_span(bounds.size.height, s0, s1);
+    let font = Font { weight: crate::fonts::weight(gpui::FontWeight::MEDIUM), ..font(crate::fonts::ui()) };
+    let size = px(10.5);
+    let ink: Hsla = rgb(th.text_dim).into();
+    let mut pill = |text: String, y: Pixels, below: bool| {
+        let run = TextRun { len: text.len(), font: font.clone(), color: ink, background_color: None, underline: None, strikethrough: None };
+        let line = window.text_system().shape_line(SharedString::from(text), size, &[run], None);
+        let (w, hh) = (line.width + px(10.), px(15.));
+        // by the thumb's end, inside the body
+        let y = if below { y - hh } else { y }.clamp(bounds.top() + px(1.), bounds.bottom() - hh - px(1.));
+        let b = Bounds::new(point(bounds.left() + px(LANE + 1.), y), gpui::size(w, hh));
+        window.paint_quad(fill(b, rgb(th.tag_bg)).corner_radii(hh / 2.).border_widths(px(1.)).border_color(rgb(th.body_border)));
+        let _ = line.paint(point(b.left() + px(5.), b.top() + (hh - size * 1.2) / 2.), size * 1.2, gpui::TextAlign::Left, None, window, cx);
+    };
+    pill(first.to_string(), bounds.top() + top, false);
+    pill(format!("{last} / {of}"), bounds.top() + top + len, true);
+}
+
+/// Where a thumb is down a lane `height` high, `s0` to `s1` of the way:
+/// its top from the lane's, and how long it is.
+fn thumb_span(height: Pixels, s0: f32, s1: f32) -> (Pixels, Pixels) {
+    let h = height - px(6.);
+    let (t0, t1) = (h * s0.clamp(0., 1.), h * s1.clamp(0., 1.));
+    let len = (t1 - t0).max(px(14.)).min(h);
+    ((px(3.) + t0).min(height - px(3.) - len), len)
 }
 pub const TABSTOP: usize = 4;
 
@@ -438,19 +479,16 @@ fn ease_in_out(x: f32) -> f32 {
 }
 
 /// A Mac scroller's thumb in acme's scrollbar lane: slim and rounded,
-/// no track, `s0` to `s1` of the way down, and nothing at all when the
-/// whole of it shows. The lane is acme's whatever is drawn in it: B1,
-/// B2 and B3 anywhere down it.
+/// `s0` to `s1` of the way down, and nothing at all when the whole of it
+/// shows. The lane is acme's whatever is drawn in it: B1, B2 and B3
+/// anywhere down it.
 pub fn paint_scroller(window: &mut Window, lane: Bounds<Pixels>, s0: f32, s1: f32, ink: Hsla) {
     if s0 <= 0. && s1 >= 1. {
         return;
     }
-    let h = lane.size.height - px(6.);
-    let (t0, t1) = (h * s0.clamp(0., 1.), h * s1.clamp(0., 1.));
-    let len = (t1 - t0).max(px(14.)).min(h);
-    let top = (lane.top() + px(3.) + t0).min(lane.bottom() - px(3.) - len);
+    let (top, len) = thumb_span(lane.size.height, s0, s1);
     // in the middle of the lane
-    let thumb = Bounds::new(point(lane.left() + (lane.size.width - px(5.)) / 2., top), size(px(5.), len));
+    let thumb = Bounds::new(point(lane.left() + (lane.size.width - px(5.)) / 2., lane.top() + top), size(px(5.), len));
     window.paint_quad(fill(thumb, ink).corner_radii(px(2.5)));
 }
 
@@ -1255,7 +1293,7 @@ pub struct Source {
     /// Its outer corners rounded, as the top (a tag) or the foot (a body)
     /// of a card: (top, bottom).
     pub round: (bool, bool),
-    /// A body's scroller: how much of its thumb shows, and whether that
+    /// A body's scroller: how far its thumb is darkened, and whether that
     /// is changing (drawn again soon).
     pub scroller: (f32, bool),
     /// A window grown to the whole column, others hidden behind it: its
@@ -1333,6 +1371,8 @@ pub struct Prepaint {
     scroller: (f32, bool),
     /// The pointer in the scroller's lane: it is open.
     lane: bool,
+    /// The lines `shown` covers, first and last (from 1), and the text's.
+    ruler: (usize, usize, usize),
     hiding: bool,
     key_caret: Option<bool>,
     bare: bool,
@@ -1751,7 +1791,7 @@ impl Element for TextElement {
                 fontspec.line_height = tag_row_height();
             }
             let lh = fontspec.line_height;
-            let margin = if kind == Kind::Body { px(BODY_MARGIN) } else if src.bare { px(0.) } else { px(MARGIN) };
+            let margin = if src.bare { px(0.) } else { px(MARGIN) };
             let room = (bounds.size.width - margin - px(4.)).max(px(10.));
             // the top row and the column tags are a line each, scrolled
             // across to their caret rather than wrapped
@@ -1952,6 +1992,7 @@ impl Element for TextElement {
                 round: src.round,
                 scroller: src.scroller,
                 lane: acme.lane_open(view),
+                ruler: (text.line_of(shown.0) + 1, text.line_of(shown.1.saturating_sub(1).max(shown.0)) + 1, text.line_of(text_len.saturating_sub(1)) + 1),
                 hiding: src.hiding,
                 key_caret: src.key_caret,
                 bare: src.bare,
@@ -2000,7 +2041,7 @@ impl Element for TextElement {
         } else {
             px(0.)
         };
-        let margin = if pp.kind == Kind::Body { px(BODY_MARGIN) } else if pp.bare { px(0.) } else { px(MARGIN) };
+        let margin = if pp.bare { px(0.) } else { px(MARGIN) };
         let origin = point(bounds.left() + margin, bounds.top() + shift);
         // how far a band on the row at `sy` reaches past it, up and down:
         // into the pad over the first row and under the last, not into
@@ -2024,19 +2065,16 @@ impl Element for TextElement {
             let mut layout_box = None;
             match pp.kind {
                 Kind::Body => {
-                    // the lane is acme's, B1, B2 and B3 all as ever; what
-                    // shows in it is a Mac scroller's thumb, slim and
-                    // rounded, with no track
-                    // the lane to the pointer: the text's inset while shut,
-                    // the whole lane once open (drawn over the text below)
-                    let w = px(if pp.lane { SCROLLWID } else { LANE_HIT });
-                    let sb = Bounds::new(point(bounds.right() - w, bounds.top()), size(w, bounds.size.height));
+                    // the lane is acme's, B1, B2 and B3 all as ever, down
+                    // the body's left under the handle; what shows in it
+                    // is a Mac scroller's thumb, slim and rounded
+                    let sb = Bounds::new(bounds.origin, size(px(LANE), bounds.size.height));
                     // acme's: the runes shown, of all of them
                     let total = pp.text_len.max(1) as f32;
                     let (s0, s1) = if pp.text_len == 0 { (0., 1.) } else { (pp.shown.0 as f32 / total, (pp.shown.1 as f32 / total).min(1.)) };
-                    // an overlay scroller: seen while the text moves or the
-                    // pointer is in the lane, fading after -- over the text,
-                    // once it is drawn
+                    // darker while the text moves or the pointer is in the
+                    // lane, fading after; drawn once the text is, the
+                    // ruler's pills over it
                     let (shows, fading) = pp.scroller;
                     overlay = Some((s0, s1, shows));
                     if fading {
@@ -2048,8 +2086,8 @@ impl Element for TextElement {
                     let th = crate::theme::theme();
                     let b = Bounds::new(point(bounds.left(), origin.y - ext), size(px(SCROLLWID), lh + ext * 2.));
                     let d = dot(&th, pp.stale, pp.dirty, pp.live, pp.pulse.is_some(), pp.note).at(pp.progress).squared(pp.hiding);
-                    // in from the card's rounded corner
-                    paint_dot(window, &d, point(b.left() + px(7.5), b.top() + b.size.height / 2.));
+                    // in from the card's rounded corner, over the thumb
+                    paint_dot(window, &d, point(b.left() + px(SPINE), b.top() + b.size.height / 2.));
                     layout_box = Some(b);
                 }
                 Kind::ColTag => {
@@ -2358,9 +2396,13 @@ impl Element for TextElement {
                 }
             }
 
-            // a body's scroller, over its text
+            // a body's scroller, and with the pointer in its lane the
+            // lines it shows, over the text
             if let Some((s0, s1, shows)) = overlay {
-                paint_overlay_scroller(window, bounds, s0, s1, shows, pp.lane);
+                paint_lane(window, bounds, s0, s1, shows, pp.lane, &[]);
+                if pp.lane {
+                    paint_ruler(window, bounds, s0, s1, pp.ruler, cx);
+                }
             }
             let layout = TextLayout {
                 bounds,

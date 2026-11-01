@@ -4148,18 +4148,18 @@ impl Acme {
             _ => 1,
         };
         let (bounds, pos) = match target {
+            // down the lane's middle, under the handle
             Target::View(v) => {
                 let Some(l) = self.layouts.get(&v) else { return false };
-                // the lane is at the body's right
-                (l.bounds, point(l.bounds.right() - px(SCROLLWID as f32 / 2.), y))
+                (l.bounds, point(l.bounds.left() + px(crate::text_element::SPINE), y))
             }
             Target::Term(w, _) => {
                 let Some(l) = self.term_layouts.get(&w) else { return false };
-                (l.bounds, point(l.bounds.right() - px(SCROLLWID as f32 / 2.), y))
+                (l.bounds, point(l.bounds.left() + px(crate::text_element::SPINE), y))
             }
             Target::Web(w) => {
                 let Some(b) = self.web_bars.get(&w).copied() else { return false };
-                (b, point(b.left() + px(SCROLLWID as f32 / 2.), y))
+                (b, point(b.left() + px(crate::text_element::SPINE), y))
             }
         };
         let y = y.clamp(bounds.top(), bounds.bottom());
@@ -4702,18 +4702,19 @@ impl Acme {
         changed
     }
 
-    /// How much of a scroller's thumb shows, as macOS's overlay scrollers
-    /// do: all of it while its text (terminal, page) moves, while the
-    /// pointer is in its lane or dragging it; fading a second after it
-    /// stopped; none otherwise. `key` names the scroller (a text, or a
-    /// window's body), `at` where it is now. And whether it is changing,
-    /// to be drawn again.
-    /// Is the pointer in `key`'s scroller lane: its gutter out, over the
-    /// text's edge, and B1 B2 B3 acme's scrollbar there.
+    /// Is the pointer in `key`'s scroller lane: its track out, the lines
+    /// it shows on pills by its thumb, and B1 B2 B3 acme's scrollbar
+    /// there.
     pub fn lane_open(&self, key: ViewId) -> bool {
         self.lane_hover == Some(key)
     }
 
+    /// How far a scroller's thumb is darkened from its rest, as macOS's
+    /// overlay scrollers show: all the way while its text (terminal,
+    /// page) moves, while the pointer is in its lane or dragging it;
+    /// fading a second after it stopped; not at all otherwise. `key`
+    /// names the scroller (a text, or a window's body), `at` where it is
+    /// now. And whether it is changing, to be drawn again.
     pub fn scroller(&mut self, key: ViewId, at: u64) -> (f32, bool) {
         if self.scroll_pos.insert(key, at).is_some_and(|was| was != at) {
             self.scrolled_at.insert(key, std::time::Instant::now());
