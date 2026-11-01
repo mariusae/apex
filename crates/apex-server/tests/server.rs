@@ -944,7 +944,9 @@ fn a_terminals_path_is_the_reported_directory_and_its_label_the_title() {
 fn b3_in_a_terminal_that_no_rule_takes_looks_nowhere_else() {
     // a text window holding the token was the last selected text
     // (seltext: where acme's look3 searches); B3 on the same token in
-    // a terminal, taken by no rule, must not search and select it there
+    // a terminal, taken by no rule, looks for it in the terminal (its
+    // history, which the client searches), and must not search and
+    // select it in that other window
     let (mut log, mut node, col, mut server, _rx) = session();
     let a = node.new_window(&mut log, col, "/tmp/smartlog", "commit D117573677 landed\n").unwrap();
     node.select(&mut log, ViewId::Body(a), 0, 0).unwrap();
@@ -961,8 +963,9 @@ fn b3_in_a_terminal_that_no_rule_takes_looks_nowhere_else() {
         }
         other => panic!("{other:?}"),
     };
-    assert!(props.is_empty(), "{props:?}");
+    assert!(props.iter().any(|p| matches!(p, Proposal::Look { ctx: ExecCtx::Window(w), .. } if *w == term)), "{props:?}");
     perform(&mut node, &mut log, props);
+    assert_eq!(node.take_client_finds(), vec![(term, "D117573677".to_string(), false)], "looked for in the terminal");
     assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (0, 0), "the other window's dot moved");
     // the same B3 from the text window itself still looks there
     let req = apex_server::PlumbReq { ctx: ExecCtx::Window(a), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
