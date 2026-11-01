@@ -3,9 +3,12 @@
 //! page's headings (`web::Toc`) as stops down it, dots on the thumb's
 //! axis where each heading is, over the thumb as over the lane -- the
 //! heading the view is in in the accent, the others dark, bigger the
-//! higher the heading. The pointer in the bar brings the outline out beside it,
-//! over the page, the heading whose stop is nearest the pointer marked; a heading chosen there is
-//! where the page goes. The bar's buttons are acme's as ever.
+//! higher the heading. The bar is for scrolling first: the pointer in it
+//! brings out only a pill by the accent's stop, naming the part being
+//! read, as a text's bar says its lines; the pointer onto the pill opens
+//! it into the whole outline, that heading level with where the pill
+//! was, and a heading chosen there is where the page goes. Back in the
+//! bar, it is a pill again. The bar's buttons are acme's as ever.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -16,7 +19,7 @@ use gpui::{anchored, deferred, div, point, px, rgb, AnyElement, Bounds, Context,
 use apex_core::WindowId;
 
 use crate::app::Acme;
-use crate::web::Toc;
+use crate::web::{Toc, TocHead};
 
 /// A row of the outline's list.
 const ROW: f32 = 23.;
@@ -29,16 +32,19 @@ const PAD: f32 = 7.;
 /// number short of the thumb's, so a stop is centred on it to the pixel.
 const STOP: [f32; 5] = [0., 4., 3., 2., 2.];
 
+/// How tall the pill naming the part being read is.
+const PILL: f32 = 20.;
+
 /// The outline's state in the app: which page's is out, its bar (as the
 /// pointer last found it: the bars are laid out after the panel is made),
-/// the panel's top, the heading near the pointer, where the panel was
-/// drawn, and its list's scroll.
+/// whether it is the whole list or the pill, the list's top, where the
+/// pill or the list was drawn, and the list's scroll.
 #[derive(Default)]
 pub struct Outline {
     pub open: Option<WindowId>,
     pub bar: Option<Bounds<Pixels>>,
+    pub whole: bool,
     pub top: Pixels,
-    pub near: Option<usize>,
     pub panel_at: Rc<Cell<Option<Bounds<Pixels>>>>,
     pub scroll: gpui::ScrollHandle,
 }
@@ -65,69 +71,80 @@ fn tall(n: usize, bar: Bounds<Pixels>) -> Pixels {
     px(ROW * n as f32 + 2. * PAD).min(bar.size.height - px(16.))
 }
 
-/// The heading whose stop is nearest `y` in `bar`.
-pub fn nearest(toc: &Toc, scroll: Option<(f64, f64, f64)>, bar: Bounds<Pixels>, y: Pixels) -> Option<usize> {
-    let at = ((y - bar.top()) / bar.size.height).clamp(0., 1.);
-    (0..toc.heads.len()).min_by(|a, b| (toc.at(*a, scroll) - at).abs().total_cmp(&(toc.at(*b, scroll) - at).abs()))
+/// Where heading `i`'s stop is down `bar`, as `paint_lane` draws it.
+fn stop_y(toc: &Toc, scroll: Option<(f64, f64, f64)>, bar: Bounds<Pixels>, i: usize) -> Pixels {
+    bar.top() + px(3.) + (bar.size.height - px(6.)) * toc.at(i, scroll)
+}
+
+/// A heading's title as the outline shows it: a path by its end, which
+/// says most, when it is long.
+fn title(h: &TocHead) -> String {
+    if h.path && h.title.chars().count() > 44 {
+        format!("…{}", h.title.chars().skip(h.title.chars().count() - 43).collect::<String>())
+    } else {
+        h.title.clone()
+    }
 }
 
 impl Acme {
-    /// The pointer moved: the outline out while it is in a page's bar
-    /// (one with an outline), or on the outline itself. In the bar, the
-    /// outline follows it, the heading nearest it marked and level with
-    /// it (the list scrolled to it where the panel can go no higher); on
-    /// the outline, the outline stays where it is, to be chosen from.
-    /// Whether anything changed.
+    /// The pointer moved: the outline's pill out while it is in a page's
+    /// bar (one with an outline); onto the pill, the whole outline from
+    /// it, staying while the pointer is on it; back in the bar, the pill
+    /// again. Whether anything changed.
     pub fn outline_hover(&mut self, pos: Point<Pixels>) -> bool {
         let in_bar = self.web_bars.iter().find(|(w, b)| b.contains(&pos) && self.webs.toc(**w).is_some()).map(|(w, b)| (*w, *b));
-        let on_panel = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
-        let mut moved = false;
-        let (open, near) = match in_bar {
+        let on_it = self.outline.panel_at.get().is_some_and(|b| b.dilate(px(4.)).contains(&pos));
+        let was = (self.outline.open, self.outline.whole);
+        match in_bar {
             Some((w, bar)) => {
                 self.outline.bar = Some(bar);
-                let (toc, _) = self.webs.toc(w).unwrap();
-                let near = nearest(toc, self.webs.page_scroll(w), bar, pos.y);
-                let (n, tall) = (toc.heads.len(), tall(toc.heads.len(), bar));
-                let row = px(PAD + ROW * (near.unwrap_or(0) as f32 + 0.5));
-                let top = (pos.y - row).min(bar.bottom() - px(8.) - tall).max(bar.top() + px(8.));
-                let off = (top + row - pos.y).max(px(0.)).min(px(ROW * n as f32 + 2. * PAD) - tall);
-                if top != self.outline.top || off != -self.outline.scroll.offset().y {
-                    self.outline.top = top;
-                    self.outline.scroll.set_offset(point(px(0.), -off));
-                    moved = true;
-                }
-                (Some(w), near)
+                (self.outline.open, self.outline.whole) = (Some(w), false);
             }
-            None if on_panel => (self.outline.open, None),
-            None => (None, None),
-        };
-        let changed = moved || open != self.outline.open || near != self.outline.near;
-        if open.is_none() {
+            None if on_it && self.outline.open.is_some() => {
+                if !self.outline.whole {
+                    self.outline.whole = true;
+                    self.place_outline();
+                }
+            }
+            None => (self.outline.open, self.outline.whole) = (None, false),
+        }
+        if self.outline.open.is_none() {
             self.outline.panel_at.set(None);
         }
-        (self.outline.open, self.outline.near) = (open, near);
-        changed
+        was != (self.outline.open, self.outline.whole)
     }
 
-    /// The outline beside the bar of the page whose it is, by the
-    /// pointer: a heading a row, indented by level, the view's in the
-    /// accent, the pointer's nearest washed; B1 on one, the page there.
+    /// The whole outline placed where the pill was: the heading being
+    /// read level with its stop (the list scrolled to it where the panel
+    /// can go no higher, or no lower).
+    fn place_outline(&mut self) {
+        let (Some(w), Some(bar)) = (self.outline.open, self.outline.bar) else { return };
+        let Some((toc, current)) = self.webs.toc(w) else { return };
+        let i = current.unwrap_or(0);
+        let y = stop_y(toc, self.webs.page_scroll(w), bar, i);
+        let (n, tall) = (toc.heads.len(), tall(toc.heads.len(), bar));
+        let row = px(PAD + ROW * (i as f32 + 0.5));
+        let top = (y - row).min(bar.bottom() - px(8.) - tall).max(bar.top() + px(8.));
+        let off = (top + row - y).max(px(0.)).min(px(ROW * n as f32 + 2. * PAD) - tall);
+        self.outline.top = top;
+        self.outline.scroll.set_offset(point(px(0.), -off));
+    }
+
+    /// The outline beside the bar of the page whose it is: its pill
+    /// (`outline_pill`), or the whole of it, a heading a row, indented by
+    /// level, the view's in the accent; B1 on one, the page there.
     pub fn outline_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let w = self.outline.open?;
         let bar = self.outline.bar?;
         let (toc, current) = self.webs.toc(w)?;
+        if !self.outline.whole {
+            return self.outline_pill(w, bar);
+        }
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();
         let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.16), offset: point(px(0.), px(8.)), blur_radius: px(28.), spread_radius: px(0.), inset: false };
         let rows = toc.heads.iter().enumerate().map(|(i, h)| {
-            let title = if h.path && h.title.chars().count() > 44 {
-                // a path: its end says most
-                format!("…{}", h.title.chars().skip(h.title.chars().count() - 43).collect::<String>())
-            } else {
-                h.title.clone()
-            };
             let here = current == Some(i);
-            let near = self.outline.near == Some(i);
             div()
                 .id(("toc", i))
                 .flex_none()
@@ -143,9 +160,8 @@ impl Acme {
                 .cursor_pointer()
                 .text_color(rgb(if here { t.accent } else { t.panel_text }))
                 .when(h.level == 1 || here, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
-                .when(near, |d| d.bg(rgb(t.tag_bg)))
                 .hover(|d| d.bg(rgb(t.tag_bg)))
-                .child(title)
+                .child(title(h))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |acme, _, _, cx| {
@@ -187,5 +203,41 @@ impl Acme {
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
             .child(list);
         Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
+    }
+
+    /// The outline's pill: the part being read, by its stop, as a text's
+    /// bar has its lines on pills by its thumb; the pointer onto it opens
+    /// the whole outline (`outline_hover`).
+    fn outline_pill(&self, w: WindowId, bar: Bounds<Pixels>) -> Option<AnyElement> {
+        let (toc, current) = self.webs.toc(w)?;
+        let i = current.unwrap_or(0);
+        let head = toc.heads.get(i)?;
+        let t = crate::theme::theme();
+        let at = self.outline.panel_at.clone();
+        let y = stop_y(toc, self.webs.page_scroll(w), bar, i);
+        let top = (y - px(PILL / 2.)).min(bar.bottom() - px(PILL)).max(bar.top());
+        let pill = div()
+            .relative()
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .h(px(PILL))
+            .max_w(px(320.))
+            .px(px(8.))
+            .rounded(px(PILL / 2.))
+            .bg(rgb(t.tag_bg))
+            .border_1()
+            .border_color(rgb(t.body_border))
+            .font_family(crate::fonts::ui())
+            .text_size(px(11.5))
+            .text_color(rgb(t.text_dim))
+            .whitespace_nowrap()
+            .child(self.overlay_mark_by(px(0.)))
+            .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
+            // the accent's mark: the stop it names
+            .child(div().flex_none().text_color(rgb(t.accent)).child("§"))
+            .child(div().min_w_0().overflow_hidden().text_ellipsis().child(title(head)))
+            .child(div().flex_none().child("›"));
+        Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), top)).child(pill)).with_priority(2).into_any_element())
     }
 }

@@ -318,13 +318,14 @@ windows put away out of the tiling, which is the core's
   headings as stops down it: dots on the thumb's axis, each where it
   stands in the page and bigger the higher it is, dark over the thumb as
   over the lane, the heading of the part being read in the accent (a
-  scrollspy). The pointer in the bar brings the headings out
-  beside it as a list, over the page, the one whose stop is nearest the
-  pointer marked, the one
-  being read in the accent; a click on one goes there (a diff's files by
-  their names, cut from the left when too long, since a path's end says
-  most). Only with two headings or more; nothing of it is drawn in the
-  page.
+  scrollspy). The bar is for scrolling first: the pointer in it brings
+  out only a pill by the accent's stop naming the part being read, as a
+  text's bar has its lines on pills; the pointer onto the pill opens it
+  into the headings as a list, over the page, the one being read in the
+  accent and level with where the pill was, and a click on one goes
+  there (a diff's files by their names, cut from the left when too long,
+  since a path's end says most). Back in the bar, it is a pill again.
+  Only with two headings or more; nothing of it is drawn in the page.
 - **A tag is what the window is, then your words.** The head is drawn
   from the window's state (DESIGN.md, *Windows are what they are*), none
   of it in the tag's text: the path, its folders dim and its name
