@@ -456,7 +456,7 @@ impl Render for Acme {
                                         let shows = acme.scroller(ViewId::Body(w), (t0 * 1e6) as u64);
                                         let open = acme.lane_open(ViewId::Body(w)) || acme.outline.open == Some(w);
                                         let scroll = acme.webs.page_scroll(w);
-                                        let stops = acme.webs.toc(w).map(|(toc, current)| outline::stops(toc, scroll, current, open)).unwrap_or_default();
+                                        let stops = acme.webs.toc(w).map(|(toc, current)| outline::stops(toc, scroll, current)).unwrap_or_default();
                                         (t0, t1, shows, open, stops)
                                     })
                                 },

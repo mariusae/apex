@@ -1,9 +1,9 @@
 //! A page's outline in its scrollbar: the scrollbar down a page's left
 //! (a preview's, a diff's) is acme's, as a text's, and carries the
 //! page's headings (`web::Toc`) as stops down it, dots on the thumb's
-//! axis where each heading is, holes in the thumb under it -- the heading
-//! the view is in in the accent, the others faint, bigger the higher the
-//! heading. The pointer in the bar brings the outline out beside it,
+//! axis where each heading is, over the thumb as over the lane -- the
+//! heading the view is in in the accent, the others dark, bigger the
+//! higher the heading. The pointer in the bar brings the outline out beside it,
 //! over the page, the heading whose stop is nearest the pointer marked; a heading chosen there is
 //! where the page goes. The bar's buttons are acme's as ever.
 
@@ -24,9 +24,10 @@ const ROW: f32 = 23.;
 /// The list's padding, its border's included.
 const PAD: f32 = 7.;
 
-/// How big a stop is across, by its heading's level: a first as wide as
-/// the thumb (5), smaller down to a fourth.
-const STOP: [f32; 5] = [0., 4.5, 3.5, 2.5, 2.];
+/// How big a stop is across, by its heading's level: a first nearly as
+/// wide as the thumb (5), smaller down to a fourth. Whole points, an odd
+/// number short of the thumb's, so a stop is centred on it to the pixel.
+const STOP: [f32; 5] = [0., 4., 3., 2., 2.];
 
 /// The outline's state in the app: which page's is out, its bar (as the
 /// pointer last found it: the bars are laid out after the panel is made),
@@ -44,14 +45,14 @@ pub struct Outline {
 
 /// The stops down the bar: each heading where it is in the page
 /// (`toc.at`), as big as its level says, the current one in the accent,
-/// the others faint (less so with the lane open); as `paint_lane` has
-/// them.
-pub fn stops(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>, open: bool) -> Vec<(f32, f32, u32, f32)> {
+/// the others darker than the thumb at its darkest, whatever they are
+/// over; as `paint_lane` has them.
+pub fn stops(toc: &Toc, scroll: Option<(f64, f64, f64)>, current: Option<usize>) -> Vec<(f32, f32, u32, f32)> {
     let t = crate::theme::theme();
     (0..toc.heads.len())
         .map(|i| {
             let d = STOP[toc.heads[i].level.min(4) as usize];
-            let (rgb, alpha) = if current == Some(i) { (t.accent, 1.) } else { (t.text_dim, if open { 0.75 } else { 0.4 }) };
+            let (rgb, alpha) = if current == Some(i) { (t.accent, 1.) } else { (crate::text_element::mix(t.text_dim, t.text, 0.5), 1.) };
             (toc.at(i, scroll), d, rgb, alpha)
         })
         .collect()

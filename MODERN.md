@@ -316,9 +316,9 @@ windows put away out of the tiling, which is the core's
   lane down the page's left, B1 B2 B3 acme's, and on a page rendered
   from a buffer (a Markdown preview, apex diff) carries the page's
   headings as stops down it: dots on the thumb's axis, each where it
-  stands in the page and bigger the higher it is, holes in the thumb
-  where it passes over them, the heading of the part being read in the
-  accent (a scrollspy). The pointer in the bar brings the headings out
+  stands in the page and bigger the higher it is, dark over the thumb as
+  over the lane, the heading of the part being read in the accent (a
+  scrollspy). The pointer in the bar brings the headings out
   beside it as a list, over the page, the one whose stop is nearest the
   pointer marked, the one
   being read in the accent; a click on one goes there (a diff's files by
