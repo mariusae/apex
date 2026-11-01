@@ -111,6 +111,13 @@ fn scripts_drive_a_headless_session() {
     ok(&sock, &["status", "-win=notes.txt", "clear"]);
     assert_eq!(status(&sock), "");
 
+    // a scratch window at a path: made once, used again after
+    let first = ok(&sock, &["new", "-scratch", "/man/cat(1)"]);
+    let again = ok(&sock, &["new", "-scratch", "/man/cat(1)"]);
+    assert_eq!(first, again, "the window at the path again");
+    let line = ok(&sock, &["win", "list"]).lines().find(|l| l.contains("/man/cat(1)")).map(String::from).unwrap_or_default();
+    assert!(line.split('\t').nth(2).is_some_and(|m| m.contains('+')), "scratch: {line}");
+
     // selections
     ok(&sock, &["sel", "notes.txt", "5", "10"]);
     assert_eq!(ok(&sock, &["sel", "notes.txt"]), "5 10\n");

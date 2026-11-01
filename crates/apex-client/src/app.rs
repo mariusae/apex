@@ -3879,7 +3879,8 @@ impl Acme {
                     (None, MouseButton::Middle) => self.term_word(w, cell.0, cell.1, is_exec_char),
                     // B3 on an OSC 8 link plumbs the link, not its text;
                     // on a URL, the whole URL (a file word stops at `?`)
-                    (None, _) => self.term_link(w, cell.0, cell.1).or_else(|| self.term_url(w, cell.0, cell.1)).or_else(|| self.term_word(w, cell.0, cell.1, is_file_char)),
+                    // and on a manual page's name, `cat(1)` whole
+                    (None, _) => self.term_link(w, cell.0, cell.1).or_else(|| self.term_url(w, cell.0, cell.1)).or_else(|| self.term_man(w, cell.0, cell.1)).or_else(|| self.term_word(w, cell.0, cell.1, is_file_char)),
                 };
                 if let Some(text) = text {
                     match button {
@@ -4109,6 +4110,13 @@ impl Acme {
 
     fn term_word(&self, w: WindowId, c: usize, r: usize, pred: fn(char) -> bool) -> Option<String> {
         self.term_word_at(w, c, r, pred).map(|(t, _)| t)
+    }
+
+    /// A manual page's name at cell `c` of row `r` (`cat(1)`), whole.
+    fn term_man(&self, w: WindowId, c: usize, r: usize) -> Option<String> {
+        let row = self.term_layouts.get(&w)?.rows.get(r)?;
+        let chars: Vec<char> = row.chars().collect();
+        apex_core::expand::man_ref_at(&chars, c).map(|(a, b)| chars[a..b].iter().collect())
     }
 
     /// `term_word`, and the columns it spans on its row.

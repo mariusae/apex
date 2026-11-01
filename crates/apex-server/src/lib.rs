@@ -1348,9 +1348,25 @@ impl Server {
             let (_, e) = log.install_rule(SERVER, -100, rule);
             let _ = self.node.state.apply(Shard::Meta, &e);
         }
+        let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
+        // a manual page's name, `cat(1)`: the page, read in a window of
+        // its own at /man/cat(1), as plan9port's plumbing shows one
+        let man = PlumbRule { start: None,
+            verb: "plumb".into(),
+            owner: None,
+            unlisted: false,
+            text: Some(r"([A-Za-z0-9_.+\-]+)\(([0-9][A-Za-z0-9]*)\)".into()),
+            file: None,
+            kind: None,
+            isfile: None,
+            isdir: None,
+            action: RuleAction::Run(format!("MANPAGER=cat man $2 $1 | col -b | {apex} new -scratch '/man/$1($2)'")),
+            win: None, to: None,
+        };
+        let (_, e) = log.install_rule(SERVER, -100, man);
+        let _ = self.node.state.apply(Shard::Meta, &e);
         // Clear in a terminal's tools menu (or typed in its tag): the
         // scrollback dropped, through the CLI
-        let apex = self_exe().map(|e| shell_quote(&e.display().to_string())).unwrap_or_else(|| "apex".into());
         let clear = PlumbRule { start: None,
             verb: "Clear".into(),
             owner: None,
@@ -1419,6 +1435,19 @@ impl Server {
         if let Some(at) = req.at.filter(|_| req.verb == "plumb") {
             if let Ok(buf) = view.state.buffer(at.buffer) {
                 let (q0, q1) = req.sel.map(|s| (s.q0, s.q1)).unwrap_or((at.q0, at.q0));
+                // a click on a manual page's name, `cat(1)`: all of it
+                let man = req.sel.is_none().then(|| {
+                    let n = buf.text.line_of(q0);
+                    let (s, e) = buf.text.line_range(n)?;
+                    let line: Vec<char> = buf.text.slice(s, e).chars().collect();
+                    apex_core::expand::man_ref_at(&line, q0 - s).map(|(a, b)| (s + a, s + b))
+                });
+                if let Some((m0, m1)) = man.flatten() {
+                    req.text = buf.text.slice(m0, m1);
+                    req.sel = Some(Span { buffer: at.buffer, q0: m0, q1: m1 });
+                    req.alt = None;
+                    trace.push(format!("expanded to {:?}: a manual page", req.text));
+                } else {
                 match apex_core::expand::expand(&buf.text, q0, q1, &is_file) {
                     Some(e) => {
                         req.text = buf.text.slice(e.q0, e.q1);
@@ -1436,6 +1465,7 @@ impl Server {
                         trace.push("nothing to expand at the pointer".into());
                         nothing = true;
                     }
+                }
                 }
             }
         } else if req.verb == "plumb" && !req.text.is_empty() {

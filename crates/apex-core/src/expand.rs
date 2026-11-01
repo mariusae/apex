@@ -53,6 +53,40 @@ pub fn expand(t: &Text, q0: usize, q1: usize, is_file: &dyn Fn(&str) -> bool) ->
     (q1 > q0).then_some(Expansion { q0, q1, file: None })
 }
 
+/// A manual page's name around `at` in `line` (char offsets): `cat(1)`,
+/// `printf(3)`, `git-log(1)`, `keyboard(7)` -- a name, then its section
+/// (a digit, and letters or digits after it) in parentheses -- as
+/// plan9port's plumbing rules read them; where it starts and ends. A
+/// click anywhere in it takes it all: B3 on a reference to a page.
+pub fn man_ref_at(line: &[char], at: usize) -> Option<(usize, usize)> {
+    let name_c = |c: char| c.is_alphanumeric() || matches!(c, '_' | '.' | '-' | '+');
+    for (open, _) in line.iter().enumerate().filter(|(_, c)| **c == '(') {
+        let mut start = open;
+        while start > 0 && name_c(line[start - 1]) {
+            start -= 1;
+        }
+        // a name to it, and not one that is all punctuation
+        if start == open || !line[start..open].iter().any(|c| c.is_alphanumeric()) {
+            continue;
+        }
+        let mut k = open + 1;
+        if !line.get(k).is_some_and(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        while line.get(k).is_some_and(|c| c.is_ascii_alphanumeric()) {
+            k += 1;
+        }
+        if line.get(k) != Some(&')') {
+            continue;
+        }
+        let end = k + 1;
+        if (start..end).contains(&at) {
+            return Some((start, end));
+        }
+    }
+    None
+}
+
 fn has_at(t: &Text, at: isize, s: &str) -> bool {
     if at < 0 {
         return false;
@@ -175,6 +209,20 @@ mod tests {
         assert_eq!(e.file, None);
         let e = expand(&t, 15, 15, &none).unwrap();
         assert_eq!(t.slice(e.q0, e.q1), "CHANGES");
+    }
+
+    #[test]
+    fn a_click_in_a_manual_page_reference_takes_it_all() {
+        let line: Vec<char> = "see cat(1), git-log(1) and printf(3p).".chars().collect();
+        let at = |s: &str| line.iter().collect::<String>().find(s).unwrap();
+        let got = |q: usize| super::man_ref_at(&line, q).map(|(a, b)| line[a..b].iter().collect::<String>());
+        assert_eq!(got(at("cat")).as_deref(), Some("cat(1)"));
+        assert_eq!(got(at("(1)") + 1).as_deref(), Some("cat(1)"), "in its section too");
+        assert_eq!(got(at("git-log") + 4).as_deref(), Some("git-log(1)"));
+        assert_eq!(got(at("printf")).as_deref(), Some("printf(3p)"));
+        assert_eq!(got(at("see")), None);
+        let none: Vec<char> = "f(x) and g() and (1)".chars().collect();
+        assert!((0..none.len()).all(|q| super::man_ref_at(&none, q).is_none()), "no section, or no name: none");
     }
 
     #[test]

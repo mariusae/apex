@@ -216,7 +216,7 @@ With -stdio, attach instead copies bytes between the daemon's socket and
 its own stdin and stdout, starting the daemon if none answers. That is
 what runs on a host: `ssh host apex -session=NAME attach -stdio` is the
 whole remote story." },
-    Cmd { name: "new", usage: "apex new [-diagnostic] [-label=LABEL] [PATH]", short: "a new window, with stdin in it", flags: &[switch("diagnostic", "a diagnostic window: scratch, made stashed, what is new in it said in a toast"), flag("label", "the window's label, beside its path")], run: new, long: "\
+    Cmd { name: "new", usage: "apex new [-diagnostic | -scratch] [-label=LABEL] [PATH]", short: "a new window, with stdin in it", flags: &[switch("diagnostic", "a diagnostic window: scratch, made stashed, what is new in it said in a toast"), switch("scratch", "a scratch window, never dirty: PATH's again when it is open, what it shows replaced"), flag("label", "the window's label, beside its path")], run: new, long: "\
 New makes a new, empty window in the session and prints its id. When
 stdin is not a terminal, its content goes into the window:
 
@@ -230,7 +230,14 @@ With -diagnostic the window is a diagnostic one, as an +Errors window
 is: a scratch window (PATH is where it is about, the current directory
 by default) made in the stash, not laid out; what is written to it
 after (apex win write, a tool) is said in a toast while it is stashed.
-For a script's report on how things stand." },
+For a script's report on how things stand.
+
+With -scratch the window is a scratch one, never saved and never dirty,
+at PATH (a name for it: /man/cat(1)); a window at PATH already open is
+used again, what it shows replaced, and shown. Output to read, as
+acme's plumber shows a manual page:
+
+	man 1 cat | col -b | apex new -scratch '/man/cat(1)'" },
     Cmd { name: "open", usage: "apex open FILE...", short: "open files", flags: &[], run: open, long: "\
 Open opens each FILE (relative to the current directory) in the first
 column, as B2 on `New FILE` would, and prints the id and name of each
@@ -1377,8 +1384,37 @@ fn new(ctx: &Ctx, p: &Parsed) -> R {
         println!("{}", w.0);
         return Ok(());
     }
+    if p.is("scratch") {
+        let path = label.ok_or("new: -scratch wants a PATH")?;
+        let path = if path.starts_with('/') { path } else { absolute(&path)? };
+        let text = if std::io::stdin().is_terminal() {
+            String::new()
+        } else {
+            let mut text = String::new();
+            std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+            text
+        };
+        // the window at the path again, else a new one
+        let open = c.node.state.windows.keys().copied().find(|w| c.node.window_path(*w) == path);
+        let w = match open {
+            Some(w) => w,
+            None => {
+                let col = c.node.state.layout.cols.last().map(|c| c.id).ok_or("no column")?;
+                let w = c.propose(Proposal::NewWindow { col, name: path.clone(), label: p.get("label").map(String::from), scratch: true, diagnostic: false }, TIMEOUT)?.ok_or("no window made")?;
+                wait(&mut c, |r| r.node.state.window(w).is_ok())?;
+                w
+            }
+        };
+        let b = c.node.state.window(w).map_err(|e| e.to_string())?.body_buffer().ok_or("not a text window")?;
+        let buf = c.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let (version, len) = (buf.version, buf.text.len());
+        c.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: len, text }, TIMEOUT)?;
+        c.propose(Proposal::Show { view: apex_core::ViewId::Body(w), at: 0 }, TIMEOUT)?;
+        println!("{}", w.0);
+        return Ok(());
+    }
     if p.get("label").is_some() {
-        return Err("new: -label goes with -diagnostic".into());
+        return Err("new: -label goes with -diagnostic or -scratch".into());
     }
     let before: Vec<WindowId> = c.node.state.windows.keys().copied().collect();
     c.propose(Proposal::Exec { ctx: ExecCtx::Top, text: "New".into() }, TIMEOUT)?;

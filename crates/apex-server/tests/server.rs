@@ -1485,3 +1485,23 @@ fn a_stale_write_is_an_error_and_a_selecting_one_selects_where_it_ran() {
     apex_server::proposal::apply(&mut node, &mut log, Proposal::ReplaceRange { select: true, dir: None, buffer: b, version, q0: 0, q1: 1, text: "Y".into() }).unwrap();
     assert_eq!(node.selection(ViewId::Body(twin)).unwrap(), (0, 1));
 }
+
+/// B3 on a manual page's name, `cat(1)`: the name and its section taken
+/// whole, wherever the click is in it, and the page read into a window
+/// of its own, as plan9port's plumbing shows one.
+#[test]
+fn b3_on_a_manual_pages_name_reads_the_page() {
+    let (mut log, mut node, col, mut server, _rx) = session();
+    server.install_default_rules(&mut log);
+    node.catch_up(&log).unwrap();
+    let w = node.new_window(&mut log, col, "/tmp/see-also", "see cat(1), git-log(1).\n").unwrap();
+    let b = node.state.window(w).unwrap().body_buffer().unwrap();
+    for (q, page) in [(4, "1 cat"), (8, "1 cat"), (14, "1 git-log")] {
+        let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: String::new(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: Some(Span { buffer: b, q0: q, q1: q }), sel: None, alt: None, reverse: false };
+        let (_, step) = server.plumb_start(&node, req);
+        let apex_server::PlumbStep::Trace(lines) = step else { panic!("{step:?}") };
+        let all = lines.join("\n");
+        assert!(all.contains("a manual page"), "{all}");
+        assert!(all.contains(&format!("would run MANPAGER=cat man {page} | col -b |")), "{all}");
+    }
+}
