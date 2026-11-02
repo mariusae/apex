@@ -22,8 +22,8 @@ execdev=${APEX_EXECDEV:-}
 if [ -z "$execdev" ]; then
     if command -v execdev >/dev/null 2>&1; then
         execdev=$(command -v execdev)
-    elif [ -x /Users/meriksen/.cargo/bin/execdev ]; then
-        execdev=/Users/meriksen/.cargo/bin/execdev
+    elif [ -x "${CARGO_HOME:-$HOME/.cargo}/bin/execdev" ]; then
+        execdev=${CARGO_HOME:-$HOME/.cargo}/bin/execdev
     else
         echo "apex-remote-devserver: execdev not found" >&2
         exit 127

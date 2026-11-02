@@ -2,4 +2,8 @@
 # Archiver for cross-compiling to x86_64-linux-musl, via Zig: macOS's ar
 # writes a BSD "random library" whose symbol table lld cannot use, so a
 # C library built for the target (ring's) looks empty to the link.
-exec "$HOME/.local/zig-aarch64-macos-0.16.0/zig" ar "$@"
+zig=${ZIG:-}
+if [ -z "$zig" ]; then zig=$(command -v zig || true); fi
+if [ -z "$zig" ]; then zig=$(ls -d "$HOME"/.local/zig-*-0.16*/zig 2>/dev/null | sort | tail -1); fi
+if [ -z "$zig" ]; then echo "zig-ar: no zig 0.16: put it on PATH or set ZIG" >&2; exit 1; fi
+exec "$zig" ar "$@"

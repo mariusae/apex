@@ -125,7 +125,7 @@ Two small wrapper scripts make this work:
 - **`mac/zig-cc`** runs `zig cc -target x86_64-linux-musl`. It first strips any `--target=…` or `-target X` argument, because cc-rs passes Rust's triple, which Zig does not understand.
 - **`mac/zig-ar`** runs `zig ar`. macOS's `ar` writes a BSD symbol table that lld cannot read, so a C library built for the target (ring's is the example given) would look empty at link time.
 
-`link-self-contained=no` stops Rust from adding its bundled musl start files, since Zig brings its own. Both wrappers hard-code the Zig path `$HOME/.local/zig-aarch64-macos-0.16.0/zig`, so on another machine or Zig version they need editing. The ghostty build script, by contrast, searches for Zig. In a cross build, `ghostty-vt-sys` sees `TARGET != HOST` and passes `-Dtarget=x86_64-linux-musl` to Zig. The Linux command therefore links a Linux archive, not the Mac's.
+`link-self-contained=no` stops Rust from adding its bundled musl start files, since Zig brings its own. Both wrappers find Zig the way the ghostty build script does: `$ZIG`, otherwise `zig` on the PATH, otherwise the newest `~/.local/zig-*-0.16*/zig`. In a cross build, `ghostty-vt-sys` sees `TARGET != HOST` and passes `-Dtarget=x86_64-linux-musl` to Zig. The Linux command therefore links a Linux archive, not the Mac's.
 
 Sources: [.cargo/config.toml:1-10](.cargo/config.toml#L1-L10), [mac/zig-cc:1-15](mac/zig-cc#L1-L15), [mac/zig-ar:1-5](mac/zig-ar#L1-L5), [crates/ghostty-vt-sys/build.rs:88-92](crates/ghostty-vt-sys/build.rs#L88-L92)
 

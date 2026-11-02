@@ -2,7 +2,7 @@
 # Build Apex.app into target/. Usage: mac/build-app.sh [--debug]
 set -e
 cd "$(dirname "$0")/.."
-export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 profile=release; flag=--release
 if [ "$1" = "--debug" ]; then profile=debug; flag=; fi
 cargo build $flag -p apex-client -p apex-cli
