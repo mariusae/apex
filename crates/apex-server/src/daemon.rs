@@ -546,18 +546,14 @@ impl Daemon {
     /// change: it goes with the next.
     fn save(&mut self, all: bool) {
         let Some(dir) = self.dumps.clone() else { return };
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         for (key, s) in &self.sessions {
             let applied: BTreeMap<Shard, Seq> = s.view.state.applied.iter().filter(|(sh, _)| !matches!(sh, Shard::Term(_))).map(|(a, b)| (*a, *b)).collect();
             if !all && self.saved.get(key) == Some(&applied) {
                 continue;
             }
-            let mut d = apex_core::dump::dump(&s.view.state, &mut |t| s.server.term_history(t));
+            let mut d = s.server.dump(&s.view);
             d.id = key.clone();
             d.label = s.label.clone();
-            d.cwd = s.server.cwd.display().to_string();
-            d.settings = s.view.state.meta.settings.get(&SERVER).cloned().unwrap_or_default();
-            d.saved = now;
             match crate::persist::write(&dir, key, &d) {
                 Ok(()) => {
                     self.saved.insert(key.clone(), applied);
@@ -1766,6 +1762,30 @@ impl Daemon {
         if verbs {
             self.start_verbs(name);
         }
+        // what Load read: sessions of their own
+        let loads = self.sessions.get_mut(name).map(|s| s.server.take_loads()).unwrap_or_default();
+        for d in loads {
+            self.load(name, d);
+        }
+    }
+
+    /// `Load` in session `from`: a session made from dump `d`, with an
+    /// identity of its own and its label (made unique: `label-2`), which
+    /// the UI leading `from` goes to.
+    fn load(&mut self, from: &str, mut d: apex_core::dump::Dump) {
+        d.id = apex_core::log::new_session_id();
+        let base = if d.label.is_empty() { "loaded".to_string() } else { d.label.clone() };
+        d.label = base.clone();
+        let mut n = 2;
+        while self.resolve(&d.label).is_some() {
+            d.label = format!("{base}-{n}");
+            n += 1;
+        }
+        let p = match self.restore_session(&d) {
+            Ok(()) => Proposal::Switch { session: d.id.clone(), window: None },
+            Err(e) => Proposal::Errors { dir: None, text: format!("Load: {e}\n") },
+        };
+        self.after(from, vec![p]);
     }
 }
 

@@ -212,6 +212,8 @@ to <code>cmd</code>, its output to <code>+Errors</code>.</p>
 <tr><td>Win [cmd]</td><td>acme's win: a shell in a text window</td></tr>
 <tr><td>Web [url]</td><td>a web page</td></tr>
 <tr><td>Kill name</td><td>kill running commands by name</td></tr>
+<tr><td>Dump [file]</td><td>write the session to a file, <code>~/apex.dump</code> by default; sessions are kept anyway, this is for keeping one as it is</td></tr>
+<tr><td>Load [file]</td><td>make a new session from a dump and go to it</td></tr>
 <tr><td>Exit</td><td>close Apex's window; the session keeps running</td></tr>
 <tr><td>End</td><td>end the session; warns once if anything is unsaved</td></tr>
 </table>
@@ -426,6 +428,14 @@ host you know, lets you make new ones, and adds hosts.</p>
 <p>Click the session's name in the title bar to rename it. Closing a tab
 (⌘⇧W, or × in the sidebar) leaves the session running on its host;
 <code>End</code>, or <code>apex end-session</code>, ends it.</p>
+
+<p>Sessions outlive the daemon. It writes each one down as it changes, in
+<code>~/.apex/sessions</code>, and has them back when it starts again,
+after a restart, a crash or a reboot: the same windows, laid out as they
+were, with their changes not yet saved. The programs that were running
+do not come back. A terminal comes back with its old output, a line
+saying when it was restored, and a new shell in the same directory. Ending
+a session forgets it.</p>
 
 <p>Only one app leads a session at a time. If you attach to a session
 from another machine, the first app becomes a <em>watcher</em>: it still

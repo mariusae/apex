@@ -143,3 +143,51 @@ fn a_dump_that_will_not_load_is_set_aside() {
     stop(&sock);
     let _ = std::fs::remove_dir_all(&dumps);
 }
+
+#[test]
+fn dump_writes_a_session_and_load_makes_one_of_it() {
+    let (sock, dumps, files) = (scratch("sock"), scratch("dumps"), scratch("files"));
+    std::fs::create_dir_all(&files).unwrap();
+    let path = files.join("g.txt");
+    std::fs::write(&path, "alpha\n").unwrap();
+    daemon(&sock, &dumps);
+    let mut c = Remote::connect(&sock, "main", "c1").unwrap();
+    let col = c.node.state.layout.cols[0].id;
+    c.send(&ClientMsg::OpenFile { col, ctx: ExecCtx::Top, name: path.to_string_lossy().to_string() });
+    assert!(wait(&mut c, |r| r.node.state.windows.len() == 1));
+    let w = *c.node.state.windows.keys().next().unwrap();
+    c.node.select(&mut c.log, ViewId::Body(w), 0, 0).unwrap();
+    c.node.insert(&mut c.log, ViewId::Body(w), "beta ").unwrap();
+    // Dump, relative to the window's directory
+    c.node.exec(&mut c.log, ExecCtx::Window(w), "Dump saved.dump").unwrap();
+    c.flush();
+    let file = files.join("saved.dump");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !file.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let d: apex_core::dump::Dump = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(d.label, "main");
+    assert_eq!(d.windows.len(), 1);
+    // Load: a session of its own, beside this one
+    c.node.exec(&mut c.log, ExecCtx::Window(w), "Load saved.dump").unwrap();
+    c.flush();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut other = None;
+    while other.is_none() && Instant::now() < deadline {
+        other = Remote::connect(&sock, "main-2", "c2").ok();
+        if other.is_none() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    let other = other.expect("a session main-2");
+    assert_ne!(other.node.state.meta.id, c.node.state.meta.id);
+    let w2 = other.node.state.windows.values().next().unwrap().id;
+    let b = other.node.state.buffer(other.node.state.window(w2).unwrap().body_buffer().unwrap()).unwrap();
+    assert_eq!(b.text.to_string(), "beta alpha\n");
+    assert!(b.dirty());
+    drop((c, other));
+    stop(&sock);
+    let _ = std::fs::remove_dir_all(&files);
+    let _ = std::fs::remove_dir_all(&dumps);
+}

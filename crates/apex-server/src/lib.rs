@@ -154,6 +154,8 @@ pub struct Server {
     stamps: HashMap<PathBuf, Option<(Option<std::time::SystemTime>, u64)>>,
     /// Subscribed files that changed, for the host to report.
     changed: BTreeSet<PathBuf>,
+    /// Dumps `Load` read, for the daemon to make sessions of.
+    loads: Vec<apex_core::dump::Dump>,
     /// The windows whose status asks for the user (done, blocked,
     /// error), in which state, as `status_flags` last saw them; none
     /// before it first looked.
@@ -224,6 +226,7 @@ impl Server {
             subscribed: BTreeSet::new(),
             stamps: HashMap::new(),
             changed: BTreeSet::new(),
+            loads: Vec::new(),
             asking: None,
         };
         (server, rx)
@@ -396,6 +399,23 @@ impl Server {
         let dir = Some(PathBuf::from(term::expand_tilde(dir.trim_end_matches('/')))).filter(|d| d.is_dir()).or_else(|| std::env::var_os("HOME").map(PathBuf::from)).unwrap_or_else(|| self.cwd.clone());
         self.pending_terms.insert(id, PendingTerm { dir, cmd: None, shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: term::restored_prelude(history) });
         Some(id)
+    }
+
+    /// The session written down (`apex_core::dump`): its windows, its
+    /// identity and label, its directory and settings.
+    pub fn dump(&self, view: &Node) -> apex_core::dump::Dump {
+        let mut d = apex_core::dump::dump(&view.state, &mut |t| self.term_history(t));
+        d.id = view.state.meta.id.clone();
+        d.label = view.state.meta.label.clone();
+        d.cwd = self.cwd.display().to_string();
+        d.settings = view.state.meta.settings.get(&SERVER).cloned().unwrap_or_default();
+        d.saved = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_secs()).unwrap_or(0);
+        d
+    }
+
+    /// The dumps `Load` read since the last call.
+    pub fn take_loads(&mut self) -> Vec<apex_core::dump::Dump> {
+        std::mem::take(&mut self.loads)
     }
 
     /// What terminal `t` has shown, as text, for a dump: its last
@@ -1178,6 +1198,24 @@ impl Server {
                 for name in words {
                     self.kill(name);
                 }
+            }
+            "Dump" => {
+                // acme's Dump: the session written down, to be had back
+                // by Load (the daemon keeps its own as it goes)
+                let path = arg.map(|a| resolve(&dir, a)).unwrap_or_else(default_dump);
+                let text = serde_json::to_vec_pretty(&self.dump(view)).map_err(|e| e.to_string())?;
+                std::fs::write(&path, text).map_err(|e| format!("Dump: {}: {e}", path.display()))?;
+            }
+            "Load" => {
+                // acme's Load: here, a session of its own made from the
+                // dump, which the UI goes to (`take_loads`)
+                let path = arg.map(|a| resolve(&dir, a)).unwrap_or_else(default_dump);
+                let bytes = std::fs::read(&path).map_err(|e| format!("Load: {}: {e}", path.display()))?;
+                let d: apex_core::dump::Dump = serde_json::from_slice(&bytes).map_err(|e| format!("Load: {}: not a dump: {e}", path.display()))?;
+                if d.version > apex_core::dump::VERSION {
+                    return Err(format!("Load: {}: a dump of a later apex", path.display()));
+                }
+                self.loads.push(d);
             }
             "Send" => {
                 // acme's sendx for a terminal: the snarf buffer, with a
@@ -2172,6 +2210,12 @@ struct PendingTerm {
     scrollback: usize,
     /// What it shows before its shell's first word (`restored_prelude`).
     prelude: Vec<u8>,
+}
+
+/// Where `Dump` and `Load` with no file name write and read: acme's
+/// `$home/acme.dump`, as apex's.
+fn default_dump() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("apex.dump")
 }
 
 /// How much of a terminal's output a dump keeps for it: its last lines.

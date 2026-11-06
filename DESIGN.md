@@ -2094,8 +2094,12 @@ scratch) at the directory of the window whose command produced the
 output, made in the last column (`errorwin1`), with no `Undo` or `Put`
 for it. Decided against
 acme, by design: `Exit` detaches this window and the session lives on
-(acme refuses while windows are dirty; nothing is lost here); there is no
-`Dump`/`Load`, sessions are the only persistence; `Send` on a terminal
+(acme refuses while windows are dirty; nothing is lost here); sessions
+are kept on disk by the daemon as they change (§12), and `Dump [file]`
+writes one to a file of its own (`~/apex.dump` when none is named, as
+acme's `$home/acme.dump`), which `Load [file]` makes a new session of --
+its label made unique, the UI going to it -- rather than replacing the
+session at hand, as acme's must; `Send` on a terminal
 types the snarf buffer plus a newline into the shell and on a text window
 appends it to the body; `Local`, `Incl` and `Abort` are not commands.
 

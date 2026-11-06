@@ -234,7 +234,7 @@ pub const BUILTINS: &[&str] = &[
     // the leader's (`Node::builtin`)
     "Cut", "Paste", "Snarf", "Undo", "Redo", "Look", "Edit", "Newcol", "Delcol", "Del", "Delete", "Zerox", "Stash", "Swap", "Font", "Sort", "Exit", "Tab", "Indent", "ID", "Send",
     // the server's (`Server::perform`)
-    "Put", "Putall", "Get", "New", "Newterm", "Win", "Kill",
+    "Put", "Putall", "Get", "New", "Newterm", "Win", "Kill", "Dump", "Load",
 ];
 
 /// Does apex have a meaning of its own for this word?
