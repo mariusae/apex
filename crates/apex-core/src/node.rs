@@ -288,7 +288,7 @@ impl Node {
     }
 
     /// Append the whole tiling as it now stands in `l`.
-    fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
+    pub(crate) fn arrange(&mut self, log: &mut Log, l: &Layout) -> Result<()> {
         self.append(log, Shard::Layout, Op::Layout(LayoutOp::Arrange { r: l.r, cols: l.cols.clone(), full: l.full, stash: l.stash.clone(), covers: l.covers.clone() }))?;
         Ok(())
     }
@@ -302,7 +302,7 @@ impl Node {
     }
 
     /// Ids are unique per attachment without coordination.
-    fn alloc(&mut self) -> u64 {
+    pub(crate) fn alloc(&mut self) -> u64 {
         let id = (self.attachment.0 << 40) | self.next_id;
         self.next_id += 1;
         id
@@ -518,7 +518,7 @@ impl Node {
     /// A window's log, its tag and its views -- not yet anywhere in the
     /// tiling.
     #[allow(clippy::too_many_arguments)]
-    fn make_window_shards(&mut self, log: &mut Log, body: Body, path: String, label: Option<String>, diagnostic: bool, via: Via, base: String) -> Result<WindowId> {
+    pub(crate) fn make_window_shards(&mut self, log: &mut Log, body: Body, path: String, label: Option<String>, diagnostic: bool, via: Via, base: String) -> Result<WindowId> {
         let id = WindowId(self.alloc());
         let tag = self.create_buffer(log, "", WIN_TAG, None)?;
         self.create_shard(log, Shard::Window(id))?;
@@ -744,7 +744,7 @@ impl Node {
 
     /// Put a (new) window into a column (acme's `coladd`) and record the
     /// mouse warp acme makes: near the layout box, in the body.
-    fn place(&mut self, log: &mut Log, col: ColumnId, w: WindowId, y: Option<i32>) -> Result<()> {
+    pub(crate) fn place(&mut self, log: &mut Log, col: ColumnId, w: WindowId, y: Option<i32>) -> Result<()> {
         // a column hidden behind one grown to the whole row: the window
         // goes where it can be seen, at no height meant for another column
         let (col, y) = match self.state.layout.full {

@@ -112,6 +112,8 @@ enum Event {
     StartTimeout(u64, String),
     /// From a stream's thread on the I/O plane (a tunnel, a fetch).
     Io(u64, u32, IoUp),
+    /// Time to write down the sessions that changed (`persist`).
+    Save,
 }
 
 /// What a stream's thread reports to the daemon.
@@ -230,21 +232,53 @@ pub struct Daemon {
     held: HashMap<(u64, String), Vec<Held>>,
     /// ⌘O's listings under way, by connection and request.
     finds: HashMap<(u64, u64), crate::find::Job>,
+    /// Where the sessions are kept on disk (`persist`): none, and they
+    /// are not (a test's daemon).
+    dumps: Option<PathBuf>,
+    /// What each session had applied when it was last written down,
+    /// terminals' output aside: it is written again once that moves.
+    saved: HashMap<String, BTreeMap<Shard, Seq>>,
     rx: Receiver<Event>,
     tx: Sender<Event>,
+}
+
+/// How often the daemon looks for sessions to write down: the most
+/// work lost when it dies.
+const SAVE_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The write end of the pipe a SIGTERM or SIGINT is said on: the daemon
+/// writes its sessions down and stops, rather than dying with them.
+static STOP_PIPE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+
+extern "C" fn on_stop_signal(_: libc::c_int) {
+    let fd = STOP_PIPE.load(std::sync::atomic::Ordering::Relaxed);
+    if fd >= 0 {
+        // SAFETY: write(2) is async-signal-safe; one byte from the stack.
+        unsafe {
+            libc::write(fd, [1u8].as_ptr().cast(), 1);
+        }
+    }
 }
 
 impl Daemon {
     /// Listen on `path` (removed first if stale) and run until the process
     /// ends, with one session `session` to begin with. Returns only on a
     /// listener error.
+    /// Its sessions are kept on disk and come back when it starts again
+    /// (`persist`).
     pub fn run(path: &Path, session: &str) -> io::Result<()> {
         let host_profile = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(|h| PathBuf::from(h).join(".apex/profile"));
-        Self::run_with(path, session, host_profile)
+        Self::run_keeping(path, session, host_profile, crate::persist::dir_for(path))
     }
 
-    /// `run`, with the host's init file given (tests keep it out of `$HOME`).
+    /// `run`, with the host's init file given (tests keep it out of
+    /// `$HOME`), and nothing kept on disk.
     pub fn run_with(path: &Path, session: &str, host_profile: Option<PathBuf>) -> io::Result<()> {
+        Self::run_keeping(path, session, host_profile, None)
+    }
+
+    /// `run_with`, its sessions kept in `dumps` when it is given.
+    pub fn run_keeping(path: &Path, session: &str, host_profile: Option<PathBuf>, dumps: Option<PathBuf>) -> io::Result<()> {
         put_apex_on_path();
         // whoever started us may go (an ssh session, a terminal): we stay
         // SAFETY: setting a signal disposition.
@@ -264,7 +298,12 @@ impl Daemon {
                 }
             });
         }
-        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, held: HashMap::new(), finds: HashMap::new(), rx, tx };
+        let mut d = Daemon { socket: path.to_path_buf(), host_profile, sessions: BTreeMap::new(), next_session: 1, conns: HashMap::new(), pending: HashMap::new(), next_pending: 1, tool_plumbs: HashMap::new(), next_tool_plumb: 1, asks: HashMap::new(), next_relay: RELAYED, held: HashMap::new(), finds: HashMap::new(), dumps, saved: HashMap::new(), rx, tx };
+        if d.dumps.is_some() {
+            d.restore_sessions();
+            d.keep_saving();
+        }
+        // (one of that label may be back already)
         d.new_session(session);
         let mut next_id = 1u64;
         while let Ok(ev) = d.rx.recv() {
@@ -274,11 +313,14 @@ impl Daemon {
                     next_id += 1;
                     d.accept(id, s);
                 }
-                // `apex stop`: done, sessions and all
+                // `apex stop` (or a SIGTERM): done, the sessions written
+                // down first
                 Event::Msg(_, ClientMsg::Stop) => {
+                    d.save(true);
                     d.conns.clear(); // every connection ends with us
                     break;
                 }
+                Event::Save => d.save(false),
                 Event::Msg(id, m) => d.handle(id, m),
                 Event::Gone(id) => d.gone(id),
                 Event::Io(id, stream, up) => d.io_up(id, stream, up),
@@ -350,38 +392,12 @@ impl Daemon {
         let mut log = Log::new();
         let key = log.id().expect("a fresh log has its identity");
         log.set_label(label);
-        let (mut server, mut srx) = Server::new(&log);
+        let (mut server, srx) = Server::new(&log);
         if let Some(dir) = dir {
             server.cd(dir)?;
         }
-        // shells and commands in this session know it by its identity,
-        // and by its label, and know the daemon
-        server.env = vec![("apexsession".into(), key.clone()), ("apexsessionlabel".into(), label.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
-        // $EDITOR opens in the session and returns when the window goes
-        if let Some(editor) = editor_command() {
-            server.env.push(("EDITOR".into(), editor));
-        }
-        // xdg-open, and $BROWSER, plumb what they are given: a URL or a
-        // file opened as B3 would open it, in the session (the link is
-        // beside the binary, whose directory leads the session's PATH)
-        if let Some(open) = link_beside("xdg-open") {
-            server.env.push(("BROWSER".into(), open));
-        }
-        let sid = self.next_session;
-        self.next_session += 1;
-        {
-            let tx = self.tx.clone();
-            thread::spawn(move || {
-                use futures::StreamExt;
-                futures::executor::block_on(async move {
-                    while let Some(ev) = srx.next().await {
-                        if tx.send(Event::Server(sid, ev)).is_err() {
-                            break;
-                        }
-                    }
-                });
-            });
-        }
+        server.env = self.session_env(&key, label);
+        let sid = self.pump(srx);
         server.install_default_rules(&mut log);
         let mut view = Node::new(SERVER);
         view.catch_up(&log).expect("fresh log");
@@ -398,6 +414,157 @@ impl Daemon {
         s.server.run_profile(&s.view, self.host_profile.as_deref());
         self.after(&key, Vec::new());
         Ok(true)
+    }
+
+    /// What every shell and command in session `key` has in its
+    /// environment: the session by its identity and its label, the
+    /// daemon, and the editor and browser that open in the session.
+    fn session_env(&self, key: &str, label: &str) -> Vec<(String, String)> {
+        let mut env = vec![("apexsession".into(), key.to_string()), ("apexsessionlabel".into(), label.to_string()), ("APEX_SOCKET".into(), self.socket.display().to_string())];
+        // $EDITOR opens in the session and returns when the window goes
+        if let Some(editor) = editor_command() {
+            env.push(("EDITOR".into(), editor));
+        }
+        // xdg-open, and $BROWSER, plumb what they are given: a URL or a
+        // file opened as B3 would open it, in the session (the link is
+        // beside the binary, whose directory leads the session's PATH)
+        if let Some(open) = link_beside("xdg-open") {
+            env.push(("BROWSER".into(), open));
+        }
+        env
+    }
+
+    /// A new session's number, its server's events carried to the
+    /// daemon's loop under it.
+    fn pump(&mut self, mut srx: futures::channel::mpsc::UnboundedReceiver<ServerEvent>) -> u64 {
+        let sid = self.next_session;
+        self.next_session += 1;
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            use futures::StreamExt;
+            futures::executor::block_on(async move {
+                while let Some(ev) = srx.next().await {
+                    if tx.send(Event::Server(sid, ev)).is_err() {
+                        break;
+                    }
+                }
+            });
+        });
+        sid
+    }
+
+    /// Every session written down when the daemon last ran made again,
+    /// oldest first. A dump that will not load is set aside.
+    fn restore_sessions(&mut self) {
+        let Some(dir) = self.dumps.clone() else { return };
+        for (path, d) in crate::persist::read_all(&dir) {
+            match d.and_then(|d| self.restore_session(&d)) {
+                Ok(()) => {}
+                Err(e) => {
+                    eprintln!("apexd: {}: not restored: {e}", path.display());
+                    crate::persist::set_aside(&path);
+                }
+            }
+        }
+    }
+
+    /// Session `d` made again: its identity and label, its directory,
+    /// settings and windows; then its profile, as for a new session.
+    fn restore_session(&mut self, d: &apex_core::dump::Dump) -> Result<(), String> {
+        if self.sessions.contains_key(&d.id) || self.resolve(&d.label).is_some() {
+            return Err(format!("a session {} is running", d.label));
+        }
+        crate::providers::valid_label(&d.label)?;
+        let key = d.id.clone();
+        let mut log = Log::with_id(&key);
+        log.set_label(&d.label);
+        let (mut server, srx) = Server::new(&log);
+        // (a directory gone since: the daemon's)
+        if !d.cwd.is_empty() {
+            let _ = server.cd(&d.cwd);
+        }
+        server.env = self.session_env(&key, &d.label);
+        let sid = self.pump(srx);
+        server.install_default_rules(&mut log);
+        for (k, v) in &d.settings {
+            log.set(SERVER, k, v);
+        }
+        let mut view = Node::new(SERVER);
+        view.catch_up(&log).map_err(|e| e.to_string())?;
+        let shell = d.settings.get("Newterm.shell").cloned();
+        let scrollback = d.settings.get("Newterm.scrollback").and_then(|s| s.trim().parse().ok()).unwrap_or(crate::DEFAULT_SCROLLBACK);
+        view.load_dump(&mut log, d, &mut crate::persist::Loader { server: &mut server, shell, scrollback }).map_err(|e| e.to_string())?;
+        log.meta(server.place());
+        view.catch_up(&log).map_err(|e| e.to_string())?;
+        self.sessions.insert(key.clone(), Session { id: sid, label: d.label.clone(), log, server, view, leader: None });
+        eprintln!("apexd: session {} ({key}) restored", d.label);
+        let s = self.sessions.get_mut(&key).unwrap();
+        s.server.run_profile(&s.view, self.host_profile.as_deref());
+        self.after(&key, Vec::new());
+        Ok(())
+    }
+
+    /// Write the sessions down every `SAVE_EVERY`, and on a SIGTERM or
+    /// SIGINT, all of them and stop.
+    fn keep_saving(&self) {
+        let tx = self.tx.clone();
+        thread::spawn(move || loop {
+            thread::sleep(SAVE_EVERY);
+            if tx.send(Event::Save).is_err() {
+                break;
+            }
+        });
+        let mut fds = [0 as libc::c_int; 2];
+        // SAFETY: pipe(2) fills the two descriptors; the handler only
+        // writes to the one it is given.
+        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+            return;
+        }
+        STOP_PIPE.store(fds[1], std::sync::atomic::Ordering::Relaxed);
+        unsafe {
+            libc::signal(libc::SIGTERM, on_stop_signal as *const () as libc::sighandler_t);
+            libc::signal(libc::SIGINT, on_stop_signal as *const () as libc::sighandler_t);
+        }
+        let tx = self.tx.clone();
+        let rfd = fds[0];
+        thread::spawn(move || loop {
+            let mut b = [0u8; 1];
+            // SAFETY: a read into a byte of ours.
+            match unsafe { libc::read(rfd, b.as_mut_ptr().cast(), 1) } {
+                1 => {
+                    let _ = tx.send(Event::Msg(0, ClientMsg::Stop));
+                    break;
+                }
+                n if n < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted => {}
+                _ => break,
+            }
+        });
+    }
+
+    /// Write down each session that changed since it last was (`all`:
+    /// every one, as the daemon stops). A terminal's output alone is no
+    /// change: it goes with the next.
+    fn save(&mut self, all: bool) {
+        let Some(dir) = self.dumps.clone() else { return };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        for (key, s) in &self.sessions {
+            let applied: BTreeMap<Shard, Seq> = s.view.state.applied.iter().filter(|(sh, _)| !matches!(sh, Shard::Term(_))).map(|(a, b)| (*a, *b)).collect();
+            if !all && self.saved.get(key) == Some(&applied) {
+                continue;
+            }
+            let mut d = apex_core::dump::dump(&s.view.state, &mut |t| s.server.term_history(t));
+            d.id = key.clone();
+            d.label = s.label.clone();
+            d.cwd = s.server.cwd.display().to_string();
+            d.settings = s.view.state.meta.settings.get(&SERVER).cloned().unwrap_or_default();
+            d.saved = now;
+            match crate::persist::write(&dir, key, &d) {
+                Ok(()) => {
+                    self.saved.insert(key.clone(), applied);
+                }
+                Err(e) => eprintln!("apexd: session {}: not written down: {e}", s.label),
+            }
+        }
     }
 
     /// The key (identity) of the session with this internal number.
@@ -449,6 +616,11 @@ impl Daemon {
         }
         // the server's drop ends its terminals
         drop(s);
+        // and it is not made again
+        if let Some(dir) = &self.dumps {
+            crate::persist::forget(dir, &key);
+        }
+        self.saved.remove(&key);
         eprintln!("apexd: session {label} ({key}) ended");
         Ok(())
     }

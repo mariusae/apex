@@ -92,6 +92,34 @@ pub fn place(cwd: Option<&Path>, title: Option<&str>, initial_dir: &Path, initia
 
 /// A leading `~` or `~/` (a shell's short form of the home directory, as
 /// in a title made with zsh's `%~`) becomes `$HOME`.
+/// What a terminal made again shows before its new shell's first word,
+/// as Terminal.app restores one: its old output, then a faint line
+/// saying when it was restored.
+pub fn restored_prelude(history: &str) -> Vec<u8> {
+    let mut out = String::new();
+    if !history.is_empty() {
+        out.push_str(&history.replace('\n', "\r\n"));
+        out.push_str("\r\n");
+    }
+    out.push_str(&format!("\x1b[2mRestored session: {}\x1b[0m\r\n", now_said()));
+    out.into_bytes()
+}
+
+/// Now, as `date` says it: "Wed Nov  5 14:02:11 EST 2026".
+fn now_said() -> String {
+    // SAFETY: localtime_r and strftime write into what is given them.
+    unsafe {
+        let t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        if libc::localtime_r(&t, &mut tm).is_null() {
+            return String::new();
+        }
+        let mut buf = [0u8; 64];
+        let n = libc::strftime(buf.as_mut_ptr().cast(), buf.len(), c"%a %b %e %H:%M:%S %Z %Y".as_ptr(), &tm);
+        String::from_utf8_lossy(&buf[..n]).to_string()
+    }
+}
+
 pub fn expand_tilde(s: &str) -> String {
     let home = || std::env::var("HOME").ok().filter(|h| !h.is_empty());
     if s == "~" {
@@ -272,8 +300,10 @@ impl TermHost {
     /// environment; with `cmd`, the login shell runs that instead (acme's
     /// `win cmd`).
     /// `scrollback`: lines of history kept (the `Newterm.scrollback`
-    /// setting; 10000 otherwise).
-    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>, shell: Option<&str>, scrollback: usize) -> Result<TermHost, String> {
+    /// setting; 10000 otherwise). `prelude`: what the terminal shows
+    /// before the shell's first word (a restored terminal's old output).
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn(id: TermId, dir: &Path, cols: u16, rows: u16, tx: UnboundedSender<(TermId, TermEvent)>, extra: &[(String, String)], cmd: Option<&str>, shell: Option<&str>, scrollback: usize, prelude: &[u8]) -> Result<TermHost, String> {
         pty::setup_env();
         let shell = pty::shell_path(shell);
         let args = match cmd {
@@ -304,7 +334,10 @@ impl TermHost {
             None => format!("{} -l", shell.display()),
         };
         let started = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let term = Terminal::new(cols, rows, scrollback).ok_or("no terminal")?;
+        let mut term = Terminal::new(cols, rows, scrollback).ok_or("no terminal")?;
+        if !prelude.is_empty() {
+            term.write(prelude);
+        }
         let term = Arc::new(Mutex::new(term));
         let report = Box::new(move |r: Report| {
             let ev = match r {
@@ -371,6 +404,19 @@ impl TermHost {
         }
         t.scroll_to_bottom();
         true
+    }
+
+    /// What the terminal has shown, its history and its screen, as text
+    /// (wrapped lines joined): the last `most` lines of it, the blank
+    /// rows below the last that are not cut.
+    pub fn history(&self, most: usize) -> String {
+        let total = match self.term.lock() {
+            Ok(mut t) => t.size().1,
+            Err(_) => return String::new(),
+        };
+        let all = self.text((0, 0), (0, total));
+        let lines: Vec<&str> = all.trim_end_matches(['\n', ' ']).split('\n').collect();
+        lines[lines.len().saturating_sub(most)..].join("\n")
     }
 
     /// The text between two positions, `(column, history line)` as the
@@ -865,7 +911,7 @@ mod scroll_tests {
     fn scrolled_back_does_not_follow_output() {
         let (tx, _rx) = futures::channel::mpsc::unbounded();
         let cmd = "i=0; while [ $i -lt 400 ]; do echo line$i; i=$((i+1)); sleep 0.005; done; sleep 3";
-        let mut h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh"), 1000).unwrap();
+        let mut h = TermHost::spawn(TermId(1), Path::new("/"), 40, 10, tx, &[], Some(cmd), Some("sh"), 1000, &[]).unwrap();
         let top_of = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::View { top, .. } = o { Some(*top) } else { None }).unwrap();
         let first_row = |h: &TermHost| h.snapshot_ops().iter().find_map(|o| if let TermOp::Rows { rows, .. } = o { Some(rows[0].iter().map(|c| c.ch).collect::<String>().trim_end().to_string()) } else { None }).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);

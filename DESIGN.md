@@ -33,7 +33,8 @@ Goals:
 Non-goals (for now): multiple simultaneous UI clients editing the same
 session ("single player mode": one UI attachment per session at a time), a
 plugin language, a configuration language, web windows, persistence of the
-server's state across restarts, Windows.
+server's state across restarts (its logs; the sessions are kept, §12),
+Windows.
 
 ### Terminology
 
@@ -2128,15 +2129,42 @@ do. Not yet: remote sessions in the selector, an About window.
 
 ---
 
-## 12. Logs in memory; compaction
+## 12. Logs in memory; compaction; sessions on disk
 
-Logs live in the server's memory; the server is a long-running daemon. No
-persistence in v1: terminals and tools could not be restored anyway, so we
-admit it rather than pretend. Snapshots are taken periodically (and on
-detach) by the node holding the state, and compaction truncates a log
-below its snapshot, so logs stay bounded. A server restart is a fresh
-world, as acme's is; `Dump`/`Load` of layouts and buffer contents can come
-later.
+Logs live in the server's memory; the server is a long-running daemon.
+Snapshots are taken periodically (and on detach) by the node holding the
+state, and compaction truncates a log below its snapshot, so logs stay
+bounded. The logs are never written to disk; the sessions are, as acme's
+`Dump` writes its windows: what each window is and what of it is nowhere
+else, so a session outlives its server -- a restart, a crash, a reboot
+(#40).
+
+*As built (`apex-core/src/dump.rs`, `apex-server/src/persist.rs`):* a
+dump is not a snapshot. It is versioned JSON saying what the windows are
+-- a file at a path, a directory, a terminal in a directory, a page at
+an address -- with the text that is nowhere else (unsaved changes, the
+scratch windows', a terminal's last 2000 lines), each window's tag,
+selection, font and tabs, the columns' tags, the tiling as it was, the
+session's identity, label, directory and settings. A file or directory
+as it was read is read again. Loading makes each window again with the
+ordinary ops under new ids and lays the tiling out in one `Arrange`, so
+a dump written by one build reads in the next; a tiling that does not
+read is laid out anew. Unsaved text comes back over the file as it is
+now -- dirty, stale if the file moved on, one Undo from the file -- and
+a terminal comes back as Terminal.app restores one: its old output, a
+faint line saying when it was restored, and a new shell in its
+directory, never the command it ran. What belonged to the process goes
+with it: attachments and leases, running commands, notifications, the
+statuses programs said, undo.
+
+The daemon (`Daemon::run`; not a test's, `run_with`) keeps its
+sessions in `~/.apex/sessions/`, under its socket's path: each written
+when it changed (every five seconds at most; a terminal's output alone
+is no change), atomically, and all of them when it stops (`apex stop`,
+a SIGTERM or SIGINT). Starting, it restores each, oldest first -- the
+same identity, so a UI's tab finds it -- and runs its profile as for a
+new one; a dump that will not load is set aside as `id.json.bad`.
+Ending a session forgets it.
 
 *As built:* the daemon compacts every shard's log after each round of
 shipping, below what every connection has been sent and both its
@@ -2538,8 +2566,6 @@ second vote for the transcript being a shard.
   offset-based over the paged rows.
 - Web windows (deferred): server-side screencast vs client-side Chrome
   with server-side URL state.
-- Persistence: whether to snapshot buffers and layouts to disk later, and
-  how that interacts with the nothing-is-lost principle on a server crash.
 - Multiple UI attachments to one session with independent layouts
   (multi-player) — explicitly out of scope; the per-shard design leaves
   the door open.

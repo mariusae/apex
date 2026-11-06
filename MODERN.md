@@ -230,9 +230,11 @@ windows put away out of the tiling, which is the core's
   attach that finds this machine's server of another version (which
   this Apex cannot talk to) offers, once a launch, to restart it, and
   Apex ▸ Restart Server… does whenever asked; both say first what goes
-  with it (the sessions' windows, terminals and the programs in them,
-  changes not saved -- counted, when it can) and that the tabs stay,
-  each attaching to a fresh session of its name. A server of this
+  with it: a server that keeps its sessions (DESIGN.md §12) has them
+  back, windows and unsaved changes, the programs in its terminals
+  ending; one from before that ends them (changes not saved counted,
+  when it can); and the tabs stay, each attaching to its session again
+  or to a fresh one of its name. A server of this
   protocol is asked to stop; one of another, which may not read our
   Stop as a Stop, is signalled, once the process at its socket's far
   end is seen to be an apex server on that socket

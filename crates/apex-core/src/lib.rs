@@ -8,6 +8,7 @@
 //! - [`node`]: a replica that leads shards: typing, commands, Edit lowering.
 
 pub mod buffer;
+pub mod dump;
 pub mod entry;
 pub mod expand;
 pub mod fuzzy;

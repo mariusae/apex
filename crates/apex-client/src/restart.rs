@@ -2,9 +2,11 @@
 //! attach finds the server here is from another version (which this apex
 //! cannot talk to), once a launch; and whenever asked (Apex ▸ Restart
 //! Server…). The server holds the sessions, so it goes only when the
-//! user says so, told what goes with it: the sessions' windows, their
-//! terminals and the programs in them, and changes not saved. The tabs
-//! are the app's and stay; each attaches to a fresh session of its name.
+//! user says so, told what goes with it (`KEPT`): a server that keeps
+//! its sessions (`persist`) has them back, the programs in their
+//! terminals aside; one from before that ends them. The tabs are the
+//! app's and stay; each attaches to its session again, or to a fresh
+//! one of its name.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,6 +16,13 @@ use crate::app::Acme;
 use crate::pool::{Pool, Why};
 
 static OFFERED: AtomicBool = AtomicBool::new(false);
+
+/// What a restart does to the sessions, said before it is asked for.
+/// Which kind the server is cannot be told from here, so both are said.
+const KEPT: &str = "A server that keeps its sessions writes them down as it stops and has them back when it starts: their windows, and the changes not saved in them. The programs running in their terminals end; each terminal comes back with a new shell. A server from before Apex kept its sessions ends them, and their changes not saved are lost.";
+
+/// What becomes of the tabs.
+const TABS: &str = "Your tabs are kept; each attaches to its session again, or to a fresh one of its name.";
 
 /// The protocol a mismatch error names the server as speaking.
 fn their_protocol(why: &str) -> Option<u32> {
@@ -30,7 +39,7 @@ impl Acme {
         }
         let theirs = their_protocol(why).map(|p| format!("protocol {p}, ")).unwrap_or_default();
         let detail = format!(
-            "Apex was updated, but the server on this machine is still the old one ({theirs}this is protocol {}), and this Apex cannot attach to its sessions until it is restarted.\n\nRestarting ends those sessions: their windows close, their terminals and the programs in them end, and changes not saved are lost. Your tabs are kept; each attaches to a fresh session of its name.",
+            "Apex was updated, but the server on this machine is still the old one ({theirs}this is protocol {}), and this Apex cannot attach to its sessions until it is restarted.\n\n{KEPT} {TABS}",
             apex_server::proto::PROTOCOL
         );
         self.ask_restart("Apex's server is from another version", &detail, "Not Now", window, cx);
@@ -44,9 +53,7 @@ impl Acme {
             1 => " One window has changes not saved.".to_string(),
             n => format!(" {n} windows have changes not saved."),
         };
-        let detail = format!(
-            "Its sessions end with it: their windows close, their terminals and the programs in them end, and changes not saved are lost.{lost} Your tabs are kept; each attaches to a fresh session of its name."
-        );
+        let detail = format!("{KEPT}{lost} {TABS}");
         self.ask_restart("Restart Apex's server?", &detail, "Cancel", window, cx);
     }
 
@@ -75,14 +82,14 @@ impl Acme {
 
     /// Restart Daemon on the page of a session that cannot be attached:
     /// asked first, as the menu's Restart Server is, since every session
-    /// on that daemon ends with it -- this machine's, or the host's.
+    /// on that daemon goes with it -- this machine's, or the host's.
     pub fn restart_daemon_asked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.url.is_local() {
             self.restart_server_asked(window, cx);
             return;
         }
         let host = self.url.arg.clone();
-        let detail = format!("Every session on {host} ends with it: their windows close, their terminals and the programs in them end, and changes not saved are lost. Your tabs are kept; each attaches to a fresh session of its name.");
+        let detail = format!("This is every session on {host}. {KEPT} {TABS}");
         let answer = window.prompt(PromptLevel::Warning, &format!("Restart the daemon on {host}?"), Some(&detail), &["Restart Daemon", "Cancel"], cx);
         cx.spawn_in(window, async move |this, cx| {
             if answer.await.ok() == Some(0) {

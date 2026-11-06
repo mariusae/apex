@@ -12,6 +12,7 @@
 pub const BUILD_ID: &str = env!("APEX_BUILD_ID");
 
 pub mod daemon;
+pub mod persist;
 pub mod find;
 pub mod plane;
 pub mod proposal;
@@ -375,12 +376,32 @@ impl Server {
             .map_err(|e| e.to_string())?;
         // the shell starts once the window is there (`spawn_pending`),
         // with the window's id in its environment as acme's win has
-        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24, scrollback });
+        self.pending_terms.insert(id, PendingTerm { dir: dir.to_path_buf(), cmd: cmd.map(String::from), shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: Vec::new() });
         // win's naming: the directory, and the host (`awd` keeps it so)
         // or the command as the label
         let label = cmd.map(command_name).filter(|n| !n.is_empty()).unwrap_or_else(term::sysname);
         let (dir, label) = term::place(None, None, dir, &label);
         Ok(Proposal::TermWindow { col, dir, label: Some(label), term: id })
+    }
+
+    /// A terminal for a window made again from a dump (`dump::Host`):
+    /// the user's shell in `dir` (home, if it is gone), never the
+    /// command it ran, its old output above it and a line saying it was
+    /// restored. Its window is the loader's to make.
+    pub fn restored_term(&mut self, log: &mut Log, dir: &str, history: &str, shell: Option<&str>, scrollback: usize) -> Option<TermId> {
+        let id = TermId(self.next_term);
+        self.next_term += 1;
+        self.node.create_shard(log, Shard::Term(id)).ok()?;
+        self.node.append(log, Shard::Term(id), Op::Term(TermOp::Create { cols: 80, rows: 24 })).ok()?;
+        let dir = Some(PathBuf::from(term::expand_tilde(dir.trim_end_matches('/')))).filter(|d| d.is_dir()).or_else(|| std::env::var_os("HOME").map(PathBuf::from)).unwrap_or_else(|| self.cwd.clone());
+        self.pending_terms.insert(id, PendingTerm { dir, cmd: None, shell: shell.map(String::from), cols: 80, rows: 24, scrollback, prelude: term::restored_prelude(history) });
+        Some(id)
+    }
+
+    /// What terminal `t` has shown, as text, for a dump: its last
+    /// `RESTORED_LINES` lines.
+    pub fn term_history(&self, t: TermId) -> Option<String> {
+        self.terms.get(&t).map(|h| h.history(RESTORED_LINES))
     }
 
     /// Start the shells of terminals whose windows have appeared, with
@@ -395,7 +416,7 @@ impl Server {
             let Some(p) = self.pending_terms.remove(&id) else { continue };
             let mut env = self.env.clone();
             env.push(("winid".into(), w.0.to_string()));
-            match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback) {
+            match TermHost::spawn(id, &p.dir, p.cols, p.rows, self.term_tx.clone(), &env, p.cmd.as_deref(), p.shell.as_deref(), p.scrollback, &p.prelude) {
                 Ok(mut host) => {
                     host.set_colors(&self.term_colors);
                     self.procs.push(MetaOp::ProcStart { pid: host.pid, name: host.name.clone(), cmd: host.cmd.clone(), dir: host.dir.display().to_string(), origin: ExecCtx::Window(w), kind: ProcKind::Term, out: ProcOut::None, started: host.started });
@@ -2149,7 +2170,12 @@ struct PendingTerm {
     cols: u16,
     rows: u16,
     scrollback: usize,
+    /// What it shows before its shell's first word (`restored_prelude`).
+    prelude: Vec<u8>,
 }
+
+/// How much of a terminal's output a dump keeps for it: its last lines.
+pub const RESTORED_LINES: usize = 2000;
 
 /// Lines of scrollback a new terminal keeps: the `Newterm.scrollback`
 /// setting, else 10000.
