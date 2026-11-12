@@ -584,6 +584,28 @@ fn look_runs_backwards_for_shift_b3() {
     assert_eq!(node.selection(v).unwrap(), (3, 5));
 }
 
+/// A Look from near the end that wraps around finds what is earlier,
+/// and one that finds nothing is no match, not a slice past the text.
+#[test]
+fn look_wraps_from_the_end() {
+    let mut log = Log::new();
+    let (a, _) = log.attach(AttachmentKind::Ui, "t");
+    let mut node = Node::new(a);
+    node.catch_up(&log).unwrap();
+    let col = node.init_session(&mut log).unwrap();
+    let body = node.create_buffer(&mut log, "/x", "ab cdefgh", None).unwrap();
+    let w = node.open_window(&mut log, col, body).unwrap();
+    let v = ViewId::Body(w);
+    for at in 6..=9 {
+        node.select(&mut log, v, at, at).unwrap();
+        assert!(!node.look(&mut log, v, "goose").unwrap());
+        assert_eq!(node.selection(v).unwrap(), (at, at));
+    }
+    node.select(&mut log, v, 9, 9).unwrap();
+    assert!(node.look(&mut log, v, "ab").unwrap());
+    assert_eq!(node.selection(v).unwrap(), (0, 2));
+}
+
 /// A name is a path, not words in a tag: one with a bar or a space in
 /// it (an xterm title is one: codex writes `renaming... | proj`) is
 /// kept whole, and the tag is the user's words alone.

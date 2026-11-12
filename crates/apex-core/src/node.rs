@@ -1709,7 +1709,8 @@ impl Node {
             rfind(0, q0).or_else(|| rfind(q0, text.len()))
         } else {
             let from = q1;
-            find(from, text.len()).or_else(|| find(0, from + n.len() - 1))
+            // around, to a match overlapping the start; never past the end
+            find(from, text.len()).or_else(|| find(0, (from + n.len() - 1).min(text.len())))
         };
         match hit {
             Some(i) => {
