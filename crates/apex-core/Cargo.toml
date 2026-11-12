@@ -2,6 +2,7 @@
 name = "apex-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "apex editor core: buffers, views, the replicated state machine, logs, leases, and built-in commands"
 
 [dependencies]

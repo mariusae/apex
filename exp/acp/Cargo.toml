@@ -2,6 +2,7 @@
 name = "apex-acp"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 description = "Experimental: an Agent Client Protocol client as an apex tool"
 
 [[bin]]

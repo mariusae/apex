@@ -2,6 +2,7 @@
 name = "apex-edit"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "The sam/acme Edit command language and plan 9 regular expressions, ported from plan9port's acme"
 
 [dependencies]

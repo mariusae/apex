@@ -2,6 +2,7 @@
 name = "apex-tool"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "the Rust API for apex tools: windows, verbs, and following what others type, without the wire protocol or the state model behind it"
 
 [dependencies]

@@ -2,6 +2,7 @@
 name = "apex-tool-web"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "apex tool web: pages on the web, a tool's (ARCHITECTURE.md §5)"
 
 [dependencies]

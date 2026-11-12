@@ -2,6 +2,7 @@
 name = "apex-tool-agent"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "apex tool agent: what every agent in the session is doing, fed by their hooks"
 
 [dependencies]

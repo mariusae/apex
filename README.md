@@ -35,3 +35,20 @@ Command…* puts `apex` on your path.
 
 Apex is a work in progress. Alien Space Bunny is by Wilhelm Bierbaum, based
 on artwork by Renée French.
+
+## License
+
+Apex is under the [MIT license](LICENSE). The parts ported from
+plan9port's acme and sam (the Edit language in `crates/apex-edit`, the
+tiling in `crates/apex-core/src/tiling.rs`) are also under plan9port's
+MIT license, reproduced in the same file.
+
+What Apex bundles or builds in keeps its own license: the fonts, Nerd
+Fonts' symbols, Mermaid and pjw's face, as listed in
+`crates/apex-client/assets/README.md`; `third_party/pathfinder_simd`
+(MIT or Apache-2.0); Ghostty's terminal library, built from source by
+`crates/ghostty-vt-sys` (MIT); and plan9port's `rc`, in the app (MIT).
+The Alien Space Bunny -- the icon and its drawing (`mac/space-bunny.*`,
+`mac/apex.icon`, `docs/space-bunny.png`,
+`crates/apex-client/assets/space-bunny.svg`) -- is Wilhelm Bierbaum's,
+after Renée French's artwork, and is not under the MIT license.

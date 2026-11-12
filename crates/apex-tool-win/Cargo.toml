@@ -2,6 +2,7 @@
 name = "apex-tool-win"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "apex tool win: acme's win as an apex tool, through the public API only"
 
 [dependencies]
