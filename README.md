@@ -41,7 +41,7 @@ on artwork by Renée French.
 Apex is under the [MIT license](LICENSE). The parts ported from
 plan9port's acme and sam (the Edit language in `crates/apex-edit`, the
 tiling in `crates/apex-core/src/tiling.rs`) are also under plan9port's
-MIT license, reproduced in the same file.
+MIT license, in [LICENSE.plan9port](LICENSE.plan9port).
 
 What Apex bundles or builds in keeps its own license: the fonts, Nerd
 Fonts' symbols, Mermaid and pjw's face, as listed in
