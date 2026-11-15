@@ -351,9 +351,8 @@ windows put away out of the tiling, which is the core's
   the edge itself (so a drag up or down drifting left still just moves
   it), at its right after a clear move right; never for a column's only
   window, nor a column too narrow to halve.
-- **A column a drag empties goes.** Dragging its last window out (into
-  another column, or out to split one) closes the column and gives its
-  room to its neighbour; a column made empty (Newcol) stays.
+- **A column a drag empties stays**, as acme's does, whatever emptied
+  it (a drag, Del, the stash): Delcol is what closes one (#4).
 - **⌘O: open a file or folder in the session's directory.** The host
   lists everything under it and matches what is typed there, so a huge
   tree never crosses the wire: the walk (breadth first, leaving out
