@@ -1200,6 +1200,15 @@ impl Tool {
         self.remote.rule_add(rule, r.priority, mine, TIMEOUT).map_err(Error)
     }
 
+    /// The session's rule (`offer_lasting`) that sends `verb` to this
+    /// tool, if there is one: what a tool looks for before offering its
+    /// lasting rules, so that each is offered once however often the
+    /// tool is started.
+    pub fn lasting(&self, verb: &str) -> Option<RuleId> {
+        let name = self.name();
+        self.remote.node.state.meta.rules.iter().find(|(_, r)| r.rule.verb == verb && r.rule.start.is_some() && matches!(&r.rule.action, RuleAction::Tool(n) if *n == name)).map(|(id, _)| *id)
+    }
+
     /// Remove a rule of the tool's own; another's (the session's, one
     /// `offer_lasting` made among them) is not the tool's to remove.
     pub fn withdraw(&mut self, id: RuleId) {
