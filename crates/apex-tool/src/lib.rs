@@ -170,6 +170,13 @@ pub struct WindowInfo {
     pub scratch: bool,
     /// A process is behind it (a shell's, a tool's).
     pub live: bool,
+    /// It holds text its file has not had: what `Del` asks about, and
+    /// what an agent reading the file from disk does not see. Never for
+    /// scratch windows, directories, terminals, or windows a tool owns.
+    pub dirty: bool,
+    /// Put away in the stash (⌘M, a diagnostic window as it is made):
+    /// open, and not in any column.
+    pub stashed: bool,
 }
 
 /// A range of characters in a window's body.
@@ -652,7 +659,7 @@ impl Tool {
 
     fn window_info(&self, w: WindowId) -> WindowInfo {
         let node = &self.remote.node;
-        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w) }
+        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w), dirty: node.window_unsaved(w), stashed: node.state.layout.is_stashed(w) }
     }
 
     /// A window, if it exists: its path, label, kind and so on.
@@ -856,6 +863,44 @@ impl Tool {
         if r.is_err() && self.watched.contains(&w) {
             // it did not land: not ours to expect back
             self.own.pop_back();
+        }
+        r?;
+        Ok(())
+    }
+
+    /// Replace several ranges at once: each `(q0, q1, text)` in the text
+    /// as it stands now, in order and apart (`END` for the end). One
+    /// undo step, and all or nothing: an error, and nothing written,
+    /// when the text changed since this tool's replica last saw it, as
+    /// for `replace`. What a tool writing a window it renders afresh
+    /// wants, its changes several and none of them to land alone.
+    pub fn edit(&mut self, w: WindowId, edits: &[(usize, usize, String)]) -> Result<()> {
+        let b = self.body_of(w)?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let (len, version) = (buf.text.len(), buf.version);
+        let edits: Vec<(usize, usize, String)> = edits.iter().map(|(q0, q1, t)| ((*q0).min(len), (*q1).min(len), t.clone())).collect();
+        if edits.iter().any(|(q0, q1, _)| q1 < q0) || edits.windows(2).any(|p| p[1].0 < p[0].1) {
+            return Err("edits out of order or overlapping".into());
+        }
+        if edits.is_empty() {
+            return Ok(());
+        }
+        let watched = self.watched.contains(&w);
+        if watched {
+            // ours, when they come back: the leader applies them last
+            // first, each where it stood
+            for (q0, q1, t) in edits.iter().rev() {
+                self.own.push_back((b, *q0, q1 - q0, t.clone()));
+            }
+            while self.own.len() > 256 {
+                self.own.pop_front();
+            }
+        }
+        let r = self.propose(Proposal::Edits { buffer: b, version, edits: edits.clone() });
+        if r.is_err() && watched {
+            for _ in 0..edits.len().min(self.own.len()) {
+                self.own.pop_back();
+            }
         }
         r?;
         Ok(())

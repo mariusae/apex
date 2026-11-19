@@ -1131,6 +1131,19 @@ impl Node {
         Ok(())
     }
 
+    /// Replace the runs `[q0, q1)` with their texts, given from the end
+    /// of the text backwards, as one undo step: a tool writing a window
+    /// it renders afresh, whose changes are several and must land
+    /// together or not at all.
+    pub fn replace_runs(&mut self, log: &mut Log, buffer: BufferId, runs: &[(usize, usize, String)]) -> Result<()> {
+        self.end_typing();
+        let group = self.new_group();
+        for (q0, q1, text) in runs {
+            self.edit_op(log, buffer, *q0, q1.saturating_sub(*q0), text, group)?;
+        }
+        Ok(())
+    }
+
     pub fn replace_text(&mut self, log: &mut Log, buffer: BufferId, q0: usize, nd: usize, text: &str) -> Result<()> {
         self.end_typing();
         let group = self.new_group();

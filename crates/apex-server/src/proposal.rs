@@ -76,6 +76,13 @@ pub enum Proposal {
     /// acme's `|` leaves the output selected), or a tool's write, which
     /// leaves dot alone as a write to acme's `data` file does.
     ReplaceRange { select: bool, dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
+    /// Several ranges replaced at once, valid at `version`: `[q0, q1)`
+    /// with its text, the ranges in the text as it stands at `version`,
+    /// in order and apart. One undo step, and all or nothing: a tool
+    /// writing what changed in a window it renders afresh, where one
+    /// `ReplaceRange` a change would leave it half written between them.
+    /// Dot is left where the edits leave it.
+    Edits { buffer: BufferId, version: Version, edits: Vec<(usize, usize, String)> },
     /// Text for `dir`'s errors window (acme's errorwin), or the session's.
     Errors { dir: Option<String>, text: String },
     /// The outcome of an exec.
@@ -289,6 +296,21 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
                 }
                 return Err(CoreError::Missing(format!("buffer {buffer} changed meanwhile: at version {}, the write was for {version}", node.state.buffer(buffer).map(|b| b.version).unwrap_or(version))));
             }
+            Ok(None)
+        }
+        Proposal::Edits { buffer, version, edits } => {
+            let b = node.state.buffer(buffer)?;
+            if b.version != version {
+                return Err(CoreError::Missing(format!("buffer {buffer} changed meanwhile: at version {}, the edits were for {version}", b.version)));
+            }
+            let len = b.text.len();
+            let ordered = edits.windows(2).all(|p| p[0].1 <= p[1].0) && edits.iter().all(|(q0, q1, _)| q0 <= q1 && *q1 <= len);
+            if !ordered {
+                return Err(CoreError::Missing("edits out of order, overlapping or past the end".into()));
+            }
+            // from the end backwards, so that each range is where it was
+            let runs: Vec<(usize, usize, String)> = edits.into_iter().rev().collect();
+            node.replace_runs(log, buffer, &runs)?;
             Ok(None)
         }
         Proposal::Errors { dir, text } => {

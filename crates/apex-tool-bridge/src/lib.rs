@@ -10,7 +10,7 @@
 //! are answered, in order, with `{"id": N, "ok": true, ...}` or
 //! `{"id": N, "ok": false, "error": "..."}`:
 //!
-//! - `windows` → `windows: [{id, path, label, kind, scratch, live}]`;
+//! - `windows` → `windows: [{id, path, label, kind, scratch, live, dirty, stashed}]`;
 //!   `window {window}` → `window: {...}`, the same for one. A window's path is where it
 //!   is (a file's or directory's, the directory an errors window is for,
 //!   the file a preview shows, a terminal's directory, a page's address),
@@ -23,6 +23,8 @@
 //! - `read {window}` → `text`; `selection {window}` → `q0, q1`
 //! - `write {window, q0, q1, text}` (a range replaced; `q0`/`q1` of -1
 //!   mean the end, so `q0: -1, q1: -1` appends), `select {window, q0, q1}`
+//! - `edits {window, edits: [{q0, q1, text}]}`: several ranges replaced
+//!   at once, in order and apart, as one undo step, all or nothing
 //! - `show {window, at}` or `show {window, line}`: the text there brought
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
@@ -257,6 +259,17 @@ impl Bridge {
                 self.tool.replace(window(v)?, at(&v["q0"]), at(&v["q1"]), v["text"].as_str().unwrap_or("")).map_err(e)?;
                 Ok(json!({}))
             }
+            "edits" => {
+                let at = |x: &Value| -> usize {
+                    match x.as_i64() {
+                        Some(n) if n >= 0 => n as usize,
+                        _ => END,
+                    }
+                };
+                let edits: Vec<(usize, usize, String)> = v["edits"].as_array().ok_or("edits")?.iter().map(|x| (at(&x["q0"]), at(&x["q1"]), x["text"].as_str().unwrap_or("").to_string())).collect();
+                self.tool.edit(window(v)?, &edits).map_err(e)?;
+                Ok(json!({}))
+            }
             "select" => {
                 let (q0, q1) = (v["q0"].as_u64().ok_or("q0")? as usize, v["q1"].as_u64().ok_or("q1")? as usize);
                 self.tool.select(window(v)?, q0, q1).map_err(e)?;
@@ -460,7 +473,7 @@ fn plumb_json(p: &Plumb) -> Value {
 /// A window as the bridge speaks of it: its id, path, label, kind, and
 /// whether it is scratch and live.
 fn window_json(w: &apex_tool::WindowInfo) -> Value {
-    json!({ "id": w.id.0, "path": w.path, "label": w.label, "status": w.status.as_ref().map(|s| json!({ "state": s.state.name(), "kind": s.kind.map(|k| k.name()), "progress": s.progress, "msg": s.msg })), "kind": w.kind.name(), "scratch": w.scratch, "live": w.live })
+    json!({ "id": w.id.0, "path": w.path, "label": w.label, "status": w.status.as_ref().map(|s| json!({ "state": s.state.name(), "kind": s.kind.map(|k| k.name()), "progress": s.progress, "msg": s.msg })), "kind": w.kind.name(), "scratch": w.scratch, "live": w.live, "dirty": w.dirty, "stashed": w.stashed })
 }
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

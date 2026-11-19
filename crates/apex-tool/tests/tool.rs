@@ -51,6 +51,57 @@ fn output_carries_the_dot_along_but_leaves_a_draft_alone() {
     t.replace(w, 0, 0, "zero\n").unwrap();
     assert_eq!(dot(&t), (0, 0));
 }
+/// Several edits are one proposal: they land together, as one undo
+/// step, each where it stood in the text as the tool saw it, and a
+/// watched window does not report them back as someone else's; one
+/// made against a text since changed lands not at all.
+#[test]
+fn several_edits_land_together_or_not_at_all() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let w = t.new_scratch("/tmp/acp-edits/", Some("edits")).unwrap();
+    t.replace(w, 0, END, "one\ntwo\nthree\n").unwrap();
+    t.watch(w).unwrap();
+    t.select(w, 8, 8).unwrap();
+    t.edit(w, &[(0, 3, "ONE".into()), (4, 7, "2".into()), (14, 14, "four\n".into())]).unwrap();
+    assert_eq!(t.read(w).unwrap(), "ONE\n2\nthree\nfour\n");
+    // the dot, at "three", moved along with what came before it
+    assert_eq!(t.selection(w).map(|r| (r.q0, r.q1)).unwrap(), (6, 6));
+    // nothing of ours comes back as an edit by someone else
+    while let Ok(Some(ev)) = t.next_event(Some(Duration::from_millis(100))) {
+        assert!(!matches!(ev, Event::Edit(_)), "{ev:?}");
+    }
+    // out of order: refused, and nothing written
+    assert!(t.edit(w, &[(4, 5, "x".into()), (0, 1, "y".into())]).is_err());
+    assert_eq!(t.read(w).unwrap(), "ONE\n2\nthree\nfour\n");
+    // someone else's edit lands first: the tool's, made against what it
+    // saw, does not, and the text is theirs alone
+    let mut other = Tool::attach_to(&sock, "main", "other").unwrap();
+    other.replace(w, 0, 0, "zero\n").unwrap();
+    assert!(t.edit(w, &[(0, 3, "one".into())]).is_err());
+    assert_eq!(other.read(w).unwrap(), "zero\nONE\n2\nthree\nfour\n");
+    // and with nothing behind its file, it is no window to warn about
+    let info = t.window(w).unwrap();
+    assert!(!info.dirty && !info.stashed, "{info:?}");
+}
+
+/// A window says whether it holds text its file has not had, and
+/// whether it is put away: what a tool warning about unsaved text, or
+/// writing a stashed window differently, asks.
+#[test]
+fn a_window_says_whether_it_is_dirty_and_whether_it_is_stashed() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let f = t.new_window("/tmp/acp-dirty.txt").unwrap();
+    assert!(!t.window(f).unwrap().dirty);
+    t.replace(f, 0, 0, "unsaved").unwrap();
+    assert!(t.window(f).unwrap().dirty);
+    let d = t.new_diagnostic("/tmp/acp-diag/", Some("diag")).unwrap();
+    let info = t.window(d).unwrap();
+    assert!(info.stashed && !info.dirty, "{info:?}");
+    assert!(!t.window(f).unwrap().stashed);
+}
+
 /// A rule may name the tool that owns a window, and so speak to that
 /// tool's windows and no others, where a name pattern would be guessing.
 #[test]

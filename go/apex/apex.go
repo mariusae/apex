@@ -257,6 +257,10 @@ type WindowInfo struct {
 	Scratch bool `json:"scratch"`
 	// A process is behind it (a shell's, a tool's).
 	Live bool `json:"live"`
+	// It holds text its file has not had (what Del asks about).
+	Dirty bool `json:"dirty"`
+	// Put away in the stash: open, and in no column.
+	Stashed bool `json:"stashed"`
 }
 
 // Windows lists the session's windows.
@@ -441,6 +445,19 @@ func (w *Window) Read() (string, error) {
 		return "", err
 	}
 	return r.Text, nil
+}
+
+// A Change is one range of several replaced at once (Edits).
+type Change struct {
+	Q0   int    `json:"q0"`
+	Q1   int    `json:"q1"`
+	Text string `json:"text"`
+}
+
+// Edits replaces several ranges at once, each in the text as it stands
+// now, in order and apart: one undo step, and all or nothing.
+func (w *Window) Edits(edits []Change) error {
+	return w.t.call("edits", map[string]any{"window": w.ID, "edits": edits}, nil)
 }
 
 // Selection returns the window's selection (dot) as character offsets.
