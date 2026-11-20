@@ -1229,8 +1229,9 @@ impl Server {
                 self.term_type(log, t, &text);
             }
             _ => {
-                // a rule's verb offered in this window: the rules take it
-                if let Some(req) = self.verb_request(view, ctx, seq, text) {
+                // a rule's verb offered in this window: the rules take it,
+                // unless they had it and declined
+                if let Some(req) = self.verb_request(view, ctx, seq, text).filter(|_| !plainly) {
                     self.plumb_starts.push(req);
                     return Ok(None);
                 }
@@ -1773,9 +1774,12 @@ impl Server {
         // every rule declined a word apex has its own meaning for: that
         // meaning is the last step of the walk, as opening the file is
         // for B3 (§6.2). The exec is performed again, plainly this time.
+        // So is a command every rule for every command here declined:
+        // the tool wanted only some of them, and the rest run as they
+        // would anywhere else.
         let failed = self.plumbs.get(&id).is_some_and(|p| p.failed);
         if let Some(exec) = exec {
-            if apex_core::plumb::is_builtin(&verb) && !failed {
+            if (apex_core::plumb::is_builtin(&verb) || verb == apex_core::plumb::EXEC) && !failed {
                 self.plumbs.remove(&id);
                 self.plain.insert((ctx, exec));
                 self.performed.remove(&(ctx, exec));

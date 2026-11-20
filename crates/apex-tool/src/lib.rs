@@ -282,6 +282,11 @@ pub struct Navigation {
     pub url: String,
 }
 
+/// The verb of a rule that takes every B2 command in its windows that
+/// no word took (`Rule::verb(EXEC)`): the whole command is `Plumb::text`.
+/// One the tool declines runs as it would anywhere else.
+pub const EXEC: &str = apex_core::plumb::EXEC;
+
 /// Where a verb of the tool's is offered. `Rule::verb(..)` or
 /// `Rule::plumb()`, then narrowed: each setter is a further condition.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
