@@ -1135,6 +1135,16 @@ impl Tool {
         Ok(())
     }
 
+    /// Set the window in the alternate, fixed-width font, or not: acme's
+    /// `Font`, run there when the window is not so already.
+    pub fn set_mono(&mut self, w: WindowId, on: bool) -> Result<()> {
+        let mono = self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.mono;
+        if mono != on {
+            self.exec_in(Some(w), "Font")?;
+        }
+        Ok(())
+    }
+
     /// Close the window (Del there).
     pub fn delete(&mut self, w: WindowId) -> Result<()> {
         self.exec_in(Some(w), "Del")
