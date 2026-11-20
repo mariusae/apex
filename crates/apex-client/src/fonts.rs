@@ -112,6 +112,12 @@ pub fn load() {
     STEP.store(step.trim().parse::<i8>().unwrap_or(0).clamp(MIN_STEP, MAX_STEP), Ordering::Relaxed);
 }
 
+/// `--fontsize N`: the step for this launch, clamped like any other;
+/// not written back to the state file, so the flag is not sticky.
+pub fn set_step(step: i8) {
+    STEP.store(step.clamp(MIN_STEP, MAX_STEP), Ordering::Relaxed);
+}
+
 /// ⌘+ and ⌘−: the text a pixel bigger or smaller a step, the mono faces
 /// in proportion; ⌘0 back to the set's own. Kept in the `fontsize`
 /// state file.
