@@ -1126,6 +1126,15 @@ impl Tool {
         Ok(())
     }
 
+    /// Mark the window as a draft: what is in it is the user's, though
+    /// no file holds it (a tool's window they write in, a message to
+    /// send). Dirty, its handle says so and `Del` asks, as for a file;
+    /// `set_clean` when it has been acted on.
+    pub fn set_draft(&mut self, w: WindowId, on: bool) -> Result<()> {
+        self.propose(Proposal::Draft { window: w, on })?;
+        Ok(())
+    }
+
     /// Close the window (Del there).
     pub fn delete(&mut self, w: WindowId) -> Result<()> {
         self.exec_in(Some(w), "Del")

@@ -2340,10 +2340,12 @@ impl Node {
     /// window at all? Scratch windows (errors, previews, transcripts, a
     /// tool's), directories, and windows a tool owns or keeps live are
     /// not: their text is not a file's, so it is never unsaved however
-    /// it changed. What `Del` asks about, and what a handle shows as
-    /// dirty.
+    /// it changed -- unless it is a draft, the user's text, which is
+    /// unsaved until its tool says otherwise. What `Del` asks about, and
+    /// what a handle shows as dirty.
     pub fn window_unsaved(&self, w: WindowId) -> bool {
-        if self.window_scratch(w) || self.window_kind(w) == WinKind::Dir || self.window_owner(w).is_some() || self.window_live(w) {
+        let draft = self.state.window(w).is_ok_and(|x| x.draft);
+        if !draft && (self.window_scratch(w) || self.window_kind(w) == WinKind::Dir || self.window_owner(w).is_some() || self.window_live(w)) {
             return false;
         }
         self.window_dirty(w)

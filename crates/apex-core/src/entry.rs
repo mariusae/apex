@@ -241,6 +241,10 @@ pub enum WindowOp {
     /// report on how things stand (its errors, a language server's
     /// diagnostics and state), made stashed, its news said in toasts.
     Diagnostic { on: bool },
+    /// The window is a draft: text of the user's that no file holds (a
+    /// tool's window they write in), unsaved while it is dirty -- its
+    /// handle says so and Del asks -- though no Put saves it.
+    Draft { on: bool },
     /// B2 (or the CLI) executed something in this window.
     Exec(ExecOp),
     Status { exec: Seq, status: ExecStatusOp },

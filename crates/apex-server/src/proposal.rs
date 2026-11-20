@@ -116,6 +116,9 @@ pub enum Proposal {
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
+    /// The window is a draft, the user's text (`WindowOp::Draft`), or
+    /// no longer is.
+    Draft { window: WindowId, on: bool },
     /// Put in an autoindent window (acme's `trimspaces`): the file on
     /// disk is the buffer at `version` without the blanks at the ends of
     /// its lines. The leader deletes those `runs` (from the end backwards)
@@ -402,6 +405,10 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
         }
         Proposal::Live { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;
+            Ok(None)
+        }
+        Proposal::Draft { window, on } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Draft { on }))?;
             Ok(None)
         }
         Proposal::Look { ctx, text, reverse } => {
