@@ -966,6 +966,8 @@ pub enum Atom {
     Label,
     /// A verb of `VERB_ICONS`.
     Verb(usize),
+    /// A tool's word for the window (`Head::words`), drawn as the word.
+    Word(usize),
     /// What is typed after a folder while the path's picker is down: the
     /// path being chosen, in the tag itself.
     Typed,
@@ -1003,6 +1005,9 @@ pub struct Head {
     /// own at the right of the tag's first row, the text wrapping short
     /// of it.
     pub status: Option<StatusChip>,
+    /// The words the window always has from the tools (`tag` rules), in
+    /// the head after apex's verbs: `Atom::Word` indexes them.
+    pub words: Vec<String>,
 }
 
 impl Head {
@@ -1176,6 +1181,22 @@ impl Head {
                 self.push(&path[name..], Some(Atom::Name));
             }
         }
+    }
+
+    /// The tools' words for the window after apex's verbs, before the
+    /// divider: words of the head, so no edit of the tag takes them
+    /// away.
+    pub fn with_words(mut self, words: &[String]) -> Head {
+        let Some(bar) = self.bar.filter(|_| !words.is_empty()) else { return self };
+        self.text.truncate(bar);
+        for (i, w) in words.iter().enumerate() {
+            self.push(w, Some(Atom::Word(i)));
+            self.push(" ", None);
+        }
+        self.words = words.to_vec();
+        self.bar = Some(self.text.len());
+        self.push("| ", None);
+        self
     }
 
     /// After the path: a gap, the label, the verbs, the divider; the
@@ -1625,6 +1646,8 @@ fn shape(
         } else if a < hn {
             match atom {
                 Some(Atom::Name | Atom::Typed) => black,
+                // a tool's word: as the words after it are, to be read
+                Some(Atom::Word(_)) => tint.map(|t| t.text).unwrap_or(black),
                 // a process's pill, quiet: its name in the secondary ink,
                 // its × as faint as the verbs
                 Some(Atom::Verb(_) | Atom::ProcKill(_)) | None => tint.map(|t| t.rest).unwrap_or(dimmed),

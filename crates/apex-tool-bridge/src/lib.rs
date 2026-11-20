@@ -53,11 +53,12 @@
 //!   no file menu in its tag, nothing for `Del` to ask about, and
 //!   `owner` on a rule speaks to it
 //! - `clean {window}`: what the window holds is what it should hold
-//! - `rule {verb?, text?, file?, kind?, window?, owner?, priority?, unlisted?}` →
+//! - `rule {verb?, text?, file?, kind?, window?, owner?, priority?, unlisted?, tag?}` →
 //!   `rule`: a rule answered by this tool (`plumb` events); `unrule
 //!   {rule}`. `unlisted` keeps the verb out of the tools menu without
 //!   taking it away: for one meant to be clicked where the tool wrote
-//!   it, or to be given an argument. A verb
+//!   it, or to be given an argument. `tag` draws it in the tag of the
+//!   windows the rule applies to, where the user cannot erase it. A verb
 //!   apex knows (`Put`, `Get`, `Del`, ...) may be taken by a rule that
 //!   says which windows it is about (`window`, `file` or `kind`): `ack`
 //!   with `ok` means the word meant what the tool says, `ok: false` hands
@@ -377,6 +378,9 @@ impl Bridge {
                 }
                 if v["unlisted"].as_bool().unwrap_or(false) {
                     r = r.unlisted();
+                }
+                if v["tag"].as_bool().unwrap_or(false) {
+                    r = r.in_tag();
                 }
                 if let Some(s) = v["start"].as_str() {
                     r = r.start(s);

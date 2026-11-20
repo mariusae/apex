@@ -1226,6 +1226,7 @@ impl Acme {
             verb: "plumb".into(),
             owner: None,
             unlisted: false,
+            tag: false,
             text: Some(r"https?://\S+".into()),
             file: None,
             kind: None,
@@ -1243,6 +1244,7 @@ impl Acme {
                 verb: "Snarfout".into(),
                 owner,
                 unlisted: false,
+                tag: false,
                 text: None,
                 file: None,
                 kind: Some(kind),
@@ -3096,6 +3098,8 @@ impl Acme {
         let kind = n.window_kind(w);
         // over another window: its Del closes this one only, and says so
         let verbs: Vec<&str> = n.window_verbs(w).into_iter().map(|v| if v == "Del" && n.state.layout.under(w).is_some() { crate::text_element::DEL_STACKED } else { v }).collect();
+        // and the tools' words for it, which the user cannot erase
+        let words = apex_core::plumb::tag_words(&n.state.meta.rules, &n.window_path(w), kind, Some(w), n.window_owner(w));
         let label = n.window_label(w).or_else(|| match kind {
             WinKind::Errors => Some("Errors".into()),
             WinKind::Page if n.is_buffer_page(w) => Some("Preview".into()),
@@ -3106,10 +3110,10 @@ impl Acme {
         let chip = n.window_status(w).and_then(|s| Some(crate::text_element::StatusChip { text: s.text()?, asks: crate::sidebar::asks(s.state), icon: crate::text_element::status_icon(s.state, s.kind) }));
         // the path's picker down: the path being chosen, typed in place
         if let Some(p) = self.picker.as_ref().filter(|p| p.window == w) {
-            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), chip, &verbs, &n.state.meta.cwd);
+            return Head::picking_in(&p.dir, &p.filter, p.filter.cursor, crate::tagedit::caret_on(p.caret_since), label.as_deref(), chip, &verbs, &n.state.meta.cwd).with_words(&words);
         }
         // a path in the session's directory from there on (only drawn so)
-        Head::build_in(&n.window_path(w), label.as_deref(), chip, &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd)
+        Head::build_in(&n.window_path(w), label.as_deref(), chip, &verbs, !n.is_url_page(w), kind == WinKind::File && !n.window_scratch(w), &n.state.meta.cwd).with_words(&words)
     }
 
     pub fn view_text(&self, view: ViewId) -> String {

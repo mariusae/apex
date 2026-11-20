@@ -379,6 +379,12 @@ pub struct PlumbRule {
     /// Nothing for a `plumb` rule, which is in no menu anyway.
     #[serde(default)]
     pub unlisted: bool,
+    /// Whether the verb is drawn in the tag of each window the rule
+    /// applies to, after apex's own words and before the user's: a word
+    /// the window always has, which the user cannot erase as they can
+    /// the tag's text. For a tool's words for its own windows.
+    #[serde(default)]
+    pub tag: bool,
     /// The plumbed text (for `plumb`) or the arguments (a verb) must match
     /// this regexp; its groups bind `$0`..`$9`.
     pub text: Option<String>,

@@ -169,7 +169,7 @@ impl Acme {
         let _ = window;
         match (button, atom) {
             // the verbs run when the button comes up on them
-            (MouseButton::Left | MouseButton::Middle, Atom::Verb(_)) => self.atom_down = Some((w, atom, button)),
+            (MouseButton::Left | MouseButton::Middle, Atom::Verb(_) | Atom::Word(_)) => self.atom_down = Some((w, atom, button)),
             (MouseButton::Left, Atom::Dir(_) | Atom::Name | Atom::Untitled) if clicks >= 2 => {
                 self.picker_due = None;
                 self.picker = None;
@@ -206,9 +206,18 @@ impl Acme {
         }
         let here = self.layouts.get(&ViewId::Tag(w)).and_then(|l| l.atom_at(pos));
         if here == Some(atom) {
-            if let Atom::Verb(i) = atom {
-                self.execute(ExecCtx::Window(w), crate::text_element::verb_command(i), cx);
-                self.after();
+            match atom {
+                Atom::Verb(i) => {
+                    self.execute(ExecCtx::Window(w), crate::text_element::verb_command(i), cx);
+                    self.after();
+                }
+                Atom::Word(i) => {
+                    if let Some(word) = self.tag_head(w).words.get(i).cloned() {
+                        self.execute(ExecCtx::Window(w), &word, cx);
+                        self.after();
+                    }
+                }
+                _ => {}
             }
         }
         cx.notify();

@@ -289,6 +289,7 @@ pub struct Rule {
     verb: Option<String>,
     owner: Option<String>,
     unlisted: bool,
+    tag: bool,
     text: Option<String>,
     file: Option<String>,
     kind: Option<WinKind>,
@@ -367,6 +368,15 @@ impl Rule {
     /// that means nothing without what follows it (`Mode plan`).
     pub fn unlisted(mut self) -> Rule {
         self.unlisted = true;
+        self
+    }
+
+    /// The verb is drawn in the tag of each window the rule applies to,
+    /// after apex's own words and before the user's, where the user
+    /// cannot erase it: the words a tool's window always has (`Reply`,
+    /// `Send`). It is in the tools menu as well, unless `unlisted`.
+    pub fn in_tag(mut self) -> Rule {
+        self.tag = true;
         self
     }
 }
@@ -1187,6 +1197,7 @@ impl Tool {
             verb: r.verb.unwrap_or_else(|| "plumb".to_string()),
             owner: r.owner,
             unlisted: r.unlisted,
+            tag: r.tag,
             text: r.text,
             file: r.file,
             kind: r.kind,

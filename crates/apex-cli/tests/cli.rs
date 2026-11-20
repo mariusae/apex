@@ -285,7 +285,7 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     let tool_sock = sock.clone();
     let tool = std::thread::spawn(move || {
         let mut c = Remote::connect_as(&tool_sock, "main", "t", AttachmentKind::Tool).unwrap();
-        let rule = PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), win: None, to: None };
+        let rule = PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, tag: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), win: None, to: None };
         c.rule_add(rule, 10, true, Duration::from_secs(5)).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut refused = 0;
@@ -320,7 +320,7 @@ fn rules_are_installed_walked_and_tools_may_refuse() {
     let other = dir.join("other.md").display().to_string();
     let tool = std::thread::spawn(move || {
         let mut c = Remote::connect_as(&tool_sock, "main", "t", AttachmentKind::Tool).unwrap();
-        let rule = PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), win: None, to: None };
+        let rule = PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, tag: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("t".into()), win: None, to: None };
         c.rule_add(rule, 10, true, Duration::from_secs(5)).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut refused = 0;
@@ -961,7 +961,7 @@ fn only_a_rules_owner_removes_it() {
     assert!(has(&preview), "a tool removed the session's rule");
     assert!(tool.link.error.as_deref().is_some_and(|e| e.contains("only its owner")), "{:?}", tool.link.error);
     // its own: the tool's
-    let rule = PlumbRule { start: None, verb: "Shout".into(), owner: None, unlisted: false, text: None, file: None, kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("meddler".into()), win: None, to: None };
+    let rule = PlumbRule { start: None, verb: "Shout".into(), owner: None, unlisted: false, tag: false, text: None, file: None, kind: Some(WinKind::File), isfile: None, isdir: None, action: RuleAction::Tool("meddler".into()), win: None, to: None };
     let own = tool.rule_add(rule, 0, true, Duration::from_secs(5)).unwrap().to_string();
     assert!(has(&own));
     // not the session's either, so not apex plumb rule rm's

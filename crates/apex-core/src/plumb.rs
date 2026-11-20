@@ -274,6 +274,18 @@ pub fn verbs_for(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind, w: O
     out
 }
 
+/// The words a window's tag always has after apex's own: every `tag`
+/// rule that applies to it, once each, in order.
+pub fn tag_words(rules: &BTreeMap<RuleId, Rule>, name: &str, kind: WinKind, w: Option<WindowId>, owner: Option<&str>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, r) in ordered(rules) {
+        if r.rule.tag && r.rule.verb != "plumb" && r.rule.verb != EXEC && r.rule.applies_to(name, kind, w, owner) && !out.contains(&r.rule.verb) {
+            out.push(r.rule.verb.clone());
+        }
+    }
+    out
+}
+
 /// The rules an attachment installed (to remove when it goes).
 pub fn owned_by(rules: &BTreeMap<RuleId, Rule>, a: AttachmentId) -> Vec<RuleId> {
     rules.iter().filter(|(_, r)| r.attachment == a).map(|(id, _)| *id).collect()
@@ -285,7 +297,7 @@ mod tests {
     use crate::entry::RuleAction;
 
     fn rule(text: Option<&str>, file: Option<&str>) -> PlumbRule {
-        PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
+        PlumbRule { start: None, verb: "plumb".into(), owner: None, unlisted: false, tag: false, text: text.map(String::from), file: file.map(String::from), kind: None, isfile: None, isdir: None, action: RuleAction::Edit("$0".into()), win: None, to: None }
     }
 
     #[test]

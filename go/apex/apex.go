@@ -808,6 +808,10 @@ type Rule struct {
 	// the tool wrote into its window, to be clicked where it stands)
 	// or an argument (`Mode plan`), and would only crowd the menu.
 	Unlisted bool
+	// The verb is drawn in the tag of each window the rule applies to,
+	// after apex's own words and before the user's, where the user
+	// cannot erase it: the words a tool's window always has.
+	Tag bool
 	// The command that starts this tool when none of its name is
 	// attached (Plan 9's plumb client): what the rule matched waits for
 	// it. Such a rule is for OfferLasting, which outlives the tool.
@@ -921,6 +925,9 @@ func (t *Tool) offer(r Rule, lasting bool) (RuleID, error) {
 	}
 	if r.Unlisted {
 		args["unlisted"] = true
+	}
+	if r.Tag {
+		args["tag"] = true
 	}
 	if r.Start != "" {
 		args["start"] = r.Start
