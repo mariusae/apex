@@ -394,8 +394,8 @@ pub struct Tool {
     remote: Remote,
     /// Windows whose body edits (by others) are reported.
     watched: BTreeSet<WindowId>,
-    /// Windows we made, opened or watch, with their names as last seen:
-    /// renames and deletions are reported for these.
+    /// Windows we made, opened, own or watch, with their names as last
+    /// seen: renames and deletions are reported for these.
     ours: BTreeMap<WindowId, (String, Option<String>)>,
     events: VecDeque<Event>,
     /// Replacements of ours in watched windows still to come back: the
@@ -1099,10 +1099,16 @@ impl Tool {
     /// which is better than guessing at their names. The claim ends
     /// when the tool detaches, or with `false`. It is not `set_live`,
     /// which comes and goes with the work: a window is owned for as
-    /// long as its tool is there.
+    /// long as its tool is there. A window claimed is the tool's as
+    /// one it made is: its renames and its deletion are reported,
+    /// though another made it -- a tool before this one, whose windows
+    /// this one takes up.
     pub fn set_owner(&mut self, w: WindowId, on: bool) -> Result<()> {
         let by = on.then_some(self.remote.attachment());
         self.propose(Proposal::Own { window: w, by })?;
+        if on && !self.ours.contains_key(&w) {
+            self.remember(w);
+        }
         Ok(())
     }
 

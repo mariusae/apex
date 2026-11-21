@@ -135,6 +135,27 @@ fn a_rule_may_name_the_tool_that_owns_the_window() {
     assert_eq!(menu(&mut c, a), vec!["Snarfout"]);
     assert!(menu(&mut c, b).is_empty());
 }
+
+/// A window a tool claims, made by another -- a tool before it, whose
+/// windows it takes up -- is the tool's as one it made is: its
+/// deletion is an event, so the tool forgets it.
+#[test]
+fn a_window_claimed_says_when_it_is_deleted() {
+    let sock = daemon();
+    let mut before = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let w = before.new_scratch("/tmp/proj/", Some("thread")).unwrap();
+    let mut after = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while after.window(w).is_none() && Instant::now() < deadline {
+        let _ = after.next_event(Some(Duration::from_millis(20)));
+    }
+    after.set_owner(w, true).unwrap();
+    assert_eq!(after.next_event(Some(Duration::from_millis(200))).unwrap(), None);
+    before.delete(w).unwrap();
+    let ev = after.next_event(Some(Duration::from_secs(5))).unwrap().expect("a deletion");
+    assert_eq!(ev, Event::Deleted { window: w });
+}
+
 /// A verb that wants a place or an argument is offered `unlisted`: it
 /// runs when B2 takes it, but is no word in the window's tools menu.
 #[test]
