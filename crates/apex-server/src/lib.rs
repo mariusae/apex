@@ -1490,6 +1490,10 @@ impl Server {
         // click), or over what was swept or selected, the text B3 takes
         // and whether it names a file; the rules see that text
         let mut req = req;
+        // what B3 took was swept, or a selection it was in, not expanded
+        // from a click: a tool may read the one as "find" and the other
+        // as "open"
+        let swept = req.verb == "plumb" && req.sel.is_some_and(|s| s.q1 > s.q0);
         let mut file = None;
         let mut trace = Vec::new();
         let mut nothing = false;
@@ -1555,10 +1559,10 @@ impl Server {
         };
         let remaining: Vec<(RuleId, apex_core::state::Rule)> = apex_core::plumb::ordered(&view.state.meta.rules).into_iter().map(|(i, r)| (i, r.clone())).collect();
         if nothing {
-            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace, failed: false });
+            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace, failed: false, swept });
             return (id, if self.plumbs[&id].req.dry { self.plumb_trace(id) } else { self.plumb_finish(id, Vec::new()) });
         }
-        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace, failed: false });
+        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace, failed: false, swept });
         let step = self.plumb_advance(view, id);
         (id, step)
     }
@@ -1707,7 +1711,8 @@ impl Server {
                     }
                     p.trace.push(format!("{who}: asked {name}"));
                     let (verb, text, at, sel) = (p.req.verb.clone(), p.req.text.clone(), p.req.at, p.req.sel);
-                    return PlumbStep::AskTool { tool: name.clone(), rule: rid, ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel };
+                    let swept = p.swept;
+                    return PlumbStep::AskTool { tool: name.clone(), rule: rid, ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel, swept };
                 }
             }
         }
@@ -1910,7 +1915,7 @@ pub enum PlumbStep {
     Ask(Proposal),
     /// Ask this tool; `plumb_next` with its answer, or refusal after a
     /// second of silence.
-    AskTool { tool: String, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    AskTool { tool: String, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span>, swept: bool },
     /// A dry run's report.
     Trace(Vec<String>),
 }
@@ -1928,6 +1933,8 @@ struct Plumb {
     trace: Vec<String>,
     /// A step neither took the word nor declined it: it never answered.
     failed: bool,
+    /// B3 took what was swept (or a selection), not a click's expansion.
+    swept: bool,
 }
 
 impl Server {

@@ -1632,7 +1632,7 @@ impl Daemon {
                 self.pending.insert(pid, Pending::Plumb { session: sid, plumb, asker });
                 self.propose(name, pid, proposal);
             }
-            PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel } => {
+            PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel, swept } => {
                 // the tool attached under that name, in this session
                 let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
                 // B3 is a search and wants to be quick; a verb is work the
@@ -1640,7 +1640,7 @@ impl Daemon {
                 // formatter) before it answers
                 let wait = if verb == apex_core::plumb::PLUMB { B3_ANSWER } else { VERB_ANSWER };
                 let start = s.view.state.meta.rules.get(&rule).and_then(|r| r.rule.start.clone());
-                let request = Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel };
+                let request = Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel, swept };
                 match (found, start) {
                     (Some(cid), _) => self.ask_tool(cid, sid, plumb, asker, request, wait),
                     // not there, and the rule says how to start it: started,

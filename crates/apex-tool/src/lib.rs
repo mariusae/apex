@@ -207,6 +207,9 @@ pub struct Plumb {
     pub at: Option<Range>,
     /// What B3 took, the text swept or expanded; `None` for a verb.
     pub sel: Option<Range>,
+    /// B3 took text swept, or a selection it was in: acme's "find
+    /// this", not a click's "open this".
+    pub swept: bool,
 }
 
 impl Plumb {
@@ -572,7 +575,7 @@ impl Tool {
                 _ => None,
             };
             let range = |s: Option<Span>| s.map(|s| Range { q0: s.q0, q1: s.q1 });
-            self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel) }));
+            self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel), swept: p.swept }));
         }
         let mut gone = Vec::new();
         for (w, (path, label)) in self.ours.iter_mut() {

@@ -407,7 +407,8 @@ mod io_tests {
 pub enum Request {
     /// A rule of ours claimed what was plumbed: the walk waits for the
     /// answer (within a second for B3, longer for a verb).
-    Plumb { rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    /// `swept`: what B3 took was swept or selected, not a click's.
+    Plumb { rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span>, swept: bool },
     /// A link in a page of ours was followed: where does it go?
     Navigate { window: WindowId, url: String },
 }
