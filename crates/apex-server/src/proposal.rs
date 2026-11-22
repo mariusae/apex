@@ -111,8 +111,11 @@ pub enum Proposal {
     /// `Goto`.
     Show { view: ViewId, at: usize },
     /// A tool owns this window (`by` its attachment), or no longer does
-    /// (`None`): it made it and writes it, so it is no file.
+    /// (`None`): it made it and writes it, so it is no file. Which tool
+    /// that is, by name, is the attachment's, said where it is applied.
     Own { window: WindowId, by: Option<AttachmentId> },
+    /// The owning tool's note on the window (`WindowOp::Note`).
+    Note { window: WindowId, note: Option<String> },
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
@@ -400,7 +403,12 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Own { window, by } => {
-            node.append(log, Shard::Window(window), Op::Window(WindowOp::Own { by }))?;
+            let name = by.and_then(|a| node.state.meta.attachments.get(&a)).map(|a| a.name.clone());
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Own { by, name }))?;
+            Ok(None)
+        }
+        Proposal::Note { window, note } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Note { note }))?;
             Ok(None)
         }
         Proposal::Live { window, by } => {

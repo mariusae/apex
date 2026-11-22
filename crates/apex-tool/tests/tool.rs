@@ -156,6 +156,52 @@ fn a_window_claimed_says_when_it_is_deleted() {
     assert_eq!(ev, Event::Deleted { window: w });
 }
 
+/// A tool that goes leaving windows of its own leaves them waiting for
+/// it, saying so, with its notes, and nothing more: it is not started
+/// again behind the user's back, though a rule says how to start it. A
+/// tool of its name, when one comes, takes them back.
+#[test]
+fn a_tools_windows_wait_for_it() {
+    let sock = daemon();
+    let marks = std::env::temp_dir().join(format!("apex-tool-again-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let again = marks.join("agent");
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let seen = |c: &mut Remote, ok: &dyn Fn(&Remote) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !ok(c) && Instant::now() < deadline {
+            let _ = c.step(Duration::from_millis(20));
+        }
+        ok(c)
+    };
+
+    // a tool with a window of its own, noted, and a word that starts it
+    let mut tool = Tool::attach_to(&sock, "main", "agent").unwrap();
+    tool.offer_lasting(Rule::verb("Agents").start(&format!("touch {}", again.display()))).unwrap();
+    let w = tool.new_scratch("/tmp/proj/", Some("a thread")).unwrap();
+    tool.set_owner(w, true).unwrap();
+    tool.set_note(w, Some("thread 0b1c")).unwrap();
+    assert!(seen(&mut c, &|c| c.node.window_owner(w) == Some("agent") && c.node.window_note(w) == Some("thread 0b1c")));
+    assert_eq!(c.node.window_waiting(w), None);
+
+    // gone: the window waits, and says so; nothing starts the tool
+    drop(tool);
+    assert!(seen(&mut c, &|c| c.node.window_waiting(w) == Some("agent")), "waits");
+    assert_eq!(c.node.window_status(w).and_then(|s| s.msg).as_deref(), Some("agent not running"));
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(!again.exists(), "not started again");
+
+    // a tool of its name takes it back, by its note
+    let mut back = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let info = back.window(w).expect("there still");
+    assert!(info.waiting && info.owner.as_deref() == Some("agent") && info.note.as_deref() == Some("thread 0b1c"), "{info:?}");
+    back.set_owner(w, true).unwrap();
+    assert!(seen(&mut c, &|c| c.node.window_waiting(w).is_none()), "taken back");
+    assert_eq!(c.node.window_status(w), None);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
 /// A verb that wants a place or an argument is offered `unlisted`: it
 /// runs when B2 takes it, but is no word in the window's tools menu.
 #[test]

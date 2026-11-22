@@ -224,15 +224,28 @@ pub enum WindowOp {
     TagExpand { on: bool },
     /// A tool owns this window: it made it and writes it, and what is
     /// in it is the tool's doing rather than a file's contents. `by` is
-    /// the attachment, whose name says which tool; the claim ends with
-    /// that attachment, or with `None`. acme says this by a program
-    /// holding the window's `event` file open (`xfid.c`, which turns
-    /// `filemenu` off for as long as it is held), and it means the same
-    /// here: no file menu in the tag, nothing for `Del` to ask about,
-    /// and a rule may name the owner to speak to that tool's windows
-    /// and no others. It is not `Live`, which comes and goes with the
-    /// work; a window is owned for as long as its tool is there.
-    Own { by: Option<AttachmentId> },
+    /// the attachment, and `name` which tool it is. acme says this by a
+    /// program holding the window's `event` file open (`xfid.c`, which
+    /// turns `filemenu` off for as long as it is held), and it means the
+    /// same here: no file menu in the tag, nothing for `Del` to ask
+    /// about, and a rule may name the owner to speak to that tool's
+    /// windows and no others. It is not `Live`, which comes and goes
+    /// with the work.
+    ///
+    /// The window stays that tool's when the attachment goes, and in a
+    /// dump: it waits, saying so, until a tool of that name takes it
+    /// back (`by` again, the same `name`). `by` `None` with a `name` is
+    /// such a window, made again from a dump; both `None`, the window is
+    /// nobody's.
+    Own {
+        by: Option<AttachmentId>,
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// The owning tool's note on the window: what it needs to take the
+    /// window back, in its own words, kept with the window and in a
+    /// dump. Apex reads nothing in it.
+    Note { note: Option<String> },
     /// A process is behind this window (a win tool's shell): live, a
     /// state beside clean and dirty. `by` is the attachment that keeps
     /// it so; the state ends with that attachment, or with `None`.

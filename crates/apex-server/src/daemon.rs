@@ -491,6 +491,10 @@ impl Daemon {
         }
         let mut view = Node::new(SERVER);
         view.catch_up(&log).map_err(|e| e.to_string())?;
+        // its init first, as for a session made anew: what it starts
+        // finds the session it is for, and a tool's windows, made again
+        // below or before it attaches, wait for it by name either way
+        server.run_profile(&view, self.host_profile.as_deref());
         let shell = d.settings.get("Newterm.shell").cloned();
         let scrollback = d.settings.get("Newterm.scrollback").and_then(|s| s.trim().parse().ok()).unwrap_or(crate::DEFAULT_SCROLLBACK);
         view.load_dump(&mut log, d, &mut crate::persist::Loader { server: &mut server, shell, scrollback }).map_err(|e| e.to_string())?;
@@ -498,8 +502,6 @@ impl Daemon {
         view.catch_up(&log).map_err(|e| e.to_string())?;
         self.sessions.insert(key.clone(), Session { id: sid, label: d.label.clone(), log, server, view, leader: None });
         eprintln!("apexd: session {} ({key}) restored", d.label);
-        let s = self.sessions.get_mut(&key).unwrap();
-        s.server.run_profile(&s.view, self.host_profile.as_deref());
         self.after(&key, Vec::new());
         Ok(())
     }
@@ -700,6 +702,10 @@ impl Daemon {
             let e = s.log.remove_rule(rid);
             let _ = s.view.state.apply(Shard::Meta, &e);
         }
+        // a tool's windows wait for it (`window_waiting`), saying so, and
+        // are nothing more: whoever ended it, a crash or the user, it is
+        // not started again behind their back. The user's word for it
+        // starts it, and it takes them back.
         let e = s.log.detach(a);
         let _ = s.view.state.apply(Shard::Meta, &e);
         if s.leader == Some(id) {

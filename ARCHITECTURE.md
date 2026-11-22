@@ -829,6 +829,17 @@ message). apex does the same, with tools for ports.
   its for a while. Nothing is started before it is wanted: no list of
   tools a session runs. (A tool wanted from the start -- a language
   server -- is the profile's: `apex tool lsp &`.)
+- **A tool's windows are never left without it.** A window a tool owns
+  (`set_owner`) is owned by the tool's name, and stays so when the tool
+  goes and in a dump, with the tool's note on it (`set_note`): what the
+  tool needs to take it back. Until a tool of that name claims it again
+  the window waits, saying `NAME not running` as its status, and
+  nothing of its tool's is offered in it. That is all: a tool that
+  goes, crashed or ended by the user, is not started again behind the
+  user's back. Whatever starts it next -- its word, the profile --
+  starts one that takes its windows back. A session made again from a
+  dump runs its profile first, then makes its windows; whichever comes
+  first, a tool and its windows find each other by name.
 - **The SDKs hand a tool what its rules' verbs bring, whoever installed
   the rule**: a tool started by a session's rule handles that verb.
 

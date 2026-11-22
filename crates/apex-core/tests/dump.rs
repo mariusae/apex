@@ -167,6 +167,29 @@ fn a_window_that_cannot_be_made_again_is_left_out() {
 }
 
 #[test]
+fn a_tools_window_is_made_again_waiting_for_the_tool_with_its_note() {
+    // a window a tool owns and noted, and one nobody owns
+    let (mut log, mut node, col) = session();
+    let (tool, e) = log.attach(AttachmentKind::Tool, "agent");
+    node.catch_up(&log).unwrap();
+    let _ = e;
+    let w = node.new_window_as(&mut log, col, "/w/", "1 ▾ hello\n", &Spec::scratch(Some("hello [Default]".into()))).unwrap();
+    node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Own { by: Some(tool), name: Some("agent".into()) })).unwrap();
+    node.append(&mut log, Shard::Window(w), Op::Window(WindowOp::Note { note: Some("thread 0b1c".into()) })).unwrap();
+    file(&mut log, &mut node, col, "/w/a.txt", "a\n");
+    let d = again(&dump::dump(&node.state, &mut |_| None));
+    let (mut log2, mut node2) = bare();
+    let mut disk = Disk(BTreeMap::from([("/w/a.txt".into(), "a\n".into())]));
+    node2.load_dump(&mut log2, &d, &mut disk).unwrap();
+    let tools: Vec<WindowId> = node2.state.windows.keys().copied().filter(|&x| node2.window_owner(x).is_some()).collect();
+    let [t] = tools.as_slice() else { panic!("one tool's window: {tools:?}") };
+    assert_eq!((node2.window_owner(*t), node2.window_waiting(*t), node2.window_note(*t)), (Some("agent"), Some("agent"), Some("thread 0b1c")));
+    assert_eq!(node2.window_status(*t).and_then(|s| s.msg).as_deref(), Some("agent not running"));
+    let a = named(&node2, "/w/a.txt")[0];
+    assert_eq!((node2.window_owner(a), node2.window_waiting(a), node2.window_note(a)), (None, None, None));
+}
+
+#[test]
 fn a_dump_of_a_later_apex_is_refused() {
     let d = Dump { version: dump::VERSION + 1, ..Default::default() };
     let (mut log, mut node) = bare();

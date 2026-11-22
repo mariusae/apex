@@ -177,6 +177,13 @@ pub struct WindowInfo {
     /// Put away in the stash (⌘M, a diagnostic window as it is made):
     /// open, and not in any column.
     pub stashed: bool,
+    /// The tool that owns it, by name, here or not.
+    pub owner: Option<String>,
+    /// Its owner is not here: the window waits for a tool of that name
+    /// to take it back (`set_owner`).
+    pub waiting: bool,
+    /// Its owner's note on it (`set_note`).
+    pub note: Option<String>,
 }
 
 /// A range of characters in a window's body.
@@ -677,7 +684,7 @@ impl Tool {
 
     fn window_info(&self, w: WindowId) -> WindowInfo {
         let node = &self.remote.node;
-        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w), dirty: node.window_unsaved(w), stashed: node.state.layout.is_stashed(w) }
+        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w), dirty: node.window_unsaved(w), stashed: node.state.layout.is_stashed(w), owner: node.window_owner(w).map(String::from), waiting: node.window_waiting(w).is_some(), note: node.window_note(w).map(String::from) }
     }
 
     /// A window, if it exists: its path, label, kind and so on.
@@ -736,7 +743,8 @@ impl Tool {
 
     /// The attachment that owns window `w`, if a tool does.
     pub fn window_owner(&self, w: WindowId) -> Option<AttachmentId> {
-        self.remote.node.state.window(w).ok().and_then(|x| x.owner)
+        let a = self.remote.node.state.window(w).ok().and_then(|x| x.owner)?;
+        self.remote.node.state.meta.attachments.contains_key(&a).then_some(a)
     }
 
     /// What the programs in window `w`'s terminal say they are doing
@@ -1096,19 +1104,33 @@ impl Tool {
     /// and `Del` asks nothing, as acme does for as long as a program
     /// holds a window's `event` file. A rule may name the owner
     /// (`Rule::owner`) to speak to one tool's windows and no others,
-    /// which is better than guessing at their names. The claim ends
-    /// when the tool detaches, or with `false`. It is not `set_live`,
-    /// which comes and goes with the work: a window is owned for as
-    /// long as its tool is there. A window claimed is the tool's as
-    /// one it made is: its renames and its deletion are reported,
-    /// though another made it -- a tool before this one, whose windows
-    /// this one takes up.
+    /// which is better than guessing at their names. It is not
+    /// `set_live`, which comes and goes with the work.
+    ///
+    /// The claim is by the tool's name, and outlasts it: when the tool
+    /// goes the window waits for one of that name, saying so, and so it
+    /// is in a dump. A tool takes back what waits for it by claiming it
+    /// again, finding what each is by its note (`set_note`); `false`
+    /// gives the window up, to be nobody's. A window claimed is the
+    /// tool's as one it made is: its renames and its deletion are
+    /// reported, though another made it.
     pub fn set_owner(&mut self, w: WindowId, on: bool) -> Result<()> {
         let by = on.then_some(self.remote.attachment());
         self.propose(Proposal::Own { window: w, by })?;
         if on && !self.ours.contains_key(&w) {
             self.remember(w);
         }
+        Ok(())
+    }
+
+    /// Note on a window of ours what we need to take it back -- after
+    /// we went, or the session was made again from a dump -- in our own
+    /// words; kept with the window, and in a dump. `None` drops it.
+    pub fn set_note(&mut self, w: WindowId, note: Option<&str>) -> Result<()> {
+        if self.remote.node.window_note(w) == note {
+            return Ok(());
+        }
+        self.propose(Proposal::Note { window: w, note: note.map(String::from) })?;
         Ok(())
     }
 

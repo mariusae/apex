@@ -513,13 +513,24 @@ fn a_live_window_is_not_put() {
     let f = node.new_window(&mut log, col, "/tmp/proj/report", "").unwrap();
     node.insert(&mut log, ViewId::Body(f), "written by a tool\n").unwrap();
     assert!(put(&node, f));
-    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by })).unwrap();
+    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by, name: Some("ui".into()) })).unwrap();
     assert_eq!(node.window_owner(f), Some("ui"));
+    assert_eq!(node.window_waiting(f), None);
     assert!(!put(&node, f) && !node.window_verbs(f).contains(&"Undo"), "{:?}", node.window_verbs(f));
     assert!(node.winclean(&mut log, f, true).unwrap());
     assert!(!node.window_unsaved(f));
-    // and lets go when the tool does
-    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by: None })).unwrap();
+    // a tool's still with the tool not here -- made again from a dump,
+    // say: it waits for one of that name, says so, and is no file
+    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by: None, name: Some("ui".into()) })).unwrap();
+    assert_eq!((node.window_owner(f), node.window_waiting(f)), (Some("ui"), Some("ui")));
+    assert_eq!(node.window_status(f).and_then(|s| s.msg).as_deref(), Some("ui not running"));
+    assert!(!put(&node, f) && !node.window_unsaved(f));
+    // taken back, it is the tool's again
+    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by, name: Some("ui".into()) })).unwrap();
+    assert_eq!((node.window_waiting(f), node.window_status(f)), (None, None));
+    // and given up, nobody's
+    node.append(&mut log, Shard::Window(f), Op::Window(WindowOp::Own { by: None, name: None })).unwrap();
+    assert_eq!((node.window_owner(f), node.window_waiting(f)), (None, None));
     assert!(put(&node, f));
     // a scratch window is never Put, live or not, whatever it is called
     // -- its name says nothing of it
@@ -1014,7 +1025,7 @@ fn the_hash_sees_every_replicated_window_flag_and_the_stacks() {
         assert_ne!(h, last, "{what} left the hash as it was");
         last = h;
     };
-    for op in [WindowOp::Own { by: Some(SERVER) }, WindowOp::Live { by: Some(SERVER) }, WindowOp::Diagnostic { on: true }, WindowOp::ProgramStatus { status: Some(apex_core::WindowStatus { state: apex_core::status::State::Working, kind: None, progress: Some(10), msg: None, by: SERVER, since: 1 }) }] {
+    for op in [WindowOp::Own { by: Some(SERVER), name: None }, WindowOp::Own { by: None, name: Some("agent".into()) }, WindowOp::Note { note: Some("thread 0b1c".into()) }, WindowOp::Live { by: Some(SERVER) }, WindowOp::Diagnostic { on: true }, WindowOp::ProgramStatus { status: Some(apex_core::WindowStatus { state: apex_core::status::State::Working, kind: None, progress: Some(10), msg: None, by: SERVER, since: 1 }) }] {
         let what = format!("{op:?}");
         node.append(&mut log, Shard::Window(w), Op::Window(op)).unwrap();
         changed(&node, &what);
