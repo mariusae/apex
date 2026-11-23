@@ -14,7 +14,10 @@ use apex_server::providers as ssh;
 static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// A fake ssh: `fake-ssh HOST CMD` runs CMD in a shell with HOME and the
-/// socket set for the scratch host. Returns (script, home, socket).
+/// socket set for the scratch host, and nothing else of ours: a host
+/// over ssh has none of the environment the tests run in (an apex
+/// terminal's `apexsession`, say, which would name the session).
+/// Returns (script, home, socket).
 fn fake_host() -> (PathBuf, PathBuf, PathBuf) {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos();
     let home = std::env::temp_dir().join(format!("apex-ssh-{}-{nanos}", std::process::id()));
@@ -24,7 +27,7 @@ fn fake_host() -> (PathBuf, PathBuf, PathBuf) {
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\n# $1 is the host; the rest is the command\nshift\nexport HOME={}\nexport APEX_SOCKET={}\nexec sh -c \"$*\"\n",
+            "#!/bin/sh\n# $1 is the host; the rest is the command\nshift\nexec env -i PATH=\"$PATH\" HOME={} APEX_SOCKET={} sh -c \"$*\"\n",
             home.display(),
             socket.display()
         ),
