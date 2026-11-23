@@ -13,7 +13,9 @@ fn what_the_server_runs_dies_of_kill_though_the_server_ignores_it() {
     unsafe {
         libc::signal(libc::SIGTERM, libc::SIG_IGN);
     }
-    std::env::set_var("SHELL", "/bin/sh");
+    // sh, as the test means, whatever rc is on the path: apex runs its
+    // commands with `acmeshell`, else an rc of its own or on the path
+    std::env::set_var("acmeshell", "/bin/sh");
     let mut log = Log::new();
     let (a, _) = log.attach(AttachmentKind::Ui, "test");
     let mut node = Node::new(a);
