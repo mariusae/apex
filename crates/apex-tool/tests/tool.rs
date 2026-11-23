@@ -656,3 +656,17 @@ fn a_tool_serves_its_pages_over_the_plane() {
     let (status, _, _) = plane.fetch("GET", "tool://nobody/x", &[], None, Duration::from_secs(5)).unwrap();
     assert_eq!(status, 503);
 }
+
+/// A tool's word put in the top row: at the end, once, the user's words
+/// left as they are.
+#[test]
+fn a_word_is_put_in_the_top_row_once() {
+    let sock = daemon();
+    let mut tool = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let before = tool.top().unwrap();
+    assert!(tool.top_word("Agents").unwrap(), "put there");
+    let after = tool.top().unwrap();
+    assert_eq!(after.trim_end(), format!("{} Agents", before.trim_end()).trim_start(), "{after:?}");
+    assert!(!tool.top_word("Agents").unwrap(), "there already");
+    assert_eq!(tool.top().unwrap(), after);
+}

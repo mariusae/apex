@@ -1031,6 +1031,31 @@ impl Tool {
         Ok(())
     }
 
+    /// The session's top row: its text, the user's words, as a window's
+    /// tag has them.
+    pub fn top(&self) -> Result<String> {
+        let b = self.remote.node.state.layout.top.ok_or_else(|| Error("no top row".into()))?;
+        Ok(self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string())
+    }
+
+    /// `word` put at the end of the top row, unless a word of the row is
+    /// it already: the user's words are left as they are, and a word the
+    /// user took away is put back only by asking again. Whether it was
+    /// put there.
+    pub fn top_word(&mut self, word: &str) -> Result<bool> {
+        let b = self.remote.node.state.layout.top.ok_or_else(|| Error("no top row".into()))?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let text = buf.text.to_string();
+        if text.split_whitespace().any(|w| w == word) {
+            return Ok(false);
+        }
+        let (len, version) = (buf.text.len(), buf.version);
+        let at = text.trim_end().chars().count();
+        let sep = if at == 0 { "" } else { " " };
+        self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: at, q1: len, text: format!("{sep}{word} ") })?;
+        Ok(true)
+    }
+
     fn tag_of(&self, w: WindowId) -> Result<BufferId> {
         Ok(self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.tag)
     }
