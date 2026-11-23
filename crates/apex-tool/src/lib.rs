@@ -76,7 +76,7 @@ use apex_server::proto::{ClientMsg, ServerMsg};
 use apex_server::remote::{Remote, ToolPlumb};
 use apex_server::Proposal;
 
-pub use apex_core::entry::WinKind;
+pub use apex_core::entry::{AttachmentKind, WinKind};
 pub use apex_core::ids::{RuleId, WindowId};
 pub use apex_core::status::{Kind, State};
 
@@ -439,6 +439,11 @@ impl Tool {
         (meta.id.clone(), meta.label.clone())
     }
 
+    /// This tool's attachment: one of `meta().attachments`.
+    pub fn attachment(&self) -> AttachmentId {
+        self.remote.attachment()
+    }
+
     /// The attachment's name.
     pub fn name(&self) -> String {
         self.remote.node.state.meta.attachments.get(&self.remote.attachment()).map(|a| a.name.clone()).unwrap_or_default()
@@ -447,6 +452,12 @@ impl Tool {
     /// The daemon's socket, for a tool starting others.
     pub fn socket(&self) -> PathBuf {
         apex_server::daemon::default_socket()
+    }
+
+    /// The ids of the daemon's sessions, those there are now: asked of
+    /// it on a connection of its own.
+    pub fn sessions(&self) -> Result<Vec<String>> {
+        apex_server::remote::list_sessions(&self.socket()).map(|l| l.into_iter().map(|s| s.id).collect()).map_err(|e| Error(e.to_string()))
     }
 
     // ---- events ----------------------------------------------------------
