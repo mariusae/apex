@@ -2120,6 +2120,12 @@ impl Node {
     /// Execute `text` as B2 would from `ctx`. Built-ins run here; anything
     /// else is recorded for the server.
     pub fn exec(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<Executed> {
+        self.exec_from(log, ctx, text, None)
+    }
+
+    /// `exec`, B2 having taken `text` from `from`: where it was is
+    /// recorded with it, for a tool that acts on what it is in.
+    pub fn exec_from(&mut self, log: &mut Log, ctx: ExecCtx, text: &str, from: Option<Span>) -> Result<Executed> {
         // acme's get: a dirty window is asked once before reloading
         if text.trim() == "Get" && !self.claimed(ctx, "Get") {
             if let ExecCtx::Window(w) = ctx {
@@ -2140,7 +2146,7 @@ impl Node {
             }
         }
         let at = self.exec_at(ctx);
-        let seq = self.append_exec(log, ctx, ExecOp { text: text.clone(), handler: handler.clone(), at })?;
+        let seq = self.append_exec(log, ctx, ExecOp { text: text.clone(), handler: handler.clone(), at, from })?;
         if handler != Handler::Leader {
             return Ok(Executed::Deferred(seq));
         }

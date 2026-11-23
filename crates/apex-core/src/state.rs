@@ -34,12 +34,15 @@ pub struct ExecRecord {
     pub text: String,
     pub handler: Handler,
     pub at: ExecAt,
+    /// Where B2 took the text from (`ExecOp::from`).
+    #[serde(default)]
+    pub from: Option<Span>,
     pub status: ExecStatus,
 }
 
 impl ExecRecord {
     fn new(x: &ExecOp) -> ExecRecord {
-        ExecRecord { text: x.text.clone(), handler: x.handler.clone(), at: x.at, status: ExecStatus::Pending }
+        ExecRecord { text: x.text.clone(), handler: x.handler.clone(), at: x.at, from: x.from, status: ExecStatus::Pending }
     }
 }
 

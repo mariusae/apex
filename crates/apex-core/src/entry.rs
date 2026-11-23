@@ -169,6 +169,11 @@ pub struct ExecOp {
     pub text: String,
     pub handler: Handler,
     pub at: ExecAt,
+    /// Where the text run was, when B2 took it from a window's text: a
+    /// word in a list acts on the item it is in, as acme's event file
+    /// says where a command was. `None` when it was typed or given.
+    #[serde(default)]
+    pub from: Option<Span>,
 }
 
 /// The outcome of an exec, reported by its performer.

@@ -36,16 +36,16 @@ fn a_name_from_home_opens_the_file_there() {
     // a click on the ~, in the name, on the range: the file, at its first line
     for q in [5, 20, 43] {
         let at = Span { buffer: b, q0: q, q1: q };
-        let req = PlumbReq { ctx: ExecCtx::Window(w), text: String::new(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: Some(at), sel: None, alt: None, reverse: false };
+        let req = PlumbReq { ctx: ExecCtx::Window(w), text: String::new(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: Some(at), sel: None, alt: None, reverse: false, word: None };
         let (_, step) = server.plumb_start(&node, req);
         assert_eq!(opened(step), Some((file.clone(), Pos::Line(1))), "at {q}");
     }
     // the same text without a place (a terminal's B3, apex plumb)
-    let req = PlumbReq { ctx: ExecCtx::Window(w), text: "~/src/tries/x/crates/a/src/main.rs:1-130".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let req = PlumbReq { ctx: ExecCtx::Window(w), text: "~/src/tries/x/crates/a/src/main.rs:1-130".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false, word: None };
     let (_, step) = server.plumb_start(&node, req);
     assert_eq!(opened(step), Some((file.clone(), Pos::Line(1))));
     // a name from ~ that is no file is a word, as ever
-    let req = PlumbReq { ctx: ExecCtx::Window(w), text: "~/src/nothing.rs:3".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let req = PlumbReq { ctx: ExecCtx::Window(w), text: "~/src/nothing.rs:3".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false, word: None };
     let (_, step) = server.plumb_start(&node, req);
     assert!(matches!(step, PlumbStep::Refused { .. }), "{step:?}");
     let _ = std::fs::remove_dir_all(&home);

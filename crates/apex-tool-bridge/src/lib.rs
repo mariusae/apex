@@ -395,7 +395,7 @@ impl Bridge {
             "ack" => {
                 // the plumb by id alone: enough to answer it
                 let id = v["plumb"].as_u64().ok_or("plumb")?;
-                let p = Plumb { id, rule: RuleId(0), verb: String::new(), text: String::new(), dir: String::new(), window: None, groups: Vec::new(), at: None, sel: None, swept: false };
+                let p = Plumb { id, rule: RuleId(0), verb: String::new(), text: String::new(), dir: String::new(), window: None, groups: Vec::new(), at: None, sel: None, swept: false, word: None };
                 self.tool.answer(&p, v["ok"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
             }
@@ -470,7 +470,7 @@ fn plumb_json(p: &Plumb) -> Value {
     let range = |r: Option<apex_tool::Range>| r.map(|r| json!({ "q0": r.q0, "q1": r.q1 }));
     json!({
         "event": "plumb", "plumb": p.id, "rule": p.rule.0, "verb": p.verb, "text": p.text, "dir": p.dir,
-        "window": p.window.map(|w| w.0), "groups": p.groups, "at": range(p.at), "sel": range(p.sel), "swept": p.swept,
+        "window": p.window.map(|w| w.0), "groups": p.groups, "at": range(p.at), "sel": range(p.sel), "swept": p.swept, "word": range(p.word),
     })
 }
 

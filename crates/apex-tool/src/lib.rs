@@ -217,6 +217,11 @@ pub struct Plumb {
     /// B3 took text swept, or a selection it was in: acme's "find
     /// this", not a click's "open this".
     pub swept: bool,
+    /// For a verb B2 took from the window's body, where the word was,
+    /// as acme's event file says where a command was: a word in a list
+    /// acts on the item it is in, wherever dot is. `None` from the tag,
+    /// or typed.
+    pub word: Option<Range>,
 }
 
 impl Plumb {
@@ -593,7 +598,7 @@ impl Tool {
                 _ => None,
             };
             let range = |s: Option<Span>| s.map(|s| Range { q0: s.q0, q1: s.q1 });
-            self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel), swept: p.swept }));
+            self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel), swept: p.swept, word: range(p.word) }));
         }
         let mut gone = Vec::new();
         for (w, (path, label)) in self.ours.iter_mut() {

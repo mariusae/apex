@@ -843,6 +843,10 @@ type Plumb struct {
 	// pointer. Sel is what B3 took, the text swept or expanded; nil for
 	// a verb. Range picks the one to act on.
 	At, Sel *Span
+	// Word is, for a verb B2 took from the window's body, where the
+	// word was: a word in a list acts on the item it is in, wherever
+	// dot is. Nil from the tag, or typed.
+	Word *Span
 }
 
 // Range is the text a handler should act on: what B3 took when there
@@ -988,6 +992,7 @@ func (t *Tool) Serve(ctx context.Context) error {
 				Groups []string `json:"groups"`
 				At     *Span    `json:"at"`
 				Sel    *Span    `json:"sel"`
+				Word   *Span    `json:"word"`
 			}
 			_ = unmarshalAll(ev, &p)
 			t.handlersMu.Lock()
@@ -998,7 +1003,7 @@ func (t *Tool) Serve(ctx context.Context) error {
 			t.handlersMu.Unlock()
 			taken := false
 			if h != nil {
-				pl := Plumb{Rule: RuleID(p.Rule), Verb: p.Verb, Text: p.Text, Dir: p.Dir, Groups: p.Groups, At: p.At, Sel: p.Sel}
+				pl := Plumb{Rule: RuleID(p.Rule), Verb: p.Verb, Text: p.Text, Dir: p.Dir, Groups: p.Groups, At: p.At, Sel: p.Sel, Word: p.Word}
 				if p.Window != nil {
 					pl.Window = t.Window(*p.Window)
 				}

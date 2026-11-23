@@ -3914,7 +3914,8 @@ impl Acme {
                             text.push(' ');
                             text.push_str(&a);
                         }
-                        self.execute(self.ctx_of(d.view), &text, cx);
+                        let from = self.node.view_buffer(d.view).ok().map(|buffer| Span { buffer, q0: lo, q1: hi });
+                        self.execute_from(self.ctx_of(d.view), &text, from, cx);
                     }
                 }
             }
@@ -5520,6 +5521,11 @@ impl Acme {
     }
 
     pub fn execute(&mut self, ctx: ExecCtx, text: &str, cx: &mut Context<Self>) {
+        self.execute_from(ctx, text, None, cx)
+    }
+
+    /// `execute`, B2 having taken `text` from `from` in a window's text.
+    pub fn execute_from(&mut self, ctx: ExecCtx, text: &str, from: Option<Span>, cx: &mut Context<Self>) {
         let word = text.trim().split_whitespace().next().unwrap_or("").to_string();
         // End: the session ended (as apex end-session does), the window
         // closed -- as Del closes a window: a modified file warns first
@@ -5609,7 +5615,7 @@ impl Acme {
                 let _ = self.node.append(&mut self.log, Shard::Layout, Op::Layout(LayoutOp::Snarf { text: t }));
             }
         }
-        match self.node.exec(&mut self.log, ctx, text) {
+        match self.node.exec_from(&mut self.log, ctx, text, from) {
             Ok(Executed::Quit(_)) => match self.backend {
                 Backend::Local(_) => cx.quit(),
                 Backend::Remote(_) => self.close_now(cx), // Exit: the session lives on, parked
@@ -5644,7 +5650,7 @@ impl Acme {
         }
         match &mut self.backend {
             Backend::Local(server) => {
-                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: verb.unwrap_or("plumb").into(), edit_only: false, dry: false, exec: None, at, sel, alt, reverse };
+                let req = PlumbReq { ctx, text: text.to_string(), dir: None, verb: verb.unwrap_or("plumb").into(), edit_only: false, dry: false, exec: None, at, sel, alt, reverse, word: None };
                 if let Some(w) = plumb_local(server, &mut self.node, &mut self.log, req) {
                     self.show(w);
                 }

@@ -557,7 +557,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
     assert!(pump_until(&mut log, &mut node, &mut server, &mut rx, |n| errors(n).contains(&format!("previewing {}", md.display()))), "errors:\n{}", errors(&node));
     // acme's expand: nothing takes `s.pchr` (no such file), so the word is tried
     let word = ("pchr".to_string(), Span { buffer: BufferId(0), q0: 2, q1: 6 });
-    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "s.pchr".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None, alt: Some(word), reverse: false };
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "s.pchr".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None, alt: Some(word), reverse: false, word: None };
     let (_, step) = server.plumb_start(&node, req);
     match step {
         apex_server::PlumbStep::Trace(lines) => {
@@ -567,7 +567,7 @@ fn a_rules_verb_shows_in_the_tag_and_b2_runs_it() {
         other => panic!("{other:?}"),
     }
     // the default rules: B3 on name:line opens the file at the line
-    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: "a.txt:1".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: None, sel: None, alt: None, reverse: false, word: None };
     let (_, step) = server.plumb_start(&node, req);
     match step {
         apex_server::PlumbStep::Trace(lines) => assert!(lines.iter().any(|l| l.contains("would open a.txt:1")), "{lines:?}"),
@@ -958,7 +958,7 @@ fn b3_in_a_terminal_that_no_rule_takes_looks_nowhere_else() {
     node.exec(&mut log, ExecCtx::Top, "Newterm").unwrap();
     poll(&mut server, &mut log, &mut node);
     let term = node.state.windows.values().find(|w| matches!(w.body, Body::Term(_))).map(|w| w.id).expect("terminal window");
-    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(term), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(term), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false, word: None };
     let (_, step) = server.plumb_start(&node, req);
     let props = match step {
         apex_server::PlumbStep::Refused { props, why } => {
@@ -972,7 +972,7 @@ fn b3_in_a_terminal_that_no_rule_takes_looks_nowhere_else() {
     assert_eq!(node.take_client_finds(), vec![(term, "D117573677".to_string(), false)], "looked for in the terminal");
     assert_eq!(node.selection(ViewId::Body(a)).unwrap(), (0, 0), "the other window's dot moved");
     // the same B3 from the text window itself still looks there
-    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(a), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false };
+    let req = apex_server::PlumbReq { ctx: ExecCtx::Window(a), text: "D117573677".into(), dir: None, verb: "plumb".into(), edit_only: false, dry: false, exec: None, at: None, sel: None, alt: None, reverse: false, word: None };
     let (_, step) = server.plumb_start(&node, req);
     let props = match step {
         apex_server::PlumbStep::Refused { props, .. } => props,
@@ -1502,7 +1502,7 @@ fn b3_on_a_manual_pages_name_reads_the_page() {
     let w = node.new_window(&mut log, col, "/tmp/see-also", "see cat(1), git-log(1).\n").unwrap();
     let b = node.state.window(w).unwrap().body_buffer().unwrap();
     for (q, page) in [(4, "1 cat"), (8, "1 cat"), (14, "1 git-log")] {
-        let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: String::new(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: Some(Span { buffer: b, q0: q, q1: q }), sel: None, alt: None, reverse: false };
+        let req = apex_server::PlumbReq { ctx: ExecCtx::Window(w), text: String::new(), dir: None, verb: "plumb".into(), edit_only: false, dry: true, exec: None, at: Some(Span { buffer: b, q0: q, q1: q }), sel: None, alt: None, reverse: false, word: None };
         let (_, step) = server.plumb_start(&node, req);
         let apex_server::PlumbStep::Trace(lines) = step else { panic!("{step:?}") };
         let all = lines.join("\n");

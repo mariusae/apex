@@ -417,7 +417,7 @@ impl Link {
             }
             ServerMsg::PlumbTrace { lines } => self.trace = Some(lines),
             ServerMsg::Plumbed { ok, why } => self.plumbed = Some((ok, why)),
-            ServerMsg::Ask { id, request: Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel, swept } } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel, swept }),
+            ServerMsg::Ask { id, request: Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel, swept, word } } => self.plumbs.push(ToolPlumb { id, rule, ctx, verb, text, dir, groups, at, sel, swept, word }),
             // a link in a page of ours: ours to say where it goes when we
             // said we answer; else what the client would do, at once
             ServerMsg::Ask { id, request: request @ Request::Navigate { .. } } => {
@@ -565,6 +565,8 @@ pub struct ToolPlumb {
     pub sel: Option<Span>,
     /// What B3 took was swept or selected, not expanded from a click.
     pub swept: bool,
+    /// A verb B2 took from the window's text: where it was.
+    pub word: Option<Span>,
 }
 
 /// A daemon speaking another protocol version is not ours to talk to:

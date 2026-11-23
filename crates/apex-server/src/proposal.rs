@@ -101,6 +101,9 @@ pub enum Proposal {
     // ---- from tools (the control protocol) ----
     /// As if B2 on `text` in `ctx`.
     Exec { ctx: ExecCtx, text: String },
+    /// As if B2 took `text` from `from`, in `ctx`'s window: a client that
+    /// does not lead the window says where its B2 was.
+    ExecFrom { ctx: ExecCtx, text: String, from: Span },
     /// Run an Edit program on a window's body.
     Edit { window: WindowId, program: String },
     Select { view: ViewId, q0: usize, q1: usize },
@@ -464,18 +467,8 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Stale { disk_hash: hash }))?;
             Ok(None)
         }
-        Proposal::Exec { ctx, text } => {
-            match node.exec(log, ctx, &text)? {
-                Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
-                // not a stashed window: one the command put away (`Stash`),
-                // or one worked in in the stash's preview
-                _ if matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w)) => Ok(None),
-                _ => Ok(match ctx {
-                    ExecCtx::Window(w) => Some(w),
-                    _ => None,
-                }),
-            }
-        }
+        Proposal::Exec { ctx, text } => exec(node, log, ctx, &text, None),
+        Proposal::ExecFrom { ctx, text, from } => exec(node, log, ctx, &text, Some(from)),
         // the Edit command's, whatever asked: its output and its warnings
         // to the errors window, a file or pipe command refused -- one
         // meaning, however it arrives
@@ -514,4 +507,19 @@ fn select(node: &mut Node, log: &mut Log, w: WindowId, line: Option<usize>) -> R
         }
     }
     Ok(())
+}
+
+/// `Exec` and `ExecFrom`: run as B2 would, the window it was in, if any,
+/// what it shows.
+fn exec(node: &mut Node, log: &mut Log, ctx: ExecCtx, text: &str, from: Option<Span>) -> Result<Option<WindowId>, CoreError> {
+    match node.exec_from(log, ctx, text, from)? {
+        Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
+        // not a stashed window: one the command put away (`Stash`),
+        // or one worked in in the stash's preview
+        _ if matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w)) => Ok(None),
+        _ => Ok(match ctx {
+            ExecCtx::Window(w) => Some(w),
+            _ => None,
+        }),
+    }
 }
