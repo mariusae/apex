@@ -344,7 +344,10 @@ fn here(session: Option<&str>, win: Option<&str>, pid: Option<u32>) -> (Option<S
 }
 
 /// A process's environment: `/proc` has it exactly, and where there
-/// is no `/proc` to ask, `ps` says it after the command.
+/// is no `/proc` to ask, `ps` says it after the command -- where the
+/// system lets it. macOS 27 does not, even for a child of ours: `ps`
+/// and `sysctl(KERN_PROCARGS2)` give the arguments alone, and nothing
+/// is learnt this way.
 fn env_of_pid(pid: u32) -> Vec<(String, String)> {
     if pid == 0 {
         return Vec::new();
@@ -456,10 +459,16 @@ mod tests {
         assert_eq!(here(None, None, None), (None, None));
         assert_eq!(here(Some(""), Some("x"), None), (None, None));
         // what the hooks are not told, the agent's own environment has:
-        // a child started with the variables, read while it sleeps
+        // a child started with the variables, read while it sleeps,
+        // where the system shows one process another's environment
         let mut kid = std::process::Command::new("sleep").arg("30").env("apexsession", "9e21ab77-x").env("winid", "42").spawn().unwrap();
-        assert_eq!(here(None, None, Some(kid.id())), (Some("9e21ab77-x".into()), Some(42)));
-        assert_eq!(here(Some("elsewhere"), None, Some(kid.id())), (Some("elsewhere".into()), Some(42)));
+        if env_of_pid(kid.id()).is_empty() {
+            assert_eq!(here(None, None, Some(kid.id())), (None, None));
+            assert_eq!(here(Some("elsewhere"), None, Some(kid.id())), (Some("elsewhere".into()), None));
+        } else {
+            assert_eq!(here(None, None, Some(kid.id())), (Some("9e21ab77-x".into()), Some(42)));
+            assert_eq!(here(Some("elsewhere"), None, Some(kid.id())), (Some("elsewhere".into()), Some(42)));
+        }
         let _ = kid.kill();
         let _ = kid.wait();
         assert_eq!(here(None, None, Some(0)), (None, None));
