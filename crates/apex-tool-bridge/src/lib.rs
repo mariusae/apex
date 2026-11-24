@@ -10,7 +10,7 @@
 //! are answered, in order, with `{"id": N, "ok": true, ...}` or
 //! `{"id": N, "ok": false, "error": "..."}`:
 //!
-//! - `windows` → `windows: [{id, path, label, kind, scratch, live}]`;
+//! - `windows` → `windows: [{id, path, label, kind, scratch, live, dirty, stashed}]`;
 //!   `window {window}` → `window: {...}`, the same for one. A window's path is where it
 //!   is (a file's or directory's, the directory an errors window is for,
 //!   the file a preview shows, a terminal's directory, a page's address),
@@ -23,6 +23,8 @@
 //! - `read {window}` → `text`; `selection {window}` → `q0, q1`
 //! - `write {window, q0, q1, text}` (a range replaced; `q0`/`q1` of -1
 //!   mean the end, so `q0: -1, q1: -1` appends), `select {window, q0, q1}`
+//! - `edits {window, edits: [{q0, q1, text}]}`: several ranges replaced
+//!   at once, in order and apart, as one undo step, all or nothing
 //! - `show {window, at}` or `show {window, line}`: the text there brought
 //!   into view if it is off screen, dot and the mouse left alone (where
 //!   `open` jumps the user there); `line {window, line}` → `q0, q1`
@@ -51,11 +53,12 @@
 //!   no file menu in its tag, nothing for `Del` to ask about, and
 //!   `owner` on a rule speaks to it
 //! - `clean {window}`: what the window holds is what it should hold
-//! - `rule {verb?, text?, file?, kind?, window?, owner?, priority?, unlisted?}` →
+//! - `rule {verb?, text?, file?, kind?, window?, owner?, priority?, unlisted?, tag?}` →
 //!   `rule`: a rule answered by this tool (`plumb` events); `unrule
 //!   {rule}`. `unlisted` keeps the verb out of the tools menu without
 //!   taking it away: for one meant to be clicked where the tool wrote
-//!   it, or to be given an argument. A verb
+//!   it, or to be given an argument. `tag` draws it in the tag of the
+//!   windows the rule applies to, where the user cannot erase it. A verb
 //!   apex knows (`Put`, `Get`, `Del`, ...) may be taken by a rule that
 //!   says which windows it is about (`window`, `file` or `kind`): `ack`
 //!   with `ok` means the word meant what the tool says, `ok: false` hands
@@ -257,6 +260,17 @@ impl Bridge {
                 self.tool.replace(window(v)?, at(&v["q0"]), at(&v["q1"]), v["text"].as_str().unwrap_or("")).map_err(e)?;
                 Ok(json!({}))
             }
+            "edits" => {
+                let at = |x: &Value| -> usize {
+                    match x.as_i64() {
+                        Some(n) if n >= 0 => n as usize,
+                        _ => END,
+                    }
+                };
+                let edits: Vec<(usize, usize, String)> = v["edits"].as_array().ok_or("edits")?.iter().map(|x| (at(&x["q0"]), at(&x["q1"]), x["text"].as_str().unwrap_or("").to_string())).collect();
+                self.tool.edit(window(v)?, &edits).map_err(e)?;
+                Ok(json!({}))
+            }
             "select" => {
                 let (q0, q1) = (v["q0"].as_u64().ok_or("q0")? as usize, v["q1"].as_u64().ok_or("q1")? as usize);
                 self.tool.select(window(v)?, q0, q1).map_err(e)?;
@@ -365,6 +379,9 @@ impl Bridge {
                 if v["unlisted"].as_bool().unwrap_or(false) {
                     r = r.unlisted();
                 }
+                if v["tag"].as_bool().unwrap_or(false) {
+                    r = r.in_tag();
+                }
                 if let Some(s) = v["start"].as_str() {
                     r = r.start(s);
                 }
@@ -378,7 +395,7 @@ impl Bridge {
             "ack" => {
                 // the plumb by id alone: enough to answer it
                 let id = v["plumb"].as_u64().ok_or("plumb")?;
-                let p = Plumb { id, rule: RuleId(0), verb: String::new(), text: String::new(), dir: String::new(), window: None, groups: Vec::new(), at: None, sel: None };
+                let p = Plumb { id, rule: RuleId(0), verb: String::new(), text: String::new(), dir: String::new(), window: None, groups: Vec::new(), at: None, sel: None, swept: false, word: None };
                 self.tool.answer(&p, v["ok"].as_bool().unwrap_or(true)).map_err(e)?;
                 Ok(json!({}))
             }
@@ -453,14 +470,14 @@ fn plumb_json(p: &Plumb) -> Value {
     let range = |r: Option<apex_tool::Range>| r.map(|r| json!({ "q0": r.q0, "q1": r.q1 }));
     json!({
         "event": "plumb", "plumb": p.id, "rule": p.rule.0, "verb": p.verb, "text": p.text, "dir": p.dir,
-        "window": p.window.map(|w| w.0), "groups": p.groups, "at": range(p.at), "sel": range(p.sel),
+        "window": p.window.map(|w| w.0), "groups": p.groups, "at": range(p.at), "sel": range(p.sel), "swept": p.swept, "word": range(p.word),
     })
 }
 
 /// A window as the bridge speaks of it: its id, path, label, kind, and
 /// whether it is scratch and live.
 fn window_json(w: &apex_tool::WindowInfo) -> Value {
-    json!({ "id": w.id.0, "path": w.path, "label": w.label, "status": w.status.as_ref().map(|s| json!({ "state": s.state.name(), "kind": s.kind.map(|k| k.name()), "progress": s.progress, "msg": s.msg })), "kind": w.kind.name(), "scratch": w.scratch, "live": w.live })
+    json!({ "id": w.id.0, "path": w.path, "label": w.label, "status": w.status.as_ref().map(|s| json!({ "state": s.state.name(), "kind": s.kind.map(|k| k.name()), "progress": s.progress, "msg": s.msg })), "kind": w.kind.name(), "scratch": w.scratch, "live": w.live, "dirty": w.dirty, "stashed": w.stashed })
 }
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

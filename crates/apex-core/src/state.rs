@@ -34,12 +34,15 @@ pub struct ExecRecord {
     pub text: String,
     pub handler: Handler,
     pub at: ExecAt,
+    /// Where B2 took the text from (`ExecOp::from`).
+    #[serde(default)]
+    pub from: Option<Span>,
     pub status: ExecStatus,
 }
 
 impl ExecRecord {
     fn new(x: &ExecOp) -> ExecRecord {
-        ExecRecord { text: x.text.clone(), handler: x.handler.clone(), at: x.at, status: ExecStatus::Pending }
+        ExecRecord { text: x.text.clone(), handler: x.handler.clone(), at: x.at, from: x.from, status: ExecStatus::Pending }
     }
 }
 
@@ -60,11 +63,22 @@ pub struct Window {
     /// The attachment of the tool that owns this window
     /// (`WindowOp::Own`): it made it and writes it.
     pub owner: Option<AttachmentId>,
+    /// Which tool that is, by name: kept when the attachment goes, so
+    /// the window waits for a tool of that name to take it back.
+    #[serde(default)]
+    pub owner_name: Option<String>,
+    /// The owning tool's note on the window (`WindowOp::Note`).
+    #[serde(default)]
+    pub note: Option<String>,
     /// The attachment whose process is behind this window (`WindowOp::Live`).
     pub live: Option<AttachmentId>,
     /// A diagnostic window (`WindowOp::Diagnostic`): made stashed, its
     /// news said in toasts, as an +Errors window's are.
     pub diagnostic: bool,
+    /// A draft (`WindowOp::Draft`): the user's text, unsaved while
+    /// dirty, though it is scratch or a tool's.
+    #[serde(default)]
+    pub draft: bool,
     /// Where a window with no text of its own is: a terminal's
     /// directory, a page's address. (A text window's is its buffer's
     /// name.)
@@ -665,7 +679,7 @@ impl State {
                 }
                 self.windows.insert(
                     id,
-                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, live: None, diagnostic: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None },
+                    Window { id, tag: *tag, body: *body, mono: false, tabstop: 4, autoindent: true, tagexpand: true, execs: BTreeMap::new(), owner: None, owner_name: None, note: None, live: None, diagnostic: false, draft: false, path: path.clone(), label: label.clone(), status: None, via: via.clone(), base: base.clone(), reload: 0, scroll: None },
                 );
             }
             WindowOp::Path { path } => self.window_mut(id)?.path = path.clone(),
@@ -677,9 +691,15 @@ impl State {
             WindowOp::Tab { n } => self.window_mut(id)?.tabstop = (*n).max(1),
             WindowOp::Indent { on } => self.window_mut(id)?.autoindent = *on,
             WindowOp::TagExpand { on } => self.window_mut(id)?.tagexpand = *on,
-            WindowOp::Own { by } => self.window_mut(id)?.owner = *by,
+            WindowOp::Own { by, name } => {
+                let w = self.window_mut(id)?;
+                w.owner = *by;
+                w.owner_name = name.clone();
+            }
+            WindowOp::Note { note } => self.window_mut(id)?.note = note.clone(),
             WindowOp::Live { by } => self.window_mut(id)?.live = *by,
             WindowOp::Diagnostic { on } => self.window_mut(id)?.diagnostic = *on,
+            WindowOp::Draft { on } => self.window_mut(id)?.draft = *on,
             WindowOp::Exec(x) => {
                 self.window_mut(id)?.execs.insert(seq, ExecRecord::new(x));
             }
@@ -964,7 +984,8 @@ impl State {
             h.update(&postcard::to_stdvec(&w.status).unwrap_or_default());
             // who owns it, keeps it live; whether it is diagnostic:
             // replicated, so compared (its status above)
-            h.update(&postcard::to_stdvec(&(w.owner, w.live, w.diagnostic)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(w.owner, w.live, w.diagnostic, w.draft)).unwrap_or_default());
+            h.update(&postcard::to_stdvec(&(&w.owner_name, &w.note)).unwrap_or_default());
             for (seq, e) in &w.execs {
                 h.update(&seq.to_le_bytes());
                 h.update(e.text.as_bytes());

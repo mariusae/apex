@@ -76,7 +76,7 @@ use apex_server::proto::{ClientMsg, ServerMsg};
 use apex_server::remote::{Remote, ToolPlumb};
 use apex_server::Proposal;
 
-pub use apex_core::entry::WinKind;
+pub use apex_core::entry::{AttachmentKind, WinKind};
 pub use apex_core::ids::{RuleId, WindowId};
 pub use apex_core::status::{Kind, State};
 
@@ -170,6 +170,20 @@ pub struct WindowInfo {
     pub scratch: bool,
     /// A process is behind it (a shell's, a tool's).
     pub live: bool,
+    /// It holds text its file has not had: what `Del` asks about, and
+    /// what an agent reading the file from disk does not see. Never for
+    /// scratch windows, directories, terminals, or windows a tool owns.
+    pub dirty: bool,
+    /// Put away in the stash (⌘M, a diagnostic window as it is made):
+    /// open, and not in any column.
+    pub stashed: bool,
+    /// The tool that owns it, by name, here or not.
+    pub owner: Option<String>,
+    /// Its owner is not here: the window waits for a tool of that name
+    /// to take it back (`set_owner`).
+    pub waiting: bool,
+    /// Its owner's note on it (`set_note`).
+    pub note: Option<String>,
 }
 
 /// A range of characters in a window's body.
@@ -200,6 +214,14 @@ pub struct Plumb {
     pub at: Option<Range>,
     /// What B3 took, the text swept or expanded; `None` for a verb.
     pub sel: Option<Range>,
+    /// B3 took text swept, or a selection it was in: acme's "find
+    /// this", not a click's "open this".
+    pub swept: bool,
+    /// For a verb B2 took from the window's body, where the word was,
+    /// as acme's event file says where a command was: a word in a list
+    /// acts on the item it is in, wherever dot is. `None` from the tag,
+    /// or typed.
+    pub word: Option<Range>,
 }
 
 impl Plumb {
@@ -275,6 +297,11 @@ pub struct Navigation {
     pub url: String,
 }
 
+/// The verb of a rule that takes every B2 command in its windows that
+/// no word took (`Rule::verb(EXEC)`): the whole command is `Plumb::text`.
+/// One the tool declines runs as it would anywhere else.
+pub const EXEC: &str = apex_core::plumb::EXEC;
+
 /// Where a verb of the tool's is offered. `Rule::verb(..)` or
 /// `Rule::plumb()`, then narrowed: each setter is a further condition.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -282,6 +309,7 @@ pub struct Rule {
     verb: Option<String>,
     owner: Option<String>,
     unlisted: bool,
+    tag: bool,
     text: Option<String>,
     file: Option<String>,
     kind: Option<WinKind>,
@@ -362,6 +390,15 @@ impl Rule {
         self.unlisted = true;
         self
     }
+
+    /// The verb is drawn in the tag of each window the rule applies to,
+    /// after apex's own words and before the user's, where the user
+    /// cannot erase it: the words a tool's window always has (`Reply`,
+    /// `Send`). It is in the tools menu as well, unless `unlisted`.
+    pub fn in_tag(mut self) -> Rule {
+        self.tag = true;
+        self
+    }
 }
 
 /// The tool's attachment to a session.
@@ -369,8 +406,8 @@ pub struct Tool {
     remote: Remote,
     /// Windows whose body edits (by others) are reported.
     watched: BTreeSet<WindowId>,
-    /// Windows we made, opened or watch, with their names as last seen:
-    /// renames and deletions are reported for these.
+    /// Windows we made, opened, own or watch, with their names as last
+    /// seen: renames and deletions are reported for these.
     ours: BTreeMap<WindowId, (String, Option<String>)>,
     events: VecDeque<Event>,
     /// Replacements of ours in watched windows still to come back: the
@@ -407,6 +444,11 @@ impl Tool {
         (meta.id.clone(), meta.label.clone())
     }
 
+    /// This tool's attachment: one of `meta().attachments`.
+    pub fn attachment(&self) -> AttachmentId {
+        self.remote.attachment()
+    }
+
     /// The attachment's name.
     pub fn name(&self) -> String {
         self.remote.node.state.meta.attachments.get(&self.remote.attachment()).map(|a| a.name.clone()).unwrap_or_default()
@@ -415,6 +457,12 @@ impl Tool {
     /// The daemon's socket, for a tool starting others.
     pub fn socket(&self) -> PathBuf {
         apex_server::daemon::default_socket()
+    }
+
+    /// The ids of the daemon's sessions, those there are now: asked of
+    /// it on a connection of its own.
+    pub fn sessions(&self) -> Result<Vec<String>> {
+        apex_server::remote::list_sessions(&self.socket()).map(|l| l.into_iter().map(|s| s.id).collect()).map_err(|e| Error(e.to_string()))
     }
 
     // ---- events ----------------------------------------------------------
@@ -550,7 +598,7 @@ impl Tool {
                 _ => None,
             };
             let range = |s: Option<Span>| s.map(|s| Range { q0: s.q0, q1: s.q1 });
-            self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel) }));
+            self.events.push_back(Event::Plumb(Plumb { id: p.id, rule: p.rule, verb: p.verb, text: p.text, dir: p.dir, window, groups: p.groups, at: range(p.at), sel: range(p.sel), swept: p.swept, word: range(p.word) }));
         }
         let mut gone = Vec::new();
         for (w, (path, label)) in self.ours.iter_mut() {
@@ -652,7 +700,7 @@ impl Tool {
 
     fn window_info(&self, w: WindowId) -> WindowInfo {
         let node = &self.remote.node;
-        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w) }
+        WindowInfo { id: w, path: node.window_path(w), label: node.window_label(w), status: node.window_status(w).map(|s| Status { state: s.state, kind: s.kind, progress: s.progress, msg: s.msg }), kind: node.window_kind(w), scratch: node.window_scratch(w), live: node.window_live(w), dirty: node.window_unsaved(w), stashed: node.state.layout.is_stashed(w), owner: node.window_owner(w).map(String::from), waiting: node.window_waiting(w).is_some(), note: node.window_note(w).map(String::from) }
     }
 
     /// A window, if it exists: its path, label, kind and so on.
@@ -711,7 +759,8 @@ impl Tool {
 
     /// The attachment that owns window `w`, if a tool does.
     pub fn window_owner(&self, w: WindowId) -> Option<AttachmentId> {
-        self.remote.node.state.window(w).ok().and_then(|x| x.owner)
+        let a = self.remote.node.state.window(w).ok().and_then(|x| x.owner)?;
+        self.remote.node.state.meta.attachments.contains_key(&a).then_some(a)
     }
 
     /// What the programs in window `w`'s terminal say they are doing
@@ -861,6 +910,44 @@ impl Tool {
         Ok(())
     }
 
+    /// Replace several ranges at once: each `(q0, q1, text)` in the text
+    /// as it stands now, in order and apart (`END` for the end). One
+    /// undo step, and all or nothing: an error, and nothing written,
+    /// when the text changed since this tool's replica last saw it, as
+    /// for `replace`. What a tool writing a window it renders afresh
+    /// wants, its changes several and none of them to land alone.
+    pub fn edit(&mut self, w: WindowId, edits: &[(usize, usize, String)]) -> Result<()> {
+        let b = self.body_of(w)?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let (len, version) = (buf.text.len(), buf.version);
+        let edits: Vec<(usize, usize, String)> = edits.iter().map(|(q0, q1, t)| ((*q0).min(len), (*q1).min(len), t.clone())).collect();
+        if edits.iter().any(|(q0, q1, _)| q1 < q0) || edits.windows(2).any(|p| p[1].0 < p[0].1) {
+            return Err("edits out of order or overlapping".into());
+        }
+        if edits.is_empty() {
+            return Ok(());
+        }
+        let watched = self.watched.contains(&w);
+        if watched {
+            // ours, when they come back: the leader applies them last
+            // first, each where it stood
+            for (q0, q1, t) in edits.iter().rev() {
+                self.own.push_back((b, *q0, q1 - q0, t.clone()));
+            }
+            while self.own.len() > 256 {
+                self.own.pop_front();
+            }
+        }
+        let r = self.propose(Proposal::Edits { buffer: b, version, edits: edits.clone() });
+        if r.is_err() && watched {
+            for _ in 0..edits.len().min(self.own.len()) {
+                self.own.pop_back();
+            }
+        }
+        r?;
+        Ok(())
+    }
+
     /// Add text at the end.
     pub fn append(&mut self, w: WindowId, text: &str) -> Result<()> {
         self.replace(w, END, END, text)
@@ -942,6 +1029,31 @@ impl Tool {
         let (len, version) = (buf.text.len(), buf.version);
         self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: 0, q1: len, text: format!("{} ", text.trim()) })?;
         Ok(())
+    }
+
+    /// The session's top row: its text, the user's words, as a window's
+    /// tag has them.
+    pub fn top(&self) -> Result<String> {
+        let b = self.remote.node.state.layout.top.ok_or_else(|| Error("no top row".into()))?;
+        Ok(self.remote.node.state.buffer(b).map_err(|e| e.to_string())?.text.to_string())
+    }
+
+    /// `word` put at the end of the top row, unless a word of the row is
+    /// it already: the user's words are left as they are, and a word the
+    /// user took away is put back only by asking again. Whether it was
+    /// put there.
+    pub fn top_word(&mut self, word: &str) -> Result<bool> {
+        let b = self.remote.node.state.layout.top.ok_or_else(|| Error("no top row".into()))?;
+        let buf = self.remote.node.state.buffer(b).map_err(|e| e.to_string())?;
+        let text = buf.text.to_string();
+        if text.split_whitespace().any(|w| w == word) {
+            return Ok(false);
+        }
+        let (len, version) = (buf.text.len(), buf.version);
+        let at = text.trim_end().chars().count();
+        let sep = if at == 0 { "" } else { " " };
+        self.propose(Proposal::ReplaceRange { select: false, dir: None, buffer: b, version, q0: at, q1: len, text: format!("{sep}{word} ") })?;
+        Ok(true)
     }
 
     fn tag_of(&self, w: WindowId) -> Result<BufferId> {
@@ -1033,13 +1145,33 @@ impl Tool {
     /// and `Del` asks nothing, as acme does for as long as a program
     /// holds a window's `event` file. A rule may name the owner
     /// (`Rule::owner`) to speak to one tool's windows and no others,
-    /// which is better than guessing at their names. The claim ends
-    /// when the tool detaches, or with `false`. It is not `set_live`,
-    /// which comes and goes with the work: a window is owned for as
-    /// long as its tool is there.
+    /// which is better than guessing at their names. It is not
+    /// `set_live`, which comes and goes with the work.
+    ///
+    /// The claim is by the tool's name, and outlasts it: when the tool
+    /// goes the window waits for one of that name, saying so, and so it
+    /// is in a dump. A tool takes back what waits for it by claiming it
+    /// again, finding what each is by its note (`set_note`); `false`
+    /// gives the window up, to be nobody's. A window claimed is the
+    /// tool's as one it made is: its renames and its deletion are
+    /// reported, though another made it.
     pub fn set_owner(&mut self, w: WindowId, on: bool) -> Result<()> {
         let by = on.then_some(self.remote.attachment());
         self.propose(Proposal::Own { window: w, by })?;
+        if on && !self.ours.contains_key(&w) {
+            self.remember(w);
+        }
+        Ok(())
+    }
+
+    /// Note on a window of ours what we need to take it back -- after
+    /// we went, or the session was made again from a dump -- in our own
+    /// words; kept with the window, and in a dump. `None` drops it.
+    pub fn set_note(&mut self, w: WindowId, note: Option<&str>) -> Result<()> {
+        if self.remote.node.window_note(w) == note {
+            return Ok(());
+        }
+        self.propose(Proposal::Note { window: w, note: note.map(String::from) })?;
         Ok(())
     }
 
@@ -1063,6 +1195,25 @@ impl Tool {
     pub fn set_live(&mut self, w: WindowId, on: bool) -> Result<()> {
         let by = on.then_some(self.remote.attachment());
         self.propose(Proposal::Live { window: w, by })?;
+        Ok(())
+    }
+
+    /// Mark the window as a draft: what is in it is the user's, though
+    /// no file holds it (a tool's window they write in, a message to
+    /// send). Dirty, its handle says so and `Del` asks, as for a file;
+    /// `set_clean` when it has been acted on.
+    pub fn set_draft(&mut self, w: WindowId, on: bool) -> Result<()> {
+        self.propose(Proposal::Draft { window: w, on })?;
+        Ok(())
+    }
+
+    /// Set the window in the alternate, fixed-width font, or not: acme's
+    /// `Font`, run there when the window is not so already.
+    pub fn set_mono(&mut self, w: WindowId, on: bool) -> Result<()> {
+        let mono = self.remote.node.state.window(w).map_err(|_| Error(format!("no window {}", w.0)))?.mono;
+        if mono != on {
+            self.exec_in(Some(w), "Font")?;
+        }
         Ok(())
     }
 
@@ -1142,6 +1293,7 @@ impl Tool {
             verb: r.verb.unwrap_or_else(|| "plumb".to_string()),
             owner: r.owner,
             unlisted: r.unlisted,
+            tag: r.tag,
             text: r.text,
             file: r.file,
             kind: r.kind,
@@ -1153,6 +1305,15 @@ impl Tool {
         };
         rule.check()?;
         self.remote.rule_add(rule, r.priority, mine, TIMEOUT).map_err(Error)
+    }
+
+    /// The session's rule (`offer_lasting`) that sends `verb` to this
+    /// tool, if there is one: what a tool looks for before offering its
+    /// lasting rules, so that each is offered once however often the
+    /// tool is started.
+    pub fn lasting(&self, verb: &str) -> Option<RuleId> {
+        let name = self.name();
+        self.remote.node.state.meta.rules.iter().find(|(_, r)| r.rule.verb == verb && r.rule.start.is_some() && matches!(&r.rule.action, RuleAction::Tool(n) if *n == name)).map(|(id, _)| *id)
     }
 
     /// Remove a rule of the tool's own; another's (the session's, one

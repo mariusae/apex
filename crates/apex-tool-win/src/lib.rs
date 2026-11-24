@@ -199,6 +199,7 @@ fn win_rules(window: WindowId, name: &str) -> Vec<PlumbRule> {
             verb: verb.into(),
             owner: None,
             unlisted: false,
+            tag: false,
             text: None,
             file: None,
             kind: None,

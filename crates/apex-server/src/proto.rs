@@ -20,7 +20,7 @@ use crate::term::TermKey;
 
 /// The wire's version. Bump it whenever anything on the wire changes
 /// (see the module doc); nothing else tells a daemon and a client apart.
-pub const PROTOCOL: u32 = 57;
+pub const PROTOCOL: u32 = 58;
 
 /// A client's terminal colours, RGB: the ink, the paper, and the
 /// sixteen ANSI colours its theme draws.
@@ -407,7 +407,8 @@ mod io_tests {
 pub enum Request {
     /// A rule of ours claimed what was plumbed: the walk waits for the
     /// answer (within a second for B3, longer for a verb).
-    Plumb { rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    /// `swept`: what B3 took was swept or selected, not a click's.
+    Plumb { rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span>, swept: bool, word: Option<Span> },
     /// A link in a page of ours was followed: where does it go?
     Navigate { window: WindowId, url: String },
 }

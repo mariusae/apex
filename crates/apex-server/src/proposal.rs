@@ -76,6 +76,13 @@ pub enum Proposal {
     /// acme's `|` leaves the output selected), or a tool's write, which
     /// leaves dot alone as a write to acme's `data` file does.
     ReplaceRange { select: bool, dir: Option<String>, buffer: BufferId, version: Version, q0: usize, q1: usize, text: String },
+    /// Several ranges replaced at once, valid at `version`: `[q0, q1)`
+    /// with its text, the ranges in the text as it stands at `version`,
+    /// in order and apart. One undo step, and all or nothing: a tool
+    /// writing what changed in a window it renders afresh, where one
+    /// `ReplaceRange` a change would leave it half written between them.
+    /// Dot is left where the edits leave it.
+    Edits { buffer: BufferId, version: Version, edits: Vec<(usize, usize, String)> },
     /// Text for `dir`'s errors window (acme's errorwin), or the session's.
     Errors { dir: Option<String>, text: String },
     /// The outcome of an exec.
@@ -94,6 +101,9 @@ pub enum Proposal {
     // ---- from tools (the control protocol) ----
     /// As if B2 on `text` in `ctx`.
     Exec { ctx: ExecCtx, text: String },
+    /// As if B2 took `text` from `from`, in `ctx`'s window: a client that
+    /// does not lead the window says where its B2 was.
+    ExecFrom { ctx: ExecCtx, text: String, from: Span },
     /// Run an Edit program on a window's body.
     Edit { window: WindowId, program: String },
     Select { view: ViewId, q0: usize, q1: usize },
@@ -104,11 +114,17 @@ pub enum Proposal {
     /// `Goto`.
     Show { view: ViewId, at: usize },
     /// A tool owns this window (`by` its attachment), or no longer does
-    /// (`None`): it made it and writes it, so it is no file.
+    /// (`None`): it made it and writes it, so it is no file. Which tool
+    /// that is, by name, is the attachment's, said where it is applied.
     Own { window: WindowId, by: Option<AttachmentId> },
+    /// The owning tool's note on the window (`WindowOp::Note`).
+    Note { window: WindowId, note: Option<String> },
     /// A tool's process is behind this window (`by` its attachment), or
     /// no longer is (`None`).
     Live { window: WindowId, by: Option<AttachmentId> },
+    /// The window is a draft, the user's text (`WindowOp::Draft`), or
+    /// no longer is.
+    Draft { window: WindowId, on: bool },
     /// Put in an autoindent window (acme's `trimspaces`): the file on
     /// disk is the buffer at `version` without the blanks at the ends of
     /// its lines. The leader deletes those `runs` (from the end backwards)
@@ -291,6 +307,21 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             }
             Ok(None)
         }
+        Proposal::Edits { buffer, version, edits } => {
+            let b = node.state.buffer(buffer)?;
+            if b.version != version {
+                return Err(CoreError::Missing(format!("buffer {buffer} changed meanwhile: at version {}, the edits were for {version}", b.version)));
+            }
+            let len = b.text.len();
+            let ordered = edits.windows(2).all(|p| p[0].1 <= p[1].0) && edits.iter().all(|(q0, q1, _)| q0 <= q1 && *q1 <= len);
+            if !ordered {
+                return Err(CoreError::Missing("edits out of order, overlapping or past the end".into()));
+            }
+            // from the end backwards, so that each range is where it was
+            let runs: Vec<(usize, usize, String)> = edits.into_iter().rev().collect();
+            node.replace_runs(log, buffer, &runs)?;
+            Ok(None)
+        }
         Proposal::Errors { dir, text } => {
             node.errors(log, dir.as_deref(), &text)?;
             Ok(None)
@@ -375,11 +406,20 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             Ok(None)
         }
         Proposal::Own { window, by } => {
-            node.append(log, Shard::Window(window), Op::Window(WindowOp::Own { by }))?;
+            let name = by.and_then(|a| node.state.meta.attachments.get(&a)).map(|a| a.name.clone());
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Own { by, name }))?;
+            Ok(None)
+        }
+        Proposal::Note { window, note } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Note { note }))?;
             Ok(None)
         }
         Proposal::Live { window, by } => {
             node.append(log, Shard::Window(window), Op::Window(WindowOp::Live { by }))?;
+            Ok(None)
+        }
+        Proposal::Draft { window, on } => {
+            node.append(log, Shard::Window(window), Op::Window(WindowOp::Draft { on }))?;
             Ok(None)
         }
         Proposal::Look { ctx, text, reverse } => {
@@ -427,18 +467,8 @@ pub fn apply(node: &mut Node, log: &mut Log, p: Proposal) -> Result<Option<Windo
             node.append(log, Shard::Buffer(buffer), Op::Buffer(BufferOp::Stale { disk_hash: hash }))?;
             Ok(None)
         }
-        Proposal::Exec { ctx, text } => {
-            match node.exec(log, ctx, &text)? {
-                Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
-                // not a stashed window: one the command put away (`Stash`),
-                // or one worked in in the stash's preview
-                _ if matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w)) => Ok(None),
-                _ => Ok(match ctx {
-                    ExecCtx::Window(w) => Some(w),
-                    _ => None,
-                }),
-            }
-        }
+        Proposal::Exec { ctx, text } => exec(node, log, ctx, &text, None),
+        Proposal::ExecFrom { ctx, text, from } => exec(node, log, ctx, &text, Some(from)),
         // the Edit command's, whatever asked: its output and its warnings
         // to the errors window, a file or pipe command refused -- one
         // meaning, however it arrives
@@ -477,4 +507,19 @@ fn select(node: &mut Node, log: &mut Log, w: WindowId, line: Option<usize>) -> R
         }
     }
     Ok(())
+}
+
+/// `Exec` and `ExecFrom`: run as B2 would, the window it was in, if any,
+/// what it shows.
+fn exec(node: &mut Node, log: &mut Log, ctx: ExecCtx, text: &str, from: Option<Span>) -> Result<Option<WindowId>, CoreError> {
+    match node.exec_from(log, ctx, text, from)? {
+        Executed::Failed(_, reason) => Err(CoreError::Missing(reason)),
+        // not a stashed window: one the command put away (`Stash`),
+        // or one worked in in the stash's preview
+        _ if matches!(ctx, ExecCtx::Window(w) if node.state.layout.is_stashed(w)) => Ok(None),
+        _ => Ok(match ctx {
+            ExecCtx::Window(w) => Some(w),
+            _ => None,
+        }),
+    }
 }

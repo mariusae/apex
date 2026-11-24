@@ -51,6 +51,57 @@ fn output_carries_the_dot_along_but_leaves_a_draft_alone() {
     t.replace(w, 0, 0, "zero\n").unwrap();
     assert_eq!(dot(&t), (0, 0));
 }
+/// Several edits are one proposal: they land together, as one undo
+/// step, each where it stood in the text as the tool saw it, and a
+/// watched window does not report them back as someone else's; one
+/// made against a text since changed lands not at all.
+#[test]
+fn several_edits_land_together_or_not_at_all() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let w = t.new_scratch("/tmp/acp-edits/", Some("edits")).unwrap();
+    t.replace(w, 0, END, "one\ntwo\nthree\n").unwrap();
+    t.watch(w).unwrap();
+    t.select(w, 8, 8).unwrap();
+    t.edit(w, &[(0, 3, "ONE".into()), (4, 7, "2".into()), (14, 14, "four\n".into())]).unwrap();
+    assert_eq!(t.read(w).unwrap(), "ONE\n2\nthree\nfour\n");
+    // the dot, at "three", moved along with what came before it
+    assert_eq!(t.selection(w).map(|r| (r.q0, r.q1)).unwrap(), (6, 6));
+    // nothing of ours comes back as an edit by someone else
+    while let Ok(Some(ev)) = t.next_event(Some(Duration::from_millis(100))) {
+        assert!(!matches!(ev, Event::Edit(_)), "{ev:?}");
+    }
+    // out of order: refused, and nothing written
+    assert!(t.edit(w, &[(4, 5, "x".into()), (0, 1, "y".into())]).is_err());
+    assert_eq!(t.read(w).unwrap(), "ONE\n2\nthree\nfour\n");
+    // someone else's edit lands first: the tool's, made against what it
+    // saw, does not, and the text is theirs alone
+    let mut other = Tool::attach_to(&sock, "main", "other").unwrap();
+    other.replace(w, 0, 0, "zero\n").unwrap();
+    assert!(t.edit(w, &[(0, 3, "one".into())]).is_err());
+    assert_eq!(other.read(w).unwrap(), "zero\nONE\n2\nthree\nfour\n");
+    // and with nothing behind its file, it is no window to warn about
+    let info = t.window(w).unwrap();
+    assert!(!info.dirty && !info.stashed, "{info:?}");
+}
+
+/// A window says whether it holds text its file has not had, and
+/// whether it is put away: what a tool warning about unsaved text, or
+/// writing a stashed window differently, asks.
+#[test]
+fn a_window_says_whether_it_is_dirty_and_whether_it_is_stashed() {
+    let sock = daemon();
+    let mut t = Tool::attach_to(&sock, "main", "acp").unwrap();
+    let f = t.new_window("/tmp/acp-dirty.txt").unwrap();
+    assert!(!t.window(f).unwrap().dirty);
+    t.replace(f, 0, 0, "unsaved").unwrap();
+    assert!(t.window(f).unwrap().dirty);
+    let d = t.new_diagnostic("/tmp/acp-diag/", Some("diag")).unwrap();
+    let info = t.window(d).unwrap();
+    assert!(info.stashed && !info.dirty, "{info:?}");
+    assert!(!t.window(f).unwrap().stashed);
+}
+
 /// A rule may name the tool that owns a window, and so speak to that
 /// tool's windows and no others, where a name pattern would be guessing.
 #[test]
@@ -84,6 +135,73 @@ fn a_rule_may_name_the_tool_that_owns_the_window() {
     assert_eq!(menu(&mut c, a), vec!["Snarfout"]);
     assert!(menu(&mut c, b).is_empty());
 }
+
+/// A window a tool claims, made by another -- a tool before it, whose
+/// windows it takes up -- is the tool's as one it made is: its
+/// deletion is an event, so the tool forgets it.
+#[test]
+fn a_window_claimed_says_when_it_is_deleted() {
+    let sock = daemon();
+    let mut before = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let w = before.new_scratch("/tmp/proj/", Some("thread")).unwrap();
+    let mut after = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while after.window(w).is_none() && Instant::now() < deadline {
+        let _ = after.next_event(Some(Duration::from_millis(20)));
+    }
+    after.set_owner(w, true).unwrap();
+    assert_eq!(after.next_event(Some(Duration::from_millis(200))).unwrap(), None);
+    before.delete(w).unwrap();
+    let ev = after.next_event(Some(Duration::from_secs(5))).unwrap().expect("a deletion");
+    assert_eq!(ev, Event::Deleted { window: w });
+}
+
+/// A tool that goes leaving windows of its own leaves them waiting for
+/// it, saying so, with its notes, and nothing more: it is not started
+/// again behind the user's back, though a rule says how to start it. A
+/// tool of its name, when one comes, takes them back.
+#[test]
+fn a_tools_windows_wait_for_it() {
+    let sock = daemon();
+    let marks = std::env::temp_dir().join(format!("apex-tool-again-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let again = marks.join("agent");
+    let mut c = Remote::connect_as(&sock, "main", "watch", AttachmentKind::Tool).unwrap();
+    let seen = |c: &mut Remote, ok: &dyn Fn(&Remote) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !ok(c) && Instant::now() < deadline {
+            let _ = c.step(Duration::from_millis(20));
+        }
+        ok(c)
+    };
+
+    // a tool with a window of its own, noted, and a word that starts it
+    let mut tool = Tool::attach_to(&sock, "main", "agent").unwrap();
+    tool.offer_lasting(Rule::verb("Agents").start(&format!("touch {}", again.display()))).unwrap();
+    let w = tool.new_scratch("/tmp/proj/", Some("a thread")).unwrap();
+    tool.set_owner(w, true).unwrap();
+    tool.set_note(w, Some("thread 0b1c")).unwrap();
+    assert!(seen(&mut c, &|c| c.node.window_owner(w) == Some("agent") && c.node.window_note(w) == Some("thread 0b1c")));
+    assert_eq!(c.node.window_waiting(w), None);
+
+    // gone: the window waits, and says so; nothing starts the tool
+    drop(tool);
+    assert!(seen(&mut c, &|c| c.node.window_waiting(w) == Some("agent")), "waits");
+    assert_eq!(c.node.window_status(w).and_then(|s| s.msg).as_deref(), Some("agent not running"));
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(!again.exists(), "not started again");
+
+    // a tool of its name takes it back, by its note
+    let mut back = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let info = back.window(w).expect("there still");
+    assert!(info.waiting && info.owner.as_deref() == Some("agent") && info.note.as_deref() == Some("thread 0b1c"), "{info:?}");
+    back.set_owner(w, true).unwrap();
+    assert!(seen(&mut c, &|c| c.node.window_waiting(w).is_none()), "taken back");
+    assert_eq!(c.node.window_status(w), None);
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
 /// A verb that wants a place or an argument is offered `unlisted`: it
 /// runs when B2 takes it, but is no word in the window's tools menu.
 #[test]
@@ -537,4 +655,18 @@ fn a_tool_serves_its_pages_over_the_plane() {
     let plane = client.io_plane();
     let (status, _, _) = plane.fetch("GET", "tool://nobody/x", &[], None, Duration::from_secs(5)).unwrap();
     assert_eq!(status, 503);
+}
+
+/// A tool's word put in the top row: at the end, once, the user's words
+/// left as they are.
+#[test]
+fn a_word_is_put_in_the_top_row_once() {
+    let sock = daemon();
+    let mut tool = Tool::attach_to(&sock, "main", "agent").unwrap();
+    let before = tool.top().unwrap();
+    assert!(tool.top_word("Agents").unwrap(), "put there");
+    let after = tool.top().unwrap();
+    assert_eq!(after.trim_end(), format!("{} Agents", before.trim_end()).trim_start(), "{after:?}");
+    assert!(!tool.top_word("Agents").unwrap(), "there already");
+    assert_eq!(tool.top().unwrap(), after);
 }

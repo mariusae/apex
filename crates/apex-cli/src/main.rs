@@ -1944,6 +1944,7 @@ fn rule_of(f: &Parsed) -> Result<(PlumbRule, i32, bool), String> {
         verb: f.get("verb").unwrap_or("plumb").to_string(),
         owner: f.get("owner").map(String::from),
         unlisted: f.is("unlisted"),
+        tag: false,
         text: f.get("text").map(String::from),
         file: f.get("file").map(String::from),
         win: match f.get("win") {

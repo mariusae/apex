@@ -1069,23 +1069,23 @@ impl Server {
     /// `view`. Returns the proposals that carry the results.
     pub fn poll_execs(&mut self, log: &mut Log, view: &Node) -> Vec<Proposal> {
         self.sync_watches(view);
-        let mut todo: Vec<(ExecCtx, Seq, String, ExecAt)> = Vec::new();
+        let mut todo: Vec<(ExecCtx, Seq, String, ExecAt, Option<Span>)> = Vec::new();
         for (w, win) in &view.state.windows {
             for (seq, e) in &win.execs {
                 if e.handler == Handler::Server && e.status == ExecStatus::Pending && !self.performed.contains(&(ExecCtx::Window(*w), *seq)) {
-                    todo.push((ExecCtx::Window(*w), *seq, e.text.clone(), e.at));
+                    todo.push((ExecCtx::Window(*w), *seq, e.text.clone(), e.at, e.from));
                 }
             }
         }
         for (seq, (ctx, e)) in &view.state.layout.execs {
             if e.handler == Handler::Server && e.status == ExecStatus::Pending && !self.performed.contains(&(*ctx, *seq)) {
-                todo.push((*ctx, *seq, e.text.clone(), e.at));
+                todo.push((*ctx, *seq, e.text.clone(), e.at, e.from));
             }
         }
         let mut props = Vec::new();
-        for (ctx, seq, text, at) in todo {
+        for (ctx, seq, text, at, from) in todo {
             self.performed.insert((ctx, seq));
-            let r = self.perform(log, view, ctx, seq, &text, at);
+            let r = self.perform(log, view, ctx, seq, &text, at, from);
             self.flush_procs(log);
             match r {
                 Ok(Some(mut p)) => {
@@ -1105,7 +1105,7 @@ impl Server {
 
     /// `Ok(Some(proposals))` if finished now, `Ok(None)` if the result
     /// arrives later through [`Server::pump`].
-    fn perform(&mut self, log: &mut Log, view: &Node, ctx: ExecCtx, seq: Seq, text: &str, at: ExecAt) -> Result<Option<Vec<Proposal>>, String> {
+    fn perform(&mut self, log: &mut Log, view: &Node, ctx: ExecCtx, seq: Seq, text: &str, at: ExecAt, from: Option<Span>) -> Result<Option<Vec<Proposal>>, String> {
         let dir = self.dir_of(view, ctx);
         let col = column_of(view, ctx)?;
         let errdir = Some(dir.to_string_lossy().to_string());
@@ -1134,7 +1134,7 @@ impl Server {
         // and fall back here if the tool declines (§6.2)
         let plainly = self.plain.remove(&(ctx, seq));
         if !plainly && view.claimed(ctx, text) {
-            if let Some(req) = self.verb_request(view, ctx, seq, text) {
+            if let Some(req) = self.verb_request(view, ctx, seq, text, from) {
                 self.plumb_starts.push(req);
                 return Ok(None);
             }
@@ -1229,8 +1229,9 @@ impl Server {
                 self.term_type(log, t, &text);
             }
             _ => {
-                // a rule's verb offered in this window: the rules take it
-                if let Some(req) = self.verb_request(view, ctx, seq, text) {
+                // a rule's verb offered in this window: the rules take it,
+                // unless they had it and declined
+                if let Some(req) = self.verb_request(view, ctx, seq, text, from).filter(|_| !plainly) {
                     self.plumb_starts.push(req);
                     return Ok(None);
                 }
@@ -1390,6 +1391,7 @@ impl Server {
             verb: "plumb".into(),
             owner: None,
             unlisted: false,
+            tag: false,
             text: Some(text.into()),
             file: None,
             kind: None,
@@ -1414,6 +1416,7 @@ impl Server {
             verb: "plumb".into(),
             owner: None,
             unlisted: false,
+            tag: false,
             text: Some(r"([A-Za-z0-9_.+\-]+)\(([0-9][A-Za-z0-9]*)\)".into()),
             file: None,
             kind: None,
@@ -1430,6 +1433,7 @@ impl Server {
             verb: "Clear".into(),
             owner: None,
             unlisted: false,
+            tag: false,
             text: None,
             file: None,
             kind: Some(WinKind::Term),
@@ -1447,6 +1451,7 @@ impl Server {
             verb: verb.into(),
             owner: None,
             unlisted,
+            tag: false,
             text: None,
             file: file.map(String::from),
             kind,
@@ -1485,6 +1490,10 @@ impl Server {
         // click), or over what was swept or selected, the text B3 takes
         // and whether it names a file; the rules see that text
         let mut req = req;
+        // what B3 took was swept, or a selection it was in, not expanded
+        // from a click: a tool may read the one as "find" and the other
+        // as "open"
+        let swept = req.verb == "plumb" && req.sel.is_some_and(|s| s.q1 > s.q0);
         let mut file = None;
         let mut trace = Vec::new();
         let mut nothing = false;
@@ -1550,10 +1559,10 @@ impl Server {
         };
         let remaining: Vec<(RuleId, apex_core::state::Rule)> = apex_core::plumb::ordered(&view.state.meta.rules).into_iter().map(|(i, r)| (i, r.clone())).collect();
         if nothing {
-            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace, failed: false });
+            self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining: Vec::new(), file, trace, failed: false, swept });
             return (id, if self.plumbs[&id].req.dry { self.plumb_trace(id) } else { self.plumb_finish(id, Vec::new()) });
         }
-        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace, failed: false });
+        self.plumbs.insert(id, Plumb { req, dir, name, kind, base, remaining, file, trace, failed: false, swept });
         let step = self.plumb_advance(view, id);
         (id, step)
     }
@@ -1702,7 +1711,8 @@ impl Server {
                     }
                     p.trace.push(format!("{who}: asked {name}"));
                     let (verb, text, at, sel) = (p.req.verb.clone(), p.req.text.clone(), p.req.at, p.req.sel);
-                    return PlumbStep::AskTool { tool: name.clone(), rule: rid, ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel };
+                    let (swept, word) = (p.swept, p.req.word);
+                    return PlumbStep::AskTool { tool: name.clone(), rule: rid, ctx, verb, text, dir: dir.display().to_string(), groups: b.groups.clone(), at, sel, swept, word };
                 }
             }
         }
@@ -1769,9 +1779,12 @@ impl Server {
         // every rule declined a word apex has its own meaning for: that
         // meaning is the last step of the walk, as opening the file is
         // for B3 (§6.2). The exec is performed again, plainly this time.
+        // So is a command every rule for every command here declined:
+        // the tool wanted only some of them, and the rest run as they
+        // would anywhere else.
         let failed = self.plumbs.get(&id).is_some_and(|p| p.failed);
         if let Some(exec) = exec {
-            if apex_core::plumb::is_builtin(&verb) && !failed {
+            if (apex_core::plumb::is_builtin(&verb) || verb == apex_core::plumb::EXEC) && !failed {
                 self.plumbs.remove(&id);
                 self.plain.insert((ctx, exec));
                 self.performed.remove(&(ctx, exec));
@@ -1793,7 +1806,7 @@ impl Server {
 
     /// A rule's verb, B2'd in a window: the request that walks the rules
     /// with that verb, if any rule offers it there.
-    fn verb_request(&self, view: &Node, ctx: ExecCtx, seq: Seq, text: &str) -> Option<PlumbReq> {
+    fn verb_request(&self, view: &Node, ctx: ExecCtx, seq: Seq, text: &str, from: Option<Span>) -> Option<PlumbReq> {
         let mut words = text.split_whitespace();
         let verb = words.next()?;
         let (name, kind) = match ctx {
@@ -1820,7 +1833,12 @@ impl Server {
             ExecCtx::Window(w) => view.view_buffer(ViewId::Body(w)).ok().and_then(|b| view.selection(ViewId::Body(w)).ok().map(|(q0, q1)| Span { buffer: b, q0, q1 })),
             _ => None,
         };
-        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None, reverse: false })
+        // and where the word was, in the window's text
+        let word = match ctx {
+            ExecCtx::Window(w) => from.filter(|s| view.view_buffer(ViewId::Body(w)).is_ok_and(|b| b == s.buffer)),
+            _ => None,
+        };
+        Some(PlumbReq { ctx, text: rest, dir: None, verb: verb.to_string(), edit_only: false, dry: false, exec: Some(seq), at, sel: None, alt: None, reverse: false, word })
     }
 
 }
@@ -1887,6 +1905,8 @@ pub struct PlumbReq {
     pub alt: Option<(String, Span)>,
     /// shift-B3: the Look at the end runs backwards.
     pub reverse: bool,
+    /// A verb B2 took from the window's text: where it was.
+    pub word: Option<Span>,
 }
 
 /// One step of a plumb walk, for the host to carry out.
@@ -1902,7 +1922,7 @@ pub enum PlumbStep {
     Ask(Proposal),
     /// Ask this tool; `plumb_next` with its answer, or refusal after a
     /// second of silence.
-    AskTool { tool: String, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span> },
+    AskTool { tool: String, rule: RuleId, ctx: ExecCtx, verb: String, text: String, dir: String, groups: Vec<String>, at: Option<Span>, sel: Option<Span>, swept: bool, word: Option<Span> },
     /// A dry run's report.
     Trace(Vec<String>),
 }
@@ -1920,6 +1940,8 @@ struct Plumb {
     trace: Vec<String>,
     /// A step neither took the word nor declined it: it never answered.
     failed: bool,
+    /// B3 took what was swept (or a selection), not a click's expansion.
+    swept: bool,
 }
 
 impl Server {

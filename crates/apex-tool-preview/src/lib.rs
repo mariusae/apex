@@ -234,7 +234,7 @@ impl Tool {
         // and Back and Fwd in it, the session's stack, from the page; and
         // Source, its file
         for verb in ["Back", "Fwd", "Source"] {
-            let rule = PlumbRule { start: None, verb: verb.into(), owner: None, unlisted: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("preview-file".into()), win: Some(page), to: None };
+            let rule = PlumbRule { start: None, verb: verb.into(), owner: None, unlisted: false, tag: false, text: None, file: None, kind: None, isfile: None, isdir: None, action: RuleAction::Tool("preview-file".into()), win: Some(page), to: None };
             let _ = self.remote.rule_add(rule, 0, true, TIMEOUT);
         }
         self.render_or_say();

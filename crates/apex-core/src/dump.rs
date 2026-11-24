@@ -114,6 +114,12 @@ pub struct DumpWindow {
     pub sel: (usize, usize),
     #[serde(default)]
     pub origin: usize,
+    /// The tool that owned it, by name, and that tool's note on it: made
+    /// again, it waits for a tool of that name to take it back.
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 fn tabstop() -> u32 {
@@ -189,6 +195,8 @@ pub fn dump(state: &State, history: &mut dyn FnMut(TermId) -> Option<String>) ->
             scroll: w.scroll.clone(),
             sel: (view.q0, view.q1),
             origin: view.origin,
+            owner: w.owner_name.clone(),
+            note: w.note.clone(),
         });
     }
     for b in shown.iter().filter_map(|b| state.buffers.get(b)) {
@@ -291,6 +299,13 @@ impl Node {
             }
             if w.scroll.is_some() {
                 self.append(log, sh, Op::Window(WindowOp::PageScroll { scroll: w.scroll.clone() }))?;
+            }
+            // a tool's: its again, waiting for it, with what it noted
+            if w.owner.is_some() {
+                self.append(log, sh, Op::Window(WindowOp::Own { by: None, name: w.owner.clone() }))?;
+            }
+            if w.note.is_some() {
+                self.append(log, sh, Op::Window(WindowOp::Note { note: w.note.clone() }))?;
             }
             if !w.tag.is_empty() && self.state.buffer(x.tag)?.text.to_string() != w.tag {
                 self.set_content(log, x.tag, &w.tag)?;

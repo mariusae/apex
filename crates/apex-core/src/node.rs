@@ -1131,21 +1131,43 @@ impl Node {
         Ok(())
     }
 
+    /// Replace the runs `[q0, q1)` with their texts, given from the end
+    /// of the text backwards, as one undo step: a tool writing a window
+    /// it renders afresh, whose changes are several and must land
+    /// together or not at all.
+    pub fn replace_runs(&mut self, log: &mut Log, buffer: BufferId, runs: &[(usize, usize, String)]) -> Result<()> {
+        self.end_typing();
+        let group = self.new_group();
+        for (q0, q1, text) in runs {
+            self.edit_op(log, buffer, *q0, q1.saturating_sub(*q0), text, group)?;
+        }
+        Ok(())
+    }
+
     pub fn replace_text(&mut self, log: &mut Log, buffer: BufferId, q0: usize, nd: usize, text: &str) -> Result<()> {
         self.end_typing();
         let group = self.new_group();
         self.edit_op(log, buffer, q0, nd, text, group)
     }
 
-    /// The tool that owns this window, by the name it attached under
-    /// (`WindowOp::Own`), while that attachment is still here. What it
-    /// holds is the tool's doing and not a file's contents: no file
-    /// menu, nothing for `Del` to ask about, and a rule may name it to
-    /// speak to that tool's windows and no others. acme says the same
-    /// by a program holding the window's `event` file (`xfid.c`).
+    /// The tool that owns this window, by its name (`WindowOp::Own`),
+    /// whether it is here or the window waits for it. What it holds is
+    /// the tool's doing and not a file's contents: no file menu,
+    /// nothing for `Del` to ask about, and a rule may name it to speak
+    /// to that tool's windows and no others. acme says the same by a
+    /// program holding the window's `event` file (`xfid.c`).
     pub fn window_owner(&self, w: WindowId) -> Option<&str> {
-        let a = self.state.window(w).ok()?.owner?;
-        self.state.meta.attachments.get(&a).map(|a| a.name.as_str())
+        self.state.window(w).ok()?.owner_name.as_deref()
+    }
+
+    /// The tool this window waits for: it owns the window, and is not
+    /// here -- gone, or not yet back since the session was made again
+    /// from a dump. Until a tool of that name takes it back, the window
+    /// says so, and nothing in it is answered.
+    pub fn window_waiting(&self, w: WindowId) -> Option<&str> {
+        let x = self.state.window(w).ok()?;
+        let here = x.owner.is_some_and(|a| self.state.meta.attachments.contains_key(&a));
+        x.owner_name.as_deref().filter(|_| !here)
     }
 
     /// Is a process behind this window: a terminal whose program runs, or a
@@ -1219,9 +1241,18 @@ impl Node {
     /// How the work behind a window stands, while whoever said so is
     /// here: a tool's status goes with the tool, the session's own (a
     /// program in a terminal saying it) is here as long as the session is.
+    /// A window waiting for its tool says that, whatever was said before.
     pub fn window_status(&self, window: WindowId) -> Option<crate::state::WindowStatus> {
+        if let Some(tool) = self.window_waiting(window) {
+            return Some(crate::state::WindowStatus { state: crate::status::State::Idle, kind: None, progress: None, msg: Some(format!("{tool} not running")), by: SERVER, since: 0 });
+        }
         let s = self.state.window(window).ok()?.status.clone()?;
         (s.by == SERVER || self.state.meta.attachments.contains_key(&s.by)).then_some(s)
+    }
+
+    /// The owning tool's note on a window (`WindowOp::Note`).
+    pub fn window_note(&self, window: WindowId) -> Option<&str> {
+        self.state.window(window).ok()?.note.as_deref()
     }
 
     /// Is a window scratch: no file behind it (a transcript, a tool's
@@ -2089,6 +2120,12 @@ impl Node {
     /// Execute `text` as B2 would from `ctx`. Built-ins run here; anything
     /// else is recorded for the server.
     pub fn exec(&mut self, log: &mut Log, ctx: ExecCtx, text: &str) -> Result<Executed> {
+        self.exec_from(log, ctx, text, None)
+    }
+
+    /// `exec`, B2 having taken `text` from `from`: where it was is
+    /// recorded with it, for a tool that acts on what it is in.
+    pub fn exec_from(&mut self, log: &mut Log, ctx: ExecCtx, text: &str, from: Option<Span>) -> Result<Executed> {
         // acme's get: a dirty window is asked once before reloading
         if text.trim() == "Get" && !self.claimed(ctx, "Get") {
             if let ExecCtx::Window(w) = ctx {
@@ -2109,7 +2146,7 @@ impl Node {
             }
         }
         let at = self.exec_at(ctx);
-        let seq = self.append_exec(log, ctx, ExecOp { text: text.clone(), handler: handler.clone(), at })?;
+        let seq = self.append_exec(log, ctx, ExecOp { text: text.clone(), handler: handler.clone(), at, from })?;
         if handler != Handler::Leader {
             return Ok(Executed::Deferred(seq));
         }
@@ -2327,10 +2364,12 @@ impl Node {
     /// window at all? Scratch windows (errors, previews, transcripts, a
     /// tool's), directories, and windows a tool owns or keeps live are
     /// not: their text is not a file's, so it is never unsaved however
-    /// it changed. What `Del` asks about, and what a handle shows as
-    /// dirty.
+    /// it changed -- unless it is a draft, the user's text, which is
+    /// unsaved until its tool says otherwise. What `Del` asks about, and
+    /// what a handle shows as dirty.
     pub fn window_unsaved(&self, w: WindowId) -> bool {
-        if self.window_scratch(w) || self.window_kind(w) == WinKind::Dir || self.window_owner(w).is_some() || self.window_live(w) {
+        let draft = self.state.window(w).is_ok_and(|x| x.draft);
+        if !draft && (self.window_scratch(w) || self.window_kind(w) == WinKind::Dir || self.window_owner(w).is_some() || self.window_live(w)) {
             return false;
         }
         self.window_dirty(w)

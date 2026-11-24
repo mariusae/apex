@@ -491,6 +491,10 @@ impl Daemon {
         }
         let mut view = Node::new(SERVER);
         view.catch_up(&log).map_err(|e| e.to_string())?;
+        // its init first, as for a session made anew: what it starts
+        // finds the session it is for, and a tool's windows, made again
+        // below or before it attaches, wait for it by name either way
+        server.run_profile(&view, self.host_profile.as_deref());
         let shell = d.settings.get("Newterm.shell").cloned();
         let scrollback = d.settings.get("Newterm.scrollback").and_then(|s| s.trim().parse().ok()).unwrap_or(crate::DEFAULT_SCROLLBACK);
         view.load_dump(&mut log, d, &mut crate::persist::Loader { server: &mut server, shell, scrollback }).map_err(|e| e.to_string())?;
@@ -498,8 +502,6 @@ impl Daemon {
         view.catch_up(&log).map_err(|e| e.to_string())?;
         self.sessions.insert(key.clone(), Session { id: sid, label: d.label.clone(), log, server, view, leader: None });
         eprintln!("apexd: session {} ({key}) restored", d.label);
-        let s = self.sessions.get_mut(&key).unwrap();
-        s.server.run_profile(&s.view, self.host_profile.as_deref());
         self.after(&key, Vec::new());
         Ok(())
     }
@@ -700,6 +702,10 @@ impl Daemon {
             let e = s.log.remove_rule(rid);
             let _ = s.view.state.apply(Shard::Meta, &e);
         }
+        // a tool's windows wait for it (`window_waiting`), saying so, and
+        // are nothing more: whoever ended it, a crash or the user, it is
+        // not started again behind their back. The user's word for it
+        // starts it, and it takes them back.
         let e = s.log.detach(a);
         let _ = s.view.state.apply(Shard::Meta, &e);
         if s.leader == Some(id) {
@@ -917,7 +923,7 @@ impl Daemon {
                 });
             }
             ClientMsg::Plumb { ctx, text, dir, edit_only, dry, at, sel, alt, reverse, verb } => {
-                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: verb.unwrap_or_else(|| "plumb".into()), edit_only, dry, exec: None, at, sel, alt, reverse };
+                let req = PlumbReq { ctx, text, dir: dir.map(PathBuf::from), verb: verb.unwrap_or_else(|| "plumb".into()), edit_only, dry, exec: None, at, sel, alt, reverse, word: None };
                 let (pid, step) = s.server.plumb_start(&s.view, req);
                 self.drive(name, pid, step, id);
                 return;
@@ -1632,7 +1638,7 @@ impl Daemon {
                 self.pending.insert(pid, Pending::Plumb { session: sid, plumb, asker });
                 self.propose(name, pid, proposal);
             }
-            PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel } => {
+            PlumbStep::AskTool { tool, rule, ctx, verb, text, dir, groups, at, sel, swept, word } => {
                 // the tool attached under that name, in this session
                 let found = self.conns.iter().find(|(_, c)| c.session == Some(sid) && c.attachment.is_some_and(|a| s.view.state.meta.attachments.get(&a).is_some_and(|x| x.name == tool))).map(|(id, _)| *id);
                 // B3 is a search and wants to be quick; a verb is work the
@@ -1640,7 +1646,7 @@ impl Daemon {
                 // formatter) before it answers
                 let wait = if verb == apex_core::plumb::PLUMB { B3_ANSWER } else { VERB_ANSWER };
                 let start = s.view.state.meta.rules.get(&rule).and_then(|r| r.rule.start.clone());
-                let request = Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel };
+                let request = Request::Plumb { rule, ctx, verb, text, dir, groups, at, sel, swept, word };
                 match (found, start) {
                     (Some(cid), _) => self.ask_tool(cid, sid, plumb, asker, request, wait),
                     // not there, and the rule says how to start it: started,

@@ -958,7 +958,11 @@ the work the word names -- a formatter claims `Put`, reshapes the buffer,
 then declines so the ordinary `Put` writes the tidy text. A `Plumb`
 carries where it came from: `at`, the pointer or dot as a `Span`, and
 `sel`, what was swept or the selection the pointer was in; a click
-sends `at` alone. The expansion is acme's, one for one (`look.c`'s
+sends `at` alone. A verb B2 took from a window's body carries `word`
+too, where that word was -- acme's event file says where a command
+was -- so that a word written into a list acts on the item it is in,
+wherever dot is (`ExecOp::from`, `Proposal::ExecFrom` for a client
+that does not lead the window). The expansion is acme's, one for one (`look.c`'s
 `expand`/`expandfile`, `apex_core::expand`), and runs on the server,
 where the files are, at the start of the walk: from the pointer, the
 text runs over `isfilec` characters to the first colon on the right (a
