@@ -10,6 +10,14 @@ use apex_server::daemon::Daemon;
 use apex_server::remote::Remote;
 use apex_server::Proposal;
 
+/// The shell the tests run, as sh is with nothing of the user's: `ENV`
+/// names the file an interactive sh reads first, which may give it a
+/// prompt of the user's own where the tests look for sh's `$ `.
+fn plain_sh() -> Vec<String> {
+    std::env::remove_var("ENV");
+    vec!["/bin/sh".to_string()]
+}
+
 fn daemon() -> PathBuf {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -43,7 +51,7 @@ fn typed_lines_reach_the_shell_and_its_output_the_window() {
     // sh without -i: cooked, no readline, as rc is (rc's rcmain from the
     // published rustrc still wants plan9port's 9 for win, so not here)
     std::thread::spawn(move || {
-        let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
+        let _ = apex_tool_win::run(&s2, "main", &d2, &plain_sh());
     });
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
     let name = format!("{}/", dir.display());
@@ -102,7 +110,7 @@ fn del_typed_in_the_window_interrupts_what_the_shell_runs() {
     std::fs::create_dir_all(&dir).unwrap();
     let (s2, d2) = (sock.clone(), dir.clone());
     std::thread::spawn(move || {
-        let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
+        let _ = apex_tool_win::run(&s2, "main", &d2, &plain_sh());
     });
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
     let name = format!("{}/", dir.display());
@@ -119,7 +127,13 @@ fn del_typed_in_the_window_interrupts_what_the_shell_runs() {
     };
     // something slow, which says so when it is interrupted
     typing(&mut c, "trap 'echo got-interrupted' INT; sleep 30; echo slept-through\n");
-    std::thread::sleep(Duration::from_millis(500));
+    // the sleep under way, and what the shell wrote before it (the
+    // line's echo) seen here, so that DEL is typed at the end as it is
+    // now and not as it was
+    let begun = Instant::now();
+    while begun.elapsed() < Duration::from_millis(500) {
+        let _ = c.step(Duration::from_millis(50));
+    }
     let started = Instant::now();
     // DEL, typed at the end, as the key is typed
     typing(&mut c, "\u{7f}");
@@ -139,7 +153,7 @@ fn b3_in_the_window_finds_files_in_its_directory() {
     std::fs::write(dir.join("hello.txt"), "hi\n").unwrap();
     let (s2, d2) = (sock.clone(), dir.clone());
     std::thread::spawn(move || {
-        let _ = apex_tool_win::run(&s2, "main", &d2, &["/bin/sh".to_string()]);
+        let _ = apex_tool_win::run(&s2, "main", &d2, &plain_sh());
     });
     let mut c = Remote::connect_as(&sock, "main", "test", AttachmentKind::Tool).unwrap();
     let name = format!("{}/", dir.display());
