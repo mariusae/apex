@@ -9,7 +9,9 @@
 //! `--via CMD` attaches through CMD's stdin/stdout; `--remote DEST`
 //! attaches to a destination through its provider (`user@host`, or
 //! `provider:name`); `--local` runs the server in-process, the old
-//! prototype's way.
+//! prototype's way. `--geometry WxH[±X±Y]` sizes the window (and places
+//! it, else it is centered), over the remembered frame; `--fontsize N`
+//! starts at the ⌘+/⌘− step N for this launch.
 
 mod app;
 mod attention;
@@ -49,8 +51,8 @@ mod warp;
 mod web;
 
 use gpui::{
-    canvas, div, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions, Window,
-    WindowBounds, WindowOptions,
+    canvas, div, point, prelude::*, px, size, App, Bounds, Context, MouseButton, TitlebarOptions,
+    Window, WindowBounds, WindowOptions,
 };
 
 use apex_core::{Body, ViewId};
@@ -681,6 +683,47 @@ enum Target {
     Choose(String),
 }
 
+/// `--geometry WxH[±X±Y]`: the window's size in pixels, optionally
+/// where its top left corner goes; without a position the window is
+/// centered. X11's geometry, minus the sign on the size.
+fn parse_geometry(g: &str) -> Option<(f32, f32, Option<(f32, f32)>)> {
+    let (size, pos) = match g.find(['+', '-']) {
+        Some(i) => (&g[..i], Some(&g[i..])),
+        None => (g, None),
+    };
+    let (w, h) = size.split_once('x')?;
+    let (w, h) = (w.parse().ok()?, h.parse().ok()?);
+    if w <= 0. || h <= 0. {
+        return None;
+    }
+    let pos = match pos {
+        Some(p) => {
+            let (x, p) = signed(p)?;
+            let (y, p) = signed(p)?;
+            if !p.is_empty() {
+                return None;
+            }
+            Some((x, y))
+        }
+        None => None,
+    };
+    Some((w, h, pos))
+}
+
+/// A signed number at the front of the string, and what is left after
+/// it: a sign, then digits, up to the next sign or the end.
+fn signed(s: &str) -> Option<(f32, &str)> {
+    if s.is_empty() {
+        return None;
+    }
+    let end = match s[1..].find(['+', '-']) {
+        Some(i) => i + 1,
+        None => s.len(),
+    };
+    let (n, rest) = s.split_at(end);
+    Some((n.parse().ok()?, rest))
+}
+
 fn main() {
     let mut files: Vec<String> = Vec::new();
     let mut local = false;
@@ -689,6 +732,8 @@ fn main() {
     let mut remote: Option<String> = None;
     let mut url: Option<String> = None;
     let mut session: Option<String> = None;
+    let mut geometry = None;
+    let mut fontsize: Option<i8> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -703,6 +748,8 @@ fn main() {
             "--remote" | "--ssh" => remote = Some(args.next().expect("--remote DESTINATION")),
             "--url" => url = Some(args.next().expect("--url URL")),
             "--session" => session = Some(args.next().expect("--session NAME")),
+            "--geometry" => geometry = parse_geometry(args.next().expect("--geometry WxH").as_str()),
+            "--fontsize" => fontsize = args.next().and_then(|s| s.parse().ok()),
             // Finder passes this when launching a bundle
             a if a.starts_with("-psn_") => {}
             _ => files.push(a),
@@ -723,6 +770,9 @@ fn main() {
         cursor::install();
         text_element::install_symbols();
         fonts::load();
+        if let Some(n) = fontsize {
+            fonts::set_step(n);
+        }
         fonts::install(cx);
         pool::Pool::install(cx);
         theme::load();
@@ -853,6 +903,17 @@ fn main() {
             Target::Url { url, files } if !url.is_local() => Some(files.clone()),
             _ => None,
         };
+        // --geometry wins over the frame remembered from last time,
+        // wherever else it came from
+        let frame = geometry
+            .map(|(w, h, at)| match at {
+                Some((x, y)) => WindowBounds::Windowed(Bounds {
+                    origin: point(px(x), px(y)),
+                    size: size(px(w), px(h)),
+                }),
+                None => WindowBounds::Windowed(Bounds::centered(None, size(px(w), px(h)), cx)),
+            })
+            .or(frame);
         let choosing = matches!(target, Target::Choose(_));
         let opened = open_window(cx, target, frame);
         if let (true, Some(h)) = (choosing, opened) {
@@ -1401,5 +1462,33 @@ impl app::Acme {
             .child(rest)
             .children(self.shelf(h, self.node.state.layout.r.dx() as f32 + self.left(), cx))
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::parse_geometry;
+
+    #[test]
+    fn sizes_and_positions() {
+        assert_eq!(parse_geometry("1100x760"), Some((1100., 760., None)));
+        assert_eq!(parse_geometry("640x480+20+30"), Some((640., 480., Some((20., 30.)))));
+        assert_eq!(parse_geometry("640x480-10-20"), Some((640., 480., Some((-10., -20.)))));
+        assert_eq!(parse_geometry("640x480+20-30"), Some((640., 480., Some((20., -30.)))));
+        assert_eq!(parse_geometry("0.5x0.5"), Some((0.5, 0.5, None)));
+    }
+
+    #[test]
+    fn rejects_the_nonsense() {
+        assert_eq!(parse_geometry(""), None);
+        assert_eq!(parse_geometry("800"), None);
+        assert_eq!(parse_geometry("800x"), None);
+        assert_eq!(parse_geometry("x600"), None);
+        assert_eq!(parse_geometry("axb"), None);
+        assert_eq!(parse_geometry("0x600"), None);
+        assert_eq!(parse_geometry("800x600+"), None);
+        assert_eq!(parse_geometry("800x600+10"), None);
+        assert_eq!(parse_geometry("800x600+10+20+30"), None);
+        assert_eq!(parse_geometry("800x600+10x20"), None);
     }
 }
