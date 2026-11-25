@@ -613,7 +613,7 @@ impl Acme {
                     let row = crate::shell::palette_row(picked, crate::shell::Act::Look)
                         .id(("goto", i))
                         .cursor_default()
-                        .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(11.)).text_color(dim).child("›"))
+                        .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(12.)).text_color(dim).child("›"))
                         .child(div().flex_none().w(px(12. * (s.level.saturating_sub(1)) as f32)))
                         .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().child(if s.failed { format!("✗ {}", s.title) } else { s.title.clone() }))
                         .child(div().flex_1().min_w_0().whitespace_nowrap().overflow_hidden().text_ellipsis().text_size(px(12.)).text_color(dim).child(s.detail.clone().unwrap_or_default()))
@@ -641,7 +641,7 @@ impl Acme {
             let row = crate::shell::palette_row(picked, crate::shell::Act::Look)
                 .id(("goto", i))
                 .cursor_default()
-                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(11.)).text_color(dim).child(mark))
+                .child(div().flex_none().w(px(16.)).flex().justify_center().text_size(px(12.)).text_color(dim).child(mark))
                 // one line, whatever the lengths: the name and the badges
                 // keep theirs, the directory gives way and is cut short
                 .child(div().min_w_0().overflow_hidden().text_ellipsis().whitespace_nowrap().when(!open && !picked, |d| d.text_color(dim)).child(name))
@@ -676,9 +676,10 @@ impl Acme {
                         .border_1()
                         .text_size(px(11.))
                         .whitespace_nowrap()
-                        .border_color(if here { rgb(t.panel_accent) } else { rgb(t.panel_border) })
-                        .text_color(if here { rgb(t.panel_accent).into() } else { dim })
-                        .child(if here { format!("{label} · here") } else { label });
+                        .border_color(rgb(t.panel_border))
+                        .text_color(dim)
+                        // this tab: the quiet mark every list has for where it is
+                        .child(if here { format!("{} {label}", crate::shell::HERE) } else { label });
                     d.child(badge)
                 })
                 .on_mouse_down(
@@ -691,7 +692,7 @@ impl Acme {
             list = list.child(row);
         }
         if picks.is_empty() {
-            list = list.child(div().px(px(10.)).py(px(8.)).text_size(px(13.)).font_family(crate::fonts::ui()).text_color(rgb(t.panel_dim)).child("Nothing matches"));
+            list = list.child(crate::shell::empty(crate::shell::NOTHING));
         }
         let panel = crate::shell::palette_panel()
             .child(self.overlay_mark())
@@ -699,7 +700,7 @@ impl Acme {
             .child(list)
             .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()));
         // Manifold's palette, as the picker is
-        Some(deferred(crate::shell::palette_place(panel)).with_priority(1))
+        Some(deferred(crate::shell::palette_place(panel)).with_priority(2))
     }
 }
 

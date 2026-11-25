@@ -160,40 +160,23 @@ impl Acme {
     /// The sessions, dropped down under the chevron.
     fn session_menu_panel(&self, h: f32, cx: &mut Context<Self>) -> AnyElement {
         let t = crate::theme::theme();
-        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.18), offset: gpui::point(px(0.), px(6.)), blur_radius: px(18.), spread_radius: px(0.), inset: false };
-        let mut panel = div()
+        let mut panel = crate::shell::popover()
             .id("session-menu")
             .absolute()
             .top(px(h - 4.))
             .left(px(0.))
             .min_w(px(220.))
             .max_w(px(360.))
-            .p(px(5.))
-            .rounded(px(9.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .shadow(vec![shadow])
+            .p(px(crate::shell::POPOVER_PAD))
             .flex()
             .flex_col()
-            .text_size(px(13.))
             .child(self.overlay_mark())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-        let look = t.sweep(false);
+        // going to a session is B3's: its wash, ink and bar under the
+        // pointer, as every list's chosen row
         let row = |id: (&'static str, usize)| {
-            div()
-                .id(id)
-                .h(px(28.))
-                .px(px(8.))
-                .rounded(px(6.))
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(8.))
-                .cursor_default()
-                .text_color(rgb(t.panel_text))
-                // going to a session is B3's: its wash and ink under the pointer
-                .hover(move |s| s.bg(rgb(look.0)).text_color(rgb(look.1)))
+            let row = div().id(id).relative().flex_none().h(px(crate::shell::POPOVER_ROW_H)).pl(px(12.)).pr(px(8.)).rounded(px(crate::shell::POPOVER_ROW_R)).flex().flex_row().items_center().gap(px(8.)).cursor_default();
+            crate::shell::chosen_under_pointer(row, crate::shell::Act::Look, crate::shell::BAR_INSET, "session-menu-row")
         };
         for (i, tab) in Pool::tabs(cx).into_iter().enumerate() {
             let id = tab.id;
@@ -206,8 +189,9 @@ impl Acme {
             let word = self.tab_word(&tab, cx);
             panel = panel.child(
                 row(("session-menu-row", i))
-                    .child(div().flex_none().w(px(12.)).child(if current { "✓" } else { "" }))
-                    .child(div().flex_1().min_w_0().truncate().when(current, |d| d.font_weight(crate::fonts::weight(FontWeight::SEMIBOLD))).child(name))
+                    // the one shown: the quiet mark every list has for where it is
+                    .child(div().flex_none().w(px(12.)).text_color(rgb(t.panel_dim)).child(if current { crate::shell::HERE } else { "" }))
+                    .child(div().flex_1().min_w_0().truncate().child(name))
                     .when_some(host, |d, host| d.child(div().flex_none().text_size(px(12.)).text_color(rgb(t.panel_dim)).child(host)))
                     .when_some(word, |d, word| d.child(div().flex_none().text_size(px(12.)).italic().text_color(rgb(t.panel_dim)).child(word)))
                     .when(notified, |d| d.child(div().flex_none().child(crate::shell::pjw(12., t.accent))))
@@ -225,9 +209,9 @@ impl Acme {
                     ),
             );
         }
-        panel = panel.child(div().h(px(1.)).mx(px(6.)).my(px(4.)).bg(rgb(t.panel_border))).child(
+        panel = panel.child(crate::shell::divider()).child(
             row(("session-menu-new", 0))
-                .child(div().flex_none().w(px(12.)).child("+"))
+                .child(div().flex_none().w(px(12.)).text_color(rgb(t.panel_dim)).child("+"))
                 .child("New Session…")
                 .on_mouse_down(
                     MouseButton::Left,
@@ -238,7 +222,7 @@ impl Acme {
                     }),
                 ),
         );
-        deferred(panel).with_priority(2).into_any_element()
+        deferred(crate::shell::fade_in("session-menu", panel)).with_priority(2).into_any_element()
     }
 }
 

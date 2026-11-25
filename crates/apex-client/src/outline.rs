@@ -24,11 +24,11 @@ use apex_core::WindowId;
 use crate::app::Acme;
 use crate::web::{Toc, TocHead};
 
-/// A row of the outline's list.
-const ROW: f32 = 23.;
+/// A row of the outline's list: a popover's.
+const ROW: f32 = crate::shell::POPOVER_ROW_H;
 
 /// The list's padding, its border's included.
-const PAD: f32 = 7.;
+const PAD: f32 = crate::shell::POPOVER_PAD + crate::shell::HAIRLINE;
 
 /// How big a stop is across, by its heading's level: a first nearly as
 /// wide as the thumb (5), smaller down to a fourth. Whole points, an odd
@@ -231,7 +231,7 @@ impl Acme {
 
     /// The outline beside the bar of the page whose it is: its pill
     /// (`outline_pill`), or the whole of it, a heading a row, indented by
-    /// level, the view's in the accent; B1 on one, the page there.
+    /// level, the view's marked as every list marks where it is (`shell::HERE`); B1 on one, the page there.
     pub fn outline_panel(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let w = self.outline.open?;
         let bar = self.outline.bar?;
@@ -241,33 +241,33 @@ impl Acme {
         }
         let t = crate::theme::theme();
         let at = self.outline.panel_at.clone();
-        let shadow = gpui::BoxShadow { color: gpui::hsla(0., 0., 0., 0.16), offset: point(px(0.), px(8.)), blur_radius: px(28.), spread_radius: px(0.), inset: false };
         // a first level is a title over what is under it, bold, only
         // when there is something under it: a flat list (an agent's
         // turns, a terminal's commands) is all of a kind, none bold
         let nested = toc.heads.iter().any(|h| h.level > 1);
         let rows = toc.heads.iter().enumerate().map(|(i, h)| {
             let here = current == Some(i);
-            div()
+            let row = div()
                 .id(("toc", i))
+                .relative()
                 .flex_none()
                 .h(px(ROW))
                 .flex()
                 .items_center()
-                .px(px(8.))
-                .pl(px(8. + 12. * (h.level.saturating_sub(1)) as f32))
-                .rounded(px(6.))
+                .pl(px(12.))
+                .pr(px(8.))
+                .rounded(px(crate::shell::POPOVER_ROW_R))
                 .whitespace_nowrap()
                 .overflow_hidden()
-                .text_ellipsis()
-                .cursor_pointer()
-                .text_color(rgb(if here { t.accent } else { t.panel_text }))
-                .when((h.level == 1 && nested) || here, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
-                .hover(|d| d.bg(rgb(t.tag_bg)))
-                .gap(px(10.))
+                .cursor_default()
+                .when(h.level == 1 && nested, |d| d.font_weight(crate::fonts::weight(gpui::FontWeight::SEMIBOLD)))
+                // the heading being read: the quiet mark every list has
+                // for where it is
+                .child(div().flex_none().w(px(14.)).text_color(rgb(t.panel_dim)).font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).child(if here { crate::shell::HERE } else { "" }))
+                .child(div().flex_none().w(px(12. * (h.level.saturating_sub(1)) as f32)))
                 .child(div().flex_1().min_w_0().overflow_hidden().text_ellipsis().child(title(h)))
                 // what more it says (a command's run), quieter, at the right
-                .when_some(h.detail.clone(), |d, detail| d.child(div().flex_none().font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).text_color(rgb(if h.failed { t.text } else { t.panel_dim })).child(detail)))
+                .when_some(h.detail.clone(), |d, detail| d.child(div().flex_none().pl(px(10.)).text_size(px(12.)).font_weight(crate::fonts::weight(gpui::FontWeight::NORMAL)).text_color(rgb(if h.failed { t.text } else { t.panel_dim })).child(detail)))
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |acme, _, _, cx| {
@@ -275,7 +275,9 @@ impl Acme {
                         cx.stop_propagation();
                         cx.notify();
                     }),
-                )
+                );
+            // going to a heading is B3's: its colours under the pointer
+            crate::shell::chosen_under_pointer(row, crate::shell::Act::Look, crate::shell::BAR_INSET, "toc-row")
         });
         let tall = tall(toc.heads.len(), bar);
         // the list scrolls in the panel; what marks where the panel is
@@ -288,9 +290,9 @@ impl Acme {
             .min_h(px(0.))
             .overflow_y_scroll()
             .track_scroll(&self.outline.scroll)
-            .p(px(PAD - 1.))
+            .p(px(crate::shell::POPOVER_PAD))
             .children(rows);
-        let panel = div()
+        let panel = crate::shell::popover()
             .relative()
             .flex()
             .flex_col()
@@ -298,17 +300,10 @@ impl Acme {
             .max_w(px(if toc.heads.iter().any(|h| h.detail.is_some()) { 520. } else { 320. }))
             .h(tall)
             .overflow_hidden()
-            .rounded(px(10.))
-            .bg(rgb(t.panel_bg))
-            .border_1()
-            .border_color(rgb(t.panel_border))
-            .shadow(vec![shadow])
-            .font_family(crate::fonts::ui())
-            .text_size(px(12.5))
             .child(self.overlay_mark_by(px(0.)))
             .child(gpui::canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {}).absolute().top(px(0.)).left(px(0.)).size_full())
             .child(list);
-        Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), self.outline.top)).child(panel)).with_priority(2).into_any_element())
+        Some(deferred(anchored().anchor(gpui::Anchor::TopLeft).position(point(bar.right() + px(2.), self.outline.top)).child(crate::shell::fade_in("toc-panel", panel))).with_priority(2).into_any_element())
     }
 
     /// The outline's pill: the part being read, by its stop; the pointer
